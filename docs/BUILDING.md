@@ -2,7 +2,7 @@
 
 DelosDB uses Gradle as its supported build system.
 
-The build is now Gradle-native for the active developer workflow: source generation, parser generation, module compilation, resource generation, jar assembly, smoke testing, and CI are all driven by Gradle.
+The build is now Gradle-native for the active developer workflow: source generation, parser generation, module compilation, resource generation, jar assembly, smoke testing, jar metadata verification, and CI are all driven by Gradle.
 
 ## Requirements
 
@@ -19,6 +19,7 @@ The build is now Gradle-native for the active developer workflow: source generat
 ./gradlew sysinfoFromJars
 ./gradlew jars
 ./gradlew verifyJars
+./gradlew verifyReleaseArtifacts
 ```
 
 ## What `./gradlew build` does
@@ -35,9 +36,10 @@ The main build lifecycle now performs these steps:
 8. Generate product `info.properties` resources.
 9. Assemble jars into `build/libs/`.
 10. Verify that all expected runtime jars were assembled.
-11. Verify that public build docs expose only the Gradle workflow.
-12. Run the embedded JDBC smoke test from compiled classes.
-13. Run the embedded JDBC smoke test from assembled jars.
+11. Verify release metadata, manifest attributes, and legal attribution files inside each jar.
+12. Verify that public build docs expose only the Gradle workflow.
+13. Run the embedded JDBC smoke test from compiled classes.
+14. Run the embedded JDBC smoke test from assembled jars.
 
 ## Current jar outputs
 
@@ -50,6 +52,25 @@ build/libs/derbyrun.jar
 build/libs/derbyshared.jar
 build/libs/derbytools.jar
 build/libs/osgi-framework-stub.jar
+```
+
+## Release artifact metadata
+
+Each runtime jar is expected to contain:
+
+```text
+META-INF/MANIFEST.MF
+META-INF/LICENSE
+META-INF/NOTICE
+META-INF/NOTICE-FORK.md
+```
+
+The manifest includes DelosDB identity metadata, compatibility metadata for the Apache Derby 10.17.1.0 base, and the Git build revision when available.
+
+Use this command to verify the release artifact shape:
+
+```bash
+./gradlew verifyReleaseArtifacts
 ```
 
 ## Smoke tests

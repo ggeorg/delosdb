@@ -3,11 +3,15 @@ plugins {
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
+import java.util.jar.JarFile
 
-version = '10.17.1.0-dvx'
+def delosDbVersion = '0.1.0-dev'
+
+version = delosDbVersion
 group = 'io.github.ggeorg.delosdb'
 
 def javaRelease = 21
+def derbyCompatibilityVersion = '10.17.1.0'
 
 def moduleNames = [
         osgi         : 'org.osgi.framework',
@@ -88,7 +92,8 @@ derby.version.drdamaint=0
 derby.build.number=${buildNumber.get()}
 derby.product.technology.name=${technologyName}
 derby.product.external.name=DelosDB
-derby.product.external.version=10.17
+derby.product.external.version=${delosDbVersion}
+delosdb.version=${delosDbVersion}
 derby.version.beta=false
 derby.product.vendor=DelosDB Project
 derby.product.file=${productFile}
@@ -465,6 +470,41 @@ def runtimeJars = {
     files(runtimeJarNames.collect { layout.buildDirectory.file("libs/${it}") })
 }
 
+def legalFileNames = ['LICENSE', 'NOTICE', 'NOTICE-FORK.md']
+def legalFiles = files(legalFileNames.collect { file(it) })
+
+def jarTitleFor = { String archiveName ->
+    [
+            'osgi-framework-stub.jar' : 'DelosDB OSGi Framework Stub',
+            'derbyshared.jar'        : 'DelosDB Shared Utilities',
+            'derby.jar'              : 'DelosDB Embedded Engine',
+            'derbyclient.jar'        : 'DelosDB Network Client',
+            'derbytools.jar'         : 'DelosDB Tools',
+            'derbynet.jar'           : 'DelosDB Network Server',
+            'derbyoptionaltools.jar' : 'DelosDB Optional Tools',
+            'derbyrun.jar'           : 'DelosDB Runner'
+    ][archiveName] ?: "DelosDB ${archiveName}"
+}
+
+def releaseManifestAttributes = { String archiveName ->
+    [
+            'Implementation-Title'        : jarTitleFor(archiveName),
+            'Implementation-Version'      : delosDbVersion,
+            'Implementation-Vendor'       : 'DelosDB Project',
+            'Specification-Title'         : jarTitleFor(archiveName),
+            'Specification-Version'       : derbyCompatibilityVersion,
+            'Specification-Vendor'        : 'DelosDB Project',
+            'DelosDB-Version'             : delosDbVersion,
+            'DelosDB-Build-Revision'      : buildNumber.get(),
+            'DelosDB-Origin'              : 'Forked from Apache Derby 10.17.1.0',
+            'DelosDB-Repository'          : 'https://github.com/ggeorg/delosdb',
+            'Apache-Derby-Base-Version'   : derbyCompatibilityVersion,
+            'Built-By'                    : System.getProperty('user.name', 'unknown'),
+            'Build-Jdk'                   : System.getProperty('java.version'),
+            'Build-Jdk-Vendor'            : System.getProperty('java.vendor')
+    ]
+}
+
 def runtimeBuildTasks = [
         'compileClassSizeCatalog',
         'splitEngineMessages'
@@ -488,9 +528,14 @@ tasks.register('compileAll') {
         dependsOn 'compileAll'
         archiveFileName = spec.archive
         destinationDirectory = layout.buildDirectory.dir('libs')
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         from moduleClassDir(spec.moduleName)
-        if (spec.archive == 'derbyrun.jar') {
-            manifest {
+        from(legalFiles) {
+            into 'META-INF'
+        }
+        manifest {
+            attributes releaseManifestAttributes(spec.archive)
+            if (spec.archive == 'derbyrun.jar') {
                 attributes 'Main-Class': 'org.apache.derby.run.run'
             }
         }
@@ -519,6 +564,66 @@ tasks.register('verifyJars') {
             }
             if (jarFile.length() == 0L) {
                 throw new GradleException("Empty jar: ${jarFile}")
+            }
+        }
+    }
+}
+
+
+tasks.register('verifyReleaseArtifacts') {
+    dependsOn 'verifyJars'
+    group = 'verification'
+    description = 'Verifies release metadata, legal attribution files, and manifests inside assembled jars.'
+    inputs.files(runtimeJars())
+    inputs.files(legalFiles)
+    doLast {
+        legalFileNames.each { legalName ->
+            def legalFile = file(legalName)
+            if (!legalFile.isFile()) {
+                throw new GradleException("Missing required legal attribution file: ${legalFile}")
+            }
+        }
+
+        runtimeJarNames.each { jarName ->
+            def jarFile = layout.buildDirectory.file("libs/${jarName}").get().asFile
+            new JarFile(jarFile).withCloseable { jar ->
+                def manifest = jar.manifest
+                if (manifest == null) {
+                    throw new GradleException("Missing manifest in ${jarFile.name}")
+                }
+
+                def attributes = manifest.mainAttributes
+                [
+                        'Implementation-Title',
+                        'Implementation-Version',
+                        'Implementation-Vendor',
+                        'Specification-Version',
+                        'DelosDB-Version',
+                        'DelosDB-Build-Revision',
+                        'DelosDB-Origin',
+                        'Apache-Derby-Base-Version',
+                        'Build-Jdk'
+                ].each { attributeName ->
+                    def value = attributes.getValue(attributeName)
+                    if (value == null || value.trim().isEmpty()) {
+                        throw new GradleException("Missing manifest attribute ${attributeName} in ${jarFile.name}")
+                    }
+                }
+
+                if (attributes.getValue('Implementation-Version') != delosDbVersion) {
+                    throw new GradleException("Unexpected Implementation-Version in ${jarFile.name}: ${attributes.getValue('Implementation-Version')}")
+                }
+
+                if (jarName == 'derbyrun.jar' && attributes.getValue('Main-Class') != 'org.apache.derby.run.run') {
+                    throw new GradleException("derbyrun.jar is missing the expected Main-Class")
+                }
+
+                legalFileNames.each { legalName ->
+                    def entryName = "META-INF/${legalName}"
+                    if (jar.getEntry(entryName) == null) {
+                        throw new GradleException("Missing ${entryName} in ${jarFile.name}")
+                    }
+                }
             }
         }
     }
@@ -601,7 +706,7 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyJars', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface'
+    dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface'
 }
 
 tasks.register('test') {

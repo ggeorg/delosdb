@@ -12,9 +12,10 @@ This file records the current Gradle build map so the fork can move from a root-
 ./gradlew sysinfoFromJars
 ./gradlew jars
 ./gradlew verifyJars
+./gradlew verifyReleaseArtifacts
 ```
 
-`./gradlew build` is the main verification command. It assembles the jars, verifies the expected runtime jar set, runs the embedded JDBC smoke test from classes, and runs the same smoke test from the assembled jars.
+`./gradlew build` is the main verification command. It assembles the jars, verifies the expected runtime jar set, verifies release metadata and legal attribution files, runs the embedded JDBC smoke test from classes, and runs the same smoke test from the assembled jars.
 
 ## Runtime/source modules currently compiled
 
@@ -68,10 +69,25 @@ These are not public runtime artifacts. They remain part of the build until we e
 | Gradle task | Purpose |
 |---|---|
 | `verifyJars` | Fails if any expected runtime jar is missing or empty. |
+| `verifyReleaseArtifacts` | Fails if jar manifests or legal attribution files are missing or incomplete. |
 | `sysinfoFromJars` | Runs `sysinfo` from the assembled jars in `build/libs/`. |
 | `smokeFromJars` | Runs the embedded JDBC smoke script from the assembled jars in `build/libs/`. |
 
-The class-directory tasks are still useful while migrating the old build, but jar-level verification is the stronger release signal. A future release workflow should build on `verifyJars`, `sysinfoFromJars`, and `smokeFromJars`.
+The class-directory tasks are still useful while migrating the old build, but jar-level verification is the stronger release signal. A future release workflow should build on `verifyReleaseArtifacts`, `sysinfoFromJars`, and `smokeFromJars`.
+
+
+## Release metadata baseline
+
+Every runtime jar is expected to include:
+
+```text
+META-INF/MANIFEST.MF
+META-INF/LICENSE
+META-INF/NOTICE
+META-INF/NOTICE-FORK.md
+```
+
+The manifest currently records DelosDB project identity, the DelosDB development version, the Apache Derby base compatibility version, the Git revision when available, and the JDK used for the build. This gives the fork a stable release-readiness baseline before module extraction begins.
 
 ## Next build architecture target
 

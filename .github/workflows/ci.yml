@@ -27,5 +27,8 @@ jobs:
       - name: Build
         run: ./gradlew --no-daemon build
 
+      - name: Verify release artifacts
+        run: ./gradlew --no-daemon verifyReleaseArtifacts
+
       - name: Sysinfo from jars
         run: ./gradlew --no-daemon sysinfoFromJars
