@@ -138,3 +138,14 @@ docs/MODULE-SPLIT-PLAN.md
 ```
 
 This guardrail should stay green before and after each module extraction.
+
+
+## Extracted commons baseline
+
+`delosdb-commons` is now the first extracted Gradle subproject. It compiles the inherited `org.apache.derby.commons` JPMS module from `java/org.apache.derby.commons` and writes its class output under `delosdb-commons/build/classes/modules/org.apache.derby.commons`. The root build consumes that output for downstream module compilation and for `derbyshared.jar` assembly. Source files have not been moved yet; this patch extracts build ownership first.
+
+Verification command:
+
+```bash
+./gradlew :delosdb-commons:compileDerbyCommons verifyExtractedCommonsProject
+```

@@ -1,0 +1,59 @@
+plugins {
+    id 'base'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = rootProject.version
+group = rootProject.group
+
+def javaRelease = rootProject.ext.javaRelease as Integer
+def moduleName = 'org.apache.derby.commons'
+def sourceRoot = rootProject.file('java/org.apache.derby.commons')
+def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
+def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
+
+def configureJavaCompile = { JavaCompile task ->
+    task.sourceCompatibility = javaRelease.toString()
+    task.targetCompatibility = javaRelease.toString()
+    task.options.release = javaRelease
+    task.options.encoding = 'UTF-8'
+    task.options.deprecation = false
+    task.options.warnings = true
+    task.classpath = files()
+    task.doFirst {
+        task.options.compilerArgs.add('-Xlint:deprecation')
+    }
+}
+
+tasks.register('generateSanityState') {
+    def templateFile = new File(sourceRoot, 'org/apache/derby/shared/common/sanity/SanityState.tmpl')
+    def outputFile = generatedSourceRoot.map {
+        it.file('org/apache/derby/shared/common/sanity/SanityState.java')
+    }
+    inputs.file(templateFile)
+    outputs.file(outputFile)
+    doLast {
+        def target = outputFile.get().asFile
+        target.parentFile.mkdirs()
+        target.text = templateFile.text.replace('@SANE@', 'true')
+    }
+}
+
+tasks.register('compileDerbyCommons', JavaCompile) {
+    dependsOn 'generateSanityState'
+    source = files(
+            fileTree(sourceRoot) { include '**/*.java' },
+            fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
+    )
+    destinationDirectory = moduleClassDir
+    configureJavaCompile(delegate)
+}
+
+tasks.register('classes') {
+    dependsOn 'compileDerbyCommons'
+}
+
+tasks.named('assemble') {
+    dependsOn 'classes'
+}

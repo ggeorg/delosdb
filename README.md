@@ -10,6 +10,17 @@ Early fork/bootstrap stage.
 
 DelosDB now uses **Gradle as the only supported build system**. The inherited Ant build surface has been removed from the supported developer workflow.
 
+
+## Gradle subprojects
+
+The first extracted build subproject is now `:delosdb-commons`. It owns generation and compilation of the inherited `org.apache.derby.commons` JPMS module while the root build still assembles the release jars. This keeps the module split incremental and reversible.
+
+Useful check:
+
+```bash
+./gradlew :delosdb-commons:compileDerbyCommons
+```
+
 ## Relationship to Apache Derby
 
 This project is based on Apache Derby 10.17.1.0 source code. Apache Derby was developed by the Apache Software Foundation and distributed under the Apache License, Version 2.0.

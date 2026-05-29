@@ -10,7 +10,10 @@ def delosDbVersion = '0.1.0-dev'
 version = delosDbVersion
 group = 'io.github.ggeorg.delosdb'
 
+ext.delosDbVersion = delosDbVersion
+
 def javaRelease = 21
+ext.javaRelease = javaRelease
 def derbyCompatibilityVersion = '10.17.1.0'
 
 def moduleNames = [
@@ -25,6 +28,9 @@ def moduleNames = [
 ]
 
 def moduleClassDir = { String moduleName ->
+    if (moduleName == moduleNames.commons) {
+        return project(':delosdb-commons').layout.buildDirectory.dir("classes/modules/${moduleName}")
+    }
     layout.buildDirectory.dir("classes/modules/${moduleName}")
 }
 
@@ -101,93 +107,9 @@ derby.product.file=${productFile}
 }
 
 tasks.register('generateSanityState') {
-    def outputFile = generatedSourceDir(moduleNames.commons).map {
-        it.file('org/apache/derby/shared/common/sanity/SanityState.java')
-    }
-    inputs.file('java/org.apache.derby.commons/org/apache/derby/shared/common/sanity/SanityState.tmpl')
-    outputs.file(outputFile)
-    doLast {
-        def target = outputFile.get().asFile
-        target.parentFile.mkdirs()
-        target.text = file('java/org.apache.derby.commons/org/apache/derby/shared/common/sanity/SanityState.tmpl')
-                .text
-                .replace('@SANE@', 'true')
-    }
-}
-
-tasks.register('generateSqlParser', JavaExec) {
-    def outputDir = generatedSourceDir(moduleNames.engine).map {
-        it.dir('org/apache/derby/impl/sql/compile')
-    }
-    inputs.file('java/org.apache.derby.engine/org/apache/derby/impl/sql/compile/sqlgrammar.jj')
-    outputs.dir(outputDir)
-    classpath = javaccClasspath
-    mainClass = 'javacc'
-    workingDir = file('java/org.apache.derby.engine/org/apache/derby/impl/sql/compile')
-    args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'sqlgrammar.jj'
-    doFirst {
-        delete outputDir
-        outputDir.get().asFile.mkdirs()
-    }
-    doLast {
-        ['CharStream.java', 'ParseException.java', 'Token.java'].each {
-            delete new File(outputDir.get().asFile, it)
-        }
-        ['SQLParser.java', 'SQLParserConstants.java', 'SQLParserTokenManager.java', 'TokenMgrError.java'].each {
-            def generated = new File(outputDir.get().asFile, it)
-            if (generated.exists()) {
-                replaceInFile(generated) { text -> text.replaceAll('(?m)^public (class|interface)', '$1') }
-            }
-        }
-        def parser = new File(outputDir.get().asFile, 'SQLParser.java')
-        if (parser.exists()) {
-            replaceInFile(parser) { text -> text.replace('tokenImage', 'SQLParserConstants.tokenImage') }
-        }
-    }
-}
-
-tasks.register('generateIjParsers') {
-    def outputDir = generatedSourceDir(moduleNames.tools).map {
-        it.dir('org/apache/derby/impl/tools/ij')
-    }
-    inputs.files(
-            'java/org.apache.derby.tools/org/apache/derby/impl/tools/ij/ij.jj',
-            'java/org.apache.derby.tools/org/apache/derby/impl/tools/ij/mtGrammar.jj'
-    )
-    outputs.dir(outputDir)
-    doLast {
-        delete outputDir
-        outputDir.get().asFile.mkdirs()
-        javaexec {
-            classpath = javaccClasspath
-            mainClass = 'javacc'
-            workingDir = file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij')
-            args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'ij.jj'
-        }
-        javaexec {
-            classpath = javaccClasspath
-            mainClass = 'javacc'
-            workingDir = file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij')
-            args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'mtGrammar.jj'
-        }
-        delete new File(outputDir.get().asFile, 'ParseException.java')
-        def ijConstants = new File(outputDir.get().asFile, 'ijConstants.java')
-        def ijTokenManager = new File(outputDir.get().asFile, 'ijTokenManager.java')
-        def ijParser = new File(outputDir.get().asFile, 'ij.java')
-        def mtParser = new File(outputDir.get().asFile, 'mtGrammar.java')
-        if (ijConstants.exists()) {
-            replaceInFile(ijConstants) { text -> text.replace('public interface', 'interface') }
-        }
-        if (ijTokenManager.exists()) {
-            replaceInFile(ijTokenManager) { text -> text.replace('public class', 'class') }
-        }
-        if (ijParser.exists()) {
-            replaceInFile(ijParser) { text -> text.replace('tokenImage', 'ijConstants.tokenImage') }
-        }
-        if (mtParser.exists()) {
-            replaceInFile(mtParser) { text -> text.replace('tokenImage', 'mtGrammarConstants.tokenImage') }
-        }
-    }
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-commons source-generation task.'
+    dependsOn ':delosdb-commons:generateSanityState'
 }
 
 tasks.register('compileOsgiStubs', JavaCompile) {
@@ -196,14 +118,10 @@ tasks.register('compileOsgiStubs', JavaCompile) {
     configureJavaCompile(delegate)
 }
 
-tasks.register('compileDerbyCommons', JavaCompile) {
-    dependsOn 'generateSanityState'
-    source = files(
-            fileTree('java/org.apache.derby.commons') { include '**/*.java' },
-            fileTree(generatedSourceDir(moduleNames.commons).get().asFile) { include '**/*.java' }
-    )
-    destinationDirectory = moduleClassDir(moduleNames.commons)
-    configureJavaCompile(delegate)
+tasks.register('compileDerbyCommons') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-commons compile task.'
+    dependsOn ':delosdb-commons:compileDerbyCommons'
 }
 
 tasks.register('compileDerbyEngine', JavaCompile) {
@@ -870,6 +788,34 @@ tasks.register('verifyArtifactInventory') {
     }
 }
 
+tasks.register('verifyExtractedCommonsProject') {
+    dependsOn ':delosdb-commons:compileDerbyCommons'
+    group = 'verification'
+    description = 'Verifies that the first extracted Gradle subproject owns the commons compile lifecycle.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-commons/build.gradle')
+    doLast {
+        def commonsProject = findProject(':delosdb-commons')
+        if (commonsProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-commons')
+        }
+        if (commonsProject.tasks.findByName('generateSanityState') == null) {
+            throw new GradleException('Missing :delosdb-commons:generateSanityState')
+        }
+        if (commonsProject.tasks.findByName('compileDerbyCommons') == null) {
+            throw new GradleException('Missing :delosdb-commons:compileDerbyCommons')
+        }
+        def commonsOutput = moduleClassDir(moduleNames.commons).get().asFile
+        if (!commonsOutput.isDirectory()) {
+            throw new GradleException("Missing compiled commons output directory: ${commonsOutput}")
+        }
+        def moduleInfo = new File(commonsOutput, 'module-info.class')
+        if (!moduleInfo.isFile()) {
+            throw new GradleException("Missing compiled commons module descriptor: ${moduleInfo}")
+        }
+    }
+}
+
 tasks.register('verifyGradleOnlyPublicSurface') {
     group = 'verification'
     description = 'Ensures public build instructions expose only the Gradle build path.'
@@ -902,7 +848,7 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface', 'verifyArtifactInventory'
+    dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface', 'verifyArtifactInventory', 'verifyExtractedCommonsProject'
 }
 
 tasks.register('test') {
