@@ -23,11 +23,9 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.14.3'
 
       - name: Build
-        run: gradle --no-daemon build
+        run: ./gradlew --no-daemon build
 
-      - name: Smoke test
-        run: gradle --no-daemon smoke
+      - name: Sysinfo
+        run: ./gradlew --no-daemon sysinfo

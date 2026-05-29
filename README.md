@@ -8,7 +8,7 @@ The goal is to preserve Derby's strongest property — a small, embeddable, stan
 
 Early fork/bootstrap stage.
 
-The current build direction is **Gradle-only** for DelosDB. The old inherited Ant build is no longer the official build path.
+DelosDB now uses **Gradle as the only supported build system**. The inherited Ant build surface has been removed from the supported developer workflow.
 
 ## Relationship to Apache Derby
 
@@ -21,7 +21,7 @@ The original `LICENSE` and `NOTICE` files are preserved. See `NOTICE-FORK.md` fo
 ## Requirements
 
 - JDK 21 or newer
-- Gradle, or the Gradle Wrapper once generated and committed
+- Gradle Wrapper from this repository
 - Git
 
 ## Build
@@ -32,19 +32,7 @@ From the repository root:
 ./gradlew build
 ```
 
-or, before the wrapper exists:
-
-```bash
-gradle build
-```
-
-## Smoke test
-
-```bash
-./gradlew smoke
-```
-
-This runs a small embedded SQL script through `ij` using classes produced by the Gradle build.
+The `build` lifecycle compiles the inherited Derby/DelosDB modules, generates the required legacy sources/resources, assembles jars, verifies the public build surface, and runs the embedded smoke test.
 
 ## Useful Gradle tasks
 
@@ -61,6 +49,21 @@ Generated jars are written to:
 build/libs/
 ```
 
-## Near-term roadmap
+## Current outputs
 
-See `docs/ROADMAP.md`.
+```text
+build/libs/derby.jar
+build/libs/derbyclient.jar
+build/libs/derbynet.jar
+build/libs/derbyoptionaltools.jar
+build/libs/derbyrun.jar
+build/libs/derbyshared.jar
+build/libs/derbytools.jar
+build/libs/osgi-framework-stub.jar
+```
+
+## Documentation
+
+- `docs/BUILDING.md` — developer build workflow
+- `docs/BUILD-INVENTORY.md` — current Gradle build map and migration inventory
+- `docs/ROADMAP.md` — modernization roadmap

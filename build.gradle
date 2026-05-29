@@ -513,6 +513,41 @@ tasks.register('smoke', JavaExec) {
     }
 }
 
+tasks.register('verifyGradleOnlyPublicSurface') {
+    group = 'verification'
+    description = 'Ensures public build instructions expose only the Gradle build path.'
+    def publicFiles = files(
+            'README.md',
+            'docs/BUILDING.md',
+            'docs/BUILD-INVENTORY.md',
+            '.github/workflows/ci.yml'
+    )
+    inputs.files(publicFiles)
+    doLast {
+        def forbidden = [
+                'ant build',
+                'ant -D',
+                'buildsource',
+                'buildjars',
+                'svnversion',
+                'changenumber',
+                'ant.importBuild'
+        ]
+        publicFiles.files.findAll { it.exists() }.each { checkedFile ->
+            def text = checkedFile.text
+            forbidden.each { needle ->
+                if (text.contains(needle)) {
+                    throw new GradleException("Unsupported legacy build reference '${needle}' found in ${checkedFile}")
+                }
+            }
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'smoke', 'verifyGradleOnlyPublicSurface'
+}
+
 tasks.register('test') {
     group = 'verification'
     description = 'Alias for the current smoke verification task.'
