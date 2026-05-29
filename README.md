@@ -8,7 +8,7 @@ The goal is to preserve Derby's strongest property — a small, embeddable, stan
 
 Early fork/bootstrap stage.
 
-The first milestone is intentionally modest: make the inherited codebase easy to build, smoke-test, and discuss in public before deeper source changes begin.
+The current build direction is **Gradle-only** for DelosDB. The old inherited Ant build is no longer the official build path.
 
 ## Relationship to Apache Derby
 
@@ -21,7 +21,7 @@ The original `LICENSE` and `NOTICE` files are preserved. See `NOTICE-FORK.md` fo
 ## Requirements
 
 - JDK 21 or newer
-- Gradle, or a Gradle Wrapper once generated and committed
+- Gradle, or the Gradle Wrapper once generated and committed
 - Git
 
 ## Build
@@ -29,39 +29,37 @@ The original `LICENSE` and `NOTICE` files are preserved. See `NOTICE-FORK.md` fo
 From the repository root:
 
 ```bash
-gradle build
+./gradlew build
 ```
 
-After generating and committing the Gradle Wrapper:
+or, before the wrapper exists:
 
 ```bash
-./gradlew build
+gradle build
 ```
 
 ## Smoke test
 
 ```bash
-gradle smoke
-```
-
-or:
-
-```bash
 ./gradlew smoke
 ```
 
-This runs a tiny embedded SQL test through `ij`.
+This runs a small embedded SQL script through `ij` using classes produced by the Gradle build.
 
-## Why the build still uses Ant internally
+## Useful Gradle tasks
 
-The inherited Derby source tree is Ant-based. The Gradle file in this repository is a thin bootstrap layer that:
+```bash
+./gradlew build
+./gradlew smoke
+./gradlew sysinfo
+./gradlew jars
+```
 
-1. provides a modern one-command entry point,
-2. removes the need to manually pass SVN-era revision metadata,
-3. gives GitHub Actions a stable target,
-4. keeps the existing build behavior intact while modernization proceeds.
+Generated jars are written to:
 
-A full Gradle or Maven module migration should happen after CI is stable.
+```text
+build/libs/
+```
 
 ## Near-term roadmap
 
