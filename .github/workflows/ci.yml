@@ -27,5 +27,5 @@ jobs:
       - name: Build
         run: ./gradlew --no-daemon build
 
-      - name: Sysinfo
-        run: ./gradlew --no-daemon sysinfo
+      - name: Sysinfo from jars
+        run: ./gradlew --no-daemon sysinfoFromJars

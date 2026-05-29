@@ -450,6 +450,21 @@ def moduleDirsForRuntime = files(
         moduleClassDir(moduleNames.runner)
 )
 
+def runtimeJarNames = [
+        'osgi-framework-stub.jar',
+        'derbyshared.jar',
+        'derby.jar',
+        'derbyclient.jar',
+        'derbytools.jar',
+        'derbynet.jar',
+        'derbyoptionaltools.jar',
+        'derbyrun.jar'
+]
+
+def runtimeJars = {
+    files(runtimeJarNames.collect { layout.buildDirectory.file("libs/${it}") })
+}
+
 def runtimeBuildTasks = [
         'compileClassSizeCatalog',
         'splitEngineMessages'
@@ -489,6 +504,47 @@ tasks.register('jars') {
 
 tasks.named('assemble') {
     dependsOn 'jars'
+}
+
+tasks.register('verifyJars') {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Checks that all expected runtime jars were assembled and are non-empty.'
+    inputs.files(runtimeJars())
+    doLast {
+        runtimeJarNames.each { jarName ->
+            def jarFile = layout.buildDirectory.file("libs/${jarName}").get().asFile
+            if (!jarFile.isFile()) {
+                throw new GradleException("Missing expected jar: ${jarFile}")
+            }
+            if (jarFile.length() == 0L) {
+                throw new GradleException("Empty jar: ${jarFile}")
+            }
+        }
+    }
+}
+
+tasks.register('sysinfoFromJars', JavaExec) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Runs DelosDB sysinfo from the assembled jars in build/libs.'
+    classpath = runtimeJars()
+    mainClass = 'org.apache.derby.run.run'
+    args 'sysinfo'
+}
+
+tasks.register('smokeFromJars', JavaExec) {
+    dependsOn 'jars'
+    mustRunAfter 'smoke'
+    group = 'verification'
+    description = 'Runs the embedded JDBC smoke script from the assembled jars in build/libs.'
+    classpath = runtimeJars()
+    mainClass = 'org.apache.derby.run.run'
+    args 'ij', file('dev/smoke.sql').absolutePath
+    workingDir = projectDir
+    doFirst {
+        delete file('build/smoke-db')
+    }
 }
 
 tasks.register('sysinfo', JavaExec) {
@@ -545,17 +601,13 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 }
 
 tasks.named('check') {
-    dependsOn 'smoke', 'verifyGradleOnlyPublicSurface'
+    dependsOn 'verifyJars', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface'
 }
 
 tasks.register('test') {
     group = 'verification'
-    description = 'Alias for the current smoke verification task.'
-    dependsOn 'smoke'
-}
-
-tasks.named('check') {
-    dependsOn 'smoke'
+    description = 'Alias for the current smoke verification tasks.'
+    dependsOn 'smoke', 'smokeFromJars'
 }
 
 tasks.named('build') {

@@ -7,11 +7,14 @@ This file records the current Gradle build map so the fork can move from a root-
 ```bash
 ./gradlew build
 ./gradlew smoke
+./gradlew smokeFromJars
 ./gradlew sysinfo
+./gradlew sysinfoFromJars
 ./gradlew jars
+./gradlew verifyJars
 ```
 
-`./gradlew build` is the main verification command. It assembles the jars and runs the embedded JDBC smoke test.
+`./gradlew build` is the main verification command. It assembles the jars, verifies the expected runtime jar set, runs the embedded JDBC smoke test from classes, and runs the same smoke test from the assembled jars.
 
 ## Runtime/source modules currently compiled
 
@@ -58,6 +61,17 @@ These are not public runtime artifacts. They remain part of the build until we e
 | `derbyOptionalToolsJar` | `build/libs/derbyoptionaltools.jar` |
 | `derbyRunJar` | `build/libs/derbyrun.jar` |
 | `osgiFrameworkStubJar` | `build/libs/osgi-framework-stub.jar` |
+
+
+## Artifact verification
+
+| Gradle task | Purpose |
+|---|---|
+| `verifyJars` | Fails if any expected runtime jar is missing or empty. |
+| `sysinfoFromJars` | Runs `sysinfo` from the assembled jars in `build/libs/`. |
+| `smokeFromJars` | Runs the embedded JDBC smoke script from the assembled jars in `build/libs/`. |
+
+The class-directory tasks are still useful while migrating the old build, but jar-level verification is the stronger release signal. A future release workflow should build on `verifyJars`, `sysinfoFromJars`, and `smokeFromJars`.
 
 ## Next build architecture target
 

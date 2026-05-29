@@ -14,8 +14,11 @@ The build is now Gradle-native for the active developer workflow: source generat
 ```bash
 ./gradlew build
 ./gradlew smoke
+./gradlew smokeFromJars
 ./gradlew sysinfo
+./gradlew sysinfoFromJars
 ./gradlew jars
+./gradlew verifyJars
 ```
 
 ## What `./gradlew build` does
@@ -31,8 +34,10 @@ The main build lifecycle now performs these steps:
 7. Generate `ClassSizeCatalogImpl`.
 8. Generate product `info.properties` resources.
 9. Assemble jars into `build/libs/`.
-10. Verify that public build docs expose only the Gradle workflow.
-11. Run the embedded JDBC smoke test.
+10. Verify that all expected runtime jars were assembled.
+11. Verify that public build docs expose only the Gradle workflow.
+12. Run the embedded JDBC smoke test from compiled classes.
+13. Run the embedded JDBC smoke test from assembled jars.
 
 ## Current jar outputs
 
@@ -47,21 +52,27 @@ build/libs/derbytools.jar
 build/libs/osgi-framework-stub.jar
 ```
 
-## Smoke test
+## Smoke tests
 
 ```bash
 ./gradlew smoke
+./gradlew smokeFromJars
 ```
 
-This runs `dev/smoke.sql` through `ij` using the Gradle-built classes.
+`smoke` runs `dev/smoke.sql` through `ij` using the Gradle-built class directories.
+
+`smokeFromJars` runs the same script from the assembled jars in `build/libs/`. This is important because it verifies the artifact shape, not only the compiler output tree.
 
 ## System info
 
 ```bash
 ./gradlew sysinfo
+./gradlew sysinfoFromJars
 ```
 
-This runs the inherited Derby `sysinfo` entry point from the Gradle-built classes.
+`sysinfo` runs the inherited Derby `sysinfo` entry point from the Gradle-built class directories.
+
+`sysinfoFromJars` runs it from the assembled jars in `build/libs/`.
 
 ## Notes
 
