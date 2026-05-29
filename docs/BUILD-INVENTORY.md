@@ -21,13 +21,13 @@ This file records the current Gradle build map so the fork can move from a root-
 
 | Gradle task | JPMS module | Source root | Output |
 |---|---|---|---|
-| `compileDerbyCommons` | `org.apache.derby.commons` | `java/org.apache.derby.commons` | `build/classes/modules/org.apache.derby.commons` |
+| `compileDerbyCommons` | `org.apache.derby.commons` | `java/org.apache.derby.commons` | `delosdb-commons/build/classes/modules/org.apache.derby.commons` |
 | `compileDerbyEngine` | `org.apache.derby.engine` | `java/org.apache.derby.engine` | `build/classes/modules/org.apache.derby.engine` |
-| `compileDerbyClient` | `org.apache.derby.client` | `java/org.apache.derby.client` | `build/classes/modules/org.apache.derby.client` |
-| `compileDerbyTools` | `org.apache.derby.tools` | `java/org.apache.derby.tools` | `build/classes/modules/org.apache.derby.tools` |
+| `compileDerbyClient` | `org.apache.derby.client` | `java/org.apache.derby.client` | `delosdb-client/build/classes/modules/org.apache.derby.client` |
+| `compileDerbyTools` | `org.apache.derby.tools` | `java/org.apache.derby.tools` | `delosdb-tools/build/classes/modules/org.apache.derby.tools` |
 | `compileDerbyServer` | `org.apache.derby.server` | `java/org.apache.derby.server` | `build/classes/modules/org.apache.derby.server` |
 | `compileDerbyOptionalTools` | `org.apache.derby.optionaltools` | `java/org.apache.derby.optionaltools` | `build/classes/modules/org.apache.derby.optionaltools` |
-| `compileDerbyRunner` | `org.apache.derby.runner` | `java/org.apache.derby.runner` | `build/classes/modules/org.apache.derby.runner` |
+| `compileDerbyRunner` | `org.apache.derby.runner` | `java/org.apache.derby.runner` | `delosdb-runner/build/classes/modules/org.apache.derby.runner` |
 | `compileOsgiStubs` | `org.osgi.framework` | `java/stubs/felix` | `build/classes/modules/org.osgi.framework` |
 
 ## Build-time generators still compiled from inherited source
@@ -140,12 +140,23 @@ docs/MODULE-SPLIT-PLAN.md
 This guardrail should stay green before and after each module extraction.
 
 
-## Extracted commons baseline
+## Extracted subproject baseline
 
-`delosdb-commons` is now the first extracted Gradle subproject. It compiles the inherited `org.apache.derby.commons` JPMS module from `java/org.apache.derby.commons` and writes its class output under `delosdb-commons/build/classes/modules/org.apache.derby.commons`. The root build consumes that output for downstream module compilation and for `derbyshared.jar` assembly. Source files have not been moved yet; this patch extracts build ownership first.
+`delosdb-commons` is the first extracted Gradle subproject. It compiles the inherited `org.apache.derby.commons` JPMS module from `java/org.apache.derby.commons` and writes its class output under `delosdb-commons/build/classes/modules/org.apache.derby.commons`.
+
+`delosdb-client` is the second extracted Gradle subproject. It compiles the inherited `org.apache.derby.client` JPMS module from `java/org.apache.derby.client` and writes its class output under `delosdb-client/build/classes/modules/org.apache.derby.client`.
+
+`delosdb-tools` is the third extracted Gradle subproject. It owns `generateIjParsers` and compiles the inherited `org.apache.derby.tools` JPMS module from `java/org.apache.derby.tools` into `delosdb-tools/build/classes/modules/org.apache.derby.tools`.
+
+`delosdb-runner` is the fourth extracted Gradle subproject. It compiles the inherited `org.apache.derby.runner` JPMS module from `java/org.apache.derby.runner` into `delosdb-runner/build/classes/modules/org.apache.derby.runner`.
+
+The root build consumes both outputs for downstream module compilation and jar assembly. Source files have not been moved yet; these patches extract build ownership first.
 
 Verification command:
 
 ```bash
 ./gradlew :delosdb-commons:compileDerbyCommons verifyExtractedCommonsProject
+./gradlew :delosdb-client:compileDerbyClient verifyExtractedClientProject
+./gradlew :delosdb-tools:compileDerbyTools verifyExtractedToolsProject
+./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedRunnerProject
 ```

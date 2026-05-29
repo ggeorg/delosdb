@@ -1,17 +1,17 @@
 # Build outputs
-/build/
-/classes/
-/generated/
-/jars/
+build/
+**/build/
+classes/
+generated/
+jars/
 
 # Derby local databases and logs
-/derby.log
+derby.log
 *.lck
-*.seg0
 
 # IDEs
-/.idea/
-/.vscode/
+.idea/
+.vscode/
 *.iml
 .classpath
 .project

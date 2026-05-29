@@ -1,0 +1,102 @@
+plugins {
+    id 'base'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = rootProject.version
+group = rootProject.group
+
+def javaRelease = rootProject.ext.javaRelease as Integer
+def moduleName = 'org.apache.derby.tools'
+def sourceRoot = rootProject.file('java/org.apache.derby.tools')
+def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
+def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
+def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def clientModuleClassDir = rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client')
+def engineModuleClassDir = rootProject.layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
+def javaccClasspath = rootProject.files('tools/java/javacc.jar')
+
+def replaceInFile = { File file, Closure<String> transform ->
+    file.text = transform(file.text)
+}
+
+def configureJavaCompile = { JavaCompile task ->
+    task.sourceCompatibility = javaRelease.toString()
+    task.targetCompatibility = javaRelease.toString()
+    task.options.release = javaRelease
+    task.options.encoding = 'UTF-8'
+    task.options.deprecation = false
+    task.options.warnings = true
+    task.classpath = files()
+    task.doFirst {
+        task.options.compilerArgs.addAll(['--module-path', files(
+                commonsModuleClassDir,
+                engineModuleClassDir,
+                clientModuleClassDir
+        ).asPath])
+        task.options.compilerArgs.add('-Xlint:deprecation')
+    }
+}
+
+tasks.register('generateIjParsers') {
+    def outputDir = generatedSourceRoot.map {
+        it.dir('org/apache/derby/impl/tools/ij')
+    }
+    inputs.files(
+            rootProject.file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij/ij.jj'),
+            rootProject.file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij/mtGrammar.jj')
+    )
+    outputs.dir(outputDir)
+    doLast {
+        delete outputDir
+        outputDir.get().asFile.mkdirs()
+        javaexec {
+            classpath = javaccClasspath
+            mainClass = 'javacc'
+            workingDir = rootProject.file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij')
+            args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'ij.jj'
+        }
+        javaexec {
+            classpath = javaccClasspath
+            mainClass = 'javacc'
+            workingDir = rootProject.file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij')
+            args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'mtGrammar.jj'
+        }
+        delete new File(outputDir.get().asFile, 'ParseException.java')
+        def ijConstants = new File(outputDir.get().asFile, 'ijConstants.java')
+        def ijTokenManager = new File(outputDir.get().asFile, 'ijTokenManager.java')
+        def ijParser = new File(outputDir.get().asFile, 'ij.java')
+        def mtParser = new File(outputDir.get().asFile, 'mtGrammar.java')
+        if (ijConstants.exists()) {
+            replaceInFile(ijConstants) { text -> text.replace('public interface', 'interface') }
+        }
+        if (ijTokenManager.exists()) {
+            replaceInFile(ijTokenManager) { text -> text.replace('public class', 'class') }
+        }
+        if (ijParser.exists()) {
+            replaceInFile(ijParser) { text -> text.replace('tokenImage', 'ijConstants.tokenImage') }
+        }
+        if (mtParser.exists()) {
+            replaceInFile(mtParser) { text -> text.replace('tokenImage', 'mtGrammarConstants.tokenImage') }
+        }
+    }
+}
+
+tasks.register('compileDerbyTools', JavaCompile) {
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':compileDerbyEngine', ':delosdb-client:compileDerbyClient', 'generateIjParsers'
+    source = files(
+            fileTree(sourceRoot) { include '**/*.java' },
+            fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
+    )
+    destinationDirectory = moduleClassDir
+    configureJavaCompile(delegate)
+}
+
+tasks.register('classes') {
+    dependsOn 'compileDerbyTools'
+}
+
+tasks.named('assemble') {
+    dependsOn 'classes'
+}

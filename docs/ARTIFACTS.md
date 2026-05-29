@@ -2,7 +2,7 @@
 
 This document records the current runtime artifacts produced by the Gradle-only build and the planned project names for the future multi-project split.
 
-The current build is still implemented from the repository root. The table below is the authoritative inventory for the next extraction steps.
+The current build is being extracted incrementally from the repository root. `delosdb-commons`, `delosdb-client`, `delosdb-tools`, and `delosdb-runner` now own their compile lifecycles; the root build still owns shared resource processing and jar assembly. The table below is the authoritative inventory for the next extraction steps.
 
 | Planned Gradle project | Current JPMS module | Current source root | Current jar | Public runtime artifact | Current compile task | Extraction order | Risk |
 |---|---|---|---|---:|---|---:|---|
@@ -75,12 +75,23 @@ runner
 `verifyArtifactInventory` checks that this inventory remains aligned with the current Gradle build model before we start moving source roots into real subprojects.
 
 
-## Commons extraction status
+## Extraction status
 
-`delosdb-commons` is now the first extracted Gradle subproject. It compiles the inherited `org.apache.derby.commons` JPMS module from `java/org.apache.derby.commons` and writes its class output under `delosdb-commons/build/classes/modules/org.apache.derby.commons`. The root build consumes that output for downstream module compilation and for `derbyshared.jar` assembly. Source files have not been moved yet; this patch extracts build ownership first.
+`delosdb-commons` is the first extracted Gradle subproject. It compiles the inherited `org.apache.derby.commons` JPMS module from `java/org.apache.derby.commons` and writes its class output under `delosdb-commons/build/classes/modules/org.apache.derby.commons`.
+
+`delosdb-client` is the second extracted Gradle subproject. It compiles the inherited `org.apache.derby.client` JPMS module from `java/org.apache.derby.client` and writes its class output under `delosdb-client/build/classes/modules/org.apache.derby.client`.
+
+`delosdb-tools` is the third extracted Gradle subproject. It owns `generateIjParsers` and compiles the inherited `org.apache.derby.tools` JPMS module from `java/org.apache.derby.tools` into `delosdb-tools/build/classes/modules/org.apache.derby.tools`.
+
+`delosdb-runner` is the fourth extracted Gradle subproject. It compiles the inherited `org.apache.derby.runner` JPMS module from `java/org.apache.derby.runner` into `delosdb-runner/build/classes/modules/org.apache.derby.runner`.
+
+The root build consumes both outputs for downstream module compilation and jar assembly. Source files have not been moved yet; the current split extracts build ownership first.
 
 Verification command:
 
 ```bash
 ./gradlew :delosdb-commons:compileDerbyCommons verifyExtractedCommonsProject
+./gradlew :delosdb-client:compileDerbyClient verifyExtractedClientProject
+./gradlew :delosdb-tools:compileDerbyTools verifyExtractedToolsProject
+./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedRunnerProject
 ```

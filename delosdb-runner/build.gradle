@@ -1,0 +1,49 @@
+plugins {
+    id 'base'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = rootProject.version
+group = rootProject.group
+
+def javaRelease = rootProject.ext.javaRelease as Integer
+def moduleName = 'org.apache.derby.runner'
+def sourceRoot = rootProject.file('java/org.apache.derby.runner')
+def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
+def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def toolsModuleClassDir = rootProject.project(':delosdb-tools').layout.buildDirectory.dir('classes/modules/org.apache.derby.tools')
+def serverModuleClassDir = rootProject.layout.buildDirectory.dir('classes/modules/org.apache.derby.server')
+
+def configureJavaCompile = { JavaCompile task ->
+    task.sourceCompatibility = javaRelease.toString()
+    task.targetCompatibility = javaRelease.toString()
+    task.options.release = javaRelease
+    task.options.encoding = 'UTF-8'
+    task.options.deprecation = false
+    task.options.warnings = true
+    task.classpath = files()
+    task.doFirst {
+        task.options.compilerArgs.addAll(['--module-path', files(
+                commonsModuleClassDir,
+                toolsModuleClassDir,
+                serverModuleClassDir
+        ).asPath])
+        task.options.compilerArgs.add('-Xlint:deprecation')
+    }
+}
+
+tasks.register('compileDerbyRunner', JavaCompile) {
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-tools:compileDerbyTools', ':compileDerbyServer'
+    source = fileTree(sourceRoot) { include '**/*.java' }
+    destinationDirectory = moduleClassDir
+    configureJavaCompile(delegate)
+}
+
+tasks.register('classes') {
+    dependsOn 'compileDerbyRunner'
+}
+
+tasks.named('assemble') {
+    dependsOn 'classes'
+}

@@ -31,6 +31,15 @@ def moduleClassDir = { String moduleName ->
     if (moduleName == moduleNames.commons) {
         return project(':delosdb-commons').layout.buildDirectory.dir("classes/modules/${moduleName}")
     }
+    if (moduleName == moduleNames.client) {
+        return project(':delosdb-client').layout.buildDirectory.dir("classes/modules/${moduleName}")
+    }
+    if (moduleName == moduleNames.tools) {
+        return project(':delosdb-tools').layout.buildDirectory.dir("classes/modules/${moduleName}")
+    }
+    if (moduleName == moduleNames.runner) {
+        return project(':delosdb-runner').layout.buildDirectory.dir("classes/modules/${moduleName}")
+    }
     layout.buildDirectory.dir("classes/modules/${moduleName}")
 }
 
@@ -124,6 +133,44 @@ tasks.register('compileDerbyCommons') {
     dependsOn ':delosdb-commons:compileDerbyCommons'
 }
 
+
+tasks.register('generateSqlParser', JavaExec) {
+    def outputDir = generatedSourceDir(moduleNames.engine).map {
+        it.dir('org/apache/derby/impl/sql/compile')
+    }
+    inputs.file('java/org.apache.derby.engine/org/apache/derby/impl/sql/compile/sqlgrammar.jj')
+    outputs.dir(outputDir)
+    classpath = javaccClasspath
+    mainClass = 'javacc'
+    workingDir = file('java/org.apache.derby.engine/org/apache/derby/impl/sql/compile')
+    args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'sqlgrammar.jj'
+    doFirst {
+        delete outputDir
+        outputDir.get().asFile.mkdirs()
+    }
+    doLast {
+        ['CharStream.java', 'ParseException.java', 'Token.java'].each {
+            delete new File(outputDir.get().asFile, it)
+        }
+        ['SQLParser.java', 'SQLParserConstants.java', 'SQLParserTokenManager.java', 'TokenMgrError.java'].each {
+            def generated = new File(outputDir.get().asFile, it)
+            if (generated.exists()) {
+                replaceInFile(generated) { text -> text.replaceAll('(?m)^public (class|interface)', '$1') }
+            }
+        }
+        def parser = new File(outputDir.get().asFile, 'SQLParser.java')
+        if (parser.exists()) {
+            replaceInFile(parser) { text -> text.replace('tokenImage', 'SQLParserConstants.tokenImage') }
+        }
+    }
+}
+
+tasks.register('generateIjParsers') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-tools ij parser generation task.'
+    dependsOn ':delosdb-tools:generateIjParsers'
+}
+
 tasks.register('compileDerbyEngine', JavaCompile) {
     dependsOn 'compileOsgiStubs', 'compileDerbyCommons', 'generateSqlParser'
     source = files(
@@ -137,25 +184,16 @@ tasks.register('compileDerbyEngine', JavaCompile) {
     ])
 }
 
-tasks.register('compileDerbyClient', JavaCompile) {
-    dependsOn 'compileDerbyCommons'
-    source = fileTree('java/org.apache.derby.client') { include '**/*.java' }
-    destinationDirectory = moduleClassDir(moduleNames.client)
-    configureJavaCompile(delegate, [moduleClassDir(moduleNames.commons)])
+tasks.register('compileDerbyClient') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-client compile task.'
+    dependsOn ':delosdb-client:compileDerbyClient'
 }
 
-tasks.register('compileDerbyTools', JavaCompile) {
-    dependsOn 'compileDerbyCommons', 'compileDerbyEngine', 'compileDerbyClient', 'generateIjParsers'
-    source = files(
-            fileTree('java/org.apache.derby.tools') { include '**/*.java' },
-            fileTree(generatedSourceDir(moduleNames.tools).get().asFile) { include '**/*.java' }
-    )
-    destinationDirectory = moduleClassDir(moduleNames.tools)
-    configureJavaCompile(delegate, [
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            moduleClassDir(moduleNames.client)
-    ])
+tasks.register('compileDerbyTools') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-tools compile task.'
+    dependsOn ':delosdb-tools:compileDerbyTools'
 }
 
 tasks.register('compileDerbyServer', JavaCompile) {
@@ -182,15 +220,10 @@ tasks.register('compileDerbyOptionalTools', JavaCompile) {
     ])
 }
 
-tasks.register('compileDerbyRunner', JavaCompile) {
-    dependsOn 'compileDerbyCommons', 'compileDerbyTools', 'compileDerbyServer'
-    source = fileTree('java/org.apache.derby.runner') { include '**/*.java' }
-    destinationDirectory = moduleClassDir(moduleNames.runner)
-    configureJavaCompile(delegate, [
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.tools),
-            moduleClassDir(moduleNames.server)
-    ])
+tasks.register('compileDerbyRunner') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-runner compile task.'
+    dependsOn ':delosdb-runner:compileDerbyRunner'
 }
 
 tasks.register('compileDerbyBuildTools', JavaCompile) {
@@ -816,6 +849,85 @@ tasks.register('verifyExtractedCommonsProject') {
     }
 }
 
+
+tasks.register('verifyExtractedClientProject') {
+    dependsOn ':delosdb-client:compileDerbyClient'
+    group = 'verification'
+    description = 'Verifies that the second extracted Gradle subproject owns the client compile lifecycle.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-client/build.gradle')
+    doLast {
+        def clientProject = findProject(':delosdb-client')
+        if (clientProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-client')
+        }
+        if (clientProject.tasks.findByName('compileDerbyClient') == null) {
+            throw new GradleException('Missing :delosdb-client:compileDerbyClient')
+        }
+        def clientOutput = moduleClassDir(moduleNames.client).get().asFile
+        if (!clientOutput.isDirectory()) {
+            throw new GradleException("Missing compiled client output directory: ${clientOutput}")
+        }
+        def moduleInfo = new File(clientOutput, 'module-info.class')
+        if (!moduleInfo.isFile()) {
+            throw new GradleException("Missing compiled client module descriptor: ${moduleInfo}")
+        }
+    }
+}
+
+tasks.register('verifyExtractedToolsProject') {
+    dependsOn ':delosdb-tools:compileDerbyTools'
+    group = 'verification'
+    description = 'Verifies that the third extracted Gradle subproject owns the tools compile lifecycle and ij parser generation.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-tools/build.gradle')
+    doLast {
+        def toolsProject = findProject(':delosdb-tools')
+        if (toolsProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-tools')
+        }
+        if (toolsProject.tasks.findByName('generateIjParsers') == null) {
+            throw new GradleException('Missing :delosdb-tools:generateIjParsers')
+        }
+        if (toolsProject.tasks.findByName('compileDerbyTools') == null) {
+            throw new GradleException('Missing :delosdb-tools:compileDerbyTools')
+        }
+        def toolsOutput = moduleClassDir(moduleNames.tools).get().asFile
+        if (!toolsOutput.isDirectory()) {
+            throw new GradleException("Missing compiled tools output directory: ${toolsOutput}")
+        }
+        def moduleInfo = new File(toolsOutput, 'module-info.class')
+        if (!moduleInfo.isFile()) {
+            throw new GradleException("Missing compiled tools module descriptor: ${moduleInfo}")
+        }
+    }
+}
+
+tasks.register('verifyExtractedRunnerProject') {
+    dependsOn ':delosdb-runner:compileDerbyRunner'
+    group = 'verification'
+    description = 'Verifies that the fourth extracted Gradle subproject owns the runner compile lifecycle.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-runner/build.gradle')
+    doLast {
+        def runnerProject = findProject(':delosdb-runner')
+        if (runnerProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-runner')
+        }
+        if (runnerProject.tasks.findByName('compileDerbyRunner') == null) {
+            throw new GradleException('Missing :delosdb-runner:compileDerbyRunner')
+        }
+        def runnerOutput = moduleClassDir(moduleNames.runner).get().asFile
+        if (!runnerOutput.isDirectory()) {
+            throw new GradleException("Missing compiled runner output directory: ${runnerOutput}")
+        }
+        def moduleInfo = new File(runnerOutput, 'module-info.class')
+        if (!moduleInfo.isFile()) {
+            throw new GradleException("Missing compiled runner module descriptor: ${moduleInfo}")
+        }
+    }
+}
+
 tasks.register('verifyGradleOnlyPublicSurface') {
     group = 'verification'
     description = 'Ensures public build instructions expose only the Gradle build path.'
@@ -848,7 +960,9 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface', 'verifyArtifactInventory', 'verifyExtractedCommonsProject'
+    dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface',
+            'verifyArtifactInventory', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
+            'verifyExtractedToolsProject', 'verifyExtractedRunnerProject'
 }
 
 tasks.register('test') {

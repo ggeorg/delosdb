@@ -15,3 +15,6 @@ dependencyResolutionManagement {
 rootProject.name = 'delosdb'
 
 include 'delosdb-commons'
+include 'delosdb-client'
+include 'delosdb-tools'
+include 'delosdb-runner'

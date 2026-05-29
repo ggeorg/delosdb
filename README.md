@@ -13,12 +13,15 @@ DelosDB now uses **Gradle as the only supported build system**. The inherited An
 
 ## Gradle subprojects
 
-The first extracted build subproject is now `:delosdb-commons`. It owns generation and compilation of the inherited `org.apache.derby.commons` JPMS module while the root build still assembles the release jars. This keeps the module split incremental and reversible.
+The extracted build subprojects are now `:delosdb-commons`, `:delosdb-client`, `:delosdb-tools`, and `:delosdb-runner`. They own compilation of the inherited commons, client, tools, and runner JPMS modules while the root build still assembles the release jars. This keeps the module split incremental and reversible.
 
 Useful check:
 
 ```bash
 ./gradlew :delosdb-commons:compileDerbyCommons
+./gradlew :delosdb-client:compileDerbyClient
+./gradlew :delosdb-tools:compileDerbyTools
+./gradlew :delosdb-runner:compileDerbyRunner
 ```
 
 ## Relationship to Apache Derby

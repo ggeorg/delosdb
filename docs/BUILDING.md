@@ -117,12 +117,21 @@ Use this command to verify the release artifact shape:
 This is still a conservative baseline. Package names remain compatible with Apache Derby 10.17.1.0 while the project identity, build workflow, documentation, and release path move toward DelosDB.
 
 
-## Commons subproject
+## Extracted subprojects
 
-`delosdb-commons` is now the first extracted Gradle subproject. It compiles the inherited `org.apache.derby.commons` JPMS module from `java/org.apache.derby.commons` and writes its class output under `delosdb-commons/build/classes/modules/org.apache.derby.commons`. The root build consumes that output for downstream module compilation and for `derbyshared.jar` assembly. Source files have not been moved yet; this patch extracts build ownership first.
+`delosdb-commons` is the first extracted Gradle subproject. It compiles the inherited `org.apache.derby.commons` JPMS module from `java/org.apache.derby.commons` and writes its class output under `delosdb-commons/build/classes/modules/org.apache.derby.commons`.
+
+`delosdb-client` is the second extracted Gradle subproject. It compiles the inherited `org.apache.derby.client` JPMS module from `java/org.apache.derby.client` and writes its class output under `delosdb-client/build/classes/modules/org.apache.derby.client`.
+
+The root build still owns jar assembly and shared resource generation for now. Source files have not been moved yet; these patches extract build ownership first.
 
 Verification command:
 
 ```bash
 ./gradlew :delosdb-commons:compileDerbyCommons verifyExtractedCommonsProject
+./gradlew :delosdb-client:compileDerbyClient
+./gradlew :delosdb-tools:compileDerbyTools
+./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedClientProject
+./gradlew verifyExtractedToolsProject
+./gradlew verifyExtractedRunnerProject
 ```
