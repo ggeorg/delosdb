@@ -1,0 +1,10 @@
+DelosDB fork notice
+===================
+
+DelosDB is a community fork based on Apache Derby 10.17.1.0.
+
+Apache Derby was developed by the Apache Software Foundation and released under the Apache License, Version 2.0. The original Apache Derby LICENSE and NOTICE files are preserved in this repository.
+
+DelosDB is not an Apache Software Foundation project and is not endorsed by the Apache Software Foundation.
+
+Apache, Apache Derby, and Derby are trademarks of the Apache Software Foundation.

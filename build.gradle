@@ -1,0 +1,89 @@
+/*
+ * DelosDB build bootstrap.
+ *
+ * This is intentionally a thin Gradle wrapper around the existing Derby Ant
+ * build. The first modernization milestone is one-command builds from Git
+ * without depending on Subversion metadata. A module-by-module Gradle/Maven
+ * migration can follow after CI and smoke tests are stable.
+ */
+
+def gitRevision() {
+    try {
+        def out = new ByteArrayOutputStream()
+        exec {
+            commandLine 'git', 'rev-parse', '--short', 'HEAD'
+            standardOutput = out
+            errorOutput = new ByteArrayOutputStream()
+            ignoreExitValue = true
+        }
+        def revision = out.toString().trim()
+        return revision ? revision : 'local'
+    } catch (Throwable ignored) {
+        return 'local'
+    }
+}
+
+ext.derbyChangeNumber = findProperty('changenumber') ?: gitRevision()
+ant.properties['changenumber'] = derbyChangeNumber
+
+// Prefix imported Ant targets to avoid collisions with future Gradle tasks.
+ant.importBuild('build.xml') { antTargetName ->
+    "derby_${antTargetName}".toString()
+}
+
+// Derby's Ant jar targets assume buildsource has already generated/compiled
+// resource files such as classes/engine/org/apache/derby/info/engine/info.properties.
+// Gradle does not infer that ordering when buildsource and buildjars are both
+// dependencies of another task, so wire the dependency explicitly.
+tasks.named('derby_buildjars') {
+    dependsOn tasks.named('derby_buildsource')
+}
+
+tasks.register('build') {
+    group = 'build'
+    description = 'Build DelosDB jars using the existing Ant build.'
+    dependsOn tasks.named('derby_buildjars')
+}
+
+tasks.register('clean') {
+    group = 'build'
+    description = 'Clean generated build outputs using the existing Ant build.'
+    dependsOn tasks.named('derby_clean')
+}
+
+tasks.register('sysinfo') {
+    group = 'verification'
+    description = 'Print Derby/DelosDB system information from the built runner jar.'
+    dependsOn tasks.named('build')
+    doLast {
+        exec {
+            commandLine 'java', '-jar', 'jars/sane/derbyrun.jar', 'sysinfo'
+        }
+    }
+}
+
+tasks.register('smoke') {
+    group = 'verification'
+    description = 'Run a minimal embedded JDBC smoke test through ij.'
+    dependsOn tasks.named('build')
+    doLast {
+        delete layout.buildDirectory.dir('smoke-db')
+        exec {
+            commandLine 'java', '-jar', 'jars/sane/derbyrun.jar', 'ij', 'dev/smoke.sql'
+        }
+    }
+}
+
+tasks.register('check') {
+    group = 'verification'
+    description = 'Run the current lightweight verification suite.'
+    dependsOn tasks.named('smoke')
+}
+
+tasks.register('printRevision') {
+    group = 'help'
+    description = 'Print the changenumber/revision used by the legacy build.'
+    doLast {
+        println derbyChangeNumber
+    }
+}

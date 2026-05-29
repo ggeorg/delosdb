@@ -1,0 +1,26 @@
+# Build outputs
+/build/
+/classes/
+/generated/
+/jars/
+
+# Derby local databases and logs
+/derby.log
+*.lck
+*.seg0
+
+# IDEs
+/.idea/
+/.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Gradle
+.gradle/
+.gradle-cache/
