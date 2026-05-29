@@ -30,5 +30,8 @@ jobs:
       - name: Verify release artifacts
         run: ./gradlew --no-daemon verifyReleaseArtifacts
 
+      - name: Verify artifact inventory
+        run: ./gradlew --no-daemon verifyArtifactInventory printArtifactInventory
+
       - name: Sysinfo from jars
         run: ./gradlew --no-daemon sysinfoFromJars

@@ -466,6 +466,122 @@ def runtimeJarNames = [
         'derbyrun.jar'
 ]
 
+
+def moduleSplitInventory = [
+        [
+                key              : 'osgi',
+                gradleProject    : 'delosdb-osgi-stub',
+                jpmsModule       : moduleNames.osgi,
+                currentSourceRoot: 'java/stubs/felix',
+                compileTask      : 'compileOsgiStubs',
+                jarTask          : 'osgiFrameworkStubJar',
+                jarName          : 'osgi-framework-stub.jar',
+                dependencies     : [],
+                generatedBy      : [],
+                publicArtifact   : false,
+                extractionOrder  : 0,
+                extractionRisk   : 'low'
+        ],
+        [
+                key              : 'commons',
+                gradleProject    : 'delosdb-commons',
+                jpmsModule       : moduleNames.commons,
+                currentSourceRoot: 'java/org.apache.derby.commons',
+                compileTask      : 'compileDerbyCommons',
+                jarTask          : 'derbySharedJar',
+                jarName          : 'derbyshared.jar',
+                dependencies     : [],
+                generatedBy      : ['generateSanityState'],
+                publicArtifact   : true,
+                extractionOrder  : 1,
+                extractionRisk   : 'low'
+        ],
+        [
+                key              : 'client',
+                gradleProject    : 'delosdb-client',
+                jpmsModule       : moduleNames.client,
+                currentSourceRoot: 'java/org.apache.derby.client',
+                compileTask      : 'compileDerbyClient',
+                jarTask          : 'derbyClientJar',
+                jarName          : 'derbyclient.jar',
+                dependencies     : ['commons'],
+                generatedBy      : ['processDerbyResources', 'splitEngineMessages'],
+                publicArtifact   : true,
+                extractionOrder  : 2,
+                extractionRisk   : 'low-medium'
+        ],
+        [
+                key              : 'tools',
+                gradleProject    : 'delosdb-tools',
+                jpmsModule       : moduleNames.tools,
+                currentSourceRoot: 'java/org.apache.derby.tools',
+                compileTask      : 'compileDerbyTools',
+                jarTask          : 'derbyToolsJar',
+                jarName          : 'derbytools.jar',
+                dependencies     : ['commons', 'engine', 'client'],
+                generatedBy      : ['generateIjParsers', 'processDerbyResources'],
+                publicArtifact   : true,
+                extractionOrder  : 3,
+                extractionRisk   : 'medium'
+        ],
+        [
+                key              : 'runner',
+                gradleProject    : 'delosdb-runner',
+                jpmsModule       : moduleNames.runner,
+                currentSourceRoot: 'java/org.apache.derby.runner',
+                compileTask      : 'compileDerbyRunner',
+                jarTask          : 'derbyRunJar',
+                jarName          : 'derbyrun.jar',
+                dependencies     : ['commons', 'tools', 'server'],
+                generatedBy      : [],
+                publicArtifact   : true,
+                extractionOrder  : 4,
+                extractionRisk   : 'low-medium'
+        ],
+        [
+                key              : 'optionaltools',
+                gradleProject    : 'delosdb-optionaltools',
+                jpmsModule       : moduleNames.optionaltools,
+                currentSourceRoot: 'java/org.apache.derby.optionaltools',
+                compileTask      : 'compileDerbyOptionalTools',
+                jarTask          : 'derbyOptionalToolsJar',
+                jarName          : 'derbyoptionaltools.jar',
+                dependencies     : ['commons', 'engine', 'tools'],
+                generatedBy      : ['processDerbyResources'],
+                publicArtifact   : true,
+                extractionOrder  : 5,
+                extractionRisk   : 'medium'
+        ],
+        [
+                key              : 'server',
+                gradleProject    : 'delosdb-server',
+                jpmsModule       : moduleNames.server,
+                currentSourceRoot: 'java/org.apache.derby.server',
+                compileTask      : 'compileDerbyServer',
+                jarTask          : 'derbyNetJar',
+                jarName          : 'derbynet.jar',
+                dependencies     : ['commons', 'engine', 'tools'],
+                generatedBy      : ['processDerbyResources'],
+                publicArtifact   : true,
+                extractionOrder  : 6,
+                extractionRisk   : 'medium-high'
+        ],
+        [
+                key              : 'engine',
+                gradleProject    : 'delosdb-engine',
+                jpmsModule       : moduleNames.engine,
+                currentSourceRoot: 'java/org.apache.derby.engine',
+                compileTask      : 'compileDerbyEngine',
+                jarTask          : 'derbyJar',
+                jarName          : 'derby.jar',
+                dependencies     : ['osgi', 'commons'],
+                generatedBy      : ['generateSqlParser', 'generateClassSizeCatalog', 'processDerbyResources', 'splitEngineMessages'],
+                publicArtifact   : true,
+                extractionOrder  : 7,
+                extractionRisk   : 'high'
+        ]
+]
+
 def runtimeJars = {
     files(runtimeJarNames.collect { layout.buildDirectory.file("libs/${it}") })
 }
@@ -674,6 +790,86 @@ tasks.register('smoke', JavaExec) {
     }
 }
 
+
+tasks.register('printArtifactInventory') {
+    group = 'help'
+    description = 'Prints the current DelosDB artifact/module inventory used for the planned multi-project split.'
+    doLast {
+        println 'DelosDB artifact inventory'
+        println '=========================='
+        moduleSplitInventory.sort { it.extractionOrder }.each { artifact ->
+            println "${artifact.extractionOrder}. ${artifact.gradleProject}"
+            println "   JPMS module : ${artifact.jpmsModule}"
+            println "   source root : ${artifact.currentSourceRoot}"
+            println "   compile task: ${artifact.compileTask}"
+            println "   jar task    : ${artifact.jarTask}"
+            println "   jar         : ${artifact.jarName}"
+            println "   deps        : ${(artifact.dependencies ?: ['none']).join(', ')}"
+            println "   generated   : ${(artifact.generatedBy ?: ['none']).join(', ')}"
+            println "   public      : ${artifact.publicArtifact}"
+            println "   risk        : ${artifact.extractionRisk}"
+            println ''
+        }
+    }
+}
+
+tasks.register('verifyArtifactInventory') {
+    group = 'verification'
+    description = 'Verifies that the documented artifact/module split inventory matches the current Gradle build model.'
+    def inventoryDocs = files(
+            'docs/BUILD-INVENTORY.md',
+            'docs/ARTIFACTS.md',
+            'docs/MODULE-SPLIT-PLAN.md'
+    )
+    inputs.files(inventoryDocs)
+    doLast {
+        inventoryDocs.files.each { doc ->
+            if (!doc.isFile()) {
+                throw new GradleException("Missing inventory document: ${doc}")
+            }
+        }
+
+        def keys = moduleSplitInventory.collect { it.key }
+        if (keys.toSet().size() != keys.size()) {
+            throw new GradleException("Duplicate module split inventory keys: ${keys}")
+        }
+
+        def extractionOrders = moduleSplitInventory.collect { it.extractionOrder }
+        if (extractionOrders.toSet().size() != extractionOrders.size()) {
+            throw new GradleException("Duplicate extraction order values: ${extractionOrders}")
+        }
+
+        moduleSplitInventory.each { artifact ->
+            if (!file(artifact.currentSourceRoot).isDirectory()) {
+                throw new GradleException("Missing source root for ${artifact.gradleProject}: ${artifact.currentSourceRoot}")
+            }
+            if (tasks.findByName(artifact.compileTask) == null) {
+                throw new GradleException("Missing compile task for ${artifact.gradleProject}: ${artifact.compileTask}")
+            }
+            if (tasks.findByName(artifact.jarTask) == null) {
+                throw new GradleException("Missing jar task for ${artifact.gradleProject}: ${artifact.jarTask}")
+            }
+            if (!runtimeJarNames.contains(artifact.jarName)) {
+                throw new GradleException("${artifact.gradleProject} jar is not included in runtimeJarNames: ${artifact.jarName}")
+            }
+            artifact.dependencies.each { dependencyKey ->
+                if (!keys.contains(dependencyKey)) {
+                    throw new GradleException("${artifact.gradleProject} references unknown dependency key: ${dependencyKey}")
+                }
+            }
+        }
+
+        def documentedText = inventoryDocs.files.findAll { it.isFile() }.collect { it.text }.join(System.lineSeparator())
+        moduleSplitInventory.each { artifact ->
+            [artifact.gradleProject, artifact.jpmsModule, artifact.jarName].each { token ->
+                if (!documentedText.contains(token)) {
+                    throw new GradleException("Inventory docs do not mention ${token}")
+                }
+            }
+        }
+    }
+}
+
 tasks.register('verifyGradleOnlyPublicSurface') {
     group = 'verification'
     description = 'Ensures public build instructions expose only the Gradle build path.'
@@ -706,7 +902,7 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface'
+    dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface', 'verifyArtifactInventory'
 }
 
 tasks.register('test') {

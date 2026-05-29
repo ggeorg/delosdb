@@ -45,6 +45,8 @@ The `build` lifecycle compiles the inherited Derby/DelosDB modules, generates th
 ./gradlew jars
 ./gradlew verifyJars
 ./gradlew verifyReleaseArtifacts
+./gradlew printArtifactInventory
+./gradlew verifyArtifactInventory
 ```
 
 Generated jars are written to:
@@ -72,4 +74,6 @@ Each runtime jar includes DelosDB manifest metadata and the required legal attri
 
 - `docs/BUILDING.md` — developer build workflow
 - `docs/BUILD-INVENTORY.md` — current Gradle build map and migration inventory
+- `docs/ARTIFACTS.md` — runtime artifact inventory and planned subproject names
+- `docs/MODULE-SPLIT-PLAN.md` — ordered plan for moving from root build to real Gradle subprojects
 - `docs/ROADMAP.md` — modernization roadmap

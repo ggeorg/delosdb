@@ -115,3 +115,26 @@ Recommended order:
 ## Cleanup policy
 
 Remove only the legacy build surface we no longer support. Do not delete source modules, tests, historical notices, release metadata, or dependency jars until the Gradle replacement path is verified.
+
+
+## Artifact inventory guardrail
+
+The current root Gradle build now exposes two inventory tasks:
+
+```bash
+./gradlew printArtifactInventory
+./gradlew verifyArtifactInventory
+```
+
+`printArtifactInventory` prints the current mapping from planned Gradle projects to JPMS modules, source roots, compile tasks, jar tasks, runtime jars, dependencies, generated inputs, and extraction risk.
+
+`verifyArtifactInventory` checks that the documented split plan still matches the active Gradle build model. It verifies current source roots, compile tasks, jar tasks, runtime jar names, dependency keys, and documentation coverage.
+
+The inventory is documented in:
+
+```text
+docs/ARTIFACTS.md
+docs/MODULE-SPLIT-PLAN.md
+```
+
+This guardrail should stay green before and after each module extraction.

@@ -20,6 +20,8 @@ The build is now Gradle-native for the active developer workflow: source generat
 ./gradlew jars
 ./gradlew verifyJars
 ./gradlew verifyReleaseArtifacts
+./gradlew printArtifactInventory
+./gradlew verifyArtifactInventory
 ```
 
 ## What `./gradlew build` does
@@ -38,8 +40,9 @@ The main build lifecycle now performs these steps:
 10. Verify that all expected runtime jars were assembled.
 11. Verify release metadata, manifest attributes, and legal attribution files inside each jar.
 12. Verify that public build docs expose only the Gradle workflow.
-13. Run the embedded JDBC smoke test from compiled classes.
-14. Run the embedded JDBC smoke test from assembled jars.
+13. Verify that the artifact/module inventory docs match the current Gradle build model.
+14. Run the embedded JDBC smoke test from compiled classes.
+15. Run the embedded JDBC smoke test from assembled jars.
 
 ## Current jar outputs
 
@@ -71,7 +74,21 @@ Use this command to verify the release artifact shape:
 
 ```bash
 ./gradlew verifyReleaseArtifacts
+./gradlew printArtifactInventory
+./gradlew verifyArtifactInventory
 ```
+
+
+## Artifact inventory
+
+```bash
+./gradlew printArtifactInventory
+./gradlew verifyArtifactInventory
+```
+
+`printArtifactInventory` shows the planned Gradle subproject name, current JPMS module, source root, compile task, jar task, jar name, dependencies, generated inputs, and extraction risk for each artifact.
+
+`verifyArtifactInventory` keeps `docs/ARTIFACTS.md`, `docs/MODULE-SPLIT-PLAN.md`, and `docs/BUILD-INVENTORY.md` aligned with the current Gradle build model. This is the guardrail before the real multi-project split begins.
 
 ## Smoke tests
 
