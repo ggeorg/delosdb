@@ -117,10 +117,10 @@ This is the final and highest-risk extraction. It owns SQL parser generation, cl
 The next real split should be:
 
 ```text
-v0.1.0-dev.8 — Extract delosdb-optionaltools
+v0.1.0-dev.9 — Extract delosdb-server
 ```
 
-Optional tools should follow tools and runner because it depends on commons, engine, tools, and optional external jars, but it is still lower-risk than the network server and embedded engine.
+Server follows optional tools because it depends on commons, engine, tools, and servlet/external module path entries, but it is still lower-risk than extracting the embedded engine itself.
 
 ## Extraction progress
 
@@ -132,7 +132,9 @@ Optional tools should follow tools and runner because it depends on commons, eng
 
 `delosdb-runner` is the fourth extracted Gradle subproject. It compiles the inherited `org.apache.derby.runner` JPMS module from `java/org.apache.derby.runner` into `delosdb-runner/build/classes/modules/org.apache.derby.runner`.
 
-The root build consumes both outputs for downstream module compilation and jar assembly. Source files have not been moved yet; the current split extracts build ownership first.
+`delosdb-optionaltools` is the fifth extracted Gradle subproject. It compiles the inherited `org.apache.derby.optionaltools` JPMS module from `java/org.apache.derby.optionaltools` into `delosdb-optionaltools/build/classes/modules/org.apache.derby.optionaltools`.
+
+The root build consumes these outputs for downstream module compilation and jar assembly. Source files have not been moved yet; the current split extracts build ownership first.
 
 Verification command:
 
@@ -141,4 +143,18 @@ Verification command:
 ./gradlew :delosdb-client:compileDerbyClient verifyExtractedClientProject
 ./gradlew :delosdb-tools:compileDerbyTools verifyExtractedToolsProject
 ./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedRunnerProject
+./gradlew :delosdb-optionaltools:compileDerbyOptionalTools verifyExtractedOptionalToolsProject
 ```
+
+
+## Current extraction status
+
+The build ownership extraction currently includes:
+
+1. `delosdb-commons`
+2. `delosdb-client`
+3. `delosdb-tools`
+4. `delosdb-runner`
+5. `delosdb-optionaltools`
+
+The next extraction target is `delosdb-server`. `delosdb-engine` remains last because it has the largest generated-source and resource surface.

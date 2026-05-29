@@ -40,6 +40,9 @@ def moduleClassDir = { String moduleName ->
     if (moduleName == moduleNames.runner) {
         return project(':delosdb-runner').layout.buildDirectory.dir("classes/modules/${moduleName}")
     }
+    if (moduleName == moduleNames.optionaltools) {
+        return project(':delosdb-optionaltools').layout.buildDirectory.dir("classes/modules/${moduleName}")
+    }
     layout.buildDirectory.dir("classes/modules/${moduleName}")
 }
 
@@ -208,16 +211,10 @@ tasks.register('compileDerbyServer', JavaCompile) {
     ])
 }
 
-tasks.register('compileDerbyOptionalTools', JavaCompile) {
-    dependsOn 'compileDerbyCommons', 'compileDerbyEngine', 'compileDerbyTools'
-    source = fileTree('java/org.apache.derby.optionaltools') { include '**/*.java' }
-    destinationDirectory = moduleClassDir(moduleNames.optionaltools)
-    configureJavaCompile(delegate, [
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            moduleClassDir(moduleNames.tools),
-            externalModulePath
-    ])
+tasks.register('compileDerbyOptionalTools') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-optionaltools compile task.'
+    dependsOn ':delosdb-optionaltools:compileDerbyOptionalTools'
 }
 
 tasks.register('compileDerbyRunner') {
@@ -928,6 +925,32 @@ tasks.register('verifyExtractedRunnerProject') {
     }
 }
 
+
+tasks.register('verifyExtractedOptionalToolsProject') {
+    dependsOn ':delosdb-optionaltools:compileDerbyOptionalTools'
+    group = 'verification'
+    description = 'Verifies that the fifth extracted Gradle subproject owns the optional tools compile lifecycle.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-optionaltools/build.gradle')
+    doLast {
+        def optionalToolsProject = findProject(':delosdb-optionaltools')
+        if (optionalToolsProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-optionaltools')
+        }
+        if (optionalToolsProject.tasks.findByName('compileDerbyOptionalTools') == null) {
+            throw new GradleException('Missing :delosdb-optionaltools:compileDerbyOptionalTools')
+        }
+        def optionalToolsOutput = moduleClassDir(moduleNames.optionaltools).get().asFile
+        if (!optionalToolsOutput.isDirectory()) {
+            throw new GradleException("Missing compiled optional tools output directory: ${optionalToolsOutput}")
+        }
+        def moduleInfo = new File(optionalToolsOutput, 'module-info.class')
+        if (!moduleInfo.isFile()) {
+            throw new GradleException("Missing compiled optional tools module descriptor: ${moduleInfo}")
+        }
+    }
+}
+
 tasks.register('verifyGradleOnlyPublicSurface') {
     group = 'verification'
     description = 'Ensures public build instructions expose only the Gradle build path.'
@@ -962,7 +985,7 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface',
             'verifyArtifactInventory', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
-            'verifyExtractedToolsProject', 'verifyExtractedRunnerProject'
+            'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject'
 }
 
 tasks.register('test') {

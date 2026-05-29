@@ -26,7 +26,7 @@ This file records the current Gradle build map so the fork can move from a root-
 | `compileDerbyClient` | `org.apache.derby.client` | `java/org.apache.derby.client` | `delosdb-client/build/classes/modules/org.apache.derby.client` |
 | `compileDerbyTools` | `org.apache.derby.tools` | `java/org.apache.derby.tools` | `delosdb-tools/build/classes/modules/org.apache.derby.tools` |
 | `compileDerbyServer` | `org.apache.derby.server` | `java/org.apache.derby.server` | `build/classes/modules/org.apache.derby.server` |
-| `compileDerbyOptionalTools` | `org.apache.derby.optionaltools` | `java/org.apache.derby.optionaltools` | `build/classes/modules/org.apache.derby.optionaltools` |
+| `compileDerbyOptionalTools` | `org.apache.derby.optionaltools` | `java/org.apache.derby.optionaltools` | `delosdb-optionaltools/build/classes/modules/org.apache.derby.optionaltools` |
 | `compileDerbyRunner` | `org.apache.derby.runner` | `java/org.apache.derby.runner` | `delosdb-runner/build/classes/modules/org.apache.derby.runner` |
 | `compileOsgiStubs` | `org.osgi.framework` | `java/stubs/felix` | `build/classes/modules/org.osgi.framework` |
 

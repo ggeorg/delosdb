@@ -22,6 +22,7 @@ The build is now Gradle-native for the active developer workflow: source generat
 ./gradlew verifyReleaseArtifacts
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
+./gradlew verifyExtractedOptionalToolsProject
 ```
 
 ## What `./gradlew build` does
@@ -76,6 +77,7 @@ Use this command to verify the release artifact shape:
 ./gradlew verifyReleaseArtifacts
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
+./gradlew verifyExtractedOptionalToolsProject
 ```
 
 
@@ -84,6 +86,7 @@ Use this command to verify the release artifact shape:
 ```bash
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
+./gradlew verifyExtractedOptionalToolsProject
 ```
 
 `printArtifactInventory` shows the planned Gradle subproject name, current JPMS module, source root, compile task, jar task, jar name, dependencies, generated inputs, and extraction risk for each artifact.

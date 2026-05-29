@@ -2,7 +2,7 @@
 
 This document records the current runtime artifacts produced by the Gradle-only build and the planned project names for the future multi-project split.
 
-The current build is being extracted incrementally from the repository root. `delosdb-commons`, `delosdb-client`, `delosdb-tools`, and `delosdb-runner` now own their compile lifecycles; the root build still owns shared resource processing and jar assembly. The table below is the authoritative inventory for the next extraction steps.
+The current build is being extracted incrementally from the repository root. `delosdb-commons`, `delosdb-client`, `delosdb-tools`, `delosdb-runner`, and `delosdb-optionaltools` now own their compile lifecycles; the root build still owns shared resource processing and jar assembly. The table below is the authoritative inventory for the next extraction steps.
 
 | Planned Gradle project | Current JPMS module | Current source root | Current jar | Public runtime artifact | Current compile task | Extraction order | Risk |
 |---|---|---|---|---:|---|---:|---|
@@ -77,7 +77,15 @@ runner
 
 ## Extraction status
 
-`delosdb-commons` is the first extracted Gradle subproject. It compiles the inherited `org.apache.derby.commons` JPMS module from `java/org.apache.derby.commons` and writes its class output under `delosdb-commons/build/classes/modules/org.apache.derby.commons`.
+The extracted Gradle subprojects currently own compilation for:
+
+- `delosdb-commons`
+- `delosdb-client`
+- `delosdb-tools`
+- `delosdb-runner`
+- `delosdb-optionaltools`
+
+`delosdb-optionaltools` compiles the inherited `org.apache.derby.optionaltools` JPMS module from `java/org.apache.derby.optionaltools` and writes its class output under `delosdb-optionaltools/build/classes/modules/org.apache.derby.optionaltools`.
 
 `delosdb-client` is the second extracted Gradle subproject. It compiles the inherited `org.apache.derby.client` JPMS module from `java/org.apache.derby.client` and writes its class output under `delosdb-client/build/classes/modules/org.apache.derby.client`.
 
