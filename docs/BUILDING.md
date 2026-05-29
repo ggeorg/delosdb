@@ -23,6 +23,7 @@ The build is now Gradle-native for the active developer workflow: source generat
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
 ./gradlew verifyExtractedOptionalToolsProject
+./gradlew verifyExtractedServerProject
 ```
 
 ## What `./gradlew build` does
@@ -78,6 +79,7 @@ Use this command to verify the release artifact shape:
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
 ./gradlew verifyExtractedOptionalToolsProject
+./gradlew verifyExtractedServerProject
 ```
 
 
@@ -87,6 +89,7 @@ Use this command to verify the release artifact shape:
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
 ./gradlew verifyExtractedOptionalToolsProject
+./gradlew verifyExtractedServerProject
 ```
 
 `printArtifactInventory` shows the planned Gradle subproject name, current JPMS module, source root, compile task, jar task, jar name, dependencies, generated inputs, and extraction risk for each artifact.
@@ -135,6 +138,9 @@ Verification command:
 ./gradlew :delosdb-client:compileDerbyClient
 ./gradlew :delosdb-tools:compileDerbyTools
 ./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedClientProject
+./gradlew :delosdb-server:compileDerbyServer verifyExtractedServerProject
 ./gradlew verifyExtractedToolsProject
 ./gradlew verifyExtractedRunnerProject
 ```
+
+`delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` and writes its class output under `delosdb-server/build/classes/modules/org.apache.derby.server`.

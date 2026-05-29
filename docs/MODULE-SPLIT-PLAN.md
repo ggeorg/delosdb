@@ -134,6 +134,8 @@ Server follows optional tools because it depends on commons, engine, tools, and 
 
 `delosdb-optionaltools` is the fifth extracted Gradle subproject. It compiles the inherited `org.apache.derby.optionaltools` JPMS module from `java/org.apache.derby.optionaltools` into `delosdb-optionaltools/build/classes/modules/org.apache.derby.optionaltools`.
 
+`delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` into `delosdb-server/build/classes/modules/org.apache.derby.server`.
+
 The root build consumes these outputs for downstream module compilation and jar assembly. Source files have not been moved yet; the current split extracts build ownership first.
 
 Verification command:
@@ -144,6 +146,7 @@ Verification command:
 ./gradlew :delosdb-tools:compileDerbyTools verifyExtractedToolsProject
 ./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedRunnerProject
 ./gradlew :delosdb-optionaltools:compileDerbyOptionalTools verifyExtractedOptionalToolsProject
+./gradlew :delosdb-server:compileDerbyServer verifyExtractedServerProject
 ```
 
 
@@ -156,5 +159,6 @@ The build ownership extraction currently includes:
 3. `delosdb-tools`
 4. `delosdb-runner`
 5. `delosdb-optionaltools`
+6. `delosdb-server`
 
-The next extraction target is `delosdb-server`. `delosdb-engine` remains last because it has the largest generated-source and resource surface.
+The next extraction target is `delosdb-engine`. It remains last because it has the largest generated-source and resource surface.

@@ -8,12 +8,19 @@ version = rootProject.version
 group = rootProject.group
 
 def javaRelease = rootProject.ext.javaRelease as Integer
-def moduleName = 'org.apache.derby.runner'
-def sourceRoot = rootProject.file('java/org.apache.derby.runner')
+def moduleName = 'org.apache.derby.server'
+def sourceRoot = rootProject.file('java/org.apache.derby.server')
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def engineModuleClassDir = rootProject.layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def toolsModuleClassDir = rootProject.project(':delosdb-tools').layout.buildDirectory.dir('classes/modules/org.apache.derby.tools')
-def serverModuleClassDir = rootProject.project(':delosdb-server').layout.buildDirectory.dir('classes/modules/org.apache.derby.server')
+def externalModulePath = rootProject.files(
+        'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
+        'tools/java/json_simple-1.1.jar',
+        'tools/java/lucene-analyzers-common.jar',
+        'tools/java/lucene-core.jar',
+        'tools/java/lucene-queryparser.jar'
+)
 
 def configureJavaCompile = { JavaCompile task ->
     task.sourceCompatibility = javaRelease.toString()
@@ -26,22 +33,23 @@ def configureJavaCompile = { JavaCompile task ->
     task.doFirst {
         task.options.compilerArgs.addAll(['--module-path', files(
                 commonsModuleClassDir,
+                engineModuleClassDir,
                 toolsModuleClassDir,
-                serverModuleClassDir
+                externalModulePath
         ).asPath])
         task.options.compilerArgs.add('-Xlint:deprecation')
     }
 }
 
-tasks.register('compileDerbyRunner', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-tools:compileDerbyTools', ':delosdb-server:compileDerbyServer'
+tasks.register('compileDerbyServer', JavaCompile) {
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':compileDerbyEngine', ':delosdb-tools:compileDerbyTools'
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = moduleClassDir
     configureJavaCompile(delegate)
 }
 
 tasks.register('classes') {
-    dependsOn 'compileDerbyRunner'
+    dependsOn 'compileDerbyServer'
 }
 
 tasks.named('assemble') {

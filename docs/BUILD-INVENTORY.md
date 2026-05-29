@@ -25,7 +25,7 @@ This file records the current Gradle build map so the fork can move from a root-
 | `compileDerbyEngine` | `org.apache.derby.engine` | `java/org.apache.derby.engine` | `build/classes/modules/org.apache.derby.engine` |
 | `compileDerbyClient` | `org.apache.derby.client` | `java/org.apache.derby.client` | `delosdb-client/build/classes/modules/org.apache.derby.client` |
 | `compileDerbyTools` | `org.apache.derby.tools` | `java/org.apache.derby.tools` | `delosdb-tools/build/classes/modules/org.apache.derby.tools` |
-| `compileDerbyServer` | `org.apache.derby.server` | `java/org.apache.derby.server` | `build/classes/modules/org.apache.derby.server` |
+| `compileDerbyServer` | `org.apache.derby.server` | `java/org.apache.derby.server` | `delosdb-server/build/classes/modules/org.apache.derby.server` |
 | `compileDerbyOptionalTools` | `org.apache.derby.optionaltools` | `java/org.apache.derby.optionaltools` | `delosdb-optionaltools/build/classes/modules/org.apache.derby.optionaltools` |
 | `compileDerbyRunner` | `org.apache.derby.runner` | `java/org.apache.derby.runner` | `delosdb-runner/build/classes/modules/org.apache.derby.runner` |
 | `compileOsgiStubs` | `org.osgi.framework` | `java/stubs/felix` | `build/classes/modules/org.osgi.framework` |
@@ -159,4 +159,7 @@ Verification command:
 ./gradlew :delosdb-client:compileDerbyClient verifyExtractedClientProject
 ./gradlew :delosdb-tools:compileDerbyTools verifyExtractedToolsProject
 ./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedRunnerProject
+./gradlew :delosdb-server:compileDerbyServer verifyExtractedServerProject
 ```
+
+`delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` and writes its class output under `delosdb-server/build/classes/modules/org.apache.derby.server`.

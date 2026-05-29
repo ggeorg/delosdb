@@ -40,6 +40,9 @@ def moduleClassDir = { String moduleName ->
     if (moduleName == moduleNames.runner) {
         return project(':delosdb-runner').layout.buildDirectory.dir("classes/modules/${moduleName}")
     }
+    if (moduleName == moduleNames.server) {
+        return project(':delosdb-server').layout.buildDirectory.dir("classes/modules/${moduleName}")
+    }
     if (moduleName == moduleNames.optionaltools) {
         return project(':delosdb-optionaltools').layout.buildDirectory.dir("classes/modules/${moduleName}")
     }
@@ -199,16 +202,10 @@ tasks.register('compileDerbyTools') {
     dependsOn ':delosdb-tools:compileDerbyTools'
 }
 
-tasks.register('compileDerbyServer', JavaCompile) {
-    dependsOn 'compileDerbyCommons', 'compileDerbyEngine', 'compileDerbyTools'
-    source = fileTree('java/org.apache.derby.server') { include '**/*.java' }
-    destinationDirectory = moduleClassDir(moduleNames.server)
-    configureJavaCompile(delegate, [
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            moduleClassDir(moduleNames.tools),
-            externalModulePath
-    ])
+tasks.register('compileDerbyServer') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-server compile task.'
+    dependsOn ':delosdb-server:compileDerbyServer'
 }
 
 tasks.register('compileDerbyOptionalTools') {
@@ -951,6 +948,33 @@ tasks.register('verifyExtractedOptionalToolsProject') {
     }
 }
 
+tasks.register('verifyExtractedServerProject') {
+    dependsOn ':delosdb-server:compileDerbyServer'
+    group = 'verification'
+    description = 'Verifies that the sixth extracted Gradle subproject owns the network server compile lifecycle.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-server/build.gradle')
+    doLast {
+        def serverProject = findProject(':delosdb-server')
+        if (serverProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-server')
+        }
+        if (serverProject.tasks.findByName('compileDerbyServer') == null) {
+            throw new GradleException('Missing :delosdb-server:compileDerbyServer')
+        }
+        def serverOutput = moduleClassDir(moduleNames.server).get().asFile
+        if (!serverOutput.isDirectory()) {
+            throw new GradleException("Missing compiled server output directory: ${serverOutput}")
+        }
+        def moduleInfo = new File(serverOutput, 'module-info.class')
+        if (!moduleInfo.isFile()) {
+            throw new GradleException("Missing server module-info.class: ${moduleInfo}")
+        }
+        println "Verified extracted server subproject output: ${serverOutput}"
+    }
+}
+
+
 tasks.register('verifyGradleOnlyPublicSurface') {
     group = 'verification'
     description = 'Ensures public build instructions expose only the Gradle build path.'
@@ -985,7 +1009,8 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface',
             'verifyArtifactInventory', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
-            'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject'
+            'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
+            'verifyExtractedServerProject'
 }
 
 tasks.register('test') {
