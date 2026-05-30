@@ -10,6 +10,7 @@ DelosDB now has a Gradle-first build, extracted Gradle subprojects, verified run
 
 1. Java 21 cleanup
    - Replace finalizers with explicit close paths and `Cleaner` only where a fallback is still needed.
+   - Prioritize real resource owners first: Lucene readers, DRDA streams, LOB temporary files, JDBC statements/connections.
    - Isolate or remove SecurityManager-era code.
    - Remove obsolete privileged-action scaffolding where it is no longer meaningful.
 

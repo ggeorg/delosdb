@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UTFDataFormatException;
+import java.lang.ref.Cleaner;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.Property;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -53,11 +54,15 @@ import org.apache.derby.shared.common.reference.MessageId;
  */
 
 final class LOBStreamControl {
+    private static final Cleaner CLEANER = Cleaner.create();
+
     private LOBFile tmpFile;
     private byte [] dataBytes = new byte [0];
     private boolean isBytes = true;
     private final int bufferSize;
     private final EmbedConnection conn;
+    private final CleanupState cleanupState;
+    private final Cleaner.Cleanable cleanable;
     private long updateCount;
     private static final int DEFAULT_BUF_SIZE = 4096;
     private static final int MAX_BUF_SIZE = 32768;
@@ -68,6 +73,8 @@ final class LOBStreamControl {
      */
     LOBStreamControl (EmbedConnection conn) {
         this.conn = conn;
+        this.cleanupState = new CleanupState(conn);
+        this.cleanable = CLEANER.register(this, cleanupState);
         updateCount = 0;
         //default buffer size
         bufferSize = DEFAULT_BUF_SIZE;
@@ -81,6 +88,8 @@ final class LOBStreamControl {
     LOBStreamControl (EmbedConnection conn, byte [] data)
             throws IOException, StandardException {
         this.conn = conn;
+        this.cleanupState = new CleanupState(conn);
+        this.cleanable = CLEANER.register(this, cleanupState);
         updateCount = 0;
         bufferSize =
             Math.min(Math.max(DEFAULT_BUF_SIZE, data.length), MAX_BUF_SIZE);
@@ -103,6 +112,7 @@ final class LOBStreamControl {
         }
 
         conn.addLobFile(tmpFile);
+        cleanupState.register(tmpFile);
         isBytes = false;
         //now this call will write into the file
         if (len != 0)
@@ -475,16 +485,45 @@ final class LOBStreamControl {
         return charCount;
     }
 
-    //
-    // This method in java.lang.Object was deprecated as of build 167
-    // of JDK 9. See DERBY-6932.
-    //
-    @SuppressWarnings({"deprecation","removal"})
-    protected void finalize() throws Throwable {
-        free();
+    /**
+     * Cleaner fallback used when callers fail to close/free this control
+     * explicitly. Explicit {@link #free()} calls remain the primary cleanup
+     * path because they can report {@link IOException}s to the caller.
+     */
+    private static final class CleanupState implements Runnable {
+        private final EmbedConnection conn;
+        private LOBFile tmpFile;
+
+        CleanupState(EmbedConnection conn) {
+            this.conn = conn;
+        }
+
+        synchronized void register(LOBFile tmpFile) {
+            this.tmpFile = tmpFile;
+        }
+
+        synchronized void clear() {
+            this.tmpFile = null;
+        }
+
+        @Override
+        public synchronized void run() {
+            LOBFile file = tmpFile;
+            tmpFile = null;
+            if (file == null) {
+                return;
+            }
+            try {
+                conn.removeLobFile(file);
+                file.close();
+                deleteFile(file.getStorageFile());
+            } catch (IOException ignored) {
+                // Cleaner fallback cannot report checked exceptions.
+            }
+        }
     }
 
-    private void deleteFile(final StorageFile file) {
+    private static void deleteFile(final StorageFile file) {
         file.delete();
     }
 
@@ -496,8 +535,10 @@ final class LOBStreamControl {
         dataBytes = null;
         if (tmpFile != null) {
             releaseTempFile(tmpFile);
+            cleanupState.clear();
             tmpFile = null;
         }
+        cleanable.clean();
     }
 
     /**
@@ -511,7 +552,8 @@ final class LOBStreamControl {
     private void releaseTempFile(LOBFile file) throws IOException {
         // Remove the file from the list of open files *first*, then close it.
         //
-        // Why? This code may be called from finalize(), and may end up running
+        // Why? This code may be called from Cleaner fallback cleanup, and may
+        // end up running
         // at the same time the transaction is committed or rolled back. If two
         // threads call RandomAccessFile.close() at the same time, Java 5 could
         // fail (see DERBY-6092). By removing it from the list before closing

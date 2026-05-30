@@ -13,6 +13,18 @@ Important behavior preserved:
 - The fallback cleanup path remains best-effort and only logs `IOException`, matching the old finalizer behavior.
 - Cleanup is idempotent to avoid double-closing the reader.
 
+
+## Additional cleanup included in this milestone
+
+`LOBStreamControl` in the embedded engine no longer relies on `finalize()` to release temporary LOB files. The explicit `free()` path still performs the primary cleanup and still reports `IOException` to callers. A `Cleaner` fallback now releases and deletes the temporary file only when callers fail to free the control explicitly.
+
+Important behavior preserved:
+
+- Explicit `free()` still removes the LOB file from the owning connection.
+- Explicit `free()` still closes and deletes the temporary file.
+- Explicit cleanup still reports `IOException`.
+- Fallback cleanup remains best-effort because `Cleaner` cannot report checked exceptions.
+
 ## Next Java 21 cleanup candidates
 
 Run:

@@ -386,11 +386,8 @@ class EXTDTAInputStream extends InputStream {
         }
 
         public void run() {
-            try {
-                close();
-            } catch (IOException ioe) {
-                // Cleaner fallback cleanup cannot report checked exceptions.
-            }
+            // Cleaner fallback cleanup cannot report checked exceptions.
+            close();
         }
     }
 
