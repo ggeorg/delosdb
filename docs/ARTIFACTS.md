@@ -128,3 +128,15 @@ Verification command:
 ## Release metadata ownership
 
 All main runtime jar subprojects consume the root build's shared DelosDB release metadata helpers. This keeps legal attribution files and manifest identity metadata consistent while artifact ownership continues to move out of the root project.
+
+
+## Binary distribution ownership
+
+The root project owns product-level distribution assembly. Runtime jar ownership remains in the extracted subprojects, while the root `dist` lifecycle collects the verified runtime jars into release-candidate archives:
+
+```text
+build/distributions/delosdb-0.1.0-dev-bin.zip
+build/distributions/delosdb-0.1.0-dev-bin.tar.gz
+```
+
+Distribution verification is intentionally product-level because it checks the combined runtime layout, legal files, documentation, examples, and launcher scripts rather than a single module artifact.

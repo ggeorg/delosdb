@@ -66,6 +66,8 @@ The `build` lifecycle compiles the inherited Derby/DelosDB modules, generates th
 ./gradlew jars
 ./gradlew verifyJars
 ./gradlew verifyReleaseArtifacts
+./gradlew verifyReleaseDistribution
+./gradlew dist
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
 ```
@@ -74,6 +76,13 @@ Generated jars are written to:
 
 ```text
 build/libs/
+```
+
+Binary distribution archives are written to:
+
+```text
+build/distributions/delosdb-0.1.0-dev-bin.zip
+build/distributions/delosdb-0.1.0-dev-bin.tar.gz
 ```
 
 ## Current outputs
@@ -107,3 +116,18 @@ Runtime jar subprojects now use shared root-level helpers for legal files and ma
 
 The root build centralizes shared Java compiler settings and release metadata. Extracted subprojects own their compile and jar tasks, but they consume the common `delosdbConfigureJavaCompile` and runtime manifest helpers from the root build so Java release, encoding, module-path handling, and jar metadata stay consistent.
 
+
+
+## Binary distribution
+
+DelosDB now has a verified binary distribution layout. The distribution includes the runtime jars, legal attribution files, documentation, a smoke-test SQL example, and small launcher scripts:
+
+```bash
+./gradlew dist
+```
+
+The launcher runs the inherited Derby command entry point through the DelosDB runtime classpath:
+
+```bash
+build/release/delosdb-0.1.0-dev/bin/delosdb sysinfo
+```

@@ -168,3 +168,8 @@ Runtime jar-owning subprojects now use centralized release metadata helpers from
 ## Convention cleanup checkpoint
 
 After compile and jar ownership extraction, shared Java compile settings and runtime jar metadata are centralized in the root build. The next cleanup step is to continue reducing duplicated Gradle code without changing source layout or public artifact names.
+
+
+## Distribution checkpoint
+
+After compile and jar ownership extraction, the next stabilization checkpoint is the product binary distribution. The root build remains responsible for assembling release-candidate archives from subproject-owned jars until the project later decides whether to publish compatibility-named `derby*.jar` artifacts, DelosDB-named aliases, or both.

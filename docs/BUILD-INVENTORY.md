@@ -182,3 +182,15 @@ The active build now centralizes two cross-cutting concerns in the root project:
 - `delosdbRuntimeJarAttributes(...)` plus `delosdbLegalFiles` for runtime jar release metadata and legal attribution.
 
 Subprojects remain artifact owners, but they should not duplicate these conventions locally.
+
+
+## Distribution lifecycle
+
+The root build now owns only product-level distribution assembly and verification. Runtime jars are still assembled by their owning subprojects, then collected by:
+
+```bash
+./gradlew dist
+./gradlew verifyReleaseDistribution
+```
+
+The distribution tasks are deliberately kept at the root because they describe the complete DelosDB product layout, not a single JPMS module.

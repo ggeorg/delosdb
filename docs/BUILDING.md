@@ -20,6 +20,8 @@ The build is now Gradle-native for the active developer workflow: source generat
 ./gradlew jars
 ./gradlew verifyJars
 ./gradlew verifyReleaseArtifacts
+./gradlew verifyReleaseDistribution
+./gradlew dist
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
 ./gradlew verifyExtractedOptionalToolsProject
@@ -45,6 +47,7 @@ The main build lifecycle now performs these steps:
 13. Verify that the artifact/module inventory docs match the current Gradle build model.
 14. Run the embedded JDBC smoke test from compiled classes.
 15. Run the embedded JDBC smoke test from assembled jars.
+16. Build and verify the binary distribution archives.
 
 ## Current jar outputs
 
@@ -76,6 +79,8 @@ Use this command to verify the release artifact shape:
 
 ```bash
 ./gradlew verifyReleaseArtifacts
+./gradlew verifyReleaseDistribution
+./gradlew dist
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
 ./gradlew verifyExtractedOptionalToolsProject
@@ -159,3 +164,46 @@ The root build defines the shared legal-file set and runtime jar manifest attrib
 ## Shared Gradle conventions
 
 The root build owns shared compiler conventions for all extracted subprojects. Subprojects should call `rootProject.ext.delosdbConfigureJavaCompile(...)` instead of declaring local JavaCompile defaults. This keeps the Java release, encoding, warning policy, classpath clearing, and JPMS module-path handling consistent.
+
+
+## Binary distribution
+
+Use the distribution task to produce release-candidate binary archives:
+
+```bash
+./gradlew dist
+```
+
+Outputs:
+
+```text
+build/distributions/delosdb-0.1.0-dev-bin.zip
+build/distributions/delosdb-0.1.0-dev-bin.tar.gz
+```
+
+The archive layout is:
+
+```text
+delosdb-0.1.0-dev/
+├── bin/
+│   ├── delosdb
+│   └── delosdb.bat
+├── docs/
+├── examples/
+│   └── smoke.sql
+├── lib/
+│   ├── derby.jar
+│   ├── derbyclient.jar
+│   ├── derbynet.jar
+│   ├── derbyoptionaltools.jar
+│   ├── derbyrun.jar
+│   ├── derbyshared.jar
+│   ├── derbytools.jar
+│   └── osgi-framework-stub.jar
+├── LICENSE
+├── NOTICE
+├── NOTICE-FORK.md
+└── README.md
+```
+
+`verifyReleaseDistribution` checks that the distribution archives exist and contain the expected legal files, documentation, launcher scripts, example SQL, and runtime jars.

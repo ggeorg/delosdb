@@ -3,7 +3,11 @@ plugins {
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.tasks.bundling.Compression
+import org.gradle.api.tasks.bundling.Tar
+import org.gradle.api.tasks.bundling.Zip
 import java.util.jar.JarFile
+import java.util.zip.ZipFile
 
 def delosDbVersion = '0.1.0-dev'
 
@@ -613,6 +617,121 @@ tasks.register('smokeFromJars', JavaExec) {
     }
 }
 
+
+def distributionBaseName = "delosdb-${delosDbVersion}"
+def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
+def distributionArchiveNames = [
+        zip: "delosdb-${delosDbVersion}-bin.zip",
+        tar: "delosdb-${delosDbVersion}-bin.tar.gz"
+]
+def distributionDocFiles = files(
+        'README.md',
+        'CONTRIBUTING.md',
+        'GOVERNANCE.md',
+        'SECURITY.md',
+        'NOTICE-FORK.md'
+)
+
+tasks.register('prepareBinaryDistribution', Copy) {
+    dependsOn 'verifyReleaseArtifacts'
+    group = 'distribution'
+    description = 'Stages the DelosDB binary distribution layout under build/release.'
+    into distributionStagingDir
+    from(distributionDocFiles)
+    from(legalFiles)
+    from('docs') {
+        into 'docs'
+    }
+    from('bin') {
+        into 'bin'
+    }
+    from(runtimeJars()) {
+        into 'lib'
+    }
+    from('dev/smoke.sql') {
+        into 'examples'
+    }
+    doFirst {
+        delete distributionStagingDir.get().asFile
+    }
+}
+
+tasks.register('delosdbBinaryZip', Zip) {
+    dependsOn 'prepareBinaryDistribution'
+    group = 'distribution'
+    description = 'Assembles the DelosDB binary ZIP distribution.'
+    archiveBaseName = 'delosdb'
+    archiveVersion = delosDbVersion
+    archiveClassifier = 'bin'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    from(distributionStagingDir) {
+        into distributionBaseName
+    }
+}
+
+tasks.register('delosdbBinaryTar', Tar) {
+    dependsOn 'prepareBinaryDistribution'
+    group = 'distribution'
+    description = 'Assembles the DelosDB binary tar.gz distribution.'
+    archiveBaseName = 'delosdb'
+    archiveVersion = delosDbVersion
+    archiveClassifier = 'bin'
+    archiveExtension = 'tar.gz'
+    compression = Compression.GZIP
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    from(distributionStagingDir) {
+        into distributionBaseName
+    }
+}
+
+tasks.register('verifyReleaseDistribution') {
+    dependsOn 'delosdbBinaryZip', 'delosdbBinaryTar'
+    group = 'verification'
+    description = 'Verifies the DelosDB binary distribution archive shape.'
+    def zipFileProvider = layout.buildDirectory.file("distributions/${distributionArchiveNames.zip}")
+    def tarFileProvider = layout.buildDirectory.file("distributions/${distributionArchiveNames.tar}")
+    inputs.files(zipFileProvider, tarFileProvider)
+    doLast {
+        def zipFile = zipFileProvider.get().asFile
+        def tarFile = tarFileProvider.get().asFile
+        [zipFile, tarFile].each { archive ->
+            if (!archive.isFile()) {
+                throw new GradleException("Missing distribution archive: ${archive}")
+            }
+            if (archive.length() == 0L) {
+                throw new GradleException("Empty distribution archive: ${archive}")
+            }
+        }
+
+        def requiredEntries = [
+                'README.md',
+                'LICENSE',
+                'NOTICE',
+                'NOTICE-FORK.md',
+                'bin/delosdb',
+                'bin/delosdb.bat',
+                'docs/BUILDING.md',
+                'docs/ARTIFACTS.md',
+                'examples/smoke.sql'
+        ] + runtimeJarNames.collect { "lib/${it}" }
+
+        new ZipFile(zipFile).withCloseable { zip ->
+            requiredEntries.each { relativePath ->
+                def entryName = "${distributionBaseName}/${relativePath}"
+                if (zip.getEntry(entryName) == null) {
+                    throw new GradleException("Missing ${entryName} in ${zipFile.name}")
+                }
+            }
+        }
+    }
+}
+
+tasks.register('dist') {
+    dependsOn 'verifyReleaseDistribution'
+    group = 'distribution'
+    description = 'Builds and verifies the DelosDB binary distribution archives.'
+}
+
 tasks.register('sysinfo', JavaExec) {
     dependsOn 'compileAll'
     group = 'verification'
@@ -1095,7 +1214,7 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface',
+    dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface',
             'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
             'verifyExtractedServerProject', 'verifyExtractedEngineProject'
