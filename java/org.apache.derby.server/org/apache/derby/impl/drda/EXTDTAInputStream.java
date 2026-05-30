@@ -24,6 +24,7 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
+import java.lang.ref.Cleaner;
 import java.sql.Blob;
 import java.sql.CallableStatement;
 import java.sql.Clob;
@@ -46,7 +47,11 @@ import org.apache.derby.impl.jdbc.Util;
  */
 class EXTDTAInputStream extends InputStream {
 
+    private static final Cleaner CLEANER = Cleaner.create();
+
     private InputStream binaryInputStream = null;
+    private final CleanupState cleanupState = new CleanupState();
+    private final Cleaner.Cleanable cleanable = CLEANER.register(this, cleanupState);
  
     /** DRDA Type of column/parameter */
     int ndrdaType;
@@ -189,11 +194,15 @@ class EXTDTAInputStream extends InputStream {
      * @see java.io.InputStream#close()
      */
     public void close() throws IOException {
-        
-        if (binaryInputStream != null)
-            binaryInputStream.close();
+
+        IOException closeFailure = cleanupState.close();
         binaryInputStream = null;
-        
+        cleanable.clean();
+
+        if (closeFailure != null) {
+            throw closeFailure;
+        }
+
     }
 
     /**
@@ -332,6 +341,7 @@ class EXTDTAInputStream extends InputStream {
         }
         
     this.binaryInputStream=is;
+    cleanupState.setBinaryInputStream(is);
     }
     private InputStream getBinaryStream() throws SQLException
     {
@@ -351,15 +361,37 @@ class EXTDTAInputStream extends InputStream {
                                       " not valid EXTDTA object type");
         }
     }
-    
-        
-    //
-    // This method in java.lang.Object was deprecated as of build 167
-    // of JDK 9. See DERBY-6932.
-    //
-    @SuppressWarnings({"deprecation","removal"})
-    protected void finalize() throws Throwable{
-    close();
+
+    private static final class CleanupState implements Runnable {
+
+        private InputStream binaryInputStream;
+
+        synchronized void setBinaryInputStream(InputStream stream) {
+            binaryInputStream = stream;
+        }
+
+        synchronized IOException close() {
+            if (binaryInputStream == null) {
+                return null;
+            }
+
+            try {
+                binaryInputStream.close();
+                return null;
+            } catch (IOException ioe) {
+                return ioe;
+            } finally {
+                binaryInputStream = null;
+            }
+        }
+
+        public void run() {
+            try {
+                close();
+            } catch (IOException ioe) {
+                // Cleaner fallback cleanup cannot report checked exceptions.
+            }
+        }
     }
 
     /**
