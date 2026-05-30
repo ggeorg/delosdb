@@ -59,3 +59,7 @@ engine cleanup last
 
 The engine should be touched only with focused tests or strong compatibility confidence.
 
+### Network Server `-noSecurityManager` command surface
+
+DelosDB still accepts the inherited `-noSecurityManager` switch as a no-op so existing startup scripts do not fail, but the switch is no longer advertised in Network Server usage text and no longer toggles internal server state. The active runtime baseline is Java 21+, where DelosDB does not install or manage a JVM SecurityManager.
+

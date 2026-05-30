@@ -245,7 +245,6 @@ public final class NetworkServerControlImpl {
     private String hostArg = DEFAULT_HOST;
     private InetAddress hostAddress;
     private int sessionArg;
-    private boolean unsecureArg;
 
     // Used to debug memory in SanityManager.DEBUG mode
     private memCheck mc;
@@ -403,12 +402,15 @@ public final class NetworkServerControlImpl {
     }
 
     /**
-     * Return true if the customer forcibly overrode our decision to install a
-     * default SecurityManager.
+     * Legacy compatibility hook for the removed {@code -noSecurityManager}
+     * switch. DelosDB runs on Java 21+, where SecurityManager support has been
+     * removed from the active server startup path, so the switch is accepted as
+     * a no-op for existing scripts.
      *
-     * @return  true if the customer forcibly overrode our decision
+     * @return always {@code false}; the server no longer has a SecurityManager
+     *         startup mode to disable
      */
-    public  boolean runningUnsecure() { return unsecureArg; }
+    public  boolean runningUnsecure() { return false; }
     
     // constructor
     public NetworkServerControlImpl() throws Exception
@@ -2591,7 +2593,9 @@ public final class NetworkServerControlImpl {
                     consolePropertyMessage("DRDA_MissingValue.U", "DRDA_Session.I");
                 break;
             case DASHARG_UNSECURE:
-                unsecureArg = true;
+                // Java 21+ compatibility: accept the old switch as a no-op so
+                // existing launch scripts do not fail, but do not expose or
+                // track a SecurityManager startup mode anymore.
                 break;
 
             case DASHARG_SSL:

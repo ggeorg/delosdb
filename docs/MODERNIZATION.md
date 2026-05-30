@@ -32,3 +32,7 @@ DelosDB now has a Gradle-first build, extracted Gradle subprojects, verified run
 
 Do not rename public `org.apache.derby.*` packages yet. Do not rename JPMS modules yet. Do not change runtime jar names yet. Those are compatibility decisions, not cleanup tasks.
 
+### Network Server `-noSecurityManager` command surface
+
+DelosDB still accepts the inherited `-noSecurityManager` switch as a no-op so existing startup scripts do not fail, but the switch is no longer advertised in Network Server usage text and no longer toggles internal server state. The active runtime baseline is Java 21+, where DelosDB does not install or manage a JVM SecurityManager.
+

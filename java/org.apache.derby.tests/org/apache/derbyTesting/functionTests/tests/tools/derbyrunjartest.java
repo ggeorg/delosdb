@@ -139,7 +139,7 @@ public class derbyrunjartest extends BaseTestCase {
         String[] output = {
             "Usage: NetworkServerControl <commands> ",
             "Commands:",
-            "start [-h <host>] [-p <port number>] [-noSecurityManager] [-ssl <ssl mode>]",
+            "start [-h <host>] [-p <port number>] [-ssl <ssl mode>]",
             "shutdown [-h <host>][-p <port number>] [-ssl <ssl mode>] [-user <username>] [-password <password>]",
             "ping [-h <host>][-p <port number>] [-ssl <ssl mode>]",
             "sysinfo [-h <host>][-p <port number>] [-ssl <ssl mode>]",
