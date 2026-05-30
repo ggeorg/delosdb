@@ -41,6 +41,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.lang.ref.Cleaner;
 import java.util.Calendar;
 import java.util.Vector;
 
@@ -95,6 +96,12 @@ public class EmbedPreparedStatement extends EmbedStatement
 
 	protected PreparedStatement	preparedStatement;
 	private Activation			activation;
+    private static final Cleaner CLEANER = Cleaner.create();
+    private final ActivationCleanupState activationCleanupState =
+            new ActivationCleanupState();
+    private final Cleaner.Cleanable activationCleanable =
+            CLEANER.register(this, activationCleanupState);
+
     /**
      * Tells which header format to use when writing CLOBs into the store.
      * <p>
@@ -139,6 +146,7 @@ public class EmbedPreparedStatement extends EmbedStatement
 
 			    activation = preparedStatement.getActivation(lcc,
                         resultSetType == java.sql.ResultSet.TYPE_SCROLL_INSENSITIVE);
+                activationCleanupState.setActivation(activation);
 
 				checkRequiresCallableStatement(activation);
 
@@ -152,29 +160,6 @@ public class EmbedPreparedStatement extends EmbedStatement
                 throw handleException(t);
             }
 
-	}
-
-	/**
-		JDBC states that a Statement is closed when garbage collected.
-
-		@exception Throwable Allows any exception to be thrown during finalize
-	*/
-	protected void finalize() throws Throwable {
-		super.finalize();
-
-		/*
-		** We mark the activation as not being used and
-	 	** that is it.  We rely on the connection to sweep
-		** through the activations to find the ones that
-		** aren't in use, and to close them.  We cannot
-	 	** do a activation.close() here because there are
-		** synchronized methods under close that cannot
-		** be called during finalization.
-		*/
-		if (activation != null) 
-		{
-			activation.markUnused();
-		}
 	}
 
 	/*
@@ -214,6 +199,32 @@ public class EmbedPreparedStatement extends EmbedStatement
 		throw newSQLException(SQLState.NOT_FOR_PREPARED_STATEMENT, "addBatch(String)");
 	}
 
+
+
+    /**
+     * Cleaner fallback for prepared statement activations. Explicit close is
+     * still the primary cleanup path; this state only preserves the old
+     * finalizer behavior for abandoned prepared statements by marking the
+     * activation unused so the connection can sweep it later.
+     */
+    private static final class ActivationCleanupState implements Runnable {
+        private Activation activation;
+
+        synchronized void setActivation(Activation activation) {
+            this.activation = activation;
+        }
+
+        synchronized void clearActivation() {
+            activation = null;
+        }
+
+        public synchronized void run() {
+            if (activation != null) {
+                activation.markUnused();
+                activation = null;
+            }
+        }
+    }
 
 	/**
 	 * Additional close to close our activation.
@@ -255,6 +266,8 @@ public class EmbedPreparedStatement extends EmbedStatement
 		try
 		{
 		    activation.close();
+            activationCleanupState.clearActivation();
+            activationCleanable.clean();
 			activation = null;
 
             InterruptStatus.restoreIntrFlagIfSeen();

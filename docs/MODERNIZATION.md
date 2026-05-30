@@ -36,3 +36,5 @@ Do not rename public `org.apache.derby.*` packages yet. Do not rename JPMS modul
 
 DelosDB still accepts the inherited `-noSecurityManager` switch as a no-op so existing startup scripts do not fail, but the switch is no longer advertised in Network Server usage text and no longer toggles internal server state. The active runtime baseline is Java 21+, where DelosDB does not install or manage a JVM SecurityManager.
 
+
+- Replaced `EmbedPreparedStatement.finalize()` with Cleaner fallback activation cleanup while preserving explicit close as the primary path.
