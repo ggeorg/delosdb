@@ -553,12 +553,22 @@ tasks.register('derbyClientJar') {
     dependsOn ':delosdb-client:derbyClientJar'
 }
 
+tasks.register('derbyToolsJar') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-tools runtime jar task.'
+    dependsOn ':delosdb-tools:derbyToolsJar'
+}
+
+tasks.register('derbyRunJar') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-runner runtime jar task.'
+    dependsOn ':delosdb-runner:derbyRunJar'
+}
+
 [
         [name: 'derbyJar', moduleName: moduleNames.engine, archive: 'derby.jar'],
-        [name: 'derbyToolsJar', moduleName: moduleNames.tools, archive: 'derbytools.jar'],
         [name: 'derbyNetJar', moduleName: moduleNames.server, archive: 'derbynet.jar'],
         [name: 'derbyOptionalToolsJar', moduleName: moduleNames.optionaltools, archive: 'derbyoptionaltools.jar'],
-        [name: 'derbyRunJar', moduleName: moduleNames.runner, archive: 'derbyrun.jar'],
         [name: 'osgiFrameworkStubJar', moduleName: moduleNames.osgi, archive: 'osgi-framework-stub.jar']
 ].each { spec ->
     tasks.register(spec.name, Jar) {
@@ -860,9 +870,9 @@ tasks.register('verifyExtractedClientProject') {
 }
 
 tasks.register('verifyExtractedToolsProject') {
-    dependsOn ':delosdb-tools:compileDerbyTools'
+    dependsOn ':delosdb-tools:compileDerbyTools', ':delosdb-tools:derbyToolsJar'
     group = 'verification'
-    description = 'Verifies that the third extracted Gradle subproject owns the tools compile lifecycle and ij parser generation.'
+    description = 'Verifies that the third extracted Gradle subproject owns the tools compile and jar lifecycle plus ij parser generation.'
     inputs.file('settings.gradle')
     inputs.file('delosdb-tools/build.gradle')
     doLast {
@@ -876,6 +886,13 @@ tasks.register('verifyExtractedToolsProject') {
         if (toolsProject.tasks.findByName('compileDerbyTools') == null) {
             throw new GradleException('Missing :delosdb-tools:compileDerbyTools')
         }
+        if (toolsProject.tasks.findByName('derbyToolsJar') == null) {
+            throw new GradleException('Missing :delosdb-tools:derbyToolsJar')
+        }
+        def toolsJar = layout.buildDirectory.file('libs/derbytools.jar').get().asFile
+        if (!toolsJar.isFile()) {
+            throw new GradleException("Missing tools runtime jar owned by :delosdb-tools: ${toolsJar}")
+        }
         def toolsOutput = moduleClassDir(moduleNames.tools).get().asFile
         if (!toolsOutput.isDirectory()) {
             throw new GradleException("Missing compiled tools output directory: ${toolsOutput}")
@@ -888,9 +905,9 @@ tasks.register('verifyExtractedToolsProject') {
 }
 
 tasks.register('verifyExtractedRunnerProject') {
-    dependsOn ':delosdb-runner:compileDerbyRunner'
+    dependsOn ':delosdb-runner:compileDerbyRunner', ':delosdb-runner:derbyRunJar'
     group = 'verification'
-    description = 'Verifies that the fourth extracted Gradle subproject owns the runner compile lifecycle.'
+    description = 'Verifies that the fourth extracted Gradle subproject owns the runner compile and jar lifecycle.'
     inputs.file('settings.gradle')
     inputs.file('delosdb-runner/build.gradle')
     doLast {
@@ -900,6 +917,13 @@ tasks.register('verifyExtractedRunnerProject') {
         }
         if (runnerProject.tasks.findByName('compileDerbyRunner') == null) {
             throw new GradleException('Missing :delosdb-runner:compileDerbyRunner')
+        }
+        if (runnerProject.tasks.findByName('derbyRunJar') == null) {
+            throw new GradleException('Missing :delosdb-runner:derbyRunJar')
+        }
+        def runnerJar = layout.buildDirectory.file('libs/derbyrun.jar').get().asFile
+        if (!runnerJar.isFile()) {
+            throw new GradleException("Missing runner runtime jar owned by :delosdb-runner: ${runnerJar}")
         }
         def runnerOutput = moduleClassDir(moduleNames.runner).get().asFile
         if (!runnerOutput.isDirectory()) {

@@ -47,3 +47,49 @@ tasks.register('classes') {
 tasks.named('assemble') {
     dependsOn 'classes'
 }
+
+
+def runnerArchiveName = 'derbyrun.jar'
+def legalFiles = rootProject.files(
+        rootProject.file('LICENSE'),
+        rootProject.file('NOTICE'),
+        rootProject.file('NOTICE-FORK.md')
+)
+
+def releaseManifestAttributes = {
+    [
+            'Implementation-Title'      : 'DelosDB Runner',
+            'Implementation-Version'    : rootProject.ext.delosDbVersion,
+            'Implementation-Vendor'     : 'DelosDB Project',
+            'Specification-Title'       : 'DelosDB Runner',
+            'Specification-Version'     : rootProject.ext.derbyCompatibilityVersion,
+            'Specification-Vendor'      : 'DelosDB Project',
+            'DelosDB-Version'           : rootProject.ext.delosDbVersion,
+            'DelosDB-Build-Revision'    : rootProject.ext.buildNumberProvider.get(),
+            'DelosDB-Origin'            : 'Forked from Apache Derby 10.17.1.0',
+            'DelosDB-Repository'        : 'https://github.com/ggeorg/delosdb',
+            'Apache-Derby-Base-Version' : rootProject.ext.derbyCompatibilityVersion,
+            'Built-By'                  : System.getProperty('user.name', 'unknown'),
+            'Build-Jdk'                 : System.getProperty('java.version'),
+            'Build-Jdk-Vendor'          : System.getProperty('java.vendor'),
+            'Main-Class'                : 'org.apache.derby.run.run'
+    ]
+}
+
+tasks.register('derbyRunJar', Jar) {
+    dependsOn 'compileDerbyRunner', ':processDerbyResources'
+    archiveFileName = runnerArchiveName
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from moduleClassDir
+    from(legalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes releaseManifestAttributes()
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn 'derbyRunJar'
+}

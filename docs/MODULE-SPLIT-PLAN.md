@@ -68,7 +68,7 @@ Current jar: `derbytools.jar`
 Current module: `org.apache.derby.tools`  
 Current source root: `java/org.apache.derby.tools`
 
-This module owns `ij` parser generation through `generateIjParsers`. Extract it only after client and commons are stable.
+This module owns `ij` parser generation through `generateIjParsers`. Its compile and jar assembly lifecycle is now extracted into `:delosdb-tools`, while the root build keeps a compatibility alias for coordinated product builds.
 
 ### 4. `delosdb-runner`
 
@@ -76,7 +76,7 @@ Current jar: `derbyrun.jar`
 Current module: `org.apache.derby.runner`  
 Current source root: `java/org.apache.derby.runner`
 
-This provides the main entry point used by `sysinfo`, `ij`, and smoke verification. It should remain behavior-compatible during the split.
+This provides the main entry point used by `sysinfo`, `ij`, and smoke verification. Its compile and jar assembly lifecycle is now extracted into `:delosdb-runner`, including the `Main-Class` manifest entry for `org.apache.derby.run.run`.
 
 ### 5. `delosdb-optionaltools`
 
@@ -114,10 +114,10 @@ This is the final and highest-risk extraction. It owns SQL parser generation, cl
 
 ## Current extraction target
 
-The next real split should be:
+The next artifact-ownership split should be:
 
 ```text
-v0.1.0-dev.9 — Extract delosdb-server
+v0.1.0-dev.12 — Extract delosdb-optionaltools jar ownership
 ```
 
 Server follows optional tools because it depends on commons, engine, tools, and servlet/external module path entries, but it is still lower-risk than extracting the embedded engine itself.

@@ -13,7 +13,7 @@ DelosDB now uses **Gradle as the only supported build system**. The inherited An
 
 ## Gradle subprojects
 
-The extracted build subprojects are now `:delosdb-commons`, `:delosdb-engine`, `:delosdb-client`, `:delosdb-tools`, `:delosdb-runner`, `:delosdb-optionaltools`, and `:delosdb-server`. They own compilation of the inherited commons, engine, client, tools, runner, optional tools, and server JPMS modules. Runtime jar ownership has started moving into those subprojects: `:delosdb-commons` now assembles `derbyshared.jar`, and `:delosdb-client` now assembles `derbyclient.jar`; the root build still coordinates the remaining release jars. This keeps the module split incremental and reversible.
+The extracted build subprojects are now `:delosdb-commons`, `:delosdb-engine`, `:delosdb-client`, `:delosdb-tools`, `:delosdb-runner`, `:delosdb-optionaltools`, and `:delosdb-server`. They own compilation of the inherited commons, engine, client, tools, runner, optional tools, and server JPMS modules. Runtime jar ownership is now moving into those subprojects: `:delosdb-commons` assembles `derbyshared.jar`, `:delosdb-client` assembles `derbyclient.jar`, `:delosdb-tools` assembles `derbytools.jar`, and `:delosdb-runner` assembles `derbyrun.jar`; the root build still coordinates the remaining release jars. This keeps the module split incremental and reversible.
 
 Useful check:
 
@@ -22,7 +22,9 @@ Useful check:
 ./gradlew :delosdb-client:compileDerbyClient
 ./gradlew :delosdb-client:derbyClientJar
 ./gradlew :delosdb-tools:compileDerbyTools
+./gradlew :delosdb-tools:derbyToolsJar
 ./gradlew :delosdb-runner:compileDerbyRunner
+./gradlew :delosdb-runner:derbyRunJar
 ./gradlew :delosdb-optionaltools:compileDerbyOptionalTools
 ./gradlew :delosdb-engine:compileDerbyEngine
 ./gradlew :delosdb-server:compileDerbyServer
