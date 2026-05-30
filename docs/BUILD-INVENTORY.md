@@ -110,7 +110,7 @@ Recommended order:
 1. Extract `delosdb-build-tools` first, because generation tasks are currently the least clean part of the build.
 2. Extract `delosdb-commons` next.
 3. Extract `delosdb-engine` after generated-source handling is stable.
-4. Extract client/tools/server/runner modules after engine packaging is stable.
+4. Continue jar ownership extraction for tools, runner, optional tools, server, and engine.
 
 ## Cleanup policy
 
@@ -150,13 +150,13 @@ This guardrail should stay green before and after each module extraction.
 
 `delosdb-runner` is the fourth extracted Gradle subproject. It compiles the inherited `org.apache.derby.runner` JPMS module from `java/org.apache.derby.runner` into `delosdb-runner/build/classes/modules/org.apache.derby.runner`.
 
-The root build consumes both outputs for downstream module compilation. `delosdb-commons` now owns `derbyshared.jar`; the root still coordinates the remaining runtime jars. Source files have not been moved yet; these patches extract build and artifact ownership incrementally.
+The root build consumes these outputs for downstream module compilation. `delosdb-commons` now owns `derbyshared.jar`, and `delosdb-client` now owns `derbyclient.jar`; the root still coordinates the remaining runtime jars. Source files have not been moved yet; these patches extract build and artifact ownership incrementally.
 
 Verification command:
 
 ```bash
 ./gradlew :delosdb-commons:compileDerbyCommons verifyExtractedCommonsProject
-./gradlew :delosdb-client:compileDerbyClient verifyExtractedClientProject
+./gradlew :delosdb-client:compileDerbyClient :delosdb-client:derbyClientJar verifyExtractedClientProject
 ./gradlew :delosdb-tools:compileDerbyTools verifyExtractedToolsProject
 ./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedRunnerProject
 ./gradlew :delosdb-engine:compileDerbyEngine verifyExtractedEngineProject

@@ -326,6 +326,8 @@ tasks.register('splitEngineMessages') {
     dependsOn 'compileDerbyBuildTools', 'processDerbyResources'
     inputs.file('java/org.apache.derby.engine/org/apache/derby/loc/messages.properties')
     outputs.dir(moduleClassDir(moduleNames.engine).map { it.dir('org/apache/derby/loc') })
+    outputs.dir(moduleClassDir(moduleNames.client).map { it.dir('org/apache/derby/loc/client') })
+    outputs.dir(layout.buildDirectory.dir('generated/locale/org/apache/derby/loc'))
     doLast {
         def generatedMessagesDir = layout.buildDirectory.dir('generated/messages').get().asFile
         generatedMessagesDir.mkdirs()
@@ -545,9 +547,14 @@ tasks.register('derbySharedJar') {
     dependsOn ':delosdb-commons:derbySharedJar'
 }
 
+tasks.register('derbyClientJar') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-client runtime jar task.'
+    dependsOn ':delosdb-client:derbyClientJar'
+}
+
 [
         [name: 'derbyJar', moduleName: moduleNames.engine, archive: 'derby.jar'],
-        [name: 'derbyClientJar', moduleName: moduleNames.client, archive: 'derbyclient.jar'],
         [name: 'derbyToolsJar', moduleName: moduleNames.tools, archive: 'derbytools.jar'],
         [name: 'derbyNetJar', moduleName: moduleNames.server, archive: 'derbynet.jar'],
         [name: 'derbyOptionalToolsJar', moduleName: moduleNames.optionaltools, archive: 'derbyoptionaltools.jar'],
@@ -821,9 +828,9 @@ tasks.register('verifyExtractedCommonsProject') {
 
 
 tasks.register('verifyExtractedClientProject') {
-    dependsOn ':delosdb-client:compileDerbyClient'
+    dependsOn ':delosdb-client:compileDerbyClient', ':delosdb-client:derbyClientJar'
     group = 'verification'
-    description = 'Verifies that the second extracted Gradle subproject owns the client compile lifecycle.'
+    description = 'Verifies that the second extracted Gradle subproject owns the client compile and jar lifecycle.'
     inputs.file('settings.gradle')
     inputs.file('delosdb-client/build.gradle')
     doLast {
@@ -833,6 +840,13 @@ tasks.register('verifyExtractedClientProject') {
         }
         if (clientProject.tasks.findByName('compileDerbyClient') == null) {
             throw new GradleException('Missing :delosdb-client:compileDerbyClient')
+        }
+        if (clientProject.tasks.findByName('derbyClientJar') == null) {
+            throw new GradleException('Missing :delosdb-client:derbyClientJar')
+        }
+        def clientJar = layout.buildDirectory.file('libs/derbyclient.jar').get().asFile
+        if (!clientJar.isFile()) {
+            throw new GradleException("Missing client runtime jar owned by :delosdb-client: ${clientJar}")
         }
         def clientOutput = moduleClassDir(moduleNames.client).get().asFile
         if (!clientOutput.isDirectory()) {
