@@ -2651,8 +2651,8 @@ public class EmbedConnection implements EngineConnection
      * <p>
      * Derby 10.17 removed support for Java SecurityManager-based permission
      * checks. DelosDB keeps this hook as a compatibility no-op so the create
-     * database path no longer calls {@code System.getSecurityManager()}, which
-     * is deprecated for removal by JEP 411.
+     * database path no longer calls the removed JVM security-manager
+     * inspection API deprecated for removal by JEP 411.
      *
      * @param user The user to be checked for database create privileges
      * @param dbname the name of the database to create

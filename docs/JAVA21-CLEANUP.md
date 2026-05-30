@@ -76,3 +76,20 @@ The remaining high-risk embedded engine connection and statement finalizers have
 ### Embedded engine finalizer cleanup batch
 
 The embedded engine no longer overrides `Object.finalize()` in `EmbedConnection` or `EmbedStatement`. DelosDB treats explicit JDBC `close()` calls as the supported lifecycle path for embedded connections and statements on Java 21+. This avoids running connection close or activation lifecycle logic from GC/finalizer threads. Single-use activations continue to be closed through result-set close, while prepared-statement activation fallback cleanup remains handled by the dedicated Cleaner state introduced earlier.
+
+### SecurityManager audit cleanup batch
+
+The production modernization audit now focuses on active runtime modules rather than inherited test/demo/history content. The audit can be run in report mode or verification mode:
+
+```bash
+./dev/modernization-audit.sh
+./dev/modernization-audit.sh --verify
+```
+
+Verification mode now fails if production code reintroduces any of these Java 21 cleanup regressions:
+
+- `Object.finalize()` overrides
+- direct JVM security-manager inspection calls
+- privileged-action cleanup wrappers
+
+This batch also removed stale Network Server localization messages that described installing or disabling a JVM SecurityManager. The inherited `-noSecurityManager` switch remains accepted as a no-op for compatibility, but the active Java 21 server startup path no longer exposes SecurityManager installation failures or authentication warnings tied to that removed mechanism.

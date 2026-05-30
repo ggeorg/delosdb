@@ -308,9 +308,9 @@ final public class DatabasePermission extends Permission {
             //assert(parentPath == null);
         } else {
             // resolve against user's working directory if relative pathname;
-            // the read access to the system property is encapsulated in a
-            // doPrivileged() block to allow for confined codebase permission
-            // grants
+            // historically this property read was wrapped for confined
+            // codebase permission grants; Java 21-era DelosDB reads it
+            // directly because the JVM SecurityManager path is gone.
             if (p.startsWith(URL_PATH_RELATIVE_PREFIX)) {
                 final String cwd = System.getProperty("user.dir");
                 // concatenated path "<cwd>/./<path>" will be canonicalized
@@ -320,8 +320,8 @@ final public class DatabasePermission extends Permission {
 
             // store canonicalized path as required for implies(Permission);
             // may throw IOException; canonicalization reads the "user.dir"
-            // system property, which we encapsulate in a doPrivileged()
-            // block to allow for confined codebase permission grants
+            // system property; Java 21-era DelosDB reads it directly because
+            // the JVM SecurityManager path is gone.
             final File f = (new File(absPath)).getCanonicalFile();
             path = f.getPath();
 
