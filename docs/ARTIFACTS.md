@@ -2,7 +2,7 @@
 
 This document records the current runtime artifacts produced by the Gradle-only build and the planned project names for the future multi-project split.
 
-The current build is being extracted incrementally from the repository root. `delosdb-commons`, `delosdb-engine`, `delosdb-client`, `delosdb-tools`, `delosdb-runner`, `delosdb-optionaltools`, and `delosdb-server` now own their compile lifecycles. `delosdb-commons` also owns its runtime jar assembly for `derbyshared.jar`, and `delosdb-client` owns `derbyclient.jar`; the root build still owns shared resource processing and the remaining jar assembly. The table below is the authoritative inventory for the next extraction steps.
+The current build is being extracted incrementally from the repository root. `delosdb-commons`, `delosdb-engine`, `delosdb-client`, `delosdb-tools`, `delosdb-runner`, `delosdb-optionaltools`, and `delosdb-server` now own their compile lifecycles. `delosdb-commons` also owns its runtime jar assembly for `derbyshared.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, and `delosdb-optionaltools` owns `derbyoptionaltools.jar`; the root build still owns shared resource processing and the remaining jar assembly. The table below is the authoritative inventory for the next extraction steps.
 
 | Planned Gradle project | Current JPMS module | Current source root | Current jar | Public runtime artifact | Current compile task | Extraction order | Risk |
 |---|---|---|---|---:|---|---:|---|
@@ -120,7 +120,7 @@ Verification command:
 | `derbyclient.jar` | `:delosdb-client` |
 | `derbytools.jar` | `:delosdb-tools` |
 | `derbyrun.jar` | `:delosdb-runner` |
-| `derbyoptionaltools.jar` | root compatibility build, pending extraction |
+| `derbyoptionaltools.jar` | `delosdb-optionaltools` via root compatibility alias |
 | `derbynet.jar` | root compatibility build, pending extraction |
 | `derby.jar` | root compatibility build, pending extraction |
 | `osgi-framework-stub.jar` | root compatibility build, pending extraction decision |

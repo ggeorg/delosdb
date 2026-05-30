@@ -110,7 +110,7 @@ Recommended order:
 1. Extract `delosdb-build-tools` first, because generation tasks are currently the least clean part of the build.
 2. Extract `delosdb-commons` next.
 3. Extract `delosdb-engine` after generated-source handling is stable.
-4. Continue jar ownership extraction for optional tools, server, and engine.
+4. Continue jar ownership extraction for server and engine.
 
 ## Cleanup policy
 
@@ -149,7 +149,7 @@ This guardrail should stay green before and after each module extraction.
 
 `delosdb-runner` is the fourth extracted Gradle subproject. It compiles the inherited `org.apache.derby.runner` JPMS module from `java/org.apache.derby.runner` into `delosdb-runner/build/classes/modules/org.apache.derby.runner`, and assembles `build/libs/derbyrun.jar` with the `org.apache.derby.run.run` main class.
 
-`delosdb-optionaltools` is the fifth extracted Gradle subproject. It compiles the inherited `org.apache.derby.optionaltools` JPMS module from `java/org.apache.derby.optionaltools` and writes its class output under `delosdb-optionaltools/build/classes/modules/org.apache.derby.optionaltools`. Jar ownership is still pending.
+`delosdb-optionaltools` is the fifth extracted Gradle subproject. It compiles the inherited `org.apache.derby.optionaltools` JPMS module from `java/org.apache.derby.optionaltools`, writes its class output under `delosdb-optionaltools/build/classes/modules/org.apache.derby.optionaltools`, and owns `derbyoptionaltools.jar` assembly while preserving the root compatibility alias.
 
 `delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` and writes its class output under `delosdb-server/build/classes/modules/org.apache.derby.server`. Jar ownership is still pending.
 
@@ -164,7 +164,7 @@ Verification command:
 ./gradlew :delosdb-client:compileDerbyClient :delosdb-client:derbyClientJar verifyExtractedClientProject
 ./gradlew :delosdb-tools:compileDerbyTools :delosdb-tools:derbyToolsJar verifyExtractedToolsProject
 ./gradlew :delosdb-runner:compileDerbyRunner :delosdb-runner:derbyRunJar verifyExtractedRunnerProject
-./gradlew :delosdb-optionaltools:compileDerbyOptionalTools verifyExtractedOptionalToolsProject
+./gradlew :delosdb-optionaltools:compileDerbyOptionalTools :delosdb-optionaltools:derbyOptionalToolsJar verifyExtractedOptionalToolsProject
 ./gradlew :delosdb-server:compileDerbyServer verifyExtractedServerProject
 ./gradlew :delosdb-engine:compileDerbyEngine verifyExtractedEngineProject
 ```

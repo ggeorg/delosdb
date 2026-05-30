@@ -565,10 +565,15 @@ tasks.register('derbyRunJar') {
     dependsOn ':delosdb-runner:derbyRunJar'
 }
 
+tasks.register('derbyOptionalToolsJar') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-optionaltools runtime jar task.'
+    dependsOn ':delosdb-optionaltools:derbyOptionalToolsJar'
+}
+
 [
         [name: 'derbyJar', moduleName: moduleNames.engine, archive: 'derby.jar'],
         [name: 'derbyNetJar', moduleName: moduleNames.server, archive: 'derbynet.jar'],
-        [name: 'derbyOptionalToolsJar', moduleName: moduleNames.optionaltools, archive: 'derbyoptionaltools.jar'],
         [name: 'osgiFrameworkStubJar', moduleName: moduleNames.osgi, archive: 'osgi-framework-stub.jar']
 ].each { spec ->
     tasks.register(spec.name, Jar) {
@@ -938,9 +943,9 @@ tasks.register('verifyExtractedRunnerProject') {
 
 
 tasks.register('verifyExtractedOptionalToolsProject') {
-    dependsOn ':delosdb-optionaltools:compileDerbyOptionalTools'
+    dependsOn ':delosdb-optionaltools:compileDerbyOptionalTools', ':delosdb-optionaltools:derbyOptionalToolsJar'
     group = 'verification'
-    description = 'Verifies that the fifth extracted Gradle subproject owns the optional tools compile lifecycle.'
+    description = 'Verifies that the fifth extracted Gradle subproject owns the optional tools compile and jar lifecycle.'
     inputs.file('settings.gradle')
     inputs.file('delosdb-optionaltools/build.gradle')
     doLast {
@@ -950,6 +955,13 @@ tasks.register('verifyExtractedOptionalToolsProject') {
         }
         if (optionalToolsProject.tasks.findByName('compileDerbyOptionalTools') == null) {
             throw new GradleException('Missing :delosdb-optionaltools:compileDerbyOptionalTools')
+        }
+        if (optionalToolsProject.tasks.findByName('derbyOptionalToolsJar') == null) {
+            throw new GradleException('Missing :delosdb-optionaltools:derbyOptionalToolsJar')
+        }
+        def optionalToolsJar = layout.buildDirectory.file('libs/derbyoptionaltools.jar').get().asFile
+        if (!optionalToolsJar.isFile()) {
+            throw new GradleException("Missing optional tools runtime jar owned by :delosdb-optionaltools: ${optionalToolsJar}")
         }
         def optionalToolsOutput = moduleClassDir(moduleNames.optionaltools).get().asFile
         if (!optionalToolsOutput.isDirectory()) {
