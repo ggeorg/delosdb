@@ -40,7 +40,6 @@ import java.util.Properties;
 import java.util.Enumeration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Vector;
 
 import org.apache.derby.iapi.tools.i18n.LocalizedResource;
 
@@ -356,13 +355,13 @@ public class JDBCDisplayUtil {
             rsmd = (resultSets.get(0)).getMetaData();
 
         checkNotNull(rsmd, "ResultSetMetaData");
-        Vector<ResultSet> nestedResults;
+        List<ResultSet> nestedResults;
         int numberOfRowsSelected = 0;
 
         // autocommit must be off or the nested cursors
         // are closed when the outer statement completes.
         if (!conn.getAutoCommit())
-            nestedResults = new Vector<ResultSet>();
+            nestedResults = new ArrayList<ResultSet>();
         else
             nestedResults = null;
 
@@ -423,13 +422,13 @@ public class JDBCDisplayUtil {
 
 	/**
 		@param out the place to write to
-		@param nr the vector of results
+		@param nr the list of results
 		@param conn the Connection against which the ResultSet was retrieved
 		@param indentLevel number of tab stops to indent line
 
 		@exception SQLException thrown on access error
 	 */
-	static private void DisplayNestedResults(PrintWriter out, Vector<ResultSet> nr, Connection conn, int indentLevel )
+	static private void DisplayNestedResults(PrintWriter out, List<ResultSet> nr, Connection conn, int indentLevel )
 		throws SQLException {
 
 		if (nr == null) return;
@@ -450,7 +449,7 @@ public class JDBCDisplayUtil {
 			LocalizedResource.OutputWriter().println(b);
 			LocalizedResource.OutputWriter().println(LocalizedResource.getMessage("UT_Resul0", LocalizedResource.getNumber(i)));
 			LocalizedResource.OutputWriter().println(b);
-			indent_DisplayResults(out, (ResultSet) nr.elementAt(i), conn,
+			indent_DisplayResults(out, (ResultSet) nr.get(i), conn,
 								  indentLevel, null, null);
 		}
 	}
@@ -476,12 +475,12 @@ public class JDBCDisplayUtil {
 											  int[] displayColumns, int[] displayColumnWidths )
 		throws SQLException {
 
-		Vector<ResultSet> nestedResults;
+		List<ResultSet> nestedResults;
 
 		// autocommit must be off or the nested cursors
 		// are closed when the outer statement completes.
 		if (!conn.getAutoCommit())
-			nestedResults = new Vector<ResultSet>();
+			nestedResults = new ArrayList<ResultSet>();
 		else
 			nestedResults = null;
 
@@ -528,7 +527,7 @@ public class JDBCDisplayUtil {
 												 int indentLevel, int[] displayColumns, int[] displayColumnWidths )
 		throws SQLException {
 
-		Vector<ResultSet> nestedResults;
+		List<ResultSet> nestedResults;
 
 		if (rs == null) {
 			indentedPrintLine( out, indentLevel, LocalizedResource.getMessage("UT_NoCurreRow_19"));
@@ -538,7 +537,7 @@ public class JDBCDisplayUtil {
 		// autocommit must be off or the nested cursors
 		// are closed when the outer statement completes.
 		if (!conn.getAutoCommit())
-			nestedResults = new Vector<ResultSet>();
+			nestedResults = new ArrayList<ResultSet>();
 		else
 			nestedResults = null;
 
@@ -659,7 +658,7 @@ public class JDBCDisplayUtil {
 
 		@exception SQLException thrown on JDBC access failure
 	 */
-	static private void DisplayRow(PrintWriter out, ResultSet rs, ResultSetMetaData rsmd, int rowLen, Vector<ResultSet> nestedResults, Connection conn, int indentLevel,
+	static private void DisplayRow(PrintWriter out, ResultSet rs, ResultSetMetaData rsmd, int rowLen, List<ResultSet> nestedResults, Connection conn, int indentLevel,
 								   int[] displayColumns, int[] displayColumnWidths )
 		throws SQLException
 	{
@@ -690,7 +689,7 @@ public class JDBCDisplayUtil {
 				else if (o instanceof ResultSet && nestedResults != null)
 				{
 					s = LocalizedResource.getMessage("UT_Resul0_20", LocalizedResource.getNumber(nestedResults.size()));
-					nestedResults.addElement( (ResultSet) o);
+					nestedResults.add((ResultSet) o);
 				}
 				else
 				{
@@ -926,13 +925,13 @@ public class JDBCDisplayUtil {
 		throws SQLException {
 		ResultSetMetaData rsmd = rs.getMetaData();
 		checkNotNull(rsmd, "ResultSetMetaData");
-		Vector<ResultSet> nestedResults;
+		List<ResultSet> nestedResults;
     int numberOfRowsSelected = 0;
 
 		// autocommit must be off or the nested cursors
 		// are closed when the outer statement completes.
 		if (!conn.getAutoCommit())
-			nestedResults = new Vector<ResultSet>();
+			nestedResults = new ArrayList<ResultSet>();
 		else
 			nestedResults = null;
 
@@ -980,7 +979,7 @@ public class JDBCDisplayUtil {
 		nestedResults = null;
 	}
 
-	static private void DisplayNestedResults(PrintStream out, Vector<ResultSet> nr, Connection conn, int indentLevel )
+	static private void DisplayNestedResults(PrintStream out, List<ResultSet> nr, Connection conn, int indentLevel )
 		throws SQLException {
 
 		if (nr == null) return;
@@ -1002,7 +1001,7 @@ public class JDBCDisplayUtil {
 			System.out.println(b);
 			System.out.println(s+i+" +");
 			System.out.println(b);
-			indent_DisplayResults(out, nr.elementAt(i), conn, 
+			indent_DisplayResults(out, nr.get(i), conn, 
 								  indentLevel, null, null);
 		}
 	}
@@ -1018,12 +1017,12 @@ public class JDBCDisplayUtil {
 											  int[] displayColumns, int[] displayColumnWidths )
 		throws SQLException {
 
-		Vector<ResultSet> nestedResults;
+		List<ResultSet> nestedResults;
 
 		// autocommit must be off or the nested cursors
 		// are closed when the outer statement completes.
 		if (!conn.getAutoCommit())
-			nestedResults = new Vector<ResultSet>();
+			nestedResults = new ArrayList<ResultSet>();
 		else
 			nestedResults = null;
 
@@ -1060,7 +1059,7 @@ public class JDBCDisplayUtil {
 												 int indentLevel, int[] displayColumns, int[] displayColumnWidths )
 		throws SQLException {
 
-		Vector<ResultSet> nestedResults;
+		List<ResultSet> nestedResults;
 
 		if (rs == null) {
 			indentedPrintLine( out, indentLevel, LocalizedResource.getMessage("UT_NoCurreRow_19"));
@@ -1070,7 +1069,7 @@ public class JDBCDisplayUtil {
 		// autocommit must be off or the nested cursors
 		// are closed when the outer statement completes.
 		if (!conn.getAutoCommit())
-			nestedResults = new Vector<ResultSet>();
+			nestedResults = new ArrayList<ResultSet>();
 		else
 			nestedResults = null;
 
@@ -1169,7 +1168,7 @@ public class JDBCDisplayUtil {
 		return rowLen;
 	} // DisplayBanner
 
-	static private void DisplayRow(PrintStream out, ResultSet rs, ResultSetMetaData rsmd, int rowLen, Vector<ResultSet> nestedResults, Connection conn, int indentLevel,
+	static private void DisplayRow(PrintStream out, ResultSet rs, ResultSetMetaData rsmd, int rowLen, List<ResultSet> nestedResults, Connection conn, int indentLevel,
 								   int[] displayColumns, int[] displayColumnWidths)
 		throws SQLException
 	{
@@ -1200,7 +1199,7 @@ public class JDBCDisplayUtil {
 				else if (o instanceof ResultSet && nestedResults != null)
 				{
 					s = "ResultSet #"+nestedResults.size();
-					nestedResults.addElement( (ResultSet) o);
+					nestedResults.add((ResultSet) o);
 				}
 				else
 				{

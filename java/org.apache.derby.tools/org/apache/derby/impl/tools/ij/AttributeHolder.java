@@ -22,15 +22,10 @@
 
 package org.apache.derby.impl.tools.ij;
 
-import org.apache.derby.shared.common.reference.Attribute;
 import org.apache.derby.iapi.tools.i18n.LocalizedResource;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
-import java.util.Vector;
-import java.util.Properties;
-import java.util.Enumeration;
-import java.util.StringTokenizer;
-import java.lang.reflect.Field;
-import java.sql.SQLException;
 
 public class AttributeHolder {
 
@@ -40,7 +35,7 @@ public class AttributeHolder {
     String name;
     String value;
     String token;
-    Vector<String> errors = new Vector<String>();
+    private final List<String> errors = new ArrayList<String>();
 
     public String getName(){
       return name;
@@ -63,27 +58,25 @@ public class AttributeHolder {
     public void addError(String aString) {
       //Keep track of error message for later display.
       if (!errors.contains(aString))
-        errors.addElement(aString);
+        errors.add(aString);
     }
-   public void check( Vector validProps){
+   public void check(List<String> validProps){
       checkName( validProps);
       //checkValue();
       displayErrors();
     }
     void displayErrors(){
       //If no error are found then nothing is displayed.
-      Enumeration<String> e = errors.elements();
       //In the first line, show the exact token that was parsed from
       //the URL.
-      if (e.hasMoreElements())
+      if (!errors.isEmpty())
         display(LocalizedResource.getMessage("TL_urlLabel1", "[", getToken(), "]"));
       //Show all errors.  More than one error can be found for an attribute.
-      while (e.hasMoreElements()){
-        String aString = e.nextElement();
+      for (String aString : errors) {
         displayIndented(aString);
       }
     }
-    void checkName( Vector validProps){
+    void checkName(List<String> validProps){
       if( validProps == null)
           return; // valid properties are unknown
       String anAtt = getName();
@@ -92,11 +85,11 @@ public class AttributeHolder {
         if (!validProps.contains(anAtt)) {
           //Check for case spelling of the name.
           if (validProps.contains(anAtt.toLowerCase(java.util.Locale.ENGLISH))) {
-            errors.addElement(LocalizedResource.getMessage("TL_incorCase"));
+            errors.add(LocalizedResource.getMessage("TL_incorCase"));
           }
           //Check if this is even a valid attribute name.
           else {
-            errors.addElement(LocalizedResource.getMessage("TL_unknownAtt"));
+            errors.add(LocalizedResource.getMessage("TL_unknownAtt"));
           }
         }
         else {
@@ -114,7 +107,7 @@ public class AttributeHolder {
         //Check all attribute that require a boolean.
         if (URLCheck.getBooleanAttributes().contains(anAtt)) {
           if (!checkBoolean(aValue)) {
-            errors.addElement(LocalizedResource.getMessage("TL_trueFalse"));
+            errors.add(LocalizedResource.getMessage("TL_trueFalse"));
           }
         }
       }

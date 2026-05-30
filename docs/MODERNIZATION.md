@@ -55,3 +55,7 @@ The embedded engine no longer overrides `Object.finalize()` in `EmbedConnection`
 The modernization audit now separates production runtime modules from inherited tests, demos, and historical material. `./dev/modernization-audit.sh --verify` is the guardrail for the Java 21 cleanup track and currently enforces that production code has no `Object.finalize()` overrides, no direct JVM security-manager inspection calls, and no privileged-action wrappers.
 
 The next cleanup target after finalizers and SecurityManager-era code is synchronized legacy collection usage. `Vector` and `Hashtable` are still reported but not failed yet because those replacements require ownership and concurrency review.
+
+### Tools collection cleanup batch
+
+The first legacy collection cleanup batch removes low-risk `Vector` usage from ij URL validation and JDBC result display utilities. The active rule for collection modernization is to replace synchronized legacy collections only where ownership and synchronization behavior are clear; engine/store/compiler structures remain audit-only until reviewed in focused batches.

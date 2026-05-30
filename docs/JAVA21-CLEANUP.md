@@ -93,3 +93,7 @@ Verification mode now fails if production code reintroduces any of these Java 21
 - privileged-action cleanup wrappers
 
 This batch also removed stale Network Server localization messages that described installing or disabling a JVM SecurityManager. The inherited `-noSecurityManager` switch remains accepted as a no-op for compatibility, but the active Java 21 server startup path no longer exposes SecurityManager installation failures or authentication warnings tied to that removed mechanism.
+
+### Tools collection cleanup batch
+
+The first synchronized-collection cleanup batch targets low-risk tooling code rather than engine runtime internals. URL validation and JDBC result display utilities now use `ArrayList`/`List` where no external synchronization or legacy `Vector` API contract is required. Internal ij result contracts which still expose `Vector` remain unchanged until a separate compatibility review.

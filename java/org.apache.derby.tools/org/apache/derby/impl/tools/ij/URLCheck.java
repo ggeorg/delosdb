@@ -23,9 +23,9 @@ package org.apache.derby.impl.tools.ij;
 
 import org.apache.derby.shared.common.reference.Attribute;
 import org.apache.derby.iapi.tools.i18n.LocalizedResource;
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
-import java.util.Enumeration;
 import java.util.StringTokenizer;
 import java.lang.reflect.Field;
 import java.sql.SQLException;
@@ -42,11 +42,11 @@ import java.sql.SQLException;
 
 public class URLCheck {
 
-  private   Vector<AttributeHolder> attributes;
-  private   static Vector<String> booleanAttributes;
+  private   List<AttributeHolder> attributes;
+  private   static List<String> booleanAttributes;
   //Need so that AppUI class does not get garbage collected
   private   LocalizedResource langUtil = LocalizedResource.getInstance();
-  private   Vector<String> validProps;
+  private   List<String> validProps;
 
   public URLCheck(String anURL) {
 
@@ -70,9 +70,7 @@ public class URLCheck {
     }
   }
   public void check(){
-    Enumeration<AttributeHolder> e = attributes.elements();
-    while (e.hasMoreElements()) {
-      AttributeHolder anAttribute = e.nextElement();
+    for (AttributeHolder anAttribute : attributes) {
       //The check for duplicate must be done at the URLCheck level
       //and not by each specific attribute.  Only URLCheck knowns about
       //all of the attributes and names.
@@ -82,9 +80,7 @@ public class URLCheck {
     }
   }
   public void checkForDuplicate(AttributeHolder anAttribute){
-    Enumeration<AttributeHolder> e = attributes.elements();
-    while (e.hasMoreElements()) {
-      AttributeHolder aHolder = e.nextElement();
+    for (AttributeHolder aHolder : attributes) {
       //If a duplicate is found, make sure that the message is only shown
       //once for each attribute.
       if (anAttribute != aHolder && anAttribute.getName().equals(aHolder.getName())) {
@@ -113,7 +109,7 @@ public class URLCheck {
 		
 		//Parse the url into attributes and put them in a Properties object.
 		StringTokenizer st = new StringTokenizer(url.substring(protocol.length()), ";:\"");
-		attributes = new Vector<AttributeHolder>();
+		attributes = new ArrayList<AttributeHolder>();
 		while (st.hasMoreTokens()) {
       AttributeHolder anAttribute = new AttributeHolder();
       String anAtt = "";
@@ -133,31 +129,31 @@ public class URLCheck {
       anAttribute.setName(anAtt);
       anAttribute.setValue(aValue);
       anAttribute.setToken(aToken);
-      attributes.addElement(anAttribute);
+      attributes.add(anAttribute);
       props.put(anAtt, aToken);
 	}
 		return props;
 	}
 
-  public static Vector<String> getBooleanAttributes(){
+  public static List<String> getBooleanAttributes(){
     if (booleanAttributes == null) {
-      booleanAttributes = new Vector<String>();
-		  booleanAttributes.addElement(Attribute.DATA_ENCRYPTION);
-		  booleanAttributes.addElement(Attribute.CREATE_ATTR);
-		  booleanAttributes.addElement(Attribute.SHUTDOWN_ATTR);
-		  booleanAttributes.addElement(Attribute.UPGRADE_ATTR);
+      booleanAttributes = new ArrayList<String>();
+		  booleanAttributes.add(Attribute.DATA_ENCRYPTION);
+		  booleanAttributes.add(Attribute.CREATE_ATTR);
+		  booleanAttributes.add(Attribute.SHUTDOWN_ATTR);
+		  booleanAttributes.add(Attribute.UPGRADE_ATTR);
     }
     return booleanAttributes;
   }
 
-    private static Vector<String> validDerbyProps;
-    private Vector<String> getValidDerbyProps()
+    private static List<String> validDerbyProps;
+    private List<String> getValidDerbyProps()
     {
         if( validDerbyProps == null)
         {
             try
             {
-                Vector<String> props = new Vector<String>();
+                List<String> props = new ArrayList<String>();
                 Class att = Attribute.class;
                 //Use reflection to get the list of valid keys from the Attribute class.
                 //The Attribute class is an interface and therefore all the field
@@ -166,7 +162,7 @@ public class URLCheck {
                 for (int i = 0; i < fields.length; i++)
                 {
                     Field aField = (Field)fields[i];
-                    props.addElement( (String) aField.get(att));
+                    props.add((String) aField.get(att));
                 }
                 validDerbyProps = props;
             }
