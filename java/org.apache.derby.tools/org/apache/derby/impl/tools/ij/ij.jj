@@ -44,8 +44,6 @@ import org.apache.derby.iapi.tools.i18n.LocalizedResource;
 import org.apache.derby.shared.common.info.JVMInfo;
 
 import java.lang.reflect.*;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
@@ -138,17 +136,11 @@ class ij {
 	   (system properties). Used when ij is being run
 	   as a command line program.
 	*/
-    // AccessController.doPrivileged() deprecated for removal by JEP 411 https://openjdk.java.net/jeps/411
-    @SuppressWarnings("removal")
 	void initFromEnvironment() {
 
 		// load all protocols specified via properties
 		//
-        Properties p = AccessController.doPrivileged(new PrivilegedAction<Properties>() {
-          	public Properties run() {
-              	return System.getProperties();
-            }
-        });
+        Properties p = System.getProperties();
         urlCheck = p.getProperty(URLCHECK_PROPERTY);
 		protocol = p.getProperty(PROTOCOL_PROPERTY);
 		String framework_property = p.getProperty(FRAMEWORK_PROPERTY);
