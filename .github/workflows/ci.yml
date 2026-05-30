@@ -30,6 +30,9 @@ jobs:
       - name: Verify release artifacts
         run: ./gradlew --no-daemon verifyReleaseArtifacts
 
+      - name: Verify centralized Gradle conventions
+        run: ./gradlew --no-daemon verifyCentralizedReleaseMetadata verifyCentralizedJavaCompileConventions
+
       - name: Verify artifact inventory
         run: ./gradlew --no-daemon verifyArtifactInventory printArtifactInventory
 

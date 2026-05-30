@@ -102,3 +102,8 @@ Each runtime jar includes DelosDB manifest metadata and the required legal attri
 ## Shared Gradle release metadata
 
 Runtime jar subprojects now use shared root-level helpers for legal files and manifest attributes. This keeps `LICENSE`, `NOTICE`, `NOTICE-FORK.md`, DelosDB version metadata, Apache Derby base-version metadata, build revision metadata, and JDK metadata consistent across all assembled jars.
+
+### Gradle convention ownership
+
+The root build centralizes shared Java compiler settings and release metadata. Extracted subprojects own their compile and jar tasks, but they consume the common `delosdbConfigureJavaCompile` and runtime manifest helpers from the root build so Java release, encoding, module-path handling, and jar metadata stay consistent.
+

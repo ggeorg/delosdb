@@ -110,10 +110,10 @@ def externalModulePath = files(
 
 def javaccClasspath = files('tools/java/javacc.jar')
 
-def configureJavaCompile = { JavaCompile task, List<Object> modulePathEntries = [] ->
+ext.delosdbConfigureJavaCompile = { JavaCompile task, Collection<Object> modulePathEntries = [] ->
     // Gradle 8.14 validates custom JavaCompile tasks even when --release is set.
-    // Because this bootstrap build intentionally avoids the java plugin for now,
-    // we must set these properties explicitly on every JavaCompile task.
+    // Because DelosDB still uses custom JavaCompile tasks while the legacy tree is
+    // being split into Gradle subprojects, keep the compiler contract centralized.
     task.sourceCompatibility = javaRelease.toString()
     task.targetCompatibility = javaRelease.toString()
     task.options.release = javaRelease
@@ -155,7 +155,7 @@ derby.product.file=${productFile}
 tasks.register('compileOsgiStubs', JavaCompile) {
     source = fileTree('java/stubs/felix') { include '**/*.java' }
     destinationDirectory = moduleClassDir(moduleNames.osgi)
-    configureJavaCompile(delegate)
+    rootProject.ext.delosdbConfigureJavaCompile(delegate)
 }
 
 tasks.register('compileDerbyBuildTools', JavaCompile) {
@@ -989,6 +989,42 @@ tasks.register('verifyExtractedEngineProject') {
     }
 }
 
+tasks.register('verifyCentralizedJavaCompileConventions') {
+    group = 'verification'
+    description = 'Ensures extracted subprojects use the shared DelosDB JavaCompile convention helper.'
+    def buildFiles = files(
+            'build.gradle',
+            'delosdb-commons/build.gradle',
+            'delosdb-client/build.gradle',
+            'delosdb-engine/build.gradle',
+            'delosdb-tools/build.gradle',
+            'delosdb-runner/build.gradle',
+            'delosdb-server/build.gradle',
+            'delosdb-optionaltools/build.gradle'
+    )
+    inputs.files(buildFiles)
+    doLast {
+        def rootBuild = file('build.gradle').text
+        if (!rootBuild.contains('ext.delosdbConfigureJavaCompile')) {
+            throw new GradleException('Root build does not define ext.delosdbConfigureJavaCompile')
+        }
+        buildFiles.files.findAll { it.path != file('build.gradle').path }.each { buildFile ->
+            def buildScript = buildFile.text
+            if (!buildScript.contains('rootProject.ext.delosdbConfigureJavaCompile')) {
+                throw new GradleException("${buildFile} does not use rootProject.ext.delosdbConfigureJavaCompile")
+            }
+            if (buildScript.contains('def configureJavaCompile')) {
+                throw new GradleException("${buildFile} still declares a local configureJavaCompile helper")
+            }
+            ['def javaRelease =', 'sourceCompatibility =', 'targetCompatibility =', 'options.release =', 'options.encoding ='].each { duplicatedSetting ->
+                if (buildScript.contains(duplicatedSetting)) {
+                    throw new GradleException("${buildFile} still duplicates JavaCompile setting '${duplicatedSetting}'")
+                }
+            }
+        }
+    }
+}
+
 tasks.register('verifyCentralizedReleaseMetadata') {
     group = 'verification'
     description = 'Ensures extracted runtime jar subprojects use the shared DelosDB release metadata helpers.'
@@ -1051,7 +1087,7 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 
 tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface',
-            'verifyCentralizedReleaseMetadata', 'verifyArtifactInventory', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
+            'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
             'verifyExtractedServerProject', 'verifyExtractedEngineProject'
 }

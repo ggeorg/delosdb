@@ -163,3 +163,8 @@ All planned compile-owner subprojects and main runtime jar owners have now been 
 ## Current cleanup phase
 
 Runtime jar-owning subprojects now use centralized release metadata helpers from the root project. The next cleanup target is shared Java compile configuration, followed by shared resource/message-generation ownership.
+
+
+## Convention cleanup checkpoint
+
+After compile and jar ownership extraction, shared Java compile settings and runtime jar metadata are centralized in the root build. The next cleanup step is to continue reducing duplicated Gradle code without changing source layout or public artifact names.

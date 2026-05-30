@@ -7,7 +7,6 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-def javaRelease = rootProject.ext.javaRelease as Integer
 def moduleName = 'org.apache.derby.tools'
 def sourceRoot = rootProject.file('java/org.apache.derby.tools')
 def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
@@ -19,24 +18,6 @@ def javaccClasspath = rootProject.files('tools/java/javacc.jar')
 
 def replaceInFile = { File file, Closure<String> transform ->
     file.text = transform(file.text)
-}
-
-def configureJavaCompile = { JavaCompile task ->
-    task.sourceCompatibility = javaRelease.toString()
-    task.targetCompatibility = javaRelease.toString()
-    task.options.release = javaRelease
-    task.options.encoding = 'UTF-8'
-    task.options.deprecation = false
-    task.options.warnings = true
-    task.classpath = files()
-    task.doFirst {
-        task.options.compilerArgs.addAll(['--module-path', files(
-                commonsModuleClassDir,
-                engineModuleClassDir,
-                clientModuleClassDir
-        ).asPath])
-        task.options.compilerArgs.add('-Xlint:deprecation')
-    }
 }
 
 tasks.register('generateIjParsers') {
@@ -90,7 +71,11 @@ tasks.register('compileDerbyTools', JavaCompile) {
             fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
     )
     destinationDirectory = moduleClassDir
-    configureJavaCompile(delegate)
+    rootProject.ext.delosdbConfigureJavaCompile(delegate, [
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir
+    ])
 }
 
 tasks.register('classes') {

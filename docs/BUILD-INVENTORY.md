@@ -172,3 +172,13 @@ Verification command:
 ## Shared Gradle conventions baseline
 
 Runtime jar-owning subprojects now share root-level release metadata helpers for `META-INF` legal files and manifest attributes. This reduces duplicated build logic before we centralize Java compile conventions and shared resource generation.
+
+
+## Centralized Gradle helpers
+
+The active build now centralizes two cross-cutting concerns in the root project:
+
+- `delosdbConfigureJavaCompile(...)` for JavaCompile defaults and JPMS module-path wiring.
+- `delosdbRuntimeJarAttributes(...)` plus `delosdbLegalFiles` for runtime jar release metadata and legal attribution.
+
+Subprojects remain artifact owners, but they should not duplicate these conventions locally.

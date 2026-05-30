@@ -7,7 +7,6 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-def javaRelease = rootProject.ext.javaRelease as Integer
 def moduleName = 'org.apache.derby.optionaltools'
 def sourceRoot = rootProject.file('java/org.apache.derby.optionaltools')
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
@@ -21,30 +20,16 @@ def externalModulePath = rootProject.files(
         'tools/java/lucene-queryparser.jar'
 )
 
-def configureJavaCompile = { JavaCompile task ->
-    task.sourceCompatibility = javaRelease.toString()
-    task.targetCompatibility = javaRelease.toString()
-    task.options.release = javaRelease
-    task.options.encoding = 'UTF-8'
-    task.options.deprecation = false
-    task.options.warnings = true
-    task.classpath = files()
-    task.doFirst {
-        task.options.compilerArgs.addAll(['--module-path', files(
-                commonsModuleClassDir,
-                engineModuleClassDir,
-                toolsModuleClassDir,
-                externalModulePath
-        ).asPath])
-        task.options.compilerArgs.add('-Xlint:deprecation')
-    }
-}
-
 tasks.register('compileDerbyOptionalTools', JavaCompile) {
     dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine', ':delosdb-tools:compileDerbyTools'
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = moduleClassDir
-    configureJavaCompile(delegate)
+    rootProject.ext.delosdbConfigureJavaCompile(delegate, [
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            toolsModuleClassDir,
+            externalModulePath
+    ])
 }
 
 tasks.register('classes') {

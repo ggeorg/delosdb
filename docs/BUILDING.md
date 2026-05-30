@@ -154,3 +154,8 @@ Verification command:
 ## Shared release metadata helpers
 
 The root build defines the shared legal-file set and runtime jar manifest attributes. Extracted jar-owning subprojects consume these helpers instead of duplicating release metadata locally. The `verifyCentralizedReleaseMetadata` task guards this convention.
+
+
+## Shared Gradle conventions
+
+The root build owns shared compiler conventions for all extracted subprojects. Subprojects should call `rootProject.ext.delosdbConfigureJavaCompile(...)` instead of declaring local JavaCompile defaults. This keeps the Java release, encoding, warning policy, classpath clearing, and JPMS module-path handling consistent.
