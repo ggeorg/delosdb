@@ -22,6 +22,7 @@
 package org.apache.derby.optional.lucene;
 
 import java.io.IOException;
+import java.lang.ref.Cleaner;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.sql.Connection;
@@ -79,6 +80,8 @@ class LuceneQueryVTI extends StringColumnVTI
     //
     /////////////////////////////////////////////////////////////////////
 
+    private static final Cleaner INDEX_READER_CLEANER = Cleaner.create();
+
     // constructor args
     private Connection  _connection;
     private String  _queryText;
@@ -91,6 +94,8 @@ class LuceneQueryVTI extends StringColumnVTI
     
 	private ScoreDoc[] _hits;
 	private IndexReader _indexReader;
+    private IndexReaderCleanup _indexReaderCleanup;
+    private Cleaner.Cleanable _indexReaderCleanable;
 	private IndexSearcher _searcher;
 	private int _hitIndex = -1;
 
@@ -398,22 +403,37 @@ class LuceneQueryVTI extends StringColumnVTI
         return _wasNull;
     }
     
-	/**
-	 * Be sure to close the Lucene IndexReader
-	 */
-    //
-    // This method in java.lang.Object was deprecated as of build 167
-    // of JDK 9. See DERBY-6932.
-    //
-    @SuppressWarnings({"deprecation","removal"})
-    protected void finalize()
+    /**
+     * Cleanup action registered with {@link Cleaner} for callers which forget
+     * to close the VTI explicitly. The explicit close path still reports I/O
+     * failures to the caller; the cleaner path only logs them because it runs
+     * after the VTI is no longer reachable.
+     */
+    private static final class IndexReaderCleanup implements Runnable
     {
-		try {
-			if ( _indexReader != null ) { _indexReader.close(); }
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-	}
+        private IndexReader indexReader;
+
+        IndexReaderCleanup( IndexReader indexReader )
+        {
+            this.indexReader = indexReader;
+        }
+
+        synchronized void close()
+            throws IOException
+        {
+            if ( indexReader == null ) { return; }
+
+            IndexReader reader = indexReader;
+            indexReader = null;
+            reader.close();
+        }
+
+        public void run()
+        {
+            try { close(); }
+            catch (IOException e) { e.printStackTrace(); }
+        }
+    }
 
 	private void closeReader()
         throws SQLException
@@ -421,11 +441,15 @@ class LuceneQueryVTI extends StringColumnVTI
 		if ( _indexReader == null ) { return; }
         
 		try {
-			_indexReader.close();
+            if ( _indexReaderCleanup != null ) { _indexReaderCleanup.close(); }
+            else { _indexReader.close(); }
 		}
         catch (IOException e) { throw ToolUtilities.wrap( e ); }
         finally
         {
+            if ( _indexReaderCleanable != null ) { _indexReaderCleanable.clean(); }
+            _indexReaderCleanable = null;
+            _indexReaderCleanup = null;
             _indexReader = null;
         }
 	}
@@ -473,6 +497,8 @@ class LuceneQueryVTI extends StringColumnVTI
             vetLuceneVersion( indexProperties.getProperty( LuceneSupport.LUCENE_VERSION ) );
 
             _indexReader = getIndexReader( derbyLuceneDir );
+            _indexReaderCleanup = new IndexReaderCleanup( _indexReader );
+            _indexReaderCleanable = INDEX_READER_CLEANER.register( this, _indexReaderCleanup );
             _searcher = new IndexSearcher( _indexReader );
 
             Query luceneQuery = qp.parse( _queryText );
