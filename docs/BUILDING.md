@@ -129,7 +129,7 @@ This is still a conservative baseline. Package names remain compatible with Apac
 
 `delosdb-client` is the second extracted Gradle subproject. It compiles the inherited `org.apache.derby.client` JPMS module from `java/org.apache.derby.client` and writes its class output under `delosdb-client/build/classes/modules/org.apache.derby.client`.
 
-The root build still owns jar assembly and shared resource generation for now. Source files have not been moved yet; these patches extract build ownership first.
+The root build still owns shared resource generation and most jar assembly for now. `delosdb-commons` owns `derbyshared.jar`; source files have not been moved yet. These patches extract build and artifact ownership incrementally.
 
 Verification command:
 
@@ -148,4 +148,4 @@ Verification command:
 
 ## Extracted engine subproject
 
-`delosdb-engine` is the seventh extracted Gradle subproject. It owns SQL parser generation and compilation of the inherited `org.apache.derby.engine` JPMS module from `java/org.apache.derby.engine`, writing class output under `delosdb-engine/build/classes/modules/org.apache.derby.engine`. The root build still owns shared resource processing, message splitting, class-size catalog generation, and jar assembly until those cross-module concerns are extracted in a later cleanup.
+`delosdb-engine` is the seventh extracted Gradle subproject. It owns SQL parser generation and compilation of the inherited `org.apache.derby.engine` JPMS module from `java/org.apache.derby.engine`, writing class output under `delosdb-engine/build/classes/modules/org.apache.derby.engine`. The root build still owns shared resource processing, message splitting, and most jar assembly until those cross-module concerns are extracted in later cleanup patches. `delosdb-commons` now owns `derbyshared.jar`.

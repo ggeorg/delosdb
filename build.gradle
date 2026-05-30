@@ -72,6 +72,9 @@ def buildNumber = providers.provider {
     }
 }
 
+ext.buildNumberProvider = buildNumber
+ext.derbyCompatibilityVersion = derbyCompatibilityVersion
+
 def externalModulePath = files(
         'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
         'tools/java/json_simple-1.1.jar',
@@ -536,8 +539,13 @@ tasks.register('compileAll') {
     dependsOn runtimeBuildTasks
 }
 
+tasks.register('derbySharedJar') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-commons runtime jar task.'
+    dependsOn ':delosdb-commons:derbySharedJar'
+}
+
 [
-        [name: 'derbySharedJar', moduleName: moduleNames.commons, archive: 'derbyshared.jar'],
         [name: 'derbyJar', moduleName: moduleNames.engine, archive: 'derby.jar'],
         [name: 'derbyClientJar', moduleName: moduleNames.client, archive: 'derbyclient.jar'],
         [name: 'derbyToolsJar', moduleName: moduleNames.tools, archive: 'derbytools.jar'],
@@ -777,7 +785,7 @@ tasks.register('verifyArtifactInventory') {
 }
 
 tasks.register('verifyExtractedCommonsProject') {
-    dependsOn ':delosdb-commons:compileDerbyCommons'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-commons:derbySharedJar'
     group = 'verification'
     description = 'Verifies that the first extracted Gradle subproject owns the commons compile lifecycle.'
     inputs.file('settings.gradle')
@@ -792,6 +800,13 @@ tasks.register('verifyExtractedCommonsProject') {
         }
         if (commonsProject.tasks.findByName('compileDerbyCommons') == null) {
             throw new GradleException('Missing :delosdb-commons:compileDerbyCommons')
+        }
+        if (commonsProject.tasks.findByName('derbySharedJar') == null) {
+            throw new GradleException('Missing :delosdb-commons:derbySharedJar')
+        }
+        def commonsJar = layout.buildDirectory.file('libs/derbyshared.jar').get().asFile
+        if (!commonsJar.isFile()) {
+            throw new GradleException("Missing commons runtime jar owned by :delosdb-commons: ${commonsJar}")
         }
         def commonsOutput = moduleClassDir(moduleNames.commons).get().asFile
         if (!commonsOutput.isDirectory()) {

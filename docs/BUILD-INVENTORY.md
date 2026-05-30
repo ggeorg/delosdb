@@ -150,7 +150,7 @@ This guardrail should stay green before and after each module extraction.
 
 `delosdb-runner` is the fourth extracted Gradle subproject. It compiles the inherited `org.apache.derby.runner` JPMS module from `java/org.apache.derby.runner` into `delosdb-runner/build/classes/modules/org.apache.derby.runner`.
 
-The root build consumes both outputs for downstream module compilation and jar assembly. Source files have not been moved yet; these patches extract build ownership first.
+The root build consumes both outputs for downstream module compilation. `delosdb-commons` now owns `derbyshared.jar`; the root still coordinates the remaining runtime jars. Source files have not been moved yet; these patches extract build and artifact ownership incrementally.
 
 Verification command:
 
@@ -165,4 +165,4 @@ Verification command:
 
 `delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` and writes its class output under `delosdb-server/build/classes/modules/org.apache.derby.server`.
 
-`delosdb-engine` is the seventh extracted Gradle subproject. It owns `generateSqlParser`, `compileDerbyEngine`, and `compileClassSizeCatalog` while the root build still coordinates shared resource processing, message splitting, and runtime jar assembly.
+`delosdb-engine` is the seventh extracted Gradle subproject. It owns `generateSqlParser`, `compileDerbyEngine`, and `compileClassSizeCatalog` while the root build still coordinates shared resource processing, message splitting, and non-commons runtime jar assembly.
