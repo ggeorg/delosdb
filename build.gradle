@@ -31,6 +31,9 @@ def moduleClassDir = { String moduleName ->
     if (moduleName == moduleNames.commons) {
         return project(':delosdb-commons').layout.buildDirectory.dir("classes/modules/${moduleName}")
     }
+    if (moduleName == moduleNames.engine) {
+        return project(':delosdb-engine').layout.buildDirectory.dir("classes/modules/${moduleName}")
+    }
     if (moduleName == moduleNames.client) {
         return project(':delosdb-client').layout.buildDirectory.dir("classes/modules/${moduleName}")
     }
@@ -140,56 +143,22 @@ tasks.register('compileDerbyCommons') {
 }
 
 
-tasks.register('generateSqlParser', JavaExec) {
-    def outputDir = generatedSourceDir(moduleNames.engine).map {
-        it.dir('org/apache/derby/impl/sql/compile')
-    }
-    inputs.file('java/org.apache.derby.engine/org/apache/derby/impl/sql/compile/sqlgrammar.jj')
-    outputs.dir(outputDir)
-    classpath = javaccClasspath
-    mainClass = 'javacc'
-    workingDir = file('java/org.apache.derby.engine/org/apache/derby/impl/sql/compile')
-    args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'sqlgrammar.jj'
-    doFirst {
-        delete outputDir
-        outputDir.get().asFile.mkdirs()
-    }
-    doLast {
-        ['CharStream.java', 'ParseException.java', 'Token.java'].each {
-            delete new File(outputDir.get().asFile, it)
-        }
-        ['SQLParser.java', 'SQLParserConstants.java', 'SQLParserTokenManager.java', 'TokenMgrError.java'].each {
-            def generated = new File(outputDir.get().asFile, it)
-            if (generated.exists()) {
-                replaceInFile(generated) { text -> text.replaceAll('(?m)^public (class|interface)', '$1') }
-            }
-        }
-        def parser = new File(outputDir.get().asFile, 'SQLParser.java')
-        if (parser.exists()) {
-            replaceInFile(parser) { text -> text.replace('tokenImage', 'SQLParserConstants.tokenImage') }
-        }
-    }
+tasks.register('generateSqlParser') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-engine SQL parser generation task.'
+    dependsOn ':delosdb-engine:generateSqlParser'
 }
-
 tasks.register('generateIjParsers') {
     group = 'build'
     description = 'Compatibility alias for the extracted delosdb-tools ij parser generation task.'
     dependsOn ':delosdb-tools:generateIjParsers'
 }
 
-tasks.register('compileDerbyEngine', JavaCompile) {
-    dependsOn 'compileOsgiStubs', 'compileDerbyCommons', 'generateSqlParser'
-    source = files(
-            fileTree('java/org.apache.derby.engine') { include '**/*.java' },
-            fileTree(generatedSourceDir(moduleNames.engine).get().asFile) { include '**/*.java' }
-    )
-    destinationDirectory = moduleClassDir(moduleNames.engine)
-    configureJavaCompile(delegate, [
-            moduleClassDir(moduleNames.osgi),
-            moduleClassDir(moduleNames.commons)
-    ])
+tasks.register('compileDerbyEngine') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-engine compile task.'
+    dependsOn ':delosdb-engine:compileDerbyEngine'
 }
-
 tasks.register('compileDerbyClient') {
     group = 'build'
     description = 'Compatibility alias for the extracted delosdb-client compile task.'
@@ -272,19 +241,11 @@ tasks.register('generateClassSizeCatalog') {
     }
 }
 
-tasks.register('compileClassSizeCatalog', JavaCompile) {
-    dependsOn 'generateClassSizeCatalog'
-    source = files(generatedSourceDir(moduleNames.engine).map {
-        it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
-    })
-    destinationDirectory = moduleClassDir(moduleNames.engine)
-    configureJavaCompile(delegate, [
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            moduleClassDir(moduleNames.osgi)
-    ])
+tasks.register('compileClassSizeCatalog') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-engine class-size catalog compile task.'
+    dependsOn ':delosdb-engine:compileClassSizeCatalog'
 }
-
 tasks.register('processDerbyResources') {
     dependsOn 'compileDerbyCommons', 'compileDerbyEngine', 'compileDerbyClient', 'compileDerbyTools',
             'compileDerbyServer', 'compileDerbyOptionalTools', 'compileDerbyRunner'
@@ -975,6 +936,43 @@ tasks.register('verifyExtractedServerProject') {
 }
 
 
+
+tasks.register('verifyExtractedEngineProject') {
+    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine:compileClassSizeCatalog'
+    group = 'verification'
+    description = 'Verifies that the final extracted Gradle subproject owns the embedded engine compile lifecycle.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-engine/build.gradle')
+    doLast {
+        def engineProject = findProject(':delosdb-engine')
+        if (engineProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-engine')
+        }
+        if (engineProject.tasks.findByName('generateSqlParser') == null) {
+            throw new GradleException('Missing :delosdb-engine:generateSqlParser')
+        }
+        if (engineProject.tasks.findByName('compileDerbyEngine') == null) {
+            throw new GradleException('Missing :delosdb-engine:compileDerbyEngine')
+        }
+        if (engineProject.tasks.findByName('compileClassSizeCatalog') == null) {
+            throw new GradleException('Missing :delosdb-engine:compileClassSizeCatalog')
+        }
+        def engineOutput = moduleClassDir(moduleNames.engine).get().asFile
+        if (!engineOutput.isDirectory()) {
+            throw new GradleException("Missing compiled engine output directory: ${engineOutput}")
+        }
+        def moduleInfo = new File(engineOutput, 'module-info.class')
+        if (!moduleInfo.isFile()) {
+            throw new GradleException("Missing engine module-info.class: ${moduleInfo}")
+        }
+        def catalogImpl = new File(engineOutput, 'org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.class')
+        if (!catalogImpl.isFile()) {
+            throw new GradleException("Missing compiled ClassSizeCatalogImpl.class: ${catalogImpl}")
+        }
+        println "Verified extracted engine subproject output: ${engineOutput}"
+    }
+}
+
 tasks.register('verifyGradleOnlyPublicSurface') {
     group = 'verification'
     description = 'Ensures public build instructions expose only the Gradle build path.'
@@ -1010,7 +1008,7 @@ tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface',
             'verifyArtifactInventory', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
-            'verifyExtractedServerProject'
+            'verifyExtractedServerProject', 'verifyExtractedEngineProject'
 }
 
 tasks.register('test') {

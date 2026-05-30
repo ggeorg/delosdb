@@ -146,6 +146,7 @@ Verification command:
 ./gradlew :delosdb-tools:compileDerbyTools verifyExtractedToolsProject
 ./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedRunnerProject
 ./gradlew :delosdb-optionaltools:compileDerbyOptionalTools verifyExtractedOptionalToolsProject
+./gradlew :delosdb-engine:compileDerbyEngine verifyExtractedEngineProject
 ./gradlew :delosdb-server:compileDerbyServer verifyExtractedServerProject
 ```
 
@@ -161,4 +162,6 @@ The build ownership extraction currently includes:
 5. `delosdb-optionaltools`
 6. `delosdb-server`
 
-The next extraction target is `delosdb-engine`. It remains last because it has the largest generated-source and resource surface.
+All planned compile-owner subprojects have now been extracted. The next phase is to move shared resource processing, message splitting, and jar assembly into the appropriate subprojects.
+
+`delosdb-engine` is the seventh extracted Gradle subproject. It owns SQL parser generation, `compileDerbyEngine`, and the class-size catalog compile step for the inherited embedded engine module.

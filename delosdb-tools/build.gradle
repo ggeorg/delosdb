@@ -14,7 +14,7 @@ def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleN
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def clientModuleClassDir = rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client')
-def engineModuleClassDir = rootProject.layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
+def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def javaccClasspath = rootProject.files('tools/java/javacc.jar')
 
 def replaceInFile = { File file, Closure<String> transform ->
@@ -84,7 +84,7 @@ tasks.register('generateIjParsers') {
 }
 
 tasks.register('compileDerbyTools', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':compileDerbyEngine', ':delosdb-client:compileDerbyClient', 'generateIjParsers'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine', ':delosdb-client:compileDerbyClient', 'generateIjParsers'
     source = files(
             fileTree(sourceRoot) { include '**/*.java' },
             fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }

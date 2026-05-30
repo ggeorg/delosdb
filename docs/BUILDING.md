@@ -138,9 +138,14 @@ Verification command:
 ./gradlew :delosdb-client:compileDerbyClient
 ./gradlew :delosdb-tools:compileDerbyTools
 ./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedClientProject
+./gradlew :delosdb-engine:compileDerbyEngine verifyExtractedEngineProject
 ./gradlew :delosdb-server:compileDerbyServer verifyExtractedServerProject
 ./gradlew verifyExtractedToolsProject
 ./gradlew verifyExtractedRunnerProject
 ```
 
 `delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` and writes its class output under `delosdb-server/build/classes/modules/org.apache.derby.server`.
+
+## Extracted engine subproject
+
+`delosdb-engine` is the seventh extracted Gradle subproject. It owns SQL parser generation and compilation of the inherited `org.apache.derby.engine` JPMS module from `java/org.apache.derby.engine`, writing class output under `delosdb-engine/build/classes/modules/org.apache.derby.engine`. The root build still owns shared resource processing, message splitting, class-size catalog generation, and jar assembly until those cross-module concerns are extracted in a later cleanup.

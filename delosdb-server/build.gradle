@@ -12,7 +12,7 @@ def moduleName = 'org.apache.derby.server'
 def sourceRoot = rootProject.file('java/org.apache.derby.server')
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def engineModuleClassDir = rootProject.layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
+def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def toolsModuleClassDir = rootProject.project(':delosdb-tools').layout.buildDirectory.dir('classes/modules/org.apache.derby.tools')
 def externalModulePath = rootProject.files(
         'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
@@ -42,7 +42,7 @@ def configureJavaCompile = { JavaCompile task ->
 }
 
 tasks.register('compileDerbyServer', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':compileDerbyEngine', ':delosdb-tools:compileDerbyTools'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine', ':delosdb-tools:compileDerbyTools'
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = moduleClassDir
     configureJavaCompile(delegate)

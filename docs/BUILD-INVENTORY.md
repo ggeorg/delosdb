@@ -22,7 +22,7 @@ This file records the current Gradle build map so the fork can move from a root-
 | Gradle task | JPMS module | Source root | Output |
 |---|---|---|---|
 | `compileDerbyCommons` | `org.apache.derby.commons` | `java/org.apache.derby.commons` | `delosdb-commons/build/classes/modules/org.apache.derby.commons` |
-| `compileDerbyEngine` | `org.apache.derby.engine` | `java/org.apache.derby.engine` | `build/classes/modules/org.apache.derby.engine` |
+| `compileDerbyEngine` | `org.apache.derby.engine` | `java/org.apache.derby.engine` | `delosdb-engine/build/classes/modules/org.apache.derby.engine` |
 | `compileDerbyClient` | `org.apache.derby.client` | `java/org.apache.derby.client` | `delosdb-client/build/classes/modules/org.apache.derby.client` |
 | `compileDerbyTools` | `org.apache.derby.tools` | `java/org.apache.derby.tools` | `delosdb-tools/build/classes/modules/org.apache.derby.tools` |
 | `compileDerbyServer` | `org.apache.derby.server` | `java/org.apache.derby.server` | `delosdb-server/build/classes/modules/org.apache.derby.server` |
@@ -159,7 +159,10 @@ Verification command:
 ./gradlew :delosdb-client:compileDerbyClient verifyExtractedClientProject
 ./gradlew :delosdb-tools:compileDerbyTools verifyExtractedToolsProject
 ./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedRunnerProject
+./gradlew :delosdb-engine:compileDerbyEngine verifyExtractedEngineProject
 ./gradlew :delosdb-server:compileDerbyServer verifyExtractedServerProject
 ```
 
 `delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` and writes its class output under `delosdb-server/build/classes/modules/org.apache.derby.server`.
+
+`delosdb-engine` is the seventh extracted Gradle subproject. It owns `generateSqlParser`, `compileDerbyEngine`, and `compileClassSizeCatalog` while the root build still coordinates shared resource processing, message splitting, and runtime jar assembly.

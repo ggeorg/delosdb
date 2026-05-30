@@ -1,0 +1,104 @@
+plugins {
+    id 'base'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = rootProject.version
+group = rootProject.group
+
+def javaRelease = rootProject.ext.javaRelease as Integer
+def moduleName = 'org.apache.derby.engine'
+def sourceRoot = rootProject.file('java/org.apache.derby.engine')
+def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
+def rootGeneratedSourceRoot = rootProject.layout.buildDirectory.dir("generated/sources/${moduleName}")
+def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
+def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def osgiModuleClassDir = rootProject.layout.buildDirectory.dir('classes/modules/org.osgi.framework')
+def javaccClasspath = rootProject.files('tools/java/javacc.jar')
+
+def replaceInFile = { File file, Closure<String> transform ->
+    file.text = transform(file.text)
+}
+
+def configureJavaCompile = { JavaCompile task, List<Object> modulePathEntries = [] ->
+    task.sourceCompatibility = javaRelease.toString()
+    task.targetCompatibility = javaRelease.toString()
+    task.options.release = javaRelease
+    task.options.encoding = 'UTF-8'
+    task.options.deprecation = false
+    task.options.warnings = true
+    task.classpath = files()
+    task.doFirst {
+        def modulePath = files(modulePathEntries).asPath
+        if (modulePath) {
+            task.options.compilerArgs.addAll(['--module-path', modulePath])
+        }
+        task.options.compilerArgs.add('-Xlint:deprecation')
+    }
+}
+
+tasks.register('generateSqlParser', JavaExec) {
+    def outputDir = generatedSourceRoot.map {
+        it.dir('org/apache/derby/impl/sql/compile')
+    }
+    inputs.file(rootProject.file('java/org.apache.derby.engine/org/apache/derby/impl/sql/compile/sqlgrammar.jj'))
+    outputs.dir(outputDir)
+    classpath = javaccClasspath
+    mainClass = 'javacc'
+    workingDir = rootProject.file('java/org.apache.derby.engine/org/apache/derby/impl/sql/compile')
+    args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'sqlgrammar.jj'
+    doFirst {
+        delete outputDir
+        outputDir.get().asFile.mkdirs()
+    }
+    doLast {
+        ['CharStream.java', 'ParseException.java', 'Token.java'].each {
+            delete new File(outputDir.get().asFile, it)
+        }
+        ['SQLParser.java', 'SQLParserConstants.java', 'SQLParserTokenManager.java', 'TokenMgrError.java'].each {
+            def generated = new File(outputDir.get().asFile, it)
+            if (generated.exists()) {
+                replaceInFile(generated) { text -> text.replaceAll('(?m)^public (class|interface)', '$1') }
+            }
+        }
+        def parser = new File(outputDir.get().asFile, 'SQLParser.java')
+        if (parser.exists()) {
+            replaceInFile(parser) { text -> text.replace('tokenImage', 'SQLParserConstants.tokenImage') }
+        }
+    }
+}
+
+tasks.register('compileDerbyEngine', JavaCompile) {
+    dependsOn ':compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', 'generateSqlParser'
+    source = files(
+            fileTree(sourceRoot) { include '**/*.java' },
+            fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
+    )
+    destinationDirectory = moduleClassDir
+    configureJavaCompile(delegate, [
+            osgiModuleClassDir,
+            commonsModuleClassDir
+    ])
+}
+
+tasks.register('compileClassSizeCatalog', JavaCompile) {
+    dependsOn 'compileDerbyEngine', ':generateClassSizeCatalog'
+    source = files(rootGeneratedSourceRoot.map {
+        it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
+    })
+    destinationDirectory = moduleClassDir
+    configureJavaCompile(delegate, [
+            commonsModuleClassDir,
+            moduleClassDir,
+            osgiModuleClassDir
+    ])
+}
+
+tasks.register('classes') {
+    dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog'
+}
+
+tasks.named('assemble') {
+    dependsOn 'classes'
+}
