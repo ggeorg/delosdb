@@ -150,3 +150,7 @@ Verification command:
 ## Extracted engine subproject
 
 `delosdb-engine` is the seventh extracted Gradle subproject. It owns SQL parser generation, compilation of the inherited `org.apache.derby.engine` JPMS module, class-size catalog compilation, and `derby.jar` assembly. The root build still owns shared resource processing and message splitting until those cross-module concerns are extracted in later cleanup patches.
+
+## Shared release metadata helpers
+
+The root build defines the shared legal-file set and runtime jar manifest attributes. Extracted jar-owning subprojects consume these helpers instead of duplicating release metadata locally. The `verifyCentralizedReleaseMetadata` task guards this convention.

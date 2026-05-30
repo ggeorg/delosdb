@@ -124,3 +124,7 @@ Verification command:
 | `derbynet.jar` | `:delosdb-server` |
 | `derby.jar` | `:delosdb-engine` |
 | `osgi-framework-stub.jar` | root project, pending extraction decision |
+
+## Release metadata ownership
+
+All main runtime jar subprojects consume the root build's shared DelosDB release metadata helpers. This keeps legal attribution files and manifest identity metadata consistent while artifact ownership continues to move out of the root project.

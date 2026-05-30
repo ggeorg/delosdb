@@ -75,6 +75,31 @@ def buildNumber = providers.provider {
 ext.buildNumberProvider = buildNumber
 ext.derbyCompatibilityVersion = derbyCompatibilityVersion
 
+ext.delosdbLegalFiles = files(
+        file('LICENSE'),
+        file('NOTICE'),
+        file('NOTICE-FORK.md')
+)
+
+ext.delosdbRuntimeJarAttributes = { String title ->
+    [
+            'Implementation-Title'      : title,
+            'Implementation-Version'    : delosDbVersion,
+            'Implementation-Vendor'     : 'DelosDB Project',
+            'Specification-Title'       : title,
+            'Specification-Version'     : derbyCompatibilityVersion,
+            'Specification-Vendor'      : 'DelosDB Project',
+            'DelosDB-Version'           : delosDbVersion,
+            'DelosDB-Build-Revision'    : buildNumber.get(),
+            'DelosDB-Origin'            : 'Forked from Apache Derby 10.17.1.0',
+            'DelosDB-Repository'        : 'https://github.com/ggeorg/delosdb',
+            'Apache-Derby-Base-Version' : derbyCompatibilityVersion,
+            'Built-By'                  : System.getProperty('user.name', 'unknown'),
+            'Build-Jdk'                 : System.getProperty('java.version'),
+            'Build-Jdk-Vendor'          : System.getProperty('java.vendor')
+    ]
+}
+
 def externalModulePath = files(
         'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
         'tools/java/json_simple-1.1.jar',
@@ -964,6 +989,35 @@ tasks.register('verifyExtractedEngineProject') {
     }
 }
 
+tasks.register('verifyCentralizedReleaseMetadata') {
+    group = 'verification'
+    description = 'Ensures extracted runtime jar subprojects use the shared DelosDB release metadata helpers.'
+    def buildFiles = files(
+            'delosdb-commons/build.gradle',
+            'delosdb-client/build.gradle',
+            'delosdb-engine/build.gradle',
+            'delosdb-tools/build.gradle',
+            'delosdb-runner/build.gradle',
+            'delosdb-server/build.gradle',
+            'delosdb-optionaltools/build.gradle'
+    )
+    inputs.files(buildFiles)
+    doLast {
+        buildFiles.files.each { buildFile ->
+            def buildScript = buildFile.text
+            if (!buildScript.contains('rootProject.ext.delosdbLegalFiles')) {
+                throw new GradleException("${buildFile} does not use rootProject.ext.delosdbLegalFiles")
+            }
+            if (!buildScript.contains('rootProject.ext.delosdbRuntimeJarAttributes')) {
+                throw new GradleException("${buildFile} does not use rootProject.ext.delosdbRuntimeJarAttributes")
+            }
+            if (buildScript.contains('def legalFiles =') || buildScript.contains('def releaseManifestAttributes =')) {
+                throw new GradleException("${buildFile} still declares duplicated release metadata helpers")
+            }
+        }
+    }
+}
+
 tasks.register('verifyGradleOnlyPublicSurface') {
     group = 'verification'
     description = 'Ensures public build instructions expose only the Gradle build path.'
@@ -997,7 +1051,7 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 
 tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface',
-            'verifyArtifactInventory', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
+            'verifyCentralizedReleaseMetadata', 'verifyArtifactInventory', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
             'verifyExtractedServerProject', 'verifyExtractedEngineProject'
 }

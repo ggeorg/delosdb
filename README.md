@@ -98,3 +98,7 @@ Each runtime jar includes DelosDB manifest metadata and the required legal attri
 - `docs/ARTIFACTS.md` — runtime artifact inventory and planned subproject names
 - `docs/MODULE-SPLIT-PLAN.md` — ordered plan for moving from root build to real Gradle subprojects
 - `docs/ROADMAP.md` — modernization roadmap
+
+## Shared Gradle release metadata
+
+Runtime jar subprojects now use shared root-level helpers for legal files and manifest attributes. This keeps `LICENSE`, `NOTICE`, `NOTICE-FORK.md`, DelosDB version metadata, Apache Derby base-version metadata, build revision metadata, and JDK metadata consistent across all assembled jars.

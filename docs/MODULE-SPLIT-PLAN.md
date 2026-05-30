@@ -159,3 +159,7 @@ The build ownership extraction currently includes:
 All planned compile-owner subprojects and main runtime jar owners have now been extracted. The next phase is to reduce root build orchestration, then move shared resource processing and message splitting into clearer owners.
 
 `delosdb-engine` is the seventh extracted Gradle subproject. It owns SQL parser generation, `compileDerbyEngine`, the class-size catalog compile step, and `derby.jar` assembly for the inherited embedded engine module.
+
+## Current cleanup phase
+
+Runtime jar-owning subprojects now use centralized release metadata helpers from the root project. The next cleanup target is shared Java compile configuration, followed by shared resource/message-generation ownership.

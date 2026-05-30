@@ -168,3 +168,7 @@ Verification command:
 ./gradlew :delosdb-server:compileDerbyServer :delosdb-server:derbyNetJar verifyExtractedServerProject
 ./gradlew :delosdb-engine:compileDerbyEngine verifyExtractedEngineProject
 ```
+
+## Shared Gradle conventions baseline
+
+Runtime jar-owning subprojects now share root-level release metadata helpers for `META-INF` legal files and manifest attributes. This reduces duplicated build logic before we centralize Java compile conventions and shared resource generation.
