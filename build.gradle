@@ -577,8 +577,13 @@ tasks.register('derbyNetJar') {
     dependsOn ':delosdb-server:derbyNetJar'
 }
 
+tasks.register('derbyJar') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-engine runtime jar task.'
+    dependsOn ':delosdb-engine:derbyJar'
+}
+
 [
-        [name: 'derbyJar', moduleName: moduleNames.engine, archive: 'derby.jar'],
         [name: 'osgiFrameworkStubJar', moduleName: moduleNames.osgi, archive: 'osgi-framework-stub.jar']
 ].each { spec ->
     tasks.register(spec.name, Jar) {
@@ -1014,7 +1019,7 @@ tasks.register('verifyExtractedServerProject') {
 
 
 tasks.register('verifyExtractedEngineProject') {
-    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine:compileClassSizeCatalog'
+    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine:compileClassSizeCatalog', ':delosdb-engine:derbyJar'
     group = 'verification'
     description = 'Verifies that the final extracted Gradle subproject owns the embedded engine compile lifecycle.'
     inputs.file('settings.gradle')
@@ -1033,6 +1038,9 @@ tasks.register('verifyExtractedEngineProject') {
         if (engineProject.tasks.findByName('compileClassSizeCatalog') == null) {
             throw new GradleException('Missing :delosdb-engine:compileClassSizeCatalog')
         }
+        if (engineProject.tasks.findByName('derbyJar') == null) {
+            throw new GradleException('Missing :delosdb-engine:derbyJar')
+        }
         def engineOutput = moduleClassDir(moduleNames.engine).get().asFile
         if (!engineOutput.isDirectory()) {
             throw new GradleException("Missing compiled engine output directory: ${engineOutput}")
@@ -1045,7 +1053,11 @@ tasks.register('verifyExtractedEngineProject') {
         if (!catalogImpl.isFile()) {
             throw new GradleException("Missing compiled ClassSizeCatalogImpl.class: ${catalogImpl}")
         }
-        println "Verified extracted engine subproject output: ${engineOutput}"
+        def engineJar = layout.buildDirectory.file('libs/derby.jar').get().asFile
+        if (!engineJar.isFile()) {
+            throw new GradleException("Missing extracted engine jar: ${engineJar}")
+        }
+        println "Verified extracted engine subproject output and jar: ${engineOutput}"
     }
 }
 

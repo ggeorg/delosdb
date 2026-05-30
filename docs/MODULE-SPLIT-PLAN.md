@@ -137,7 +137,7 @@ Server follows optional tools because it depends on commons, engine, tools, and 
 
 `delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` into `delosdb-server/build/classes/modules/org.apache.derby.server` and owns `derbynet.jar` assembly.
 
-The root build consumes these outputs for downstream module compilation. `delosdb-commons` owns `derbyshared.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, `delosdb-optionaltools` owns `derbyoptionaltools.jar`, and `delosdb-server` owns `derbynet.jar`; the root still coordinates the remaining engine and OSGi stub jars. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
+The root build consumes these outputs for downstream module compilation. `delosdb-commons` owns `derbyshared.jar`, `delosdb-engine` owns `derby.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, `delosdb-optionaltools` owns `derbyoptionaltools.jar`, and `delosdb-server` owns `derbynet.jar`; the root still coordinates the remaining OSGi stub jar. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
 
 Verification command:
 
