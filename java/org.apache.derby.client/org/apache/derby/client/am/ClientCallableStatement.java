@@ -65,7 +65,7 @@ public class ClientCallableStatement extends ClientPreparedStatement
     static final private int WAS_NOT_NULL = 2;
     static final private int WAS_NULL_UNSET = 0;
 
-    //---------------------constructors/finalizer---------------------------------
+    //---------------------constructors-------------------------------------------
 
     private void initCallableStatement() {
         materialCallableStatement_ = null;
@@ -134,12 +134,6 @@ public class ClientCallableStatement extends ClientPreparedStatement
         initCallableStatement();
     }
 
-    protected void finalize() throws Throwable {
-        if (agent_.loggingEnabled()) {
-            agent_.logWriter_.traceEntry(this, "finalize");
-        }
-        super.finalize();
-    }
 
     //---------------------------entry points-------------------------------------
 
