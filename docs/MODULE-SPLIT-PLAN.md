@@ -68,7 +68,7 @@ Current jar: `derbytools.jar`
 Current module: `org.apache.derby.tools`  
 Current source root: `java/org.apache.derby.tools`
 
-This module owns `ij` parser generation through `generateIjParsers`. Its compile and jar assembly lifecycle is now extracted into `:delosdb-tools`, while the root build keeps a compatibility alias for coordinated product builds.
+This module owns `ij` parser generation through `generateIjParsers`. Its compile and jar assembly lifecycle is now extracted into `:delosdb-tools`; the root build depends directly on the subproject for coordinated product builds.
 
 ### 4. `delosdb-runner`
 
@@ -114,14 +114,7 @@ This is the final and highest-risk extraction. It owns SQL parser generation, cl
 
 ## Current extraction target
 
-The next artifact-ownership split should be:
-
-```text
-v0.1.0-dev.12 — Extract delosdb-optionaltools jar ownership ✅
-v0.1.0-dev.13 — Extract delosdb-server jar ownership ✅
-```
-
-Server follows optional tools because it depends on commons, engine, tools, and servlet/external module path entries, but it is still lower-risk than extracting the embedded engine itself.
+All planned compile-owner subprojects and main runtime jar owners have now been extracted. The next cleanup target is root build orchestration: the root project should coordinate product-level verification, shared resource/message generation, build-tool generation, and the OSGi stub jar without exposing compatibility alias tasks for module compile or jar assembly.
 
 ## Extraction progress
 
@@ -137,7 +130,7 @@ Server follows optional tools because it depends on commons, engine, tools, and 
 
 `delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` into `delosdb-server/build/classes/modules/org.apache.derby.server` and owns `derbynet.jar` assembly.
 
-The root build consumes these outputs for downstream module compilation. `delosdb-commons` owns `derbyshared.jar`, `delosdb-engine` owns `derby.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, `delosdb-optionaltools` owns `derbyoptionaltools.jar`, and `delosdb-server` owns `derbynet.jar`; the root still coordinates the remaining OSGi stub jar. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
+The root build consumes these outputs for downstream module compilation and product-level verification. `delosdb-commons` owns `derbyshared.jar`, `delosdb-engine` owns `derby.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, `delosdb-optionaltools` owns `derbyoptionaltools.jar`, and `delosdb-server` owns `derbynet.jar`; the root still coordinates the remaining OSGi stub jar. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
 
 Verification command:
 
@@ -163,6 +156,6 @@ The build ownership extraction currently includes:
 5. `delosdb-optionaltools`
 6. `delosdb-server`
 
-All planned compile-owner subprojects have now been extracted. The next phase is to move runtime jar assembly into the appropriate subprojects first, then shared resource processing and message splitting.
+All planned compile-owner subprojects and main runtime jar owners have now been extracted. The next phase is to reduce root build orchestration, then move shared resource processing and message splitting into clearer owners.
 
-`delosdb-engine` is the seventh extracted Gradle subproject. It owns SQL parser generation, `compileDerbyEngine`, and the class-size catalog compile step for the inherited embedded engine module.
+`delosdb-engine` is the seventh extracted Gradle subproject. It owns SQL parser generation, `compileDerbyEngine`, the class-size catalog compile step, and `derby.jar` assembly for the inherited embedded engine module.

@@ -127,73 +127,14 @@ derby.product.file=${productFile}
 """
 }
 
-tasks.register('generateSanityState') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-commons source-generation task.'
-    dependsOn ':delosdb-commons:generateSanityState'
-}
-
 tasks.register('compileOsgiStubs', JavaCompile) {
     source = fileTree('java/stubs/felix') { include '**/*.java' }
     destinationDirectory = moduleClassDir(moduleNames.osgi)
     configureJavaCompile(delegate)
 }
 
-tasks.register('compileDerbyCommons') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-commons compile task.'
-    dependsOn ':delosdb-commons:compileDerbyCommons'
-}
-
-
-tasks.register('generateSqlParser') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-engine SQL parser generation task.'
-    dependsOn ':delosdb-engine:generateSqlParser'
-}
-tasks.register('generateIjParsers') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-tools ij parser generation task.'
-    dependsOn ':delosdb-tools:generateIjParsers'
-}
-
-tasks.register('compileDerbyEngine') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-engine compile task.'
-    dependsOn ':delosdb-engine:compileDerbyEngine'
-}
-tasks.register('compileDerbyClient') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-client compile task.'
-    dependsOn ':delosdb-client:compileDerbyClient'
-}
-
-tasks.register('compileDerbyTools') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-tools compile task.'
-    dependsOn ':delosdb-tools:compileDerbyTools'
-}
-
-tasks.register('compileDerbyServer') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-server compile task.'
-    dependsOn ':delosdb-server:compileDerbyServer'
-}
-
-tasks.register('compileDerbyOptionalTools') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-optionaltools compile task.'
-    dependsOn ':delosdb-optionaltools:compileDerbyOptionalTools'
-}
-
-tasks.register('compileDerbyRunner') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-runner compile task.'
-    dependsOn ':delosdb-runner:compileDerbyRunner'
-}
-
 tasks.register('compileDerbyBuildTools', JavaCompile) {
-    dependsOn 'compileDerbyCommons', 'compileDerbyEngine'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
     source = files(
             'java/build/org/apache/derbyBuild/splitmessages.java',
             'java/build/org/apache/derbyBuild/ClassSizeCrawler.java'
@@ -244,14 +185,11 @@ tasks.register('generateClassSizeCatalog') {
     }
 }
 
-tasks.register('compileClassSizeCatalog') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-engine class-size catalog compile task.'
-    dependsOn ':delosdb-engine:compileClassSizeCatalog'
-}
 tasks.register('processDerbyResources') {
-    dependsOn 'compileDerbyCommons', 'compileDerbyEngine', 'compileDerbyClient', 'compileDerbyTools',
-            'compileDerbyServer', 'compileDerbyOptionalTools', 'compileDerbyRunner'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-client:compileDerbyClient', ':delosdb-tools:compileDerbyTools',
+            ':delosdb-server:compileDerbyServer', ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner'
     doLast {
         [
                 (moduleNames.commons)      : 'java/org.apache.derby.commons',
@@ -533,54 +471,12 @@ def releaseManifestAttributes = { String archiveName ->
 }
 
 def runtimeBuildTasks = [
-        'compileClassSizeCatalog',
+        ':delosdb-engine:compileClassSizeCatalog',
         'splitEngineMessages'
 ]
 
 tasks.register('compileAll') {
     dependsOn runtimeBuildTasks
-}
-
-tasks.register('derbySharedJar') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-commons runtime jar task.'
-    dependsOn ':delosdb-commons:derbySharedJar'
-}
-
-tasks.register('derbyClientJar') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-client runtime jar task.'
-    dependsOn ':delosdb-client:derbyClientJar'
-}
-
-tasks.register('derbyToolsJar') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-tools runtime jar task.'
-    dependsOn ':delosdb-tools:derbyToolsJar'
-}
-
-tasks.register('derbyRunJar') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-runner runtime jar task.'
-    dependsOn ':delosdb-runner:derbyRunJar'
-}
-
-tasks.register('derbyOptionalToolsJar') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-optionaltools runtime jar task.'
-    dependsOn ':delosdb-optionaltools:derbyOptionalToolsJar'
-}
-
-tasks.register('derbyNetJar') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-server runtime jar task.'
-    dependsOn ':delosdb-server:derbyNetJar'
-}
-
-tasks.register('derbyJar') {
-    group = 'build'
-    description = 'Compatibility alias for the extracted delosdb-engine runtime jar task.'
-    dependsOn ':delosdb-engine:derbyJar'
 }
 
 [
@@ -605,8 +501,10 @@ tasks.register('derbyJar') {
 }
 
 tasks.register('jars') {
-    dependsOn 'derbySharedJar', 'derbyJar', 'derbyClientJar', 'derbyToolsJar',
-            'derbyNetJar', 'derbyOptionalToolsJar', 'derbyRunJar', 'osgiFrameworkStubJar'
+    dependsOn ':delosdb-commons:derbySharedJar', ':delosdb-engine:derbyJar',
+            ':delosdb-client:derbyClientJar', ':delosdb-tools:derbyToolsJar',
+            ':delosdb-server:derbyNetJar', ':delosdb-optionaltools:derbyOptionalToolsJar',
+            ':delosdb-runner:derbyRunJar', 'osgiFrameworkStubJar'
 }
 
 tasks.named('assemble') {
@@ -789,10 +687,17 @@ tasks.register('verifyArtifactInventory') {
             if (!file(artifact.currentSourceRoot).isDirectory()) {
                 throw new GradleException("Missing source root for ${artifact.gradleProject}: ${artifact.currentSourceRoot}")
             }
-            if (tasks.findByName(artifact.compileTask) == null) {
+
+            def taskOwner = artifact.gradleProject == 'delosdb-osgi-stub'
+                    ? project
+                    : findProject(":${artifact.gradleProject}")
+            if (taskOwner == null) {
+                throw new GradleException("Missing Gradle project for ${artifact.gradleProject}")
+            }
+            if (taskOwner.tasks.findByName(artifact.compileTask) == null) {
                 throw new GradleException("Missing compile task for ${artifact.gradleProject}: ${artifact.compileTask}")
             }
-            if (tasks.findByName(artifact.jarTask) == null) {
+            if (taskOwner.tasks.findByName(artifact.jarTask) == null) {
                 throw new GradleException("Missing jar task for ${artifact.gradleProject}: ${artifact.jarTask}")
             }
             if (!runtimeJarNames.contains(artifact.jarName)) {
@@ -1015,8 +920,6 @@ tasks.register('verifyExtractedServerProject') {
         }
     }
 }
-
-
 
 tasks.register('verifyExtractedEngineProject') {
     dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine:compileClassSizeCatalog', ':delosdb-engine:derbyJar'
