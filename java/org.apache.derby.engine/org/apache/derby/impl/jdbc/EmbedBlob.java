@@ -38,6 +38,7 @@ import java.sql.Blob;
 import java.io.EOFException;
 import java.io.InputStream;
 import java.io.IOException;
+import java.lang.ref.Cleaner;
 
 /**
     Implements java.sql.Blob (see the JDBC 2.0 spec).
@@ -70,6 +71,33 @@ import java.io.IOException;
 
 final class EmbedBlob extends ConnectionChild implements Blob, EngineLOB
 {
+    private static final Cleaner CLEANER = Cleaner.create();
+
+    private final StoreStreamCleanupState streamCleanupState =
+            new StoreStreamCleanupState();
+    private final Cleaner.Cleanable streamCleanup =
+            CLEANER.register(this, streamCleanupState);
+
+    private static final class StoreStreamCleanupState implements Runnable {
+        private PositionedStoreStream stream;
+
+        synchronized void set(PositionedStoreStream stream) {
+            this.stream = stream;
+        }
+
+        synchronized void close() {
+            if (stream != null) {
+                stream.closeStream();
+                stream = null;
+            }
+        }
+
+        @Override
+        public void run() {
+            close();
+        }
+    }
+
     /**
      * Tells whether the Blob has been materialized or not.
      * <p>
@@ -231,6 +259,7 @@ final class EmbedBlob extends ConnectionChild implements Blob, EngineLOB
             // more easily move back and forth in the Blob.
             try {
                 myStream = new PositionedStoreStream(dvdStream);
+                streamCleanupState.set(myStream);
                 // The BinaryToRawStream will read the encoded length bytes.
                 BinaryToRawStream tmpStream =
                         new BinaryToRawStream(myStream, con);
@@ -855,15 +884,10 @@ final class EmbedBlob extends ConnectionChild implements Blob, EngineLOB
    /*
     If we have a stream, release the resources associated with it.
     */
-    //
-    // This method in java.lang.Object was deprecated as of build 167
-    // of JDK 9. See DERBY-6932.
-    //
-    @SuppressWarnings({"deprecation","removal"})
-    protected void finalize()
+    private void closeStoreStream()
     {
-        if (!materialized)
-            myStream.closeStream();
+        streamCleanup.clean();
+        myStream = null;
     }
 
 	/**
@@ -951,7 +975,7 @@ final class EmbedBlob extends ConnectionChild implements Blob, EngineLOB
                 control = new LOBStreamControl(getEmbedConnection());
                 control.copyData(myStream, length());
                 control.write(bytes, offset, len, pos - 1);
-                myStream.close();
+                closeStoreStream();
                 streamLength = -1;
                 materialized = true;
             }
@@ -990,7 +1014,7 @@ final class EmbedBlob extends ConnectionChild implements Blob, EngineLOB
                     control = new LOBStreamControl (
                                             getEmbedConnection());
                     control.copyData (myStream, pos - 1);
-                    myStream.close ();
+                    closeStoreStream();
                     streamLength = -1;
                     materialized = true;
                     return control.getOutputStream(pos - 1);
@@ -1029,7 +1053,7 @@ final class EmbedBlob extends ConnectionChild implements Blob, EngineLOB
                     setBlobPosition(0); // copy from the beginning
                     control = new LOBStreamControl (getEmbedConnection());
                     control.copyData (myStream, len);
-                    myStream.close();
+                    closeStoreStream();
                     streamLength = -1;
                     materialized = true;
                 }
@@ -1076,8 +1100,7 @@ final class EmbedBlob extends ConnectionChild implements Blob, EngineLOB
         //if a array of bytes then initialize it to null
         //to free up space
         if (!materialized) {
-            myStream.closeStream();
-            myStream = null;
+            closeStoreStream();
         } else {
             try {
                 control.free ();
