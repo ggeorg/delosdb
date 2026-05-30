@@ -67,6 +67,8 @@ The `build` lifecycle compiles the inherited Derby/DelosDB modules, generates th
 ./gradlew verifyJars
 ./gradlew verifyReleaseArtifacts
 ./gradlew verifyReleaseDistribution
+./gradlew publishToMavenLocal
+./gradlew verifyMavenPublications
 ./gradlew dist
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
@@ -106,6 +108,7 @@ Each runtime jar includes DelosDB manifest metadata and the required legal attri
 - `docs/BUILD-INVENTORY.md` — current Gradle build map and migration inventory
 - `docs/ARTIFACTS.md` — runtime artifact inventory and planned subproject names
 - `docs/MODULE-SPLIT-PLAN.md` — ordered plan for moving from root build to real Gradle subprojects
+- `docs/PUBLISHING.md` — local Maven publication workflow
 - `docs/ROADMAP.md` — modernization roadmap
 
 ## Shared Gradle release metadata
@@ -131,3 +134,27 @@ The launcher runs the inherited Derby command entry point through the DelosDB ru
 ```bash
 build/release/delosdb-0.1.0-dev/bin/delosdb sysinfo
 ```
+
+
+## Local Maven publication
+
+DelosDB has a local Maven publication baseline for the extracted runtime subprojects. Maven coordinates are DelosDB-branded while the binary distribution keeps Derby-compatible jar file names for now:
+
+```bash
+./gradlew publishToMavenLocal
+./gradlew verifyMavenPublications
+```
+
+Published local coordinates use:
+
+```text
+io.github.ggeorg.delosdb:delosdb-engine:0.1.0-dev
+io.github.ggeorg.delosdb:delosdb-client:0.1.0-dev
+io.github.ggeorg.delosdb:delosdb-server:0.1.0-dev
+io.github.ggeorg.delosdb:delosdb-tools:0.1.0-dev
+io.github.ggeorg.delosdb:delosdb-runner:0.1.0-dev
+io.github.ggeorg.delosdb:delosdb-commons:0.1.0-dev
+io.github.ggeorg.delosdb:delosdb-optionaltools:0.1.0-dev
+```
+
+This is intentionally local-only for now. Maven Central signing, staging, sources jars, and javadocs will be added as separate release-hardening steps.

@@ -33,6 +33,9 @@ jobs:
       - name: Verify binary distribution
         run: ./gradlew --no-daemon verifyReleaseDistribution
 
+      - name: Verify Maven Local publications
+        run: ./gradlew --no-daemon verifyMavenPublications
+
       - name: Verify centralized Gradle conventions
         run: ./gradlew --no-daemon verifyCentralizedReleaseMetadata verifyCentralizedJavaCompileConventions
 

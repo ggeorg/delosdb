@@ -173,3 +173,8 @@ After compile and jar ownership extraction, shared Java compile settings and run
 ## Distribution checkpoint
 
 After compile and jar ownership extraction, the next stabilization checkpoint is the product binary distribution. The root build remains responsible for assembling release-candidate archives from subproject-owned jars until the project later decides whether to publish compatibility-named `derby*.jar` artifacts, DelosDB-named aliases, or both.
+
+
+## Publication baseline
+
+After compile and jar ownership extraction, DelosDB publishes the public runtime subprojects to Maven Local using DelosDB coordinates. This keeps source/package/module compatibility separate from artifact identity: Maven artifacts are `delosdb-*`, while Java packages and JPMS modules remain `org.apache.derby.*` during this compatibility phase.

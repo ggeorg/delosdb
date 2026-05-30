@@ -140,3 +140,20 @@ build/distributions/delosdb-0.1.0-dev-bin.tar.gz
 ```
 
 Distribution verification is intentionally product-level because it checks the combined runtime layout, legal files, documentation, examples, and launcher scripts rather than a single module artifact.
+
+
+## Local Maven publication inventory
+
+The Maven publication baseline uses DelosDB artifact IDs while preserving Derby-compatible runtime jar names in `build/libs/` and in the binary distribution.
+
+| Gradle project | Maven coordinate | Current runtime jar |
+|---|---|---|
+| `:delosdb-commons` | `io.github.ggeorg.delosdb:delosdb-commons:0.1.0-dev` | `derbyshared.jar` |
+| `:delosdb-engine` | `io.github.ggeorg.delosdb:delosdb-engine:0.1.0-dev` | `derby.jar` |
+| `:delosdb-client` | `io.github.ggeorg.delosdb:delosdb-client:0.1.0-dev` | `derbyclient.jar` |
+| `:delosdb-tools` | `io.github.ggeorg.delosdb:delosdb-tools:0.1.0-dev` | `derbytools.jar` |
+| `:delosdb-runner` | `io.github.ggeorg.delosdb:delosdb-runner:0.1.0-dev` | `derbyrun.jar` |
+| `:delosdb-server` | `io.github.ggeorg.delosdb:delosdb-server:0.1.0-dev` | `derbynet.jar` |
+| `:delosdb-optionaltools` | `io.github.ggeorg.delosdb:delosdb-optionaltools:0.1.0-dev` | `derbyoptionaltools.jar` |
+
+The OSGi framework stub remains an internal support artifact and is not published as part of the public Maven baseline.
