@@ -571,9 +571,14 @@ tasks.register('derbyOptionalToolsJar') {
     dependsOn ':delosdb-optionaltools:derbyOptionalToolsJar'
 }
 
+tasks.register('derbyNetJar') {
+    group = 'build'
+    description = 'Compatibility alias for the extracted delosdb-server runtime jar task.'
+    dependsOn ':delosdb-server:derbyNetJar'
+}
+
 [
         [name: 'derbyJar', moduleName: moduleNames.engine, archive: 'derby.jar'],
-        [name: 'derbyNetJar', moduleName: moduleNames.server, archive: 'derbynet.jar'],
         [name: 'osgiFrameworkStubJar', moduleName: moduleNames.osgi, archive: 'osgi-framework-stub.jar']
 ].each { spec ->
     tasks.register(spec.name, Jar) {
@@ -975,9 +980,9 @@ tasks.register('verifyExtractedOptionalToolsProject') {
 }
 
 tasks.register('verifyExtractedServerProject') {
-    dependsOn ':delosdb-server:compileDerbyServer'
+    dependsOn ':delosdb-server:compileDerbyServer', ':delosdb-server:derbyNetJar'
     group = 'verification'
-    description = 'Verifies that the sixth extracted Gradle subproject owns the network server compile lifecycle.'
+    description = 'Verifies that the sixth extracted Gradle subproject owns the network server compile and jar lifecycle.'
     inputs.file('settings.gradle')
     inputs.file('delosdb-server/build.gradle')
     doLast {
@@ -988,6 +993,13 @@ tasks.register('verifyExtractedServerProject') {
         if (serverProject.tasks.findByName('compileDerbyServer') == null) {
             throw new GradleException('Missing :delosdb-server:compileDerbyServer')
         }
+        if (serverProject.tasks.findByName('derbyNetJar') == null) {
+            throw new GradleException('Missing :delosdb-server:derbyNetJar')
+        }
+        def serverJar = layout.buildDirectory.file('libs/derbynet.jar').get().asFile
+        if (!serverJar.isFile()) {
+            throw new GradleException("Missing network server runtime jar owned by :delosdb-server: ${serverJar}")
+        }
         def serverOutput = moduleClassDir(moduleNames.server).get().asFile
         if (!serverOutput.isDirectory()) {
             throw new GradleException("Missing compiled server output directory: ${serverOutput}")
@@ -996,7 +1008,6 @@ tasks.register('verifyExtractedServerProject') {
         if (!moduleInfo.isFile()) {
             throw new GradleException("Missing server module-info.class: ${moduleInfo}")
         }
-        println "Verified extracted server subproject output: ${serverOutput}"
     }
 }
 

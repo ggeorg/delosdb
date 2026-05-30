@@ -129,7 +129,7 @@ This is still a conservative baseline. Package names remain compatible with Apac
 
 `delosdb-client` is the second extracted Gradle subproject. It compiles the inherited `org.apache.derby.client` JPMS module from `java/org.apache.derby.client` and writes its class output under `delosdb-client/build/classes/modules/org.apache.derby.client`.
 
-The root build still owns shared resource generation and most jar assembly for now. `delosdb-commons` owns `derbyshared.jar`, and `delosdb-client` owns `derbyclient.jar`; source files have not been moved yet. These patches extract build and artifact ownership incrementally.
+The root build still owns shared resource generation and the remaining engine/OSGi jar assembly for now. `delosdb-commons` owns `derbyshared.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, `delosdb-optionaltools` owns `derbyoptionaltools.jar`, and `delosdb-server` owns `derbynet.jar`; source files have not been moved yet. These patches extract build and artifact ownership incrementally.
 
 Verification command:
 
@@ -140,12 +140,12 @@ Verification command:
 ./gradlew :delosdb-tools:compileDerbyTools
 ./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedClientProject
 ./gradlew :delosdb-engine:compileDerbyEngine verifyExtractedEngineProject
-./gradlew :delosdb-server:compileDerbyServer verifyExtractedServerProject
+./gradlew :delosdb-server:compileDerbyServer :delosdb-server:derbyNetJar verifyExtractedServerProject
 ./gradlew verifyExtractedToolsProject
 ./gradlew verifyExtractedRunnerProject
 ```
 
-`delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` and writes its class output under `delosdb-server/build/classes/modules/org.apache.derby.server`.
+`delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server`, writes its class output under `delosdb-server/build/classes/modules/org.apache.derby.server`, and owns `derbynet.jar` assembly.
 
 ## Extracted engine subproject
 

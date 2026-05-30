@@ -2,7 +2,7 @@
 
 This document records the current runtime artifacts produced by the Gradle-only build and the planned project names for the future multi-project split.
 
-The current build is being extracted incrementally from the repository root. `delosdb-commons`, `delosdb-engine`, `delosdb-client`, `delosdb-tools`, `delosdb-runner`, `delosdb-optionaltools`, and `delosdb-server` now own their compile lifecycles. `delosdb-commons` also owns its runtime jar assembly for `derbyshared.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, and `delosdb-optionaltools` owns `derbyoptionaltools.jar`; the root build still owns shared resource processing and the remaining jar assembly. The table below is the authoritative inventory for the next extraction steps.
+The current build is being extracted incrementally from the repository root. `delosdb-commons`, `delosdb-engine`, `delosdb-client`, `delosdb-tools`, `delosdb-runner`, `delosdb-optionaltools`, and `delosdb-server` now own their compile lifecycles. `delosdb-commons` also owns its runtime jar assembly for `derbyshared.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, `delosdb-optionaltools` owns `derbyoptionaltools.jar`, and `delosdb-server` owns `derbynet.jar`; the root build still owns shared resource processing and the remaining engine/OSGi jar assembly. The table below is the authoritative inventory for the next extraction steps.
 
 | Planned Gradle project | Current JPMS module | Current source root | Current jar | Public runtime artifact | Current compile task | Extraction order | Risk |
 |---|---|---|---|---:|---|---:|---|
@@ -87,7 +87,7 @@ The extracted Gradle subprojects currently own compilation for:
 - `delosdb-server`
 - `delosdb-engine`
 
-`delosdb-server` compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` and writes its class output under `delosdb-server/build/classes/modules/org.apache.derby.server`.
+`delosdb-server` compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server`, writes its class output under `delosdb-server/build/classes/modules/org.apache.derby.server`, and owns `derbynet.jar` assembly while preserving the root compatibility alias.
 
 `delosdb-optionaltools` compiles the inherited `org.apache.derby.optionaltools` JPMS module from `java/org.apache.derby.optionaltools` and writes its class output under `delosdb-optionaltools/build/classes/modules/org.apache.derby.optionaltools`.
 
@@ -97,7 +97,7 @@ The extracted Gradle subprojects currently own compilation for:
 
 `delosdb-runner` is the fourth extracted Gradle subproject. It compiles the inherited `org.apache.derby.runner` JPMS module from `java/org.apache.derby.runner` into `delosdb-runner/build/classes/modules/org.apache.derby.runner`, and assembles `build/libs/derbyrun.jar`.
 
-The root build consumes these outputs for downstream module compilation. `delosdb-commons` owns `derbyshared.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, and `delosdb-runner` owns `derbyrun.jar`; the root still coordinates the remaining jars. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
+The root build consumes these outputs for downstream module compilation. `delosdb-commons` owns `derbyshared.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, `delosdb-optionaltools` owns `derbyoptionaltools.jar`, and `delosdb-server` owns `derbynet.jar`; the root still coordinates the remaining engine and OSGi stub jars. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
 
 Verification command:
 
@@ -107,7 +107,7 @@ Verification command:
 ./gradlew :delosdb-tools:compileDerbyTools :delosdb-tools:derbyToolsJar verifyExtractedToolsProject
 ./gradlew :delosdb-runner:compileDerbyRunner :delosdb-runner:derbyRunJar verifyExtractedRunnerProject
 ./gradlew :delosdb-engine:compileDerbyEngine verifyExtractedEngineProject
-./gradlew :delosdb-server:compileDerbyServer verifyExtractedServerProject
+./gradlew :delosdb-server:compileDerbyServer :delosdb-server:derbyNetJar verifyExtractedServerProject
 ```
 
 `delosdb-engine` compiles the inherited `org.apache.derby.engine` JPMS module from `java/org.apache.derby.engine` into `delosdb-engine/build/classes/modules/org.apache.derby.engine`. It now owns SQL parser generation and the class-size catalog compile step; the root build still coordinates shared resources, split messages, and non-commons jar assembly.
@@ -121,6 +121,6 @@ Verification command:
 | `derbytools.jar` | `:delosdb-tools` |
 | `derbyrun.jar` | `:delosdb-runner` |
 | `derbyoptionaltools.jar` | `delosdb-optionaltools` via root compatibility alias |
-| `derbynet.jar` | root compatibility build, pending extraction |
+| `derbynet.jar` | `delosdb-server` via root compatibility alias |
 | `derby.jar` | root compatibility build, pending extraction |
 | `osgi-framework-stub.jar` | root compatibility build, pending extraction decision |

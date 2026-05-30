@@ -118,6 +118,7 @@ The next artifact-ownership split should be:
 
 ```text
 v0.1.0-dev.12 — Extract delosdb-optionaltools jar ownership ✅
+v0.1.0-dev.13 — Extract delosdb-server jar ownership ✅
 ```
 
 Server follows optional tools because it depends on commons, engine, tools, and servlet/external module path entries, but it is still lower-risk than extracting the embedded engine itself.
@@ -134,9 +135,9 @@ Server follows optional tools because it depends on commons, engine, tools, and 
 
 `delosdb-optionaltools` is the fifth extracted Gradle subproject. It compiles the inherited `org.apache.derby.optionaltools` JPMS module from `java/org.apache.derby.optionaltools` into `delosdb-optionaltools/build/classes/modules/org.apache.derby.optionaltools` and owns `derbyoptionaltools.jar` assembly.
 
-`delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` into `delosdb-server/build/classes/modules/org.apache.derby.server`.
+`delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` into `delosdb-server/build/classes/modules/org.apache.derby.server` and owns `derbynet.jar` assembly.
 
-The root build consumes these outputs for downstream module compilation. `delosdb-commons` now owns `derbyshared.jar`, and `delosdb-client` now owns `derbyclient.jar`; the root still coordinates the remaining jars. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
+The root build consumes these outputs for downstream module compilation. `delosdb-commons` owns `derbyshared.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, `delosdb-optionaltools` owns `derbyoptionaltools.jar`, and `delosdb-server` owns `derbynet.jar`; the root still coordinates the remaining engine and OSGi stub jars. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
 
 Verification command:
 
@@ -147,7 +148,7 @@ Verification command:
 ./gradlew :delosdb-runner:compileDerbyRunner verifyExtractedRunnerProject
 ./gradlew :delosdb-optionaltools:compileDerbyOptionalTools :delosdb-optionaltools:derbyOptionalToolsJar verifyExtractedOptionalToolsProject
 ./gradlew :delosdb-engine:compileDerbyEngine verifyExtractedEngineProject
-./gradlew :delosdb-server:compileDerbyServer verifyExtractedServerProject
+./gradlew :delosdb-server:compileDerbyServer :delosdb-server:derbyNetJar verifyExtractedServerProject
 ```
 
 
