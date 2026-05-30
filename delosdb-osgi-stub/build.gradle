@@ -1,0 +1,46 @@
+plugins {
+    id 'base'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = rootProject.version
+group = rootProject.group
+
+def moduleName = 'org.osgi.framework'
+def sourceRoot = rootProject.file('java/stubs/felix')
+def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
+
+tasks.register('compileOsgiStubs', JavaCompile) {
+    source = fileTree(sourceRoot) { include '**/*.java' }
+    destinationDirectory = moduleClassDir
+    rootProject.ext.delosdbConfigureJavaCompile(delegate)
+}
+
+tasks.register('classes') {
+    dependsOn 'compileOsgiStubs'
+}
+
+tasks.named('assemble') {
+    dependsOn 'classes'
+}
+
+def osgiArchiveName = 'osgi-framework-stub.jar'
+
+tasks.register('osgiFrameworkStubJar', Jar) {
+    dependsOn 'compileOsgiStubs'
+    archiveFileName = osgiArchiveName
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from moduleClassDir
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB OSGi Framework Stub')
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn 'osgiFrameworkStubJar'
+}

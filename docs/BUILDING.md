@@ -129,7 +129,7 @@ This is still a conservative baseline. Package names remain compatible with Apac
 
 `delosdb-client` is the second extracted Gradle subproject. It compiles the inherited `org.apache.derby.client` JPMS module from `java/org.apache.derby.client` and writes its class output under `delosdb-client/build/classes/modules/org.apache.derby.client`.
 
-The root build still owns shared resource generation, message splitting, build-tool generation, product-level verification, and the remaining OSGi stub jar assembly for now. The extracted subprojects own compilation and runtime jar assembly for the main DelosDB artifacts. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
+The root build still owns shared resource generation, message splitting, build-tool generation, and product-level verification. The extracted subprojects now own compilation and runtime jar assembly for the DelosDB runtime artifacts, including the OSGi framework stub. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
 
 Verification command:
 

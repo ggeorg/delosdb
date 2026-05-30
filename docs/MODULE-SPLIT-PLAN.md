@@ -114,7 +114,7 @@ This is the final and highest-risk extraction. It owns SQL parser generation, cl
 
 ## Current extraction target
 
-All planned compile-owner subprojects and main runtime jar owners have now been extracted. The next cleanup target is root build orchestration: the root project should coordinate product-level verification, shared resource/message generation, build-tool generation, and the OSGi stub jar without exposing compatibility alias tasks for module compile or jar assembly.
+All planned compile-owner subprojects and runtime jar owners have now been extracted, including the OSGi framework stub. The root project should coordinate product-level verification, shared resource/message generation, and build-tool generation without exposing compatibility alias tasks for module compile or jar assembly.
 
 ## Extraction progress
 
@@ -130,7 +130,7 @@ All planned compile-owner subprojects and main runtime jar owners have now been 
 
 `delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server` into `delosdb-server/build/classes/modules/org.apache.derby.server` and owns `derbynet.jar` assembly.
 
-The root build consumes these outputs for downstream module compilation and product-level verification. `delosdb-commons` owns `derbyshared.jar`, `delosdb-engine` owns `derby.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, `delosdb-optionaltools` owns `derbyoptionaltools.jar`, and `delosdb-server` owns `derbynet.jar`; the root still coordinates the remaining OSGi stub jar. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
+The root build consumes these outputs for downstream module compilation and product-level verification. `delosdb-osgi-stub` owns `osgi-framework-stub.jar`, `delosdb-commons` owns `derbyshared.jar`, `delosdb-engine` owns `derby.jar`, `delosdb-client` owns `derbyclient.jar`, `delosdb-tools` owns `derbytools.jar`, `delosdb-runner` owns `derbyrun.jar`, `delosdb-optionaltools` owns `derbyoptionaltools.jar`, and `delosdb-server` owns `derbynet.jar`. Source files have not been moved yet; the current split extracts build and artifact ownership incrementally.
 
 Verification command:
 

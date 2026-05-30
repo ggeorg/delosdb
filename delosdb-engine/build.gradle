@@ -13,7 +13,7 @@ def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleN
 def rootGeneratedSourceRoot = rootProject.layout.buildDirectory.dir("generated/sources/${moduleName}")
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def osgiModuleClassDir = rootProject.layout.buildDirectory.dir('classes/modules/org.osgi.framework')
+def osgiModuleClassDir = rootProject.project(':delosdb-osgi-stub').layout.buildDirectory.dir('classes/modules/org.osgi.framework')
 def javaccClasspath = rootProject.files('tools/java/javacc.jar')
 
 def replaceInFile = { File file, Closure<String> transform ->
@@ -52,7 +52,7 @@ tasks.register('generateSqlParser', JavaExec) {
 }
 
 tasks.register('compileDerbyEngine', JavaCompile) {
-    dependsOn ':compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', 'generateSqlParser'
+    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', 'generateSqlParser'
     source = files(
             fileTree(sourceRoot) { include '**/*.java' },
             fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }

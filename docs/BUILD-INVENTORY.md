@@ -28,7 +28,7 @@ This file records the current Gradle build map so the fork can move from a root-
 | `compileDerbyServer` | `org.apache.derby.server` | `java/org.apache.derby.server` | `delosdb-server/build/classes/modules/org.apache.derby.server` |
 | `compileDerbyOptionalTools` | `org.apache.derby.optionaltools` | `java/org.apache.derby.optionaltools` | `delosdb-optionaltools/build/classes/modules/org.apache.derby.optionaltools` |
 | `compileDerbyRunner` | `org.apache.derby.runner` | `java/org.apache.derby.runner` | `delosdb-runner/build/classes/modules/org.apache.derby.runner` |
-| `compileOsgiStubs` | `org.osgi.framework` | `java/stubs/felix` | `build/classes/modules/org.osgi.framework` |
+| `:delosdb-osgi-stub:compileOsgiStubs` | `org.osgi.framework` | `java/stubs/felix` | `delosdb-osgi-stub/build/classes/modules/org.osgi.framework` |
 
 ## Build-time generators still compiled from inherited source
 
@@ -61,7 +61,7 @@ These are not public runtime artifacts. They remain part of the build until we e
 | `derbyNetJar` | `build/libs/derbynet.jar` |
 | `derbyOptionalToolsJar` | `build/libs/derbyoptionaltools.jar` |
 | `derbyRunJar` | `build/libs/derbyrun.jar` |
-| `osgiFrameworkStubJar` | `build/libs/osgi-framework-stub.jar` |
+| `:delosdb-osgi-stub:osgiFrameworkStubJar` | `build/libs/osgi-framework-stub.jar` |
 
 
 ## Artifact verification
@@ -153,7 +153,7 @@ This guardrail should stay green before and after each module extraction.
 
 `delosdb-server` is the sixth extracted Gradle subproject. It compiles the inherited `org.apache.derby.server` JPMS module from `java/org.apache.derby.server`, writes its class output under `delosdb-server/build/classes/modules/org.apache.derby.server`, and owns `derbynet.jar` assembly with direct subproject ownership.
 
-`delosdb-engine` is the seventh extracted Gradle subproject. It owns `generateSqlParser`, `compileDerbyEngine`, `compileClassSizeCatalog`, and `derbyJar`. The root build still coordinates shared resource processing, split message generation, build-tool generation, product-level verification, and the OSGi stub jar.
+`delosdb-engine` is the seventh extracted Gradle subproject. It owns `generateSqlParser`, `compileDerbyEngine`, `compileClassSizeCatalog`, and `derbyJar`. The root build still coordinates shared resource processing, split message generation, build-tool generation, and product-level verification. The OSGi stub jar is now owned by `:delosdb-osgi-stub`.
 
 The root build consumes these outputs for downstream module compilation and product-level verification. Source files have not been moved yet; these patches extract build and artifact ownership incrementally.
 

@@ -13,7 +13,7 @@ DelosDB now uses **Gradle as the only supported build system**. The inherited An
 
 ## Gradle subprojects
 
-The extracted build subprojects are now `:delosdb-commons`, `:delosdb-engine`, `:delosdb-client`, `:delosdb-tools`, `:delosdb-runner`, `:delosdb-optionaltools`, and `:delosdb-server`. They own compilation of the inherited commons, engine, client, tools, runner, optional tools, and server JPMS modules, and they now own their runtime jars: `:delosdb-commons` assembles `derbyshared.jar`, `:delosdb-engine` assembles `derby.jar`, `:delosdb-client` assembles `derbyclient.jar`, `:delosdb-tools` assembles `derbytools.jar`, `:delosdb-runner` assembles `derbyrun.jar`, `:delosdb-optionaltools` assembles `derbyoptionaltools.jar`, and `:delosdb-server` assembles `derbynet.jar`. The root build coordinates product-level verification and the remaining OSGi stub jar only.
+The extracted build subprojects are now `:delosdb-osgi-stub`, `:delosdb-commons`, `:delosdb-engine`, `:delosdb-client`, `:delosdb-tools`, `:delosdb-runner`, `:delosdb-optionaltools`, and `:delosdb-server`. They own compilation of the inherited OSGi stub, commons, engine, client, tools, runner, optional tools, and server JPMS modules, and they now own their runtime jars: `:delosdb-osgi-stub` assembles `osgi-framework-stub.jar`, `:delosdb-commons` assembles `derbyshared.jar`, `:delosdb-engine` assembles `derby.jar`, `:delosdb-client` assembles `derbyclient.jar`, `:delosdb-tools` assembles `derbytools.jar`, `:delosdb-runner` assembles `derbyrun.jar`, `:delosdb-optionaltools` assembles `derbyoptionaltools.jar`, and `:delosdb-server` assembles `derbynet.jar`. The root build coordinates product-level verification only.
 
 Useful check:
 

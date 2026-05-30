@@ -28,6 +28,9 @@ def moduleNames = [
 ]
 
 def moduleClassDir = { String moduleName ->
+    if (moduleName == moduleNames.osgi) {
+        return project(':delosdb-osgi-stub').layout.buildDirectory.dir("classes/modules/${moduleName}")
+    }
     if (moduleName == moduleNames.commons) {
         return project(':delosdb-commons').layout.buildDirectory.dir("classes/modules/${moduleName}")
     }
@@ -150,12 +153,6 @@ derby.version.beta=false
 derby.product.vendor=DelosDB Project
 derby.product.file=${productFile}
 """
-}
-
-tasks.register('compileOsgiStubs', JavaCompile) {
-    source = fileTree('java/stubs/felix') { include '**/*.java' }
-    destinationDirectory = moduleClassDir(moduleNames.osgi)
-    rootProject.ext.delosdbConfigureJavaCompile(delegate)
 }
 
 tasks.register('compileDerbyBuildTools', JavaCompile) {
@@ -504,32 +501,11 @@ tasks.register('compileAll') {
     dependsOn runtimeBuildTasks
 }
 
-[
-        [name: 'osgiFrameworkStubJar', moduleName: moduleNames.osgi, archive: 'osgi-framework-stub.jar']
-].each { spec ->
-    tasks.register(spec.name, Jar) {
-        dependsOn 'compileAll'
-        archiveFileName = spec.archive
-        destinationDirectory = layout.buildDirectory.dir('libs')
-        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-        from moduleClassDir(spec.moduleName)
-        from(legalFiles) {
-            into 'META-INF'
-        }
-        manifest {
-            attributes releaseManifestAttributes(spec.archive)
-            if (spec.archive == 'derbyrun.jar') {
-                attributes 'Main-Class': 'org.apache.derby.run.run'
-            }
-        }
-    }
-}
-
 tasks.register('jars') {
     dependsOn ':delosdb-commons:derbySharedJar', ':delosdb-engine:derbyJar',
             ':delosdb-client:derbyClientJar', ':delosdb-tools:derbyToolsJar',
             ':delosdb-server:derbyNetJar', ':delosdb-optionaltools:derbyOptionalToolsJar',
-            ':delosdb-runner:derbyRunJar', 'osgiFrameworkStubJar'
+            ':delosdb-runner:derbyRunJar', ':delosdb-osgi-stub:osgiFrameworkStubJar'
 }
 
 tasks.named('assemble') {
@@ -713,9 +689,7 @@ tasks.register('verifyArtifactInventory') {
                 throw new GradleException("Missing source root for ${artifact.gradleProject}: ${artifact.currentSourceRoot}")
             }
 
-            def taskOwner = artifact.gradleProject == 'delosdb-osgi-stub'
-                    ? project
-                    : findProject(":${artifact.gradleProject}")
+            def taskOwner = findProject(":${artifact.gradleProject}")
             if (taskOwner == null) {
                 throw new GradleException("Missing Gradle project for ${artifact.gradleProject}")
             }
@@ -745,6 +719,39 @@ tasks.register('verifyArtifactInventory') {
         }
     }
 }
+
+tasks.register('verifyExtractedOsgiStubProject') {
+    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-osgi-stub:osgiFrameworkStubJar'
+    group = 'verification'
+    description = 'Verifies that the extracted OSGi stub subproject owns the stub compile and jar lifecycle.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-osgi-stub/build.gradle')
+    doLast {
+        def osgiProject = findProject(':delosdb-osgi-stub')
+        if (osgiProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-osgi-stub')
+        }
+        if (osgiProject.tasks.findByName('compileOsgiStubs') == null) {
+            throw new GradleException('Missing :delosdb-osgi-stub:compileOsgiStubs')
+        }
+        if (osgiProject.tasks.findByName('osgiFrameworkStubJar') == null) {
+            throw new GradleException('Missing :delosdb-osgi-stub:osgiFrameworkStubJar')
+        }
+        def osgiJar = layout.buildDirectory.file('libs/osgi-framework-stub.jar').get().asFile
+        if (!osgiJar.isFile()) {
+            throw new GradleException("Missing OSGi stub jar owned by :delosdb-osgi-stub: ${osgiJar}")
+        }
+        def osgiOutput = moduleClassDir(moduleNames.osgi).get().asFile
+        if (!osgiOutput.isDirectory()) {
+            throw new GradleException("Missing compiled OSGi stub output directory: ${osgiOutput}")
+        }
+        def bundleActivator = new File(osgiOutput, 'org/osgi/framework/BundleActivator.class')
+        if (!bundleActivator.isFile()) {
+            throw new GradleException("Missing compiled OSGi BundleActivator stub: ${bundleActivator}")
+        }
+    }
+}
+
 
 tasks.register('verifyExtractedCommonsProject') {
     dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-commons:derbySharedJar'
@@ -1000,7 +1007,8 @@ tasks.register('verifyCentralizedJavaCompileConventions') {
             'delosdb-tools/build.gradle',
             'delosdb-runner/build.gradle',
             'delosdb-server/build.gradle',
-            'delosdb-optionaltools/build.gradle'
+            'delosdb-optionaltools/build.gradle',
+            'delosdb-osgi-stub/build.gradle'
     )
     inputs.files(buildFiles)
     doLast {
@@ -1035,7 +1043,8 @@ tasks.register('verifyCentralizedReleaseMetadata') {
             'delosdb-tools/build.gradle',
             'delosdb-runner/build.gradle',
             'delosdb-server/build.gradle',
-            'delosdb-optionaltools/build.gradle'
+            'delosdb-optionaltools/build.gradle',
+            'delosdb-osgi-stub/build.gradle'
     )
     inputs.files(buildFiles)
     doLast {
@@ -1087,7 +1096,7 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 
 tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface',
-            'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
+            'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
             'verifyExtractedServerProject', 'verifyExtractedEngineProject'
 }
