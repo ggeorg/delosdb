@@ -24,6 +24,7 @@ The build is now Gradle-native for the active developer workflow: source generat
 ./gradlew dist
 ./gradlew publishToMavenLocal
 ./gradlew verifyMavenPublications
+./gradlew verifyMavenLocalConsumer
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
 ./gradlew verifyExtractedOptionalToolsProject
@@ -218,6 +219,7 @@ DelosDB can publish its extracted runtime subprojects to Maven Local. This is th
 ```bash
 ./gradlew publishToMavenLocal
 ./gradlew verifyMavenPublications
+./gradlew verifyMavenLocalConsumer
 ```
 
 The publication task writes DelosDB-branded artifacts under the local Maven repository:
@@ -241,3 +243,11 @@ delosdb-optionaltools
 `verifyMavenPublications` publishes to Maven Local and checks that each publication has a non-empty jar, a non-empty POM, DelosDB coordinates, license metadata, SCM metadata, and the expected DelosDB inter-artifact dependencies.
 
 The OSGi framework stub is still a build/runtime support jar for the inherited engine compile path and is not part of the public Maven publication baseline.
+
+## Maven Local consumer verification
+
+Run this after `publishToMavenLocal` or `verifyMavenPublications` to prove that an external Gradle project can consume DelosDB from Maven Local:
+
+```bash
+./gradlew verifyMavenLocalConsumer
+```

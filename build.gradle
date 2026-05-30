@@ -6,6 +6,7 @@ import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.bundling.Compression
 import org.gradle.api.tasks.bundling.Tar
 import org.gradle.api.tasks.bundling.Zip
+import org.gradle.api.tasks.GradleBuild
 import java.util.jar.JarFile
 import java.util.zip.ZipFile
 
@@ -1246,6 +1247,111 @@ tasks.register('verifyMavenPublications') {
         }
         println "Verified DelosDB Maven Local publications under ${repositoryBase}"
     }
+}
+
+
+// Prove that the Maven Local publications are consumable from a fresh external
+// Gradle project, not only present on disk. This intentionally uses a generated
+// throw-away consumer project under build/ so it does not pollute the repository.
+def mavenLocalConsumerProjectDir = layout.buildDirectory.dir('consumer-tests/maven-local-embedded-smoke')
+
+tasks.register('writeMavenLocalConsumerProject') {
+    dependsOn 'verifyMavenPublications'
+    group = 'verification'
+    description = 'Writes a temporary external Gradle project that consumes DelosDB from Maven Local.'
+    outputs.dir(mavenLocalConsumerProjectDir)
+    doLast {
+        def consumerDir = mavenLocalConsumerProjectDir.get().asFile
+        delete consumerDir
+
+        def sourceDir = new File(consumerDir, 'src/main/java/delosdb/smoke')
+        sourceDir.mkdirs()
+
+        new File(consumerDir, 'settings.gradle').text = """pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenLocal()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'delosdb-maven-local-embedded-smoke'
+"""
+
+        new File(consumerDir, 'build.gradle').text = """plugins {
+    id 'application'
+}
+
+group = 'io.github.ggeorg.delosdb.consumer'
+version = '0.1.0-dev'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(${javaRelease})
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = ${javaRelease}
+    options.encoding = 'UTF-8'
+}
+
+application {
+    mainClass = 'delosdb.smoke.MavenLocalSmoke'
+}
+
+dependencies {
+    implementation '${project.group}:delosdb-engine:${project.version}'
+}
+"""
+
+        new File(sourceDir, 'MavenLocalSmoke.java').text = """package delosdb.smoke;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+
+public final class MavenLocalSmoke {
+    private MavenLocalSmoke() {
+    }
+
+    public static void main(String[] args) throws Exception {
+        Class.forName(\"org.apache.derby.jdbc.EmbeddedDriver\");
+        try (Connection connection = DriverManager.getConnection(\"jdbc:derby:build/consumer-db;create=true\");
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate(\"create table delosdb_smoke(id int primary key, value varchar(32))\");
+            statement.executeUpdate(\"insert into delosdb_smoke values (1, 'maven-local-ok')\");
+            try (ResultSet resultSet = statement.executeQuery(\"select value from delosdb_smoke where id = 1\")) {
+                if (!resultSet.next()) {
+                    throw new IllegalStateException(\"No smoke-test row returned\");
+                }
+                String value = resultSet.getString(1);
+                if (!\"maven-local-ok\".equals(value)) {
+                    throw new IllegalStateException(\"Unexpected smoke-test value: \" + value);
+                }
+            }
+        }
+        System.out.println(\"DelosDB Maven Local consumer smoke test passed.\");
+    }
+}
+"""
+    }
+}
+
+tasks.register('verifyMavenLocalConsumer', GradleBuild) {
+    dependsOn 'writeMavenLocalConsumerProject'
+    group = 'verification'
+    description = 'Runs a generated external Gradle consumer project against the Maven Local DelosDB engine artifact.'
+    dir = mavenLocalConsumerProjectDir.get().asFile
+    tasks = ['clean', 'run']
 }
 
 tasks.register('verifyCentralizedJavaCompileConventions') {

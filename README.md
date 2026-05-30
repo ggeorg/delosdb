@@ -69,6 +69,7 @@ The `build` lifecycle compiles the inherited Derby/DelosDB modules, generates th
 ./gradlew verifyReleaseDistribution
 ./gradlew publishToMavenLocal
 ./gradlew verifyMavenPublications
+./gradlew verifyMavenLocalConsumer
 ./gradlew dist
 ./gradlew printArtifactInventory
 ./gradlew verifyArtifactInventory
@@ -137,6 +138,15 @@ build/release/delosdb-0.1.0-dev/bin/delosdb sysinfo
 
 
 ## Local Maven publication
+
+DelosDB can publish DelosDB-branded coordinates to Maven Local and verify that a fresh external Gradle consumer can resolve and run the embedded engine from those publications:
+
+```bash
+./gradlew publishToMavenLocal
+./gradlew verifyMavenPublications
+./gradlew verifyMavenLocalConsumer
+```
+
 
 DelosDB has a local Maven publication baseline for the extracted runtime subprojects. Maven coordinates are DelosDB-branded while the binary distribution keeps Derby-compatible jar file names for now:
 

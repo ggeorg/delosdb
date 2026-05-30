@@ -10,6 +10,7 @@ From the repository root:
 ./gradlew clean build
 ./gradlew publishToMavenLocal
 ./gradlew verifyMavenPublications
+./gradlew verifyMavenLocalConsumer
 ```
 
 The local repository location is:
@@ -52,6 +53,24 @@ derbyoptionaltools.jar
 - each POM contains DelosDB group/artifact/version coordinates;
 - each POM contains license and SCM metadata;
 - each POM contains the expected DelosDB inter-artifact dependencies.
+
+
+
+## External consumer verification
+
+`verifyMavenLocalConsumer` generates a temporary external Gradle project under:
+
+```text
+build/consumer-tests/maven-local-embedded-smoke/
+```
+
+The generated project uses only Maven Local resolution and depends on:
+
+```text
+io.github.ggeorg.delosdb:delosdb-engine:0.1.0-dev
+```
+
+It then runs a small embedded JDBC smoke test through the published artifact. This proves that the DelosDB-branded Maven coordinates are not only published, but also consumable from a separate Gradle build.
 
 ## Not Maven Central yet
 

@@ -36,6 +36,9 @@ jobs:
       - name: Verify Maven Local publications
         run: ./gradlew --no-daemon verifyMavenPublications
 
+      - name: Verify Maven Local consumer
+        run: ./gradlew --no-daemon verifyMavenLocalConsumer
+
       - name: Verify centralized Gradle conventions
         run: ./gradlew --no-daemon verifyCentralizedReleaseMetadata verifyCentralizedJavaCompileConventions
 
