@@ -2478,30 +2478,13 @@ public class EmbedConnection implements EngineConnection
 	}
 
 	/**
-		@exception Throwable	standard error policy
+	 * DelosDB no longer uses {@code Object.finalize()} to close abandoned
+	 * embedded connections. The supported cleanup path is explicit
+	 * {@link #close()} by the owner of the connection. This avoids running
+	 * connection close logic from GC/finalizer threads and preserves the
+	 * DERBY-1947 deadlock avoidance rationale by removing finalization from
+	 * this lifecycle path entirely.
 	 */
-    //
-    // This method in java.lang.Object was deprecated as of build 167
-    // of JDK 9. See DERBY-6932.
-    //
-    @SuppressWarnings({"deprecation","removal"})
-	protected void finalize() throws Throwable 
-	{
-		try {
-			// Only close root connections, since for nested
-			// connections, it is not strictly necessary and close()
-			// synchronizes on the root connection which can cause
-			// deadlock with the call to runFinalization from
-			// GenericPreparedStatement#prepareToInvalidate (see
-			// DERBY-1947) on SUN VMs.
-			if (rootConnection == this) {
-				close(exceptionClose);
-			}
-		}
-		finally {
-			super.finalize();
-		}
-	}
 
 	/**
 	 * if auto commit is on, remember that we need to commit

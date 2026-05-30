@@ -369,37 +369,11 @@ public class EmbedStatement extends ConnectionChild
 	}
 
     /**
-     * Mark the statement and its single-use activation as unused. This method
-     * should be called from <code>EmbedPreparedStatement</code>'s finalizer as
-     * well, even though prepared statements reuse activations, since
-     * <code>getGeneratedKeys()</code> uses a single-use activation regardless
-     * of statement type.
-     * <BR>
-     * Dynamic result sets (those in dynamicResults array) need not
-     * be handled here as they will be handled by the statement object
-     * that created them. In some cases results will point to a
-     * ResultSet in dynamicResults but all that will happen is that
-     * the activation will get marked as unused twice.
+     * DelosDB no longer uses {@code Object.finalize()} as a fallback cleanup
+     * path for abandoned embedded statements. Applications are expected to
+     * close statements and result sets explicitly; result-set close remains
+     * responsible for closing single-use activations.
      */
-    //
-    // This method in java.lang.Object was deprecated as of build 167
-    // of JDK 9. See DERBY-6932.
-    //
-    @SuppressWarnings({"deprecation","removal"})
-    protected void finalize() throws Throwable {
-        super.finalize();
-
-        // We mark the activation as not being used and
-        // that is it.  We rely on the connection to sweep
-        // through the activations to find the ones that
-        // aren't in use, and to close them.  We cannot
-        // do a activation.close() here because there are
-        // synchronized methods under close that cannot
-        // be called during finalization.
-        if (results != null && results.singleUseActivation != null) {
-            results.singleUseActivation.markUnused();
-        }
-    }
 
 	// allow sub-classes to execute additional close
 	// logic while holding the synchronization.

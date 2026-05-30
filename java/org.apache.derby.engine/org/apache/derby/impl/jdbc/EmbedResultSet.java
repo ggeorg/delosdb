@@ -142,11 +142,9 @@ public class EmbedResultSet extends ConnectionChild
 	 for a single execution Activation. Ie.
 	 a ResultSet from a Statement.executeQuery() or
      a ResultSet that is now a dynamic result set.
-	 In this case the closing of this ResultSet will close
-	 the activation or the finalization of the parent EmbedStatement
-	 without it being closed will mark the Activation as unused.
-	 @see EmbedStatement#finalize()
-	 @see EmbedPreparedStatement#finalize()
+	 In this case closing this ResultSet will close the activation.
+     DelosDB no longer relies on statement finalization as a fallback
+     activation cleanup path on Java 21+.
     */
 	Activation singleUseActivation;
 
