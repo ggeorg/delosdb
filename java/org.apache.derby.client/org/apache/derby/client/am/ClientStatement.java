@@ -464,27 +464,11 @@ public class ClientStatement implements Statement, StatementCallbackInterface{
         generatedKeysColumnIndexes_ = columnIndexes;
     }
 
-    /* (non-Javadoc)
-     * @see java.lang.Object#finalize()
-     * 
-     * This method cleans up client-side resources by calling markClosed().
-     * It is different from close() method, which also does clean up on server.
-     * Changes done as part of DERBY-210. 
+    /*
+     * Client statements are closed explicitly through close(), connection close,
+     * or result-set ownership paths. DelosDB no longer uses Object.finalize()
+     * to mark abandoned client statements closed on the Java 21 baseline.
      */
-    //
-    // This method in java.lang.Object was deprecated as of build 167
-    // of JDK 9. See DERBY-6932.
-    //
-    @SuppressWarnings({"deprecation","removal"})
-    protected void finalize() throws Throwable {
-        if (agent_.loggingEnabled()) {
-            agent_.logWriter_.traceEntry(this, "finalize");
-        }
-        if (openOnClient_) {
-            markClosed();
-        }
-        super.finalize();
-    }
 
     /*
      * Accessor to state variable warnings_

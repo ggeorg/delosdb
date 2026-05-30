@@ -38,3 +38,9 @@ DelosDB still accepts the inherited `-noSecurityManager` switch as a no-op so ex
 
 
 - Replaced `EmbedPreparedStatement.finalize()` with Cleaner fallback activation cleanup while preserving explicit close as the primary path.
+
+### Client JDBC finalizer cleanup batch
+
+The client connection, client statement, logical connection, and pooled connection classes no longer override `Object.finalize()`. DelosDB now treats explicit `close()` and existing ownership paths as the supported cleanup mechanism for these client-side JDBC objects on Java 21+.
+
+Remaining engine connection/statement finalizers are deliberately left for a separate high-risk cleanup pass because they touch activation and transaction lifecycle behavior.

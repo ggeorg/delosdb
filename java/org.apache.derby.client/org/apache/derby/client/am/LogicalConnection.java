@@ -50,8 +50,8 @@ import org.apache.derby.shared.common.reference.SQLState;
  * {@link #isClosed()}. When a physical connection is wrapped, it is non-null,
  * when the logical connection is closed, the wrapped physical connection is
  * always set to {@code null}.
- * Both the finalizer and the {@code close}-methods will always set the 
- * physical connection to {@code null}. After the physical connection has been
+ * The {@code close}-methods always set the physical connection to
+ * {@code null}. After the physical connection has been
  * nulled out, only the {@code PooledConnection} instance will maintain a
  * handle to the physical connection.
  */
@@ -84,14 +84,8 @@ public class LogicalConnection implements Connection {
         }
     }
 
-    //
-    // This method in java.lang.Object was deprecated as of build 167
-    // of JDK 9. See DERBY-6932.
-    //
-    @SuppressWarnings({"deprecation","removal"})
-    protected void finalize() throws Throwable {
-        close();
-    }
+    // Logical connection cleanup is deterministic through close(). DelosDB no
+    // longer uses Object.finalize() as a fallback close path on Java 21+.
 
     // Used by ClientPooledConnection close when it disassociates itself from the LogicalConnection
     synchronized public void nullPhysicalConnection() {

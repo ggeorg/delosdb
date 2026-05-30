@@ -194,24 +194,8 @@ public class ClientPooledConnection implements PooledConnection {
         return this.statementCache != null;
     }
 
-    //
-    // This method in java.lang.Object was deprecated as of build 167
-    // of JDK 9. See DERBY-6932.
-    //
-    @SuppressWarnings({"deprecation","removal"})
-    protected void finalize() throws Throwable {
-        if (logWriter_ != null) {
-            logWriter_.traceEntry(this, "finalize");
-        }
-
-        try {
-            close();
-        } finally {
-            // Any exception ignored if thrown from finalizer anyway, so no
-            // need to catch it.
-            super.finalize();
-        }
-    }
+    // Pooled connection cleanup is deterministic through close(). DelosDB no
+    // longer uses Object.finalize() as a fallback close path on Java 21+.
 
     /**
      * Closes the physical connection to the data source and frees all

@@ -365,41 +365,10 @@ public abstract class ClientConnection
                 clientSSLMode_);
     }
 
-    // Users are advised to call the method close() on Statement and Connection objects when they are done with them.
-    // However, some users will forget, and some code may get killed before it can close these objects.
-    // Therefore, if JDBC drivers have state associated with JDBC objects that need to get
-    // explicitly cleared up, they should provide finalize methods to take care of them.
-    // The garbage collector will call these finalize methods when the objects are found to be garbage,
-    // and this will give the driver a chance to close (or otherwise clean up) the objects.
-    // Note, however, that there is no guarantee that the garbage collector will ever run.
-    // If that is the case, the finalizers will not be called.
-    //
-    // This method in java.lang.Object was deprecated as of build 167
-    // of JDK 9. See DERBY-6932.
-    //
-    @SuppressWarnings({"deprecation","removal"})
-    protected void finalize() throws Throwable {
-        if (agent_.loggingEnabled()) {
-            agent_.logWriter_.traceEntry(this, "finalize");
-        }
-
-        // finalize() differs from close() in that it will not throw an
-        // exception if a transaction is in progress.
-        // finalize() also differs from close() in that it will not drive
-        // an auto-commit before disconnecting.
-        //
-        // If a transaction is in progress, a close() request will throw an SqlException.
-        // However, if a connection with an incomplete transaction is finalized,
-        // or is abruptly terminated by application exit,
-        // the normal rollback semantics imposed by the DERBY server are adopted.
-        // So we just pull the plug and let the server handle this default semantic.
-
-        if (!open_) {
-            return;
-        }
-        agent_.disconnectEvent();
-        super.finalize();
-    }
+    // Users are advised to call close() on Statement and Connection objects when
+    // they are done with them. DelosDB no longer uses Object.finalize() as a
+    // fallback cleanup mechanism on the Java 21 baseline. Client connections
+    // rely on explicit close() or process/socket termination semantics.
 
     // ---------------------------jdbc 1------------------------------------------
 
