@@ -21,19 +21,20 @@
 
 package org.apache.derby.impl.tools.ij;
 
-import java.util.Vector;
 import java.sql.SQLWarning;
 
+import java.util.ArrayList;
+import java.util.List;
 /**
  * This is an impl for a simple Vector of objects.
  *
  */
 class ijVectorResult extends ijResultImpl {
 
-	Vector<Object> vec;
+	private final List<Object> vec;
 	SQLWarning warns;
 
-	ijVectorResult(Vector<Object> v, SQLWarning w) {
+	ijVectorResult(List<Object> v, SQLWarning w) {
 		vec = v;
 		warns = w;
 	}
@@ -42,14 +43,17 @@ class ijVectorResult extends ijResultImpl {
 	 * Initialize a new vector containing only one object.
 	 */
 	ijVectorResult(Object value, SQLWarning w) {
-		this(new Vector<Object>(1), w);
+		this(new ArrayList<Object>(1), w);
 		vec.add(value);
 	}
 
 
 	public boolean isVector() { return true; }
 
-	public Vector getVector() { return vec; }
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+    public java.util.Vector getVector() {
+        return new java.util.Vector(vec);
+    }
 
 	public SQLWarning getSQLWarnings() { return warns; }
 	public void clearSQLWarnings() { warns = null; }

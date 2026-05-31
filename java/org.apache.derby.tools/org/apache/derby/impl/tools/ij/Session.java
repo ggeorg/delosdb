@@ -28,8 +28,8 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.Hashtable;
-
+import java.util.HashMap;
+import java.util.Map;
 /**
 	Session holds the objects local to a particular database session,
 	which starts with a connection and is all other JDBC
@@ -46,10 +46,10 @@ class Session {
 	boolean singleSession = true;
 	Connection conn = null;
 	String tag, name;
-	Hashtable<String,PreparedStatement> prepStmts = new Hashtable<String,PreparedStatement>();
-	Hashtable<String,Statement> cursorStmts = new Hashtable<String,Statement>();
-	Hashtable<String,ResultSet> cursors = new Hashtable<String,ResultSet>();
-	Hashtable<String,AsyncStatement> asyncStmts = new Hashtable<String,AsyncStatement>();
+	Map<String,PreparedStatement> prepStmts = new HashMap<String,PreparedStatement>();
+	Map<String,Statement> cursorStmts = new HashMap<String,Statement>();
+	Map<String,ResultSet> cursors = new HashMap<String,ResultSet>();
+	Map<String,AsyncStatement> asyncStmts = new HashMap<String,AsyncStatement>();
 	boolean isJCC= false;      // Is this the IBM UNIVERSAL DRIVER.
 	boolean isDNC = false;     // Is this the Derby Network Client JDBC Driver
 	boolean isEmbeddedDerby = false; // Is this the Derby Embedded JDBC Driver

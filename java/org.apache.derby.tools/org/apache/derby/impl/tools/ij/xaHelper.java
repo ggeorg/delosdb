@@ -27,8 +27,6 @@ import java.io.UnsupportedEncodingException;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Locale;
-import java.util.Vector;
-
 import javax.transaction.xa.Xid;
 import javax.transaction.xa.XAException;
 import javax.sql.PooledConnection;
@@ -37,6 +35,8 @@ import javax.sql.XADataSource;
 import javax.sql.DataSource;
 import javax.sql.ConnectionPoolDataSource;
 
+import java.util.ArrayList;
+import java.util.List;
 /*
  * The real xa helper class.  Load this class only if we know the javax classes
  * are in the class path.
@@ -293,12 +293,12 @@ class xaHelper implements xaAbstractHelper
             throw handleException(t);
 		}
 
-		Vector<String> v = new Vector<String>();
-		v.addElement("");
-		v.addElement(LocalizedResource.getMessage("IJ_Reco0InDoubT", LocalizedResource.getNumber(val.length)));
-		v.addElement("");
+		List<Object> v = new ArrayList<Object>();
+		v.add("");
+		v.add(LocalizedResource.getMessage("IJ_Reco0InDoubT", LocalizedResource.getNumber(val.length)));
+		v.add("");
 		for (int i = 0; i < val.length; i++)
-			v.addElement(LocalizedResource.getMessage("IJ_Tran01", LocalizedResource.getNumber(i+1), val[i].toString()));
+			v.add(LocalizedResource.getMessage("IJ_Tran01", LocalizedResource.getNumber(i+1), val[i].toString()));
 
 		return new ijVectorResult(v,null);
 
