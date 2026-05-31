@@ -26,7 +26,8 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
   A ByteHolder that stores all its bytes in memory.
@@ -38,7 +39,7 @@ implements ByteHolder
 
 	boolean writing = true;
 	
-	Vector<byte[]> bufV;
+	List<byte[]> bufV;
 	int curBufVEleAt;
 
 	byte[] curBuf;
@@ -69,8 +70,8 @@ implements ByteHolder
 		this.curBuf = new byte[bufSize];
 		this.curBufPos = 0;
 
-		this.bufV = new Vector<byte[]>(128);
-		bufV.addElement(curBuf);
+		this.bufV = new ArrayList<byte[]>(128);
+		bufV.add(curBuf);
 		this.curBufVEleAt = 0;
 	}
 
@@ -170,7 +171,7 @@ implements ByteHolder
 	{
 		writing = true;
 		
-		curBuf = bufV.elementAt(0);
+		curBuf = bufV.get(0);
 		this.curBufVEleAt = 0;
 		this.curBufPos = 0;
 		
@@ -194,7 +195,7 @@ implements ByteHolder
 		//
 		//Reposition so reads start from the first
 		//byte.
-		curBuf = bufV.elementAt(0);
+		curBuf = bufV.get(0);
 		this.curBufVEleAt = 0;
 		this.curBufPos = 0;
 		if (curBufVEleAt == lastBufVEleAt)
@@ -440,11 +441,11 @@ implements ByteHolder
 		if (bufV.size() <= curBufVEleAt)
 		{
 			curBuf = new byte[bufSize];
-			bufV.addElement(curBuf);
+			bufV.add(curBuf);
 		}
 		else
 		{
-			curBuf = bufV.elementAt(curBufVEleAt);
+			curBuf = bufV.get(curBufVEleAt);
 		}
 		
 		initBuffer_w();
@@ -489,7 +490,7 @@ implements ByteHolder
 			SanityManager.ASSERT(writing == false,
 								 "Reading should be true 5");
 		if (curBufVEleAt >= lastBufVEleAt) return true;
-		curBuf = bufV.elementAt(++curBufVEleAt);
+		curBuf = bufV.get(++curBufVEleAt);
 		curBufPos = 0;
 		if (curBufVEleAt == lastBufVEleAt)
 			curBufDataBytes = lastBufDataBytes;
@@ -506,7 +507,7 @@ implements ByteHolder
 	{
 		StringBuffer sb = new StringBuffer(100);
 
-		byte[] buf = bufV.elementAt(bufVEleAt);
+		byte[] buf = bufV.get(bufVEleAt);
 		sb.append("(");
 		for (int ix = 0;ix<buf.length;ix++)
 			sb.append(buf[ix]+".");
