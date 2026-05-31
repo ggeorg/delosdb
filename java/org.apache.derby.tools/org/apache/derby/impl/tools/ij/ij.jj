@@ -61,6 +61,7 @@ import java.util.Vector;
 import java.util.Enumeration;
 import java.util.Locale;
 import java.util.List;
+import java.util.Map;
 import java.util.ArrayList;
 import javax.transaction.xa.XAResource;
 
@@ -490,10 +491,10 @@ class ij {
 		String[] array = new String[size];
 		String key;
 
-                Hashtable ss = currentConnEnv.getSessions();
+                Map<String,Session> ss = currentConnEnv.getSessions();
 		// Calculate the number of connections in the sessions list and
 		// build an array of all the connection names.
-		for (Enumeration connectionNames = ss.keys(); connectionNames.hasMoreElements();) {
+		for (String connectionName : ss.keySet()) {
  		    if (count == size) {
 		       // need to expand the array
 		       size = size*2;
@@ -501,7 +502,7 @@ class ij {
 		       System.arraycopy(array, 0, expandedArray, 0, count);
 		       array = expandedArray;
 		    }
-		    key = (String)connectionNames.nextElement();
+		    key = connectionName;
 		    array[ count++ ] = key;
 		}
 
@@ -523,23 +524,20 @@ class ij {
 	  all the connections made so far.
 	    */
 	public ijResult showConnectionsMethod(boolean ignore0Rows) throws SQLException {
-  		Hashtable ss = currentConnEnv.getSessions();
-	  	Vector<Object> v = new Vector<Object>();
+  		Map<String,Session> ss = currentConnEnv.getSessions();
+	  	List<Object> v = new ArrayList<Object>();
 	  	SQLWarning w = null;
         if (ss == null || ss.size() == 0) {
         	if (!ignore0Rows)
-            	v.addElement(LocalizedResource.getMessage("IJ_NoConneAvail"));
+            	v.add(LocalizedResource.getMessage("IJ_NoConneAvail"));
         } 
         else {
         	boolean haveCurrent=false;
-			int count = 0;
-			for (Enumeration connectionNames = ss.keys(); connectionNames.hasMoreElements();
-						connectionNames.nextElement()) 
-		    	count++;
+			int count = ss.size();
             String[] array = sortConnectionNames();
 		    for ( int ictr = 0; ictr < count; ictr++ ) {
 				String connectionName = array[ ictr ];
-            	Session s = (Session)ss.get(connectionName);
+            	Session s = ss.get(connectionName);
             	if (s.getConnection().isClosed()) {
             		if (currentConnEnv.getSession() != null && 
             				connectionName.equals(currentConnEnv.getSession().getName())) {
@@ -568,13 +566,13 @@ class ij {
               		// save the warnings from these connections
 	              	w = appendWarnings(w,s.getConnection().getWarnings());
     	          	s.getConnection().clearWarnings();
-        	      	v.addElement(row.toString());
+        	      	v.add(row.toString());
             	}
         	}
   	    	if (haveCurrent)
-            	v.addElement(LocalizedResource.getMessage("IJ_CurreConne"));
+            	v.add(LocalizedResource.getMessage("IJ_CurreConne"));
 		    else
-            	v.addElement(LocalizedResource.getMessage("IJ_NoCurreConne"));
+            	v.add(LocalizedResource.getMessage("IJ_NoCurreConne"));
 	  	}
 	  	return new ijVectorResult(v,w);
 	}

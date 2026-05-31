@@ -25,8 +25,10 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.lang.reflect.InvocationTargetException;
 
-import java.util.Hashtable;
+import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Properties;
 
 import java.sql.Connection;
@@ -41,7 +43,7 @@ import org.apache.derby.iapi.tools.i18n.LocalizedOutput;
 
  */
 class ConnectionEnv {
-	Hashtable<String,Session> sessions = new Hashtable<String,Session>();
+	private final Map<String,Session> sessions = new LinkedHashMap<String,Session>();
 	private Session currSession;
 	private String tag;
 	private boolean only;
@@ -117,15 +119,9 @@ class ConnectionEnv {
     int newNum = 0;
     boolean newConnectionNameOk = false;
     String newConnectionName = "";
-    Enumeration<String> e;
     while (!newConnectionNameOk){
       newConnectionName = Session.DEFAULT_NAME + newNum;
-      newConnectionNameOk = true;
-      e = sessions.keys();
-      while (e.hasMoreElements() && newConnectionNameOk){
-        if ((e.nextElement()).equals(newConnectionName))
-           newConnectionNameOk = false;
-      }
+      newConnectionNameOk = !sessions.containsKey(newConnectionName);
       newNum = newNum + 1;
     }
     return newConnectionName;
@@ -135,7 +131,7 @@ class ConnectionEnv {
 		return currSession;
 	}
 
-	Hashtable<String,Session> getSessions() {
+	Map<String,Session> getSessions() {
 		return sessions;
 	}
 
@@ -170,8 +166,7 @@ class ConnectionEnv {
 		if (sessions == null || sessions.size() == 0)
 			return;
 		else
-			for (Enumeration<String> e = sessions.keys(); e.hasMoreElements(); ) {
-				String n = e.nextElement();
+			for (String n : new ArrayList<String>(sessions.keySet())) {
 				removeSession(n);
 			}
 	}

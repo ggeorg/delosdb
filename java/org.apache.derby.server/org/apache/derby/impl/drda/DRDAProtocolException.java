@@ -30,7 +30,8 @@
 */
 
 package org.apache.derby.impl.drda;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 class DRDAProtocolException extends Exception
@@ -82,7 +83,7 @@ class DRDAProtocolException extends Exception
     // when getMessage() is called on this Exception object
     private String msg;
     
-    private static Hashtable<String, DRDAProtocolExceptionInfo> errorInfoTable;
+    private static final Map<String, DRDAProtocolExceptionInfo> errorInfoTable;
     
     protected static String DRDA_Proto_CMDCHKRM=    "DRDA_Proto_CMDCHKRM";
     protected static String DRDA_Proto_CMDNSPRM=    "DRDA_Proto_CMDNSPRM";
@@ -109,7 +110,7 @@ class DRDAProtocolException extends Exception
        DRDAProtocolExceptionInfo for each of our messages.
     */
     
-    errorInfoTable = new Hashtable<String, DRDAProtocolExceptionInfo>();
+    errorInfoTable = new HashMap<String, DRDAProtocolExceptionInfo>();
     
     errorInfoTable.put(
                DRDA_Proto_CMDCHKRM,
@@ -237,7 +238,7 @@ class DRDAProtocolException extends Exception
         boolean agentError = false;
 
         exceptionInfo = 
-            (DRDAProtocolExceptionInfo) errorInfoTable.get(msgid);
+            errorInfoTable.get(msgid);
                 
         if (agent != null)
         {
