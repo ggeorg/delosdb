@@ -52,6 +52,12 @@ production_get_security_manager="$(count_matches 'System\.getSecurityManager[[:s
 production_do_privileged="$(count_matches 'AccessController\.doPrivileged|doPrivileged[[:space:]]*\(')"
 production_access_controller="$(count_matches 'java\.security\.AccessController|AccessController\.')"
 
+# Match legacy java.util collection usage precisely enough to avoid counting
+# project-specific class names such as QueryTreeNodeVector or DiskHashtable.
+VECTOR_USAGE_PATTERN='new[[:space:]]+(java\.util\.)?Vector[[:space:]]*(<|\()|(^|[^[:alnum:]_])Vector[[:space:]]*<'
+HASHTABLE_USAGE_PATTERN='new[[:space:]]+(java\.util\.)?Hashtable[[:space:]]*(<|\()|(^|[^[:alnum:]_])Hashtable[[:space:]]*<'
+
+
 cat > "$REPORT_FILE" <<EOF_REPORT
 # DelosDB Modernization Audit
 
@@ -65,8 +71,8 @@ This report focuses on production modules. Historical demo material and the inhe
 | System.getSecurityManager calls | ${production_get_security_manager} |
 | AccessController references | ${production_access_controller} |
 | doPrivileged calls | ${production_do_privileged} |
-| Vector usage | $(count_matches 'new[[:space:]]+Vector|Vector[[:space:]]*<') |
-| Hashtable usage | $(count_matches 'new[[:space:]]+Hashtable|Hashtable[[:space:]]*<') |
+| Vector usage | $(count_matches "$VECTOR_USAGE_PATTERN") |
+| Hashtable usage | $(count_matches "$HASHTABLE_USAGE_PATTERN") |
 
 Secondary all-tree counts, including inherited tests/demo/history:
 
@@ -83,8 +89,8 @@ write_matches "Production Object finalizer overrides" 'protected[[:space:]]+void
 write_matches "Production System.getSecurityManager calls" 'System\.getSecurityManager[[:space:]]*\('
 write_matches "Production AccessController references" 'java\.security\.AccessController|AccessController\.'
 write_matches "Production doPrivileged calls" 'AccessController\.doPrivileged|doPrivileged[[:space:]]*\('
-write_matches "Production Vector usage" 'new[[:space:]]+Vector|Vector[[:space:]]*<' 
-write_matches "Production Hashtable usage" 'new[[:space:]]+Hashtable|Hashtable[[:space:]]*<' 
+write_matches "Production Vector usage" "$VECTOR_USAGE_PATTERN" 
+write_matches "Production Hashtable usage" "$HASHTABLE_USAGE_PATTERN" 
 
 if [[ "$VERIFY" == true ]]; then
   failed=false
