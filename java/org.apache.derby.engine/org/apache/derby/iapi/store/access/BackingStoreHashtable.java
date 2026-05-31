@@ -60,13 +60,13 @@ may differ).  The important points are that the hash value is the standard
 java hash value on the row[key_column_numbers[0], if key_column_numbers.length is 1,
 or row[key_column_numbers[0, 1, ...]] if key_column_numbers.length &gt; 1, 
 and that duplicate detection is done by the standard java duplicate detection provided by 
-java.util.Hashtable.
+java.util.HashMap.
 </p>
 
 <pre>
-import java.util.Hashtable;
+import java.util.HashMap;
 
-hash_table = new Hashtable();
+hash_table = new HashMap();
 
 Object row; // is a DataValueDescriptor[] or a LocatedRow
 
@@ -82,27 +82,27 @@ while((row = rowSource.getNextRowFromRowSource()) != null)
     if ((duplicate_value = 
         hash_table.put(key, row)) != null)
     {
-        Vector row_vec;
+        ArrayList row_vec;
 
         // inserted a duplicate
-        if ((duplicate_value instanceof vector))
+        if ((duplicate_value instanceof ArrayList))
         {
-            row_vec = (Vector) duplicate_value;
+            row_vec = (ArrayList) duplicate_value;
         }
         else
         {
-            // allocate vector to hold duplicates
-            row_vec = new Vector(2);
+            // allocate list to hold duplicates
+            row_vec = new ArrayList(2);
 
-            // insert original row into vector
-            row_vec.addElement(duplicate_value);
+            // insert original row into list
+            row_vec.add(duplicate_value);
 
-            // put the vector as the data rather than the row
+            // put the list as the data rather than the row
             hash_table.put(key, row_vec);
         }
         
-        // insert new row into vector
-        row_vec.addElement(row);
+        // insert new row into list
+        row_vec.add(row);
     }
 }
 </pre>
