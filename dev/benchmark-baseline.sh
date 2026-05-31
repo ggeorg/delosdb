@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIB_DIR="$ROOT_DIR/build/libs"
 DERBY_JAR="$LIB_DIR/derby.jar"
+DERBY_SHARED_JAR="$LIB_DIR/derbyshared.jar"
 REPORT_DIR="$ROOT_DIR/build/reports/benchmarks"
 WORK_DIR="$ROOT_DIR/build/benchmarks/embedded-baseline"
 SRC_DIR="$WORK_DIR/src"
@@ -17,6 +18,21 @@ if [[ ! -f "$DERBY_JAR" ]]; then
   echo "Run ./gradlew clean build before running the benchmark baseline." >&2
   exit 1
 fi
+
+if [[ ! -f "$DERBY_SHARED_JAR" ]]; then
+  echo "Missing $DERBY_SHARED_JAR" >&2
+  echo "Run ./gradlew clean build before running the benchmark baseline." >&2
+  exit 1
+fi
+
+RUNTIME_CLASSPATH=""
+for jar in "$LIB_DIR"/*.jar; do
+  if [[ -z "$RUNTIME_CLASSPATH" ]]; then
+    RUNTIME_CLASSPATH="$jar"
+  else
+    RUNTIME_CLASSPATH="$RUNTIME_CLASSPATH:$jar"
+  fi
+done
 
 mkdir -p "$SRC_DIR" "$CLASS_DIR" "$REPORT_DIR"
 rm -rf "$DB_DIR" "$CLASS_DIR"/*
@@ -46,7 +62,13 @@ public final class DelosDbEmbeddedBenchmark {
         T run() throws Exception;
     }
 
+    private interface SqlRunnable {
+        void run() throws Exception;
+    }
+
     public static void main(String[] args) throws Exception {
+        Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
+
         Path databasePath = Path.of(args[0]).toAbsolutePath();
         int rows = Integer.parseInt(args[1]);
         int lookups = Integer.parseInt(args[2]);
@@ -121,6 +143,7 @@ public final class DelosDbEmbeddedBenchmark {
 
             printReport(databasePath, rows, lookups, createDatabase.nanos, createSchema,
                     insertRows, primaryKeyLookups, indexedRangeQuery, fullTableCount);
+            connection.commit();
         } finally {
             shutdown(databasePath);
         }
@@ -132,7 +155,7 @@ public final class DelosDbEmbeddedBenchmark {
         return new Timed<>(value, System.nanoTime() - start);
     }
 
-    private static long timedVoid(SqlWork<Void> work) throws Exception {
+    private static long timedVoid(SqlRunnable work) throws Exception {
         long start = System.nanoTime();
         work.run();
         return System.nanoTime() - start;
@@ -176,10 +199,10 @@ public final class DelosDbEmbeddedBenchmark {
 }
 JAVA
 
-javac --release 21 -cp "$DERBY_JAR" -d "$CLASS_DIR" "$SRC_DIR/DelosDbEmbeddedBenchmark.java"
+javac --release 21 -cp "$RUNTIME_CLASSPATH" -d "$CLASS_DIR" "$SRC_DIR/DelosDbEmbeddedBenchmark.java"
 
 REPORT_FILE="$REPORT_DIR/embedded-baseline.md"
-java -cp "$CLASS_DIR:$DERBY_JAR" DelosDbEmbeddedBenchmark "$DB_DIR" "$ROWS" "$LOOKUPS" | tee "$REPORT_FILE"
+java -cp "$CLASS_DIR:$RUNTIME_CLASSPATH" DelosDbEmbeddedBenchmark "$DB_DIR" "$ROWS" "$LOOKUPS" | tee "$REPORT_FILE"
 
 echo
 printf 'Benchmark baseline written to %s\n' "$REPORT_FILE"

@@ -635,7 +635,8 @@ tasks.register('compileModernizationSmoke', JavaCompile) {
 }
 
 tasks.register('modernizationSmoke', JavaExec) {
-    dependsOn 'compileModernizationSmoke'
+    dependsOn 'compileModernizationSmoke', 'verifyReleaseArtifacts'
+    mustRunAfter 'smokeFromJars'
     group = 'verification'
     description = 'Runs JDBC lifecycle smoke coverage for Java 21 modernization cleanup paths from assembled jars.'
     classpath = files(modernizationSmokeClassesDir, runtimeJars())
@@ -643,6 +644,37 @@ tasks.register('modernizationSmoke', JavaExec) {
     workingDir = layout.buildDirectory.dir('modernization-smoke').get().asFile
     doFirst {
         delete file('build/modernization-smoke/modernization-smoke-db')
+        workingDir.mkdirs()
+    }
+}
+
+
+def networkServerSmokeClassesDir = layout.buildDirectory.dir('classes/network-server-smoke')
+
+tasks.register('compileNetworkServerSmoke', JavaCompile) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Compiles the network server JDBC smoke test.'
+    source = files('dev/network-server-smoke/src/main/java')
+    destinationDirectory = networkServerSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = runtimeJars()
+}
+
+tasks.register('networkServerSmoke', JavaExec) {
+    dependsOn 'compileNetworkServerSmoke', 'verifyReleaseArtifacts'
+    mustRunAfter 'smokeFromJars', 'modernizationSmoke'
+    group = 'verification'
+    description = 'Starts the DelosDB Network Server from assembled jars and verifies a remote JDBC client round trip.'
+    classpath = files(networkServerSmokeClassesDir, runtimeJars())
+    mainClass = 'delosdb.smoke.NetworkServerSmoke'
+    args layout.buildDirectory.dir('network-server-smoke/home').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('network-server-smoke').get().asFile
+    doFirst {
+        delete file('build/network-server-smoke')
         workingDir.mkdirs()
     }
 }
@@ -772,10 +804,10 @@ tasks.register('sysinfo', JavaExec) {
 }
 
 tasks.register('smoke', JavaExec) {
-    dependsOn 'compileAll'
+    dependsOn 'jars'
     group = 'verification'
-    description = 'Runs a small embedded JDBC create/insert/select script using Gradle-built classes.'
-    classpath = moduleDirsForRuntime
+    description = 'Runs a small embedded JDBC create/insert/select script using assembled runtime jars.'
+    classpath = runtimeJars()
     mainClass = 'org.apache.derby.run.run'
     args 'ij', file('dev/smoke.sql').absolutePath
     workingDir = projectDir
@@ -1482,7 +1514,7 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'smoke', 'smokeFromJars', 'modernizationSmoke', 'verifyGradleOnlyPublicSurface',
+    dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'smoke', 'smokeFromJars', 'modernizationSmoke', 'networkServerSmoke', 'verifyGradleOnlyPublicSurface',
             'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
             'verifyExtractedServerProject', 'verifyExtractedEngineProject'
@@ -1491,7 +1523,7 @@ tasks.named('check') {
 tasks.register('test') {
     group = 'verification'
     description = 'Alias for the current smoke verification tasks.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'networkServerSmoke'
 }
 
 tasks.named('build') {

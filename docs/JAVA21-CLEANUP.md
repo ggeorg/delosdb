@@ -129,3 +129,8 @@ This batch removes additional low-risk synchronized collection usage from servic
 ### Modernization smoke coverage
 
 `./gradlew modernizationSmoke` is now part of the root verification lifecycle. It runs against the assembled jars and covers the main cleanup-sensitive JDBC lifecycle paths: embedded create-database, statement batching, prepared statements, BLOB materialization/free, result-set close, transaction commit, and database shutdown. Keep this smoke test small and fast; deeper behavioral coverage belongs in focused Derby regression tests.
+
+### Network Server smoke coverage
+
+`./gradlew networkServerSmoke` starts the DelosDB Network Server from the assembled runtime jars on a temporary loopback port and verifies a remote JDBC client round trip through `derbyclient.jar`. This gives the Java 21 cleanup track a fast regression guard for server startup, client-driver connectivity, create-database behavior through the network protocol, query execution, database shutdown, and server shutdown.
+

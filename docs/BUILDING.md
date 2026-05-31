@@ -109,11 +109,17 @@ Use this command to verify the release artifact shape:
 ```bash
 ./gradlew smoke
 ./gradlew smokeFromJars
+./gradlew modernizationSmoke
+./gradlew networkServerSmoke
 ```
 
 `smoke` runs `dev/smoke.sql` through `ij` using the Gradle-built class directories.
 
 `smokeFromJars` runs the same script from the assembled jars in `build/libs/`. This is important because it verifies the artifact shape, not only the compiler output tree.
+
+`modernizationSmoke` runs a focused embedded JDBC lifecycle smoke test from assembled jars.
+
+`networkServerSmoke` starts the Network Server from assembled jars on a temporary loopback port and verifies a remote JDBC client round trip.
 
 ## System info
 

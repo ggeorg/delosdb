@@ -53,7 +53,7 @@ From the repository root:
 ./gradlew build
 ```
 
-The `build` lifecycle compiles the inherited Derby/DelosDB modules, generates the required legacy sources/resources, assembles jars, verifies the public build surface, verifies jar release metadata and legal attribution files, and runs embedded smoke tests from both classes and assembled jars.
+The `build` lifecycle compiles the inherited Derby/DelosDB modules, generates the required legacy sources/resources, assembles jars, verifies the public build surface, verifies jar release metadata and legal attribution files, and runs embedded smoke tests from both classes and assembled jars, plus modernization and Network Server smoke coverage.
 
 ## Useful Gradle tasks
 
@@ -61,6 +61,8 @@ The `build` lifecycle compiles the inherited Derby/DelosDB modules, generates th
 ./gradlew build
 ./gradlew smoke
 ./gradlew smokeFromJars
+./gradlew modernizationSmoke
+./gradlew networkServerSmoke
 ./gradlew sysinfo
 ./gradlew sysinfoFromJars
 ./gradlew jars

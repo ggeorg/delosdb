@@ -85,3 +85,13 @@ This batch removes additional low-risk synchronized collection usage from servic
 ### Java 21 modernization smoke test
 
 DelosDB now includes a focused Java smoke test for the Java 21 cleanup track. `./gradlew modernizationSmoke` runs from the assembled runtime jars and exercises embedded database creation, statement batching, prepared-statement execution, BLOB retrieval/free, result-set iteration, commit, and shutdown. This is not a replacement for the inherited Derby test suite, but it gives the modernization work a fast regression guard around the JDBC lifecycle paths touched by finalizer, Cleaner, and collection cleanup batches.
+
+### Network Server smoke coverage
+
+`./gradlew networkServerSmoke` starts the DelosDB Network Server from the assembled runtime jars on a temporary loopback port and verifies a remote JDBC client round trip through `derbyclient.jar`. This gives the Java 21 cleanup track a fast regression guard for server startup, client-driver connectivity, create-database behavior through the network protocol, query execution, database shutdown, and server shutdown.
+
+
+
+## Smoke and benchmark stability
+
+The embedded smoke task runs from assembled runtime jars, matching the release artifact path. The embedded benchmark explicitly commits after read-only timing sections so Derby does not reject connection close with an active transaction.
