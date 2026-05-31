@@ -21,7 +21,8 @@
 
 package org.apache.derby.impl.sql.execute;
 
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.List;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
@@ -115,7 +116,6 @@ abstract class GenericAggregateResultSet extends NoPutResultSetImpl
 	 * 
 	 * @exception StandardException on error
 	 */	
-    @SuppressWarnings("UseOfObsoleteCollectionType")
 	protected final GenericAggregator[] getSortAggregators
 	(
 		AggregatorInfoList 			list,
@@ -125,8 +125,8 @@ abstract class GenericAggregateResultSet extends NoPutResultSetImpl
 	) throws StandardException
 	{
 		GenericAggregator 	aggregators[]; 
-        Vector<GenericAggregator>
-                tmpAggregators = new Vector<GenericAggregator>();
+        List<GenericAggregator>
+                tmpAggregators = new ArrayList<GenericAggregator>();
 		ClassFactory		cf = lcc.getLanguageConnectionFactory().getClassFactory();
 
         for (AggregatorInfo aggInfo : list)
@@ -134,14 +134,13 @@ abstract class GenericAggregateResultSet extends NoPutResultSetImpl
 			if (! (eliminateDistincts && aggInfo.isDistinct()))
 			// if (eliminateDistincts == aggInfo.isDistinct())
 			{
-				tmpAggregators.addElement(new GenericAggregator(aggInfo, cf));
+				tmpAggregators.add(new GenericAggregator(aggInfo, cf));
 			}
 		}
 
 
 
-		aggregators = new GenericAggregator[tmpAggregators.size()];
-		tmpAggregators.copyInto(aggregators);
+		aggregators = tmpAggregators.toArray(new GenericAggregator[tmpAggregators.size()]);
 		// System.out.println("size of sort aggregates " + tmpAggregators.size());
 
 		return aggregators;

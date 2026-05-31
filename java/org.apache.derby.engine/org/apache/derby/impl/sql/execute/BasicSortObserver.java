@@ -29,7 +29,8 @@ import org.apache.derby.iapi.sql.execute.ExecRow;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 /**
@@ -43,7 +44,7 @@ public class BasicSortObserver implements SortObserver
 	protected boolean	distinct;
 	private	  boolean	reuseWrappers;
 	private	  ExecRow	execRow;
-	private	  Vector<DataValueDescriptor[]>	vector;
+	private	  List<DataValueDescriptor[]>	vector;
 
 	/**
 	 * Simple constructor
@@ -65,7 +66,7 @@ public class BasicSortObserver implements SortObserver
 		this.distinct = distinct;
 		this.execRow = execRow;
 		this.reuseWrappers = reuseWrappers;
-		vector = new Vector<DataValueDescriptor[]>();
+		vector = new ArrayList<DataValueDescriptor[]>();
 	}
 
 	/**
@@ -116,7 +117,7 @@ public class BasicSortObserver implements SortObserver
 	{
 		if (reuseWrappers && vector.size() < maxFreeListSize)
 		{
-			vector.addElement(objectArray);
+			vector.add(objectArray);
 		}
 	}
 
@@ -127,8 +128,8 @@ public class BasicSortObserver implements SortObserver
 
 		if (lastElement > 0)
 		{
-			DataValueDescriptor[] retval = vector.elementAt(lastElement - 1);
-			vector.removeElementAt(lastElement - 1);
+			DataValueDescriptor[] retval = vector.get(lastElement - 1);
+			vector.remove(lastElement - 1);
 			return retval;
 		}
 		return execRow.getRowArrayClone();

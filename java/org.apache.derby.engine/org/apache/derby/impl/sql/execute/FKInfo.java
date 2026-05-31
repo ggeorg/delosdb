@@ -25,7 +25,8 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.io.StreamCorruptedException;
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.derby.catalog.UUID;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.util.ArrayUtil;
@@ -207,8 +208,7 @@ public class FKInfo implements Formatable
 			return (FKInfo[])null;
 		}
 
-		Vector<FKInfo> newfksVector = new Vector<FKInfo>();
-		FKInfo[] newfks = null;
+		List<FKInfo> newfks = new ArrayList<FKInfo>();
 
 		/*
 		** For each FKInfo
@@ -218,7 +218,7 @@ public class FKInfo implements Formatable
 			if (addAllTypeIsFK && 
 				(fkInfo[i].type == FOREIGN_KEY))
 			{
-				newfksVector.addElement(fkInfo[i]);
+				newfks.add(fkInfo[i]);
 				continue;
 			}
 				
@@ -233,7 +233,7 @@ public class FKInfo implements Formatable
 					*/
 					if (fkInfo[i].colArray[fkCols] == cols[chcol])
 					{
-						newfksVector.addElement(fkInfo[i]);
+						newfks.add(fkInfo[i]);
 						
 						// go to the next fk
 						fkCols = fkcollen;
@@ -245,18 +245,9 @@ public class FKInfo implements Formatable
 
 		
 		/*
-		** Now convert the vector into an array.
+		** Now convert the list into an array.
 		*/
-		int size = newfksVector.size();
-		if (size > 0)
-		{
-			newfks = new FKInfo[size];
-			for (int i = 0; i < size; i++)
-			{
-                newfks[i] = newfksVector.elementAt(i);
-			}
-		}
-		return newfks;
+		return newfks.isEmpty() ? null : newfks.toArray(new FKInfo[newfks.size()]);
 	}
 		
 	//////////////////////////////////////////////
