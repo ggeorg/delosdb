@@ -1545,12 +1545,11 @@ public abstract class BaseActivation implements CursorActivation, GeneratedByteC
 	 *	@param	rs	input result set
 	 *	@return	materialized resultset, or original rs if it can't be materialized
 	 */
-    @SuppressWarnings("UseOfObsoleteCollectionType")
 	public NoPutResultSet materializeResultSetIfPossible(NoPutResultSet rs)
 		throws StandardException
 	{
 		rs.openCore();
-		Vector<ExecRow> rowCache = new Vector<ExecRow>();
+		ArrayList<ExecRow> rowCache = new ArrayList<ExecRow>();
 		ExecRow aRow;
 		int cacheSize = 0;
 		FormatableBitSet toClone = null;
@@ -1569,7 +1568,7 @@ public abstract class BaseActivation implements CursorActivation, GeneratedByteC
 			if (cacheSize > maxMemoryPerTable ||
 					rowCache.size() > Optimizer.MAX_DYNAMIC_MATERIALIZED_ROWS)
 				break;
-			rowCache.addElement(aRow.getClone(toClone));
+			rowCache.add(aRow.getClone(toClone));
 			aRow = rs.getNextRowCore();
 		}
 		rs.close();
@@ -1596,7 +1595,7 @@ public abstract class BaseActivation implements CursorActivation, GeneratedByteC
 			{
 				rrs[i] = new RowResultSet(
 										this,
-                                        rowCache.elementAt(i),
+                                        rowCache.get(i),
 										true,
 										rsNum,
 										1,

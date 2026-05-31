@@ -32,7 +32,7 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Hashtable;
+import java.util.Map;
 import org.apache.derby.client.am.ClientBlob;
 import org.apache.derby.client.am.ClientMessageId;
 import org.apache.derby.client.am.ClientClob;
@@ -539,7 +539,7 @@ class NetStatementRequest extends NetPackageRequest
 
         int[][] protocolTypesAndLengths = allocateLidAndLengthsArray(parameterMetaData);
 
-        Hashtable protocolTypeToOverrideLidMapping = null;
+        Map<Integer, Integer> protocolTypeToOverrideLidMapping = null;
         ArrayList mddOverrideArray = null;
         protocolTypeToOverrideLidMapping =
                 computeProtocolTypesAndLengths(inputRow, parameterMetaData, protocolTypesAndLengths,
@@ -575,7 +575,7 @@ class NetStatementRequest extends NetPackageRequest
     private void buildFDODSC(int numColumns,
                              int[][] protocolTypesAndLengths,
                              boolean overrideExists,
-                             Hashtable overrideMap,
+                             Map<Integer, Integer> overrideMap,
                              ArrayList overrideArray) throws SqlException {
         markLengthBytes(CodePoint.FDODSC);
         buildSQLDTA(numColumns, protocolTypesAndLengths, overrideExists, overrideMap, overrideArray);
@@ -588,7 +588,7 @@ class NetStatementRequest extends NetPackageRequest
     private void buildSQLDTA(int numColumns,
                                int[][] lidAndLengthOverrides,
                                boolean overrideExists,
-                               Hashtable overrideMap,
+                               Map<Integer, Integer> overrideMap,
                                ArrayList overrideArray) throws SqlException {
         // mdd overrides need to be built first if any before the descriptors are built.
         if (overrideExists) {
@@ -609,7 +609,7 @@ class NetStatementRequest extends NetPackageRequest
     private void buildSQLDTAGRP(int numVars,
                                   int[][] lidAndLengthOverrides,
                                   boolean mddRequired,
-                                  Hashtable overrideMap) throws SqlException {
+                                  Map<Integer, Integer> overrideMap) throws SqlException {
         int n = 0;
         int offset = 0;
 
@@ -1170,11 +1170,11 @@ class NetStatementRequest extends NetPackageRequest
     // Comment: I don't think that it is possible to send decimal values without looking at the data for 
     // precision and scale (Kathey Marsden 10/11)
     // backburner: after refactoring this, later on, think about replacing case statements with table lookups
-    private Hashtable computeProtocolTypesAndLengths(
+    private Map<Integer, Integer> computeProtocolTypesAndLengths(
             Object[] inputRow,
             ColumnMetaData parameterMetaData,
             int[][] lidAndLengths,
-            Hashtable overrideMap) throws SqlException {
+            Map<Integer, Integer> overrideMap) throws SqlException {
 
         try
         {

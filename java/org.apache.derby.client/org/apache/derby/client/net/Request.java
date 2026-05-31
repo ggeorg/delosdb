@@ -40,7 +40,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
-import java.util.Hashtable;
+import java.util.Map;
 import org.apache.derby.shared.common.error.ExceptionUtil;
 
 class Request {
@@ -965,7 +965,7 @@ class Request {
                                   int count,
                                   int offset,
                                   boolean mddRequired,
-                                  Hashtable map) {
+                                  Map<Integer, Integer> map) {
         if (!mddRequired) {
             writeLidAndLengths(lidAndLengthOverrides, count, offset);
         }
@@ -974,13 +974,13 @@ class Request {
         else {
             ensureLength(count * 3);
             int protocolType, overrideLid;
-            Object entry;
+            Integer entry;
             for (int i = 0; i < count; i++, offset++) {
                 protocolType = lidAndLengthOverrides[offset][0];
                 // lookup the protocolType in the protocolType->overrideLid map
                 // if an entry exists, replace the protocolType with the overrideLid
                 entry = map.get(protocolType);
-                overrideLid = (entry == null) ? protocolType : ((Integer) entry).intValue();
+                overrideLid = (entry == null) ? protocolType : entry.intValue();
                 buffer.put((byte) overrideLid);
                 buffer.putShort((short) lidAndLengthOverrides[offset][1]);
             }
