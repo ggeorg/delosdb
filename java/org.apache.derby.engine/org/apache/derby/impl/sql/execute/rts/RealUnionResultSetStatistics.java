@@ -160,10 +160,10 @@ public class RealUnionResultSetStatistics
 	{
 		return getStatementExecutionPlanText(0);
 	}
-  public java.util.Vector<ResultSetStatistics> getChildren(){
-    java.util.Vector<ResultSetStatistics> children = new java.util.Vector<ResultSetStatistics>();
-    children.addElement(leftResultSetStatistics);
-    children.addElement(rightResultSetStatistics);
+  public java.util.List<ResultSetStatistics> getChildren(){
+    java.util.List<ResultSetStatistics> children = new java.util.ArrayList<ResultSetStatistics>();
+    children.add(leftResultSetStatistics);
+    children.add(rightResultSetStatistics);
     return children;
   }
 	/**

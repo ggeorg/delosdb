@@ -35,7 +35,6 @@ import java.io.ObjectOutput;
 import java.io.ObjectInput;
 import java.io.IOException;
 
-import java.util.Vector;
 
 /**
   ResultSetStatistics implemenation for NoPutResultSetImpl.
@@ -116,11 +115,11 @@ abstract class RealNoRowsResultSetStatistics
 	 * <P>
 	 * The objects returned can be of any type, including addtional Inspectables.
    *
-	 * @return java.util.Vector	A vector of objects.
+	 * @return java.util.List	A list of objects.
 	 */
-  public Vector<ResultSetStatistics> getChildren(){
-    Vector<ResultSetStatistics> children = new Vector<ResultSetStatistics>();
-    children.addElement(sourceResultSetStatistics);
+  public java.util.List<ResultSetStatistics> getChildren(){
+    java.util.List<ResultSetStatistics> children = new java.util.ArrayList<ResultSetStatistics>();
+    children.add(sourceResultSetStatistics);
     return children;
   }
 

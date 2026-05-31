@@ -28,7 +28,6 @@ import org.apache.derby.impl.sql.execute.xplain.XPLAINUtil;
 import org.apache.derby.iapi.sql.execute.xplain.XPLAINVisitor;
 import org.apache.derby.shared.common.reference.SQLState;
 
-import java.util.Vector;
 
 public class RealRowCountStatistics
     extends RealNoPutResultSetStatistics
@@ -129,9 +128,9 @@ public class RealRowCountStatistics
     /**
      * @see RealBasicNoPutResultSetStatistics#getChildren
      */
-    public Vector<ResultSetStatistics> getChildren() {
-        Vector<ResultSetStatistics> children = new Vector<ResultSetStatistics>();
-        children.addElement(childResultSetStatistics);
+    public java.util.List<ResultSetStatistics> getChildren() {
+        java.util.List<ResultSetStatistics> children = new java.util.ArrayList<ResultSetStatistics>();
+        children.add(childResultSetStatistics);
 
         return children;
     }

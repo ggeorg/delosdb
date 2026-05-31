@@ -228,9 +228,9 @@ public class RealProjectRestrictStatistics
 	{
 		return getStatementExecutionPlanText(0);
 	}
-  public java.util.Vector<ResultSetStatistics> getChildren(){
-    java.util.Vector<ResultSetStatistics> children = new java.util.Vector<ResultSetStatistics>();
-    children.addElement(childResultSetStatistics);
+  public java.util.List<ResultSetStatistics> getChildren(){
+    java.util.List<ResultSetStatistics> children = new java.util.ArrayList<ResultSetStatistics>();
+    children.add(childResultSetStatistics);
 
 	// get all of our subqueries
 	if (subqueryTrackingArray != null)
@@ -239,7 +239,7 @@ public class RealProjectRestrictStatistics
 		{
 			if (subqueryTrackingArray[index] != null)
 			{
-				children.addElement(subqueryTrackingArray[index]);
+				children.add(subqueryTrackingArray[index]);
 			}
 		}
 	}

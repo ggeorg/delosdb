@@ -148,9 +148,9 @@ public class RealMaterializedResultSetStatistics
 	{
 		return getStatementExecutionPlanText(0);
 	}
-  public java.util.Vector<ResultSetStatistics> getChildren(){
-    java.util.Vector<ResultSetStatistics> children = new java.util.Vector<ResultSetStatistics>();
-    children.addElement(childResultSetStatistics);
+  public java.util.List<ResultSetStatistics> getChildren(){
+    java.util.List<ResultSetStatistics> children = new java.util.ArrayList<ResultSetStatistics>();
+    children.add(childResultSetStatistics);
     return children;
   }
 	/**

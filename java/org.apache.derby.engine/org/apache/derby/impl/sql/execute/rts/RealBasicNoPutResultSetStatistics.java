@@ -33,7 +33,6 @@ import org.apache.derby.impl.sql.execute.xplain.XPLAINUtil;
 
 import java.text.DecimalFormat;
 import java.util.Locale;
-import java.util.Vector;
 
 
 /**
@@ -140,10 +139,10 @@ abstract class RealBasicNoPutResultSetStatistics
 	 * <P>
 	 * The objects returned can be of any type, including addtional Inspectables.
    *
-	 * @return java.util.Vector	A vector of objects.
+	 * @return java.util.List	A list of objects.
 	 */
-  public Vector<ResultSetStatistics> getChildren(){
-    return new Vector<ResultSetStatistics>();
+  public java.util.List<ResultSetStatistics> getChildren(){
+    return new java.util.ArrayList<ResultSetStatistics>();
   }
 	/**
    * Return the time for all operations performed by this node, and the children
@@ -163,9 +162,8 @@ abstract class RealBasicNoPutResultSetStatistics
 	 */
   public long getChildrenTime(){
     long childrenTime = 0;
-    java.util.Enumeration e = getChildren().elements();
-    while (e.hasMoreElements()){
-      childrenTime = childrenTime + ((RealBasicNoPutResultSetStatistics)e.nextElement()).getTotalTime();
+    for (ResultSetStatistics child : getChildren()){
+      childrenTime = childrenTime + ((RealBasicNoPutResultSetStatistics) child).getTotalTime();
     }
     return childrenTime;
   }
