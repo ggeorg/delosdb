@@ -50,10 +50,9 @@ class ijVectorResult extends ijResultImpl {
 
 	public boolean isVector() { return true; }
 
-	@SuppressWarnings({ "rawtypes", "unchecked" })
-    public java.util.Vector getVector() {
-        return new java.util.Vector(vec);
-    }
+	public List<Object> getVector() {
+		return vec;
+	}
 
 	public SQLWarning getSQLWarnings() { return warns; }
 	public void clearSQLWarnings() { warns = null; }

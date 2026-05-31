@@ -25,7 +25,11 @@ PRODUCTION_ROOTS=(
 
 count_matches() {
   local pattern="$1"
-  { grep -R --include='*.java' -E "$pattern" "${PRODUCTION_ROOTS[@]}" 2>/dev/null || true; } | wc -l | tr -d ' '
+  {
+    grep -R --include='*.java' -E "$pattern" "${PRODUCTION_ROOTS[@]}" 2>/dev/null \
+      | grep -Ev '^[^:]+:[[:space:]]*(//|/\*|\*)|^[[:space:]]*(//|/\*|\*)' \
+      || true
+  } | wc -l | tr -d ' '
 }
 
 write_matches() {
@@ -37,6 +41,7 @@ write_matches() {
     echo
     grep -R --include='*.java' -n -E "$pattern" "${PRODUCTION_ROOTS[@]}" 2>/dev/null \
       | sed "s#${ROOT_DIR}/##" \
+      | grep -Ev '^[^:]+:[0-9]+:[[:space:]]*(//|/\*|\*)' \
       | head -200 \
       || true
   } >> "$REPORT_FILE"
@@ -44,7 +49,11 @@ write_matches() {
 
 count_all_matches() {
   local pattern="$1"
-  { grep -R --include='*.java' -E "$pattern" "$ROOT_DIR/java" 2>/dev/null || true; } | wc -l | tr -d ' '
+  {
+    grep -R --include='*.java' -E "$pattern" "$ROOT_DIR/java" 2>/dev/null \
+      | grep -Ev '^[^:]+:[[:space:]]*(//|/\*|\*)|^[[:space:]]*(//|/\*|\*)' \
+      || true
+  } | wc -l | tr -d ' '
 }
 
 production_finalizers="$(count_matches 'protected[[:space:]]+void[[:space:]]+finalize[[:space:]]*\(')"

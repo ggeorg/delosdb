@@ -27,7 +27,6 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
-import java.util.Vector;
 import java.util.List;
 
 /**
@@ -52,7 +51,7 @@ abstract class ijResultImpl implements ijResult {
 	public ResultSet getResultSet() throws SQLException { return null; }
 	public List<ResultSet> getMultipleResultSets() { return null; }
 	public ResultSet getNextRowOfResultSet() { return null; }
-	public Vector getVector() { return null; }
+	public List<?> getVector() { return null; }
 	public SQLException getException() { return null; }
 
 	public int[] getColumnDisplayList() { return null; }

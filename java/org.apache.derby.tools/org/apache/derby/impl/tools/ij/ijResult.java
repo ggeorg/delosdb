@@ -27,7 +27,6 @@ import java.sql.Statement;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
-import java.util.Vector;
 import java.util.List;
 
 /**
@@ -54,7 +53,7 @@ interface ijResult {
 	ResultSet getResultSet() throws SQLException;
 	List<ResultSet> getMultipleResultSets();
 	ResultSet getNextRowOfResultSet();
-	Vector getVector();
+	List<?> getVector();
 	SQLException getException();
 	int[] getColumnDisplayList();
 	int[] getColumnWidthList();

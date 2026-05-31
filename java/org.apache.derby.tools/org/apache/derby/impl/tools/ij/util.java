@@ -44,7 +44,7 @@ import java.sql.ResultSetMetaData;
 import java.sql.Types;
 
 import java.util.Properties;
-import java.util.Vector;
+import java.util.List;
 import java.util.Locale;
 import javax.sql.DataSource;
 
@@ -543,10 +543,10 @@ public final class util {
 	/**
 		Display a vector of strings to the out stream.
 	 */
-	public static void DisplayVector(LocalizedOutput out, Vector v) {
+	public static void DisplayVector(LocalizedOutput out, List<?> v) {
 		int l = v.size();
 		for (int i=0;i<l;i++)
-			out.println(v.elementAt(i));
+			out.println(v.get(i));
 	}
 
 	/**
