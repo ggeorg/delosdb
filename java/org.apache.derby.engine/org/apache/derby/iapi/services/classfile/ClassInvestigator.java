@@ -24,11 +24,12 @@ package org.apache.derby.iapi.services.classfile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashSet;
-import java.util.Hashtable;
-import java.util.Vector;
+import java.util.List;
+import java.util.Map;
 
 import org.apache.derby.iapi.services.io.DataInputUtil;
 
@@ -139,29 +140,29 @@ public class ClassInvestigator extends ClassHolder {
 	public Enumeration implementedInterfaces()
 	{
 		int interfaceCount = interfaces == null ? 0 : interfaces.length;
-		Vector<String> implemented = new Vector<String>(interfaceCount);
+		List<String> implemented = new ArrayList<String>(interfaceCount);
 
         for (int i = 0; i < interfaceCount; i++)
         {
             implemented.add(className(interfaces[i]));
         }
-        return implemented.elements();
+        return Collections.enumeration(implemented);
 	}
     public Enumeration<ClassMember> getFields() {
 		if (field_info == null)
         {
-			return Collections.enumeration( new Vector<ClassMember>() );
+			return Collections.enumeration(Collections.<ClassMember>emptyList());
         }
 
-		return field_info.entries.elements();
+		return Collections.enumeration(field_info.entries);
 	}
 
     public Enumeration<ClassMember> getMethods() {
 		if (method_info == null)
         {
-			return Collections.enumeration( new Vector<ClassMember>() );
+			return Collections.enumeration(Collections.<ClassMember>emptyList());
         }
-		return method_info.entries.elements();
+		return Collections.enumeration(method_info.entries);
 	}
 
     public Enumeration referencedClasses() {
@@ -174,7 +175,7 @@ public class ClassInvestigator extends ClassHolder {
 
 	private Enumeration getClasses(Enumeration<ClassMember> methods, Enumeration<ClassMember> fields)
 	{
-		return new ClassEnumeration(this, cptEntries.elements(), methods, fields);
+		return new ClassEnumeration(this, Collections.enumeration(cptEntries), methods, fields);
 	}
 
 	public Enumeration getStrings() {
@@ -228,10 +229,10 @@ public class ClassInvestigator extends ClassHolder {
 		if (attribute_info != null) {
 			for (int i = attribute_info.size() - 1; i >= 0 ; i--) {
 
-				AttributeEntry ae = (AttributeEntry) attribute_info.elementAt(i);
+				AttributeEntry ae = attribute_info.get(i);
 				String name = nameIndexToString(ae.getNameIndex());
 				if (name.equals("SourceFile"))
-					attribute_info.removeElementAt(i);
+					attribute_info.remove(i);
 				else if (name.equals("InnerClasses"))
 					; // leave in
 				else
@@ -253,7 +254,7 @@ public class ClassInvestigator extends ClassHolder {
 
 				for (int i = attrs.size() - 1; i >= 0 ; i--) {
 
-					AttributeEntry ae = (AttributeEntry) attrs.elementAt(i);
+					AttributeEntry ae = attrs.get(i);
 					String name = nameIndexToString(ae.getNameIndex());
 					if (name.equals("ConstantValue"))
 						; // leave in
@@ -279,7 +280,7 @@ public class ClassInvestigator extends ClassHolder {
 
 				for (int i = attrs.size() - 1; i >= 0 ; i--) {
 
-					AttributeEntry ae = (AttributeEntry) attrs.elementAt(i);
+					AttributeEntry ae = attrs.get(i);
 					String name = nameIndexToString(ae.getNameIndex());
 					if (name.equals("Code"))
 						processCodeAttribute(member, ae);
@@ -346,7 +347,7 @@ public class ClassInvestigator extends ClassHolder {
 		ae.infoIn = newInfo;
 	}
 
-	public void renameClassElements(Hashtable classNameMap, Hashtable memberNameMap) {
+	public void renameClassElements(Map<String,String> classNameMap, Map<String,String> memberNameMap) {
 
 		// this & super class
 		renameString(classNameMap, (CONSTANT_Index_info) getEntry(this_class));
@@ -396,13 +397,13 @@ public class ClassInvestigator extends ClassHolder {
 		renameMembers(getMethods(), classNameMap, memberNameMap);
 	}
 
-	private void renameMembers(Enumeration<ClassMember> e, Hashtable classNameMap, Hashtable memberNameMap) {
+	private void renameMembers(Enumeration<ClassMember> e, Map<String,String> classNameMap, Map<String,String> memberNameMap) {
 
 		for (; e.hasMoreElements(); ) {
 			ClassMember member = e.nextElement();
 
 			String oldMemberName = nameIndexToString(member.name_index);
-			String newMemberName = (String) memberNameMap.get(oldMemberName);
+			String newMemberName = memberNameMap.get(oldMemberName);
 			if (newMemberName != null)
 				doRenameString(member.name_index, newMemberName);
 
@@ -414,12 +415,12 @@ public class ClassInvestigator extends ClassHolder {
 
 	}
 
-	private void renameString(Hashtable classNameMap, CONSTANT_Index_info cii) {
+	private void renameString(Map<String,String> classNameMap, CONSTANT_Index_info cii) {
 
 		int index = cii.getI1();
 
 		String name = nameIndexToString(index);
-		String newName = (String) classNameMap.get(name);
+		String newName = classNameMap.get(name);
 		if (newName != null) {
 
 			doRenameString(index, newName);
@@ -436,7 +437,7 @@ public class ClassInvestigator extends ClassHolder {
 				String baseClassName = name.substring(classOffset, name.length() - 1);
 
 
-				newName = (String) classNameMap.get(baseClassName);
+				newName = classNameMap.get(baseClassName);
 
 				if (newName != null) {
 
@@ -516,7 +517,7 @@ public class ClassInvestigator extends ClassHolder {
 
 		return item;
 	}
-	public static String newDescriptor(Hashtable classNameMap, String descriptor) {
+	public static String newDescriptor(Map<String,String> classNameMap, String descriptor) {
 
 		String newDescriptor = null;
 
@@ -549,7 +550,7 @@ public class ClassInvestigator extends ClassHolder {
 
 				// name includes L and ;
 				String name = descriptor.substring(startOffset, endOffset);
-				String newName = (String) classNameMap.get(name);
+				String newName = classNameMap.get(name);
 				if (newName != null) {
 					if (newDescriptor == null)
 						newDescriptor = descriptor;

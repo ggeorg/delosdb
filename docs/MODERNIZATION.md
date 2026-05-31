@@ -67,3 +67,8 @@ The second legacy collection cleanup batch targets private utility/diagnostic ac
 ### Client collection cleanup batch
 
 The third legacy collection cleanup batch targets private client driver maps. Low-risk `Hashtable` fields in metadata lookup, section/cursor tracking, connection cursor-name caching, and DRDA trace name lookup now use `HashMap`/`Map`. Engine/store/compiler collection structures remain intentionally audit-only until reviewed in focused batches.
+
+
+### Classfile collection cleanup batch
+
+The fourth legacy collection cleanup batch targets the internal classfile generation/inspection utilities. These structures are build/runtime bytecode metadata containers owned by the classfile package, so replacing private `Vector`/`Hashtable` storage with `List`/`Map` is lower-risk than changing store, lock, compiler, or public ij APIs. Existing enumeration-facing methods still return `Enumeration` through `Collections.enumeration(...)` to preserve caller behavior.

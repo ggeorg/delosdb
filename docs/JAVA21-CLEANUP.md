@@ -107,3 +107,10 @@ The batch intentionally does not touch store, compiler, daemon, lock, or public 
 ### Client collection cleanup batch
 
 This batch removes low-risk client-side `Hashtable` usage from private lookup/cache state. Column metadata name lookup, positioned-update cursor maps, client cursor-name caches, and DRDA trace code-point names now use `HashMap`/`Map` internally. These structures are connection/metadata owned and do not expose `Hashtable` as part of a public API contract.
+
+
+### Classfile collection cleanup batch
+
+This batch replaces low-risk synchronized collection usage in the internal classfile generation and inspection package. Constant-pool entries, member tables, attribute lists, and implemented-interface accumulation now use `ArrayList`/`List` and `HashMap`/`Map` internally. Public enumeration-style return behavior is preserved with `Collections.enumeration(...)` where callers still expect `Enumeration`.
+
+The batch intentionally does not touch compiler query-tree vectors, store/sort structures, lock tables, daemon queues, or public ij vector-result contracts. Those remain audit-only until their ownership and concurrency behavior are reviewed separately.

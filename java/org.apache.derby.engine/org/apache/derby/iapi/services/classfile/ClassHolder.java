@@ -24,20 +24,13 @@ package org.apache.derby.iapi.services.classfile;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.Enumeration;
-
 import java.io.IOException;
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.apache.derby.iapi.util.ByteArray;
-import org.apache.derby.iapi.services.classfile.VMDescriptor;
-import org.apache.derby.iapi.services.classfile.VMDescriptor;
-
-import java.util.Hashtable;
-import java.util.Vector;
-import java.util.Enumeration;
 
 
 /** Based upon "THE class FILE FORMAT" chapter of "The Java Virtual Machine Specification"
@@ -91,8 +84,8 @@ public class ClassHolder {
 	/*
 	** Fields for Constant Pool Table
 	*/
-	protected Hashtable<Object,ConstantPoolEntry> cptHashTable;
-	protected Vector<ConstantPoolEntry> cptEntries;
+	protected Map<Object,ConstantPoolEntry> cptHashTable;
+	protected List<ConstantPoolEntry> cptEntries;
 	private int cptEstimatedSize;
 
 	/**
@@ -108,11 +101,11 @@ public class ClassHolder {
 	protected ClassHolder(int estimatedConstantPoolCount) {
 		// Constant Pool Information
 		// 100 is the estimate of the number of entries that will be generated
-		cptEntries = new Vector<ConstantPoolEntry>(estimatedConstantPoolCount);
-		cptHashTable = new Hashtable<Object,ConstantPoolEntry>(estimatedConstantPoolCount, (float)0.75);
+		cptEntries = new ArrayList<ConstantPoolEntry>(estimatedConstantPoolCount);
+		cptHashTable = new HashMap<Object,ConstantPoolEntry>(estimatedConstantPoolCount, 0.75f);
 
 		// reserve the 0'th constant pool entry
-		cptEntries.setSize(1);
+		cptEntries.add(null);
 	}
 
 
@@ -536,8 +529,7 @@ public class ClassHolder {
 
  	protected void cptPut(ClassFormatOutput out) throws IOException {
 
-		for (Enumeration<ConstantPoolEntry> e = cptEntries.elements(); e.hasMoreElements(); ) {
-			ConstantPoolEntry item = e.nextElement();
+		for (ConstantPoolEntry item : cptEntries) {
 			if (item == null) {
 				continue;
 			}

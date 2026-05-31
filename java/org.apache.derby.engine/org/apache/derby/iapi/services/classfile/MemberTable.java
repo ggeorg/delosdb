@@ -23,19 +23,21 @@ package org.apache.derby.iapi.services.classfile;
 
 import java.io.IOException;
 
-import java.util.Hashtable;
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 
 
 class MemberTable {
-	protected Vector<ClassMember> entries;
-	private Hashtable<MemberTableHash,MemberTableHash> hashtable;
+	protected List<ClassMember> entries;
+	private Map<MemberTableHash,MemberTableHash> hashtable;
 	private MemberTableHash	mutableMTH = null;
 
 	public MemberTable(int count) {
-		entries = new Vector<ClassMember>(count);
-		hashtable = new Hashtable<MemberTableHash,MemberTableHash>((count > 50) ? count : 50);
+		entries = new ArrayList<ClassMember>(count);
+		hashtable = new HashMap<MemberTableHash,MemberTableHash>((count > 50) ? count : 50);
 		mutableMTH = new MemberTableHash(null, null);
 	}
 
@@ -44,10 +46,10 @@ class MemberTable {
 									item.getName(), 
 									item.getDescriptor(),
 									entries.size());
-		/* Add to the Vector */
+		/* Add to the list */
 		entries.add(item);
 
-		/* Add to the Hashtable */
+		/* Add to the lookup map */
 		hashtable.put(mth, mth);
 	}
 
@@ -70,7 +72,7 @@ class MemberTable {
 
 	void put(ClassFormatOutput out) throws IOException {
 
-		Vector<ClassMember> lentries = entries;
+		List<ClassMember> lentries = entries;
 		int count = lentries.size();
 		for (int i = 0; i < count; i++) {
 			lentries.get(i).put(out);
@@ -84,7 +86,7 @@ class MemberTable {
 	int classFileSize() {
 		int size = 0;
 
-		Vector<ClassMember> lentries = entries;
+		List<ClassMember> lentries = entries;
 		int count = lentries.size();
 		for (int i = 0; i < count; i++) {
 			size += lentries.get(i).classFileSize();
