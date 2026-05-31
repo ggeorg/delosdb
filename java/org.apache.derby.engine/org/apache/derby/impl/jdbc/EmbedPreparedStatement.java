@@ -42,8 +42,8 @@ import org.apache.derby.shared.common.reference.SQLState;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.lang.ref.Cleaner;
+import java.util.ArrayList;
 import java.util.Calendar;
-import java.util.Vector;
 
 /*
  We would import these, but have name-overlap
@@ -1047,15 +1047,15 @@ public class EmbedPreparedStatement extends EmbedStatement
     public void addBatch() throws SQLException {
 	  checkStatus();
 
-	  // need to synchronized to ensure that two threads
-	  // don't both create a Vector at the same time. This
+	  // Need to synchronize to ensure that two threads
+	  // don't both create the batch collection at the same time. This
 	  // would lead to one of the set of parameters being thrown
 	  // away
   	  synchronized (getConnectionSynchronization()) {
   			if (batchStatements == null)
-  				batchStatements = new Vector<Object>();
+  				batchStatements = new ArrayList<Object>();
 
-          //get a clone of the parameterValueSet and save it in the vector
+          // Get a clone of the parameterValueSet and save it in the batch
           //which will be used later on at the time of batch execution.
           //This way we will get a copy of the current statement's parameter
           //values rather than a pointer to the statement's parameter value

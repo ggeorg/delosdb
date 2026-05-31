@@ -37,8 +37,9 @@ import java.sql.BatchUpdateException;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Vector;
+import java.util.List;
 import org.apache.derby.iapi.util.InterruptStatus;
 
 /*
@@ -96,9 +97,9 @@ public class EmbedStatement extends ConnectionChild
 	//the state of this statement, set to false when close() is called
 	private boolean active = true;
 
-    //in case of batch update, save the individual statements in the batch in this vector
- 	//this is only used by JDBC 2.0
- 	Vector<Object> batchStatements;
+    // In case of batch update, save the individual statements in the batch.
+ 	// This is only used by JDBC 2.0. Access is synchronized on the connection.
+ 	List<Object> batchStatements;
 	
 	// The maximum # of rows to return per result set.
 	// (0 means no limit.)
@@ -975,7 +976,7 @@ public class EmbedStatement extends ConnectionChild
 		checkStatus();
   	  synchronized (getConnectionSynchronization()) {
 		  if (batchStatements == null)
-			  batchStatements = new Vector<Object>();
+			  batchStatements = new ArrayList<Object>();
         batchStatements.add(sql);
   		}
 	}
@@ -1039,7 +1040,7 @@ public class EmbedStatement extends ConnectionChild
 			// setup and restore themselves.
 			clearResultSets();
 
-			Vector<Object> stmts = batchStatements;
+			List<Object> stmts = batchStatements;
 			batchStatements = null;
 			int size;
 			if (stmts == null)
