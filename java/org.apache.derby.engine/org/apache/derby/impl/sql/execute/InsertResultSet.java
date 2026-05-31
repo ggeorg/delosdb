@@ -24,8 +24,9 @@ package org.apache.derby.impl.sql.execute;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
-import java.util.Hashtable;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Vector;
 import org.apache.derby.catalog.UUID;
@@ -115,11 +116,11 @@ class InsertResultSet extends DMLWriteGeneratedColumnsResultSet implements Targe
     private	boolean[]				needToDropSort;
 
     /*
-    ** This hashtable is used to convert an index conglomerate
-    ** from it's old conglom number to the new one.  It is
+    ** This map is used to convert an index conglomerate
+    ** from its old conglom number to the new one.  It is
     ** bulk insert specific.
     */
-    private Hashtable<Long,Long>				indexConversionTable;
+    private Map<Long,Long>				indexConversionTable;
 
     // indexedCols is 1-based
     private FormatableBitSet					indexedCols;
@@ -1783,7 +1784,7 @@ class InsertResultSet extends DMLWriteGeneratedColumnsResultSet implements Targe
         dd.dropStatisticsDescriptors(td.getUUID(), null, tc);
         long[] newIndexCongloms = new long[numIndexes];
 
-        indexConversionTable = new Hashtable<Long,Long>(numIndexes);
+        indexConversionTable = new HashMap<Long,Long>(numIndexes);
         // Populate each index
         for (int index = 0; index < numIndexes; index++)
         {

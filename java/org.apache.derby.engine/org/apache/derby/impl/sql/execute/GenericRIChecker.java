@@ -21,8 +21,8 @@
 
 package org.apache.derby.impl.sql.execute;
 
-import java.util.Enumeration;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.sql.Activation;
@@ -55,7 +55,7 @@ public abstract class GenericRIChecker
      */
     protected BackingStoreHashtable deferredRowsHashTable;
 
-    private final Hashtable<Long,ScanController> scanControllers;
+    private final Map<Long,ScanController> scanControllers;
     protected final int numColumns;
     protected int[] identityMap;
 
@@ -75,7 +75,7 @@ public abstract class GenericRIChecker
         this.lcc = lcc;
 		this.fkInfo = fkinfo;
 		this.tc = tc;
-		scanControllers = new Hashtable<Long,ScanController>();
+		scanControllers = new HashMap<Long,ScanController>();
 		numColumns = fkInfo.colArray.length;
 		indexQualifierRow = new IndexRow(numColumns);
 
@@ -239,10 +239,8 @@ public abstract class GenericRIChecker
 	void close()
 		throws StandardException
 	{
-		Enumeration<ScanController> e = scanControllers.elements();
-		while (e.hasMoreElements())
+		for (ScanController scan : scanControllers.values())
 		{
-			ScanController scan = e.nextElement();
 			scan.close();
 		}
 		scanControllers.clear();
