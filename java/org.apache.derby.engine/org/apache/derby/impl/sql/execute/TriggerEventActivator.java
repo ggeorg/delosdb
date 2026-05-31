@@ -36,7 +36,6 @@ import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.jdbc.ConnectionContext;
 import org.apache.derby.catalog.UUID;
 
-import java.util.Vector;
 
 /**
  * Responsible for firing a trigger or set of triggers
@@ -62,11 +61,10 @@ public class TriggerEventActivator
 	 * @param triggerInfo	the trigger information 
 	 * @param dmlType		Type of DML for which this trigger is being fired.
 	 * @param activation	the activation.
-	 * @param aiCounters	vector of ai counters 
+	 * @param aiCounters	auto-increment counters 
 	 *
 	 * @exception StandardException on error
 	 */
-    @SuppressWarnings("UseOfObsoleteCollectionType")
 	public TriggerEventActivator
 	(
 		LanguageConnectionContext	lcc, 
@@ -74,7 +72,7 @@ public class TriggerEventActivator
 		TriggerInfo 				triggerInfo,
 		int							dmlType,
 		Activation					activation,
-        Vector<AutoincrementCounter> aiCounters
+        List<AutoincrementCounter> aiCounters
 	) throws StandardException
 	{
 		if (triggerInfo == null)

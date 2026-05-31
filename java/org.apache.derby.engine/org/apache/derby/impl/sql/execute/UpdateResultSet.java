@@ -25,7 +25,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
-import java.util.Vector;
 
 import org.apache.derby.catalog.UUID;
 import org.apache.derby.iapi.db.TriggerExecutionContext;
@@ -813,10 +812,10 @@ class UpdateResultSet extends DMLWriteGeneratedColumnsResultSet
 		{
 			if (triggerInfo != null)
 			{
-				Vector<AutoincrementCounter> v = null;
+				List<AutoincrementCounter> v = null;
 				if (aiCache != null)
 				{
-					v = new Vector<AutoincrementCounter>();
+					v = new ArrayList<AutoincrementCounter>();
 					for (int i = 0; i < aiCache.length; i++)
 					{
 						String s, t, c;
@@ -835,7 +834,7 @@ class UpdateResultSet extends DMLWriteGeneratedColumnsResultSet
 								 constants.getAutoincIncrement(i),
 								 aiCache[i].getLong(),
 								 s, t, c, i + 1);
-						v.addElement(aic);
+						v.add(aic);
 					}
 				}
 				if (triggerActivator == null)

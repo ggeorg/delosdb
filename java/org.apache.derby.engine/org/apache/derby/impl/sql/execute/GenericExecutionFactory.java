@@ -56,8 +56,8 @@ import org.apache.derby.iapi.services.loader.GeneratedMethod;
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.catalog.UUID;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
+import java.util.List;
 import java.util.Properties;
-import java.util.Vector;
 
 /**
 	This Factory is for creating the execution items needed
@@ -315,7 +315,7 @@ public class GenericExecutionFactory
 		int 						dmlType,
 		UUID						targetTableId,
 		String						targetTableName,
-        Vector<AutoincrementCounter> aiCounters
+        List<AutoincrementCounter> aiCounters
 	) throws StandardException
 	{
 		return new InternalTriggerExecutionContext(lcc, cc,

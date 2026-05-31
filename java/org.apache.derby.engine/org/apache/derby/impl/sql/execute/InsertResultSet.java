@@ -28,7 +28,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Vector;
 import org.apache.derby.catalog.UUID;
 import org.apache.derby.catalog.types.StatisticsImpl;
 import org.apache.derby.iapi.db.TriggerExecutionContext;
@@ -930,10 +929,10 @@ class InsertResultSet extends DMLWriteGeneratedColumnsResultSet implements Targe
         {
             if (triggerInfo != null)
             {
-                Vector<AutoincrementCounter> v = null;
+                List<AutoincrementCounter> v = null;
                 if (aiCache != null)
                 {
-                    v = new Vector<AutoincrementCounter>();
+                    v = new ArrayList<AutoincrementCounter>();
                     for (int i = 0; i < aiCache.length; i++)
                     {
                         String s, t, c;
@@ -953,7 +952,7 @@ class InsertResultSet extends DMLWriteGeneratedColumnsResultSet implements Targe
                                 constants.getAutoincIncrement(i),
                                 aiCache[i].getLong(),
                                 s, t, c, i + 1);
-                        v.addElement(aic);
+                        v.add(aic);
                     }
                 }
 

@@ -23,9 +23,10 @@ package org.apache.derby.impl.sql.execute;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Vector;
 
 import org.apache.derby.catalog.UUID;
 import org.apache.derby.iapi.db.TriggerExecutionContext;
@@ -92,8 +93,7 @@ class InternalTriggerExecutionContext
 	** space because they can no longer provide meaningful
 	** results.
 	*/
-    @SuppressWarnings("UseOfObsoleteCollectionType")
-    private Vector<ResultSet>   resultSetVector;
+    private List<ResultSet> resultSets;
 
 	/**
 	 * aiCounters is a vector of AutoincrementCounters used to keep state which
@@ -103,8 +103,7 @@ class InternalTriggerExecutionContext
 	 * @see AutoincrementCounter
 	 * 
 	 */
-    @SuppressWarnings("UseOfObsoleteCollectionType")
-    private Vector<AutoincrementCounter> aiCounters;
+    private List<AutoincrementCounter> aiCounters;
 	
 	/**
      * aiHT is a map of auto increment (key, value) pairs. This is used
@@ -133,7 +132,7 @@ class InternalTriggerExecutionContext
 	 *
 	 * @exception StandardException on error
 	 */
-    @SuppressWarnings({"UseOfObsoleteCollectionType", "LeakingThisInConstructor"})
+    @SuppressWarnings("LeakingThisInConstructor")
     InternalTriggerExecutionContext
 	(
 		LanguageConnectionContext	lcc,
@@ -142,7 +141,7 @@ class InternalTriggerExecutionContext
 		int 						dmlType,
 		UUID						targetTableId,
 		String						targetTableName,
-        Vector<AutoincrementCounter> aiCounters
+        List<AutoincrementCounter> aiCounters
 	) throws StandardException
 	{
 		this.dmlType = dmlType;
@@ -151,7 +150,7 @@ class InternalTriggerExecutionContext
 		this.lcc = lcc;
 		this.targetTableId = targetTableId;
 		this.targetTableName = targetTableName;
-		this.resultSetVector = new Vector<java.sql.ResultSet>();
+		this.resultSets = new ArrayList<ResultSet>();
 		this.aiCounters = aiCounters;
 
 		lcc.pushTriggerExecutionContext(this);
@@ -239,15 +238,15 @@ class InternalTriggerExecutionContext
 		** Explicitly close all result sets that we have
 		** given out to the user.  
 	 	*/
-        if (resultSetVector != null) {
-            for (ResultSet rs : resultSetVector) {
+        if (resultSets != null) {
+            for (ResultSet rs : resultSets) {
                 try {
                     rs.close();
                 } catch (SQLException se) {
                 }
             }
 		}
-		resultSetVector = null;
+		resultSets = null;
 	
 		/*
 		** We should have already closed our underlying
@@ -408,7 +407,7 @@ class InternalTriggerExecutionContext
 				brs = (CursorResultSet) ((TableScanResultSet) brs).clone();
 			brs.open();
 			java.sql.ResultSet rs = cc.getResultSet(brs);
-			resultSetVector.addElement(rs);
+			resultSets.add(rs);
 			return rs;
 		} catch (StandardException se)
 		{
@@ -451,7 +450,7 @@ class InternalTriggerExecutionContext
 				ars = (CursorResultSet) ((TableScanResultSet) ars).clone();
 			ars.open();
 			java.sql.ResultSet rs = cc.getResultSet(ars);
-			resultSetVector.addElement(rs);
+			resultSets.add(rs);
 			return rs;
 		} catch (StandardException se)
 		{
