@@ -21,8 +21,8 @@
 
 package org.apache.derby.iapi.sql.dictionary;
 
-import java.util.Enumeration;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.i18n.MessageService;
@@ -196,7 +196,6 @@ public	class	DDUtils
 	**checks whether the foreign key relation ships referential action
 	**is violating the restrictions we have in the current system.
 	**/
-    @SuppressWarnings("UseOfObsoleteCollectionType")
 	public static void validateReferentialActions
     (
 		DataDictionary	dd,
@@ -237,16 +236,16 @@ public	class	DDUtils
 		//check whether the foreign key relation ships referential action
 		//is not violating the restrictions we have in the current system.
 		TableDescriptor refTd = otherConstraintInfo.getReferencedTableDescriptor(dd);
-		Hashtable<String,Integer> deleteConnHashtable = new Hashtable<String,Integer>();
+		Map<String,Integer> deleteConnMap = new HashMap<String,Integer>();
 		//find whether the foreign key is self referencing.
 		boolean isSelfReferencingFk = (refTd.getUUID().equals(td.getUUID()));
 		String refTableName = refTd.getSchemaName() + "." + refTd.getName();
 		//look for the other foreign key constraints on this table first
-		int currentSelfRefValue = getCurrentDeleteConnections(dd, td, -1, deleteConnHashtable, false, true);
+		int currentSelfRefValue = getCurrentDeleteConnections(dd, td, -1, deleteConnMap, false, true);
 		validateDeleteConnection(dd, td, refTd, 
 								 refAction, 
-                                 deleteConnHashtable,
-                                 new Hashtable<String, Integer>(deleteConnHashtable),
+                                 deleteConnMap,
+                                 new HashMap<String, Integer>(deleteConnMap),
 								 true, myConstraintName, false , 
 								 new StringBuffer(0), refTableName,
 								 isSelfReferencingFk,
@@ -257,26 +256,25 @@ public	class	DDUtils
 		{
 			checkForAnyExistingDeleteConnectionViolations(dd, td,
 														  refAction, 
-														  deleteConnHashtable, 
+														  deleteConnMap, 
 														  myConstraintName);
 		}	
 	}
 
     /**
      * Finds the existing delete connection for the table and the referential
-     * actions that will occur and stores the information in the hash table.
-     * HashTable (key , value) = ( table name that this table is delete
+     * actions that will occur and stores the information in the map.
+     * Map (key, value) = ( table name that this table is delete
      * connected to, referential action that will occur if there is a delete on
      * the table this table connected to [CASCADE, SET NULL, RESTRICT, NO
      * ACTION] )
      */
-    @SuppressWarnings("UseOfObsoleteCollectionType")
 	private	static int  getCurrentDeleteConnections
 	(
 	 DataDictionary	dd,
 	 TableDescriptor	td,
 	 int refActionType,
-	 Hashtable<String,Integer> dch,
+	 Map<String,Integer> dch,
 	 boolean prevNotCascade,
 	 boolean findSelfRef
 	 )
@@ -340,7 +338,7 @@ public	class	DDUtils
 							prevNotCascade = true;
 					}
 
-					//store the delete connection info in the hash table,
+					//store the delete connection info in the map,
 					//note that the referential action value is not what is
 					//not specified on the current link. It is actually the 
 					//value of what happens to the table whose delete
@@ -373,15 +371,14 @@ public	class	DDUtils
      * DB2 and throws error messaged similar to DB2 (sql0632N, sql0633N,
      * sql0634N).
      */
-    @SuppressWarnings("UseOfObsoleteCollectionType")
 	private	static void validateDeleteConnection
 	(
 		DataDictionary	dd,
 		TableDescriptor actualTd,  // the table we are adding the foriegn key.
 		TableDescriptor	refTd,
 		int refActionType,
-		Hashtable<String,Integer> dch,
-		Hashtable<String,Integer> ech,  //existing delete connections
+		Map<String,Integer> dch,
+		Map<String,Integer> ech,  //existing delete connections
 		boolean checkImmediateRefTable,
 		String myConstraintName,
 		boolean prevNotCascade,
@@ -456,7 +453,7 @@ public	class	DDUtils
 				*/
 
                 if( isSelfReferencingFk &&
-                    dch.contains(Integer.valueOf(StatementType.RA_CASCADE)) &&
+                    dch.containsValue(Integer.valueOf(StatementType.RA_CASCADE)) &&
                     refActionType !=  StatementType.RA_CASCADE)
 				{
 					throw
@@ -606,10 +603,10 @@ public	class	DDUtils
 				if(rAction != null)
 				{
 					/*
-					** If the table name has entry in the hash table means, there
+					** If the table name has entry in the map means, there
 					** is already  a path to this table exists from the table
 					** the new foreign key relation ship is being formed.
-					** Note: refValue in the hash table is how the table we are
+					** Note: refValue in the map is how the table we are
 					** adding the new relationsship is going to affected not
 					** current path refvalue.
 					**/
@@ -742,7 +739,7 @@ public	class	DDUtils
 	**   for each ReferencedKeyConstraintDescriptor
 	**   {
 	**    1)find the delete connections of the referring table.
-	**    [getCurrentDeleteConnections() will return this hash table]
+	**    [getCurrentDeleteConnections() will return this map]
 	**	  2) we already have collected the Delete connections 
     **       in validDeleteConnections() for the actual table we are adding the 
     **       foreign key.
@@ -750,11 +747,11 @@ public	class	DDUtils
     **       referring  any table that the table we are adding
     **       foreign key has delete connection.
 	**
-	**     for each table referring table delete connection hash table
+	**     for each table referring table delete connection map
 	**     {
-	**      if it is there in the actual table delete connection hash table
+	**      if it is there in the actual table delete connection map
     **      {
-	**         //In our example case we find t1 in both the hash tables.
+	**         //In our example case we find t1 in both the maps.
 	**         make sure we are having valid referential action
     **         from the existing path and the new path we got from 
 	**         new foreign key relation ship.
@@ -768,13 +765,12 @@ public	class	DDUtils
 	**/
 
 
-    @SuppressWarnings("UseOfObsoleteCollectionType")
     private static void checkForAnyExistingDeleteConnectionViolations
 	(
 	 DataDictionary	dd,
 	 TableDescriptor td,
 	 int refActionType,
-	 Hashtable<String,Integer> newDconnHashTable,
+	 Map<String,Integer> newDconnMap,
 	 String myConstraintName
 	 )
 	throws StandardException
@@ -804,7 +800,7 @@ public	class	DDUtils
 				
 				//Note: More than one table can refer to the same
 				//ReferencedKeyConstraintDescriptor, so we need to find all the tables.
-				Hashtable<String,Integer> dConnHashtable = new Hashtable<String,Integer>();
+				Map<String,Integer> dConnMap = new HashMap<String,Integer>();
 				for (int inner = 0; inner < size; inner++)
 				{
 					ForeignKeyConstraintDescriptor fkcd = (ForeignKeyConstraintDescriptor) fkcdl.elementAt(inner);
@@ -820,7 +816,7 @@ public	class	DDUtils
 						//gather the delete connections of the table that is
 						//referring to the table we are adding foreign key relation ship
 
-						getCurrentDeleteConnections(dd, fktd, -1, dConnHashtable, false, true);
+						getCurrentDeleteConnections(dd, fktd, -1, dConnMap, false, true);
 
 						/*
 						**Find out if we introduced more than one delete connection
@@ -830,16 +826,15 @@ public	class	DDUtils
 						**referential action and only one SET NULL path.
 						**/
 
-						for (Enumeration<String> e = dConnHashtable.keys() ; e.hasMoreElements() ;) 
+						for (String tName : dConnMap.keySet())
 						{
-							String tName = e.nextElement();
 							//we should not check for the table name to which  we are
 							//adding the foreign key relation ship.
 							if(!tName.equals(addTableName))
 							{
-								if(newDconnHashTable.containsKey(tName))
+								if(newDconnMap.containsKey(tName))
 								{
-									int currentDeleteRule = (dConnHashtable.get(tName)).intValue();
+									int currentDeleteRule = (dConnMap.get(tName)).intValue();
 									if((currentDeleteRule == StatementType.RA_SETNULL
 										&& raDeleteRuleToAddTable == StatementType.RA_SETNULL) ||
 									   currentDeleteRule  != raDeleteRuleToAddTable)
@@ -852,9 +847,9 @@ public	class	DDUtils
 							}
 						}
 					}
-					//same hash table can be used for the other referring tables
-					//so clear the hash table.
-					dConnHashtable.clear();
+					//same map can be used for the other referring tables
+					//so clear the map.
+					dConnMap.clear();
 				}
 			}
 		}
