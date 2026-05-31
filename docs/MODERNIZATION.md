@@ -59,3 +59,11 @@ The next cleanup target after finalizers and SecurityManager-era code is synchro
 ### Tools collection cleanup batch
 
 The first legacy collection cleanup batch removes low-risk `Vector` usage from ij URL validation and JDBC result display utilities. The active rule for collection modernization is to replace synchronized legacy collections only where ownership and synchronization behavior are clear; engine/store/compiler structures remain audit-only until reviewed in focused batches.
+
+### Identifier and sysinfo collection cleanup batch
+
+The second legacy collection cleanup batch targets private utility/diagnostic accumulation state: identifier parsing helpers, statement-cache diagnostics, and sysinfo zip-location merging. These paths now use `ArrayList`/`List` internally while preserving existing array and string-returning APIs. Engine/store/compiler collection structures remain intentionally untouched until reviewed in focused batches.
+
+### Client collection cleanup batch
+
+The third legacy collection cleanup batch targets private client driver maps. Low-risk `Hashtable` fields in metadata lookup, section/cursor tracking, connection cursor-name caching, and DRDA trace name lookup now use `HashMap`/`Map`. Engine/store/compiler collection structures remain intentionally audit-only until reviewed in focused batches.

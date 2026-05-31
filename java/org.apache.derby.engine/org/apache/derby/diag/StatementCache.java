@@ -24,9 +24,10 @@ package org.apache.derby.diag;
 import java.sql.ResultSetMetaData;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.Vector;
+import java.util.List;
 
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.Limits;
@@ -70,7 +71,7 @@ import org.apache.derby.vti.VTITemplate;
 public final class StatementCache extends VTITemplate {
 
 	private int position = -1;
-	private Vector<GenericPreparedStatement> data;
+	private List<GenericPreparedStatement> data;
 	private GenericPreparedStatement currentPs;
 	private boolean wasNull;
 
@@ -86,7 +87,7 @@ public final class StatementCache extends VTITemplate {
 
 		if (statementCache != null) {
 			final Collection values = statementCache.values();
-			data = new Vector<GenericPreparedStatement>(values.size());
+			data = new ArrayList<GenericPreparedStatement>(values.size());
 			for (Iterator i = values.iterator(); i.hasNext(); ) {
 				final CachedStatement cs = (CachedStatement) i.next();
 				final GenericPreparedStatement ps =

@@ -23,7 +23,8 @@ package org.apache.derby.client.am;
 
 import java.lang.ref.WeakReference;
 import java.sql.ResultSet;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Stack;
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -66,15 +67,15 @@ public class SectionManager {
     // When requested (rs.getCursorName()), if the cursor name is still null,
     // then is given the canned cursor name as defined by our jdbc package set and added to the cursor map.
     // Still need to consider how positioned updates should interact with multiple result sets from a stored.
-    private final Hashtable<String, Section>
+    private final Map<String, Section>
         positionedUpdateCursorNameToQuerySection_ =
-            new Hashtable<String, Section>();
+            new HashMap<String, Section>();
 
     // Cursor name to ResultSet mapping is needed for positioned updates to check whether
     // a ResultSet is scrollable.  If so, exception is thrown.
-    private final Hashtable<String, WeakReference<ClientResultSet>>
+    private final Map<String, WeakReference<ClientResultSet>>
         positionedUpdateCursorNameToResultSet_ =
-            new Hashtable<String, WeakReference<ClientResultSet>>();
+            new HashMap<String, WeakReference<ClientResultSet>>();
 
     private final int maxNumSections_ = 32768;
 

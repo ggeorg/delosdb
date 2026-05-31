@@ -28,8 +28,9 @@ import org.apache.derby.shared.common.reference.Property;
 import org.apache.derby.shared.common.error.StandardException;
 import java.io.IOException;
 import java.io.StringReader;
-import java.util.Vector;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Properties;
 import org.apache.derby.shared.common.reference.Limits;
 
@@ -126,7 +127,7 @@ public abstract class IdUtil
 	private static String[] parseMultiPartSQLIdentifier(StringReader r)
 		 throws StandardException
 	{
-		Vector<String> v = new Vector<String>();
+		List<String> v = new ArrayList<String>();
 		while (true)
 		{
 			String thisId = parseId(r,true);
@@ -147,9 +148,7 @@ public abstract class IdUtil
 				throw StandardException.newException(SQLState.ID_PARSE_ERROR,ioe);
 			}
 		}
-		String[] result = new String[v.size()];
-		v.copyInto(result);
-		return result;
+		return v.toArray(new String[v.size()]);
 	}
 	
 	/**
@@ -412,7 +411,7 @@ public abstract class IdUtil
 		if (input.length() == 0)
 			return new String[0][];
 
-		Vector<String[]> v = new Vector<String[]>();
+		List<String[]> v = new ArrayList<String[]>();
 		java.io.StringReader r = new java.io.StringReader(input);
 		//
 		while (true)
@@ -444,9 +443,7 @@ public abstract class IdUtil
 				throw StandardException.newException(SQLState.DB_CLASS_PATH_PARSE_ERROR,ioe,input);
 			}
 		}
-		String[][] result = new String[v.size()][];
-		v.copyInto(result);
-		return result;
+		return v.toArray(new String[v.size()][]);
 	}
 
 
@@ -487,7 +484,7 @@ public abstract class IdUtil
 	private static String[] parseIdList(StringReader r, boolean normalize)
 		 throws StandardException
 	{
-		Vector<String> v = new Vector<String>();
+		List<String> v = new ArrayList<String>();
 		while (true)
 		{
 			int delim;
@@ -515,9 +512,7 @@ public abstract class IdUtil
 			}
 		}
 		if (v.size() == 0) return null;
-		String[] result = new String[v.size()];
-		v.copyInto(result);
-		return result;
+		return v.toArray(new String[v.size()]);
 	}
 
 	/**
@@ -532,9 +527,9 @@ public abstract class IdUtil
 		if (l1 == null || l2 == null) return null;
 		HashSet<String> h = new HashSet<String>();
 		for(int ix=0;ix<l2.length;ix++) h.add(l2[ix]); 
-		Vector<String> v = new Vector<String>();
+		List<String> v = new ArrayList<String>();
 		for(int ix=0;ix<l1.length;ix++) if (h.contains(l1[ix])) v.add(l1[ix]);
-		return vectorToIdList(v,true); 
+		return listToIdList(v,true); 
 	}
 
 	/**
@@ -544,11 +539,10 @@ public abstract class IdUtil
 	  @param normal True means the ids in v are in normal form
 	         and false means they are in external form.
 	  */
-	private static String vectorToIdList(Vector<String> v,boolean normal)
+	private static String listToIdList(List<String> v,boolean normal)
 	{
 		if (v.size() == 0) return null;
-		String[] a = new String[v.size()];
-		v.copyInto(a);
+		String[] a = v.toArray(new String[v.size()]);
 		if (normal)
 			return mkIdList(a);
 		else
@@ -598,7 +592,7 @@ public abstract class IdUtil
 	{
 		if (l == null) return null;
 		HashSet<String> h = new HashSet<String>();
-		Vector<String> v = new Vector<String>();
+		List<String> v = new ArrayList<String>();
 		for(int ix=0;ix<l.length;ix++)
 		{
 			if (!h.contains(l[ix]))
@@ -606,7 +600,7 @@ public abstract class IdUtil
 			else
 				v.add(l[ix]);
 		}
-		return vectorToIdList(v,true);
+		return listToIdList(v,true);
 	}
 	
 	/**
@@ -621,7 +615,7 @@ public abstract class IdUtil
 		StringReader r = new StringReader(l);
 		String[] external_a = parseIdList(r,false);
 		HashSet<String> h = new HashSet<String>();
-		Vector<String> v = new Vector<String>();
+		List<String> v = new ArrayList<String>();
 		for(int ix=0;ix<normal_a.length;ix++)
 		{
 			if (!h.contains(normal_a[ix]))
@@ -630,7 +624,7 @@ public abstract class IdUtil
 				v.add(external_a[ix]);
 			}
 		}
-		return vectorToIdList(v,false);
+		return listToIdList(v,false);
 	}
 
 	/**
@@ -699,7 +693,7 @@ public abstract class IdUtil
 		 throws StandardException
 	{
 		if (list==null) return null;
-		Vector<String> v = new Vector<String>();
+		List<String> v = new ArrayList<String>();
 		StringReader r = new StringReader(list);
 		String[] enteredList_a = parseIdList(r,false);
         
@@ -714,7 +708,7 @@ public abstract class IdUtil
 		if (v.size() == 0)
 			return null;
 		else
-			return vectorToIdList(v,false);
+			return listToIdList(v,false);
 	}
 
 

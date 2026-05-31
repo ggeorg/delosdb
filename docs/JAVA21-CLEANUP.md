@@ -97,3 +97,13 @@ This batch also removed stale Network Server localization messages that describe
 ### Tools collection cleanup batch
 
 The first synchronized-collection cleanup batch targets low-risk tooling code rather than engine runtime internals. URL validation and JDBC result display utilities now use `ArrayList`/`List` where no external synchronization or legacy `Vector` API contract is required. Internal ij result contracts which still expose `Vector` remain unchanged until a separate compatibility review.
+
+### Identifier and sysinfo collection cleanup batch
+
+This batch removes additional low-risk `Vector` usage from utility code where no external synchronization or legacy `Vector` API contract is required. Identifier parsing now uses `ArrayList`/`List` for local accumulation before converting to arrays or identifier-list strings. Statement cache diagnostics and sysinfo zip-location merging now also use `List` collections for private iteration state.
+
+The batch intentionally does not touch store, compiler, daemon, lock, or public ij vector-result contracts. Those remain audit-only until their ownership and concurrency behavior are reviewed separately.
+
+### Client collection cleanup batch
+
+This batch removes low-risk client-side `Hashtable` usage from private lookup/cache state. Column metadata name lookup, positioned-update cursor maps, client cursor-name caches, and DRDA trace code-point names now use `HashMap`/`Map` internally. These structures are connection/metadata owned and do not expose `Hashtable` as part of a public API contract.

@@ -25,7 +25,8 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.derby.shared.common.reference.DRDAConstants;
 import org.apache.derby.shared.common.reference.JDBC40Translation;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -96,7 +97,7 @@ public class ColumnMetaData implements ResultSetMetaData {
 
     transient int resultSetConcurrency_;
 
-    transient private Hashtable<String, Integer> columnNameToIndexCache_;
+    transient private Map<String, Integer> columnNameToIndexCache_;
 
     transient private boolean statementClosed_ = false;
 
@@ -799,7 +800,7 @@ public class ColumnMetaData implements ResultSetMetaData {
     int findColumnX(String columnName) throws SqlException {
         // Create cache if it doesn't exist
         if (columnNameToIndexCache_ == null) {
-            columnNameToIndexCache_ = new Hashtable<String, Integer>();
+            columnNameToIndexCache_ = new HashMap<String, Integer>();
         } else { // Check cache for mapping
             Integer index = columnNameToIndexCache_.get(columnName);
             if (index != null) {
@@ -824,7 +825,7 @@ public class ColumnMetaData implements ResultSetMetaData {
     // assign ordinal position as the column name if null.
     private void assignColumnName(int column) {
         if (columnNameToIndexCache_ == null) {
-            columnNameToIndexCache_ = new Hashtable<String, Integer>();
+            columnNameToIndexCache_ = new HashMap<String, Integer>();
         }
         String columnName = Integer.toString(column);
         columnNameToIndexCache_.put(columnName, column);

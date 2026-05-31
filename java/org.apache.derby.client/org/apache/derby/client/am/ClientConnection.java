@@ -35,7 +35,6 @@ import java.sql.Savepoint;
 import java.sql.Statement;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Properties;
@@ -192,8 +191,8 @@ public abstract class ClientConnection
     public int portNumber_;
     private int clientSSLMode_ = BasicClientDataSource.SSL_OFF;
 
-    Hashtable<String, String> clientCursorNameCache_ =
-            new Hashtable<String, String>();
+    Map<String, String> clientCursorNameCache_ =
+            new HashMap<String, String>();
 
     public int commBufferSize_ = 32767;
 

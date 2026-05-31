@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.tools.sysinfo;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
@@ -39,7 +40,6 @@ import java.util.zip.ZipFile;
 import java.io.IOException;
 import java.util.zip.ZipEntry;
 import java.io.FileInputStream;
-import java.util.Vector;
 import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.net.URI;
@@ -928,7 +928,7 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
         if (classpath != null) {
             String cp [] = parseClasspath(classpath);
             List<String> jarNamesList = Arrays.asList(jarNames);
-            Vector<ZipInfoProperties> v = new Vector<ZipInfoProperties>();
+            List<ZipInfoProperties> v = new ArrayList<ZipInfoProperties>();
             for (int i = 0; i < cp.length; i++)
             {
                 boolean matches = false;
@@ -947,13 +947,12 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
                 ZipInfoProperties zip =  checkForInfo(cp[i]);
                 if (zip != null)
                 {
-                    v.addElement(zip);
+                    v.add(zip);
                 }
             }
             if (v.size() > 0)
             {
-                ZipInfoProperties cpzips[] = new ZipInfoProperties[v.size()];
-                v.copyInto(cpzips);
+                ZipInfoProperties cpzips[] = v.toArray(new ZipInfoProperties[v.size()]);
                 return mergeZips(zips, cpzips);
             }
         }
@@ -1207,7 +1206,7 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
     private static ZipInfoProperties[] mergeZips(ZipInfoProperties[] zip1,
                                                  ZipInfoProperties[] zip2)
     {
-        Vector<ZipInfoProperties> v = new Vector<ZipInfoProperties>();
+        List<ZipInfoProperties> v = new ArrayList<ZipInfoProperties>();
         boolean foundDup = false;
   
         // remove duplicates from first array
@@ -1222,7 +1221,7 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
                 }
             }
             if (zip1[i] != null)
-              v.addElement(zip1[i]);
+              v.add(zip1[i]);
         }
   
         // if provided a second array, remove any locations in second array
@@ -1239,15 +1238,13 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
             }
             if (!foundDup)
             {
-                v.addElement(zip2[j]);
+                v.add(zip2[j]);
             }
             foundDup = false;
           }
         }
   
-        ZipInfoProperties[] merged = new ZipInfoProperties[v.size()];
-        v.copyInto(merged);
-        return merged;
+        return v.toArray(new ZipInfoProperties[v.size()]);
     }
 
     /**
