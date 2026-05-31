@@ -32,14 +32,15 @@ import org.apache.derby.iapi.services.property.PropertySetCallback;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Dictionary;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Properties;
-import java.util.Vector;
 
 public class PropertyValidation implements PropertyFactory
 {
-	private Vector<PropertySetCallback>  notifyOnSet;
+	private List<PropertySetCallback>  notifyOnSet;
 
     /* Constructors for This class: */
 	public PropertyValidation()
@@ -124,10 +125,12 @@ public class PropertyValidation implements PropertyFactory
                     SQLState.RAWSTORE_CANNOT_CHANGE_LOGDEVICE);
         }
 
- 		if (notifyOnSet != null) {
-			for (int i = 0; i < notifyOnSet.size(); i++) {
-				PropertySetCallback psc = notifyOnSet.get(i);
-				psc.validate(key, value, set);
+ 		synchronized (this) {
+			if (notifyOnSet != null) {
+				for (int i = 0; i < notifyOnSet.size(); i++) {
+					PropertySetCallback psc = notifyOnSet.get(i);
+					psc.validate(key, value, set);
+				}
 			}
 		}
 	}
@@ -135,7 +138,7 @@ public class PropertyValidation implements PropertyFactory
 	public synchronized void addPropertySetNotification(PropertySetCallback who){
 
 		if (notifyOnSet == null)
-			notifyOnSet = new Vector<PropertySetCallback>(1,1);
+			notifyOnSet = new ArrayList<PropertySetCallback>(1);
 		notifyOnSet.add(who);
 
 	}

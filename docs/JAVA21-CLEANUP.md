@@ -120,3 +120,12 @@ The batch intentionally does not touch compiler query-tree vectors, store/sort s
 This batch replaces low-risk private `Hashtable` usage in debug, diagnostic, and reflection helper code. Sanity debug flags and generated-method caches now use concurrent maps where their old synchronized-map behavior protected shared state. Statement-duration diagnostics, table-name display caches, and bytecode primitive lookup now use `Map`/`HashMap` because the data is local/private and does not expose a legacy `Hashtable` API contract.
 
 The batch intentionally leaves lock attribute contracts, formattable hashtables, data-dictionary APIs, XA transaction tables, store/sort structures, and compiler query-tree collections untouched until reviewed separately.
+
+### Service and command collection cleanup batch
+
+This batch removes additional low-risk synchronized collection usage from service-support and command-parsing paths. Property validation callbacks now use `List` storage while preserving synchronized validation and callback-registration behavior. Bytecode method thrown-exception metadata now uses `List` because it is owned by a single method builder during class generation. Network Server command-line argument accumulation now uses `List` while leaving server session/thread queues and shared runtime tables untouched for separate concurrency review.
+
+
+### Modernization smoke coverage
+
+`./gradlew modernizationSmoke` is now part of the root verification lifecycle. It runs against the assembled jars and covers the main cleanup-sensitive JDBC lifecycle paths: embedded create-database, statement batching, prepared statements, BLOB materialization/free, result-set close, transaction commit, and database shutdown. Keep this smoke test small and fast; deeper behavioral coverage belongs in focused Derby regression tests.

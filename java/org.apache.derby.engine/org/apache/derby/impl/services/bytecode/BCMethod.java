@@ -34,7 +34,8 @@ import org.apache.derby.iapi.services.classfile.VMDescriptor;
 import org.apache.derby.iapi.services.classfile.VMOpcode;
 
 import java.lang.reflect.Modifier;
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.List;
 import java.io.IOException;
 
 /**
@@ -98,7 +99,7 @@ class BCMethod implements MethodBuilder {
     private final String[] parameterTypes;
     
     
-	Vector<String> thrownExceptions; // expected to be names of Classes under Throwable
+	List<String> thrownExceptions; // expected to be names of Classes under Throwable
 
 	CodeChunk myCode;
 	protected ClassMember myEntry;
@@ -210,7 +211,7 @@ class BCMethod implements MethodBuilder {
 		}
 
 		if (thrownExceptions == null)
-			thrownExceptions = new Vector<String>();
+			thrownExceptions = new ArrayList<String>();
 		thrownExceptions.add(exceptionClass);
 	}
 

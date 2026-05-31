@@ -35,9 +35,9 @@ import org.apache.derby.iapi.store.access.AccessFactory;
 import org.apache.derby.iapi.store.access.xa.XAResourceManager;
 import org.apache.derby.iapi.store.access.xa.XAXactId;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
-import java.util.Hashtable;
-import java.util.Enumeration;
 import javax.transaction.xa.XAException;
 
 
@@ -50,7 +50,7 @@ public class ResourceAdapterImpl
 	private XAResourceManager rm;	
 
 	// maps Xid to XATransationResource for run time transactions
-    private Hashtable<XAXactId, XATransactionState> connectionTable;
+    private Map<XAXactId, XATransactionState> connectionTable;
 
 	/*
 	 * Module control
@@ -62,7 +62,7 @@ public class ResourceAdapterImpl
 		// we can only run on jdk1.2 or beyond with JTA and JAVA 20 extension
 		// loaded.
 
-        connectionTable = new Hashtable<XAXactId, XATransactionState>();
+        connectionTable = new HashMap<XAXactId, XATransactionState>();
 
 		AccessFactory af = 
 			(AccessFactory)findServiceModule(this, AccessFactory.MODULE);
@@ -72,15 +72,11 @@ public class ResourceAdapterImpl
 		active = true;
 	}
 
-	public void stop()
+	public synchronized void stop()
 	{
 		active = false;
 
-        for (Enumeration<XATransactionState> e = connectionTable.elements();
-                e.hasMoreElements(); ) {
-
-            XATransactionState tranState = e.nextElement();
-
+        for (XATransactionState tranState : connectionTable.values()) {
 			try {
 				tranState.conn.close();
 			} catch (java.sql.SQLException sqle) {

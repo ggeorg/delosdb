@@ -43,6 +43,7 @@ import java.sql.SQLWarning;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Hashtable;
+import java.util.List;
 import java.util.Properties;
 import java.util.StringTokenizer;
 import java.util.Vector;
@@ -231,7 +232,7 @@ public final class NetworkServerControlImpl {
     private final static int ERRTYPE_UNKNOWN = -1;
 
     // command argument information
-    private Vector<String> commandArgs = new Vector<String>();
+    private final List<String> commandArgs = new ArrayList<String>();
     private String databaseArg;
     // DERBY-2109: Note that derby JDBC clients have a default user name
     // "APP" (= Property.DEFAULT_USER_NAME) assigned if they don't provide
@@ -2475,7 +2476,7 @@ public final class NetworkServerControlImpl {
                 for (i = 0; i < COMMANDS.length; i++)
                 {
                     if (StringUtil.SQLEqualsIgnoreCase(COMMANDS[i], 
-                                                       (String)commandArgs.firstElement()))
+                                                       (String)commandArgs.get(0)))
                     {
                         commandArgs.remove(0);
                         return i;
@@ -2484,7 +2485,7 @@ public final class NetworkServerControlImpl {
 
                 // didn't find command
                 consolePropertyMessage("DRDA_UnknownCommand.U", 
-                    (String) commandArgs.firstElement());
+                    (String) commandArgs.get(0));
             }
         } catch (Exception e) {
             if (e.getMessage().equals(NetworkServerControlImpl.UNEXPECTED_ERR))

@@ -25,7 +25,9 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.PreparedStatement;
 import java.sql.Connection;
-import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.error.StandardException;
@@ -44,16 +46,16 @@ import org.apache.derby.iapi.util.StringUtil;
 
 public class Import extends ImportAbstract{
 
-    private static  int                _importCounter;
+    private static final AtomicInteger IMPORT_COUNTER = new AtomicInteger();
 
     //
-    // This hashtable stores Import instances, which keep the context needed
+    // This map stores Import instances, which keep the context needed
     // to correlate Derby errors with line numbers in the file that is being
-    // imported. An importing thread will access this hashtable at the very
-    // beginning and the very end of its run. We cannot use Hashmap
-    // because different threads may simultaneously put and delete entries.
+    // imported. An importing thread will access this map at the very
+    // beginning and the very end of its run.
     //
-    private static  Hashtable<Integer,Import>   _importers = new Hashtable<Integer,Import>();
+    private static final ConcurrentMap<Integer,Import> IMPORTERS =
+            new ConcurrentHashMap<Integer,Import>();
 
     private String inputFileName;
     private static short skip; //The number of header lines to be skipped
@@ -80,7 +82,7 @@ public class Import extends ImportAbstract{
 												   columnDelimiter, codeset);
             this.lobsInExtFile = lobsInExtFile;
 
-            _importers.put( importCounter, this );
+            IMPORTERS.put(importCounter, this);
             
 			doImport();
 
@@ -264,7 +266,7 @@ public class Import extends ImportAbstract{
             }
             catch (Throwable t)
             {
-                throw formatImportError( (Import) _importers.get( importCounter ), inputFileName, t );
+                throw formatImportError(IMPORTERS.get(importCounter), inputFileName, t);
             }
 
             StringBuffer sb = new StringBuffer("new ");
@@ -339,7 +341,7 @@ public class Import extends ImportAbstract{
             }
             catch (Throwable t)
             {
-                throw formatImportError( (Import) _importers.get( importCounter ), inputFileName, t );
+                throw formatImportError(IMPORTERS.get(importCounter), inputFileName, t);
             }
             statement.close();
             ips.close();
@@ -347,11 +349,11 @@ public class Import extends ImportAbstract{
         finally
         {
             //
-            // The importer was put into a hashtable so that we could look up
+            // The importer was put into a map so that we could look up
             // line numbers for error messages. The Import constructor put
-            // the importer in the hashtable. Now garbage collect that entry.
+            // the importer in the map. Now remove that entry.
             //
-            _importers.remove( importCounter );
+            IMPORTERS.remove(importCounter);
         }
     }
     
@@ -403,9 +405,9 @@ public class Import extends ImportAbstract{
      * Bump the import counter.
      *
      */
-    private static  synchronized    int bumpImportCounter()
+    private static int bumpImportCounter()
     {
-        return ++_importCounter;
+        return IMPORT_COUNTER.incrementAndGet();
     }
     
     /*

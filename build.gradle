@@ -619,6 +619,35 @@ tasks.register('smokeFromJars', JavaExec) {
 }
 
 
+def modernizationSmokeClassesDir = layout.buildDirectory.dir('classes/modernization-smoke')
+
+tasks.register('compileModernizationSmoke', JavaCompile) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Compiles the Java 21 modernization JDBC smoke test.'
+    source = files('dev/modernization-smoke/src/main/java')
+    destinationDirectory = modernizationSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = runtimeJars()
+}
+
+tasks.register('modernizationSmoke', JavaExec) {
+    dependsOn 'compileModernizationSmoke'
+    group = 'verification'
+    description = 'Runs JDBC lifecycle smoke coverage for Java 21 modernization cleanup paths from assembled jars.'
+    classpath = files(modernizationSmokeClassesDir, runtimeJars())
+    mainClass = 'delosdb.smoke.ModernizationSmoke'
+    workingDir = layout.buildDirectory.dir('modernization-smoke').get().asFile
+    doFirst {
+        delete file('build/modernization-smoke/modernization-smoke-db')
+        workingDir.mkdirs()
+    }
+}
+
+
 def distributionBaseName = "delosdb-${delosDbVersion}"
 def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
 def distributionArchiveNames = [
@@ -1453,7 +1482,7 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'smoke', 'smokeFromJars', 'verifyGradleOnlyPublicSurface',
+    dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'smoke', 'smokeFromJars', 'modernizationSmoke', 'verifyGradleOnlyPublicSurface',
             'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
             'verifyExtractedServerProject', 'verifyExtractedEngineProject'
@@ -1462,7 +1491,7 @@ tasks.named('check') {
 tasks.register('test') {
     group = 'verification'
     description = 'Alias for the current smoke verification tasks.'
-    dependsOn 'smoke', 'smokeFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke'
 }
 
 tasks.named('build') {

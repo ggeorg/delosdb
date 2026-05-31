@@ -76,3 +76,12 @@ The fourth legacy collection cleanup batch targets the internal classfile genera
 ### Diagnostic/debug map cleanup batch
 
 The fifth legacy collection cleanup batch targets private diagnostic and support maps: sanity debug flags, statement-duration row correlation, lock-table table-name caches, bytecode validation primitive lookup, and generated-method reflection caches. Shared caches now use concurrent maps; single-owner diagnostic maps now use `HashMap`/`Map`. Public `Hashtable` contracts and concurrency-sensitive engine/store structures remain audit-only.
+
+### Service and command collection cleanup batch
+
+This batch removes additional low-risk synchronized collection usage from service-support and command-parsing paths. Property validation callbacks now use `List` storage while preserving synchronized validation and callback-registration behavior. Bytecode method thrown-exception metadata now uses `List` because it is owned by a single method builder during class generation. Network Server command-line argument accumulation now uses `List` while leaving server session/thread queues and shared runtime tables untouched for separate concurrency review.
+
+
+### Java 21 modernization smoke test
+
+DelosDB now includes a focused Java smoke test for the Java 21 cleanup track. `./gradlew modernizationSmoke` runs from the assembled runtime jars and exercises embedded database creation, statement batching, prepared-statement execution, BLOB retrieval/free, result-set iteration, commit, and shutdown. This is not a replacement for the inherited Derby test suite, but it gives the modernization work a fast regression guard around the JDBC lifecycle paths touched by finalizer, Cleaner, and collection cleanup batches.
