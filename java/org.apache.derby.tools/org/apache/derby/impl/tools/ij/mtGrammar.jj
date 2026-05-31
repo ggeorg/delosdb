@@ -34,8 +34,10 @@ PARSER_BEGIN(mtGrammar)
 
 package org.apache.derby.impl.tools.ij;
 
-import java.util.Hashtable;
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.io.IOException;
 import org.apache.derby.iapi.tools.i18n.*;
 
@@ -100,9 +102,9 @@ TOKEN :
 mtTestSuite
 grammarStatement() :
 {
-	Vector cases = null;
-	Vector init = null;
-	Vector last = null;
+	List<mtTestCase> cases = null;
+	List<mtTestCase> init = null;
+	List<mtTestCase> last = null;
 	int	threads = 0;
 	mtTime time; 
 }
@@ -143,10 +145,10 @@ runTime() :
 	}
 }
 
-Vector
+List<mtTestCase>
 cases() :
 {
-	Vector<mtTestCase> testCases = new Vector<mtTestCase>(5);	// start with 5
+	List<mtTestCase> testCases = new ArrayList<mtTestCase>(5);	// start with 5
 }
 {
 	(testCase(testCases))+
@@ -158,7 +160,7 @@ cases() :
 
 
 void
-testCase(Vector<mtTestCase> testCases) :
+testCase(List<mtTestCase> testCases) :
 {
 	Token	t;
 	mtTestCase testCase = new mtTestCase();
@@ -167,15 +169,15 @@ testCase(Vector<mtTestCase> testCases) :
 	<CASE> t=<WORD> caseInfo(testCase)
 	{
 		testCase.setName(t.image);
-		testCases.addElement(testCase);
+		testCases.add(testCase);
 	}
 }
 
 
-Vector<mtTestCase>
+List<mtTestCase>
 init() :
 {
-	Vector<mtTestCase> testCases = new Vector<mtTestCase>(5);	// start with 5
+	List<mtTestCase> testCases = new ArrayList<mtTestCase>(5);	// start with 5
 }
 {
 	(initCase(testCases))+ 
@@ -187,7 +189,7 @@ init() :
 
 
 void
-initCase(Vector<mtTestCase> testCases) :
+initCase(List<mtTestCase> testCases) :
 {
 	Token	t;
 	mtTestCase testCase = new mtTestCase();
@@ -196,14 +198,14 @@ initCase(Vector<mtTestCase> testCases) :
 	<INIT> t=<WORD> caseInfo(testCase)
 	{
 		testCase.setName(t.image);
-		testCases.addElement(testCase);
+		testCases.add(testCase);
 	}
 }
 
-Vector
+List<mtTestCase>
 last() :
 {
-	Vector<mtTestCase> testCases = new Vector<mtTestCase>(1);	// start with 1
+	List<mtTestCase> testCases = new ArrayList<mtTestCase>(1);	// start with 1
 }
 {
 	(lastCase(testCases))+ 
@@ -215,7 +217,7 @@ last() :
 
 
 void
-lastCase(Vector<mtTestCase> testCases) :
+lastCase(List<mtTestCase> testCases) :
 {
 	Token	t;
 	mtTestCase testCase = new mtTestCase();
@@ -224,7 +226,7 @@ lastCase(Vector<mtTestCase> testCases) :
 	<LAST> t=<WORD> caseInfo(testCase)
 	{
 		testCase.setName(t.image);
-		testCases.addElement(testCase);
+		testCases.add(testCase);
 	}
 }
 
@@ -234,7 +236,7 @@ caseInfo(mtTestCase testCase) :
 	String	file;
 	String	prop = null;
 	int	weight = 50;
-	Hashtable<String,Integer> errorList = null;
+	Map<String,Integer> errorList = null;
 	String	description = null;
 }
 {
@@ -256,7 +258,7 @@ caseInfo(mtTestCase testCase) :
 	[ errorList=ignoreErrors() ] 
 	{
 		if (errorList == null)
-			errorList = new Hashtable<String,Integer>();
+			errorList = new HashMap<String,Integer>();
 
 		testCase.setIgnoreErrors(errorList);
 	}
@@ -325,12 +327,12 @@ description() :
 	}	
 }
 
-Hashtable<String,Integer>
+Map<String,Integer>
 ignoreErrors() :
 {
 	// note: we need a non-null errorlist even
 	// if there is nothing in it
-	Hashtable<String,Integer> errorList = new Hashtable<String,Integer>();
+	Map<String,Integer> errorList = new HashMap<String,Integer>();
 }
 {
 	<IGNOREERRORS> getError(errorList) (<COMMA> getError(errorList))*
@@ -340,7 +342,7 @@ ignoreErrors() :
 }
 
 void
-getError(Hashtable<String,Integer> errorList) :
+getError(Map<String,Integer> errorList) :
 {
 	String	s;
 }

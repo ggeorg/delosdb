@@ -27,9 +27,10 @@ import org.apache.derby.iapi.tools.i18n.*;
 import org.apache.derby.shared.common.info.ProductVersionHolder;
 import org.apache.derby.shared.common.info.ProductGenusNames;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Stack;
-import java.util.Hashtable;
 
 import java.io.InputStream;
 import java.io.FileInputStream;
@@ -64,7 +65,7 @@ public class utilMain {
 	private boolean mtUse;
 	private boolean firstRun = true;
 	private LocalizedOutput out = null;
-	private Hashtable ignoreErrors;
+	private Map<String, Integer> ignoreErrors;
 	/**
 	 * True if to display the error code when
 	 * displaying a SQLException.
@@ -96,7 +97,7 @@ public class utilMain {
 	utilMain(int numConnections, LocalizedOutput out)
 		throws ijFatalException
 	{
-		this(numConnections, out, (Hashtable)null);
+		this(numConnections, out, null);
 	}
 
     /**
@@ -109,7 +110,7 @@ public class utilMain {
     utilMain(int numConnections, LocalizedOutput out, boolean loadSystemProperties)
 		throws ijFatalException
 	{
-		this(numConnections, out, (Hashtable)null);
+		this(numConnections, out, null);
         if (loadSystemProperties) {
             initFromEnvironment();
         }
@@ -127,7 +128,7 @@ public class utilMain {
 	 *							thrown.  ignoreErrors is used for stress
 	 *							tests.
 	 */
-	public utilMain(int numConnections, LocalizedOutput out, Hashtable ignoreErrors)
+	public utilMain(int numConnections, LocalizedOutput out, Map<String, Integer> ignoreErrors)
 		throws ijFatalException
 	{
 		/* init the parser; give it no input to start with.
@@ -138,7 +139,7 @@ public class utilMain {
 		ijTokMgr = new ijTokenManager(charStream);
 		ijParser = new ij(ijTokMgr, this);
 		this.out = out;
-		if ( ignoreErrors != null ) { this.ignoreErrors = (Hashtable) ignoreErrors.clone(); }
+		if ( ignoreErrors != null ) { this.ignoreErrors = new HashMap<String, Integer>(ignoreErrors); }
 		
 		showErrorCode = 
 			Boolean.valueOf(

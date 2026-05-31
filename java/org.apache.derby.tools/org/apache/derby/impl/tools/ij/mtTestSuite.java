@@ -21,27 +21,22 @@
 
 package org.apache.derby.impl.tools.ij;
 
-import java.util.Vector;
-import java.util.Enumeration;
-import java.util.Properties;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.lang.Math;
+import java.util.List;
 
 /**
  */
 public class mtTestSuite
 {
-	private Vector cases;
-	private Vector last;
-	private Vector init;
+	private List<mtTestCase> cases;
+	private List<mtTestCase> last;
+	private List<mtTestCase> init;
 	private mtTime time;
 	private int numThreads;
 	private String rootDir = null;
 
 
 	mtTestSuite(int numThreads, mtTime time, 
-			Vector initCases, Vector testCases, Vector finalCases)
+			List<mtTestCase> initCases, List<mtTestCase> testCases, List<mtTestCase> finalCases)
 	{
 		this.numThreads = numThreads;
 		this.time = time;
@@ -68,18 +63,15 @@ public class mtTestSuite
 	** @return boolean indicates if there was a problem loading
 	** 	the file
 	*/
-	private boolean loadCases(Vector cases)
+	private boolean loadCases(List<mtTestCase> cases)
 	{
 		if (cases == null)
 			return false;
 
 		boolean gotError = false;
-		Enumeration e = cases.elements();
-		mtTestCase tcase;
  
-		while (e.hasMoreElements())
+		for (mtTestCase tcase : cases)
 		{
-			tcase = (mtTestCase)e.nextElement();
 			try
 			{
 				tcase.initialize(rootDir);
@@ -108,17 +100,17 @@ public class mtTestSuite
 		return numThreads;
 	}
 
-	public Vector getCases()
+	public List<mtTestCase> getCases()
 	{
 		return cases;
 	}
 
-	public Vector getInitCases()
+	public List<mtTestCase> getInitCases()
 	{
 		return init;
 	}
 
-	public Vector getFinalCases()
+	public List<mtTestCase> getFinalCases()
 	{
 		return last;
 	}
@@ -146,19 +138,19 @@ public class mtTestSuite
 		str +="\nNumber of Initializers: "+init.size()+"\n";
 		for (i = 0, len = init.size(); i < len; i++)
 		{
-			str += init.elementAt(i).toString() + "\n";
+			str += init.get(i).toString() + "\n";
 		}
 
 		str +="\nNumber of Cases: "+cases.size()+"\n";
 		for (i = 0, len = cases.size(); i < len; i++)
 		{
-			str += cases.elementAt(i).toString() + "\n";
+			str += cases.get(i).toString() + "\n";
 		}
 
 		str +="\nNumber of Final Cases: "+last.size()+"\n";
 		for (i = 0, len = last.size(); i < len; i++)
 		{
-			str += last.elementAt(i).toString() + "\n";
+			str += last.get(i).toString() + "\n";
 		}
 
 		return str;
@@ -178,7 +170,7 @@ public class mtTestSuite
 		do
 		{
 			caseNum = (int)((java.lang.Math.random() * 1311) % numCases);
-			testCase = (mtTestCase)cases.elementAt(caseNum);
+			testCase = cases.get(caseNum);
 		}
 		while (testCase.grab() == false);
 	

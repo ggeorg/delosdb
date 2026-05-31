@@ -23,8 +23,6 @@ package org.apache.derby.impl.drda;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.Socket;
-import java.util.Iterator;
-import java.util.Map;
 
 /**
  * Adapter written to allow for protocol testing from the test package.
@@ -101,15 +99,7 @@ public class ProtocolTestAdapter {
      *      name is unknown.
      */
     public Integer decodeCodePoint(String codePointName) {
-        // Just do this the expensive way, assuming it's infrequently used.
-        Iterator entryIter = CP_NAMES.entrySet().iterator();
-        while (entryIter.hasNext()) {
-            Map.Entry entry = (Map.Entry)entryIter.next();
-            if (codePointName.equals((String)entry.getValue())) {
-                return (Integer)entry.getKey();
-            }
-        }
-        return null;
+        return CP_NAMES.codePointForName(codePointName);
     }
 
     /**

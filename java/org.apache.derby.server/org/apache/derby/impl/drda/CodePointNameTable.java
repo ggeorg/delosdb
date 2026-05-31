@@ -20,152 +20,168 @@
  */
 package org.apache.derby.impl.drda;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
-  This class has a hashtable of CodePoint values.  It is used by the tracing
+  This class has a map of CodePoint values.  It is used by the tracing
   code and by the protocol testing code
   It is arranged in alphabetical order.
 */
-
-class CodePointNameTable extends java.util.Hashtable<Integer, String>
+class CodePointNameTable
 {
+  private final Map<Integer, String> names = new HashMap<Integer, String>();
+
   CodePointNameTable ()
   {
-    put(CodePoint.ABNUOWRM, "ABNUOWRM");
-    put(CodePoint.ACCRDB, "ACCRDB");
-    put(CodePoint.ACCRDBRM, "ACCRDBRM");
-    put(CodePoint.ACCSEC, "ACCSEC");
-    put(CodePoint.ACCSECRD, "ACCSECRD");
-    put(CodePoint.AGENT, "AGENT");
-    put(CodePoint.AGNPRMRM, "AGNPRMRM");
-    put(CodePoint.BGNBND, "BGNBND");
-    put(CodePoint.BGNBNDRM, "BGNBNDRM");
-    put(CodePoint.BNDSQLSTT, "BNDSQLSTT");
-    put(CodePoint.CCSIDSBC, "CCSIDSBC");
-    put(CodePoint.CCSIDMBC, "CCSIDMBC");
-    put(CodePoint.CCSIDDBC, "CCSIDDBC");
-    put(CodePoint.CLSQRY, "CLSQRY");
-    put(CodePoint.CMDATHRM, "CMDATHRM");
-    put(CodePoint.CMDCHKRM, "CMDCHKRM");
-    put(CodePoint.CMDCMPRM, "CMDCMPRM");
-    put(CodePoint.CMDNSPRM, "CMDNSPRM");
-    put(CodePoint.CMMRQSRM, "CMMRQSRM");
-    put(CodePoint.CMDVLTRM, "CMDVLTRM");
-    put(CodePoint.CNTQRY, "CNTQRY");
-    put(CodePoint.CRRTKN, "CRRTKN");
-    put(CodePoint.DRPPKG, "DRPPKG");
-    put(CodePoint.DSCRDBTBL, "DSCRDBTBL");
-    put(CodePoint.DSCINVRM, "DSCINVRM");
-    put(CodePoint.DSCSQLSTT, "DSCSQLSTT");
-    put(CodePoint.DTAMCHRM, "DTAMCHRM");
-    put(CodePoint.ENDBND, "ENDBND");
-    put(CodePoint.ENDQRYRM, "ENDQRYRM");
-    put(CodePoint.ENDUOWRM, "ENDUOWRM");
-    put(CodePoint.EXCSAT, "EXCSAT");
-    put(CodePoint.EXCSATRD, "EXCSATRD");
-    put(CodePoint.EXCSQLIMM, "EXCSQLIMM");
-    put(CodePoint.EXCSQLSET, "EXCSQLSET");
-    put(CodePoint.EXCSQLSTT, "EXCSQLSTT");
-    put(CodePoint.EXTNAM, "EXTNAM");
-    put(CodePoint.FRCFIXROW, "FRCFIXROW");
-    put(CodePoint.MAXBLKEXT, "MAXBLKEXT");
-    put(CodePoint.MAXRSLCNT, "MAXRSLCNT");
-    put(CodePoint.MGRDEPRM, "MGRDEPRM");
-    put(CodePoint.MGRLVLLS, "MGRLVLLS");
-    put(CodePoint.MGRLVLRM, "MGRLVLRM");
-    put(CodePoint.MONITOR, "MONITOR");
-    put(CodePoint.NBRROW, "NBRROW");
-    put(CodePoint.OBJNSPRM, "OBJNSPRM");
-    put(CodePoint.OPNQFLRM, "OPNQFLRM");
-    put(CodePoint.OPNQRY, "OPNQRY");
-    put(CodePoint.OPNQRYRM, "OPNQRYRM");
-    put(CodePoint.OUTEXP, "OUTEXP");
-    put(CodePoint.OUTOVR, "OUTOVR");
-    put(CodePoint.OUTOVROPT, "OUTOVROPT");
-    put(CodePoint.PASSWORD, "PASSWORD");
-    put(CodePoint.PKGID, "PKGID");
-    put(CodePoint.PKGBNARM, "PKGBNARM");
-    put(CodePoint.PKGBPARM, "PKGBPARM");
-    put(CodePoint.PKGNAMCSN, "PKGNAMCSN");
-    put(CodePoint.PKGNAMCT, "PKGNAMCT");
-    put(CodePoint.PRCCNVRM, "PRCCNVRM");
-    put(CodePoint.PRDID, "PRDID");
-    put(CodePoint.PRDDTA, "PRDDTA");
-    put(CodePoint.PRMNSPRM, "PRMNSPRM");
-    put(CodePoint.PRPSQLSTT, "PRPSQLSTT");
-    put(CodePoint.QRYBLKCTL, "QRYBLKCTL");
-    put(CodePoint.QRYBLKRST, "QRYBLKRST");
-    put(CodePoint.QRYBLKSZ, "QRYBLKSZ");
-    put(CodePoint.QRYCLSIMP, "QRYCLSIMP");
-    put(CodePoint.QRYCLSRLS, "QRYCLSRLS");
-    put(CodePoint.QRYDSC, "QRYDSC");
-    put(CodePoint.QRYDTA, "QRYDTA");
-    put(CodePoint.QRYINSID, "QRYINSID");
-    put(CodePoint.QRYNOPRM, "QRYNOPRM");
-    put(CodePoint.QRYPOPRM, "QRYPOPRM");
-    put(CodePoint.QRYRELSCR, "QRYRELSCR");
-    put(CodePoint.QRYRFRTBL, "QRYRFRTBL");
-    put(CodePoint.QRYROWNBR, "QRYROWNBR");
-    put(CodePoint.QRYROWSNS, "QRYROWSNS");
-    put(CodePoint.QRYRTNDTA, "QRYRTNDTA");
-    put(CodePoint.QRYSCRORN, "QRYSCRORN");
-    put(CodePoint.QRYROWSET, "QRYROWSET");
-    put(CodePoint.RDBAFLRM, "RDBAFLRM");
-    put(CodePoint.RDBACCCL, "RDBACCCL");
-    put(CodePoint.RDBACCRM, "RDBACCRM");
-    put(CodePoint.RDBALWUPD, "RDBALWUPD");
-    put(CodePoint.RDBATHRM, "RDBATHRM");
-    put(CodePoint.RDBCMM, "RDBCMM");
-    put(CodePoint.RDBCMTOK, "RDBCMTOK");
-    put(CodePoint.RDBNACRM, "RDBNACRM");
-    put(CodePoint.RDBNAM, "RDBNAM");
-    put(CodePoint.RDBNFNRM, "RDBNFNRM");
-    put(CodePoint.RDBRLLBCK, "RDBRLLBCK");
-    put(CodePoint.RDBUPDRM, "RDBUPDRM");
-    put(CodePoint.REBIND, "REBIND");
-    put(CodePoint.RSCLMTRM, "RSCLMTRM");
-    put(CodePoint.RSLSETRM, "RSLSETRM");
-    put(CodePoint.RTNEXTDTA, "RTNEXTDTA");
-    put(CodePoint.RTNSQLDA, "RTNSQLDA");
-    put(CodePoint.SECCHK, "SECCHK");
-    put(CodePoint.SECCHKCD, "SECCHKCD");
-    put(CodePoint.SECCHKRM, "SECCHKRM");
-    put(CodePoint.SECMEC, "SECMEC");
-    put(CodePoint.SECMGRNM, "SECMGRNM");
-    put(CodePoint.SECTKN, "SECTKN");
-    put(CodePoint.SPVNAM, "SPVNAM");
-    put(CodePoint.SQLAM, "SQLAM");
-    put(CodePoint.SQLATTR, "SQLATTR");
-    put(CodePoint.SQLCARD, "SQLCARD");
-    put(CodePoint.SQLERRRM, "SQLERRRM");
-    put(CodePoint.SQLDARD, "SQLDARD");
-    put(CodePoint.SQLDTA, "SQLDTA");
-    put(CodePoint.SQLDTARD, "SQLDTARD");
-    put(CodePoint.SQLSTT, "SQLSTT");
-    put(CodePoint.SQLSTTVRB, "SQLSTTVRB");
-    put(CodePoint.SRVCLSNM, "SRVCLSNM");
-    put(CodePoint.SRVRLSLV, "SRVRLSLV");
-    put(CodePoint.SRVNAM, "SRVNAM");
-    put(CodePoint.SVRCOD, "SVRCOD");
-    put(CodePoint.SYNCCTL, "SYNCCTL");
-    put(CodePoint.SYNCLOG, "SYNCLOG");
-    put(CodePoint.SYNCRSY, "SYNCRSY");
-    put(CodePoint.SYNTAXRM, "SYNTAXRM");
-    put(CodePoint.TRGNSPRM, "TRGNSPRM");
-    put(CodePoint.TYPDEFNAM, "TYPDEFNAM");
-    put(CodePoint.TYPDEFOVR, "TYPDEFOVR");
-    put(CodePoint.TYPSQLDA, "TYPSQLDA");
-    put(CodePoint.UOWDSP, "UOWDSP");
-    put(CodePoint.USRID, "USRID");
-    put(CodePoint.VALNSPRM, "VALNSPRM");
-    put(CodePoint.PBSD, "PBSD");
-    put(CodePoint.PBSD_ISO, "PBSD_ISO");
-    put(CodePoint.PBSD_SCHEMA, "PBSD_SCHEMA");
-    put(CodePoint.UNICODEMGR, "UNICODEMGR");
+    names.put(CodePoint.ABNUOWRM, "ABNUOWRM");
+    names.put(CodePoint.ACCRDB, "ACCRDB");
+    names.put(CodePoint.ACCRDBRM, "ACCRDBRM");
+    names.put(CodePoint.ACCSEC, "ACCSEC");
+    names.put(CodePoint.ACCSECRD, "ACCSECRD");
+    names.put(CodePoint.AGENT, "AGENT");
+    names.put(CodePoint.AGNPRMRM, "AGNPRMRM");
+    names.put(CodePoint.BGNBND, "BGNBND");
+    names.put(CodePoint.BGNBNDRM, "BGNBNDRM");
+    names.put(CodePoint.BNDSQLSTT, "BNDSQLSTT");
+    names.put(CodePoint.CCSIDSBC, "CCSIDSBC");
+    names.put(CodePoint.CCSIDMBC, "CCSIDMBC");
+    names.put(CodePoint.CCSIDDBC, "CCSIDDBC");
+    names.put(CodePoint.CLSQRY, "CLSQRY");
+    names.put(CodePoint.CMDATHRM, "CMDATHRM");
+    names.put(CodePoint.CMDCHKRM, "CMDCHKRM");
+    names.put(CodePoint.CMDCMPRM, "CMDCMPRM");
+    names.put(CodePoint.CMDNSPRM, "CMDNSPRM");
+    names.put(CodePoint.CMMRQSRM, "CMMRQSRM");
+    names.put(CodePoint.CMDVLTRM, "CMDVLTRM");
+    names.put(CodePoint.CNTQRY, "CNTQRY");
+    names.put(CodePoint.CRRTKN, "CRRTKN");
+    names.put(CodePoint.DRPPKG, "DRPPKG");
+    names.put(CodePoint.DSCRDBTBL, "DSCRDBTBL");
+    names.put(CodePoint.DSCINVRM, "DSCINVRM");
+    names.put(CodePoint.DSCSQLSTT, "DSCSQLSTT");
+    names.put(CodePoint.DTAMCHRM, "DTAMCHRM");
+    names.put(CodePoint.ENDBND, "ENDBND");
+    names.put(CodePoint.ENDQRYRM, "ENDQRYRM");
+    names.put(CodePoint.ENDUOWRM, "ENDUOWRM");
+    names.put(CodePoint.EXCSAT, "EXCSAT");
+    names.put(CodePoint.EXCSATRD, "EXCSATRD");
+    names.put(CodePoint.EXCSQLIMM, "EXCSQLIMM");
+    names.put(CodePoint.EXCSQLSET, "EXCSQLSET");
+    names.put(CodePoint.EXCSQLSTT, "EXCSQLSTT");
+    names.put(CodePoint.EXTNAM, "EXTNAM");
+    names.put(CodePoint.FRCFIXROW, "FRCFIXROW");
+    names.put(CodePoint.MAXBLKEXT, "MAXBLKEXT");
+    names.put(CodePoint.MAXRSLCNT, "MAXRSLCNT");
+    names.put(CodePoint.MGRDEPRM, "MGRDEPRM");
+    names.put(CodePoint.MGRLVLLS, "MGRLVLLS");
+    names.put(CodePoint.MGRLVLRM, "MGRLVLRM");
+    names.put(CodePoint.MONITOR, "MONITOR");
+    names.put(CodePoint.NBRROW, "NBRROW");
+    names.put(CodePoint.OBJNSPRM, "OBJNSPRM");
+    names.put(CodePoint.OPNQFLRM, "OPNQFLRM");
+    names.put(CodePoint.OPNQRY, "OPNQRY");
+    names.put(CodePoint.OPNQRYRM, "OPNQRYRM");
+    names.put(CodePoint.OUTEXP, "OUTEXP");
+    names.put(CodePoint.OUTOVR, "OUTOVR");
+    names.put(CodePoint.OUTOVROPT, "OUTOVROPT");
+    names.put(CodePoint.PASSWORD, "PASSWORD");
+    names.put(CodePoint.PKGID, "PKGID");
+    names.put(CodePoint.PKGBNARM, "PKGBNARM");
+    names.put(CodePoint.PKGBPARM, "PKGBPARM");
+    names.put(CodePoint.PKGNAMCSN, "PKGNAMCSN");
+    names.put(CodePoint.PKGNAMCT, "PKGNAMCT");
+    names.put(CodePoint.PRCCNVRM, "PRCCNVRM");
+    names.put(CodePoint.PRDID, "PRDID");
+    names.put(CodePoint.PRDDTA, "PRDDTA");
+    names.put(CodePoint.PRMNSPRM, "PRMNSPRM");
+    names.put(CodePoint.PRPSQLSTT, "PRPSQLSTT");
+    names.put(CodePoint.QRYBLKCTL, "QRYBLKCTL");
+    names.put(CodePoint.QRYBLKRST, "QRYBLKRST");
+    names.put(CodePoint.QRYBLKSZ, "QRYBLKSZ");
+    names.put(CodePoint.QRYCLSIMP, "QRYCLSIMP");
+    names.put(CodePoint.QRYCLSRLS, "QRYCLSRLS");
+    names.put(CodePoint.QRYDSC, "QRYDSC");
+    names.put(CodePoint.QRYDTA, "QRYDTA");
+    names.put(CodePoint.QRYINSID, "QRYINSID");
+    names.put(CodePoint.QRYNOPRM, "QRYNOPRM");
+    names.put(CodePoint.QRYPOPRM, "QRYPOPRM");
+    names.put(CodePoint.QRYRELSCR, "QRYRELSCR");
+    names.put(CodePoint.QRYRFRTBL, "QRYRFRTBL");
+    names.put(CodePoint.QRYROWNBR, "QRYROWNBR");
+    names.put(CodePoint.QRYROWSNS, "QRYROWSNS");
+    names.put(CodePoint.QRYRTNDTA, "QRYRTNDTA");
+    names.put(CodePoint.QRYSCRORN, "QRYSCRORN");
+    names.put(CodePoint.QRYROWSET, "QRYROWSET");
+    names.put(CodePoint.RDBAFLRM, "RDBAFLRM");
+    names.put(CodePoint.RDBACCCL, "RDBACCCL");
+    names.put(CodePoint.RDBACCRM, "RDBACCRM");
+    names.put(CodePoint.RDBALWUPD, "RDBALWUPD");
+    names.put(CodePoint.RDBATHRM, "RDBATHRM");
+    names.put(CodePoint.RDBCMM, "RDBCMM");
+    names.put(CodePoint.RDBCMTOK, "RDBCMTOK");
+    names.put(CodePoint.RDBNACRM, "RDBNACRM");
+    names.put(CodePoint.RDBNAM, "RDBNAM");
+    names.put(CodePoint.RDBNFNRM, "RDBNFNRM");
+    names.put(CodePoint.RDBRLLBCK, "RDBRLLBCK");
+    names.put(CodePoint.RDBUPDRM, "RDBUPDRM");
+    names.put(CodePoint.REBIND, "REBIND");
+    names.put(CodePoint.RSCLMTRM, "RSCLMTRM");
+    names.put(CodePoint.RSLSETRM, "RSLSETRM");
+    names.put(CodePoint.RTNEXTDTA, "RTNEXTDTA");
+    names.put(CodePoint.RTNSQLDA, "RTNSQLDA");
+    names.put(CodePoint.SECCHK, "SECCHK");
+    names.put(CodePoint.SECCHKCD, "SECCHKCD");
+    names.put(CodePoint.SECCHKRM, "SECCHKRM");
+    names.put(CodePoint.SECMEC, "SECMEC");
+    names.put(CodePoint.SECMGRNM, "SECMGRNM");
+    names.put(CodePoint.SECTKN, "SECTKN");
+    names.put(CodePoint.SPVNAM, "SPVNAM");
+    names.put(CodePoint.SQLAM, "SQLAM");
+    names.put(CodePoint.SQLATTR, "SQLATTR");
+    names.put(CodePoint.SQLCARD, "SQLCARD");
+    names.put(CodePoint.SQLERRRM, "SQLERRRM");
+    names.put(CodePoint.SQLDARD, "SQLDARD");
+    names.put(CodePoint.SQLDTA, "SQLDTA");
+    names.put(CodePoint.SQLDTARD, "SQLDTARD");
+    names.put(CodePoint.SQLSTT, "SQLSTT");
+    names.put(CodePoint.SQLSTTVRB, "SQLSTTVRB");
+    names.put(CodePoint.SRVCLSNM, "SRVCLSNM");
+    names.put(CodePoint.SRVRLSLV, "SRVRLSLV");
+    names.put(CodePoint.SRVNAM, "SRVNAM");
+    names.put(CodePoint.SVRCOD, "SVRCOD");
+    names.put(CodePoint.SYNCCTL, "SYNCCTL");
+    names.put(CodePoint.SYNCLOG, "SYNCLOG");
+    names.put(CodePoint.SYNCRSY, "SYNCRSY");
+    names.put(CodePoint.SYNTAXRM, "SYNTAXRM");
+    names.put(CodePoint.TRGNSPRM, "TRGNSPRM");
+    names.put(CodePoint.TYPDEFNAM, "TYPDEFNAM");
+    names.put(CodePoint.TYPDEFOVR, "TYPDEFOVR");
+    names.put(CodePoint.TYPSQLDA, "TYPSQLDA");
+    names.put(CodePoint.UOWDSP, "UOWDSP");
+    names.put(CodePoint.USRID, "USRID");
+    names.put(CodePoint.VALNSPRM, "VALNSPRM");
+    names.put(CodePoint.PBSD, "PBSD");
+    names.put(CodePoint.PBSD_ISO, "PBSD_ISO");
+    names.put(CodePoint.PBSD_SCHEMA, "PBSD_SCHEMA");
+    names.put(CodePoint.UNICODEMGR, "UNICODEMGR");
   }
 
   String lookup (int codePoint)
   {
-    return get(codePoint);
+    return names.get(codePoint);
+  }
+
+  Integer codePointForName(String codePointName)
+  {
+    for (Map.Entry<Integer, String> entry : names.entrySet())
+    {
+      if (codePointName.equals(entry.getValue()))
+      {
+        return entry.getKey();
+      }
+    }
+    return null;
   }
 
 }
