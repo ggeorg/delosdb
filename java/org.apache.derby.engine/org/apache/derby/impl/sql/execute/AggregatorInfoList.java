@@ -27,16 +27,15 @@ import org.apache.derby.iapi.services.io.Formatable;
 import java.io.ObjectOutput;
 import java.io.ObjectInput;
 import java.io.IOException;
-import java.util.Vector;
+import java.util.ArrayList;
 
 /**
- * Vector of AggergatorInfo objects.
+ * List of AggregatorInfo objects.
  *
- * @see java.util.Vector
- *
+ * This class keeps the small legacy elementAt/addElement surface used by the
+ * compiler while storing entries in a modern ArrayList.
  */
-@SuppressWarnings("UseOfObsoleteCollectionType")
-public class AggregatorInfoList extends Vector<AggregatorInfo> implements Formatable 
+public class AggregatorInfoList extends ArrayList<AggregatorInfo> implements Formatable 
 {
 	/********************************************************
 	**
@@ -59,6 +58,22 @@ public class AggregatorInfoList extends Vector<AggregatorInfo> implements Format
 	 * Niladic constructor for Formatable
 	 */
 	public AggregatorInfoList() {}
+
+	/**
+	 * Compatibility helper for legacy callers that used Vector terminology.
+	 */
+	public AggregatorInfo elementAt(int index)
+	{
+		return get(index);
+	}
+
+	/**
+	 * Compatibility helper for legacy callers that used Vector terminology.
+	 */
+	public void addElement(AggregatorInfo aggInfo)
+	{
+		add(aggInfo);
+	}
 
 	/**
 	 * Indicate whether i have a distinct or not.
