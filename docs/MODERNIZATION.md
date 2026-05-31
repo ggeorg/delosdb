@@ -72,3 +72,7 @@ The third legacy collection cleanup batch targets private client driver maps. Lo
 ### Classfile collection cleanup batch
 
 The fourth legacy collection cleanup batch targets the internal classfile generation/inspection utilities. These structures are build/runtime bytecode metadata containers owned by the classfile package, so replacing private `Vector`/`Hashtable` storage with `List`/`Map` is lower-risk than changing store, lock, compiler, or public ij APIs. Existing enumeration-facing methods still return `Enumeration` through `Collections.enumeration(...)` to preserve caller behavior.
+
+### Diagnostic/debug map cleanup batch
+
+The fifth legacy collection cleanup batch targets private diagnostic and support maps: sanity debug flags, statement-duration row correlation, lock-table table-name caches, bytecode validation primitive lookup, and generated-method reflection caches. Shared caches now use concurrent maps; single-owner diagnostic maps now use `HashMap`/`Map`. Public `Hashtable` contracts and concurrency-sensitive engine/store structures remain audit-only.

@@ -22,8 +22,8 @@
 package org.apache.derby.shared.common.sanity;
 
 
-import java.util.Hashtable;
-import java.util.Enumeration;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * The SanityService provides assertion checking and debug
@@ -75,7 +75,7 @@ public class SanityManager {
 	 * DebugFlags holds the values of all debug flags in
 	 * the configuration file.
 	 */
-	static private Hashtable<String,Boolean> DebugFlags = new Hashtable<String,Boolean>();
+	static private final ConcurrentMap<String,Boolean> DebugFlags = new ConcurrentHashMap<String,Boolean>();
 	/**
 	 * AllDebugOn and AllDebugOff override individual flags
 	 */

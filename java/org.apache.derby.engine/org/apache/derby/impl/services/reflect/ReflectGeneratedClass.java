@@ -29,11 +29,12 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
 import java.lang.reflect.Method;
-import java.util.Hashtable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public final class ReflectGeneratedClass extends LoadedGeneratedClass {
 
-	private final Hashtable<String,GeneratedMethod> methodCache;
+	private final ConcurrentMap<String,GeneratedMethod> methodCache;
 	private static final GeneratedMethod[] directs;
 
 	static {
@@ -45,7 +46,7 @@ public final class ReflectGeneratedClass extends LoadedGeneratedClass {
 
 	public ReflectGeneratedClass(ClassFactory cf, Class jvmClass) {
 		super(cf, jvmClass);
-		methodCache = new Hashtable<String,GeneratedMethod>();
+		methodCache = new ConcurrentHashMap<String,GeneratedMethod>();
 	}
 
 	public GeneratedMethod getMethod(String simpleName)

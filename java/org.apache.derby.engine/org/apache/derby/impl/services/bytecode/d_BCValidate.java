@@ -24,7 +24,8 @@ package org.apache.derby.impl.services.bytecode;
 import java.lang.reflect.*;
 import org.apache.derby.iapi.services.classfile.VMOpcode;
 import org.apache.derby.shared.common.sanity.SanityManager;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -183,11 +184,11 @@ class d_BCValidate
         }
     }
 
-	private static Hashtable<String,Class<?>> primitives;
+	private static Map<String,Class<?>> primitives;
 
 	static {
 		if (SanityManager.DEBUG) {
-			primitives = new Hashtable<String,Class<?>>();
+			primitives = new HashMap<String,Class<?>>();
 			primitives.put("boolean", Boolean.TYPE);
 			primitives.put("byte", Byte.TYPE);
 			primitives.put("char", Character.TYPE);

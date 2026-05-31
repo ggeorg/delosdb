@@ -27,7 +27,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.FileInputStream;
 import java.text.SimpleDateFormat;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -83,7 +84,7 @@ public class StatementDuration extends VTITemplate
 	private InputStream inputStream;
 	private BufferedReader bufferedReader;
 	private String inputFileName;
-	private Hashtable<String,String[]> hashTable;
+	private Map<String,String[]> hashTable;
 
 	// Variables for current row
 	private String line;
@@ -156,7 +157,7 @@ public class StatementDuration extends VTITemplate
 				throw new SQLException(ex.getMessage());
 			}
 
-			hashTable = new Hashtable<String,String[]>();
+			hashTable = new HashMap<String,String[]>();
 		}
 
 		while (true)

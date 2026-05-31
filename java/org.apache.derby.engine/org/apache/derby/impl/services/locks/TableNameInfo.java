@@ -32,30 +32,30 @@ import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 
 import org.apache.derby.iapi.store.access.TransactionController;
 
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.derby.catalog.UUID;
 
-@SuppressWarnings("UseOfObsoleteCollectionType")
 public class TableNameInfo {
 
 	// things to look up table name etc
 	private DataDictionary dd;
 
     // conglomId -> conglomerateDescriptor
-    private Hashtable<Long, ConglomerateDescriptor> ddCache;
+    private Map<Long, ConglomerateDescriptor> ddCache;
 
     // tableID UUID -> table descriptor
-    private Hashtable<UUID, TableDescriptor> tdCache;
+    private Map<UUID, TableDescriptor> tdCache;
 
-    private Hashtable<Long,TableDescriptor> tableCache;     // conglomId -> table descriptor
-	private Hashtable<Long,String> indexCache;		// conglomId -> indexname
+    private Map<Long,TableDescriptor> tableCache;     // conglomId -> table descriptor
+	private Map<Long,String> indexCache;		// conglomId -> indexname
 
 	public TableNameInfo(LanguageConnectionContext lcc, boolean andIndex)
 		throws StandardException {
 
-		tableCache = new Hashtable<Long,TableDescriptor>(31);
+		tableCache = new HashMap<Long,TableDescriptor>(31);
 		if (andIndex)
-			indexCache = new Hashtable<Long,String>(13);
+			indexCache = new HashMap<Long,String>(13);
 
 		TransactionController tc = lcc.getTransactionExecute();
 
