@@ -44,7 +44,6 @@ import java.util.NoSuchElementException;
 import java.util.Properties;
 import java.util.ResourceBundle;
 import java.util.StringTokenizer;
-import java.util.Vector;
 import org.apache.derby.shared.common.error.ErrorStringBuilder;
 import org.apache.derby.shared.common.error.ExceptionSeverity;
 import org.apache.derby.shared.common.error.ShutdownException;
@@ -99,12 +98,12 @@ abstract class BaseMonitor
 	private static final String LINE = 
         "----------------------------------------------------------------";
 
-	// Vector of class objects of implementations, found in the System, application
+	// List of class objects of implementations, found in the System, application
 	// and default (modules.properties) properties
 
     private List<List<Class<?>>> implementationSets;
 
-    private final Vector<TopService> services; // Vector of TopServices
+    private final List<TopService> services; // list of TopServices
 
 	Properties bootProperties;		// specifc properties provided by the boot method, override everything else
 	Properties applicationProperties;
@@ -133,7 +132,7 @@ abstract class BaseMonitor
 	BaseMonitor() {
 		super();
 
-		services = new Vector<TopService>(0, 1);
+		services = Collections.synchronizedList(new ArrayList<TopService>());
 		services.add(new TopService(this));	// first element is always the free-floating service
 	}
 
