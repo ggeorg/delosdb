@@ -26,8 +26,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.sql.SQLException;
-import java.util.Enumeration;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.derby.iapi.tools.i18n.LocalizedResource;
 
 /**
@@ -70,7 +70,7 @@ class Session
                                         // client
 
     /** Table of databases accessed in this session. */
-    private Hashtable<String, Database> dbtable;
+    private Map<String, Database> dbtable;
     private NetworkServerControlImpl nsctrl;        // NetworkServerControlImpl needed for logging
                                                         // message if tracing fails.
                                                         
@@ -95,7 +95,7 @@ class Session
         this.traceOn = traceOn;
         if (traceOn)
             dssTrace = new DssTrace(); 
-        dbtable = new Hashtable<String, Database>();
+        dbtable = new HashMap<String, Database>();
         initialize(traceDirectory);
     }
 
@@ -112,10 +112,12 @@ class Session
             clientSocket.close();
             setTraceOff();
             if (dbtable != null)
-                for (Enumeration e = dbtable.elements() ; e.hasMoreElements() ;) 
+            {
+                for (Database database : dbtable.values())
                 {
-                    ((Database) e.nextElement()).close();
+                    database.close();
                 }
+            }
             
         }catch (IOException e) {} // ignore IOException when we are shutting down
         finally {
@@ -219,7 +221,7 @@ class Session
      */
     protected Database getDatabase(String dbName)
     {
-        return (Database)dbtable.get(dbName);
+        return dbtable.get(dbName);
     }
 
     /**
