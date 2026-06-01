@@ -269,10 +269,10 @@ abstract class BaseMonitor
             systemProperties = System.getProperties();
         }
 
-        Vector<Class<?>> bootImplementations = getImplementations(bootProperties, false);
+        List<Class<?>> bootImplementations = getImplementations(bootProperties, false);
 
-        Vector<Class<?>> systemImplementations = null;
-        Vector<Class<?>> applicationImplementations = null;
+        List<Class<?>> systemImplementations = null;
+        List<Class<?>> applicationImplementations = null;
 
         // TEMP - making this sanity only breaks the unit test code
         // I will fix soon, djd.
@@ -282,7 +282,7 @@ abstract class BaseMonitor
             applicationImplementations = getImplementations(applicationProperties, false);
         }
 
-        Vector<Class<?>> defaultImplementations = getDefaultImplementations();
+        List<Class<?>> defaultImplementations = getDefaultImplementations();
 
         int implementationCount = 0;
         if (bootImplementations != null)
@@ -705,7 +705,7 @@ abstract class BaseMonitor
 
 		Object instance = null;
 
-		Vector<Class<?>> localImplementations = getImplementations(properties, false);
+		List<Class<?>> localImplementations = getImplementations(properties, false);
 		if (localImplementations != null) {
 			instance = loadInstance(localImplementations, factoryInterface, properties);
 		}
@@ -1042,17 +1042,17 @@ abstract class BaseMonitor
 	/**
 		Create an implementation set.
 		Look through the properties object for all properties that
-		start with derby.module and add the value into the vector.
+		start with derby.module and add the value into the list.
 
 		If no implementations are listed in the properties object
 		then null is returned.
 	*/
-	private Vector<Class<?>> getImplementations(Properties moduleList, boolean actualModuleList) {
+	private List<Class<?>> getImplementations(Properties moduleList, boolean actualModuleList) {
 
 		if (moduleList == null)
 			return null;
 
-		Vector<Class<?>> implementations = actualModuleList ? new Vector<Class<?>>(moduleList.size()) : new Vector<Class<?>>(0,1);
+		ArrayList<Class<?>> implementations = actualModuleList ? new ArrayList<Class<?>>(moduleList.size()) : new ArrayList<Class<?>>();
 
 		// Get my current JDK environment
 		int theJDKId = JVMInfo.JDK_ID;
@@ -1163,7 +1163,7 @@ nextModule:
 
 				}
 				else {
-					// just add to the end of the vector
+					// just add to the end of the list
 					implementations.add(possibleModule);
 				}
 
@@ -1232,7 +1232,7 @@ nextModule:
         return true;
     } // end of getPersistentServiceImplementation
         
-	private Vector<Class<?>> getDefaultImplementations() {
+	private List<Class<?>> getDefaultImplementations() {
 
 		Properties moduleList = getDefaultModuleProperties();
 
