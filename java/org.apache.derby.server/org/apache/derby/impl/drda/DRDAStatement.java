@@ -34,7 +34,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.derby.iapi.jdbc.EngineStatement;
 import org.apache.derby.iapi.jdbc.EnginePreparedStatement;
 import org.apache.derby.iapi.transaction.TransactionControl;
@@ -89,8 +90,8 @@ class DRDAStatement
 
 
     private DRDAResultSet currentDrdaRs;  // Current ResultSet
-    /** Hashtable with resultsets. */
-    private Hashtable<ConsistencyToken, DRDAResultSet> resultSetTable;
+    /** Map with resultsets. */
+    private Map<ConsistencyToken, DRDAResultSet> resultSetTable;
     /** Ordered list of hash keys. */
     private ArrayList<ConsistencyToken> resultSetKeyList;
     private int numResultSets = 0;  
@@ -965,7 +966,7 @@ class DRDAStatement
                 // before we store our new resultSet.
                 // For just a single resultSet we don't ever create the Hashtable.
                 resultSetTable =
-                        new Hashtable<ConsistencyToken, DRDAResultSet>();
+                        new HashMap<ConsistencyToken, DRDAResultSet>();
                 ConsistencyToken pkgcnstkn = pkgnamcsn.getPkgcnstkn();
                 resultSetTable.put(pkgcnstkn, currentDrdaRs);
                 resultSetKeyList = new ArrayList<ConsistencyToken>();
