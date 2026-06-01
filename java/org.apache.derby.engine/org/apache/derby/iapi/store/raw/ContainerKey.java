@@ -33,7 +33,7 @@ import org.apache.derby.iapi.services.locks.Lockable;
 import org.apache.derby.iapi.services.locks.Latch;
 import org.apache.derby.iapi.services.locks.VirtualLockTable;
 
-import java.util.Hashtable;
+import java.util.Map;
 
 /**
 	A key that identifies a Container within the RawStore.
@@ -165,7 +165,7 @@ public final class ContainerKey implements Matchable, Lockable
 	/**
 		This lockable wants to participate in the Virtual Lock table.
 	 */
-	public boolean lockAttributes(int flag, Hashtable<String,Object> attributes)
+	public boolean lockAttributes(int flag, Map<String,Object> attributes)
 	{
 		if (SanityManager.DEBUG)
 		{

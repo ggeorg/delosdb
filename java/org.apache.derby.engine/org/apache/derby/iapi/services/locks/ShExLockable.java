@@ -27,7 +27,7 @@ import org.apache.derby.iapi.services.locks.VirtualLockTable;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
 
-import java.util.Hashtable;
+import java.util.Map;
 
 public class ShExLockable implements Lockable
 {
@@ -96,7 +96,7 @@ public class ShExLockable implements Lockable
      * Any lockable object which DOES NOT want to participate should
      * override this function.
      */
-	public boolean lockAttributes(int flag, Hashtable<String,Object> attributes)
+	public boolean lockAttributes(int flag, Map<String,Object> attributes)
 	{
         if((flag & VirtualLockTable.SHEXLOCK) == 0)
             return false;

@@ -48,7 +48,7 @@ import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 import org.apache.derby.iapi.util.ByteArray;
 
 import java.util.Properties;
-import java.util.Hashtable;
+import java.util.Map;
 
 /**
 	BaseContainer is an abstract class that provides the locking bahaviour
@@ -919,7 +919,7 @@ abstract class BaseContainer implements Lockable {
 	//}
 
 	// Not interested in participating in the diagnostic virtual lock table.
-	public boolean lockAttributes(int flag, Hashtable attributes)
+	public boolean lockAttributes(int flag, Map<String,Object> attributes)
 	{
 		return false;
 	}

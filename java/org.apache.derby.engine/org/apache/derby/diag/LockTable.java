@@ -39,8 +39,8 @@ import org.apache.derby.shared.common.error.PublicAPI;
 import org.apache.derby.iapi.sql.ResultColumnDescriptor;
 import org.apache.derby.impl.jdbc.EmbedResultSetMetaData;
 
-import java.util.Hashtable;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Map;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -237,7 +237,7 @@ public class LockTable extends VTITemplate implements VTICosting  {
     Latch                   lock)
         throws StandardException
     {
-		Hashtable<String,Object>	attributes = new Hashtable<String,Object>(17);
+		Map<String,Object>	attributes = new HashMap<String,Object>(17);
         Object      lock_type =  lock.getQualifier();
 
 

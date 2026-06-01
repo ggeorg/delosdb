@@ -32,8 +32,8 @@ import org.apache.derby.iapi.services.context.ContextService;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.TransactionInfo;
 
-import java.util.Hashtable;
-import java.util.Dictionary;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Stack;
 
 import java.util.List;
@@ -147,7 +147,7 @@ class Deadlock  {
 						 byte deadlockWake) {
 
 		// step one, get a list of all waiters
-		Dictionary waiters = Deadlock.getWaiters(set);
+		Map<Object,Object> waiters = Deadlock.getWaiters(set);
 
 		// This stack will track the potential deadlock chain
 		// The Stack consists of
@@ -366,8 +366,8 @@ inner:		for (;;) {
      * @return all waiters in the lock table
      * @see LockControl#addWaiters(java.util.Map)
      */
-	private static Hashtable getWaiters(LockTable set) {
-		Hashtable<Object,Object> waiters = new Hashtable<Object,Object>();
+	private static Map<Object,Object> getWaiters(LockTable set) {
+		Map<Object,Object> waiters = new HashMap<Object,Object>();
 		set.addWaiters(waiters);
 		return waiters;
 	}
@@ -382,7 +382,7 @@ inner:		for (;;) {
      * been picked and awoken), or an array describing the deadlock otherwise
      */
 	private static Object[] handle(AbstractPool factory, Stack chain, int start,
-								   Dictionary waiters, byte deadlockWake) {
+								   Map<Object,Object> waiters, byte deadlockWake) {
 
 		// If start is zero then the space that started looking for the
 		// deadlock is activly involved in the deadlock.
@@ -441,7 +441,7 @@ inner:		for (;;) {
 											Object[] data) {
 
 		Stack chain = (Stack) data[0];
-		Dictionary waiters = (Dictionary) data[1];
+		Map<?,?> waiters = (Map<?,?>) data[1];
 
 
 		LanguageConnectionContext lcc = (LanguageConnectionContext)
@@ -467,7 +467,7 @@ inner:		for (;;) {
 
 		StringBuffer sb = new StringBuffer(200);
 
-		Hashtable<String,Object> attributes = new Hashtable<String,Object>(17);
+		Map<String,Object> attributes = new HashMap<String,Object>(17);
 
 		String victimXID = null;
 

@@ -36,7 +36,8 @@ import org.apache.derby.iapi.store.access.TransactionController;
 
 import java.util.Date;
 import java.util.Enumeration;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Code to support Timeout error output.
@@ -63,8 +64,8 @@ public final class Timeout
     private char[] outputRow;
     /* the entire lockTable as a buffer */
     private StringBuffer sb;
-    /* the hashtable information of the current lock */
-    private Hashtable currentRow;
+    /* the attribute information of the current lock */
+    private Map<String,Object> currentRow;
     /* the time when the exception was thrown */
     private final long currentTime;
     /* the snapshot of the lockTable that timeout */
@@ -262,7 +263,7 @@ public final class Timeout
      */
     private void dumpLock() throws StandardException
     {
-        Hashtable<String,Object> attributes = new Hashtable<String,Object>(17);
+        Map<String,Object> attributes = new HashMap<String,Object>(17);
         Object lock_type = currentLock.getQualifier();
 
         // want containerId, segmentId, pageNum, recId from locktable

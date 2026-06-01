@@ -21,7 +21,7 @@
 
 package org.apache.derby.iapi.services.locks;
 
-import java.util.Hashtable;
+import java.util.Map;
 
 /**
 	Any object that needs to be locked must implement Lockable.
@@ -139,7 +139,7 @@ public interface Lockable {
 		for TABLE_AND_ROWLOCK and if this is not a table or row lock, then
 		don't participate.
 		@param attributes if this decides to participate, put all relevant
-		attributes into the Hashtable.  The complete list of interesting
+		attributes into the Map.  The complete list of interesting
 		attributes is listed in VirtualLockTable.
 		The following attributes must be present for all participating
 		lockables:
@@ -157,5 +157,5 @@ public interface Lockable {
 
 		@see VirtualLockTable
 	 */
-	public boolean lockAttributes(int flag, Hashtable<String,Object> attributes);
+	public boolean lockAttributes(int flag, Map<String,Object> attributes);
 }
