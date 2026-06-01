@@ -7,8 +7,16 @@ import org.gradle.api.tasks.bundling.Compression
 import org.gradle.api.tasks.bundling.Tar
 import org.gradle.api.tasks.bundling.Zip
 import org.gradle.api.tasks.GradleBuild
+import org.gradle.process.ExecOperations
+import javax.inject.Inject
 import java.util.jar.JarFile
 import java.util.zip.ZipFile
+
+
+abstract class DelosDbExecSupport {
+    @Inject
+    abstract ExecOperations getExecOperations()
+}
 
 def delosDbVersion = '0.1.0-dev'
 
@@ -64,10 +72,12 @@ def generatedSourceDir = { String moduleName ->
     layout.buildDirectory.dir("generated/sources/${moduleName}")
 }
 
+def execSupport = objects.newInstance(DelosDbExecSupport)
+
 def buildNumber = providers.provider {
     try {
         def stdout = new ByteArrayOutputStream()
-        exec {
+        execSupport.execOperations.exec {
             commandLine 'git', 'rev-parse', '--short', 'HEAD'
             standardOutput = stdout
             errorOutput = new ByteArrayOutputStream()
@@ -187,7 +197,7 @@ tasks.register('generateClassSizeCatalog') {
     doLast {
         def target = outputFile.get().asFile
         target.parentFile.mkdirs()
-        javaexec {
+        execSupport.execOperations.javaexec {
             classpath = files(
                     layout.buildDirectory.dir('classes/build-tools'),
                     moduleClassDir(moduleNames.commons),
@@ -306,7 +316,7 @@ tasks.register('splitEngineMessages') {
         clientLoc.mkdirs()
         localeLoc.mkdirs()
 
-        javaexec {
+        execSupport.execOperations.javaexec {
             classpath = files(
                     layout.buildDirectory.dir('classes/build-tools'),
                     moduleClassDir(moduleNames.commons)

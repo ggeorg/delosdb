@@ -3,6 +3,14 @@ plugins {
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.process.ExecOperations
+import javax.inject.Inject
+
+
+abstract class DelosDbToolsExecSupport {
+    @Inject
+    abstract ExecOperations getExecOperations()
+}
 
 version = rootProject.version
 group = rootProject.group
@@ -15,6 +23,7 @@ def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.build
 def clientModuleClassDir = rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def javaccClasspath = rootProject.files('tools/java/javacc.jar')
+def execSupport = objects.newInstance(DelosDbToolsExecSupport)
 
 def replaceInFile = { File file, Closure<String> transform ->
     file.text = transform(file.text)
@@ -32,13 +41,13 @@ tasks.register('generateIjParsers') {
     doLast {
         delete outputDir
         outputDir.get().asFile.mkdirs()
-        javaexec {
+        execSupport.execOperations.javaexec {
             classpath = javaccClasspath
             mainClass = 'javacc'
             workingDir = rootProject.file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij')
             args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'ij.jj'
         }
-        javaexec {
+        execSupport.execOperations.javaexec {
             classpath = javaccClasspath
             mainClass = 'javacc'
             workingDir = rootProject.file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij')
