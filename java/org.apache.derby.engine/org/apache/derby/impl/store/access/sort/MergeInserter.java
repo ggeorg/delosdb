@@ -21,7 +21,8 @@
 
 package org.apache.derby.impl.store.access.sort;
 
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
@@ -50,7 +51,7 @@ final class MergeInserter implements SortController
 	/**
 	A vector of the conglomerate ids of the merge runs.
 	**/
-	private Vector<Long> mergeRuns;
+	private List<Long> mergeRuns;
 
 	/**
 	An in-memory ordered set that is used to sort rows
@@ -71,7 +72,7 @@ final class MergeInserter implements SortController
     int     stat_numRowsInput;
     int     stat_numRowsOutput;
     int     stat_numMergeRuns;
-    Vector<Integer>  stat_mergeRunsSize;
+    List<Integer>  stat_mergeRunsSize;
 
 
 	/*
@@ -188,15 +189,15 @@ final class MergeInserter implements SortController
             stat_sortType = "external";
 			long conglomid = sort.createMergeRun(tran, sortBuffer);
 			if (mergeRuns == null)
-				mergeRuns = new Vector<Long>();
-			mergeRuns.addElement(conglomid);
+				mergeRuns = new ArrayList<Long>();
+			mergeRuns.add(conglomid);
 
             stat_numMergeRuns++;
             // calculate size of this merge run
             // buffer was too full for last row
             runSize = stat_numRowsInput - totalRunSize - 1;
             totalRunSize += runSize;
-            stat_mergeRunsSize.addElement(runSize);
+            stat_mergeRunsSize.add(runSize);
 
 			// Re-insert the row into the sort buffer.
 			// This is guaranteed to work since the sort
@@ -226,7 +227,7 @@ final class MergeInserter implements SortController
         if (stat_sortType == "external")
         {
             stat_numMergeRuns++;
-            stat_mergeRunsSize.addElement(stat_numRowsInput - totalRunSize);
+            stat_mergeRunsSize.add(stat_numRowsInput - totalRunSize);
         }
 
         // close the SortController in the transaction.
@@ -284,7 +285,7 @@ final class MergeInserter implements SortController
         stat_numMergeRuns = 0;
         stat_numRowsInput = 0;
         stat_numRowsOutput = 0;
-        stat_mergeRunsSize = new Vector<Integer>();
+        stat_mergeRunsSize = new ArrayList<Integer>();
         runSize = 0;
         totalRunSize = 0;
 

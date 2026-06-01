@@ -29,7 +29,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 
 import org.apache.derby.shared.common.i18n.MessageService;
 
-import java.util.Vector;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -53,7 +53,7 @@ class MergeSortInfo implements SortInfo
     private int     stat_numRowsInput;
     private int     stat_numRowsOutput;
     private int     stat_numMergeRuns;
-    private Vector  stat_mergeRunsSize;
+    private List<Integer>  stat_mergeRunsSize;
 
 
     /* Constructors for This class: */

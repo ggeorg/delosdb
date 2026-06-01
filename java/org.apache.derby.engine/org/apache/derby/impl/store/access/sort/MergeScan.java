@@ -21,8 +21,7 @@
 
 package org.apache.derby.impl.store.access.sort;
 
-import java.util.Enumeration;
-import java.util.Vector;
+import java.util.List;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException;
@@ -51,7 +50,7 @@ public class MergeScan extends SortScan
 	/**
 	The merge runs.
 	**/
-	protected Vector<Long> mergeRuns;
+	protected List<Long> mergeRuns;
 
 	/**
 	Array of scan controllers for the merge runs.
@@ -70,7 +69,7 @@ public class MergeScan extends SortScan
     MergeSort           sort, 
     TransactionManager  tran,
     SortBuffer          sortBuffer, 
-    Vector<Long>              mergeRuns,
+    List<Long>                mergeRuns,
 	SortObserver		sortObserver,
     boolean             hold)
 	{
@@ -182,11 +181,10 @@ public class MergeScan extends SortScan
 
 		// Open a scan on each merge run.
 		int scanindex = 0;
-		Enumeration<Long> e = mergeRuns.elements();
-		while (e.hasMoreElements())
+		for (Long containerId : mergeRuns)
 		{
 			// get the container id
-			long id = (e.nextElement()).longValue();
+			long id = containerId.longValue();
 
 			Transaction rawTran = tran.getRawStoreXact();  // get raw transaction
 			int segmentId = StreamContainerHandle.TEMPORARY_SEGMENT;

@@ -21,9 +21,9 @@
 
 package org.apache.derby.impl.store.access.sort;
 
-import java.util.Enumeration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
-import java.util.Vector;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -146,7 +146,7 @@ class MergeSort implements Sort
 	Might be null if no merge runs were produced.
 	It is a vector of container ids.
 	**/
-	private Vector<Long> mergeRuns = null;
+	private List<Long> mergeRuns = null;
 
 	/**
 	An ordered set of the leftover rows that didn't go
@@ -237,7 +237,7 @@ class MergeSort implements Sort
 		{
 			// Dump the rows in the sort buffer to a merge run.
 			long containerId = createMergeRun(tran, sortBuffer);
-			mergeRuns.addElement(containerId);
+			mergeRuns.add(containerId);
 
 			// If there are more merge runs than we can sort
 			// at once with our sort buffer, we have to reduce
@@ -296,7 +296,7 @@ class MergeSort implements Sort
 		{
 			// Dump the rows in the sort buffer to a merge run.
 			long containerId = createMergeRun(tran, sortBuffer);
-			mergeRuns.addElement(containerId);
+			mergeRuns.add(containerId);
 
 			// If there are more merge runs than we can sort
 			// at once with our sort buffer, we have to reduce
@@ -577,7 +577,7 @@ class MergeSort implements Sort
 	An inserter is closing.
 	**/
 	void doneInserting(MergeInserter inserter,
-		SortBuffer sortBuffer, Vector<Long> mergeRuns)
+		SortBuffer sortBuffer, List<Long> mergeRuns)
 	{
         if (SanityManager.DEBUG)
         {
@@ -609,7 +609,7 @@ class MergeSort implements Sort
 	}
 
 	void doneScanning(Scan scan, SortBuffer sortBuffer,
-		Vector<Long> mergeRuns)
+		List<Long> mergeRuns)
 	{
 		this.mergeRuns = mergeRuns;
 
@@ -626,17 +626,14 @@ class MergeSort implements Sort
 	{
 		if (mergeRuns != null)
 		{
-			Enumeration<Long> e = mergeRuns.elements();
-
 			try 
 			{
 				Transaction rawTran = tran.getRawStoreXact();
 				long segmentId = StreamContainerHandle.TEMPORARY_SEGMENT;
 
-				while (e.hasMoreElements())
+				for (Long containerId : mergeRuns)
 				{
-					long containerId = (e.nextElement()).longValue();
-					rawTran.dropStreamContainer(segmentId, containerId);
+					rawTran.dropStreamContainer(segmentId, containerId.longValue());
 				}
 			}
 			catch (StandardException se)
@@ -673,30 +670,27 @@ class MergeSort implements Sort
 	private void multiStageMerge(TransactionManager tran)
 		throws StandardException
 	{
-		Enumeration<Long> e;
 		//int iterations = 0; // DEBUG (nat)
 		int maxMergeRuns = sortBuffer.capacity();
 
 		if (maxMergeRuns > ExternalSortFactory.DEFAULT_MAX_MERGE_RUN)
 			maxMergeRuns = ExternalSortFactory.DEFAULT_MAX_MERGE_RUN;
 
-		Vector<Long> subset;
-		Vector<Long> leftovers;
+		List<Long> subset;
+		List<Long> leftovers;
 
 		while (mergeRuns.size() > maxMergeRuns)
 		{
 			// Move maxMergeRuns elements from the merge runs
 			// vector into a subset, leaving the rest.
-			subset = new Vector<Long>(maxMergeRuns);
-			leftovers = new Vector<Long>(mergeRuns.size() - maxMergeRuns);
-			e = mergeRuns.elements();
-			while (e.hasMoreElements())
+			subset = new ArrayList<Long>(maxMergeRuns);
+			leftovers = new ArrayList<Long>(mergeRuns.size() - maxMergeRuns);
+			for (Long containerId : mergeRuns)
 			{
-				Long containerId = e.nextElement();
 				if (subset.size() < maxMergeRuns)
-					subset.addElement(containerId);
+					subset.add(containerId);
 				else
-					leftovers.addElement(containerId);
+					leftovers.add(containerId);
 			}
 
 			/* DEBUG (nat)
@@ -732,13 +726,11 @@ class MergeSort implements Sort
 			long id = rawTran.addAndLoadStreamContainer(segmentId,
 				properties, msRowSource);
 
-			mergeRuns.addElement(id);
+			mergeRuns.add(id);
 
 			// Drop the conglomerates in the merge subset
-			e = subset.elements();
-			while (e.hasMoreElements())
+			for (Long containerId : subset)
 			{
-				Long containerId = (Long) e.nextElement();
 				rawTran.dropStreamContainer(segmentId, containerId.longValue());
 			}
 		}
