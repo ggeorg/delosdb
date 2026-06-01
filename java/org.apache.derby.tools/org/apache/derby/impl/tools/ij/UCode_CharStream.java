@@ -228,7 +228,7 @@ public final class UCode_CharStream implements CharStream
    * @deprecated 
    * @see #getEndColumn
    */
-
+  @Deprecated
   public final int getColumn() {
      return bufcolumn[bufpos];
   }
@@ -237,7 +237,7 @@ public final class UCode_CharStream implements CharStream
    * @deprecated 
    * @see #getEndLine
    */
-
+  @Deprecated
   public final int getLine() {
      return bufline[bufpos];
   }
