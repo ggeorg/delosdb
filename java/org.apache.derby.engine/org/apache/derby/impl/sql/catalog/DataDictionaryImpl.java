@@ -45,6 +45,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.SortedSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.apache.derby.catalog.AliasInfo;
 import org.apache.derby.catalog.DefaultInfo;
 import org.apache.derby.catalog.DependableFinder;
@@ -380,7 +382,7 @@ public final class	DataDictionaryImpl
 	CacheManager	nameTdCache;
 	private CacheManager	spsNameCache;
     private CacheManager sequenceGeneratorCache;
-	private Hashtable<UUID,SPSDescriptor>		spsIdHash;
+	private ConcurrentMap<UUID,SPSDescriptor>		spsIdHash;
 	// private Hashtable       spsTextHash;
 	int				tdCacheSize;
 	int				stmtCacheSize;
@@ -681,7 +683,7 @@ public final class	DataDictionaryImpl
 					"SPSNameDescriptorCache",
 					stmtCacheSize,
 					stmtCacheSize);
-			spsIdHash = new Hashtable<UUID,SPSDescriptor>(stmtCacheSize);
+			spsIdHash = new ConcurrentHashMap<UUID,SPSDescriptor>(stmtCacheSize);
 			// spsTextHash = new Hashtable(stmtCacheSize);
 		}
 
