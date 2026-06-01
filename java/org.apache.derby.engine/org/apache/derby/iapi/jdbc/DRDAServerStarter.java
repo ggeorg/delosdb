@@ -139,8 +139,7 @@ public final class DRDAServerStarter implements ModuleControl, Runnable
         runServerMethod = serverClass.getMethod(
                 "blockingStart", new Class[] { java.io.PrintWriter.class});
                
-        serverShutdownMethod = serverClass.getMethod(
-                "directShutdown", null);
+        serverShutdownMethod = serverClass.getMethod("directShutdown");
     }
 
     public void boot(boolean create,
@@ -245,7 +244,7 @@ public final class DRDAServerStarter implements ModuleControl, Runnable
         try {
             if( serverThread != null && serverThread.isAlive())
             {
-                serverShutdownMethod.invoke( server, null);
+                serverShutdownMethod.invoke( server );
                 serverThread.interrupt();
                 serverThread = null;
             }

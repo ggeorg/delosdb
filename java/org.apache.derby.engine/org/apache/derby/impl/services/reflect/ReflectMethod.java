@@ -43,7 +43,7 @@ class ReflectMethod implements GeneratedMethod {
 		Throwable t;
 
 		try {
-			return realMethod.invoke(ref, null);
+			return realMethod.invoke(ref);
 
 		} catch (IllegalAccessException iae) {
 

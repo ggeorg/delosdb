@@ -1939,7 +1939,7 @@ throws SQLException
 
 			classC = Class.forName( className );
 			method = classC.getMethod( methodName, argTypes );
-			theConnection = (Connection) method.invoke( null, args );
+			theConnection = (Connection) method.invoke( null, (Object[]) args );
 			result = addSession( theConnection, name );
 
 		} 

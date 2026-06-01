@@ -175,7 +175,7 @@ public class MatchingClauseConstantAction implements ConstantAction, Formatable
                 // UpdateResultSet, or DeleteResultSet.
                 //
                 Method  actionMethod = activation.getClass().getMethod( _actionMethodName );
-                _actionRS = (ResultSet) actionMethod.invoke( activation, null );
+                _actionRS = (ResultSet) actionMethod.invoke( activation );
             }
             catch (Exception e) { throw StandardException.plainWrapException( e ); }
 
