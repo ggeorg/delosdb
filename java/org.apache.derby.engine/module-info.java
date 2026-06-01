@@ -62,6 +62,7 @@
  * </div>
  *
  */
+@SuppressWarnings("module")
 module org.apache.derby.engine
 {
     //

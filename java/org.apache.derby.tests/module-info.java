@@ -39,6 +39,7 @@
  * </div>
  *
  */
+@SuppressWarnings("module")
 open module org.apache.derby.tests
 {
     //
