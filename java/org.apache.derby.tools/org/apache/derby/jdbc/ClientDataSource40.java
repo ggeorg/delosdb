@@ -32,6 +32,7 @@ import javax.sql.DataSource;
    </P>
    @deprecated Use {@link ClientDataSource} instead.
  */
+@Deprecated
 public class ClientDataSource40 extends ClientDataSource
     implements DataSource /* compile-time check for 4.1 extension */
 {

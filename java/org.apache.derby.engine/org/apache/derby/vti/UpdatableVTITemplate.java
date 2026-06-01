@@ -472,6 +472,7 @@ public abstract class UpdatableVTITemplate implements PreparedStatement
  	 * @exception SQLException on unexpected JDBC error
      * @deprecated
 	 */
+	@Deprecated
 	public void setUnicodeStream(int parameterIndex, InputStream x, int length) throws SQLException
 	{
         throw new SQLException("setUnicodeStream");

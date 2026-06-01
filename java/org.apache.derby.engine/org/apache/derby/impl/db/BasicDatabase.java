@@ -492,6 +492,7 @@ public class BasicDatabase implements ModuleControl, ModuleSupportable, Property
 		Return the UUID of this database.
         @deprecated
 	*/
+	@Deprecated
 	public final UUID getId() {
 		return myUUID;
 	}

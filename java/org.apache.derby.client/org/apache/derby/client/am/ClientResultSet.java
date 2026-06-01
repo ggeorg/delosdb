@@ -811,6 +811,7 @@ public abstract class ClientResultSet implements ResultSet,
 
     // Live life on the edge and run unsynchronized
     /** @deprecated */
+    @Deprecated
     public BigDecimal getBigDecimal(int column, int scale) throws SQLException {
         try
         {
@@ -1226,6 +1227,7 @@ public abstract class ClientResultSet implements ResultSet,
      * @exception SQLException throws feature not implemented
      * @deprecated
      */
+    @Deprecated
     public InputStream getUnicodeStream(int column) throws SQLException {
         if (agent_.loggingEnabled()) {
             agent_.logWriter_.traceDeprecatedEntry(this, "getUnicodeStream",
@@ -1593,6 +1595,7 @@ public abstract class ClientResultSet implements ResultSet,
     }
 
     /** @deprecated */
+    @Deprecated
     public final BigDecimal getBigDecimal(String columnName, int scale)
             throws SQLException {
         try
@@ -1769,6 +1772,7 @@ public abstract class ClientResultSet implements ResultSet,
     }
 
     /** @deprecated */
+    @Deprecated
     public final InputStream getUnicodeStream(String columnName)
             throws SQLException {
         try

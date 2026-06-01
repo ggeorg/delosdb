@@ -409,6 +409,7 @@ public class ClientCallableStatement extends ClientPreparedStatement
     }
 
     /** @deprecated */
+    @Deprecated
     public BigDecimal getBigDecimal(int parameterIndex, int scale)
             throws SQLException, ArithmeticException {
         try

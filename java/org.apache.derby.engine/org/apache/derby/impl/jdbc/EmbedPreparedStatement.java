@@ -665,6 +665,7 @@ public class EmbedPreparedStatement extends EmbedStatement
 	 * @exception SQLException thrown on failure.
      * @deprecated
      */
+    @Deprecated
     public void setUnicodeStream(int parameterIndex, InputStream x, int length)
 	    throws SQLException
 	{

@@ -32,6 +32,7 @@ import javax.sql.ConnectionPoolDataSource;
    </P>
    @deprecated Use {@link ClientConnectionPoolDataSource} instead.
  */
+@Deprecated
 public class ClientConnectionPoolDataSource40
     extends ClientConnectionPoolDataSource
     implements ConnectionPoolDataSource /* compile-time

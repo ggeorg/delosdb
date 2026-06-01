@@ -154,6 +154,7 @@ public interface Database
 
         @return the UUID of this database.
 	*/
+	@Deprecated
 	public UUID getId();
 }	
 

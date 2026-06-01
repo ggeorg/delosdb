@@ -35,6 +35,7 @@ import javax.sql.XADataSource;
    </P>
    @deprecated Use {@link ClientXADataSource} instead.
  */
+@Deprecated
 public class ClientXADataSource40 extends ClientXADataSource
     implements XADataSource /* compile-time check for 4.1 extension */
 {

@@ -119,6 +119,7 @@ public class BrokeredCallableStatement extends BrokeredPreparedStatement
     }
 
     /** @deprecated */
+    @Deprecated
     public final BigDecimal getBigDecimal(int parameterIndex,
                                               int scale)
         throws SQLException

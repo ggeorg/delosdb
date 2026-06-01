@@ -394,6 +394,7 @@ public class EmbedCallableStatement extends EmbedPreparedStatement
      * @exception SQLException NoOutputParameters thrown.
      * @deprecated
      */
+    @Deprecated
     public final BigDecimal getBigDecimal(int parameterIndex, int scale) throws SQLException
 	{
     	BigDecimal v = getBigDecimal(parameterIndex);

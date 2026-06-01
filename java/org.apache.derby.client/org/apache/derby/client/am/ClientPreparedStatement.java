@@ -1174,6 +1174,7 @@ public class ClientPreparedStatement extends ClientStatement
      * @exception SQLException throws feature not implemented.
      * @deprecated
      */
+    @Deprecated
     public void setUnicodeStream(int parameterIndex,
                                  InputStream x,
                                  int length) throws SQLException {

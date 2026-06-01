@@ -320,6 +320,7 @@ public class BrokeredPreparedStatement extends BrokeredStatement
 	 * @exception SQLException thrown on failure.
      * @deprecated
      */
+    @Deprecated
     public final void setUnicodeStream(int parameterIndex, InputStream x, int length) throws SQLException
     {
         getPreparedStatement().setUnicodeStream( parameterIndex, x, length);

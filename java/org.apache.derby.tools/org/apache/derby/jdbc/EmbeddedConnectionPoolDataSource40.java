@@ -29,6 +29,7 @@ package org.apache.derby.jdbc;
    </P>
    @deprecated Use {@link EmbeddedConnectionPoolDataSource} instead.
  */
+@Deprecated
 public class EmbeddedConnectionPoolDataSource40 
     extends EmbeddedConnectionPoolDataSource
     implements javax.sql.ConnectionPoolDataSource // compile-time check for

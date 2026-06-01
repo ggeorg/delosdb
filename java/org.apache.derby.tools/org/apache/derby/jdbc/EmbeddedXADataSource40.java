@@ -30,6 +30,7 @@ package org.apache.derby.jdbc;
    </P>
    @deprecated Use {@link EmbeddedXADataSource} instead.
  */
+@Deprecated
 public class EmbeddedXADataSource40 extends EmbeddedXADataSource
     implements javax.sql.XADataSource /* compile-time check for 4.1 extension */
 {
