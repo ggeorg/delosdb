@@ -24,8 +24,9 @@ package org.apache.derby.impl.drda;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Enumeration;
-import java.util.Hashtable;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.apache.derby.iapi.jdbc.EngineConnection;
 import org.apache.derby.shared.common.reference.Attribute;
 import org.apache.derby.iapi.tools.i18n.LocalizedResource;
@@ -75,8 +76,8 @@ class Database
     DRDAStatement defaultStatement;    // default statement used 
                                                        // for execute imm
     private DRDAStatement currentStatement; // current statement we are working on
-    /** Hash table for storing statements. */
-    private Hashtable<Object, DRDAStatement> stmtTable;
+    /** Table for storing statements. */
+    private ConcurrentMap<Object, DRDAStatement> stmtTable;
 
     // constructor
     /**
@@ -87,7 +88,7 @@ class Database
     Database (String dbName)
     {
         setDatabaseName(dbName);
-        this.stmtTable = new Hashtable<Object, DRDAStatement>();
+        this.stmtTable = new ConcurrentHashMap<Object, DRDAStatement>();
         initializeDefaultStatement();
     }
 
@@ -226,7 +227,7 @@ class Database
      */
     protected DRDAStatement getDRDAStatement(Pkgnamcsn pkgnamcsn) {
         DRDAStatement newStmt =
-            (DRDAStatement) stmtTable.get(pkgnamcsn.getStatementKey());
+            stmtTable.get(pkgnamcsn.getStatementKey());
         if (newStmt != null) {
             currentStatement = newStmt;
             currentStatement.setCurrentDrdaResultSet(pkgnamcsn);
@@ -354,9 +355,9 @@ class Database
         try {
             if (stmtTable != null)
             {
-                for (Enumeration e = stmtTable.elements() ; e.hasMoreElements() ;) 
+                for (DRDAStatement statement : stmtTable.values())
                 {
-                    ((DRDAStatement) e.nextElement()).close();
+                    statement.close();
                 }
             
             }
@@ -410,7 +411,7 @@ class Database
         // DERBY-6714: stmtTable can be null if the session gets closed
         // while we are constructing the runtime info. Create a local copy
         // and check for null before accessing it.
-        Hashtable<Object, DRDAStatement> statements = stmtTable;
+        ConcurrentMap<Object, DRDAStatement> statements = stmtTable;
 
         String s = indent + 
         localLangUtil.getTextMessage("DRDA_RuntimeInfoDatabase.I") +
@@ -422,10 +423,9 @@ class Database
         s += localLangUtil.getTextMessage("DRDA_RuntimeInfoPreparedStatementHeader.I");
 
         if (statements != null) {
-            for (Enumeration e = statements.elements(); e.hasMoreElements(); )
+            for (DRDAStatement statement : statements.values())
                 {
-                    s += ((DRDAStatement) e.nextElement()).toDebugString(indent
-                                                                         +"\t") +"\n";
+                    s += statement.toDebugString(indent + "\t") + "\n";
                 }
         }
 
