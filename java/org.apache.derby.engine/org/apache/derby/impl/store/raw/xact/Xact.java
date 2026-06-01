@@ -62,8 +62,9 @@ import java.util.Stack;
 import java.util.Enumeration;
 import java.util.Properties;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Dictionary;
+import java.util.Map;
 
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -2486,7 +2487,7 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 		throws StandardException {
 
 		// Count row locks by table
-		Dictionary<ContainerKey,LockCount> containers = new java.util.Hashtable<ContainerKey,LockCount>();
+		Map<ContainerKey,LockCount> containers = new HashMap<ContainerKey,LockCount>();
 
 		for (; lockList.hasMoreElements(); ) {
 
@@ -2516,8 +2517,7 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 		// this threshold
 
 		boolean didEscalate = false;
-		for (Enumeration<ContainerKey> e = containers.keys(); e.hasMoreElements(); ) {
-			ContainerKey ckey = e.nextElement();
+		for (ContainerKey ckey : containers.keySet()) {
 
 			LockCount lc = containers.get(ckey);
 
@@ -2560,7 +2560,7 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 		// It would be possible to pass in the notifyObservers
 		// some indication of which tables were escalated
 		// to reduce the extra lock call for the un-escalated
-		// containers. This would involve passing the Hashtable
+		// containers. This would involve passing the map
 		// of escalated containers and having the update method
 		// of BaseContainerHandle look for its ContainerKey within it.
 		if (didEscalate) {
