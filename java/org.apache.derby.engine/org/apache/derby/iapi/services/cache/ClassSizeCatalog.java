@@ -21,14 +21,14 @@
 
 package org.apache.derby.iapi.services.cache;
 
-import java.util.Hashtable;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Map from class names to size coefficients. The size coefficients can be
  * used to estimate how much memory an instance of the class takes.
  * @see ClassSize#getSizeCoefficients(Class)
  */
-abstract class ClassSizeCatalog extends Hashtable<String, int[]> {
+abstract class ClassSizeCatalog extends ConcurrentHashMap<String, int[]> {
     /** The singleton instance of this class. */
     private static final ClassSizeCatalog INSTANCE;
     static {
