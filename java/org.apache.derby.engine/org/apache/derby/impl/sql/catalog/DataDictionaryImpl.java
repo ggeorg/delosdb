@@ -38,7 +38,6 @@ import java.util.Enumeration;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -6843,15 +6842,15 @@ public final class	DataDictionaryImpl
 	 *
 	 * @param tc		TransactionController for the transaction
 	 *
-	 * @return	A Hashtable with all of the ConglomerateDescriptors
+	 * @return	A Map with all of the ConglomerateDescriptors
 	 *		in the database hashed by conglomerate number.
 	 *
 	 * @exception StandardException		Thrown on failure
 	 */
-	public Hashtable<Long,ConglomerateDescriptor> hashAllConglomerateDescriptorsByNumber(TransactionController tc)
+	public Map<Long,ConglomerateDescriptor> hashAllConglomerateDescriptorsByNumber(TransactionController tc)
 		throws StandardException
 	{
-		Hashtable<Long,ConglomerateDescriptor> ht = new Hashtable<Long,ConglomerateDescriptor>();
+		Map<Long,ConglomerateDescriptor> ht = new HashMap<Long,ConglomerateDescriptor>();
 		ConglomerateDescriptor	  cd = null;
 		ScanController			  scanController;
 		ExecRow 				  outRow;
@@ -6899,17 +6898,16 @@ public final class	DataDictionaryImpl
 	 *
 	 * @param tc		TransactionController for the transaction
 	 *
-	 * @return	A Hashtable with all of the Table descriptors in the database
+	 * @return	A Map with all of the Table descriptors in the database
 	 *			hashed by TableId
 	 *
 	 *
 	 * @exception StandardException		Thrown on failure
 	 */
-    @SuppressWarnings("UseOfObsoleteCollectionType")
-	public Hashtable<UUID,TableDescriptor> hashAllTableDescriptorsByTableId(TransactionController tc)
+	public Map<UUID,TableDescriptor> hashAllTableDescriptorsByTableId(TransactionController tc)
 		throws StandardException
 	{
-		Hashtable<UUID,TableDescriptor> ht = new Hashtable<UUID,TableDescriptor>();
+		Map<UUID,TableDescriptor> ht = new HashMap<UUID,TableDescriptor>();
 		ScanController			  scanController;
 		ExecRow 				  outRow;
 		TabInfoImpl					ti = coreInfo[SYSTABLES_CORE_NUM];
@@ -14612,7 +14610,7 @@ public final class	DataDictionaryImpl
     void    createIdentitySequences( TransactionController tc )
         throws StandardException
     {
-        Hashtable<UUID,TableDescriptor> tableMap = hashAllTableDescriptorsByTableId( tc );
+        Map<UUID,TableDescriptor> tableMap = hashAllTableDescriptorsByTableId( tc );
 
         for ( UUID tableID : tableMap.keySet() )
         {

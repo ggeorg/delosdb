@@ -23,7 +23,7 @@ package org.apache.derby.iapi.sql.dictionary;
 
 import java.sql.Types;
 import java.util.Dictionary;
-import java.util.Hashtable;
+import java.util.Map;
 import java.util.List;
 import org.apache.derby.catalog.DependableFinder;
 import org.apache.derby.catalog.TypeDescriptor;
@@ -1435,13 +1435,12 @@ public interface DataDictionary
 	 *
 	 * @param tc		TransactionController for the transaction
 	 *
-	 * @return	A Hashtable with all of the ConglomerateDescriptors
+	 * @return	A Map with all of the ConglomerateDescriptors
 	 *		in the database hashed by conglomerate number.
 	 *
 	 * @exception StandardException		Thrown on failure
 	 */
-    @SuppressWarnings("UseOfObsoleteCollectionType")
-    public Hashtable<Long, ConglomerateDescriptor>
+    public Map<Long, ConglomerateDescriptor>
         hashAllConglomerateDescriptorsByNumber(TransactionController tc)
             throws StandardException;
 
@@ -1454,14 +1453,13 @@ public interface DataDictionary
 	 *
 	 * @param tc		TransactionController for the transaction
 	 *
-	 * @return	A Hashtable with all of the Table descriptors in the database
+	 * @return	A Map with all of the Table descriptors in the database
 	 *			hashed by TableId
 	 *
 	 *
 	 * @exception StandardException		Thrown on failure
 	 */
-    @SuppressWarnings("UseOfObsoleteCollectionType")
-    public Hashtable<UUID, TableDescriptor> hashAllTableDescriptorsByTableId(TransactionController tc)
+    public Map<UUID, TableDescriptor> hashAllTableDescriptorsByTableId(TransactionController tc)
 		throws StandardException;
 
 	/**
