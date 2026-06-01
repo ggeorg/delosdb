@@ -41,9 +41,9 @@ import java.sql.Driver;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -315,8 +315,8 @@ public final class NetworkServerControlImpl {
     ArrayList<InetAddress> localAddresses;
 
     // open sessions
-    private Hashtable<Integer, Session> sessionTable =
-            new Hashtable<Integer, Session>();
+    private Map<Integer, Session> sessionTable =
+            Collections.synchronizedMap(new HashMap<Integer, Session>());
 
     // current session
     private Session currentSession;
