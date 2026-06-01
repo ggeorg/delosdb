@@ -42,8 +42,10 @@ import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.StringTokenizer;
 import java.util.Vector;
@@ -329,8 +331,8 @@ public final class NetworkServerControlImpl {
     private int freeThreads;
 
     // known application requesters
-    private Hashtable<String, AppRequester> appRequesterTable =
-            new Hashtable<String, AppRequester>();
+    private Map<String, AppRequester> appRequesterTable =
+            new HashMap<String, AppRequester>();
 
     // accessed by inner classes for privileged action
     private String propertyFileName;
@@ -1974,7 +1976,7 @@ public final class NetworkServerControlImpl {
         }
 
         if (!appRequesterTable.isEmpty())
-            s = (AppRequester)appRequesterTable.get(appRequester.prdid);
+            s = appRequesterTable.get(appRequester.prdid);
 
         if (s == null)
         {
