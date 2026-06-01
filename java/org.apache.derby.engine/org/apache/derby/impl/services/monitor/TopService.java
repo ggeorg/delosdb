@@ -32,7 +32,8 @@ import org.apache.derby.iapi.util.InterruptStatus;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.reference.EngineType;
 
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Vector;
 import java.util.Properties;
 import java.util.Locale;
@@ -61,7 +62,7 @@ final class TopService {
 	/**
 		List of protocols.
 	*/
-	Hashtable<ProtocolKey,ModuleInstance>		protocolTable;
+	Map<ProtocolKey,ModuleInstance>		protocolTable;
 
 	/**
 	*/
@@ -88,7 +89,7 @@ final class TopService {
 	TopService(BaseMonitor monitor) {
 		super();
 		this.monitor = monitor;
-		protocolTable = new Hashtable<ProtocolKey,ModuleInstance>();
+		protocolTable = new HashMap<ProtocolKey,ModuleInstance>();
 		moduleInstances = new Vector<ModuleInstance>(0, 5);
 	}
 
