@@ -41,6 +41,7 @@ import org.apache.derby.impl.jdbc.EmbedResultSetMetaData;
 
 import java.util.Hashtable;
 import java.util.Enumeration;
+import java.util.Map;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
@@ -97,7 +98,7 @@ public class LockTable extends VTITemplate implements VTICosting  {
 	** private 
 	*/
 	private TransactionController tc;
-	private Hashtable currentRow;		// an entry in the lock table
+	private Map<String,Object> currentRow;		// an entry in the lock table
 	private Enumeration lockTable;	
 	private boolean wasNull;
 	private boolean initialized;
@@ -230,9 +231,9 @@ public class LockTable extends VTITemplate implements VTICosting  {
 	*/
 
 	/**
-		Convert the lock information into a hashtable.
+		Convert the lock information into a map.
 	*/
-    private Hashtable<String,Object> dumpLock(
+    private Map<String,Object> dumpLock(
     Latch                   lock)
         throws StandardException
     {
