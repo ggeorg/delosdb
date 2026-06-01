@@ -22,7 +22,7 @@
 package org.apache.derby.impl.sql.execute;
 
 import java.util.Properties;
-import java.util.Vector;
+import java.util.List;
 
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -77,7 +77,7 @@ class DependentResultSet extends ScanResultSet implements CursorResultSet
 	TemporaryRowHolderResultSet[] sourceResultSets;
 	int[] sourceOpened;
 	int    sArrayIndex;
-    Vector<TemporaryRowHolder> sVector;
+    List<TemporaryRowHolder> sourceRowHolderList;
 
 
     protected ScanController scanController;
@@ -398,7 +398,7 @@ class DependentResultSet extends ScanResultSet implements CursorResultSet
 			
 		}
 
-		if(sVector.size() > sourceRowHolders.length)
+		if(sourceRowHolderList.size() > sourceRowHolders.length)
 		{
 			addNewSources();
 		}
@@ -509,14 +509,14 @@ class DependentResultSet extends ScanResultSet implements CursorResultSet
 	public void openCore() throws StandardException
 	{
 		initIsolationLevel();
-		sVector = activation.getParentResultSet(parentResultSetId);
-		int size = sVector.size();
+		sourceRowHolderList = activation.getParentResultSet(parentResultSetId);
+		int size = sourceRowHolderList.size();
 		sourceRowHolders = new TemporaryRowHolder[size];
 		sourceOpened = new int[size];
 		sourceResultSets = new TemporaryRowHolderResultSet[size];
 		for(int i = 0 ; i < size ; i++)
 		{
-            sourceRowHolders[i] = sVector.elementAt(i);
+            sourceRowHolders[i] = sourceRowHolderList.get(i);
 			sourceOpened[i] = 0;
 		}
 
@@ -529,7 +529,7 @@ class DependentResultSet extends ScanResultSet implements CursorResultSet
 
 	private void addNewSources()
 	{
-		int size = sVector.size();
+		int size = sourceRowHolderList.size();
 		TemporaryRowHolder[] tsourceRowHolders = new TemporaryRowHolder[size];
 		int[] tsourceOpened = new int[size];
 		TemporaryRowHolderResultSet[] tsourceResultSets = new TemporaryRowHolderResultSet[size];
@@ -542,7 +542,7 @@ class DependentResultSet extends ScanResultSet implements CursorResultSet
 		//copy the new sources
 		for(int i = sourceRowHolders.length; i < size ; i++)
 		{
-            tsourceRowHolders[i] = sVector.elementAt(i);
+            tsourceRowHolders[i] = sourceRowHolderList.get(i);
 			tsourceOpened[i] = 0;
 		}
 

@@ -29,9 +29,9 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Stack;
-import java.util.Vector;
 import org.apache.derby.catalog.Dependable;
 import org.apache.derby.catalog.DependableFinder;
 import org.apache.derby.catalog.UUID;
@@ -1632,34 +1632,28 @@ public abstract class BaseActivation implements CursorActivation, GeneratedByteC
 
 	// maintain map of parent result set vectors
 	// a table can have more than one parent source.
-    @SuppressWarnings("UseOfObsoleteCollectionType")
-	protected Map<String,Vector<TemporaryRowHolder>> parentResultSets;
+    protected Map<String,List<TemporaryRowHolder>> parentResultSets;
 
-    @SuppressWarnings("UseOfObsoleteCollectionType")
     public void setParentResultSet(TemporaryRowHolder rs, String resultSetId)
 	{
-		Vector<TemporaryRowHolder>  rsVector;
+		List<TemporaryRowHolder>  resultSets;
 		if(parentResultSets == null)
-			parentResultSets = new HashMap<String,Vector<TemporaryRowHolder>>();
-        rsVector = parentResultSets.get(resultSetId);
+			parentResultSets = new HashMap<String,List<TemporaryRowHolder>>();
+        resultSets = parentResultSets.get(resultSetId);
 
-		if(rsVector == null)
+		if(resultSets == null)
 		{
-			rsVector = new Vector<TemporaryRowHolder>();
-			rsVector.addElement(rs);
-		}else
-		{
-			rsVector.addElement(rs);
+			resultSets = new ArrayList<TemporaryRowHolder>();
 		}
-		parentResultSets.put(resultSetId , rsVector);
+		resultSets.add(rs);
+		parentResultSets.put(resultSetId , resultSets);
 	}
 
 	/**
 	 * get the reference to parent table ResultSets, that will be needed by the 
 	 * referential action dependent table scans.
 	 */
-    @SuppressWarnings("UseOfObsoleteCollectionType")
-	public Vector<TemporaryRowHolder> getParentResultSet(String resultSetId)
+	public List<TemporaryRowHolder> getParentResultSet(String resultSetId)
 	{
         return parentResultSets.get(resultSetId);
 	}

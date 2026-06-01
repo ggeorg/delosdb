@@ -23,7 +23,7 @@ package org.apache.derby.impl.sql;
 
 import java.sql.SQLWarning;
 import java.util.Enumeration;
-import java.util.Vector;
+import java.util.List;
 import org.apache.derby.catalog.Dependable;
 import org.apache.derby.catalog.DependableFinder;
 import org.apache.derby.catalog.UUID;
@@ -793,8 +793,7 @@ final public class GenericActivationHolder implements Activation
 	}
 
 
-    @SuppressWarnings("UseOfObsoleteCollectionType")
-    public Vector<TemporaryRowHolder> getParentResultSet(String resultSetId)
+    public List<TemporaryRowHolder> getParentResultSet(String resultSetId)
 	{
 		return ac.getParentResultSet(resultSetId);
 	}

@@ -23,7 +23,7 @@ package org.apache.derby.iapi.sql;
 
 import java.sql.SQLWarning;
 import java.util.Enumeration;
-import java.util.Vector;
+import java.util.List;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.conn.SQLSessionContext;
@@ -602,8 +602,7 @@ public interface Activation extends Dependent
      * @param resultSetId An handle on the result set
      * @return the parent result sets
 	 */
-    @SuppressWarnings("UseOfObsoleteCollectionType")
-    public Vector<TemporaryRowHolder> getParentResultSet(String resultSetId);
+    public List<TemporaryRowHolder> getParentResultSet(String resultSetId);
 	
 	//clear the parent resultset hash table;
 	public void clearParentResultSets();
