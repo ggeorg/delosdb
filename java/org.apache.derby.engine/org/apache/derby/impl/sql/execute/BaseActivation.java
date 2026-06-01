@@ -25,9 +25,11 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Hashtable;
+import java.util.Map;
 import java.util.Stack;
 import java.util.Vector;
 import org.apache.derby.catalog.Dependable;
@@ -1628,17 +1630,17 @@ public abstract class BaseActivation implements CursorActivation, GeneratedByteC
 	protected CursorResultSet[] raParentResultSets;
 
 
-	// maintain hash table of parent result set vector
+	// maintain map of parent result set vectors
 	// a table can have more than one parent source.
     @SuppressWarnings("UseOfObsoleteCollectionType")
-	protected Hashtable<String,Vector<TemporaryRowHolder>> parentResultSets;
+	protected Map<String,Vector<TemporaryRowHolder>> parentResultSets;
 
     @SuppressWarnings("UseOfObsoleteCollectionType")
     public void setParentResultSet(TemporaryRowHolder rs, String resultSetId)
 	{
 		Vector<TemporaryRowHolder>  rsVector;
 		if(parentResultSets == null)
-			parentResultSets = new Hashtable<String,Vector<TemporaryRowHolder>>();
+			parentResultSets = new HashMap<String,Vector<TemporaryRowHolder>>();
         rsVector = parentResultSets.get(resultSetId);
 
 		if(rsVector == null)
@@ -1664,7 +1666,7 @@ public abstract class BaseActivation implements CursorActivation, GeneratedByteC
 
 	public Enumeration<String> getParentResultSetKeys()
 	{
-		return parentResultSets.keys();
+		return Collections.enumeration(parentResultSets.keySet());
 	}
 
 	/**
