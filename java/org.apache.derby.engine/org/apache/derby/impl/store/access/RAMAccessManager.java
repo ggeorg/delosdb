@@ -69,8 +69,9 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.reference.Attribute;
 
 import java.util.Dictionary;
-import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.Map;
 import java.util.Properties;
 
 import java.io.Serializable;
@@ -95,12 +96,12 @@ public abstract class RAMAccessManager
     /**
     Hash table on primary implementation type.
     **/
-    private Hashtable<String,MethodFactory> implhash;
+    private Map<String,MethodFactory> implhash;
 
     /**
     Hash table on primary format.
     **/
-    private Hashtable<UUID,MethodFactory> formathash;
+    private Map<UUID,MethodFactory> formathash;
 
 	/**
 	Service properties.  These are supplied from ModuleControl.boot(),
@@ -164,8 +165,8 @@ public abstract class RAMAccessManager
     {
         // Intialize the hash tables that hold the access methods that
         // this access manager knows about.
-        implhash   = new Hashtable<String,MethodFactory>();
-        formathash = new Hashtable<UUID,MethodFactory>();
+        implhash   = new HashMap<String,MethodFactory>();
+        formathash = new HashMap<UUID,MethodFactory>();
     }
 
     /**************************************************************************
@@ -594,12 +595,10 @@ public abstract class RAMAccessManager
 
         // No primary format.  See if one of the access methods
         // supports it as a secondary format.
-        Enumeration<MethodFactory> e = formathash.elements();
-        while (e.hasMoreElements())
+        for (MethodFactory candidate : formathash.values())
         {
-            factory = e.nextElement();
-            if (factory.supportsFormat(format))
-                return factory;
+            if (candidate.supportsFormat(format))
+                return candidate;
         }
 
         // No such implementation.
@@ -621,12 +620,10 @@ public abstract class RAMAccessManager
 
         // No primary implementation.  See if one of the access methods
         // supports the implementation type as a secondary.
-        Enumeration<MethodFactory> e = implhash.elements();
-        while (e.hasMoreElements())
+        for (MethodFactory candidate : implhash.values())
         {
-            factory = e.nextElement();
-            if (factory.supportsImplementation(impltype))
-                return factory;
+            if (candidate.supportsImplementation(impltype))
+                return candidate;
         }
 		factory = null;
 
