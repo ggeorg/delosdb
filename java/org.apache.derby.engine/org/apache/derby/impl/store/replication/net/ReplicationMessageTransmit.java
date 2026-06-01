@@ -281,7 +281,7 @@ public class ReplicationMessageTransmit {
             // See ReplicationMessage#TYPE_ERROR
             String exception[] = (String[])message.getMessage();
             throw StandardException.
-                newException(exception[exception.length - 1], exception);
+                newException(exception[exception.length - 1], (Object[]) exception);
         } else {
             //The message format was not recognized. Hence throw
             //an unexpected exception.

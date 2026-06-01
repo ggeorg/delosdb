@@ -511,7 +511,7 @@ public class BrokeredConnection implements EngineConnection
      */
     final SQLException noCurrentConnection() {
         return ExceptionFactory.getInstance().getSQLException(
-                SQLState.NO_CURRENT_CONNECTION, null, null, null);
+                SQLState.NO_CURRENT_CONNECTION, null, null);
     }
 
 	/**

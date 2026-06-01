@@ -1756,7 +1756,7 @@ public class ClientPreparedStatement extends ClientStatement
 
     public int executeUpdate(String sql, String[] columnNames) throws SQLException {
         if (agent_.loggingEnabled()) {
-            agent_.logWriter_.traceEntry(this, "executeUpdate", columnNames);
+            agent_.logWriter_.traceEntry(this, "executeUpdate", (Object[]) columnNames);
         }
         throw new SqlException(agent_.logWriter_,
             new ClientMessageId(SQLState.NOT_FOR_PREPARED_STATEMENT),

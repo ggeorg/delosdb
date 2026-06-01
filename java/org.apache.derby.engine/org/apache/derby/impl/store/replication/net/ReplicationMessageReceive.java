@@ -335,7 +335,7 @@ public class ReplicationMessageReceive {
             sendMessage(ack);
 
             throw StandardException.
-                newException(SQLState.REPLICATION_LOG_OUT_OF_SYNCH, exception);
+                newException(SQLState.REPLICATION_LOG_OUT_OF_SYNCH, (Object[]) exception);
         }
     }
     
@@ -368,7 +368,7 @@ public class ReplicationMessageReceive {
         sendMessage(ack);
 
         throw StandardException.
-            newException(SQLState.REPLICATION_UNEXPECTED_MESSAGEID, exception);
+            newException(SQLState.REPLICATION_UNEXPECTED_MESSAGEID, (Object[]) exception);
 
     }
 
