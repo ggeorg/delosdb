@@ -47,6 +47,36 @@ write_matches() {
   } >> "$REPORT_FILE"
 }
 
+
+write_filtered_matches() {
+  local title="$1"
+  local pattern="$2"
+  local path_filter="$3"
+  local filter_mode="$4"
+  local matches
+
+  {
+    echo
+    echo "## $title"
+    echo
+
+    matches=$(grep -R --include='*.java' -n -E "$pattern" "${PRODUCTION_ROOTS[@]}" 2>/dev/null \
+      | sed "s#${ROOT_DIR}/##" \
+      | grep -Ev '^[^:]+:[0-9]+:[[:space:]]*(//|/\*|\*)' \
+      || true)
+
+    if [[ -z "$matches" ]]; then
+      return
+    fi
+
+    if [[ "$filter_mode" == "include" ]]; then
+      printf '%s\n' "$matches" | grep -E "$path_filter" | head -200 || true
+    else
+      printf '%s\n' "$matches" | grep -Ev "$path_filter" | head -200 || true
+    fi
+  } >> "$REPORT_FILE"
+}
+
 count_all_matches() {
   local pattern="$1"
   {
@@ -65,6 +95,14 @@ production_access_controller="$(count_matches 'java\.security\.AccessController|
 # project-specific class names such as QueryTreeNodeVector or DiskHashtable.
 VECTOR_USAGE_PATTERN='new[[:space:]]+(java\.util\.)?Vector[[:space:]]*(<|\()|(^|[^[:alnum:]_])Vector[[:space:]]*<'
 HASHTABLE_USAGE_PATTERN='new[[:space:]]+(java\.util\.)?Hashtable[[:space:]]*(<|\()|(^|[^[:alnum:]_])Hashtable[[:space:]]*<'
+
+# Remaining legacy collection usages are no longer equally actionable. Many
+# surviving matches are intentionally deferred because they sit on public
+# contracts, serialization-sensitive classes, lock/store/recovery paths, or
+# concurrency-sensitive runtime queues. Keep these visible, but separate them
+# from the remaining candidate list so modernization work does not chase risky
+# tail items blindly.
+DEFERRED_COLLECTION_PATH_PATTERN='impl/services/monitor|impl/services/daemon|impl/store/access/sort|impl/sql/GenericActivationHolder|impl/sql/execute/BaseActivation|impl/sql/execute/DeleteCascadeResultSet|impl/sql/execute/DependentResultSet|iapi/sql/Activation|impl/drda/NetworkServerControlImpl|impl/services/locks|iapi/services/locks|impl/store/access/PropertyConglomerate|impl/store/access/RAMAccessManager|impl/store/raw|impl/sql/catalog/DataDictionaryImpl|iapi/sql/dictionary/DataDictionary|iapi/services/cache/ClassSizeCatalog|iapi/services/io/FormatableHashtable|iapi/store/raw/ContainerKey|iapi/sql/depend/ProviderList|diag/LockTable|org/apache/derby/jdbc/EmbeddedDataSource|org/apache/derby/jdbc/ReferenceableDataSource'
 
 
 cat > "$REPORT_FILE" <<EOF_REPORT
@@ -100,6 +138,10 @@ write_matches "Production AccessController references" 'java\.security\.AccessCo
 write_matches "Production doPrivileged calls" 'AccessController\.doPrivileged|doPrivileged[[:space:]]*\('
 write_matches "Production Vector usage" "$VECTOR_USAGE_PATTERN" 
 write_matches "Production Hashtable usage" "$HASHTABLE_USAGE_PATTERN" 
+write_filtered_matches "Deferred/concurrency-sensitive Vector usage" "$VECTOR_USAGE_PATTERN" "$DEFERRED_COLLECTION_PATH_PATTERN" include
+write_filtered_matches "Deferred/contract-sensitive Hashtable usage" "$HASHTABLE_USAGE_PATTERN" "$DEFERRED_COLLECTION_PATH_PATTERN" include
+write_filtered_matches "Remaining candidate Vector usage" "$VECTOR_USAGE_PATTERN" "$DEFERRED_COLLECTION_PATH_PATTERN" exclude
+write_filtered_matches "Remaining candidate Hashtable usage" "$HASHTABLE_USAGE_PATTERN" "$DEFERRED_COLLECTION_PATH_PATTERN" exclude
 
 if [[ "$VERIFY" == true ]]; then
   failed=false
