@@ -34,14 +34,14 @@ import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.dictionary.DataDictionary;
 import org.apache.derby.iapi.store.access.TransactionController;
 import java.io.Serializable;
-import java.util.Dictionary;
+import java.util.Map;
 
 /**
  * A class to handle setting language database properties
  */
 public class LanguageDbPropertySetter implements PropertySetCallback
 {
-	public void init(boolean dbOnly, Dictionary p) {
+	public void init(boolean dbOnly, Map<?,?> p) {
 		// not called yet ...
 	}
 	/** @exception StandardException Thrown on error. */
@@ -49,7 +49,7 @@ public class LanguageDbPropertySetter implements PropertySetCallback
 	(
 		String			key,
 		Serializable	value,
-		Dictionary		p
+		Map<?,?>		p
 	) throws StandardException 
 	{
         // Can't change the dictionary version manually. That could make the database
@@ -89,7 +89,7 @@ public class LanguageDbPropertySetter implements PropertySetCallback
 	(
 		String			key,
 		Serializable	value,
-		Dictionary		p
+		Map<?,?>		p
 	) 
 	{
 		return null;
@@ -99,7 +99,7 @@ public class LanguageDbPropertySetter implements PropertySetCallback
 	(
 		String			key,
 		Serializable	value,
-		Dictionary		p
+		Map<?,?>		p
 	) 
 	{
 		return null;

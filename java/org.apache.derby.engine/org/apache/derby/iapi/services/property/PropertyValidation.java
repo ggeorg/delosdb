@@ -33,7 +33,7 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Dictionary;
+import java.util.Map;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Properties;
@@ -50,7 +50,7 @@ public class PropertyValidation implements PropertyFactory
 
 	public Serializable doValidateApplyAndMap(TransactionController tc,
 											 String key, Serializable value,
-											 Dictionary d, boolean dbOnlyProperty)
+											 Map<?,?> d, boolean dbOnlyProperty)
 		 throws StandardException
 	{
 		Serializable mappedValue = null;
@@ -96,7 +96,7 @@ public class PropertyValidation implements PropertyFactory
 	  */
 	public Serializable doMap(String key,
 							 Serializable value,
-							 Dictionary set)
+							 Map<?,?> set)
 		 throws StandardException
 	{
 		Serializable mappedValue = null;
@@ -115,7 +115,7 @@ public class PropertyValidation implements PropertyFactory
 
 	public void validateSingleProperty(String key,
 						  Serializable value,
-						  Dictionary set)
+						  Map<?,?> set)
 		 throws StandardException
 	{
 		// RESOLVE: log device cannot be changed on the fly right now

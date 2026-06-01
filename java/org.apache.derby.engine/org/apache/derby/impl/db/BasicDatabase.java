@@ -75,7 +75,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.sql.SQLException;
 import java.util.Properties;
-import java.util.Dictionary;
+import java.util.Map;
 import java.util.Locale;
 import java.text.DateFormat;
 
@@ -632,7 +632,7 @@ public class BasicDatabase implements ModuleControl, ModuleSupportable, Property
 	/*
 	** Methods of PropertySetCallback
 	*/
-	public void init(boolean dbOnly, Dictionary p) {
+	public void init(boolean dbOnly, Map<?,?> p) {
 		// not called yet ...
 	}
 
@@ -642,7 +642,7 @@ public class BasicDatabase implements ModuleControl, ModuleSupportable, Property
 	*/
 	public boolean validate(String key,
 						 Serializable value,
-						 Dictionary p)
+						 Map<?,?> p)
 		throws StandardException
 	{
 		//
@@ -686,7 +686,7 @@ public class BasicDatabase implements ModuleControl, ModuleSupportable, Property
 	  @see PropertySetCallback#apply
 	  @exception StandardException Thrown on error.
 	*/
-	public Serviceable apply(String key, Serializable value, Dictionary p)
+	public Serviceable apply(String key, Serializable value, Map<?,?> p)
 		throws StandardException
 	{
 		// only interested in the classpath
@@ -709,7 +709,7 @@ public class BasicDatabase implements ModuleControl, ModuleSupportable, Property
 	/**
 	  @see PropertySetCallback#map
 	*/
-	public Serializable map(String key,Serializable value,Dictionary p)
+	public Serializable map(String key,Serializable value,Map<?,?> p)
 	{
 		return null;
 	}

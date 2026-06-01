@@ -59,7 +59,7 @@ import java.security.NoSuchAlgorithmException;
 import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.security.SecureRandom;
-import java.util.Dictionary;
+import java.util.Map;
 import java.util.Properties;
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -378,14 +378,14 @@ public abstract class AuthenticationServiceBase
 	/*
 	** Methods of PropertySetCallback
 	*/
-	public void init(boolean dbOnly, Dictionary p) {
+	public void init(boolean dbOnly, Map<?,?> p) {
 		// not called yet ...
 	}
 
 	/**
 	  @see PropertySetCallback#validate
 	*/
-	public boolean validate(String key, Serializable value, Dictionary p)
+	public boolean validate(String key, Serializable value, Map<?,?> p)
         throws StandardException
     {
 
@@ -475,7 +475,7 @@ public abstract class AuthenticationServiceBase
 	/**
 	  @see PropertySetCallback#validate
 	*/
-	public Serviceable apply(String key,Serializable value,Dictionary p)
+	public Serviceable apply(String key,Serializable value,Map<?,?> p)
 	{
 		return null;
 	}
@@ -483,7 +483,7 @@ public abstract class AuthenticationServiceBase
 	  @see PropertySetCallback#map
 	  @exception StandardException Thrown on error.
 	*/
-	public Serializable map(String key, Serializable value, Dictionary p)
+	public Serializable map(String key, Serializable value, Map<?,?> p)
 		throws StandardException
 	{
 		// We only care for "derby.user." property changes
@@ -650,7 +650,7 @@ public abstract class AuthenticationServiceBase
      */
     String hashUsingDefaultAlgorithm(String user,
                                                 String password,
-                                                Dictionary props)
+                                                Map<?,?> props)
             throws StandardException
     {
         if ( password ==  null ) { return null; }

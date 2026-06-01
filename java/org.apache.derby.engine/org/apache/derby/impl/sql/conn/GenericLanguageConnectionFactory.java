@@ -71,7 +71,7 @@ import org.apache.derby.shared.common.reference.Property;
 import org.apache.derby.shared.common.reference.EngineType;
 
 import java.util.Properties;
-import java.util.Dictionary;
+import java.util.Map;
 import java.io.Serializable;
 import org.apache.derby.iapi.util.IdUtil;
 import org.apache.derby.iapi.services.daemon.Serviceable;
@@ -343,7 +343,7 @@ public class GenericLanguageConnectionFactory
 	** Methods of PropertySetCallback
 	*/
 
-	public void init(boolean dbOnly, Dictionary p) {
+	public void init(boolean dbOnly, Map<?,?> p) {
 		// not called yet ...
 	}
 
@@ -353,7 +353,7 @@ public class GenericLanguageConnectionFactory
 	*/
 	public boolean validate(String key,
 						 Serializable value,
-						 Dictionary p)
+						 Map<?,?> p)
 		throws StandardException {
 		if (value == null)
 			return true;
@@ -403,12 +403,12 @@ public class GenericLanguageConnectionFactory
 	/** @see PropertySetCallback#apply */
 	public Serviceable apply(String key,
 							 Serializable value,
-							 Dictionary p)
+							 Map<?,?> p)
 	{
 			 return null;
 	}
 	/** @see PropertySetCallback#map */
-	public Serializable map(String key, Serializable value, Dictionary p)
+	public Serializable map(String key, Serializable value, Map<?,?> p)
 	{
 		return null;
 	}

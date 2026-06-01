@@ -35,7 +35,7 @@ import org.apache.derby.iapi.services.property.PropertySetCallback;
 import java.util.Properties;
 import java.io.File;
 import java.io.Serializable;
-import java.util.Dictionary;
+import java.util.Map;
 
 /**
   Module interface for an Property validation.  
@@ -94,12 +94,12 @@ public interface PropertyFactory
 	 */
 	public void validateSingleProperty(String key,
 						  Serializable value,
-						  Dictionary set)
+						  Map<?,?> set)
 		throws StandardException;
 
 	public Serializable doValidateApplyAndMap(TransactionController tc,
 											 String key, Serializable value,
-											 Dictionary d, boolean dbOnlyProperty)
+											 Map<?,?> d, boolean dbOnlyProperty)
 		throws StandardException;
 
 
@@ -119,6 +119,6 @@ public interface PropertyFactory
 	  */
 	public Serializable doMap(String key,
 							 Serializable value,
-							 Dictionary set)
+							 Map<?,?> set)
 		throws StandardException;
 }

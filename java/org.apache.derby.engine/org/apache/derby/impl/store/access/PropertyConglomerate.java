@@ -53,9 +53,8 @@ import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import java.io.Serializable;
-import java.util.Dictionary;
-import java.util.Enumeration;
-import java.util.Hashtable;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -96,7 +95,7 @@ class PropertyConglomerate
 	protected long propertiesConglomId;
 	protected Properties serviceProperties;
 	private LockFactory lf;
-    private Dictionary<String, Object> cachedSet;
+    private Map<String, Object> cachedSet;
 	private CacheLock cachedLock;
 
 	private PropertyFactory  pf;
@@ -271,7 +270,7 @@ class PropertyConglomerate
 		else
 		{
 			synchronized (this) {
-                Hashtable<Object, Object> defaults = new Hashtable<Object, Object>();
+                Map<Object, Object> defaults = new HashMap<Object, Object>();
 				getProperties(tc,defaults,false/*!stringsOnly*/,true/*defaultsOnly*/);
 				validate(key,value,defaults);
 				valueToSave = map(key,value,defaults);
@@ -380,7 +379,7 @@ class PropertyConglomerate
 											 String key, Serializable value, boolean dbOnlyProperty)
 		 throws StandardException
 	{
-        Dictionary<Object, Object> d = new Hashtable<Object, Object>();
+        Map<Object, Object> d = new HashMap<Object, Object>();
 		getProperties(tc,d,false/*!stringsOnly*/,false/*!defaultsOnly*/);
 		Serializable mappedValue = pf.doValidateApplyAndMap(tc, key,
 																   value, d, dbOnlyProperty);
@@ -408,7 +407,7 @@ class PropertyConglomerate
 	  */
 	private Serializable map(String key,
 							 Serializable value,
-							 Dictionary set)
+							 Map<?,?> set)
 		 throws StandardException
 	{
 		return pf.doMap(key, value, set);
@@ -425,7 +424,7 @@ class PropertyConglomerate
 
 	private void validate(String key,
 						  Serializable value,
-						  Dictionary set)
+						  Map<?,?> set)
 		 throws StandardException
 	{
 		pf.validateSingleProperty(key, value, set);
@@ -558,7 +557,7 @@ class PropertyConglomerate
 	{
 		//
 		//Get the cached set of properties.
-		Dictionary dbProps = getCachedDbProperties(tc);
+		Map<String, Object> dbProps = getCachedDbProperties(tc);
 
 		//
 		//Return the value if it is defined.
@@ -570,7 +569,7 @@ class PropertyConglomerate
 
 	private Serializable getCachedPropertyDefault(TransactionController tc,
 												  String key,
-												  Dictionary dbProps)
+												  Map<String, Object> dbProps)
 		 throws StandardException
 	{
 		//
@@ -578,7 +577,7 @@ class PropertyConglomerate
 		if (dbProps == null) dbProps = getCachedDbProperties(tc);
 		//
 		//return the default for the value if it is defined.
-		Dictionary defaults = (Dictionary)dbProps.get(AccessFactoryGlobals.DEFAULT_PROPERTY_NAME);
+		Map<?,?> defaults = (Map<?,?>) dbProps.get(AccessFactoryGlobals.DEFAULT_PROPERTY_NAME);
 		if (defaults == null)
 			return null;
 		else
@@ -644,7 +643,7 @@ class PropertyConglomerate
 			//
 			//Return the property default value (may be null) if
 			//defined.
-			Dictionary defaults = (Dictionary)readProperty(tc,AccessFactoryGlobals.DEFAULT_PROPERTY_NAME);
+			Map<?,?> defaults = (Map<?,?>) readProperty(tc,AccessFactoryGlobals.DEFAULT_PROPERTY_NAME);
 			if (defaults == null)
 				return null;
 			else
@@ -656,16 +655,15 @@ class PropertyConglomerate
 		}
 	}
 
-    private <K, V> Dictionary<? super K, ? super V> copyValues(
-            Dictionary<? super K, ? super V> to,
-            Dictionary<K, V> from, boolean stringsOnly)
+    private <K, V> Map<? super K, ? super V> copyValues(
+            Map<? super K, ? super V> to,
+            Map<K, V> from, boolean stringsOnly)
 	{
 		if (from == null) return to; 
-        for (Enumeration<K> keys = from.keys(); keys.hasMoreElements(); ) {
-            K key = keys.nextElement();
-            V value = from.get(key);
+        for (Map.Entry<K, V> entry : from.entrySet()) {
+            V value = entry.getValue();
 			if ((value instanceof String) || !stringsOnly)
-				to.put(key, value);
+				to.put(entry.getKey(), value);
 		}
 		return to;
 	}
@@ -681,13 +679,13 @@ class PropertyConglomerate
 	}
 
 	public void getProperties(TransactionController tc,
-                               Dictionary<Object, Object> d,
+                               Map<Object, Object> d,
 							   boolean stringsOnly,
 							   boolean defaultsOnly) throws StandardException
 	{
 		// See if I'm the exclusive owner. If so I cannot populate
 		// the cache as it would contain my uncommitted changes.
-        Dictionary<String, Object> dbProps;
+        Map<String, Object> dbProps;
 		if (iHoldTheUpdateLock(tc))
 		{
             dbProps = readDbProperties(tc);
@@ -708,10 +706,10 @@ class PropertyConglomerate
 	void resetCache() {cachedSet = null;}
 
 	/** Read the database properties and add in the service set. */
-	private Dictionary<String,Object> readDbProperties(TransactionController tc)
+	private Map<String,Object> readDbProperties(TransactionController tc)
 		 throws StandardException
 	{
-		Dictionary<String,Object> set = new Hashtable<String,Object>();
+		Map<String,Object> set = new HashMap<String,Object>();
 
         // scan the table for a row with no matching "key"
 		ScanController scan = openScan(tc, (String) null, 0);
@@ -741,11 +739,11 @@ class PropertyConglomerate
 		return set;
 	}
 
-    private Dictionary<String, Object>
+    private Map<String, Object>
             getCachedDbProperties(TransactionController tc)
 		 throws StandardException
 	{
-        Dictionary<String, Object> dbProps = cachedSet;
+        Map<String, Object> dbProps = cachedSet;
 		//Get the cached set of properties.
 		if (dbProps == null)
 		{

@@ -22,7 +22,6 @@
 package org.apache.derby.iapi.sql.dictionary;
 
 import java.sql.Types;
-import java.util.Dictionary;
 import java.util.Map;
 import java.util.List;
 import org.apache.derby.catalog.DependableFinder;
@@ -438,7 +437,7 @@ public interface DataDictionary
 	 *
 	 * @param props   The persistent properties used to configure password hashing.
 	 */
-    public  PasswordHasher  makePasswordHasher( Dictionary<?,?> props )
+    public  PasswordHasher  makePasswordHasher( Map<?,?> props )
         throws StandardException;
     
 	/**

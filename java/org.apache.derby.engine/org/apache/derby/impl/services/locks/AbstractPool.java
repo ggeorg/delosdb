@@ -37,7 +37,7 @@ import org.apache.derby.iapi.util.Matchable;
 import org.apache.derby.shared.common.reference.Property;
 
 import java.io.Serializable;
-import java.util.Dictionary;
+import java.util.Map;
 import java.util.Enumeration;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.services.locks.LockOwner;
@@ -382,7 +382,7 @@ abstract class AbstractPool implements LockFactory
 	** Methods of PropertySetCallback
 	*/
 
-	public void init(boolean dbOnly, Dictionary p) {
+	public void init(boolean dbOnly, Map<?,?> p) {
 
 		getAndApply(dbOnly, p, Property.DEADLOCK_TIMEOUT);
 		getAndApply(dbOnly, p, Property.LOCKWAIT_TIMEOUT);
@@ -392,7 +392,7 @@ abstract class AbstractPool implements LockFactory
 //EXCLUDE-END-lockdiag- 
 	}
 
-	private void getAndApply(boolean dbOnly, Dictionary p, String key) {
+	private void getAndApply(boolean dbOnly, Map<?,?> p, String key) {
 
 		try {
 
@@ -407,7 +407,7 @@ abstract class AbstractPool implements LockFactory
 	}
 
 	
-	public boolean validate(String key, Serializable value, Dictionary p)
+	public boolean validate(String key, Serializable value, Map<?,?> p)
 		throws StandardException {
 
 		if (!key.startsWith(Property.LOCKS_INTRO))
@@ -428,7 +428,7 @@ abstract class AbstractPool implements LockFactory
 		return true;
 	}
 
-    public Serviceable apply(String key, Serializable value, Dictionary p)
+    public Serviceable apply(String key, Serializable value, Map<?,?> p)
 		throws StandardException {
 
 		if (value == null) {
@@ -456,7 +456,7 @@ abstract class AbstractPool implements LockFactory
 		return null;
 	}
 	
-    public Serializable map(String key, Serializable value, Dictionary p) {
+    public Serializable map(String key, Serializable value, Map<?,?> p) {
 		return null;
 	}
 

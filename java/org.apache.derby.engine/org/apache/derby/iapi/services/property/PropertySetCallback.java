@@ -24,7 +24,7 @@ package org.apache.derby.iapi.services.property;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.daemon.Serviceable;
 import java.io.Serializable;
-import java.util.Dictionary;
+import java.util.Map;
 
 public interface PropertySetCallback {
 
@@ -42,7 +42,7 @@ public interface PropertySetCallback {
 		@param dbOnly true if only per-database properties are to be looked at
 		@param p the complete set of per-database properties.
 	*/ 
-	void init(boolean dbOnly, Dictionary p);
+	void init(boolean dbOnly, Map<?,?> p);
 
 	/**
 	  Validate a property change.
@@ -55,7 +55,7 @@ public interface PropertySetCallback {
 	  @return true if this object was interested in this property, false otherwise.
 	  @exception StandardException Oh well.
 	*/
-    boolean validate(String key, Serializable value, Dictionary p)
+    boolean validate(String key, Serializable value, Map<?,?> p)
 		 throws StandardException;
 	/**
 	  Apply a property change. Will only be called after validate has been called
@@ -71,7 +71,7 @@ public interface PropertySetCallback {
 	  @return post commit work for the property change.
 	  @exception StandardException Oh well.
 	*/
-    Serviceable apply(String key, Serializable value, Dictionary p)
+    Serviceable apply(String key, Serializable value, Map<?,?> p)
 		 throws StandardException;
 	
 	/**
@@ -87,6 +87,6 @@ public interface PropertySetCallback {
 	  @return new value for the change
 	  @exception StandardException Oh well.
 	*/
-    Serializable map(String key, Serializable value, Dictionary p)
+    Serializable map(String key, Serializable value, Map<?,?> p)
 		 throws StandardException;
 }

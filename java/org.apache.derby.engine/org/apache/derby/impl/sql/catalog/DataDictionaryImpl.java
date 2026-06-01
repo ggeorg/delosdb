@@ -33,7 +33,7 @@ import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
-import java.util.Dictionary;
+import java.util.Map;
 import java.util.Enumeration;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
@@ -41,7 +41,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import java.util.SortedSet;
 import java.util.concurrent.ConcurrentHashMap;
@@ -1454,7 +1453,7 @@ public final class	DataDictionaryImpl
     }
 
     // returns null if database is at rev level 10.5 or earlier
-    public  PasswordHasher  makePasswordHasher( Dictionary<?,?> props )
+    public  PasswordHasher  makePasswordHasher( Map<?,?> props )
         throws StandardException
     {
         // Support for configurable hash algorithm was added in Derby 10.6, so
@@ -1504,7 +1503,7 @@ public final class	DataDictionaryImpl
      *   length of the salt
      * @return random bytes
      */
-    private byte[] generateRandomSalt(Dictionary props) {
+    private byte[] generateRandomSalt(Map<?,?> props) {
         int saltLength = getIntProperty(
                 props,
                 Property.AUTHENTICATION_BUILTIN_SALT_LENGTH,
@@ -1529,7 +1528,7 @@ public final class	DataDictionaryImpl
      * @return the value of the property
      */
     private int getIntProperty(
-            Dictionary props, String key,
+            Map<?,?> props, String key,
             int defaultValue, int minValue, int maxValue) {
 
         String sVal = (String) PropertyUtil.getPropertyFromSet(props, key);

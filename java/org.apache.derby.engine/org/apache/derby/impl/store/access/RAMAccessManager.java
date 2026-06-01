@@ -68,9 +68,7 @@ import org.apache.derby.catalog.UUID;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.reference.Attribute;
 
-import java.util.Dictionary;
 import java.util.HashMap;
-import java.util.Hashtable;
 import java.util.Map;
 import java.util.Properties;
 
@@ -876,7 +874,7 @@ public abstract class RAMAccessManager
 		// set up the initial values by calling the validate and apply methods.
 		// the map methods are not called as they will have been called
 		// at runtime when the user set the property.
-        Dictionary<Object, Object> d = new Hashtable<Object, Object>();
+        Map<Object, Object> d = new HashMap<Object, Object>();
 		try {
 			xactProperties.getProperties(tc,d,false/*!stringsOnly*/,false/*!defaultsOnly*/);
 		} catch (StandardException se) {
@@ -1234,11 +1232,11 @@ public abstract class RAMAccessManager
     // This interface is implemented to ensure the user cannot change the
     // encryption provider or algorithm.
 
-	public void init(boolean dbOnly, Dictionary p)
+	public void init(boolean dbOnly, Map<?,?> p)
     {
     }
 
-    public boolean validate(String key, Serializable value, Dictionary p)
+    public boolean validate(String key, Serializable value, Map<?,?> p)
 		 throws StandardException
     {
         if (key.equals(Attribute.CRYPTO_ALGORITHM))
@@ -1252,13 +1250,13 @@ public abstract class RAMAccessManager
         return true;
     }
 
-    public Serviceable apply(String key, Serializable value, Dictionary p)
+    public Serviceable apply(String key, Serializable value, Map<?,?> p)
 		 throws StandardException
     {
         return null;
     }
 
-    public Serializable map(String key, Serializable value, Dictionary p)
+    public Serializable map(String key, Serializable value, Map<?,?> p)
 		 throws StandardException
     {
         return null;

@@ -35,6 +35,7 @@ import org.apache.derby.iapi.util.IdUtil;
 import java.util.Properties;
 import java.io.Serializable;
 import java.util.Dictionary;
+import java.util.Map;
 import java.util.Enumeration;
 
 /**
@@ -97,7 +98,7 @@ public class PropertyUtil {
 	public static final int NOT_SET = -1;
 
 
-	static int whereSet(String key, Dictionary set) {
+	static int whereSet(String key, Map<?,?> set) {
 
 		boolean dbOnly = isDBOnly(set);
 
@@ -118,7 +119,7 @@ public class PropertyUtil {
 		return NOT_SET;
 	}
 
-	public static boolean isDBOnly(Dictionary set) {
+	public static boolean isDBOnly(Map<?,?> set) {
 
 		if (set == null)
 			return false;
@@ -235,6 +236,49 @@ public class PropertyUtil {
         }
 
 		return PropertyUtil.getPropertyFromSet(dbOnly, set, key);
+	}
+
+	public static Serializable getPropertyFromSet(Map<?,?> set, String key) {
+	
+		boolean dbOnly = set != null ? isDBOnly(set) : false;
+
+		return PropertyUtil.getPropertyFromSet(dbOnly, set, key);
+	}
+
+	public static Serializable getPropertyFromSet(boolean dbOnly, Map<?,?> set, String key) {
+
+		if (set != null) {
+
+			Serializable value;
+
+			if (!dbOnly) {
+				value = getMonitor().getJVMProperty(key);
+				if (value != null)
+					return value;
+			}
+		
+			value = (Serializable) set.get(key);
+			if (value != null)
+				return value;
+
+			if (dbOnly)
+				return null;
+		}
+
+		return PropertyUtil.getSystemProperty(key);
+	}
+
+	public static boolean isDBOnly(Dictionary set) {
+
+		if (set == null)
+			return false;
+
+		String value = (String) set.get(Property.DATABASE_PROPERTIES_ONLY);
+
+		boolean dbOnly = Boolean.valueOf(
+                    (value != null ? value.trim() : null)).booleanValue();
+
+		return dbOnly;
 	}
 
 	public static Serializable getPropertyFromSet(Dictionary set, String key) {
