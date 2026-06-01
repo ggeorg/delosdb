@@ -48,7 +48,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.StringTokenizer;
-import java.util.Vector;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.net.ServerSocketFactory;
 import javax.net.SocketFactory;
@@ -321,11 +320,13 @@ public final class NetworkServerControlImpl {
     // current session
     private Session currentSession;
     // DRDAConnThreads
-    private Vector<DRDAConnThread> threadList = new Vector<DRDAConnThread>();
+    private List<DRDAConnThread> threadList =
+            Collections.synchronizedList(new ArrayList<DRDAConnThread>());
 
     // queue of sessions waiting for a free thread - the queue is managed
     // in a simple first come, first serve manner - no priorities
-    private Vector<Session> runQueue = new Vector<Session>();
+    private List<Session> runQueue =
+            Collections.synchronizedList(new ArrayList<Session>());
 
     // number of DRDAConnThreads waiting for something to do
     private int freeThreads;
