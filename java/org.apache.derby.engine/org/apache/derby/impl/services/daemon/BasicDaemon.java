@@ -31,7 +31,8 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.shared.common.error.StandardException;
 
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import org.apache.derby.iapi.util.InterruptStatus;
 
@@ -61,8 +62,8 @@ import org.apache.derby.iapi.util.InterruptStatus;
 
 	The BasicDaemon implementation manages the DaemonService's data structure,
 	handles subscriptions and enqueues requests, and determine the service
-	schedule for its Serviceable objects.  The BasicDaemon keeps an array
-	(Vector) of Serviceable subscriptions it also keeps 2 queues for clients
+	schedule for its Serviceable objects.  The BasicDaemon keeps a list
+	of Serviceable subscriptions it also keeps 2 queues for clients
 	that uses it for one time service - the 1st queue is for a serviceNow
 	enqueue request, the 2nd queue is for non serviceNow enqueue request.
 
@@ -80,7 +81,7 @@ public class BasicDaemon implements DaemonService, Runnable
 
 	private static final int OPTIMAL_QUEUE_SIZE = 100;
 
-	private final Vector<ServiceRecord> subscription;
+	private final List<ServiceRecord> subscription;
 
 	// the context this daemon should run with
 	protected final ContextService contextService;
@@ -130,7 +131,7 @@ public class BasicDaemon implements DaemonService, Runnable
 		this.contextService = contextService;
 		this.contextMgr = contextService.newContextManager();
 
-		subscription = new Vector<ServiceRecord>(1, 1);
+		subscription = Collections.synchronizedList(new ArrayList<ServiceRecord>());
 		highPQ = new java.util.LinkedList<ServiceRecord>();
 		normPQ = new java.util.LinkedList<ServiceRecord>();
 		
@@ -177,7 +178,7 @@ public class BasicDaemon implements DaemonService, Runnable
 		if (clientNumber < 0 || clientNumber > subscription.size())
 			return;
 
-		// client number is never reused.  Just null out the vector entry.
+		// client number is never reused.  Just null out the list entry.
 		subscription.set(clientNumber, null);
 	}
 
@@ -186,7 +187,7 @@ public class BasicDaemon implements DaemonService, Runnable
 		if (clientNumber < 0 || clientNumber > subscription.size())
 			return;
 
-		ServiceRecord clientRecord = (ServiceRecord)subscription.get(clientNumber);
+		ServiceRecord clientRecord = subscription.get(clientNumber);
 		if (clientRecord == null)
 			return;
 
@@ -252,7 +253,7 @@ public class BasicDaemon implements DaemonService, Runnable
 
 		while (nextService < subscription.size())
 		{
-			clientRecord = (ServiceRecord)subscription.get(nextService++);
+			clientRecord = subscription.get(nextService++);
 			if (clientRecord != null && (clientRecord.needImmediateService() || (!urgent && clientRecord.needService())))
 				return clientRecord;
 		}
@@ -504,7 +505,7 @@ public class BasicDaemon implements DaemonService, Runnable
 				boolean noSubscriptionRequests = true; 
 				for (int urgentServiced = 0; urgentServiced < subscription.size(); urgentServiced++)
 				{
-					ServiceRecord clientRecord = (ServiceRecord)subscription.get(urgentServiced);
+					ServiceRecord clientRecord = subscription.get(urgentServiced);
 					if (clientRecord != null &&	clientRecord.needService())
 					{
 						noSubscriptionRequests = false;
