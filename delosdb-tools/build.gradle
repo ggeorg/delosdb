@@ -61,6 +61,22 @@ tasks.register('generateIjParsers') {
         if (mtParser.exists()) {
             replaceInFile(mtParser) { text -> text.replace('tokenImage', 'mtGrammarConstants.tokenImage') }
         }
+        def charStream = new File(outputDir.get().asFile, 'CharStream.java')
+        def simpleCharStream = new File(outputDir.get().asFile, 'SimpleCharStream.java')
+        if (charStream.exists()) {
+            replaceInFile(charStream) { text ->
+                text
+                        .replace('  int getColumn();', '  @Deprecated\n  int getColumn();')
+                        .replace('  int getLine();', '  @Deprecated\n  int getLine();')
+            }
+        }
+        if (simpleCharStream.exists()) {
+            replaceInFile(simpleCharStream) { text ->
+                text
+                        .replace('  public int getColumn() {', '  @Deprecated\n  public int getColumn() {')
+                        .replace('  public int getLine() {', '  @Deprecated\n  public int getLine() {')
+            }
+        }
     }
 }
 
