@@ -834,3 +834,71 @@ tasks.register('runDerbyUnitJunitTests', JavaExec) {
             externalTestClasspath
     )
 }
+
+// Second tiny execution island for the inherited Derby tests. Keep this separate
+// from check until it is proven green on the real workspace.
+def engineFunctionTestWorkDir = layout.buildDirectory.dir('test-work/engine-function')
+
+tasks.register('runDerbyEngineFunctionTests', JavaExec) {
+    group = 'verification'
+    description = 'Runs the inherited Derby engine function-test execution island.'
+    dependsOn 'compileDerbyEngineFunctionTests'
+    mainClass = 'junit.textui.TestRunner'
+    args 'org.apache.derbyTesting.functionTests.tests.engine._Suite'
+    workingDir = engineFunctionTestWorkDir.get().asFile
+    doFirst {
+        engineFunctionTestWorkDir.get().asFile.mkdirs()
+    }
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            engineFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+// Third tiny execution island for the inherited Derby tests. MemoryDB is a small
+// already-compiled package-level suite, so it is a safe next execution target.
+def memoryDbFunctionTestWorkDir = layout.buildDirectory.dir('test-work/memorydb-function')
+
+tasks.register('runDerbyMemoryDbFunctionTests', JavaExec) {
+    group = 'verification'
+    description = 'Runs the inherited Derby memorydb function-test execution island.'
+    dependsOn 'compileDerbyMemoryDbFunctionTests'
+    mainClass = 'junit.textui.TestRunner'
+    args 'org.apache.derbyTesting.functionTests.tests.memorydb._Suite'
+    workingDir = memoryDbFunctionTestWorkDir.get().asFile
+    doFirst {
+        memoryDbFunctionTestWorkDir.get().asFile.mkdirs()
+    }
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            memoryDbFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+// Execution alias for only the inherited Derby execution islands that have been
+// explicitly activated. This remains separate from check and does not run derbyall.
+tasks.register('runActivatedDerbyExecutionIslands') {
+    group = 'verification'
+    description = 'Runs the currently activated inherited Derby execution islands.'
+    dependsOn 'runDerbyUnitJunitTests',
+            'runDerbyEngineFunctionTests',
+            'runDerbyMemoryDbFunctionTests'
+}
