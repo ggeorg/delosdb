@@ -2,14 +2,20 @@ plugins {
     id 'base'
 }
 
+import org.gradle.api.tasks.compile.JavaCompile
+
 version = rootProject.version
 group = rootProject.group
 
-// The inherited Derby storeless prototype is intentionally moved into this
-// Gradle module as source layout first. Compilation/execution is deferred
-// because it is a legacy optional engine prototype with separate boot wiring.
+// The inherited Derby storeless prototype is Gradle-owned now. Keep it as a
+// classpath-compiled legacy prototype because it intentionally reaches into
+// engine internals and is not a runtime JPMS module.
 def storelessSourceRoot = file('src/main/java')
 def storelessResourcesRoot = file('src/main/resources')
+def storelessClassDir = layout.buildDirectory.dir('classes/storeless')
+def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
+def osgiModuleClassDir = rootProject.project(':delosdb-osgi-stub').layout.buildDirectory.dir('classes/modules/org.osgi.framework')
 
 tasks.register('verifyDerbyStorelessSourceLayout') {
     group = 'verification'
@@ -45,6 +51,32 @@ tasks.register('verifyDerbyStorelessSourceLayout') {
     }
 }
 
+tasks.register('compileDerbyStoreless', JavaCompile) {
+    dependsOn 'verifyDerbyStorelessSourceLayout', ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
+    source = fileTree(storelessSourceRoot) { include '**/*.java' }
+    destinationDirectory = storelessClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            osgiModuleClassDir
+    )
+}
+
+tasks.register('classes') {
+    dependsOn 'compileDerbyStoreless'
+}
+
+tasks.named('assemble') {
+    dependsOn 'classes'
+}
+
 tasks.named('check') {
-    dependsOn 'verifyDerbyStorelessSourceLayout'
+    dependsOn 'verifyDerbyStorelessSourceLayout', 'compileDerbyStoreless'
 }

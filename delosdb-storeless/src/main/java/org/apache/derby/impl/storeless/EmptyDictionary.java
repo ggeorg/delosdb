@@ -20,9 +20,8 @@
  */
 package org.apache.derby.impl.storeless;
 
-import java.util.Dictionary;
-import java.util.Hashtable;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import org.apache.derby.catalog.DependableFinder;
@@ -168,7 +167,7 @@ public class EmptyDictionary implements DataDictionary, ModuleSupportable {
 		return false;
 	}
 
-    public  PasswordHasher  makePasswordHasher( Dictionary props )
+    public  PasswordHasher  makePasswordHasher( Map<?,?> props )
         throws StandardException {
 		// Auto-generated method stub
 		return null;
@@ -574,16 +573,14 @@ public class EmptyDictionary implements DataDictionary, ModuleSupportable {
 
 	}
 
-    @SuppressWarnings("UseOfObsoleteCollectionType")
-    public Hashtable<Long, ConglomerateDescriptor>
+    public Map<Long, ConglomerateDescriptor>
         hashAllConglomerateDescriptorsByNumber(TransactionController tc)
             throws StandardException {
 		// Auto-generated method stub
 		return null;
 	}
 
-    @SuppressWarnings("UseOfObsoleteCollectionType")
-    public Hashtable<UUID, TableDescriptor>
+    public Map<UUID, TableDescriptor>
         hashAllTableDescriptorsByTableId(TransactionController tc)
             throws StandardException {
 		// Auto-generated method stub
