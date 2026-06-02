@@ -26,6 +26,7 @@ PRODUCTION_ROOTS=(
 ALL_TREE_ROOTS=(
   "$ROOT_DIR/java"
   "$ROOT_DIR/delosdb-tests/src/test/java"
+  "$ROOT_DIR/delosdb-demos/src/main/demo"
 )
 
 count_matches() {

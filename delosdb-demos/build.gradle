@@ -1,0 +1,42 @@
+plugins {
+    id 'base'
+}
+
+version = rootProject.version
+group = rootProject.group
+
+// The inherited Derby demos are intentionally moved into this Gradle module as
+// a source layout first. Compilation/execution is deferred because several
+// demos rely on legacy scripts, SQL files, and path-sensitive sample assets.
+def demoSourceRoot = file('src/main/demo')
+
+tasks.register('verifyDerbyDemosSourceLayout') {
+    group = 'verification'
+    description = 'Verifies that the inherited Derby demo tree is owned by delosdb-demos.'
+    inputs.dir(demoSourceRoot)
+    doLast {
+        if (!demoSourceRoot.isDirectory()) {
+            throw new GradleException("Missing inherited Derby demo source root: ${demoSourceRoot}")
+        }
+        def simpleApp = new File(demoSourceRoot, 'simple/SimpleApp.java')
+        if (!simpleApp.isFile()) {
+            throw new GradleException("Missing SimpleApp demo source: ${simpleApp}")
+        }
+        def networkSample = new File(demoSourceRoot, 'nserverdemo/SimpleNetworkServerSample.java')
+        if (!networkSample.isFile()) {
+            throw new GradleException("Missing network-server demo source: ${networkSample}")
+        }
+        def toursSchema = new File(demoSourceRoot, 'toursdb/ToursDB_schema.sql')
+        if (!toursSchema.isFile()) {
+            throw new GradleException("Missing toursdb schema: ${toursSchema}")
+        }
+        def vtiDemo = new File(demoSourceRoot, 'vtis/demoFileVtis.sql')
+        if (!vtiDemo.isFile()) {
+            throw new GradleException("Missing VTI demo SQL script: ${vtiDemo}")
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'verifyDerbyDemosSourceLayout'
+}

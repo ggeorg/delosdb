@@ -1553,11 +1553,46 @@ tasks.register('verifyMovedTestsSourceLayout') {
     }
 }
 
+
+tasks.register('verifyMovedDemosSourceLayout') {
+    dependsOn ':delosdb-demos:verifyDerbyDemosSourceLayout'
+    group = 'verification'
+    description = 'Verifies that the inherited Derby demo sources have moved into the delosdb-demos Gradle module.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-demos/build.gradle')
+    inputs.dir('delosdb-demos/src/main/demo')
+    doLast {
+        def demosProject = findProject(':delosdb-demos')
+        if (demosProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-demos')
+        }
+        if (file('java/demo').exists()) {
+            throw new GradleException('Legacy Derby demo source root still exists: java/demo')
+        }
+        if (demosProject.tasks.findByName('verifyDerbyDemosSourceLayout') == null) {
+            throw new GradleException('Missing :delosdb-demos:verifyDerbyDemosSourceLayout')
+        }
+        def demoRoot = file('delosdb-demos/src/main/demo')
+        def simpleApp = new File(demoRoot, 'simple/SimpleApp.java')
+        if (!simpleApp.isFile()) {
+            throw new GradleException("Missing moved SimpleApp demo source: ${simpleApp}")
+        }
+        def networkSample = new File(demoRoot, 'nserverdemo/SimpleNetworkServerSample.java')
+        if (!networkSample.isFile()) {
+            throw new GradleException("Missing moved network-server demo source: ${networkSample}")
+        }
+        def toursSchema = new File(demoRoot, 'toursdb/ToursDB_schema.sql')
+        if (!toursSchema.isFile()) {
+            throw new GradleException("Missing moved toursdb schema: ${toursSchema}")
+        }
+    }
+}
+
 tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'verifyGradleOnlyPublicSurface',
             'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
-            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout'
+            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedDemosSourceLayout'
 }
 
 tasks.register('fullVerification') {
