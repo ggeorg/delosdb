@@ -235,7 +235,7 @@ tasks.register('processDerbyResources') {
                 (moduleNames.tools)        : 'java/org.apache.derby.tools',
                 (moduleNames.server)       : 'java/org.apache.derby.server',
                 (moduleNames.optionaltools): 'java/org.apache.derby.optionaltools',
-                (moduleNames.runner)       : 'java/org.apache.derby.runner'
+                (moduleNames.runner)       : 'delosdb-runner/src/main/java'
         ].each { moduleName, sourceDir ->
             copy {
                 from(sourceDir) {
@@ -414,7 +414,7 @@ def moduleSplitInventory = [
                 key              : 'runner',
                 gradleProject    : 'delosdb-runner',
                 jpmsModule       : moduleNames.runner,
-                currentSourceRoot: 'java/org.apache.derby.runner',
+                currentSourceRoot: 'delosdb-runner/src/main/java',
                 compileTask      : 'compileDerbyRunner',
                 jarTask          : 'derbyRunJar',
                 jarName          : 'derbyrun.jar',
