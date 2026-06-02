@@ -14,7 +14,7 @@ mkdir -p "$REPORT_DIR"
 
 PRODUCTION_ROOTS=(
   "$ROOT_DIR/java/org.apache.derby.client"
-  "$ROOT_DIR/java/org.apache.derby.commons"
+  "$ROOT_DIR/delosdb-commons/src/main/java"
   "$ROOT_DIR/java/org.apache.derby.engine"
   "$ROOT_DIR/java/org.apache.derby.optionaltools"
   "$ROOT_DIR/java/org.apache.derby.runner"
