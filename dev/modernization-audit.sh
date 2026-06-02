@@ -28,6 +28,7 @@ ALL_TREE_ROOTS=(
   "$ROOT_DIR/delosdb-tests/src/test/java"
   "$ROOT_DIR/delosdb-pptesting/src/test/java"
   "$ROOT_DIR/delosdb-demos/src/main/demo"
+  "$ROOT_DIR/delosdb-storeless/src/main/java"
 )
 
 count_matches() {

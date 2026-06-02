@@ -1,0 +1,50 @@
+plugins {
+    id 'base'
+}
+
+version = rootProject.version
+group = rootProject.group
+
+// The inherited Derby storeless prototype is intentionally moved into this
+// Gradle module as source layout first. Compilation/execution is deferred
+// because it is a legacy optional engine prototype with separate boot wiring.
+def storelessSourceRoot = file('src/main/java')
+def storelessResourcesRoot = file('src/main/resources')
+
+tasks.register('verifyDerbyStorelessSourceLayout') {
+    group = 'verification'
+    description = 'Verifies that the inherited Derby storeless prototype is owned by delosdb-storeless.'
+    inputs.dir(storelessSourceRoot)
+    inputs.dir(storelessResourcesRoot)
+    doLast {
+        if (!storelessSourceRoot.isDirectory()) {
+            throw new GradleException("Missing Derby storeless source root: ${storelessSourceRoot}")
+        }
+        if (!storelessResourcesRoot.isDirectory()) {
+            throw new GradleException("Missing Derby storeless resources root: ${storelessResourcesRoot}")
+        }
+        def service = new File(storelessSourceRoot, 'org/apache/derby/impl/storeless/StorelessService.java')
+        if (!service.isFile()) {
+            throw new GradleException("Missing storeless service source: ${service}")
+        }
+        def database = new File(storelessSourceRoot, 'org/apache/derby/impl/storeless/StorelessDatabase.java')
+        if (!database.isFile()) {
+            throw new GradleException("Missing storeless database source: ${database}")
+        }
+        def dictionary = new File(storelessSourceRoot, 'org/apache/derby/impl/storeless/EmptyDictionary.java')
+        if (!dictionary.isFile()) {
+            throw new GradleException("Missing storeless dictionary source: ${dictionary}")
+        }
+        def moduleProperties = new File(storelessResourcesRoot, 'org/apache/derby/modules.properties')
+        if (!moduleProperties.isFile()) {
+            throw new GradleException("Missing storeless modules.properties resource: ${moduleProperties}")
+        }
+        if (!moduleProperties.text.contains('derby.module.storeless.service')) {
+            throw new GradleException("Storeless modules.properties is missing service registration: ${moduleProperties}")
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'verifyDerbyStorelessSourceLayout'
+}

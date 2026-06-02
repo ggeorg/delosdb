@@ -1650,11 +1650,42 @@ tasks.register('verifyMovedLocalesSourceLayout') {
     }
 }
 
+
+tasks.register('verifyMovedStorelessSourceLayout') {
+    dependsOn ':delosdb-storeless:verifyDerbyStorelessSourceLayout'
+    group = 'verification'
+    description = 'Verifies that the inherited Derby storeless prototype has moved into the delosdb-storeless Gradle module.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-storeless/build.gradle')
+    inputs.dir('delosdb-storeless/src/main/java')
+    inputs.dir('delosdb-storeless/src/main/resources')
+    doLast {
+        def storelessProject = findProject(':delosdb-storeless')
+        if (storelessProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-storeless')
+        }
+        if (file('java/storeless').exists()) {
+            throw new GradleException('Legacy Derby storeless source root still exists: java/storeless')
+        }
+        if (storelessProject.tasks.findByName('verifyDerbyStorelessSourceLayout') == null) {
+            throw new GradleException('Missing :delosdb-storeless:verifyDerbyStorelessSourceLayout')
+        }
+        def service = file('delosdb-storeless/src/main/java/org/apache/derby/impl/storeless/StorelessService.java')
+        if (!service.isFile()) {
+            throw new GradleException("Missing moved storeless service source: ${service}")
+        }
+        def moduleProperties = file('delosdb-storeless/src/main/resources/org/apache/derby/modules.properties')
+        if (!moduleProperties.isFile()) {
+            throw new GradleException("Missing moved storeless modules.properties resource: ${moduleProperties}")
+        }
+    }
+}
+
 tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'verifyGradleOnlyPublicSurface',
             'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
-            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedPackagePrivateTestsSourceLayout', 'verifyMovedDemosSourceLayout', 'verifyMovedLocalesSourceLayout'
+            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedPackagePrivateTestsSourceLayout', 'verifyMovedDemosSourceLayout', 'verifyMovedLocalesSourceLayout', 'verifyMovedStorelessSourceLayout'
 }
 
 tasks.register('fullVerification') {
