@@ -1999,7 +1999,6 @@ public class GenericLanguageConnectionContext
      * execution time, set transaction isolation level calls this method before
      * changing the isolation level.
      */
-    @SuppressWarnings({"deprecation","removal"})
     public boolean verifyAllHeldResultSetsAreClosed()
             throws StandardException
     {
@@ -2041,7 +2040,6 @@ public class GenericLanguageConnectionContext
         // There may be open ResultSet's that are yet to be garbage collected
         // let's try and force these out rather than throw an error
         System.gc();
-        System.runFinalization();
 
 
         /* For every activation */
@@ -2087,7 +2085,6 @@ public class GenericLanguageConnectionContext
      *
      * @exception StandardException thrown on failure
      */
-    @SuppressWarnings({"deprecation","removal"})
     public boolean verifyNoOpenResultSets(PreparedStatement pStmt, Provider provider,
                                        int action)
             throws StandardException
@@ -2134,7 +2131,6 @@ public class GenericLanguageConnectionContext
         // There may be open ResultSet's that are yet to be garbage collected
         // let's try and force these out rather than throw an error
         System.gc();
-        System.runFinalization();
 
 
         /* For every activation */
