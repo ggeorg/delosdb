@@ -1525,7 +1525,7 @@ tasks.register('verifyGradleOnlyPublicSurface') {
 
 
 tasks.register('verifyMovedTestsSourceLayout') {
-    dependsOn ':delosdb-tests:verifyDerbyTestsSourceLayout'
+    dependsOn ':delosdb-tests:verifyDerbyTestsSourceLayout', ':delosdb-tests:verifyDerbyTestsAssets'
     group = 'verification'
     description = 'Verifies that the inherited Derby test harness has moved into the delosdb-tests Gradle module.'
     inputs.file('settings.gradle')
@@ -1541,6 +1541,9 @@ tasks.register('verifyMovedTestsSourceLayout') {
         }
         if (testsProject.tasks.findByName('verifyDerbyTestsSourceLayout') == null) {
             throw new GradleException('Missing :delosdb-tests:verifyDerbyTestsSourceLayout')
+        }
+        if (testsProject.tasks.findByName('verifyDerbyTestsAssets') == null) {
+            throw new GradleException('Missing :delosdb-tests:verifyDerbyTestsAssets')
         }
         def moduleInfo = file('delosdb-tests/src/test/java/module-info.java')
         if (!moduleInfo.isFile()) {

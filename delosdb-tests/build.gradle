@@ -34,6 +34,74 @@ tasks.register('verifyDerbyTestsSourceLayout') {
     }
 }
 
+
+tasks.register('verifyDerbyTestsAssets') {
+    group = 'verification'
+    description = 'Verifies the inherited Derby test harness inventory without compiling it.'
+    inputs.dir(testSourceRoot)
+    doLast {
+        if (!testSourceRoot.isDirectory()) {
+            throw new GradleException("Missing inherited Derby test source root: ${testSourceRoot}")
+        }
+
+        // Keep this verification intentionally conservative: the inherited Derby
+        // test harness varies across upstream trees, so verify stable anchor files
+        // and inventory shape rather than brittle individual historical test names.
+        [
+            'module-info.java',
+            'build.xml',
+            'README.htm',
+            'org/apache/derby/info/tsting/DerbyModule.java',
+            'org/apache/derbyTesting/junit/BaseTestCase.java',
+            'org/apache/derbyTesting/junit/BaseJDBCTestCase.java',
+            'org/apache/derbyTesting/functionTests/harness/RunSuite.java',
+            'org/apache/derbyTesting/functionTests/harness/RunTest.java',
+            'org/apache/derbyTesting/functionTests/suites/derbyall.properties'
+        ].each { relativePath ->
+            def required = new File(testSourceRoot, relativePath)
+            if (!required.isFile()) {
+                throw new GradleException("Missing inherited Derby test asset: ${required}")
+            }
+        }
+
+        [
+            'org/apache/derbyTesting/functionTests/harness',
+            'org/apache/derbyTesting/functionTests/master',
+            'org/apache/derbyTesting/functionTests/suites',
+            'org/apache/derbyTesting/functionTests/tests',
+            'org/apache/derbyTesting/functionTests/testData',
+            'org/apache/derbyTesting/junit',
+            'org/apache/derbyTesting/perf',
+            'org/apache/derbyTesting/system',
+            'org/apache/derbyTesting/unitTests'
+        ].each { relativePath ->
+            def requiredDir = new File(testSourceRoot, relativePath)
+            if (!requiredDir.isDirectory()) {
+                throw new GradleException("Missing inherited Derby test directory: ${requiredDir}")
+            }
+        }
+
+        def javaFiles = fileTree(testSourceRoot) { include '**/*.java' }.files.size()
+        def propertyFiles = fileTree(testSourceRoot) { include '**/*.properties' }.files.size()
+        def sqlFiles = fileTree(testSourceRoot) { include '**/*.sql' }.files.size()
+        def masterFiles = fileTree(testSourceRoot) { include '**/*.out' }.files.size()
+
+        if (javaFiles < 900) {
+            throw new GradleException("Expected at least 900 inherited Derby Java test files, found ${javaFiles}")
+        }
+        if (propertyFiles < 150) {
+            throw new GradleException("Expected at least 150 inherited Derby test properties files, found ${propertyFiles}")
+        }
+        if (sqlFiles < 200) {
+            throw new GradleException("Expected at least 200 inherited Derby SQL test files, found ${sqlFiles}")
+        }
+        if (masterFiles < 300) {
+            throw new GradleException("Expected at least 300 inherited Derby master output files, found ${masterFiles}")
+        }
+    }
+}
+
+
 tasks.named('check') {
-    dependsOn 'verifyDerbyTestsSourceLayout'
+    dependsOn 'verifyDerbyTestsSourceLayout', 'verifyDerbyTestsAssets'
 }

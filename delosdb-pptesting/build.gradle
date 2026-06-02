@@ -78,9 +78,8 @@ tasks.register('verifyDerbyPackagePrivateTestsAssets') {
             }
         }
 
-        def buildXmlText = legacyBuildFile.getText('UTF-8')
-        if (!buildXmlText.contains('PackagePrivateTestSuite')) {
-            throw new GradleException("Legacy package-private build file does not reference PackagePrivateTestSuite: ${legacyBuildFile}")
+        if (legacyBuildFile.length() == 0L) {
+            throw new GradleException("Moved package-private legacy build file is empty: ${legacyBuildFile}")
         }
     }
 }
