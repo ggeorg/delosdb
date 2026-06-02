@@ -3,6 +3,7 @@ plugins {
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.tasks.JavaExec
 
 version = rootProject.version
 group = rootProject.group
@@ -780,4 +781,56 @@ tasks.named('check') {
             'compileDerbyCompatibilityFunctionTests',
             'compileDerbyJdbcApiSmokeFunctionTests',
             'compileDerbyJdbc4SmokeFunctionTests'
+}
+
+
+// Lifecycle alias for the inherited Derby test islands that have been reviewed
+// and activated so far. This is compile-only; it does not run derbyall or the
+// legacy harness.
+tasks.register('compileActivatedDerbyTests') {
+    group = 'verification'
+    description = 'Compiles all currently activated inherited Derby test islands.'
+    dependsOn 'compileDerbyUnitJunitTests',
+            'compileDerbyEngineFunctionTests',
+            'compileDerbyMultiFunctionTests',
+            'compileDerbyMemoryDbFunctionTests',
+            'compileDerbyMemoryFunctionTests',
+            'compileDerbyNistFunctionTests',
+            'compileDerbyStoreTestsFunctionTests',
+            'compileDerbyPerfFunctionTests',
+            'compileDerbyManagementFunctionTests',
+            'compileDerbyLargeDataFunctionTests',
+            'compileDerbyI18nFunctionTests',
+            'compileDerbyCompatibilityFunctionTests',
+            'compileDerbyJdbcApiSmokeFunctionTests',
+            'compileDerbyJdbc4SmokeFunctionTests'
+}
+
+// First tiny execution island for the inherited Derby tests. Keep execution
+// separate from check until this island is proven green on the real workspace.
+def unitJunitTestWorkDir = layout.buildDirectory.dir('test-work/unit-junit')
+
+tasks.register('runDerbyUnitJunitTests', JavaExec) {
+    group = 'verification'
+    description = 'Runs the first tiny inherited Derby JUnit execution island.'
+    dependsOn 'compileDerbyUnitJunitTests'
+    mainClass = 'junit.textui.TestRunner'
+    args 'org.apache.derbyTesting.unitTests.junit._Suite'
+    workingDir = unitJunitTestWorkDir.get().asFile
+    doFirst {
+        unitJunitTestWorkDir.get().asFile.mkdirs()
+    }
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            unitJunitTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
 }
