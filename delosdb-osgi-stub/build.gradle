@@ -8,7 +8,7 @@ version = rootProject.version
 group = rootProject.group
 
 def moduleName = 'org.osgi.framework'
-def sourceRoot = rootProject.file('java/stubs/felix')
+def sourceRoot = layout.projectDirectory.dir('src/main/java')
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 
 tasks.register('compileOsgiStubs', JavaCompile) {

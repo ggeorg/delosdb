@@ -358,7 +358,7 @@ def moduleSplitInventory = [
                 key              : 'osgi',
                 gradleProject    : 'delosdb-osgi-stub',
                 jpmsModule       : moduleNames.osgi,
-                currentSourceRoot: 'java/stubs/felix',
+                currentSourceRoot: 'delosdb-osgi-stub/src/main/java',
                 compileTask      : 'compileOsgiStubs',
                 jarTask          : 'osgiFrameworkStubJar',
                 jarName          : 'osgi-framework-stub.jar',
