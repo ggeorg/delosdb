@@ -1588,11 +1588,42 @@ tasks.register('verifyMovedDemosSourceLayout') {
     }
 }
 
+
+tasks.register('verifyMovedLocalesSourceLayout') {
+    dependsOn ':delosdb-locales:verifyDerbyLocalesSourceLayout'
+    group = 'verification'
+    description = 'Verifies that inherited Derby localization templates have moved into the delosdb-locales Gradle module.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-locales/build.gradle')
+    inputs.dir('delosdb-locales/src/main/templates')
+    doLast {
+        def localesProject = findProject(':delosdb-locales')
+        if (localesProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-locales')
+        }
+        if (file('java/locales').exists()) {
+            throw new GradleException('Legacy Derby locales template root still exists: java/locales')
+        }
+        if (localesProject.tasks.findByName('verifyDerbyLocalesSourceLayout') == null) {
+            throw new GradleException('Missing :delosdb-locales:verifyDerbyLocalesSourceLayout')
+        }
+        def templatesDir = file('delosdb-locales/src/main/templates')
+        def derbyModuleTemplate = new File(templatesDir, 'DerbyModule.template')
+        if (!derbyModuleTemplate.isFile()) {
+            throw new GradleException("Missing moved DerbyModule locale template: ${derbyModuleTemplate}")
+        }
+        def moduleInfoTemplate = new File(templatesDir, 'module-info.template')
+        if (!moduleInfoTemplate.isFile()) {
+            throw new GradleException("Missing moved module-info locale template: ${moduleInfoTemplate}")
+        }
+    }
+}
+
 tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'verifyGradleOnlyPublicSurface',
             'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
-            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedDemosSourceLayout'
+            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedDemosSourceLayout', 'verifyMovedLocalesSourceLayout'
 }
 
 tasks.register('fullVerification') {
