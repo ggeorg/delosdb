@@ -52,7 +52,12 @@ tasks.register('verifyDerbyStorelessSourceLayout') {
 }
 
 tasks.register('compileDerbyStoreless', JavaCompile) {
-    dependsOn 'verifyDerbyStorelessSourceLayout', ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
+    dependsOn 'verifyDerbyStorelessSourceLayout',
+            ':delosdb-osgi-stub:compileOsgiStubs',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
     source = fileTree(storelessSourceRoot) { include '**/*.java' }
     destinationDirectory = storelessClassDir
     sourceCompatibility = rootProject.ext.javaRelease.toString()
