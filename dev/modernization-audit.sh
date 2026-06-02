@@ -13,7 +13,7 @@ fi
 mkdir -p "$REPORT_DIR"
 
 PRODUCTION_ROOTS=(
-  "$ROOT_DIR/java/org.apache.derby.client"
+  "$ROOT_DIR/delosdb-client/src/main/java"
   "$ROOT_DIR/delosdb-commons/src/main/java"
   "$ROOT_DIR/java/org.apache.derby.engine"
   "$ROOT_DIR/java/org.apache.derby.optionaltools"
