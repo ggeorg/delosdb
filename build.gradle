@@ -1621,7 +1621,7 @@ tasks.register('verifyMovedDemosSourceLayout') {
 
 
 tasks.register('verifyMovedLocalesSourceLayout') {
-    dependsOn ':delosdb-locales:verifyDerbyLocalesSourceLayout'
+    dependsOn ':delosdb-locales:verifyDerbyLocalesSourceLayout', ':delosdb-locales:verifyDerbyLocalesGeneration'
     group = 'verification'
     description = 'Verifies that inherited Derby localization templates have moved into the delosdb-locales Gradle module.'
     inputs.file('settings.gradle')
@@ -1637,6 +1637,9 @@ tasks.register('verifyMovedLocalesSourceLayout') {
         }
         if (localesProject.tasks.findByName('verifyDerbyLocalesSourceLayout') == null) {
             throw new GradleException('Missing :delosdb-locales:verifyDerbyLocalesSourceLayout')
+        }
+        if (localesProject.tasks.findByName('verifyDerbyLocalesGeneration') == null) {
+            throw new GradleException('Missing :delosdb-locales:verifyDerbyLocalesGeneration')
         }
         def templatesDir = file('delosdb-locales/src/main/templates')
         def derbyModuleTemplate = new File(templatesDir, 'DerbyModule.template')

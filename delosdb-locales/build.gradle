@@ -27,3 +27,33 @@ tasks.register('verifyDerbyLocalesSourceLayout') {
         }
     }
 }
+
+tasks.register('verifyDerbyLocalesGeneration') {
+    dependsOn ':splitEngineMessages'
+    group = 'verification'
+    description = 'Verifies the locale module inputs used by the current Derby message splitting pipeline.'
+    inputs.dir('src/main/templates')
+    inputs.dir(rootProject.file('delosdb-engine/src/main/java/org/apache/derby/loc'))
+    doLast {
+        def templatesDir = file('src/main/templates')
+        if (!templatesDir.isDirectory()) {
+            throw new GradleException("Missing locales templates directory: ${templatesDir}")
+        }
+
+        def sourceLocDir = rootProject.file('delosdb-engine/src/main/java/org/apache/derby/loc')
+        def englishMessages = new File(sourceLocDir, 'messages.properties')
+        if (!englishMessages.isFile()) {
+            throw new GradleException("Missing engine messages source: ${englishMessages}")
+        }
+        def localizedMessages = sourceLocDir.listFiles({ File dir, String name ->
+            name.startsWith('messages_') && name.endsWith('.properties')
+        } as FilenameFilter)
+        if (localizedMessages == null || localizedMessages.length == 0) {
+            throw new GradleException("Missing localized Derby message property files under: ${sourceLocDir}")
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'verifyDerbyLocalesSourceLayout', 'verifyDerbyLocalesGeneration'
+}
