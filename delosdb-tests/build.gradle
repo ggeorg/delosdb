@@ -694,7 +694,6 @@ tasks.register('compileDerbyJdbc4SmokeFunctionTests', JavaCompile) {
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/BlobClobTestSetup.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/BlobSetMethodsTest.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/BlobTest.java'),
-            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/CallableStatementTest.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/CallableStatementTestSetup.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/ClobTest.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/ConnectionMethodsTest.java'),
@@ -702,12 +701,10 @@ tasks.register('compileDerbyJdbc4SmokeFunctionTests', JavaCompile) {
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Derby3650Test.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Driver40Test.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Driver40UnbootedTest.java'),
-            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/JDBC4FromJDBC3DataSourceTest.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/LobSortTest.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/LobStreamTest.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/LoginTimeoutTest.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/ParameterMetaDataWrapperTest.java'),
-            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/PreparedStatementTest.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/ResultSetMetaDataTest.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/ResultSetTest.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/RowIdNotImplementedTest.java'),
@@ -718,7 +715,10 @@ tasks.register('compileDerbyJdbc4SmokeFunctionTests', JavaCompile) {
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/TestDbMetaData.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/TestJDBC40Exception.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Wrapper41.java'),
-            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Wrapper41Conn.java')
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Wrapper41Conn.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Wrapper41DataSource.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Wrapper41Driver.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Wrapper41Test.java')
     )
     destinationDirectory = jdbc4SmokeFunctionTestClassDir
     sourceCompatibility = rootProject.ext.javaRelease.toString()
