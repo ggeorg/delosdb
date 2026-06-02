@@ -75,6 +75,7 @@ public class LowMemory {
      * OutOfMemoryError, not part way through the action.
      * 
      */
+    @SuppressWarnings({"deprecation","removal"})
     public void setLowMemory() {
         
         // Can read lowMemory unsynchronized, worst
@@ -94,6 +95,7 @@ public class LowMemory {
 
             for (int i = 0; i < 5; i++) {
                 System.gc();
+                System.runFinalization();
                 try {
                     Thread.sleep(50L);
                 } catch (InterruptedException e) {

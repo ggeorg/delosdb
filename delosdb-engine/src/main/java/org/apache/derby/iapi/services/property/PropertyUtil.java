@@ -34,6 +34,7 @@ import org.apache.derby.iapi.util.IdUtil;
 
 import java.util.Properties;
 import java.io.Serializable;
+import java.util.Dictionary;
 import java.util.Map;
 import java.util.Enumeration;
 
@@ -209,6 +210,8 @@ public class PropertyUtil {
 		  after the database has been booted. This set will be a DoubleProperties
 		  object with the per-database transaction set as the read set
 		  and the service.properties as the write set.
+		  <LI>
+		  The Dictionary set returned/passed in by a method of BasicService.Properties.
 		  </UL>
 		<BR>
 		This method uses the same search order as the getService() calls.
@@ -265,6 +268,48 @@ public class PropertyUtil {
 		return PropertyUtil.getSystemProperty(key);
 	}
 
+	public static boolean isDBOnly(Dictionary set) {
+
+		if (set == null)
+			return false;
+
+		String value = (String) set.get(Property.DATABASE_PROPERTIES_ONLY);
+
+		boolean dbOnly = Boolean.valueOf(
+                    (value != null ? value.trim() : null)).booleanValue();
+
+		return dbOnly;
+	}
+
+	public static Serializable getPropertyFromSet(Dictionary set, String key) {
+	
+		boolean dbOnly = set != null ? isDBOnly(set) : false;
+
+		return PropertyUtil.getPropertyFromSet(dbOnly, set, key);
+	}
+
+	public static Serializable getPropertyFromSet(boolean dbOnly, Dictionary set, String key) {
+
+		if (set != null) {
+
+			Serializable value;
+
+			if (!dbOnly) {
+				value = getMonitor().getJVMProperty(key);
+				if (value != null)
+					return value;
+			}
+		
+			value = (Serializable) set.get(key);
+			if (value != null)
+				return value;
+
+			if (dbOnly)
+				return null;
+		}
+
+		return PropertyUtil.getSystemProperty(key);
+	}
 
 	public static String getPropertyFromSet(boolean dbOnly, Properties set, String key) {
 

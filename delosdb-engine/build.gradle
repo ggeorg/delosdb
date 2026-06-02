@@ -8,7 +8,7 @@ version = rootProject.version
 group = rootProject.group
 
 def moduleName = 'org.apache.derby.engine'
-def sourceRoot = rootProject.file('java/org.apache.derby.engine')
+def sourceRoot = rootProject.file('delosdb-engine/src/main/java')
 def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
 def rootGeneratedSourceRoot = rootProject.layout.buildDirectory.dir("generated/sources/${moduleName}")
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
@@ -24,11 +24,11 @@ tasks.register('generateSqlParser', JavaExec) {
     def outputDir = generatedSourceRoot.map {
         it.dir('org/apache/derby/impl/sql/compile')
     }
-    inputs.file(rootProject.file('java/org.apache.derby.engine/org/apache/derby/impl/sql/compile/sqlgrammar.jj'))
+    inputs.file(rootProject.file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/sqlgrammar.jj'))
     outputs.dir(outputDir)
     classpath = javaccClasspath
     mainClass = 'javacc'
-    workingDir = rootProject.file('java/org.apache.derby.engine/org/apache/derby/impl/sql/compile')
+    workingDir = rootProject.file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile')
     args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'sqlgrammar.jj'
     doFirst {
         delete outputDir

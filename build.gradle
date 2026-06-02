@@ -230,7 +230,7 @@ tasks.register('processDerbyResources') {
     doLast {
         [
                 (moduleNames.commons)      : 'delosdb-commons/src/main/java',
-                (moduleNames.engine)       : 'java/org.apache.derby.engine',
+                (moduleNames.engine)       : 'delosdb-engine/src/main/java',
                 (moduleNames.client)       : 'delosdb-client/src/main/java',
                 (moduleNames.tools)        : 'delosdb-tools/src/main/java',
                 (moduleNames.server)       : 'delosdb-server/src/main/java',
@@ -299,7 +299,7 @@ tasks.register('processDerbyResources') {
 
 tasks.register('splitEngineMessages') {
     dependsOn 'compileDerbyBuildTools', 'processDerbyResources'
-    inputs.file('java/org.apache.derby.engine/org/apache/derby/loc/messages.properties')
+    inputs.file('delosdb-engine/src/main/java/org/apache/derby/loc/messages.properties')
     outputs.dir(moduleClassDir(moduleNames.engine).map { it.dir('org/apache/derby/loc') })
     outputs.dir(moduleClassDir(moduleNames.client).map { it.dir('org/apache/derby/loc/client') })
     outputs.dir(layout.buildDirectory.dir('generated/locale/org/apache/derby/loc'))
@@ -307,7 +307,7 @@ tasks.register('splitEngineMessages') {
         def generatedMessagesDir = layout.buildDirectory.dir('generated/messages').get().asFile
         generatedMessagesDir.mkdirs()
         def englishMessages = new File(generatedMessagesDir, 'messages_en.properties')
-        englishMessages.text = file('java/org.apache.derby.engine/org/apache/derby/loc/messages.properties').text
+        englishMessages.text = file('delosdb-engine/src/main/java/org/apache/derby/loc/messages.properties').text
 
         def engineLoc = new File(moduleClassDir(moduleNames.engine).get().asFile, 'org/apache/derby/loc')
         def clientLoc = new File(moduleClassDir(moduleNames.client).get().asFile, 'org/apache/derby/loc/client')
@@ -456,7 +456,7 @@ def moduleSplitInventory = [
                 key              : 'engine',
                 gradleProject    : 'delosdb-engine',
                 jpmsModule       : moduleNames.engine,
-                currentSourceRoot: 'java/org.apache.derby.engine',
+                currentSourceRoot: 'delosdb-engine/src/main/java',
                 compileTask      : 'compileDerbyEngine',
                 jarTask          : 'derbyJar',
                 jarName          : 'derby.jar',
