@@ -16,7 +16,7 @@ version = rootProject.version
 group = rootProject.group
 
 def moduleName = 'org.apache.derby.tools'
-def sourceRoot = rootProject.file('java/org.apache.derby.tools')
+def sourceRoot = rootProject.file('delosdb-tools/src/main/java')
 def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
@@ -34,8 +34,8 @@ tasks.register('generateIjParsers') {
         it.dir('org/apache/derby/impl/tools/ij')
     }
     inputs.files(
-            rootProject.file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij/ij.jj'),
-            rootProject.file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij/mtGrammar.jj')
+            rootProject.file('delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/ij.jj'),
+            rootProject.file('delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/mtGrammar.jj')
     )
     outputs.dir(outputDir)
     doLast {
@@ -44,13 +44,13 @@ tasks.register('generateIjParsers') {
         execSupport.execOperations.javaexec {
             classpath = javaccClasspath
             mainClass = 'javacc'
-            workingDir = rootProject.file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij')
+            workingDir = rootProject.file('delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij')
             args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'ij.jj'
         }
         execSupport.execOperations.javaexec {
             classpath = javaccClasspath
             mainClass = 'javacc'
-            workingDir = rootProject.file('java/org.apache.derby.tools/org/apache/derby/impl/tools/ij')
+            workingDir = rootProject.file('delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij')
             args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'mtGrammar.jj'
         }
         delete new File(outputDir.get().asFile, 'ParseException.java')

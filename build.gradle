@@ -232,7 +232,7 @@ tasks.register('processDerbyResources') {
                 (moduleNames.commons)      : 'delosdb-commons/src/main/java',
                 (moduleNames.engine)       : 'java/org.apache.derby.engine',
                 (moduleNames.client)       : 'delosdb-client/src/main/java',
-                (moduleNames.tools)        : 'java/org.apache.derby.tools',
+                (moduleNames.tools)        : 'delosdb-tools/src/main/java',
                 (moduleNames.server)       : 'delosdb-server/src/main/java',
                 (moduleNames.optionaltools): 'delosdb-optionaltools/src/main/java',
                 (moduleNames.runner)       : 'delosdb-runner/src/main/java'
@@ -250,7 +250,7 @@ tasks.register('processDerbyResources') {
         }
 
         copy {
-            from('java/org.apache.derby.tools/org/apache/derby/loc') {
+            from('delosdb-tools/src/main/java/org/apache/derby/loc') {
                 include 'sysinfoMessages.properties'
                 include 'toolsmessages.properties'
             }
@@ -400,7 +400,7 @@ def moduleSplitInventory = [
                 key              : 'tools',
                 gradleProject    : 'delosdb-tools',
                 jpmsModule       : moduleNames.tools,
-                currentSourceRoot: 'java/org.apache.derby.tools',
+                currentSourceRoot: 'delosdb-tools/src/main/java',
                 compileTask      : 'compileDerbyTools',
                 jarTask          : 'derbyToolsJar',
                 jarName          : 'derbytools.jar',
