@@ -1552,7 +1552,7 @@ tasks.register('verifyMovedTestsSourceLayout') {
 
 
 tasks.register('verifyMovedPackagePrivateTestsSourceLayout') {
-    dependsOn ':delosdb-pptesting:verifyDerbyPackagePrivateTestsSourceLayout', ':delosdb-pptesting:verifyDerbyPackagePrivateTestsAssets'
+    dependsOn ':delosdb-pptesting:verifyDerbyPackagePrivateTestsSourceLayout', ':delosdb-pptesting:verifyDerbyPackagePrivateTestsAssets', ':delosdb-pptesting:compileDerbyPackagePrivateTests'
     group = 'verification'
     description = 'Verifies that inherited Derby package-private tests have moved into the delosdb-pptesting Gradle module.'
     inputs.file('settings.gradle')
@@ -1572,6 +1572,9 @@ tasks.register('verifyMovedPackagePrivateTestsSourceLayout') {
         }
         if (ppProject.tasks.findByName('verifyDerbyPackagePrivateTestsAssets') == null) {
             throw new GradleException('Missing :delosdb-pptesting:verifyDerbyPackagePrivateTestsAssets')
+        }
+        if (ppProject.tasks.findByName('compileDerbyPackagePrivateTests') == null) {
+            throw new GradleException('Missing :delosdb-pptesting:compileDerbyPackagePrivateTests')
         }
         def suite = file('delosdb-pptesting/src/test/java/org/apache/derby/PackagePrivateTestSuite.java')
         if (!suite.isFile()) {

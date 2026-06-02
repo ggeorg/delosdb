@@ -2,6 +2,8 @@ plugins {
     id 'base'
 }
 
+import org.gradle.api.tasks.compile.JavaCompile
+
 version = rootProject.version
 group = rootProject.group
 
@@ -101,6 +103,66 @@ tasks.register('verifyDerbyTestsAssets') {
     }
 }
 
+
+
+
+// Compile only the shared Derby JUnit test-support classes needed by small
+// activated test modules. The full inherited Derby harness remains inventory-only.
+def testSupportClassDir = layout.buildDirectory.dir('classes/test-support')
+def junitClasspath = rootProject.files('tools/java/junit.jar')
+def externalTestClasspath = rootProject.files(
+        'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
+        'tools/java/json_simple-1.1.jar',
+        'tools/java/lucene-analyzers-common.jar',
+        'tools/java/lucene-core.jar',
+        'tools/java/lucene-queryparser.jar'
+)
+def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
+def clientModuleClassDir = rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client')
+def serverModuleClassDir = rootProject.project(':delosdb-server').layout.buildDirectory.dir('classes/modules/org.apache.derby.server')
+def toolsModuleClassDir = rootProject.project(':delosdb-tools').layout.buildDirectory.dir('classes/modules/org.apache.derby.tools')
+def optionalToolsModuleClassDir = rootProject.project(':delosdb-optionaltools').layout.buildDirectory.dir('classes/modules/org.apache.derby.optionaltools')
+def runnerModuleClassDir = rootProject.project(':delosdb-runner').layout.buildDirectory.dir('classes/modules/org.apache.derby.runner')
+
+tasks.register('compileDerbyTestSupport', JavaCompile) {
+    dependsOn 'verifyDerbyTestsAssets',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            fileTree(new File(testSourceRoot, 'org/apache/derbyTesting/junit')) { include '**/*.java' },
+            fileTree(new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/streams')) { include '**/*.java' },
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/harness/JavaVersionHolder.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/PrivilegedFileOpsForTests.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/SQLStateConstants.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/TestNullOutputStream.java')
+    )
+    destinationDirectory = testSupportClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
 
 tasks.named('check') {
     dependsOn 'verifyDerbyTestsSourceLayout', 'verifyDerbyTestsAssets'
