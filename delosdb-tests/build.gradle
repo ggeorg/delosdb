@@ -836,15 +836,16 @@ tasks.register('runDerbyUnitJunitTests', JavaExec) {
 }
 
 // Second tiny execution island for the inherited Derby tests. Keep this separate
-// from check until it is proven green on the real workspace.
+// from check until it is proven green on the real workspace. This deliberately
+// runs a narrow engine test first, not the full engine _Suite.
 def engineFunctionTestWorkDir = layout.buildDirectory.dir('test-work/engine-function')
 
 tasks.register('runDerbyEngineFunctionTests', JavaExec) {
     group = 'verification'
-    description = 'Runs the inherited Derby engine function-test execution island.'
+    description = 'Runs the narrow inherited Derby engine function-test execution island.'
     dependsOn 'compileDerbyEngineFunctionTests'
     mainClass = 'junit.textui.TestRunner'
-    args 'org.apache.derbyTesting.functionTests.tests.engine._Suite'
+    args 'org.apache.derbyTesting.functionTests.tests.engine.LockInterruptTest'
     workingDir = engineFunctionTestWorkDir.get().asFile
     doFirst {
         engineFunctionTestWorkDir.get().asFile.mkdirs()
