@@ -621,6 +621,127 @@ tasks.register('compileDerbyCompatibilityFunctionTests', JavaCompile) {
     )
 }
 
+
+// Compile a reviewed JDBC API smoke subset before attempting the full inherited
+// jdbcapi package. This keeps JDBC activation broad enough to be useful but avoids
+// pulling the entire legacy harness in one step.
+def jdbcApiSmokeFunctionTestClassDir = layout.buildDirectory.dir('classes/jdbcapi-smoke-function-tests')
+
+tasks.register('compileDerbyJdbcApiSmokeFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/AIjdbcTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/AssertEventCatcher.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/AuthenticationTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/AutoGenJDBC30Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/BatchUpdateTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/BlobClob4BlobTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/BlobSetBytesBoundaryTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/BlobStoredProcedureTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/BlobUpdatableStreamTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/CacheSessionDataTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/CallableTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/CharacterStreamsTest.java')
+    )
+    destinationDirectory = jdbcApiSmokeFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+// Compile a JDBC4 smoke subset after the JDBC API smoke island. Avoid the known
+// cross-package-heavy JDBC4 tail until those dependencies are activated deliberately.
+def jdbc4SmokeFunctionTestClassDir = layout.buildDirectory.dir('classes/jdbc4-smoke-function-tests')
+
+tasks.register('compileDerbyJdbc4SmokeFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            'compileDerbyJdbcApiSmokeFunctionTests',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/AbortTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/BlobClobTestSetup.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/BlobSetMethodsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/BlobTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/CallableStatementTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/CallableStatementTestSetup.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/ClobTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/ConnectionMethodsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/ConnectionTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Derby3650Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Driver40Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Driver40UnbootedTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/JDBC4FromJDBC3DataSourceTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/LobSortTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/LobStreamTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/LoginTimeoutTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/ParameterMetaDataWrapperTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/PreparedStatementTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/ResultSetMetaDataTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/ResultSetTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/RowIdNotImplementedTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/SetObjectUnsupportedTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/StatementEventsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/StatementTestSetup.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/StreamTruncationTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/TestDbMetaData.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/TestJDBC40Exception.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Wrapper41.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Wrapper41Conn.java')
+    )
+    destinationDirectory = jdbc4SmokeFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            jdbcApiSmokeFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 tasks.register('classes') {
     dependsOn 'compileDerbyUnitJunitTests',
             'compileDerbyEngineFunctionTests',
@@ -633,7 +754,9 @@ tasks.register('classes') {
             'compileDerbyManagementFunctionTests',
             'compileDerbyLargeDataFunctionTests',
             'compileDerbyI18nFunctionTests',
-            'compileDerbyCompatibilityFunctionTests'
+            'compileDerbyCompatibilityFunctionTests',
+            'compileDerbyJdbcApiSmokeFunctionTests',
+            'compileDerbyJdbc4SmokeFunctionTests'
 }
 
 tasks.named('assemble') {
@@ -654,5 +777,7 @@ tasks.named('check') {
             'compileDerbyManagementFunctionTests',
             'compileDerbyLargeDataFunctionTests',
             'compileDerbyI18nFunctionTests',
-            'compileDerbyCompatibilityFunctionTests'
+            'compileDerbyCompatibilityFunctionTests',
+            'compileDerbyJdbcApiSmokeFunctionTests',
+            'compileDerbyJdbc4SmokeFunctionTests'
 }
