@@ -80,10 +80,12 @@ import org.apache.derby.iapi.util.InterruptStatus;
 import org.apache.derby.iapi.services.io.FileUtil;
 import org.apache.derby.iapi.services.property.PropertyUtil;
 
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.Properties;
-import java.util.Hashtable;
-import java.util.Enumeration;
 
 import java.io.File;
 import java.io.IOException;
@@ -194,9 +196,9 @@ public class BaseDataFileFactory
 
 
 	//hash table to keep track of information about dropped containers stubs
-	private Hashtable<LogInstant,Object[]> droppedTableStubInfo;
+	private Map<LogInstant,Object[]> droppedTableStubInfo;
 
-	private Hashtable<String,StorageFile> postRecoveryRemovedFiles;
+	private Map<String,StorageFile> postRecoveryRemovedFiles;
 
     // actions
     private int actionCode;
@@ -460,7 +462,7 @@ public class BaseDataFileFactory
                 (noLog != null && Boolean.valueOf(noLog).booleanValue());
         }
 
-        droppedTableStubInfo = new Hashtable<LogInstant,Object[]>();
+        droppedTableStubInfo = Collections.synchronizedMap(new HashMap<LogInstant,Object[]>());
 
         // If derby.system.durability=test then set flags to disable sync of
         // data pages at allocation when file is grown, disable sync of data
@@ -1713,10 +1715,10 @@ public class BaseDataFileFactory
         {
             synchronized(droppedTableStubInfo)
             {
-                for (Enumeration<LogInstant> e = droppedTableStubInfo.keys(); 
-                     e.hasMoreElements(); ) 
+                for (Iterator<LogInstant> e = droppedTableStubInfo.keySet().iterator();
+                     e.hasNext(); ) 
                 {
-                    LogInstant logInstant  = e.nextElement();
+                    LogInstant logInstant  = e.next();
                     if(logInstant.lessThan(redoLWM))
                     {
 						
@@ -1739,7 +1741,7 @@ public class BaseDataFileFactory
                                 {
                                     //if we successfuly delete the file remove 
                                     //it from the hash table.
-                                    droppedTableStubInfo.remove(logInstant);
+                                    e.remove();
                                 }
                             }
                             catch (Exception pae)
@@ -2300,7 +2302,7 @@ public class BaseDataFileFactory
     void fileToRemove( StorageFile file, boolean remove) 
     {
         if (postRecoveryRemovedFiles == null)
-        { postRecoveryRemovedFiles = new Hashtable<String,StorageFile>(); }
+        { postRecoveryRemovedFiles = Collections.synchronizedMap(new HashMap<String,StorageFile>()); }
         String path = null;
         synchronized( this)
         {
@@ -2872,27 +2874,28 @@ public class BaseDataFileFactory
 
         case POST_RECOVERY_REMOVE_ACTION:
         {
-			for (Enumeration<StorageFile> e = postRecoveryRemovedFiles.elements(); 
-                    e.hasMoreElements(); )
+            synchronized (postRecoveryRemovedFiles)
             {
-				StorageFile f = e.nextElement();
-				if (f.exists())
+                for (StorageFile f : postRecoveryRemovedFiles.values())
                 {
-					boolean delete_status = f.delete();
-
-                    if (SanityManager.DEBUG)
+                    if (f.exists())
                     {
-                        // delete should always work, code which
-                        // created the StorageFactory already 
-                        // checked for existence.
-                        if (!delete_status)
+                        boolean delete_status = f.delete();
+
+                        if (SanityManager.DEBUG)
                         {
-                            SanityManager.THROWASSERT(
-                                "delete of stub (" + stub + ") failed.");
+                            // delete should always work, code which
+                            // created the StorageFactory already
+                            // checked for existence.
+                            if (!delete_status)
+                            {
+                                SanityManager.THROWASSERT(
+                                    "delete of stub (" + stub + ") failed.");
+                            }
                         }
                     }
                 }
-			}
+            }
             return null;
         }
 
