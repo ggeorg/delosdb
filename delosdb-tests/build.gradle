@@ -1,0 +1,39 @@
+plugins {
+    id 'base'
+}
+
+version = rootProject.version
+group = rootProject.group
+
+// The inherited Derby test harness is intentionally moved into this Gradle
+// module as source layout first. Compilation/execution will be enabled in a
+// later reviewed island because the legacy harness has path-sensitive fixtures
+// and optional dependencies.
+def testSourceRoot = file('src/test/java')
+
+tasks.register('verifyDerbyTestsSourceLayout') {
+    group = 'verification'
+    description = 'Verifies that the inherited Derby test harness source tree is owned by delosdb-tests.'
+    inputs.dir(testSourceRoot)
+    doLast {
+        if (!testSourceRoot.isDirectory()) {
+            throw new GradleException("Missing inherited Derby test source root: ${testSourceRoot}")
+        }
+        def moduleInfo = new File(testSourceRoot, 'module-info.java')
+        if (!moduleInfo.isFile()) {
+            throw new GradleException("Missing Derby tests module descriptor: ${moduleInfo}")
+        }
+        def baseTestCase = new File(testSourceRoot, 'org/apache/derbyTesting/junit/BaseTestCase.java')
+        if (!baseTestCase.isFile()) {
+            throw new GradleException("Missing Derby JUnit harness source: ${baseTestCase}")
+        }
+        def functionTests = new File(testSourceRoot, 'org/apache/derbyTesting/functionTests')
+        if (!functionTests.isDirectory()) {
+            throw new GradleException("Missing Derby function test tree: ${functionTests}")
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'verifyDerbyTestsSourceLayout'
+}

@@ -23,6 +23,11 @@ PRODUCTION_ROOTS=(
   "$ROOT_DIR/delosdb-tools/src/main/java"
 )
 
+ALL_TREE_ROOTS=(
+  "$ROOT_DIR/java"
+  "$ROOT_DIR/delosdb-tests/src/test/java"
+)
+
 count_matches() {
   local pattern="$1"
   {
@@ -80,7 +85,7 @@ write_filtered_matches() {
 count_all_matches() {
   local pattern="$1"
   {
-    grep -R --include='*.java' -E "$pattern" "$ROOT_DIR/java" 2>/dev/null \
+    grep -R --include='*.java' -E "$pattern" "${ALL_TREE_ROOTS[@]}" 2>/dev/null \
       | grep -Ev '^[^:]+:[[:space:]]*(//|/\*|\*)|^[[:space:]]*(//|/\*|\*)' \
       || true
   } | wc -l | tr -d ' '

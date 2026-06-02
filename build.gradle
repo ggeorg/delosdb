@@ -1523,11 +1523,41 @@ tasks.register('verifyGradleOnlyPublicSurface') {
     }
 }
 
+
+tasks.register('verifyMovedTestsSourceLayout') {
+    dependsOn ':delosdb-tests:verifyDerbyTestsSourceLayout'
+    group = 'verification'
+    description = 'Verifies that the inherited Derby test harness has moved into the delosdb-tests Gradle module.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-tests/build.gradle')
+    inputs.dir('delosdb-tests/src/test/java')
+    doLast {
+        def testsProject = findProject(':delosdb-tests')
+        if (testsProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-tests')
+        }
+        if (file('java/org.apache.derby.tests').exists()) {
+            throw new GradleException('Legacy Derby tests bridge source root still exists: java/org.apache.derby.tests')
+        }
+        if (testsProject.tasks.findByName('verifyDerbyTestsSourceLayout') == null) {
+            throw new GradleException('Missing :delosdb-tests:verifyDerbyTestsSourceLayout')
+        }
+        def moduleInfo = file('delosdb-tests/src/test/java/module-info.java')
+        if (!moduleInfo.isFile()) {
+            throw new GradleException("Missing moved Derby tests module descriptor: ${moduleInfo}")
+        }
+        def junitHarness = file('delosdb-tests/src/test/java/org/apache/derbyTesting/junit/BaseTestCase.java')
+        if (!junitHarness.isFile()) {
+            throw new GradleException("Missing moved Derby JUnit harness source: ${junitHarness}")
+        }
+    }
+}
+
 tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'verifyGradleOnlyPublicSurface',
             'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
-            'verifyExtractedServerProject', 'verifyExtractedEngineProject'
+            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout'
 }
 
 tasks.register('fullVerification') {
