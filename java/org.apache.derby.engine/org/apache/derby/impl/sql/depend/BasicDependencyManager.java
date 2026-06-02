@@ -22,7 +22,6 @@
 package org.apache.derby.impl.sql.depend;
 
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -598,42 +597,21 @@ public class BasicDependencyManager implements DependencyManager {
 	public ProviderInfo[] getPersistentProviderInfos(ProviderList pl)
 							throws StandardException
 	{
-		Enumeration e = pl.elements();
-		int			numProviders = 0;
-		ProviderInfo[]	retval;
+		List<ProviderInfo> providerInfos = new ArrayList<ProviderInfo>();
 
-		/*
-		** We make 2 passes - the first to count the number of persistent
- 		** providers and the second to populate the array of ProviderInfos.
-		*/
-		while (e != null && e.hasMoreElements())
+		for (Provider prov : pl.values())
 		{
-			Provider prov = (Provider) e.nextElement();
-
 			if (prov.isPersistent())
 			{
-				numProviders++;
-			}
-		}
-
-		e = pl.elements();
-		retval = new ProviderInfo[numProviders];
-		int piCtr = 0;
-		while (e != null && e.hasMoreElements())
-		{
-			Provider prov = (Provider) e.nextElement();
-
-			if (prov.isPersistent())
-			{
-				retval[piCtr++] = new BasicProviderInfo(
+				providerInfos.add(new BasicProviderInfo(
 									prov.getObjectID(),
 									prov.getDependableFinder(),
 									prov.getObjectName()
-									);
+									));
 			}
 		}
 
-		return retval;
+		return providerInfos.toArray(EMPTY_PROVIDER_INFO);
 	}
 
 	/**
@@ -646,10 +624,8 @@ public class BasicDependencyManager implements DependencyManager {
 	public void clearColumnInfoInProviders(ProviderList pl)
 					throws StandardException
 	{
-		Enumeration e = pl.elements();
-		while (e.hasMoreElements())
+		for (Provider pro : pl.values())
 		{
-			Provider pro = (Provider) e.nextElement();
 			if (pro instanceof TableDescriptor)
 				((TableDescriptor) pro).setReferencedColumnMap(null);
 		}

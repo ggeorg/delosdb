@@ -21,7 +21,7 @@
 
 package org.apache.derby.iapi.sql.depend;
 
-import java.util.Hashtable;
+import java.util.HashMap;
 
 import org.apache.derby.catalog.UUID;
 
@@ -30,7 +30,7 @@ import org.apache.derby.catalog.UUID;
  * tracked for some object other than the current dependent.
  */
 
-public class ProviderList extends Hashtable<UUID,Provider>
+public class ProviderList extends HashMap<UUID,Provider>
 {
 	/**
 	 * Add a Provider to the list.
