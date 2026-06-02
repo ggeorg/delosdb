@@ -202,8 +202,46 @@ tasks.register('compileDerbyUnitJunitTests', JavaCompile) {
     )
 }
 
+
+// Compile the next small real inherited Derby function-test island. This stays
+// limited to tests/engine so harness activation remains reviewed and incremental.
+def engineFunctionTestClassDir = layout.buildDirectory.dir('classes/engine-function-tests')
+
+tasks.register('compileDerbyEngineFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = fileTree(new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/engine')) { include '**/*.java' }
+    destinationDirectory = engineFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 tasks.register('classes') {
-    dependsOn 'compileDerbyUnitJunitTests'
+    dependsOn 'compileDerbyUnitJunitTests', 'compileDerbyEngineFunctionTests'
 }
 
 tasks.named('assemble') {
@@ -211,5 +249,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyDerbyTestsSourceLayout', 'verifyDerbyTestsAssets', 'compileDerbyUnitJunitTests'
+    dependsOn 'verifyDerbyTestsSourceLayout', 'verifyDerbyTestsAssets', 'compileDerbyUnitJunitTests', 'compileDerbyEngineFunctionTests'
 }
