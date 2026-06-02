@@ -198,6 +198,11 @@ if [[ "$VERIFY" == true ]]; then
     failed=true
   fi
 
+  if [[ "$production_access_controller" != "0" ]]; then
+    echo "Modernization audit failed: production AccessController references remain." >&2
+    failed=true
+  fi
+
   if [[ "$production_vector_usage" != "0" ]]; then
     echo "Modernization audit failed: production Vector usages remain." >&2
     failed=true
