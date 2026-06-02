@@ -18,7 +18,7 @@ PRODUCTION_ROOTS=(
   "$ROOT_DIR/java/org.apache.derby.engine"
   "$ROOT_DIR/java/org.apache.derby.optionaltools"
   "$ROOT_DIR/delosdb-runner/src/main/java"
-  "$ROOT_DIR/java/org.apache.derby.server"
+  "$ROOT_DIR/delosdb-server/src/main/java"
   "$ROOT_DIR/java/org.apache.derby.shared"
   "$ROOT_DIR/java/org.apache.derby.tools"
 )
