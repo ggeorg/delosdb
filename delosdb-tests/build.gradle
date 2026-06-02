@@ -924,6 +924,37 @@ tasks.register('runDerbyMemoryFunctionTests', JavaExec) {
     )
 }
 
+
+// Fifth tiny execution island for the inherited Derby tests. Storetests is a
+// small already-compiled package-level suite, so activate it separately from the
+// old Derby harness and keep it out of check until proven green.
+def storeTestsFunctionTestWorkDir = layout.buildDirectory.dir('test-work/storetests-function')
+
+tasks.register('runDerbyStoreTestsFunctionTests', JavaExec) {
+    group = 'verification'
+    description = 'Runs the inherited Derby storetests function-test execution island.'
+    dependsOn 'compileDerbyStoreTestsFunctionTests'
+    mainClass = 'junit.textui.TestRunner'
+    args 'org.apache.derbyTesting.functionTests.tests.storetests._Suite'
+    workingDir = storeTestsFunctionTestWorkDir.get().asFile
+    doFirst {
+        storeTestsFunctionTestWorkDir.get().asFile.mkdirs()
+    }
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            storeTestsFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 // Execution alias for only the inherited Derby execution islands that have been
 // explicitly activated. This remains separate from check and does not run derbyall.
 tasks.register('runActivatedDerbyExecutionIslands') {
@@ -932,5 +963,6 @@ tasks.register('runActivatedDerbyExecutionIslands') {
     dependsOn 'runDerbyUnitJunitTests',
             'runDerbyEngineFunctionTests',
             'runDerbyMemoryDbFunctionTests',
-            'runDerbyMemoryFunctionTests'
+            'runDerbyMemoryFunctionTests',
+            'runDerbyStoreTestsFunctionTests'
 }
