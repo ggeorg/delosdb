@@ -8,7 +8,7 @@ version = rootProject.version
 group = rootProject.group
 
 def moduleName = 'org.apache.derby.optionaltools'
-def sourceRoot = rootProject.file('java/org.apache.derby.optionaltools')
+def sourceRoot = project.file('src/main/java')
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
