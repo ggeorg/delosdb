@@ -164,6 +164,52 @@ tasks.register('compileDerbyTestSupport', JavaCompile) {
     )
 }
 
+// Compile the first small real inherited Derby test island. Keep this limited to
+// unitTests/junit so test activation grows by reviewed groups, not by the full
+// historical harness.
+def unitJunitTestClassDir = layout.buildDirectory.dir('classes/unit-junit-tests')
+
+tasks.register('compileDerbyUnitJunitTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = fileTree(new File(testSourceRoot, 'org/apache/derbyTesting/unitTests/junit')) { include '**/*.java' }
+    destinationDirectory = unitJunitTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+tasks.register('classes') {
+    dependsOn 'compileDerbyUnitJunitTests'
+}
+
+tasks.named('assemble') {
+    dependsOn 'classes'
+}
+
 tasks.named('check') {
-    dependsOn 'verifyDerbyTestsSourceLayout', 'verifyDerbyTestsAssets'
+    dependsOn 'verifyDerbyTestsSourceLayout', 'verifyDerbyTestsAssets', 'compileDerbyUnitJunitTests'
 }
