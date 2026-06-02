@@ -229,7 +229,7 @@ tasks.register('processDerbyResources') {
             ':delosdb-runner:compileDerbyRunner'
     doLast {
         [
-                (moduleNames.commons)      : 'java/org.apache.derby.commons',
+                (moduleNames.commons)      : 'delosdb-commons/src/main/java',
                 (moduleNames.engine)       : 'java/org.apache.derby.engine',
                 (moduleNames.client)       : 'java/org.apache.derby.client',
                 (moduleNames.tools)        : 'java/org.apache.derby.tools',
@@ -372,7 +372,7 @@ def moduleSplitInventory = [
                 key              : 'commons',
                 gradleProject    : 'delosdb-commons',
                 jpmsModule       : moduleNames.commons,
-                currentSourceRoot: 'java/org.apache.derby.commons',
+                currentSourceRoot: 'delosdb-commons/src/main/java',
                 compileTask      : 'compileDerbyCommons',
                 jarTask          : 'derbySharedJar',
                 jarName          : 'derbyshared.jar',
