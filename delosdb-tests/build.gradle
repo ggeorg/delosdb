@@ -240,8 +240,120 @@ tasks.register('compileDerbyEngineFunctionTests', JavaCompile) {
     )
 }
 
+
+// Compile a small batch of low-risk inherited Derby function-test islands. These
+// are compile-only islands with no full harness or derbyall activation.
+def multiFunctionTestClassDir = layout.buildDirectory.dir('classes/multi-function-tests')
+
+tasks.register('compileDerbyMultiFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = fileTree(new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/multi')) { include '**/*.java' }
+    destinationDirectory = multiFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+def memoryDbFunctionTestClassDir = layout.buildDirectory.dir('classes/memorydb-function-tests')
+
+tasks.register('compileDerbyMemoryDbFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = fileTree(new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/memorydb')) { include '**/*.java' }
+    destinationDirectory = memoryDbFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+def memoryFunctionTestClassDir = layout.buildDirectory.dir('classes/memory-function-tests')
+
+tasks.register('compileDerbyMemoryFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = fileTree(new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/memory')) { include '**/*.java' }
+    destinationDirectory = memoryFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 tasks.register('classes') {
-    dependsOn 'compileDerbyUnitJunitTests', 'compileDerbyEngineFunctionTests'
+    dependsOn 'compileDerbyUnitJunitTests',
+            'compileDerbyEngineFunctionTests',
+            'compileDerbyMultiFunctionTests',
+            'compileDerbyMemoryDbFunctionTests',
+            'compileDerbyMemoryFunctionTests'
 }
 
 tasks.named('assemble') {
@@ -249,5 +361,11 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyDerbyTestsSourceLayout', 'verifyDerbyTestsAssets', 'compileDerbyUnitJunitTests', 'compileDerbyEngineFunctionTests'
+    dependsOn 'verifyDerbyTestsSourceLayout',
+            'verifyDerbyTestsAssets',
+            'compileDerbyUnitJunitTests',
+            'compileDerbyEngineFunctionTests',
+            'compileDerbyMultiFunctionTests',
+            'compileDerbyMemoryDbFunctionTests',
+            'compileDerbyMemoryFunctionTests'
 }
