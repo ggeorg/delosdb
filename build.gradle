@@ -1554,6 +1554,37 @@ tasks.register('verifyMovedTestsSourceLayout') {
 }
 
 
+tasks.register('verifyMovedPackagePrivateTestsSourceLayout') {
+    dependsOn ':delosdb-pptesting:verifyDerbyPackagePrivateTestsSourceLayout'
+    group = 'verification'
+    description = 'Verifies that inherited Derby package-private tests have moved into the delosdb-pptesting Gradle module.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-pptesting/build.gradle')
+    inputs.dir('delosdb-pptesting/src/test/java')
+    inputs.file('delosdb-pptesting/src/test/legacy/build.xml')
+    doLast {
+        def ppProject = findProject(':delosdb-pptesting')
+        if (ppProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-pptesting')
+        }
+        if (file('java/pptesting').exists()) {
+            throw new GradleException('Legacy Derby package-private test source root still exists: java/pptesting')
+        }
+        if (ppProject.tasks.findByName('verifyDerbyPackagePrivateTestsSourceLayout') == null) {
+            throw new GradleException('Missing :delosdb-pptesting:verifyDerbyPackagePrivateTestsSourceLayout')
+        }
+        def suite = file('delosdb-pptesting/src/test/java/org/apache/derby/PackagePrivateTestSuite.java')
+        if (!suite.isFile()) {
+            throw new GradleException("Missing moved package-private test suite: ${suite}")
+        }
+        def legacyBuild = file('delosdb-pptesting/src/test/legacy/build.xml')
+        if (!legacyBuild.isFile()) {
+            throw new GradleException("Missing moved package-private legacy build file: ${legacyBuild}")
+        }
+    }
+}
+
+
 tasks.register('verifyMovedDemosSourceLayout') {
     dependsOn ':delosdb-demos:verifyDerbyDemosSourceLayout'
     group = 'verification'
@@ -1623,7 +1654,7 @@ tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'verifyGradleOnlyPublicSurface',
             'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
-            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedDemosSourceLayout', 'verifyMovedLocalesSourceLayout'
+            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedPackagePrivateTestsSourceLayout', 'verifyMovedDemosSourceLayout', 'verifyMovedLocalesSourceLayout'
 }
 
 tasks.register('fullVerification') {

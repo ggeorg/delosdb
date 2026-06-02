@@ -1,0 +1,44 @@
+plugins {
+    id 'base'
+}
+
+version = rootProject.version
+group = rootProject.group
+
+// The inherited Derby package-private tests are intentionally moved into this
+// Gradle module as source layout first. Compilation/execution is deferred
+// because these tests are tied to legacy harness wiring and package-private
+// access assumptions.
+def packagePrivateTestSourceRoot = file('src/test/java')
+def legacyBuildFile = file('src/test/legacy/build.xml')
+
+tasks.register('verifyDerbyPackagePrivateTestsSourceLayout') {
+    group = 'verification'
+    description = 'Verifies that the inherited Derby package-private test tree is owned by delosdb-pptesting.'
+    inputs.dir(packagePrivateTestSourceRoot)
+    inputs.file(legacyBuildFile)
+    doLast {
+        if (!packagePrivateTestSourceRoot.isDirectory()) {
+            throw new GradleException("Missing Derby package-private test source root: ${packagePrivateTestSourceRoot}")
+        }
+        if (!legacyBuildFile.isFile()) {
+            throw new GradleException("Missing moved package-private legacy build file: ${legacyBuildFile}")
+        }
+        def suite = new File(packagePrivateTestSourceRoot, 'org/apache/derby/PackagePrivateTestSuite.java')
+        if (!suite.isFile()) {
+            throw new GradleException("Missing package-private test suite: ${suite}")
+        }
+        def clientSuite = new File(packagePrivateTestSourceRoot, 'org/apache/derby/client/am/_Suite.java')
+        if (!clientSuite.isFile()) {
+            throw new GradleException("Missing package-private client test suite: ${clientSuite}")
+        }
+        def clobTest = new File(packagePrivateTestSourceRoot, 'org/apache/derby/impl/jdbc/InternalClobTest.java')
+        if (!clobTest.isFile()) {
+            throw new GradleException("Missing package-private JDBC CLOB test: ${clobTest}")
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'verifyDerbyPackagePrivateTestsSourceLayout'
+}
