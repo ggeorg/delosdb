@@ -86,6 +86,37 @@ count_all_matches() {
   } | wc -l | tr -d ' '
 }
 
+
+count_filtered_matches() {
+  local pattern="$1"
+  local path_filter="$2"
+  local filter_mode="$3"
+  local matches
+  local filtered
+
+  matches=$(grep -R --include='*.java' -n -E "$pattern" "${PRODUCTION_ROOTS[@]}" 2>/dev/null     | sed "s#${ROOT_DIR}/##"     | grep -Ev '^[^:]+:[0-9]+:[[:space:]]*(//|/\*|\*)'     || true)
+
+  if [[ -z "$matches" ]]; then
+    echo 0
+    return
+  fi
+
+  if [[ "$filter_mode" == "include" ]]; then
+    filtered=$(printf '%s
+' "$matches" | grep -E "$path_filter" || true)
+  else
+    filtered=$(printf '%s
+' "$matches" | grep -Ev "$path_filter" || true)
+  fi
+
+  if [[ -z "$filtered" ]]; then
+    echo 0
+  else
+    printf '%s
+' "$filtered" | wc -l | tr -d ' '
+  fi
+}
+
 production_finalizers="$(count_matches 'protected[[:space:]]+void[[:space:]]+finalize[[:space:]]*\(')"
 production_get_security_manager="$(count_matches 'System\.getSecurityManager[[:space:]]*\(')"
 production_do_privileged="$(count_matches 'AccessController\.doPrivileged|doPrivileged[[:space:]]*\(')"
@@ -96,13 +127,18 @@ production_access_controller="$(count_matches 'java\.security\.AccessController|
 VECTOR_USAGE_PATTERN='new[[:space:]]+(java\.util\.)?Vector[[:space:]]*(<|\()|(^|[^[:alnum:]_])Vector[[:space:]]*<'
 HASHTABLE_USAGE_PATTERN='new[[:space:]]+(java\.util\.)?Hashtable[[:space:]]*(<|\()|(^|[^[:alnum:]_])Hashtable[[:space:]]*<'
 
-# Remaining legacy collection usages are no longer equally actionable. Many
-# surviving matches are intentionally deferred because they sit on public
-# contracts, serialization-sensitive classes, lock/store/recovery paths, or
-# concurrency-sensitive runtime queues. Keep these visible, but separate them
-# from the remaining candidate list so modernization work does not chase risky
-# tail items blindly.
-DEFERRED_COLLECTION_PATH_PATTERN='impl/services/monitor|impl/services/daemon|impl/store/access/sort|impl/sql/GenericActivationHolder|impl/sql/execute/BaseActivation|impl/sql/execute/DeleteCascadeResultSet|impl/sql/execute/DependentResultSet|iapi/sql/Activation|impl/drda/NetworkServerControlImpl|impl/services/locks|iapi/services/locks|impl/store/access/PropertyConglomerate|impl/store/access/RAMAccessManager|impl/store/raw|impl/sql/catalog/DataDictionaryImpl|iapi/sql/dictionary/DataDictionary|iapi/services/cache/ClassSizeCatalog|iapi/services/io/FormatableHashtable|iapi/store/raw/ContainerKey|iapi/sql/depend/ProviderList|diag/LockTable|org/apache/derby/jdbc/EmbeddedDataSource|org/apache/derby/jdbc/ReferenceableDataSource'
+# The legacy collection modernization pass has eliminated all production
+# Vector usages and all modernizable production Hashtable usages. The only
+# remaining Hashtable matches are intentionally retained for stored-format and
+# JNDI ObjectFactory contracts. Treat every other production Hashtable match as
+# a regression.
+ALLOWED_HASHTABLE_PATH_PATTERN='iapi/services/io/FormatableHashtable|org/apache/derby/jdbc/EmbeddedDataSource|org/apache/derby/jdbc/ReferenceableDataSource'
+
+production_vector_usage="$(count_matches "$VECTOR_USAGE_PATTERN")"
+production_hashtable_usage="$(count_matches "$HASHTABLE_USAGE_PATTERN")"
+allowed_hashtable_usage="$(count_filtered_matches "$HASHTABLE_USAGE_PATTERN" "$ALLOWED_HASHTABLE_PATH_PATTERN" include)"
+unexpected_hashtable_usage="$(count_filtered_matches "$HASHTABLE_USAGE_PATTERN" "$ALLOWED_HASHTABLE_PATH_PATTERN" exclude)"
+
 
 
 cat > "$REPORT_FILE" <<EOF_REPORT
@@ -118,8 +154,10 @@ This report focuses on production modules. Historical demo material and the inhe
 | System.getSecurityManager calls | ${production_get_security_manager} |
 | AccessController references | ${production_access_controller} |
 | doPrivileged calls | ${production_do_privileged} |
-| Vector usage | $(count_matches "$VECTOR_USAGE_PATTERN") |
-| Hashtable usage | $(count_matches "$HASHTABLE_USAGE_PATTERN") |
+| Vector usage | ${production_vector_usage} |
+| Hashtable usage | ${production_hashtable_usage} |
+| Allowed contract/stored-format Hashtable usage | ${allowed_hashtable_usage} |
+| Unexpected Hashtable usage | ${unexpected_hashtable_usage} |
 
 Secondary all-tree counts, including inherited tests/demo/history:
 
@@ -136,12 +174,11 @@ write_matches "Production Object finalizer overrides" 'protected[[:space:]]+void
 write_matches "Production System.getSecurityManager calls" 'System\.getSecurityManager[[:space:]]*\('
 write_matches "Production AccessController references" 'java\.security\.AccessController|AccessController\.'
 write_matches "Production doPrivileged calls" 'AccessController\.doPrivileged|doPrivileged[[:space:]]*\('
-write_matches "Production Vector usage" "$VECTOR_USAGE_PATTERN" 
-write_matches "Production Hashtable usage" "$HASHTABLE_USAGE_PATTERN" 
-write_filtered_matches "Deferred/concurrency-sensitive Vector usage" "$VECTOR_USAGE_PATTERN" "$DEFERRED_COLLECTION_PATH_PATTERN" include
-write_filtered_matches "Deferred/contract-sensitive Hashtable usage" "$HASHTABLE_USAGE_PATTERN" "$DEFERRED_COLLECTION_PATH_PATTERN" include
-write_filtered_matches "Remaining candidate Vector usage" "$VECTOR_USAGE_PATTERN" "$DEFERRED_COLLECTION_PATH_PATTERN" exclude
-write_filtered_matches "Remaining candidate Hashtable usage" "$HASHTABLE_USAGE_PATTERN" "$DEFERRED_COLLECTION_PATH_PATTERN" exclude
+write_matches "Production Vector usage" "$VECTOR_USAGE_PATTERN"
+write_matches "Production Hashtable usage" "$HASHTABLE_USAGE_PATTERN"
+write_filtered_matches "Allowed contract/stored-format Hashtable usage" "$HASHTABLE_USAGE_PATTERN" "$ALLOWED_HASHTABLE_PATH_PATTERN" include
+write_filtered_matches "Remaining candidate Vector usage" "$VECTOR_USAGE_PATTERN" '^$' exclude
+write_filtered_matches "Remaining candidate Hashtable usage" "$HASHTABLE_USAGE_PATTERN" "$ALLOWED_HASHTABLE_PATH_PATTERN" exclude
 
 if [[ "$VERIFY" == true ]]; then
   failed=false
@@ -158,6 +195,16 @@ if [[ "$VERIFY" == true ]]; then
 
   if [[ "$production_do_privileged" != "0" ]]; then
     echo "Modernization audit failed: production doPrivileged calls remain." >&2
+    failed=true
+  fi
+
+  if [[ "$production_vector_usage" != "0" ]]; then
+    echo "Modernization audit failed: production Vector usages remain." >&2
+    failed=true
+  fi
+
+  if [[ "$unexpected_hashtable_usage" != "0" ]]; then
+    echo "Modernization audit failed: unexpected production Hashtable usages remain." >&2
     failed=true
   fi
 
