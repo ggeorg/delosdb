@@ -8,7 +8,7 @@ version = rootProject.version
 group = rootProject.group
 
 def moduleName = 'org.apache.derby.commons'
-def sourceRoot = rootProject.file('java/org.apache.derby.commons')
+def sourceRoot = file('src/main/java')
 def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 
