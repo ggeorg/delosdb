@@ -145,6 +145,7 @@ tasks.register('compileDerbyTestSupport', JavaCompile) {
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/TestNullOutputStream.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/Barrier.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/JarUtil.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/CanonTestCase.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/ScriptTestCase.java')
     )
     destinationDirectory = testSupportClassDir
