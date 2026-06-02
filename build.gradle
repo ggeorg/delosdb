@@ -68,6 +68,8 @@ def moduleClassDir = { String moduleName ->
     layout.buildDirectory.dir("classes/modules/${moduleName}")
 }
 
+def buildToolsClassDir = project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools')
+
 def generatedSourceDir = { String moduleName ->
     layout.buildDirectory.dir("generated/sources/${moduleName}")
 }
@@ -170,18 +172,10 @@ derby.product.file=${productFile}
 """
 }
 
-tasks.register('compileDerbyBuildTools', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
-    source = files(
-            'java/build/org/apache/derbyBuild/splitmessages.java',
-            'java/build/org/apache/derbyBuild/ClassSizeCrawler.java'
-    )
-    destinationDirectory = layout.buildDirectory.dir('classes/build-tools')
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    classpath = files(moduleClassDir(moduleNames.commons), moduleClassDir(moduleNames.engine))
+tasks.register('compileDerbyBuildTools') {
+    group = 'build'
+    description = 'Lifecycle alias for the delosdb-buildtools compile task.'
+    dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
 }
 
 tasks.register('generateClassSizeCatalog') {
@@ -199,7 +193,7 @@ tasks.register('generateClassSizeCatalog') {
         target.parentFile.mkdirs()
         execSupport.execOperations.javaexec {
             classpath = files(
-                    layout.buildDirectory.dir('classes/build-tools'),
+                    buildToolsClassDir,
                     moduleClassDir(moduleNames.commons),
                     moduleClassDir(moduleNames.engine)
             )
@@ -318,7 +312,7 @@ tasks.register('splitEngineMessages') {
 
         execSupport.execOperations.javaexec {
             classpath = files(
-                    layout.buildDirectory.dir('classes/build-tools'),
+                    buildToolsClassDir,
                     moduleClassDir(moduleNames.commons)
             )
             mainClass = 'org.apache.derbyBuild.splitmessages'
@@ -1696,11 +1690,44 @@ tasks.register('verifyMovedStorelessSourceLayout') {
     }
 }
 
+tasks.register('verifyMovedBuildToolsSourceLayout') {
+    dependsOn ':delosdb-buildtools:verifyDerbyBuildToolsSourceLayout', ':delosdb-buildtools:compileDerbyBuildTools'
+    group = 'verification'
+    description = 'Verifies that inherited Derby build helper sources have moved into the delosdb-buildtools Gradle module.'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-buildtools/build.gradle')
+    inputs.dir('delosdb-buildtools/src/main/java')
+    doLast {
+        def buildToolsProject = findProject(':delosdb-buildtools')
+        if (buildToolsProject == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-buildtools')
+        }
+        if (file('java/build').exists()) {
+            throw new GradleException('Legacy Derby build helper source root still exists: java/build')
+        }
+        if (buildToolsProject.tasks.findByName('verifyDerbyBuildToolsSourceLayout') == null) {
+            throw new GradleException('Missing :delosdb-buildtools:verifyDerbyBuildToolsSourceLayout')
+        }
+        if (buildToolsProject.tasks.findByName('compileDerbyBuildTools') == null) {
+            throw new GradleException('Missing :delosdb-buildtools:compileDerbyBuildTools')
+        }
+        def splitMessages = file('delosdb-buildtools/src/main/java/org/apache/derbyBuild/splitmessages.java')
+        if (!splitMessages.isFile()) {
+            throw new GradleException("Missing moved splitmessages build helper: ${splitMessages}")
+        }
+        def classSizeCrawler = file('delosdb-buildtools/src/main/java/org/apache/derbyBuild/ClassSizeCrawler.java')
+        if (!classSizeCrawler.isFile()) {
+            throw new GradleException("Missing moved ClassSizeCrawler build helper: ${classSizeCrawler}")
+        }
+    }
+}
+
+
 tasks.named('check') {
     dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'verifyGradleOnlyPublicSurface',
             'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
-            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedPackagePrivateTestsSourceLayout', 'verifyMovedDemosSourceLayout', 'verifyMovedLocalesSourceLayout', 'verifyMovedStorelessSourceLayout'
+            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedPackagePrivateTestsSourceLayout', 'verifyMovedDemosSourceLayout', 'verifyMovedLocalesSourceLayout', 'verifyMovedStorelessSourceLayout', 'verifyMovedBuildToolsSourceLayout'
 }
 
 tasks.register('fullVerification') {
