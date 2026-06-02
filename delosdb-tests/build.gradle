@@ -142,7 +142,10 @@ tasks.register('compileDerbyTestSupport', JavaCompile) {
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/harness/JavaVersionHolder.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/PrivilegedFileOpsForTests.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/SQLStateConstants.java'),
-            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/TestNullOutputStream.java')
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/TestNullOutputStream.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/Barrier.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/JarUtil.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/ScriptTestCase.java')
     )
     destinationDirectory = testSupportClassDir
     sourceCompatibility = rootProject.ext.javaRelease.toString()
@@ -348,12 +351,124 @@ tasks.register('compileDerbyMemoryFunctionTests', JavaCompile) {
     )
 }
 
+
+// Compile the next batch of small inherited Derby function-test islands. These
+// stay compile-only and add only the extra shared util classes required by the
+// selected groups.
+def nistFunctionTestClassDir = layout.buildDirectory.dir('classes/nist-function-tests')
+
+tasks.register('compileDerbyNistFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = fileTree(new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/nist')) { include '**/*.java' }
+    destinationDirectory = nistFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+def storeTestsFunctionTestClassDir = layout.buildDirectory.dir('classes/storetests-function-tests')
+
+tasks.register('compileDerbyStoreTestsFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = fileTree(new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/storetests')) { include '**/*.java' }
+    destinationDirectory = storeTestsFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+def perfFunctionTestClassDir = layout.buildDirectory.dir('classes/perf-function-tests')
+
+tasks.register('compileDerbyPerfFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = fileTree(new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/perf')) { include '**/*.java' }
+    destinationDirectory = perfFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 tasks.register('classes') {
     dependsOn 'compileDerbyUnitJunitTests',
             'compileDerbyEngineFunctionTests',
             'compileDerbyMultiFunctionTests',
             'compileDerbyMemoryDbFunctionTests',
-            'compileDerbyMemoryFunctionTests'
+            'compileDerbyMemoryFunctionTests',
+            'compileDerbyNistFunctionTests',
+            'compileDerbyStoreTestsFunctionTests',
+            'compileDerbyPerfFunctionTests'
 }
 
 tasks.named('assemble') {
@@ -367,5 +482,8 @@ tasks.named('check') {
             'compileDerbyEngineFunctionTests',
             'compileDerbyMultiFunctionTests',
             'compileDerbyMemoryDbFunctionTests',
-            'compileDerbyMemoryFunctionTests'
+            'compileDerbyMemoryFunctionTests',
+            'compileDerbyNistFunctionTests',
+            'compileDerbyStoreTestsFunctionTests',
+            'compileDerbyPerfFunctionTests'
 }
