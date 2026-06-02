@@ -893,6 +893,36 @@ tasks.register('runDerbyMemoryDbFunctionTests', JavaExec) {
     )
 }
 
+
+// Fourth tiny execution island for the inherited Derby tests. Memory is already
+// compile-activated and remains separate from the old Derby harness.
+def memoryFunctionTestWorkDir = layout.buildDirectory.dir('test-work/memory-function')
+
+tasks.register('runDerbyMemoryFunctionTests', JavaExec) {
+    group = 'verification'
+    description = 'Runs the inherited Derby memory function-test execution island.'
+    dependsOn 'compileDerbyMemoryFunctionTests'
+    mainClass = 'junit.textui.TestRunner'
+    args 'org.apache.derbyTesting.functionTests.tests.memory._Suite'
+    workingDir = memoryFunctionTestWorkDir.get().asFile
+    doFirst {
+        memoryFunctionTestWorkDir.get().asFile.mkdirs()
+    }
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            memoryFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 // Execution alias for only the inherited Derby execution islands that have been
 // explicitly activated. This remains separate from check and does not run derbyall.
 tasks.register('runActivatedDerbyExecutionIslands') {
@@ -900,5 +930,6 @@ tasks.register('runActivatedDerbyExecutionIslands') {
     description = 'Runs the currently activated inherited Derby execution islands.'
     dependsOn 'runDerbyUnitJunitTests',
             'runDerbyEngineFunctionTests',
-            'runDerbyMemoryDbFunctionTests'
+            'runDerbyMemoryDbFunctionTests',
+            'runDerbyMemoryFunctionTests'
 }
