@@ -1018,6 +1018,65 @@ tasks.register('runDerbyJdbc4SmokeFunctionTests', JavaExec) {
     )
 }
 
+
+
+// Eighth and ninth narrow execution islands for already compile-activated
+// inherited Derby test groups. These run selected smoke classes only, not the
+// full i18n/perf packages and not the old Derby harness.
+def i18nSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/i18n-smoke-function')
+
+tasks.register('runDerbyI18nSmokeFunctionTests', JavaExec) {
+    group = 'verification'
+    description = 'Runs the narrow inherited Derby i18n smoke execution island.'
+    dependsOn 'compileDerbyI18nFunctionTests'
+    mainClass = 'junit.textui.TestRunner'
+    args 'org.apache.derbyTesting.functionTests.tests.i18n.CaseI_tr_TRTest'
+    workingDir = i18nSmokeFunctionTestWorkDir.get().asFile
+    doFirst {
+        i18nSmokeFunctionTestWorkDir.get().asFile.mkdirs()
+    }
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            i18nFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+def perfSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/perf-smoke-function')
+
+tasks.register('runDerbyPerfSmokeFunctionTests', JavaExec) {
+    group = 'verification'
+    description = 'Runs the narrow inherited Derby perf smoke execution island.'
+    dependsOn 'compileDerbyPerfFunctionTests'
+    mainClass = 'junit.textui.TestRunner'
+    args 'org.apache.derbyTesting.functionTests.tests.perf.StartupNewDBTest'
+    workingDir = perfSmokeFunctionTestWorkDir.get().asFile
+    doFirst {
+        perfSmokeFunctionTestWorkDir.get().asFile.mkdirs()
+    }
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            perfFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 // Execution alias for only the inherited Derby execution islands that have been
 // explicitly activated. This remains separate from check and does not run derbyall.
 tasks.register('runActivatedDerbyExecutionIslands') {
@@ -1029,5 +1088,7 @@ tasks.register('runActivatedDerbyExecutionIslands') {
             'runDerbyMemoryFunctionTests',
             'runDerbyStoreTestsFunctionTests',
             'runDerbyJdbcApiSmokeFunctionTests',
-            'runDerbyJdbc4SmokeFunctionTests'
+            'runDerbyJdbc4SmokeFunctionTests',
+            'runDerbyI18nSmokeFunctionTests',
+            'runDerbyPerfSmokeFunctionTests'
 }
