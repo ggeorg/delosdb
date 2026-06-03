@@ -986,6 +986,38 @@ tasks.register('runDerbyJdbcApiSmokeFunctionTests', JavaExec) {
     )
 }
 
+
+
+// Seventh tiny execution island for the inherited Derby tests. Start JDBC4
+// execution with one simple RowId API smoke class instead of the full jdbc4 package.
+def jdbc4SmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbc4-smoke-function')
+
+tasks.register('runDerbyJdbc4SmokeFunctionTests', JavaExec) {
+    group = 'verification'
+    description = 'Runs the narrow inherited Derby JDBC4 smoke execution island.'
+    dependsOn 'compileDerbyJdbc4SmokeFunctionTests'
+    mainClass = 'junit.textui.TestRunner'
+    args 'org.apache.derbyTesting.functionTests.tests.jdbc4.RowIdNotImplementedTest'
+    workingDir = jdbc4SmokeFunctionTestWorkDir.get().asFile
+    doFirst {
+        jdbc4SmokeFunctionTestWorkDir.get().asFile.mkdirs()
+    }
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            jdbcApiSmokeFunctionTestClassDir,
+            jdbc4SmokeFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 // Execution alias for only the inherited Derby execution islands that have been
 // explicitly activated. This remains separate from check and does not run derbyall.
 tasks.register('runActivatedDerbyExecutionIslands') {
@@ -996,5 +1028,6 @@ tasks.register('runActivatedDerbyExecutionIslands') {
             'runDerbyMemoryDbFunctionTests',
             'runDerbyMemoryFunctionTests',
             'runDerbyStoreTestsFunctionTests',
-            'runDerbyJdbcApiSmokeFunctionTests'
+            'runDerbyJdbcApiSmokeFunctionTests',
+            'runDerbyJdbc4SmokeFunctionTests'
 }
