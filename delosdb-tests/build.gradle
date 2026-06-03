@@ -1060,7 +1060,9 @@ tasks.register('runDerbyPerfSmokeFunctionTests', JavaExec) {
     args 'org.apache.derbyTesting.functionTests.tests.perf.StartupNewDBTest'
     workingDir = perfSmokeFunctionTestWorkDir.get().asFile
     doFirst {
-        perfSmokeFunctionTestWorkDir.get().asFile.mkdirs()
+        def workDir = perfSmokeFunctionTestWorkDir.get().asFile
+        delete workDir
+        workDir.mkdirs()
     }
     classpath = rootProject.files(
             commonsModuleClassDir,
