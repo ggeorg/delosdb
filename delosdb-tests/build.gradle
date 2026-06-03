@@ -1060,9 +1060,7 @@ tasks.register('runDerbyPerfSmokeFunctionTests', JavaExec) {
     args 'org.apache.derbyTesting.functionTests.tests.perf.StartupNewDBTest'
     workingDir = perfSmokeFunctionTestWorkDir.get().asFile
     doFirst {
-        def workDir = perfSmokeFunctionTestWorkDir.get().asFile
-        delete workDir
-        workDir.mkdirs()
+        perfSmokeFunctionTestWorkDir.get().asFile.mkdirs()
     }
     classpath = rootProject.files(
             commonsModuleClassDir,
@@ -1157,6 +1155,75 @@ tasks.register('runDerbyJdbc4ExtendedSmokeFunctionTests') {
     }
 }
 
+
+
+// Twelfth and thirteenth execution islands. These expand only already
+// compile-activated groups with selected classes that avoid the known broad
+// suite tails: ErrorStreamTest/resource-sensitive engine cases and full
+// largedata package execution.
+def engineExtendedFunctionTestWorkDir = layout.buildDirectory.dir('test-work/engine-extended-function')
+
+tasks.register('runDerbyEngineExtendedFunctionTests') {
+    group = 'verification'
+    description = 'Runs additional narrow inherited Derby engine execution classes.'
+    dependsOn 'compileDerbyEngineFunctionTests'
+    doLast {
+        def workDir = engineExtendedFunctionTestWorkDir.get().asFile
+        workDir.mkdirs()
+        [
+                'org.apache.derbyTesting.functionTests.tests.engine.Derby6396Test',
+                'org.apache.derbyTesting.functionTests.tests.engine.ModuleLoadingTest',
+                'org.apache.derbyTesting.functionTests.tests.engine.ReadMeFilesTest'
+        ].each { testClassName ->
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        engineFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
+def largeDataSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/largedata-smoke-function')
+
+tasks.register('runDerbyLargeDataSmokeFunctionTests', JavaExec) {
+    group = 'verification'
+    description = 'Runs a narrow inherited Derby largedata smoke execution class.'
+    dependsOn 'compileDerbyLargeDataFunctionTests'
+    mainClass = 'junit.textui.TestRunner'
+    args 'org.apache.derbyTesting.functionTests.tests.largedata.Derby5624Test'
+    workingDir = largeDataSmokeFunctionTestWorkDir.get().asFile
+    doFirst {
+        largeDataSmokeFunctionTestWorkDir.get().asFile.mkdirs()
+    }
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            largeDataFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 // Execution alias for only the inherited Derby execution islands that have been
 // explicitly activated. This remains separate from check and does not run derbyall.
 tasks.register('runActivatedDerbyExecutionIslands') {
@@ -1172,5 +1239,7 @@ tasks.register('runActivatedDerbyExecutionIslands') {
             'runDerbyI18nSmokeFunctionTests',
             'runDerbyPerfSmokeFunctionTests',
             'runDerbyJdbcApiExtendedSmokeFunctionTests',
-            'runDerbyJdbc4ExtendedSmokeFunctionTests'
+            'runDerbyJdbc4ExtendedSmokeFunctionTests',
+            'runDerbyEngineExtendedFunctionTests',
+            'runDerbyLargeDataSmokeFunctionTests'
 }
