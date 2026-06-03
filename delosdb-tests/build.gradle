@@ -1417,6 +1417,49 @@ tasks.register('runDerbyJdbc4LobSmokeFunctionTests') {
     }
 }
 
+
+
+// Nineteenth execution island. Continue the JDBC4 path with selected metadata
+// and statement-event smoke classes only. These remain separate from the full
+// jdbc4 package suite and run in an isolated work directory.
+def jdbc4MiscSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbc4-misc-smoke-function')
+
+tasks.register('runDerbyJdbc4MiscSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs additional narrow inherited Derby JDBC4 metadata and event smoke execution classes.'
+    dependsOn 'compileDerbyJdbc4SmokeFunctionTests'
+    doLast {
+        def workDir = jdbc4MiscSmokeFunctionTestWorkDir.get().asFile
+        delete workDir
+        workDir.mkdirs()
+        [
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.Derby3650Test',
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.TestDbMetaData',
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.StatementEventsTest'
+        ].each { testClassName ->
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        jdbcApiSmokeFunctionTestClassDir,
+                        jdbc4SmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
 tasks.register('runActivatedDerbyExecutionIslands') {
     group = 'verification'
     description = 'Runs the currently activated inherited Derby execution islands.'
@@ -1437,5 +1480,6 @@ tasks.register('runActivatedDerbyExecutionIslands') {
             'runDerbyJdbcApiAdditionalSmokeFunctionTests',
             'runDerbyJdbc4AdditionalSmokeFunctionTests',
             'runDerbyJdbcApiLobSmokeFunctionTests',
-            'runDerbyJdbc4LobSmokeFunctionTests'
+            'runDerbyJdbc4LobSmokeFunctionTests',
+            'runDerbyJdbc4MiscSmokeFunctionTests'
 }
