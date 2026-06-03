@@ -1260,6 +1260,85 @@ tasks.register('runDerbyManagementSmokeFunctionTests', JavaExec) {
 
 // Execution alias for only the inherited Derby execution islands that have been
 // explicitly activated. This remains separate from check and does not run derbyall.
+
+// Fifteenth and sixteenth execution islands. These continue the already
+// compile-activated JDBC smoke path with selected classes only. They avoid the
+// full jdbcapi/jdbc4 suites and keep each batch in an isolated work directory.
+def jdbcApiAdditionalSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbcapi-additional-smoke-function')
+
+tasks.register('runDerbyJdbcApiAdditionalSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs additional narrow inherited Derby JDBC API smoke execution classes.'
+    dependsOn 'compileDerbyJdbcApiSmokeFunctionTests'
+    doLast {
+        def workDir = jdbcApiAdditionalSmokeFunctionTestWorkDir.get().asFile
+        delete workDir
+        workDir.mkdirs()
+        [
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.AutoGenJDBC30Test',
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.BatchUpdateTest'
+        ].each { testClassName ->
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        jdbcApiSmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
+def jdbc4AdditionalSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbc4-additional-smoke-function')
+
+tasks.register('runDerbyJdbc4AdditionalSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs additional narrow inherited Derby JDBC4 smoke execution classes.'
+    dependsOn 'compileDerbyJdbc4SmokeFunctionTests'
+    doLast {
+        def workDir = jdbc4AdditionalSmokeFunctionTestWorkDir.get().asFile
+        delete workDir
+        workDir.mkdirs()
+        [
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.Driver40Test',
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.Driver40UnbootedTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.LoginTimeoutTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.StreamTruncationTest'
+        ].each { testClassName ->
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        jdbcApiSmokeFunctionTestClassDir,
+                        jdbc4SmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
 tasks.register('runActivatedDerbyExecutionIslands') {
     group = 'verification'
     description = 'Runs the currently activated inherited Derby execution islands.'
@@ -1276,5 +1355,7 @@ tasks.register('runActivatedDerbyExecutionIslands') {
             'runDerbyJdbc4ExtendedSmokeFunctionTests',
             'runDerbyEngineExtendedFunctionTests',
             'runDerbyLargeDataSmokeFunctionTests',
-            'runDerbyManagementSmokeFunctionTests'
+            'runDerbyManagementSmokeFunctionTests',
+            'runDerbyJdbcApiAdditionalSmokeFunctionTests',
+            'runDerbyJdbc4AdditionalSmokeFunctionTests'
 }
