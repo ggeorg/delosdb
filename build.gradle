@@ -1736,7 +1736,8 @@ tasks.named('check') {
 tasks.register('fullVerification') {
     group = 'verification'
     description = 'Runs the full DelosDB verification suite, including integration smoke checks.'
-    dependsOn 'check', 'smoke', 'smokeFromJars', 'modernizationSmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'check', 'smoke', 'smokeFromJars', 'modernizationSmoke', 'networkServerSmoke', 'sysinfoFromJars',
+            ':delosdb-tests:runActivatedDerbyExecutionIslands'
 }
 
 tasks.register('test') {
