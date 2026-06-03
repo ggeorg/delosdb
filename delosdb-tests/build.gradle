@@ -1226,6 +1226,38 @@ tasks.register('runDerbyLargeDataSmokeFunctionTests', JavaExec) {
     )
 }
 
+
+// Fourteenth execution island. Keep this management activation narrow: one
+// embedded JMX/bootstrap smoke class, not the full management _Suite.
+def managementSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/management-smoke-function')
+
+tasks.register('runDerbyManagementSmokeFunctionTests', JavaExec) {
+    group = 'verification'
+    description = 'Runs a narrow inherited Derby management smoke execution class.'
+    dependsOn 'compileDerbyManagementFunctionTests'
+    mainClass = 'junit.textui.TestRunner'
+    args 'org.apache.derbyTesting.functionTests.tests.management.CustomMBeanServerBuilderTest'
+    workingDir = managementSmokeFunctionTestWorkDir.get().asFile
+    doFirst {
+        def workDir = managementSmokeFunctionTestWorkDir.get().asFile
+        delete workDir
+        workDir.mkdirs()
+    }
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            managementFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 // Execution alias for only the inherited Derby execution islands that have been
 // explicitly activated. This remains separate from check and does not run derbyall.
 tasks.register('runActivatedDerbyExecutionIslands') {
@@ -1243,5 +1275,6 @@ tasks.register('runActivatedDerbyExecutionIslands') {
             'runDerbyJdbcApiExtendedSmokeFunctionTests',
             'runDerbyJdbc4ExtendedSmokeFunctionTests',
             'runDerbyEngineExtendedFunctionTests',
-            'runDerbyLargeDataSmokeFunctionTests'
+            'runDerbyLargeDataSmokeFunctionTests',
+            'runDerbyManagementSmokeFunctionTests'
 }
