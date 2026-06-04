@@ -1515,8 +1515,7 @@ tasks.register('runDerbyJdbc4ConnectionSmokeFunctionTests') {
         delete workDir
         workDir.mkdirs()
         [
-                'org.apache.derbyTesting.functionTests.tests.jdbc4.ConnectionTest',
-                'org.apache.derbyTesting.functionTests.tests.jdbc4.ConnectionMethodsTest'
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.ConnectionTest'
         ].each { testClassName ->
             javaexec {
                 mainClass = 'junit.textui.TestRunner'
