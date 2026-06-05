@@ -1655,6 +1655,119 @@ tasks.register('runDerbyLargeDataAdditionalSmokeFunctionTests') {
     }
 }
 
+
+// Twenty-sixth through twenty-eighth execution islands. This batch keeps the
+// faster cadence by adding several already compile-activated smoke families,
+// while still isolating each test class in its own work directory. Avoid known
+// brittle tails: localized-message assertions, optimizer-plan assertions,
+// missing testData resources, and procedure-class runtime classpath setup.
+def managementAdditionalSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/management-additional-smoke-function')
+
+tasks.register('runDerbyManagementAdditionalSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs additional inherited Derby management MBean smoke execution classes.'
+    dependsOn 'compileDerbyManagementFunctionTests'
+    doLast {
+        [
+                'org.apache.derbyTesting.functionTests.tests.management.CacheManagerMBeanTest',
+                'org.apache.derbyTesting.functionTests.tests.management.JMXTest'
+        ].each { testClassName ->
+            def workDir = new File(managementAdditionalSmokeFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
+            delete workDir
+            workDir.mkdirs()
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        managementFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
+def jdbcApiBlobAuthSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbcapi-blob-auth-smoke-function')
+
+tasks.register('runDerbyJdbcApiBlobAuthSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs additional inherited Derby JDBC API BLOB/authentication smoke execution classes.'
+    dependsOn 'compileDerbyJdbcApiSmokeFunctionTests'
+    doLast {
+        [
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.AuthenticationTest'
+        ].each { testClassName ->
+            def workDir = new File(jdbcApiBlobAuthSmokeFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
+            delete workDir
+            workDir.mkdirs()
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        jdbcApiSmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
+def jdbc4AbortSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbc4-abort-smoke-function')
+
+tasks.register('runDerbyJdbc4AbortSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs an inherited Derby JDBC4 abort smoke execution class.'
+    dependsOn 'compileDerbyJdbc4SmokeFunctionTests'
+    doLast {
+        [
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.AbortTest'
+        ].each { testClassName ->
+            def workDir = new File(jdbc4AbortSmokeFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
+            delete workDir
+            workDir.mkdirs()
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        jdbcApiSmokeFunctionTestClassDir,
+                        jdbc4SmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
 tasks.register('runActivatedDerbyExecutionIslands') {
     group = 'verification'
     description = 'Runs the currently activated inherited Derby execution islands.'
@@ -1681,5 +1794,8 @@ tasks.register('runActivatedDerbyExecutionIslands') {
             'runDerbyJdbc4ConnectionSmokeFunctionTests',
             'runDerbyJdbcApiCallableSmokeFunctionTests',
             'runDerbyJdbc4LobResultSetSmokeFunctionTests',
-            'runDerbyLargeDataAdditionalSmokeFunctionTests'
+            'runDerbyLargeDataAdditionalSmokeFunctionTests',
+            'runDerbyManagementAdditionalSmokeFunctionTests',
+            'runDerbyJdbcApiBlobAuthSmokeFunctionTests',
+            'runDerbyJdbc4AbortSmokeFunctionTests'
 }
