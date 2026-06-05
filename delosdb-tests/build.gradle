@@ -743,6 +743,54 @@ tasks.register('compileDerbyJdbc4SmokeFunctionTests', JavaCompile) {
     )
 }
 
+
+// Compile an additional JDBC API statement/driver smoke subset. Keep this as a
+// reviewed compile island instead of activating the full jdbcapi package.
+def jdbcApiStatementSmokeFunctionTestClassDir = layout.buildDirectory.dir('classes/jdbcapi-statement-smoke-function-tests')
+
+tasks.register('compileDerbyJdbcApiStatementSmokeFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            'compileDerbyJdbcApiSmokeFunctionTests',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/DataSourcePropertiesTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/DriverTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/NullSQLTextTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/PrepStmtMetaDataTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ResultSetCloseTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/SavepointJdbc30Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/StatementJdbc30Test.java')
+    )
+    destinationDirectory = jdbcApiStatementSmokeFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            jdbcApiSmokeFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 tasks.register('classes') {
     dependsOn 'compileDerbyUnitJunitTests',
             'compileDerbyEngineFunctionTests',
@@ -757,7 +805,8 @@ tasks.register('classes') {
             'compileDerbyI18nFunctionTests',
             'compileDerbyCompatibilityFunctionTests',
             'compileDerbyJdbcApiSmokeFunctionTests',
-            'compileDerbyJdbc4SmokeFunctionTests'
+            'compileDerbyJdbc4SmokeFunctionTests',
+            'compileDerbyJdbcApiStatementSmokeFunctionTests'
 }
 
 tasks.named('assemble') {
@@ -780,7 +829,8 @@ tasks.named('check') {
             'compileDerbyI18nFunctionTests',
             'compileDerbyCompatibilityFunctionTests',
             'compileDerbyJdbcApiSmokeFunctionTests',
-            'compileDerbyJdbc4SmokeFunctionTests'
+            'compileDerbyJdbc4SmokeFunctionTests',
+            'compileDerbyJdbcApiStatementSmokeFunctionTests'
 }
 
 
@@ -803,7 +853,8 @@ tasks.register('compileActivatedDerbyTests') {
             'compileDerbyI18nFunctionTests',
             'compileDerbyCompatibilityFunctionTests',
             'compileDerbyJdbcApiSmokeFunctionTests',
-            'compileDerbyJdbc4SmokeFunctionTests'
+            'compileDerbyJdbc4SmokeFunctionTests',
+            'compileDerbyJdbcApiStatementSmokeFunctionTests'
 }
 
 // First tiny execution island for the inherited Derby tests. Keep execution
@@ -1768,6 +1819,52 @@ tasks.register('runDerbyJdbc4AbortSmokeFunctionTests') {
     }
 }
 
+
+// Additional batched JDBC API statement/driver execution island. These classes
+// are compiled in a separate island and executed with per-class work directories
+// to keep state leakage contained while avoiding full jdbcapi activation.
+def jdbcApiStatementSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbcapi-statement-smoke-function')
+
+tasks.register('runDerbyJdbcApiStatementSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs additional inherited Derby JDBC API statement/driver smoke execution classes.'
+    dependsOn 'compileDerbyJdbcApiStatementSmokeFunctionTests'
+    doLast {
+        [
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.DataSourcePropertiesTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.DriverTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.NullSQLTextTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.PrepStmtMetaDataTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.ResultSetCloseTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.SavepointJdbc30Test',
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.StatementJdbc30Test'
+        ].each { testClassName ->
+            def workDir = new File(jdbcApiStatementSmokeFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
+            delete workDir
+            workDir.mkdirs()
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        jdbcApiSmokeFunctionTestClassDir,
+                        jdbcApiStatementSmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
 tasks.register('runActivatedDerbyExecutionIslands') {
     group = 'verification'
     description = 'Runs the currently activated inherited Derby execution islands.'
@@ -1797,5 +1894,6 @@ tasks.register('runActivatedDerbyExecutionIslands') {
             'runDerbyLargeDataAdditionalSmokeFunctionTests',
             'runDerbyManagementAdditionalSmokeFunctionTests',
             'runDerbyJdbcApiBlobAuthSmokeFunctionTests',
-            'runDerbyJdbc4AbortSmokeFunctionTests'
+            'runDerbyJdbc4AbortSmokeFunctionTests',
+            'runDerbyJdbcApiStatementSmokeFunctionTests'
 }
