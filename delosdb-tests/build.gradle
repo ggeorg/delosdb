@@ -1631,7 +1631,6 @@ tasks.register('runDerbyLargeDataAdditionalSmokeFunctionTests') {
         delete workDir
         workDir.mkdirs()
         [
-                'org.apache.derbyTesting.functionTests.tests.largedata.Derby6317Test',
                 'org.apache.derbyTesting.functionTests.tests.largedata.Derby6884Test'
         ].each { testClassName ->
             javaexec {
