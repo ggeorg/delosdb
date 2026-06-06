@@ -1990,3 +1990,94 @@ tasks.register('runActivatedDerbyExecutionIslands') {
             'runDerbyJdbcApiStatementSmokeFunctionTests',
             'runDerbyJdbcApiMetadataSmokeFunctionTests'
 }
+
+
+// Visibility helper for the Gradle-owned inherited Derby test islands. This is
+// intentionally informational only: it does not compile, run, or activate new tests.
+tasks.register('listActivatedDerbyTestIslands') {
+    group = 'verification'
+    description = 'Prints the currently activated inherited Derby compile and execution islands.'
+    doLast {
+        def compileIslands = [
+                'compileDerbyUnitJunitTests',
+                'compileDerbyEngineFunctionTests',
+                'compileDerbyMultiFunctionTests',
+                'compileDerbyMemoryDbFunctionTests',
+                'compileDerbyMemoryFunctionTests',
+                'compileDerbyNistFunctionTests',
+                'compileDerbyStoreTestsFunctionTests',
+                'compileDerbyPerfFunctionTests',
+                'compileDerbyManagementFunctionTests',
+                'compileDerbyLargeDataFunctionTests',
+                'compileDerbyI18nFunctionTests',
+                'compileDerbyCompatibilityFunctionTests',
+                'compileDerbyJdbcApiSmokeFunctionTests',
+                'compileDerbyJdbc4SmokeFunctionTests',
+                'compileDerbyJdbcApiStatementSmokeFunctionTests',
+                'compileDerbyJdbcApiMetadataSmokeFunctionTests'
+        ]
+
+        def executionIslands = [
+                'runDerbyUnitJunitTests',
+                'runDerbyEngineFunctionTests',
+                'runDerbyMemoryDbFunctionTests',
+                'runDerbyMemoryFunctionTests',
+                'runDerbyStoreTestsFunctionTests',
+                'runDerbyJdbcApiSmokeFunctionTests',
+                'runDerbyJdbc4SmokeFunctionTests',
+                'runDerbyI18nSmokeFunctionTests',
+                'runDerbyPerfSmokeFunctionTests',
+                'runDerbyJdbcApiExtendedSmokeFunctionTests',
+                'runDerbyJdbc4ExtendedSmokeFunctionTests',
+                'runDerbyEngineExtendedFunctionTests',
+                'runDerbyLargeDataSmokeFunctionTests',
+                'runDerbyManagementSmokeFunctionTests',
+                'runDerbyJdbcApiAdditionalSmokeFunctionTests',
+                'runDerbyJdbc4AdditionalSmokeFunctionTests',
+                'runDerbyJdbcApiLobSmokeFunctionTests',
+                'runDerbyJdbc4LobSmokeFunctionTests',
+                'runDerbyJdbc4MiscSmokeFunctionTests',
+                'runDerbyManagementCoreSmokeFunctionTests',
+                'runDerbyJdbc4ConnectionSmokeFunctionTests',
+                'runDerbyJdbcApiCallableSmokeFunctionTests',
+                'runDerbyJdbc4LobResultSetSmokeFunctionTests',
+                'runDerbyLargeDataAdditionalSmokeFunctionTests',
+                'runDerbyManagementAdditionalSmokeFunctionTests',
+                'runDerbyJdbcApiBlobAuthSmokeFunctionTests',
+                'runDerbyJdbc4AbortSmokeFunctionTests',
+                'runDerbyJdbcApiStatementSmokeFunctionTests',
+                'runDerbyJdbcApiMetadataSmokeFunctionTests'
+        ]
+
+        def compileOnlyTail = [
+                'UrlLocaleTest - message/localization-sensitive warnings',
+                'BatchUpdateTest - duplicate-key message text assertion',
+                'ConnectionMethodsTest - requires testData/ConnectionMethods resources',
+                'CacheSessionDataTest - requires runtime-visible ProcedureTest',
+                'Derby6317Test - optimizer plan-sensitive index/table scan assertion',
+                'BlobClob4BlobTest - message text assertion for 40XD0',
+                'ParameterMetaDataJdbc30Test - requires runtime-visible lang procedure classes',
+                'ResultSetMiscTest - requires runtime-visible T_Access',
+                'SetTransactionIsolationTest - isolation behavior/state-sensitive assertion'
+        ]
+
+        println ''
+        println 'Activated inherited Derby test islands'
+        println '====================================='
+        println ''
+        println "Compile islands (${compileIslands.size()}):"
+        compileIslands.each { println "  - ${it}" }
+        println ''
+        println "Execution islands (${executionIslands.size()}):"
+        executionIslands.each { println "  - ${it}" }
+        println ''
+        println 'Known compile-only / deferred execution tails:'
+        compileOnlyTail.each { println "  - ${it}" }
+        println ''
+        println 'Aggregate commands:'
+        println '  ./gradlew :delosdb-tests:compileActivatedDerbyTests'
+        println '  ./gradlew :delosdb-tests:runActivatedDerbyExecutionIslands'
+        println '  ./gradlew fullVerification'
+        println ''
+    }
+}
