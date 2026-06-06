@@ -839,6 +839,107 @@ tasks.register('compileDerbyJdbcApiMetadataSmokeFunctionTests', JavaCompile) {
 }
 
 
+
+// Compile a broader JDBC API smoke subset after the reviewed statement and
+// metadata islands. Keep this compile-only: these classes recover inherited
+// JDBC source coverage without widening runtime execution or old harness use.
+def jdbcApiBroaderSmokeFunctionTestClassDir = layout.buildDirectory.dir('classes/jdbcapi-broader-smoke-function-tests')
+
+tasks.register('compileDerbyJdbcApiBroaderSmokeFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            'compileDerbyJdbcApiSmokeFunctionTests',
+            'compileDerbyJdbcApiStatementSmokeFunctionTests',
+            'compileDerbyJdbcApiMetadataSmokeFunctionTests',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/DeadlockWatchdog.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/TestRoutines.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/AutoloadTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ClientConnectionPoolDataSourceTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ClobStoredProcedureTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ClobTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ClobTruncateTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ClobUpdatableReaderTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ClosedObjectTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ConcurrentAutoloadTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/DMDBugsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/DSCreateShutdownDBTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/DataSourceSerializationTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/DataSourceTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/DaylightSavingTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/DboPowersTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/Derby2017LayerATest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/Derby5158Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/Derby5165Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/DriverMgrAuthenticationTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/DummyReader.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/InternationalConnectSimpleDSTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/InternationalConnectTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/InvalidLDAPServerAuthenticationTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/JDBCDriversAllTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/JDBCDriversClientTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/JDBCDriversEmbeddedTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/JDBCDriversPropertyTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/LDAPAuthenticationTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/LargeDataLocksTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/LobLengthTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/LobRsGetterTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/LobStreamsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ParameterMappingTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/PoolDSAuthenticationTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/PoolXADSCreateShutdownDBTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/PrepStmtNullTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/RelativeTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ResultSetStreamTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ScrollResultSetTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/SetQueryTimeoutTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/StatementJdbc20Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/StatementPoolingTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/StreamTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/UpdatableResultSetTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/UpdateXXXTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/Wrapper41DBMD.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/Wrapper41Statement.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/Wrapper42DBMD.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/XADSAuthenticationTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/XAJNDITest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/XATest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/XATransactionTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/metadataMultiConnTest.java')
+    )
+    destinationDirectory = jdbcApiBroaderSmokeFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            jdbcApiSmokeFunctionTestClassDir,
+            jdbcApiStatementSmokeFunctionTestClassDir,
+            jdbcApiMetadataSmokeFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+
 // Compile a curated SQL lang smoke subset. Keep this compile-only for now so the
 // broad lang package does not enter execution before its resource/message tails
 // are classified.
@@ -1134,6 +1235,7 @@ tasks.register('classes') {
             'compileDerbyJdbc4SmokeFunctionTests',
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
+            'compileDerbyJdbcApiBroaderSmokeFunctionTests',
             'compileDerbyLangSmokeFunctionTests',
             'compileDerbyLangAdditionalSmokeFunctionTests',
             'compileDerbyLangCoreSmokeFunctionTests',
@@ -1163,6 +1265,7 @@ tasks.named('check') {
             'compileDerbyJdbc4SmokeFunctionTests',
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
+            'compileDerbyJdbcApiBroaderSmokeFunctionTests',
             'compileDerbyLangSmokeFunctionTests',
             'compileDerbyLangAdditionalSmokeFunctionTests',
             'compileDerbyLangCoreSmokeFunctionTests',
@@ -1192,6 +1295,7 @@ tasks.register('compileActivatedDerbyTests') {
             'compileDerbyJdbc4SmokeFunctionTests',
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
+            'compileDerbyJdbcApiBroaderSmokeFunctionTests',
             'compileDerbyLangSmokeFunctionTests',
             'compileDerbyLangAdditionalSmokeFunctionTests',
             'compileDerbyLangCoreSmokeFunctionTests',
@@ -2372,6 +2476,7 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'compileDerbyJdbc4SmokeFunctionTests',
                 'compileDerbyJdbcApiStatementSmokeFunctionTests',
                 'compileDerbyJdbcApiMetadataSmokeFunctionTests',
+                'compileDerbyJdbcApiBroaderSmokeFunctionTests',
                 'compileDerbyLangSmokeFunctionTests',
                 'compileDerbyLangAdditionalSmokeFunctionTests',
                 'compileDerbyLangCoreSmokeFunctionTests',
