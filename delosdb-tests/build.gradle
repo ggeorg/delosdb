@@ -2024,6 +2024,40 @@ tasks.register('runActivatedDerbyExecutionIslands') {
 }
 
 
+// Convenience aliases for faster iteration. These do not change the official
+// full activated execution aggregate; they only provide cheaper checkpoints when
+// validating the next reviewed island batch.
+tasks.register('runActivatedDerbyNonJdbcExecutionIslands') {
+    group = 'verification'
+    description = 'Runs activated inherited Derby non-JDBC execution islands.'
+    dependsOn 'runActivatedDerbyCoreExecutionIslands',
+            'runActivatedDerbyManagementExecutionIslands',
+            'runActivatedDerbyLargeDataExecutionIslands'
+}
+
+tasks.register('runActivatedDerbyJdbcExecutionIslands') {
+    group = 'verification'
+    description = 'Runs activated inherited Derby JDBC API and JDBC4 execution islands.'
+    dependsOn 'runActivatedDerbyJdbcApiExecutionIslands',
+            'runActivatedDerbyJdbc4ExecutionIslands'
+}
+
+tasks.register('runActivatedDerbySmokeExecutionIslands') {
+    group = 'verification'
+    description = 'Runs a fast smoke subset of activated inherited Derby execution islands.'
+    dependsOn 'runDerbyUnitJunitTests',
+            'runDerbyEngineFunctionTests',
+            'runDerbyMemoryDbFunctionTests',
+            'runDerbyStoreTestsFunctionTests',
+            'runDerbyI18nSmokeFunctionTests',
+            'runDerbyPerfSmokeFunctionTests',
+            'runDerbyLargeDataSmokeFunctionTests',
+            'runDerbyManagementSmokeFunctionTests',
+            'runDerbyJdbcApiSmokeFunctionTests',
+            'runDerbyJdbc4SmokeFunctionTests'
+}
+
+
 // Visibility helper for the Gradle-owned inherited Derby test islands. This is
 // intentionally informational only: it does not compile, run, or activate new tests.
 tasks.register('listActivatedDerbyTestIslands') {
@@ -2086,7 +2120,10 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'runActivatedDerbyManagementExecutionIslands',
                 'runActivatedDerbyLargeDataExecutionIslands',
                 'runActivatedDerbyJdbcApiExecutionIslands',
-                'runActivatedDerbyJdbc4ExecutionIslands'
+                'runActivatedDerbyJdbc4ExecutionIslands',
+                'runActivatedDerbyNonJdbcExecutionIslands',
+                'runActivatedDerbyJdbcExecutionIslands',
+                'runActivatedDerbySmokeExecutionIslands'
         ]
 
         def compileOnlyTail = [
@@ -2116,6 +2153,9 @@ tasks.register('listActivatedDerbyTestIslands') {
         println ''
         println 'Aggregate commands:'
         println '  ./gradlew :delosdb-tests:compileActivatedDerbyTests'
+        println '  ./gradlew :delosdb-tests:runActivatedDerbySmokeExecutionIslands'
+        println '  ./gradlew :delosdb-tests:runActivatedDerbyNonJdbcExecutionIslands'
+        println '  ./gradlew :delosdb-tests:runActivatedDerbyJdbcExecutionIslands'
         println '  ./gradlew :delosdb-tests:runActivatedDerbyCoreExecutionIslands'
         println '  ./gradlew :delosdb-tests:runActivatedDerbyManagementExecutionIslands'
         println '  ./gradlew :delosdb-tests:runActivatedDerbyLargeDataExecutionIslands'
