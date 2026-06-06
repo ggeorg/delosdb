@@ -429,6 +429,113 @@ tasks.register('compileDerbyStoreTestsFunctionTests', JavaCompile) {
     )
 }
 
+
+// Compile a broader curated store subset. This is intentionally compile-only:
+// many store tests exercise crash recovery, encryption, locking, backup, and
+// filesystem-sensitive behavior, so execution stays out until each class is reviewed.
+def storeBroaderSmokeFunctionTestClassDir = layout.buildDirectory.dir('classes/store-broader-smoke-function-tests')
+
+tasks.register('compileDerbyStoreBroaderSmokeFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/AccessTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/AutomaticIndexStatisticsMultiTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/AutomaticIndexStatisticsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/BTreeMaxScanTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/BackupPathTests.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/BackupRestoreTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/BaseTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/Beetle6038.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/BootAllTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/BootLockMinion.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/BootLockTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/ClassLoaderBootTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/ClobReclamationTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/CryptoCrashRecoveryTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/DecryptDatabaseTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/Derby3625Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/Derby3980DeadlockTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/Derby4577Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/Derby4676Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/Derby4923Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/Derby5234Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/Derby5582AutomaticIndexStatisticsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/EncryptDatabaseTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/EncryptionAESTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/EncryptionKeyAESTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/EncryptionKeyBlowfishTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/EncryptionKeyDESTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/EncryptionKeyTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/EncryptionTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/HoldCursorExternalSortJDBC30Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/HoldCursorJDBC30Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/IndexSplitDeadlockTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/InterruptResilienceTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/KeepDisposableStatsPropertyTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/LiveLockTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/LockTableVtiTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/LogChecksumRecovery.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/LogChecksumRecovery1.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/LogChecksumSetup.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/LongColumnTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/MadhareTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/MaxLogNumber.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/MaxLogNumberRecovery.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/OCRecoveryTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/OSReadOnlyTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/OfflineBackupTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/OnlineCompressTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/PositionedStoreStreamTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/RecoveryAfterBackupSetup.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/RecoveryTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/RowLockBasicTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/ServicePropertiesFileTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/SpaceTableTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/StoreBaseTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/StoreScriptsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/TableLockBasicTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/UpdateLocksTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/checkPoint.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/col_rec1.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/col_rec2.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/dropcrash.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/store/dropcrash2.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/corruptio/CorruptBaseStorageFactory.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/corruptio/CorruptDiskStorageFactory.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/corruptio/CorruptFile.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/corruptio/CorruptRandomAccessFile.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/corruptio/CorruptibleIo.java')
+    )
+    destinationDirectory = storeBroaderSmokeFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 def perfFunctionTestClassDir = layout.buildDirectory.dir('classes/perf-function-tests')
 
 tasks.register('compileDerbyPerfFunctionTests', JavaCompile) {
@@ -1403,6 +1510,7 @@ tasks.register('classes') {
             'compileDerbyMemoryFunctionTests',
             'compileDerbyNistFunctionTests',
             'compileDerbyStoreTestsFunctionTests',
+            'compileDerbyStoreBroaderSmokeFunctionTests',
             'compileDerbyPerfFunctionTests',
             'compileDerbyManagementFunctionTests',
             'compileDerbyLargeDataFunctionTests',
@@ -1436,6 +1544,7 @@ tasks.named('check') {
             'compileDerbyMemoryFunctionTests',
             'compileDerbyNistFunctionTests',
             'compileDerbyStoreTestsFunctionTests',
+            'compileDerbyStoreBroaderSmokeFunctionTests',
             'compileDerbyPerfFunctionTests',
             'compileDerbyManagementFunctionTests',
             'compileDerbyLargeDataFunctionTests',
@@ -1469,6 +1578,7 @@ tasks.register('compileActivatedDerbyTests') {
             'compileDerbyMemoryFunctionTests',
             'compileDerbyNistFunctionTests',
             'compileDerbyStoreTestsFunctionTests',
+            'compileDerbyStoreBroaderSmokeFunctionTests',
             'compileDerbyPerfFunctionTests',
             'compileDerbyManagementFunctionTests',
             'compileDerbyLargeDataFunctionTests',
@@ -2653,6 +2763,7 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'compileDerbyMemoryFunctionTests',
                 'compileDerbyNistFunctionTests',
                 'compileDerbyStoreTestsFunctionTests',
+                'compileDerbyStoreBroaderSmokeFunctionTests',
                 'compileDerbyPerfFunctionTests',
                 'compileDerbyManagementFunctionTests',
                 'compileDerbyLargeDataFunctionTests',
