@@ -536,6 +536,74 @@ tasks.register('compileDerbyStoreBroaderSmokeFunctionTests', JavaCompile) {
     )
 }
 
+
+// Compile a broad curated network-server/client subset. This is compile-only:
+// the selected derbynet tests often start servers, open sockets, inspect locale
+// output, or depend on external process behavior, so execution remains deferred.
+def derbynetBroaderSmokeFunctionTestClassDir = layout.buildDirectory.dir('classes/derbynet-broader-smoke-function-tests')
+
+tasks.register('compileDerbyDerbynetBroaderSmokeFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/BadConnectionTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/ByteArrayCombinerStreamTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/ClientSideSystemPropertiesTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/DRDAProtocolTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/DerbyNetAutoStartTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/DerbyNetNewServerTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/GetCurrentPropertiesTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/LOBLocatorReleaseTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/NSSecurityMechanismTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/NSinSameJVMTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/NetIjTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/NetworkServerControlClientCommandTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/OutBufferedStreamTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/PrepareStatementTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/ProtocolTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/RuntimeInfoTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/SSLTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/ServerPropertiesTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/ShutDownDBWhenNSShutsDownTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/SqlExceptionTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/SuicideOfStreamingTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/SwitchablePrintStream.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/SysinfoTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/TestEnc.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/Utf8CcsidManagerClientTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/Utf8CcsidManagerTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/derbynet/executeUpdate.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/ProtocolTestGrammar.java')
+    )
+    destinationDirectory = derbynetBroaderSmokeFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
 def perfFunctionTestClassDir = layout.buildDirectory.dir('classes/perf-function-tests')
 
 tasks.register('compileDerbyPerfFunctionTests', JavaCompile) {
@@ -1511,6 +1579,7 @@ tasks.register('classes') {
             'compileDerbyNistFunctionTests',
             'compileDerbyStoreTestsFunctionTests',
             'compileDerbyStoreBroaderSmokeFunctionTests',
+            'compileDerbyDerbynetBroaderSmokeFunctionTests',
             'compileDerbyPerfFunctionTests',
             'compileDerbyManagementFunctionTests',
             'compileDerbyLargeDataFunctionTests',
@@ -1545,6 +1614,7 @@ tasks.named('check') {
             'compileDerbyNistFunctionTests',
             'compileDerbyStoreTestsFunctionTests',
             'compileDerbyStoreBroaderSmokeFunctionTests',
+            'compileDerbyDerbynetBroaderSmokeFunctionTests',
             'compileDerbyPerfFunctionTests',
             'compileDerbyManagementFunctionTests',
             'compileDerbyLargeDataFunctionTests',
@@ -1579,6 +1649,7 @@ tasks.register('compileActivatedDerbyTests') {
             'compileDerbyNistFunctionTests',
             'compileDerbyStoreTestsFunctionTests',
             'compileDerbyStoreBroaderSmokeFunctionTests',
+            'compileDerbyDerbynetBroaderSmokeFunctionTests',
             'compileDerbyPerfFunctionTests',
             'compileDerbyManagementFunctionTests',
             'compileDerbyLargeDataFunctionTests',
@@ -2764,6 +2835,7 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'compileDerbyNistFunctionTests',
                 'compileDerbyStoreTestsFunctionTests',
                 'compileDerbyStoreBroaderSmokeFunctionTests',
+                'compileDerbyDerbynetBroaderSmokeFunctionTests',
                 'compileDerbyPerfFunctionTests',
                 'compileDerbyManagementFunctionTests',
                 'compileDerbyLargeDataFunctionTests',
@@ -2835,7 +2907,8 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'BlobClob4BlobTest - message text assertion for 40XD0',
                 'ParameterMetaDataJdbc30Test - requires runtime-visible lang procedure classes',
                 'ResultSetMiscTest - requires runtime-visible T_Access',
-                'SetTransactionIsolationTest - isolation behavior/state-sensitive assertion'
+                'SetTransactionIsolationTest - isolation behavior/state-sensitive assertion',
+                'Derbynet execution - server/socket/process/locale-sensitive; compile-only for now'
         ]
 
         println ''
