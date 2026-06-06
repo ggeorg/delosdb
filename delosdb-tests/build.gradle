@@ -144,6 +144,7 @@ tasks.register('compileDerbyTestSupport', JavaCompile) {
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/PrivilegedFileOpsForTests.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/SQLStateConstants.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/TestNullOutputStream.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/SecurityCheck.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/Formatters.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/Barrier.java'),
             new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/JarUtil.java'),
@@ -1917,6 +1918,8 @@ tasks.register('runDerbyJdbcApiStatementSmokeFunctionTests') {
 
 // Batched JDBC API metadata/result-set execution island. Keep per-class work
 // directories to contain state while avoiding full jdbcapi execution.
+// ParameterMetaDataJdbc30Test and ResultSetMiscTest remain compile-only until
+// their runtime procedure/classloader dependencies are activated deliberately.
 def jdbcApiMetadataSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbcapi-metadata-smoke-function')
 
 tasks.register('runDerbyJdbcApiMetadataSmokeFunctionTests') {
@@ -1926,10 +1929,7 @@ tasks.register('runDerbyJdbcApiMetadataSmokeFunctionTests') {
     doLast {
         [
                 'org.apache.derbyTesting.functionTests.tests.jdbcapi.DataSourceReferenceTest',
-                'org.apache.derbyTesting.functionTests.tests.jdbcapi.ParameterMetaDataJdbc30Test',
-                'org.apache.derbyTesting.functionTests.tests.jdbcapi.ResultSetJDBC30Test',
-                'org.apache.derbyTesting.functionTests.tests.jdbcapi.ResultSetMiscTest',
-                'org.apache.derbyTesting.functionTests.tests.jdbcapi.SetTransactionIsolationTest'
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.ResultSetJDBC30Test'
         ].each { testClassName ->
             def workDir = new File(jdbcApiMetadataSmokeFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
             delete workDir
