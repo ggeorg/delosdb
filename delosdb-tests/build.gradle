@@ -1570,6 +1570,165 @@ tasks.register('compileDerbyLangDdlDmlSmokeFunctionTests', JavaCompile) {
 }
 
 
+// Compile the broad remaining inherited Derby lang test island. This intentionally
+// stays compile-only: many of these classes are runtime-sensitive, optional-tool,
+// collation, trigger, XML, VTI, or concurrency-oriented tests.
+def langBroadRemainderSmokeFunctionTestClassDir = layout.buildDirectory.dir('classes/lang-broad-remainder-smoke-function-tests')
+
+tasks.register('compileDerbyLangBroadRemainderSmokeFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            'compileDerbyLangSmokeFunctionTests',
+            'compileDerbyLangAdditionalSmokeFunctionTests',
+            'compileDerbyLangCoreSmokeFunctionTests',
+            'compileDerbyLangDdlDmlSmokeFunctionTests',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/AggregateClassLoadingTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/AnsiSignatures.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/AnsiSignaturesTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ArchiveVTI.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/AwareVTITest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/BigDataTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/Bug5052rtsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ClassLoadingTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/CollationTest2.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ConcurrentImplicitCreateSchema.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ConnectTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/DBInJarTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/DatabaseClassLoadingTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/DeadlockDetectionTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/DeadlockModeTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/DeclareGlobalTempTableJavaJDBC30Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/DeclareGlobalTempTableJavaTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/Derby5652.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/Derby5866TriggerOrderTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/Derby6131.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/Derby6725GetDatabaseName.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/DummyAwareVTI.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/DummyOptTrace.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/EnumeratorTableFunction.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/FakeByteArray.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/FullName.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/GeneratedColumnsPermsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/GenericMode.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/HalfCreatedDatabaseTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/IntArray.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/JitTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/JoinDeadlockTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/JsonSuite.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/LOBDB2compatibilityTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/LangScripts.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/LobMode.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/LongMagnitude.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/LuceneBackupTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/LuceneCoarseAuthorizationTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/LuceneCollationTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/LuceneInMemoryTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/LuceneJarLoadingTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/LuceneSuite.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/LuceneSupportTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ModeAggregate.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/NativeAuthenticationServiceTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/NestedCommitTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/NestedWhereSubqueryTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/NewOptimizerOverridesTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/OLAPTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/OptimizerOverridesTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/OptionalToolExample.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/OptionalToolsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/OrderByAndOffsetFetchInSubqueries.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/OrderByAndSortAvoidance.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/PrepareExecuteDDL.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ProcedureInTriggerTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/RSMDWrapper.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/RawDBReaderTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/RestrictedTableVTI.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/RestrictedVTITest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ResultSetsFromPreparedStatementTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/RolesConferredPrivilegesTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/RolesTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/RoutineTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/RoutinesDefinersRightsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/SQLAuthorizationPropTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/SQLSessionContextTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/SampleSQLData.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/SelectivityTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/SequencePermsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/SimpleJsonPermsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/SimpleJsonTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/SpillHashTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/StatementPlanCacheTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/StreamsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/SysDiagVTIMappingTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/TableFunctionTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/TableVTI.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/Test_6496.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/TriggerBeforeTrigTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/TriggerGeneralTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/TriggerWhenClauseTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/TruncateTableAndOnlineBackupTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/UDAPermsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/UDTPermsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/UDTTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/UniqueConstraintMultiThreadedTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/UserDefinedAggregatesTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/VTITest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/VarargsRoutines.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/VarargsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/VetJigsawTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/WISCInsert.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/WarehouseVTI.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/XMLBindingTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/XMLConcurrencyTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/XMLOptimizerTraceTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/XMLTypeAndOpsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/XMLXXETest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ZipFileTableFunction.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/concateTests.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/dbManagerLimits.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/dbjarUtil.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/outparams.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/outparams30.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/simpleThread.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/simpleThreadWrapper.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/userDefMethods.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/wisconsin.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/util/SampleVTI.java')
+    )
+    destinationDirectory = langBroadRemainderSmokeFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            langSmokeFunctionTestClassDir,
+            langAdditionalSmokeFunctionTestClassDir,
+            langCoreSmokeFunctionTestClassDir,
+            langDdlDmlSmokeFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+
 tasks.register('classes') {
     dependsOn 'compileDerbyUnitJunitTests',
             'compileDerbyEngineFunctionTests',
@@ -1596,7 +1755,8 @@ tasks.register('classes') {
             'compileDerbyLangSmokeFunctionTests',
             'compileDerbyLangAdditionalSmokeFunctionTests',
             'compileDerbyLangCoreSmokeFunctionTests',
-            'compileDerbyLangDdlDmlSmokeFunctionTests'
+            'compileDerbyLangDdlDmlSmokeFunctionTests',
+            'compileDerbyLangBroadRemainderSmokeFunctionTests'
 }
 
 tasks.named('assemble') {
@@ -1631,7 +1791,8 @@ tasks.named('check') {
             'compileDerbyLangSmokeFunctionTests',
             'compileDerbyLangAdditionalSmokeFunctionTests',
             'compileDerbyLangCoreSmokeFunctionTests',
-            'compileDerbyLangDdlDmlSmokeFunctionTests'
+            'compileDerbyLangDdlDmlSmokeFunctionTests',
+            'compileDerbyLangBroadRemainderSmokeFunctionTests'
 }
 
 
@@ -1666,7 +1827,8 @@ tasks.register('compileActivatedDerbyTests') {
             'compileDerbyLangSmokeFunctionTests',
             'compileDerbyLangAdditionalSmokeFunctionTests',
             'compileDerbyLangCoreSmokeFunctionTests',
-            'compileDerbyLangDdlDmlSmokeFunctionTests'
+            'compileDerbyLangDdlDmlSmokeFunctionTests',
+            'compileDerbyLangBroadRemainderSmokeFunctionTests'
 }
 
 // First tiny execution island for the inherited Derby tests. Keep execution
@@ -2852,7 +3014,8 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'compileDerbyLangSmokeFunctionTests',
                 'compileDerbyLangAdditionalSmokeFunctionTests',
                 'compileDerbyLangCoreSmokeFunctionTests',
-                'compileDerbyLangDdlDmlSmokeFunctionTests'
+                'compileDerbyLangDdlDmlSmokeFunctionTests',
+                'compileDerbyLangBroadRemainderSmokeFunctionTests'
         ]
 
         def executionIslands = [
