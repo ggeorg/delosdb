@@ -583,6 +583,67 @@ tasks.register('compileDerbyI18nFunctionTests', JavaCompile) {
     )
 }
 
+// Compile a broad tools smoke subset without enabling the old tools harness or
+// dblook/TestUtil tail. This recovers ij/import-export/sysinfo source coverage
+// while keeping runtime execution unchanged.
+def toolsBroaderSmokeFunctionTestClassDir = layout.buildDirectory.dir('classes/tools-broader-smoke-function-tests')
+
+tasks.register('compileDerbyToolsBroaderSmokeFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            'compileDerbyLargeDataFunctionTests',
+            'compileDerbyI18nFunctionTests',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/ConnectWrongSubprotocolTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/IJRunScriptTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/IjConnNameTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/IjSecurityManagerTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/ImportExportBinaryDataTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/ImportExportIJTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/ImportExportLobTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/ImportExportTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/RollBackWrappingWhenFailOnImportTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/SysinfoAPITest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/SysinfoCPCheckTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/SysinfoLocaleTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/ToolScripts.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/derbyrunjartest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/ij2Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/ij3Test.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/tools/ij5Test.java')
+    )
+    destinationDirectory = toolsBroaderSmokeFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            largeDataFunctionTestClassDir,
+            i18nFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+
 def compatibilityFunctionTestClassDir = layout.buildDirectory.dir('classes/compatibility-function-tests')
 
 tasks.register('compileDerbyCompatibilityFunctionTests', JavaCompile) {
@@ -940,6 +1001,63 @@ tasks.register('compileDerbyJdbcApiBroaderSmokeFunctionTests', JavaCompile) {
 }
 
 
+// Compile the remaining JDBC API tail that stays clear of TestUtil/RunTest.
+// The deliberately excluded tail is still old-harness-sensitive and should be
+// handled separately rather than hidden inside this batch.
+def jdbcApiTailSmokeFunctionTestClassDir = layout.buildDirectory.dir('classes/jdbcapi-tail-smoke-function-tests')
+
+tasks.register('compileDerbyJdbcApiTailSmokeFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            'compileDerbyJdbcApiSmokeFunctionTests',
+            'compileDerbyJdbcApiStatementSmokeFunctionTests',
+            'compileDerbyJdbcApiMetadataSmokeFunctionTests',
+            'compileDerbyJdbcApiBroaderSmokeFunctionTests',
+            'compileDerbyCompatibilityFunctionTests',
+            'compileDerbyLangDdlDmlSmokeFunctionTests',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/BLOBDataModelSetup.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/BLOBTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/J2EEDataSourceTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/ProcedureTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbcapi/SURijTest.java')
+    )
+    destinationDirectory = jdbcApiTailSmokeFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            jdbcApiSmokeFunctionTestClassDir,
+            jdbcApiStatementSmokeFunctionTestClassDir,
+            jdbcApiMetadataSmokeFunctionTestClassDir,
+            jdbcApiBroaderSmokeFunctionTestClassDir,
+            compatibilityFunctionTestClassDir,
+            langDdlDmlSmokeFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+
 // Compile the remaining JDBC4 tests that are self-contained with the already
 // activated JDBC4 smoke support. Keep signature-vetting utilities out for now
 // because they pull old harness TestUtil/RunTest dependencies.
@@ -1290,9 +1408,11 @@ tasks.register('classes') {
             'compileDerbyLargeDataFunctionTests',
             'compileDerbyI18nFunctionTests',
             'compileDerbyCompatibilityFunctionTests',
+            'compileDerbyToolsBroaderSmokeFunctionTests',
             'compileDerbyJdbcApiSmokeFunctionTests',
             'compileDerbyJdbc4SmokeFunctionTests',
             'compileDerbyJdbc4BroaderSmokeFunctionTests',
+            'compileDerbyJdbcApiTailSmokeFunctionTests',
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
             'compileDerbyJdbcApiBroaderSmokeFunctionTests',
@@ -1321,9 +1441,11 @@ tasks.named('check') {
             'compileDerbyLargeDataFunctionTests',
             'compileDerbyI18nFunctionTests',
             'compileDerbyCompatibilityFunctionTests',
+            'compileDerbyToolsBroaderSmokeFunctionTests',
             'compileDerbyJdbcApiSmokeFunctionTests',
             'compileDerbyJdbc4SmokeFunctionTests',
             'compileDerbyJdbc4BroaderSmokeFunctionTests',
+            'compileDerbyJdbcApiTailSmokeFunctionTests',
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
             'compileDerbyJdbcApiBroaderSmokeFunctionTests',
@@ -1352,9 +1474,11 @@ tasks.register('compileActivatedDerbyTests') {
             'compileDerbyLargeDataFunctionTests',
             'compileDerbyI18nFunctionTests',
             'compileDerbyCompatibilityFunctionTests',
+            'compileDerbyToolsBroaderSmokeFunctionTests',
             'compileDerbyJdbcApiSmokeFunctionTests',
             'compileDerbyJdbc4SmokeFunctionTests',
             'compileDerbyJdbc4BroaderSmokeFunctionTests',
+            'compileDerbyJdbcApiTailSmokeFunctionTests',
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
             'compileDerbyJdbcApiBroaderSmokeFunctionTests',
@@ -2534,9 +2658,11 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'compileDerbyLargeDataFunctionTests',
                 'compileDerbyI18nFunctionTests',
                 'compileDerbyCompatibilityFunctionTests',
+                'compileDerbyToolsBroaderSmokeFunctionTests',
                 'compileDerbyJdbcApiSmokeFunctionTests',
                 'compileDerbyJdbc4SmokeFunctionTests',
                 'compileDerbyJdbc4BroaderSmokeFunctionTests',
+                'compileDerbyJdbcApiTailSmokeFunctionTests',
                 'compileDerbyJdbcApiStatementSmokeFunctionTests',
                 'compileDerbyJdbcApiMetadataSmokeFunctionTests',
                 'compileDerbyJdbcApiBroaderSmokeFunctionTests',
