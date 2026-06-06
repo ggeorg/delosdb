@@ -1957,38 +1957,70 @@ tasks.register('runDerbyJdbcApiMetadataSmokeFunctionTests') {
     }
 }
 
-tasks.register('runActivatedDerbyExecutionIslands') {
+// Bucketed lifecycle aliases for the activated inherited Derby execution islands.
+// These aliases make failures cheaper to isolate without changing which tests are active.
+tasks.register('runActivatedDerbyCoreExecutionIslands') {
     group = 'verification'
-    description = 'Runs the currently activated inherited Derby execution islands.'
+    description = 'Runs activated inherited Derby core/non-JDBC execution islands.'
     dependsOn 'runDerbyUnitJunitTests',
             'runDerbyEngineFunctionTests',
+            'runDerbyEngineExtendedFunctionTests',
             'runDerbyMemoryDbFunctionTests',
             'runDerbyMemoryFunctionTests',
             'runDerbyStoreTestsFunctionTests',
-            'runDerbyJdbcApiSmokeFunctionTests',
-            'runDerbyJdbc4SmokeFunctionTests',
             'runDerbyI18nSmokeFunctionTests',
-            'runDerbyPerfSmokeFunctionTests',
-            'runDerbyJdbcApiExtendedSmokeFunctionTests',
-            'runDerbyJdbc4ExtendedSmokeFunctionTests',
-            'runDerbyEngineExtendedFunctionTests',
-            'runDerbyLargeDataSmokeFunctionTests',
-            'runDerbyManagementSmokeFunctionTests',
-            'runDerbyJdbcApiAdditionalSmokeFunctionTests',
-            'runDerbyJdbc4AdditionalSmokeFunctionTests',
-            'runDerbyJdbcApiLobSmokeFunctionTests',
-            'runDerbyJdbc4LobSmokeFunctionTests',
-            'runDerbyJdbc4MiscSmokeFunctionTests',
+            'runDerbyPerfSmokeFunctionTests'
+}
+
+tasks.register('runActivatedDerbyManagementExecutionIslands') {
+    group = 'verification'
+    description = 'Runs activated inherited Derby management execution islands.'
+    dependsOn 'runDerbyManagementSmokeFunctionTests',
             'runDerbyManagementCoreSmokeFunctionTests',
-            'runDerbyJdbc4ConnectionSmokeFunctionTests',
+            'runDerbyManagementAdditionalSmokeFunctionTests'
+}
+
+tasks.register('runActivatedDerbyLargeDataExecutionIslands') {
+    group = 'verification'
+    description = 'Runs activated inherited Derby large-data execution islands.'
+    dependsOn 'runDerbyLargeDataSmokeFunctionTests',
+            'runDerbyLargeDataAdditionalSmokeFunctionTests'
+}
+
+tasks.register('runActivatedDerbyJdbcApiExecutionIslands') {
+    group = 'verification'
+    description = 'Runs activated inherited Derby JDBC API execution islands.'
+    dependsOn 'runDerbyJdbcApiSmokeFunctionTests',
+            'runDerbyJdbcApiExtendedSmokeFunctionTests',
+            'runDerbyJdbcApiAdditionalSmokeFunctionTests',
+            'runDerbyJdbcApiLobSmokeFunctionTests',
             'runDerbyJdbcApiCallableSmokeFunctionTests',
-            'runDerbyJdbc4LobResultSetSmokeFunctionTests',
-            'runDerbyLargeDataAdditionalSmokeFunctionTests',
-            'runDerbyManagementAdditionalSmokeFunctionTests',
             'runDerbyJdbcApiBlobAuthSmokeFunctionTests',
-            'runDerbyJdbc4AbortSmokeFunctionTests',
             'runDerbyJdbcApiStatementSmokeFunctionTests',
             'runDerbyJdbcApiMetadataSmokeFunctionTests'
+}
+
+tasks.register('runActivatedDerbyJdbc4ExecutionIslands') {
+    group = 'verification'
+    description = 'Runs activated inherited Derby JDBC4 execution islands.'
+    dependsOn 'runDerbyJdbc4SmokeFunctionTests',
+            'runDerbyJdbc4ExtendedSmokeFunctionTests',
+            'runDerbyJdbc4AdditionalSmokeFunctionTests',
+            'runDerbyJdbc4LobSmokeFunctionTests',
+            'runDerbyJdbc4MiscSmokeFunctionTests',
+            'runDerbyJdbc4ConnectionSmokeFunctionTests',
+            'runDerbyJdbc4LobResultSetSmokeFunctionTests',
+            'runDerbyJdbc4AbortSmokeFunctionTests'
+}
+
+tasks.register('runActivatedDerbyExecutionIslands') {
+    group = 'verification'
+    description = 'Runs the currently activated inherited Derby execution islands.'
+    dependsOn 'runActivatedDerbyCoreExecutionIslands',
+            'runActivatedDerbyManagementExecutionIslands',
+            'runActivatedDerbyLargeDataExecutionIslands',
+            'runActivatedDerbyJdbcApiExecutionIslands',
+            'runActivatedDerbyJdbc4ExecutionIslands'
 }
 
 
@@ -2049,6 +2081,14 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'runDerbyJdbcApiMetadataSmokeFunctionTests'
         ]
 
+        def executionBuckets = [
+                'runActivatedDerbyCoreExecutionIslands',
+                'runActivatedDerbyManagementExecutionIslands',
+                'runActivatedDerbyLargeDataExecutionIslands',
+                'runActivatedDerbyJdbcApiExecutionIslands',
+                'runActivatedDerbyJdbc4ExecutionIslands'
+        ]
+
         def compileOnlyTail = [
                 'UrlLocaleTest - message/localization-sensitive warnings',
                 'BatchUpdateTest - duplicate-key message text assertion',
@@ -2076,6 +2116,11 @@ tasks.register('listActivatedDerbyTestIslands') {
         println ''
         println 'Aggregate commands:'
         println '  ./gradlew :delosdb-tests:compileActivatedDerbyTests'
+        println '  ./gradlew :delosdb-tests:runActivatedDerbyCoreExecutionIslands'
+        println '  ./gradlew :delosdb-tests:runActivatedDerbyManagementExecutionIslands'
+        println '  ./gradlew :delosdb-tests:runActivatedDerbyLargeDataExecutionIslands'
+        println '  ./gradlew :delosdb-tests:runActivatedDerbyJdbcApiExecutionIslands'
+        println '  ./gradlew :delosdb-tests:runActivatedDerbyJdbc4ExecutionIslands'
         println '  ./gradlew :delosdb-tests:runActivatedDerbyExecutionIslands'
         println '  ./gradlew fullVerification'
         println ''
