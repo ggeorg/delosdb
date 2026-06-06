@@ -1581,6 +1581,9 @@ tasks.register('compileDerbyLangBroadRemainderSmokeFunctionTests', JavaCompile) 
             'compileDerbyLangAdditionalSmokeFunctionTests',
             'compileDerbyLangCoreSmokeFunctionTests',
             'compileDerbyLangDdlDmlSmokeFunctionTests',
+            'compileDerbyJdbcApiBroaderSmokeFunctionTests',
+            'compileDerbyJdbc4BroaderSmokeFunctionTests',
+            'compileDerbyMemoryDbFunctionTests',
             ':delosdb-commons:compileDerbyCommons',
             ':delosdb-client:compileDerbyClient',
             ':delosdb-server:compileDerbyServer',
@@ -1723,6 +1726,9 @@ tasks.register('compileDerbyLangBroadRemainderSmokeFunctionTests', JavaCompile) 
             langAdditionalSmokeFunctionTestClassDir,
             langCoreSmokeFunctionTestClassDir,
             langDdlDmlSmokeFunctionTestClassDir,
+            jdbcApiBroaderSmokeFunctionTestClassDir,
+            jdbc4BroaderSmokeFunctionTestClassDir,
+            memoryDbFunctionTestClassDir,
             junitClasspath,
             externalTestClasspath
     )
