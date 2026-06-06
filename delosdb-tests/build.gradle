@@ -945,6 +945,68 @@ tasks.register('compileDerbyLangAdditionalSmokeFunctionTests', JavaCompile) {
     )
 }
 
+// Compile a third curated SQL lang smoke subset focused on core SQL behavior.
+// Keep this compile-only so semantic/runtime-sensitive lang assertions remain
+// out of execution until they are reviewed class by class.
+def langCoreSmokeFunctionTestClassDir = layout.buildDirectory.dir('classes/lang-core-smoke-function-tests')
+
+tasks.register('compileDerbyLangCoreSmokeFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            'compileDerbyLangSmokeFunctionTests',
+            'compileDerbyLangAdditionalSmokeFunctionTests',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ArithmeticTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/CaseExpressionTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ColumnDefaultsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/CreateTableFromQueryTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/DateTimeTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/DistinctTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ForBitDataTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/GroupByExpressionTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/GroupByTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/InbetweenTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/InsertTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/NullsTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/PrimaryKeyTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/RenameIndexTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/RenameTableTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/TimeHandlingTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/TimestampArithTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/ViewsTest.java')
+    )
+    destinationDirectory = langCoreSmokeFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            langSmokeFunctionTestClassDir,
+            langAdditionalSmokeFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+
 tasks.register('classes') {
     dependsOn 'compileDerbyUnitJunitTests',
             'compileDerbyEngineFunctionTests',
@@ -963,7 +1025,8 @@ tasks.register('classes') {
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
             'compileDerbyLangSmokeFunctionTests',
-            'compileDerbyLangAdditionalSmokeFunctionTests'
+            'compileDerbyLangAdditionalSmokeFunctionTests',
+            'compileDerbyLangCoreSmokeFunctionTests'
 }
 
 tasks.named('assemble') {
@@ -990,7 +1053,8 @@ tasks.named('check') {
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
             'compileDerbyLangSmokeFunctionTests',
-            'compileDerbyLangAdditionalSmokeFunctionTests'
+            'compileDerbyLangAdditionalSmokeFunctionTests',
+            'compileDerbyLangCoreSmokeFunctionTests'
 }
 
 
@@ -1017,7 +1081,8 @@ tasks.register('compileActivatedDerbyTests') {
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
             'compileDerbyLangSmokeFunctionTests',
-            'compileDerbyLangAdditionalSmokeFunctionTests'
+            'compileDerbyLangAdditionalSmokeFunctionTests',
+            'compileDerbyLangCoreSmokeFunctionTests'
 }
 
 // First tiny execution island for the inherited Derby tests. Keep execution
@@ -2195,7 +2260,8 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'compileDerbyJdbcApiStatementSmokeFunctionTests',
                 'compileDerbyJdbcApiMetadataSmokeFunctionTests',
                 'compileDerbyLangSmokeFunctionTests',
-                'compileDerbyLangAdditionalSmokeFunctionTests'
+                'compileDerbyLangAdditionalSmokeFunctionTests',
+                'compileDerbyLangCoreSmokeFunctionTests'
         ]
 
         def executionIslands = [
