@@ -1158,7 +1158,7 @@ tasks.register('compileDerbyJdbcApiTailSmokeFunctionTests', JavaCompile) {
             jdbcApiMetadataSmokeFunctionTestClassDir,
             jdbcApiBroaderSmokeFunctionTestClassDir,
             compatibilityFunctionTestClassDir,
-            langDdlDmlSmokeFunctionTestClassDir,
+            layout.buildDirectory.dir('classes/lang-ddl-dml-smoke-function-tests'),
             junitClasspath,
             externalTestClasspath
     )
