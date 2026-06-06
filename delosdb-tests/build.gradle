@@ -940,6 +940,65 @@ tasks.register('compileDerbyJdbcApiBroaderSmokeFunctionTests', JavaCompile) {
 }
 
 
+// Compile the remaining JDBC4 tests that are self-contained with the already
+// activated JDBC4 smoke support. Keep signature-vetting utilities out for now
+// because they pull old harness TestUtil/RunTest dependencies.
+def jdbc4BroaderSmokeFunctionTestClassDir = layout.buildDirectory.dir('classes/jdbc4-broader-smoke-function-tests')
+
+tasks.register('compileDerbyJdbc4BroaderSmokeFunctionTests', JavaCompile) {
+    dependsOn 'compileDerbyTestSupport',
+            'compileDerbyJdbcApiSmokeFunctionTests',
+            'compileDerbyJdbcApiStatementSmokeFunctionTests',
+            'compileDerbyJdbcApiMetadataSmokeFunctionTests',
+            'compileDerbyJdbcApiBroaderSmokeFunctionTests',
+            'compileDerbyJdbc4SmokeFunctionTests',
+            ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-client:compileDerbyClient',
+            ':delosdb-server:compileDerbyServer',
+            ':delosdb-tools:compileDerbyTools',
+            ':delosdb-optionaltools:compileDerbyOptionalTools',
+            ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:compileClassSizeCatalog',
+            ':splitEngineMessages'
+    source = files(
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/Price.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/CallableStatementTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/DataSourceTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/Derby2017LayerBTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/JDBC4FromJDBC3DataSourceTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/PreparedStatementTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/PreparedStatementTest42.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/StatementTest.java'),
+            new File(testSourceRoot, 'org/apache/derbyTesting/functionTests/tests/jdbc4/XA40Test.java')
+    )
+    destinationDirectory = jdbc4BroaderSmokeFunctionTestClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            engineModuleClassDir,
+            clientModuleClassDir,
+            serverModuleClassDir,
+            toolsModuleClassDir,
+            optionalToolsModuleClassDir,
+            runnerModuleClassDir,
+            testSupportClassDir,
+            jdbcApiSmokeFunctionTestClassDir,
+            jdbcApiStatementSmokeFunctionTestClassDir,
+            jdbcApiMetadataSmokeFunctionTestClassDir,
+            jdbcApiBroaderSmokeFunctionTestClassDir,
+            jdbc4SmokeFunctionTestClassDir,
+            junitClasspath,
+            externalTestClasspath
+    )
+}
+
+
 // Compile a curated SQL lang smoke subset. Keep this compile-only for now so the
 // broad lang package does not enter execution before its resource/message tails
 // are classified.
@@ -1233,6 +1292,7 @@ tasks.register('classes') {
             'compileDerbyCompatibilityFunctionTests',
             'compileDerbyJdbcApiSmokeFunctionTests',
             'compileDerbyJdbc4SmokeFunctionTests',
+            'compileDerbyJdbc4BroaderSmokeFunctionTests',
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
             'compileDerbyJdbcApiBroaderSmokeFunctionTests',
@@ -1263,6 +1323,7 @@ tasks.named('check') {
             'compileDerbyCompatibilityFunctionTests',
             'compileDerbyJdbcApiSmokeFunctionTests',
             'compileDerbyJdbc4SmokeFunctionTests',
+            'compileDerbyJdbc4BroaderSmokeFunctionTests',
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
             'compileDerbyJdbcApiBroaderSmokeFunctionTests',
@@ -1293,6 +1354,7 @@ tasks.register('compileActivatedDerbyTests') {
             'compileDerbyCompatibilityFunctionTests',
             'compileDerbyJdbcApiSmokeFunctionTests',
             'compileDerbyJdbc4SmokeFunctionTests',
+            'compileDerbyJdbc4BroaderSmokeFunctionTests',
             'compileDerbyJdbcApiStatementSmokeFunctionTests',
             'compileDerbyJdbcApiMetadataSmokeFunctionTests',
             'compileDerbyJdbcApiBroaderSmokeFunctionTests',
@@ -2474,6 +2536,7 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'compileDerbyCompatibilityFunctionTests',
                 'compileDerbyJdbcApiSmokeFunctionTests',
                 'compileDerbyJdbc4SmokeFunctionTests',
+                'compileDerbyJdbc4BroaderSmokeFunctionTests',
                 'compileDerbyJdbcApiStatementSmokeFunctionTests',
                 'compileDerbyJdbcApiMetadataSmokeFunctionTests',
                 'compileDerbyJdbcApiBroaderSmokeFunctionTests',
