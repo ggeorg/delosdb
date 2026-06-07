@@ -1,0 +1,29 @@
+# Gradle build outputs
+build/
+**/build/
+
+# Inherited Derby/Ant-era generated artifacts; not supported DelosDB outputs
+classes/
+classes.pptesting/
+generated/
+jars/
+
+# Derby local databases and logs
+derby.log
+*.lck
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Gradle
+.gradle/
+.gradle-cache/
