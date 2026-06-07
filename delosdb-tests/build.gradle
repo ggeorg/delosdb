@@ -2995,79 +2995,79 @@ tasks.register('listActivatedDerbyTestIslands') {
     description = 'Prints the currently activated inherited Derby compile and execution islands.'
     doLast {
         def compileIslands = [
-                'compileDerbyUnitJunitTests',
-                'compileDerbyEngineFunctionTests',
-                'compileDerbyMultiFunctionTests',
-                'compileDerbyMemoryDbFunctionTests',
-                'compileDerbyMemoryFunctionTests',
-                'compileDerbyNistFunctionTests',
-                'compileDerbyStoreTestsFunctionTests',
-                'compileDerbyStoreBroaderSmokeFunctionTests',
-                'compileDerbyDerbynetBroaderSmokeFunctionTests',
-                'compileDerbyPerfFunctionTests',
-                'compileDerbyManagementFunctionTests',
-                'compileDerbyLargeDataFunctionTests',
-                'compileDerbyI18nFunctionTests',
-                'compileDerbyCompatibilityFunctionTests',
-                'compileDerbyToolsBroaderSmokeFunctionTests',
-                'compileDerbyJdbcApiSmokeFunctionTests',
-                'compileDerbyJdbc4SmokeFunctionTests',
-                'compileDerbyJdbc4BroaderSmokeFunctionTests',
-                'compileDerbyJdbcApiTailSmokeFunctionTests',
-                'compileDerbyJdbcApiStatementSmokeFunctionTests',
-                'compileDerbyJdbcApiMetadataSmokeFunctionTests',
-                'compileDerbyJdbcApiBroaderSmokeFunctionTests',
-                'compileDerbyLangSmokeFunctionTests',
-                'compileDerbyLangAdditionalSmokeFunctionTests',
-                'compileDerbyLangCoreSmokeFunctionTests',
-                'compileDerbyLangDdlDmlSmokeFunctionTests',
-                'compileDerbyLangBroadRemainderSmokeFunctionTests'
+                [area: 'core',     mode: 'compile+execution', task: 'compileDerbyUnitJunitTests',                       notes: 'unitTests/junit'],
+                [area: 'core',     mode: 'compile+execution', task: 'compileDerbyEngineFunctionTests',                  notes: 'small engine function tests'],
+                [area: 'core',     mode: 'compile-only',      task: 'compileDerbyMultiFunctionTests',                   notes: 'multi/database function tests'],
+                [area: 'core',     mode: 'compile+execution', task: 'compileDerbyMemoryDbFunctionTests',                notes: 'memorydb smoke'],
+                [area: 'core',     mode: 'compile+execution', task: 'compileDerbyMemoryFunctionTests',                  notes: 'memory smoke'],
+                [area: 'core',     mode: 'compile-only',      task: 'compileDerbyNistFunctionTests',                    notes: 'NIST source compile only'],
+                [area: 'store',    mode: 'compile+execution', task: 'compileDerbyStoreTestsFunctionTests',              notes: 'store smoke'],
+                [area: 'store',    mode: 'compile-only',      task: 'compileDerbyStoreBroaderSmokeFunctionTests',       notes: 'broader inherited store batch'],
+                [area: 'derbynet', mode: 'compile-only',      task: 'compileDerbyDerbynetBroaderSmokeFunctionTests',    notes: 'network server/client compile batch'],
+                [area: 'perf',     mode: 'compile+execution', task: 'compileDerbyPerfFunctionTests',                    notes: 'perf smoke'],
+                [area: 'mgmt',     mode: 'compile+execution', task: 'compileDerbyManagementFunctionTests',              notes: 'management smoke'],
+                [area: 'largedata',mode: 'compile+execution', task: 'compileDerbyLargeDataFunctionTests',               notes: 'large-data smoke'],
+                [area: 'i18n',     mode: 'compile+execution', task: 'compileDerbyI18nFunctionTests',                    notes: 'i18n smoke'],
+                [area: 'compat',   mode: 'compile-only',      task: 'compileDerbyCompatibilityFunctionTests',           notes: 'compatibility source compile only'],
+                [area: 'tools',    mode: 'compile-only',      task: 'compileDerbyToolsBroaderSmokeFunctionTests',       notes: 'broader tools batch'],
+                [area: 'jdbcapi',  mode: 'compile+execution', task: 'compileDerbyJdbcApiSmokeFunctionTests',            notes: 'JDBC API smoke'],
+                [area: 'jdbc4',    mode: 'compile+execution', task: 'compileDerbyJdbc4SmokeFunctionTests',              notes: 'JDBC4 smoke'],
+                [area: 'jdbc4',    mode: 'compile-only',      task: 'compileDerbyJdbc4BroaderSmokeFunctionTests',       notes: 'broader JDBC4 batch'],
+                [area: 'jdbcapi',  mode: 'compile-only',      task: 'compileDerbyJdbcApiTailSmokeFunctionTests',        notes: 'JDBC API tail batch'],
+                [area: 'jdbcapi',  mode: 'compile+execution', task: 'compileDerbyJdbcApiStatementSmokeFunctionTests',   notes: 'statement smoke'],
+                [area: 'jdbcapi',  mode: 'compile+execution', task: 'compileDerbyJdbcApiMetadataSmokeFunctionTests',    notes: 'metadata smoke'],
+                [area: 'jdbcapi',  mode: 'compile-only',      task: 'compileDerbyJdbcApiBroaderSmokeFunctionTests',     notes: 'broader JDBC API batch'],
+                [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangSmokeFunctionTests',               notes: 'first curated lang batch'],
+                [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangAdditionalSmokeFunctionTests',     notes: 'additional curated lang batch'],
+                [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangCoreSmokeFunctionTests',           notes: 'core SQL/lang batch'],
+                [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangDdlDmlSmokeFunctionTests',         notes: 'DDL/DML lang batch'],
+                [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangBroadRemainderSmokeFunctionTests', notes: 'broad remaining safe lang batch']
         ]
 
         def executionIslands = [
-                'runDerbyUnitJunitTests',
-                'runDerbyEngineFunctionTests',
-                'runDerbyMemoryDbFunctionTests',
-                'runDerbyMemoryFunctionTests',
-                'runDerbyStoreTestsFunctionTests',
-                'runDerbyJdbcApiSmokeFunctionTests',
-                'runDerbyJdbc4SmokeFunctionTests',
-                'runDerbyI18nSmokeFunctionTests',
-                'runDerbyPerfSmokeFunctionTests',
-                'runDerbyJdbcApiExtendedSmokeFunctionTests',
-                'runDerbyJdbc4ExtendedSmokeFunctionTests',
-                'runDerbyEngineExtendedFunctionTests',
-                'runDerbyLargeDataSmokeFunctionTests',
-                'runDerbyManagementSmokeFunctionTests',
-                'runDerbyJdbcApiAdditionalSmokeFunctionTests',
-                'runDerbyJdbc4AdditionalSmokeFunctionTests',
-                'runDerbyJdbcApiLobSmokeFunctionTests',
-                'runDerbyJdbc4LobSmokeFunctionTests',
-                'runDerbyJdbc4MiscSmokeFunctionTests',
-                'runDerbyManagementCoreSmokeFunctionTests',
-                'runDerbyJdbc4ConnectionSmokeFunctionTests',
-                'runDerbyJdbcApiCallableSmokeFunctionTests',
-                'runDerbyJdbc4LobResultSetSmokeFunctionTests',
-                'runDerbyLargeDataAdditionalSmokeFunctionTests',
-                'runDerbyManagementAdditionalSmokeFunctionTests',
-                'runDerbyJdbcApiBlobAuthSmokeFunctionTests',
-                'runDerbyJdbc4AbortSmokeFunctionTests',
-                'runDerbyJdbcApiStatementSmokeFunctionTests',
-                'runDerbyJdbcApiMetadataSmokeFunctionTests'
+                [area: 'core',     bucket: 'core',      task: 'runDerbyUnitJunitTests'],
+                [area: 'core',     bucket: 'core',      task: 'runDerbyEngineFunctionTests'],
+                [area: 'core',     bucket: 'core',      task: 'runDerbyMemoryDbFunctionTests'],
+                [area: 'core',     bucket: 'core',      task: 'runDerbyMemoryFunctionTests'],
+                [area: 'store',    bucket: 'core',      task: 'runDerbyStoreTestsFunctionTests'],
+                [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiSmokeFunctionTests'],
+                [area: 'jdbc4',    bucket: 'jdbc4',     task: 'runDerbyJdbc4SmokeFunctionTests'],
+                [area: 'i18n',     bucket: 'core',      task: 'runDerbyI18nSmokeFunctionTests'],
+                [area: 'perf',     bucket: 'core',      task: 'runDerbyPerfSmokeFunctionTests'],
+                [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiExtendedSmokeFunctionTests'],
+                [area: 'jdbc4',    bucket: 'jdbc4',     task: 'runDerbyJdbc4ExtendedSmokeFunctionTests'],
+                [area: 'core',     bucket: 'core',      task: 'runDerbyEngineExtendedFunctionTests'],
+                [area: 'largedata',bucket: 'largedata', task: 'runDerbyLargeDataSmokeFunctionTests'],
+                [area: 'mgmt',     bucket: 'mgmt',      task: 'runDerbyManagementSmokeFunctionTests'],
+                [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiAdditionalSmokeFunctionTests'],
+                [area: 'jdbc4',    bucket: 'jdbc4',     task: 'runDerbyJdbc4AdditionalSmokeFunctionTests'],
+                [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiLobSmokeFunctionTests'],
+                [area: 'jdbc4',    bucket: 'jdbc4',     task: 'runDerbyJdbc4LobSmokeFunctionTests'],
+                [area: 'jdbc4',    bucket: 'jdbc4',     task: 'runDerbyJdbc4MiscSmokeFunctionTests'],
+                [area: 'mgmt',     bucket: 'mgmt',      task: 'runDerbyManagementCoreSmokeFunctionTests'],
+                [area: 'jdbc4',    bucket: 'jdbc4',     task: 'runDerbyJdbc4ConnectionSmokeFunctionTests'],
+                [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiCallableSmokeFunctionTests'],
+                [area: 'jdbc4',    bucket: 'jdbc4',     task: 'runDerbyJdbc4LobResultSetSmokeFunctionTests'],
+                [area: 'largedata',bucket: 'largedata', task: 'runDerbyLargeDataAdditionalSmokeFunctionTests'],
+                [area: 'mgmt',     bucket: 'mgmt',      task: 'runDerbyManagementAdditionalSmokeFunctionTests'],
+                [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiBlobAuthSmokeFunctionTests'],
+                [area: 'jdbc4',    bucket: 'jdbc4',     task: 'runDerbyJdbc4AbortSmokeFunctionTests'],
+                [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiStatementSmokeFunctionTests'],
+                [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiMetadataSmokeFunctionTests']
         ]
 
         def executionBuckets = [
-                'runActivatedDerbyCoreExecutionIslands',
-                'runActivatedDerbyManagementExecutionIslands',
-                'runActivatedDerbyLargeDataExecutionIslands',
-                'runActivatedDerbyJdbcApiExecutionIslands',
-                'runActivatedDerbyJdbc4ExecutionIslands',
-                'runActivatedDerbyNonJdbcExecutionIslands',
-                'runActivatedDerbyJdbcExecutionIslands',
-                'runActivatedDerbySmokeExecutionIslands'
+                [task: 'runActivatedDerbyCoreExecutionIslands',       notes: 'core smoke/extended execution'],
+                [task: 'runActivatedDerbyManagementExecutionIslands', notes: 'management execution'],
+                [task: 'runActivatedDerbyLargeDataExecutionIslands',  notes: 'large-data execution'],
+                [task: 'runActivatedDerbyJdbcApiExecutionIslands',    notes: 'JDBC API execution'],
+                [task: 'runActivatedDerbyJdbc4ExecutionIslands',      notes: 'JDBC4 execution'],
+                [task: 'runActivatedDerbyNonJdbcExecutionIslands',    notes: 'core + management + large-data'],
+                [task: 'runActivatedDerbyJdbcExecutionIslands',       notes: 'JDBC API + JDBC4'],
+                [task: 'runActivatedDerbySmokeExecutionIslands',      notes: 'fast smoke checkpoint']
         ]
 
-        def compileOnlyTail = [
+        def deferredTails = [
                 'UrlLocaleTest - message/localization-sensitive warnings',
                 'BatchUpdateTest - duplicate-key message text assertion',
                 'ConnectionMethodsTest - requires testData/ConnectionMethods resources',
@@ -3077,21 +3077,64 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'ParameterMetaDataJdbc30Test - requires runtime-visible lang procedure classes',
                 'ResultSetMiscTest - requires runtime-visible T_Access',
                 'SetTransactionIsolationTest - isolation behavior/state-sensitive assertion',
-                'Derbynet execution - server/socket/process/locale-sensitive; compile-only for now'
+                'UnsupportedVetter / VerifySignatures - pull TestUtil and old harness RunTest',
+                'DatabaseMetaDataTest - pulls upgrade-version helper machinery',
+                'dblook network tests - dblook inheritance and network runtime sensitivity',
+                'LangHarnessJavaTest / _Suite - old harness suite wiring',
+                'CollationTest / FullCollationTests - collation mega-suite dependency',
+                'TriggerTest - currently depends on deferred DatabaseMetaDataTest',
+                'Derbynet execution - server/socket/process/locale-sensitive; compile-only for now',
+                'Store broader execution - recovery/log/device sensitive; compile-only for now',
+                'Lang broad execution - intentionally not promoted yet'
         ]
+
+        def sourceCountFor = { taskName ->
+            def islandTask = tasks.named(taskName).get()
+            if (!(islandTask instanceof JavaCompile)) {
+                return 0
+            }
+            islandTask.source.files.findAll { it.isFile() && it.name.endsWith('.java') }.size()
+        }
+
+        def byArea = compileIslands.groupBy { it.area }
+        def compileTotal = compileIslands.collect { sourceCountFor(it.task) }.sum(0)
+        def compileOnlyTotal = compileIslands.findAll { it.mode == 'compile-only' }.collect { sourceCountFor(it.task) }.sum(0)
+        def executionBackedTotal = compileIslands.findAll { it.mode == 'compile+execution' }.collect { sourceCountFor(it.task) }.sum(0)
 
         println ''
         println 'Activated inherited Derby test islands'
         println '====================================='
         println ''
-        println "Compile islands (${compileIslands.size()}):"
-        compileIslands.each { println "  - ${it}" }
+        println 'Summary:'
+        println "  compile islands:       ${compileIslands.size()}"
+        println "  compile source files:  ${compileTotal}"
+        println "  compile-only files:    ${compileOnlyTotal}"
+        println "  execution-backed files:${executionBackedTotal}"
+        println "  execution islands:     ${executionIslands.size()}"
+        println "  execution buckets:     ${executionBuckets.size()}"
         println ''
-        println "Execution islands (${executionIslands.size()}):"
-        executionIslands.each { println "  - ${it}" }
+        println 'Compile islands by area:'
+        byArea.keySet().sort().each { area ->
+            def islands = byArea[area]
+            def areaSources = islands.collect { sourceCountFor(it.task) }.sum(0)
+            println "  ${area} (${islands.size()} islands, ${areaSources} source files):"
+            islands.each { island ->
+                println "    - ${island.task} [${island.mode}, ${sourceCountFor(island.task)} files] - ${island.notes}"
+            }
+        }
         println ''
-        println 'Known compile-only / deferred execution tails:'
-        compileOnlyTail.each { println "  - ${it}" }
+        println 'Execution islands by bucket:'
+        executionIslands.groupBy { it.bucket }.keySet().sort().each { bucket ->
+            def islands = executionIslands.groupBy { it.bucket }[bucket]
+            println "  ${bucket} (${islands.size()} islands):"
+            islands.each { island -> println "    - ${island.task} [${island.area}]" }
+        }
+        println ''
+        println 'Execution bucket aliases:'
+        executionBuckets.each { println "  - ${it.task} - ${it.notes}" }
+        println ''
+        println 'Known deferred tails / do-not-promote-yet areas:'
+        deferredTails.each { println "  - ${it}" }
         println ''
         println 'Aggregate commands:'
         println '  ./gradlew :delosdb-tests:compileActivatedDerbyTests'
