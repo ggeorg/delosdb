@@ -78,7 +78,8 @@ Recommended sequence:
 Done:  delosdb-spi stability annotation vocabulary
 Now:   document the Derby Monitor bridge decision
 Next:  mark monitor-facing APIs as @LegacyInternal / @InternalApi
-Then:  add ExtensionRegistry skeleton with no provider contracts yet
+Done:  add internal ExtensionRegistry skeleton with no provider contracts yet
+Then:  register built-in provider descriptors above the Monitor bridge
 Then:  add the first small @ExperimentalSpi provider contract
 Later: add IndexProvider and StorageProvider bridges after lifecycle boundaries are proven
 ```
