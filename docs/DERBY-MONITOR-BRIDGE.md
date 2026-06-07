@@ -80,17 +80,18 @@ Now:   document the Derby Monitor bridge decision
 Next:  mark monitor-facing APIs as @LegacyInternal / @InternalApi
 Done:  add internal ExtensionRegistry skeleton with no provider contracts yet
 Done:  register built-in provider descriptors above the Monitor bridge
-Then:  add the first small @ExperimentalSpi provider contract
-Later: add IndexProvider and StorageProvider bridges after lifecycle boundaries are proven
+Done:  add experimental IndexProvider contract skeleton
+Now:   connect built-in btree identity to an internal IndexProvider adapter
+Later: add SQL/catalog/optimizer bridges after lifecycle boundaries are proven
 ```
 
-The first real provider contract should be deliberately small. A lightweight
-`ExtensionProvider` or `FunctionProvider` is safer than starting with `StorageProvider`
-or `IndexProvider`, because storage and indexing touch boot, catalog metadata,
-optimizer behavior, locking, recovery, and execution.
+The first real provider contract is deliberately small. The experimental
+`IndexProvider` contract currently covers provider identity, capabilities, and
+optional cost estimation only. It does not expose runtime open/create/drop hooks,
+Derby access methods, or optimizer implementation classes.
 
 
-## Built-in provider descriptors
+## Built-in provider descriptors and adapters
 
 The first registry-backed provider identity is internal only:
 
@@ -103,8 +104,14 @@ descriptor without exposing Derby index, store, optimizer, or monitor classes as
 public SPI. It gives later `CREATE INDEX ... USING btree` work a stable internal
 name to resolve while keeping the implementation behind the bridge.
 
-This is not yet an `IndexProvider` contract, not provider discovery, and not
-optimizer integration. It is only the built-in descriptor registration step.
+The built-in `btree` identity is now backed by an internal `IndexProvider`
+adapter. The adapter reports conservative B-tree capabilities and deliberately
+returns no provider-specific cost estimate so Derby's existing costing path remains
+unchanged until the optimizer bridge is introduced.
+
+This is not provider discovery, SQL syntax, catalog persistence, or optimizer
+integration. It only connects the built-in descriptor to the experimental SPI shape
+while keeping Derby implementation classes behind the bridge.
 
 ## Non-goals
 
@@ -114,7 +121,8 @@ This decision does not introduce:
 - a Spring/CDI-style runtime container;
 - public access to Derby monitor internals;
 - a storage provider contract;
-- an index provider contract;
+- SQL syntax for selecting an index provider;
+- optimizer integration with `IndexProvider`;
 - old harness execution;
 - Ant as a supported workflow.
 

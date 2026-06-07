@@ -77,6 +77,7 @@ module org.apache.derby.engine
     requires java.xml;
     
     requires org.apache.derby.commons;
+    requires io.github.ggeorg.delosdb.spi;
 
     //
     // OPTIONAL IMPORTS
@@ -88,8 +89,7 @@ module org.apache.derby.engine
 
     requires static org.osgi.framework;
 
-    // Compile-time stability marker annotations only; not required at runtime.
-    requires static io.github.ggeorg.delosdb.spi;
+    // DelosDB SPI is required at runtime for internal built-in provider adapters.
 
     //
     // DERBY PUBLIC API

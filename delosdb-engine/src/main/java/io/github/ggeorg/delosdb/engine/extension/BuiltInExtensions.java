@@ -1,7 +1,12 @@
 package io.github.ggeorg.delosdb.engine.extension;
 
+import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
+import io.github.ggeorg.delosdb.spi.index.IndexCapabilities;
+import io.github.ggeorg.delosdb.spi.index.IndexMetadata;
+import io.github.ggeorg.delosdb.spi.index.IndexProvider;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -22,7 +27,7 @@ public final class BuiltInExtensions {
 
     public static void registerBuiltIns(ExtensionRegistry registry) {
         Objects.requireNonNull(registry, "registry");
-        registry.register(btreeIndexProvider());
+        BuiltInIndexProviders.all().forEach(provider -> registry.register(indexProviderDescriptor(provider)));
     }
 
     public static InMemoryExtensionRegistry newRegistryWithBuiltIns() {
@@ -32,15 +37,38 @@ public final class BuiltInExtensions {
     }
 
     public static ExtensionDescriptor btreeIndexProvider() {
+        return indexProviderDescriptor(BuiltInIndexProviders.btree());
+    }
+
+    public static ExtensionDescriptor indexProviderDescriptor(IndexProvider provider) {
+        Objects.requireNonNull(provider, "provider");
+        IndexMetadata metadata = IndexMetadata.of(provider.name(), "builtin_" + provider.name(), List.of("key"));
         return ExtensionDescriptor.builtIn(
                 ExtensionType.INDEX,
-                BTREE_INDEX_PROVIDER,
-                List.of(
-                        "default-index-provider",
-                        "ordered-scan",
-                        "range-scan",
-                        "unique-capable"
-                )
+                provider.name(),
+                capabilityNames(provider.capabilities(metadata))
         );
+    }
+
+    private static List<String> capabilityNames(IndexCapabilities capabilities) {
+        Objects.requireNonNull(capabilities, "capabilities");
+        List<String> names = new ArrayList<>();
+        names.add("default-index-provider");
+        if (capabilities.supportsEqualityLookup()) {
+            names.add("equality-lookup");
+        }
+        if (capabilities.supportsRangeScan()) {
+            names.add("range-scan");
+        }
+        if (capabilities.supportsOrdering()) {
+            names.add("ordered-scan");
+        }
+        if (capabilities.supportsUniqueConstraint()) {
+            names.add("unique-capable");
+        }
+        if (capabilities.supportsNullableKeys()) {
+            names.add("nullable-keys");
+        }
+        return List.copyOf(names);
     }
 }

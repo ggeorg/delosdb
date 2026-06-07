@@ -99,7 +99,10 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
                 'ExtensionState.java',
                 'InMemoryExtensionRegistry.java',
                 'BuiltInExtensions.java',
-                'package-info.java'
+                'package-info.java',
+                'index/BuiltInBTreeIndexProvider.java',
+                'index/BuiltInIndexProviders.java',
+                'index/package-info.java'
         ].each { sourceName ->
             def sourceFile = new File(extensionRoot, sourceName)
             if (!sourceFile.isFile()) {
@@ -110,9 +113,22 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         if (!builtIns.contains('BTREE_INDEX_PROVIDER = "btree"')) {
             throw new GradleException('Built-in extension registration must declare the internal btree provider identity')
         }
+        if (!builtIns.contains('BuiltInIndexProviders.all()')) {
+            throw new GradleException('Built-in descriptor registration must be derived from built-in index provider adapters')
+        }
+        def btreeAdapter = new File(extensionRoot, 'index/BuiltInBTreeIndexProvider.java').text
+        if (!btreeAdapter.contains('implements IndexProvider')) {
+            throw new GradleException('Built-in B-tree adapter must implement the experimental IndexProvider SPI')
+        }
+        if (!btreeAdapter.contains('return Optional.empty()')) {
+            throw new GradleException('Built-in B-tree adapter must leave costing to the existing Derby path for now')
+        }
         def moduleInfo = file('src/main/java/module-info.java').text
         if (moduleInfo.contains('exports io.github.ggeorg.delosdb.engine.extension')) {
             throw new GradleException('Internal extension registry package must not be exported from org.apache.derby.engine')
+        }
+        if (!moduleInfo.contains('requires io.github.ggeorg.delosdb.spi;')) {
+            throw new GradleException('Engine module must require delosdb-spi for built-in provider adapters')
         }
     }
 }
