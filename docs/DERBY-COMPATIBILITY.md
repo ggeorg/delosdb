@@ -27,6 +27,19 @@ is equivalent to the Derby-compatible form while `btree` is the default built-in
 provider. If a statement does not name a provider, DelosDB treats it as if it
 named the default provider.
 
+## Optional provider syntax
+
+DelosDB now accepts the additive provider form for the built-in default provider:
+
+```sql
+CREATE INDEX idx ON t(c) USING btree;
+```
+
+For this phase, `btree` is the only accepted provider name. Unknown providers
+fail before execution with a clean unsupported-feature diagnostic. The statement
+continues through the existing Derby index creation path; no catalog metadata,
+optimizer behavior, or storage behavior changes are introduced by this syntax.
+
 ## Provider defaults
 
 The built-in default index provider is:
@@ -74,7 +87,7 @@ The safe sequence is:
 
 ```text
 1. default provider identity = btree
-2. optional SQL syntax maps to that identity
+2. optional SQL syntax maps to that identity for `USING btree`
 3. existing syntax defaults to that identity
 4. catalog metadata defaults old indexes to that identity
 5. optimizer bridge falls back to Derby costing if provider declines

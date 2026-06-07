@@ -152,6 +152,23 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         if (!compatibilityDoc.contains('CREATE INDEX idx ON t(c) USING btree')) {
             throw new GradleException('Derby compatibility policy must document the additive USING btree rule')
         }
+        def createIndexNode = file('src/main/java/org/apache/derby/impl/sql/compile/CreateIndexNode.java').text
+        if (!createIndexNode.contains('normalizeIndexProviderName')) {
+            throw new GradleException('CreateIndexNode must normalize the optional DelosDB index provider name')
+        }
+        if (!createIndexNode.contains('verifyIndexProviderName')) {
+            throw new GradleException('CreateIndexNode must verify unsupported index providers before execution')
+        }
+        if (!createIndexNode.contains('BuiltInIndexProviders.defaultProviderName()')) {
+            throw new GradleException('CreateIndexNode must default CREATE INDEX provider resolution to built-in btree')
+        }
+        def sqlGrammar = file('src/main/java/org/apache/derby/impl/sql/compile/sqlgrammar.jj').text
+        if (!sqlGrammar.contains('indexProviderClause')) {
+            throw new GradleException('SQL grammar must expose the optional CREATE INDEX USING provider clause')
+        }
+        if (!sqlGrammar.contains('[ indexProviderName = indexProviderClause() ]')) {
+            throw new GradleException('CREATE INDEX grammar must keep the provider clause optional for Derby compatibility')
+        }
         def moduleInfo = file('src/main/java/module-info.java').text
         if (moduleInfo.contains('exports io.github.ggeorg.delosdb.engine.extension')) {
             throw new GradleException('Internal extension registry package must not be exported from org.apache.derby.engine')

@@ -23,6 +23,7 @@ package	org.apache.derby.impl.sql.compile;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.Limits;
@@ -37,6 +38,7 @@ import org.apache.derby.iapi.sql.dictionary.SchemaDescriptor;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.sql.execute.ConstantAction;
 import org.apache.derby.iapi.types.DataTypeDescriptor;
+import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 
 /**
  * A CreateIndexNode is the root of a QueryTree that represents a CREATE INDEX
@@ -49,6 +51,7 @@ class CreateIndexNode extends DDLStatementNode
     private boolean             unique;
     private Properties          properties;
     private String              indexType;
+    private String              indexProviderName;
     private TableName           indexName;
     private TableName           tableName;
     private List<String>        columnNameList;
@@ -63,6 +66,7 @@ class CreateIndexNode extends DDLStatementNode
 	 * @param unique	True means it's a unique index
 	 * @param indexType	The type of index
 	 * @param indexName	The name of the index
+     * @param indexProviderName The optional DelosDB index provider name
 	 * @param tableName	The name of the table the index will be on
 	 * @param columnNameList	A list of column names, in the order they
 	 *							appear in the index.
@@ -74,6 +78,7 @@ class CreateIndexNode extends DDLStatementNode
     CreateIndexNode(boolean unique,
                     String indexType,
                     TableName indexName,
+                    String indexProviderName,
                     TableName tableName,
                     List<String> columnNameList,
                     Properties properties,
@@ -82,6 +87,7 @@ class CreateIndexNode extends DDLStatementNode
         super(indexName, cm);
         this.unique = unique;
         this.indexType = indexType;
+        this.indexProviderName = normalizeIndexProviderName(indexProviderName);
         this.indexName = indexName;
         this.tableName = tableName;
         this.columnNameList = columnNameList;
@@ -119,6 +125,38 @@ class CreateIndexNode extends DDLStatementNode
 
 	// We inherit the generate() method from DDLStatementNode.
 
+    /**
+     * Normalize an optional DelosDB provider name for CREATE INDEX ... USING.
+     * For now, only the built-in Derby-compatible provider is accepted.
+     * Existing Derby CREATE INDEX syntax passes null and stays on the same
+     * implicit B-tree path.
+     */
+    private String normalizeIndexProviderName(String providerName)
+    {
+        if (providerName == null)
+        {
+            return BuiltInIndexProviders.defaultProviderName();
+        }
+        return providerName.toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Verify the optional DelosDB provider clause remains additive.
+     * Unknown providers are rejected until extension catalog/provider loading
+     * exists. The default provider is the existing Derby B-tree behavior.
+     *
+     * @exception StandardException Thrown if a non-default provider is named
+     */
+    private void verifyIndexProviderName() throws StandardException
+    {
+        if (!BuiltInIndexProviders.defaultProviderName().equals(indexProviderName))
+        {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "CREATE INDEX USING " + indexProviderName);
+        }
+    }
+
 	/**
 	 * Bind this CreateIndexNode.  This means doing any static error
 	 * checking that can be done before actually creating the table.
@@ -133,6 +171,8 @@ class CreateIndexNode extends DDLStatementNode
 		int						columnCount;
 
         getSchemaDescriptor(); // want checking side-effects only
+
+        verifyIndexProviderName();
 
 		td = getTableDescriptor(tableName);
 

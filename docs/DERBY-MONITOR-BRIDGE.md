@@ -154,6 +154,23 @@ CREATE INDEX idx ON t(c) USING btree;
 
 The detailed compatibility policy is recorded in `docs/DERBY-COMPATIBILITY.md`.
 
+### Optional CREATE INDEX provider syntax
+
+The first SQL-facing step is intentionally additive:
+
+```sql
+CREATE INDEX idx ON t(c) USING btree;
+```
+
+`USING btree` resolves to the same built-in default provider as existing Derby
+syntax without a provider clause. The parser records and validates the provider
+name, but execution still follows Derby's existing B-tree creation path. This is
+not catalog persistence, optimizer integration, provider discovery, or alternate
+index implementation.
+
+Unknown providers remain unsupported until extension catalog/provider loading is
+designed.
+
 ## Non-goals
 
 This decision does not introduce:
@@ -162,7 +179,6 @@ This decision does not introduce:
 - a Spring/CDI-style runtime container;
 - public access to Derby monitor internals;
 - a storage provider contract;
-- SQL syntax for selecting an index provider;
 - optimizer integration with `IndexProvider`;
 - old harness execution;
 - Ant as a supported workflow.

@@ -10555,6 +10555,7 @@ indexDefinition() throws StandardException :
 {
 	Boolean		unique = Boolean.FALSE;
 	Properties	properties = null;
+	String		indexProviderName = null;
 	TableName	indexName;
 	TableName	tableName;
 	ArrayList<String> indexColumnList = new ArrayList<String>();
@@ -10567,6 +10568,7 @@ indexDefinition() throws StandardException :
 	[ unique = unique() ] <INDEX>
 		indexName = qualifiedName(Limits.MAX_IDENTIFIER_LENGTH) <ON> tableName = qualifiedName(Limits.MAX_IDENTIFIER_LENGTH)
 				<LEFT_PAREN> indexColumnList(indexColumnList) <RIGHT_PAREN>
+		[ indexProviderName = indexProviderClause() ]
 		[ properties = propertyList(false) <CHECK_PROPERTIES>]
 	{
 		/* User allowed to specify schema name on table and index.
@@ -10600,10 +10602,26 @@ indexDefinition() throws StandardException :
                                 unique.booleanValue(),
 								DEFAULT_INDEX_TYPE,
 								indexName,
+                                indexProviderName,
 								tableName,
 								indexColumnList,
 								properties,
 								getContextManager());
+	}
+}
+
+/*
+ * <A NAME="indexProviderClause">indexProviderClause</A>
+ */
+String
+indexProviderClause() throws StandardException :
+{
+	String indexProviderName;
+}
+{
+	<USING> indexProviderName = identifier(Limits.MAX_IDENTIFIER_LENGTH, true)
+	{
+		return indexProviderName;
 	}
 }
 
