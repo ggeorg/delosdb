@@ -15,7 +15,3 @@ This keeps inherited Derby internals separate from DelosDB platform APIs.
 The initial `delosdb-spi` module contains markers only. Provider contracts such as
 `StorageProvider`, `IndexProvider`, optimizer hooks, and extension registries should
 be added in separate reviewed increments.
-
-Before adding real provider contracts, DelosDB records the Derby monitor bridge
-decision in `docs/DERBY-MONITOR-BRIDGE.md`: public SPI contracts sit above Derby's
-existing monitor/module system and must not expose monitor internals directly.
