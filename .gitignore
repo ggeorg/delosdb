@@ -1,7 +1,10 @@
-# Build outputs
+# Gradle build outputs
 build/
 **/build/
+
+# Inherited Derby/Ant-era generated artifacts; not supported DelosDB outputs
 classes/
+classes.pptesting/
 generated/
 jars/
 
