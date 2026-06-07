@@ -3059,6 +3059,132 @@ tasks.register('runDerbyJdbcApiBroaderLobStreamSmokeFunctionTests') {
     }
 }
 
+
+// Batched execution checkpoint: promote small validated islands across lang,
+// JDBC4, and derbynet utility coverage. Keep this bounded: no full suite, no
+// old harness, no network server process orchestration, and no store runtime.
+def langBasicSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/lang-basic-smoke-function')
+
+tasks.register('runDerbyLangBasicSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs curated basic inherited Derby lang execution tests.'
+    dependsOn 'compileDerbyLangSmokeFunctionTests'
+    doLast {
+        [
+                'org.apache.derbyTesting.functionTests.tests.lang.CommentTest',
+                'org.apache.derbyTesting.functionTests.tests.lang.ConstantExpressionTest',
+                'org.apache.derbyTesting.functionTests.tests.lang.CurrentSchemaTest',
+                'org.apache.derbyTesting.functionTests.tests.lang.DropTableTest',
+                'org.apache.derbyTesting.functionTests.tests.lang.CoalesceTest',
+                'org.apache.derbyTesting.functionTests.tests.lang.AnsiTrimTest'
+        ].each { testClassName ->
+            def workDir = new File(langBasicSmokeFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
+            delete workDir
+            workDir.mkdirs()
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        langSmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
+
+def jdbc4BroaderExecutionSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbc4-broader-execution-smoke-function')
+
+tasks.register('runDerbyJdbc4BroaderSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs curated broader inherited Derby JDBC4 execution tests.'
+    dependsOn 'compileDerbyJdbc4BroaderSmokeFunctionTests'
+    doLast {
+        [
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.StatementTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.PreparedStatementTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.PreparedStatementTest42',
+                'org.apache.derbyTesting.functionTests.tests.jdbc4.CallableStatementTest'
+        ].each { testClassName ->
+            def workDir = new File(jdbc4BroaderExecutionSmokeFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
+            delete workDir
+            workDir.mkdirs()
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        jdbcApiSmokeFunctionTestClassDir,
+                        jdbcApiStatementSmokeFunctionTestClassDir,
+                        jdbcApiMetadataSmokeFunctionTestClassDir,
+                        jdbcApiBroaderSmokeFunctionTestClassDir,
+                        jdbc4SmokeFunctionTestClassDir,
+                        jdbc4BroaderSmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
+
+def derbynetUtilitySmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/derbynet-utility-smoke-function')
+
+tasks.register('runDerbyDerbynetUtilitySmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs curated inherited Derby derbynet utility execution tests without server orchestration.'
+    dependsOn 'compileDerbyDerbynetBroaderSmokeFunctionTests'
+    doLast {
+        [
+                'org.apache.derbyTesting.functionTests.tests.derbynet.ByteArrayCombinerStreamTest',
+                'org.apache.derbyTesting.functionTests.tests.derbynet.Utf8CcsidManagerTest',
+                'org.apache.derbyTesting.functionTests.tests.derbynet.Utf8CcsidManagerClientTest'
+        ].each { testClassName ->
+            def workDir = new File(derbynetUtilitySmokeFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
+            delete workDir
+            workDir.mkdirs()
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        derbynetBroaderSmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
 // Bucketed lifecycle aliases for the activated inherited Derby execution islands.
 // These aliases make failures cheaper to isolate without changing which tests are active.
 tasks.register('runActivatedDerbyCoreExecutionIslands') {
@@ -3089,6 +3215,12 @@ tasks.register('runActivatedDerbyLargeDataExecutionIslands') {
             'runDerbyLargeDataAdditionalSmokeFunctionTests'
 }
 
+tasks.register('runActivatedDerbyLangExecutionIslands') {
+    group = 'verification'
+    description = 'Runs activated inherited Derby lang execution islands.'
+    dependsOn 'runDerbyLangBasicSmokeFunctionTests'
+}
+
 tasks.register('runActivatedDerbyJdbcApiExecutionIslands') {
     group = 'verification'
     description = 'Runs activated inherited Derby JDBC API execution islands.'
@@ -3112,6 +3244,12 @@ tasks.register('runActivatedDerbyToolsExecutionIslands') {
     dependsOn 'runDerbyToolsBroaderSmokeFunctionTests'
 }
 
+tasks.register('runActivatedDerbyDerbynetExecutionIslands') {
+    group = 'verification'
+    description = 'Runs activated inherited Derby derbynet utility execution islands.'
+    dependsOn 'runDerbyDerbynetUtilitySmokeFunctionTests'
+}
+
 tasks.register('runActivatedDerbyJdbc4ExecutionIslands') {
     group = 'verification'
     description = 'Runs activated inherited Derby JDBC4 execution islands.'
@@ -3122,7 +3260,8 @@ tasks.register('runActivatedDerbyJdbc4ExecutionIslands') {
             'runDerbyJdbc4MiscSmokeFunctionTests',
             'runDerbyJdbc4ConnectionSmokeFunctionTests',
             'runDerbyJdbc4LobResultSetSmokeFunctionTests',
-            'runDerbyJdbc4AbortSmokeFunctionTests'
+            'runDerbyJdbc4AbortSmokeFunctionTests',
+            'runDerbyJdbc4BroaderSmokeFunctionTests'
 }
 
 tasks.register('runActivatedDerbyExecutionIslands') {
@@ -3131,7 +3270,9 @@ tasks.register('runActivatedDerbyExecutionIslands') {
     dependsOn 'runActivatedDerbyCoreExecutionIslands',
             'runActivatedDerbyManagementExecutionIslands',
             'runActivatedDerbyLargeDataExecutionIslands',
+            'runActivatedDerbyLangExecutionIslands',
             'runActivatedDerbyToolsExecutionIslands',
+            'runActivatedDerbyDerbynetExecutionIslands',
             'runActivatedDerbyJdbcApiExecutionIslands',
             'runActivatedDerbyJdbc4ExecutionIslands'
 }
@@ -3146,7 +3287,9 @@ tasks.register('runActivatedDerbyNonJdbcExecutionIslands') {
     dependsOn 'runActivatedDerbyCoreExecutionIslands',
             'runActivatedDerbyManagementExecutionIslands',
             'runActivatedDerbyLargeDataExecutionIslands',
-            'runActivatedDerbyToolsExecutionIslands'
+            'runActivatedDerbyLangExecutionIslands',
+            'runActivatedDerbyToolsExecutionIslands',
+            'runActivatedDerbyDerbynetExecutionIslands'
 }
 
 tasks.register('runActivatedDerbyJdbcExecutionIslands') {
@@ -3167,9 +3310,12 @@ tasks.register('runActivatedDerbySmokeExecutionIslands') {
             'runDerbyPerfSmokeFunctionTests',
             'runDerbyLargeDataSmokeFunctionTests',
             'runDerbyManagementSmokeFunctionTests',
+            'runDerbyLangBasicSmokeFunctionTests',
             'runDerbyToolsBroaderSmokeFunctionTests',
+            'runDerbyDerbynetUtilitySmokeFunctionTests',
             'runDerbyJdbcApiSmokeFunctionTests',
-            'runDerbyJdbc4SmokeFunctionTests'
+            'runDerbyJdbc4SmokeFunctionTests',
+            'runDerbyJdbc4BroaderSmokeFunctionTests'
 }
 
 
@@ -3188,7 +3334,7 @@ tasks.register('listActivatedDerbyTestIslands') {
                 [area: 'core',     mode: 'compile-only',      task: 'compileDerbyNistFunctionTests',                    notes: 'NIST source compile only'],
                 [area: 'store',    mode: 'compile+execution', task: 'compileDerbyStoreTestsFunctionTests',              notes: 'store smoke'],
                 [area: 'store',    mode: 'compile-only',      task: 'compileDerbyStoreBroaderSmokeFunctionTests',       notes: 'broader inherited store batch'],
-                [area: 'derbynet', mode: 'compile-only',      task: 'compileDerbyDerbynetBroaderSmokeFunctionTests',    notes: 'network server/client compile batch'],
+                [area: 'derbynet', mode: 'compile+execution', task: 'compileDerbyDerbynetBroaderSmokeFunctionTests',    notes: 'network utility execution subset; broader server tails deferred'],
                 [area: 'perf',     mode: 'compile+execution', task: 'compileDerbyPerfFunctionTests',                    notes: 'perf smoke'],
                 [area: 'mgmt',     mode: 'compile+execution', task: 'compileDerbyManagementFunctionTests',              notes: 'management smoke'],
                 [area: 'largedata',mode: 'compile+execution', task: 'compileDerbyLargeDataFunctionTests',               notes: 'large-data smoke'],
@@ -3197,12 +3343,12 @@ tasks.register('listActivatedDerbyTestIslands') {
                 [area: 'tools',    mode: 'compile+execution', task: 'compileDerbyToolsBroaderSmokeFunctionTests',       notes: 'broader tools batch'],
                 [area: 'jdbcapi',  mode: 'compile+execution', task: 'compileDerbyJdbcApiSmokeFunctionTests',            notes: 'JDBC API smoke'],
                 [area: 'jdbc4',    mode: 'compile+execution', task: 'compileDerbyJdbc4SmokeFunctionTests',              notes: 'JDBC4 smoke'],
-                [area: 'jdbc4',    mode: 'compile-only',      task: 'compileDerbyJdbc4BroaderSmokeFunctionTests',       notes: 'broader JDBC4 batch'],
+                [area: 'jdbc4',    mode: 'compile+execution', task: 'compileDerbyJdbc4BroaderSmokeFunctionTests',       notes: 'broader JDBC4 execution subset'],
                 [area: 'jdbcapi',  mode: 'compile-only',      task: 'compileDerbyJdbcApiTailSmokeFunctionTests',        notes: 'JDBC API tail batch'],
                 [area: 'jdbcapi',  mode: 'compile+execution', task: 'compileDerbyJdbcApiStatementSmokeFunctionTests',   notes: 'statement smoke'],
                 [area: 'jdbcapi',  mode: 'compile+execution', task: 'compileDerbyJdbcApiMetadataSmokeFunctionTests',    notes: 'metadata smoke'],
                 [area: 'jdbcapi',  mode: 'compile+execution', task: 'compileDerbyJdbcApiBroaderSmokeFunctionTests',     notes: 'broader JDBC API batch'],
-                [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangSmokeFunctionTests',               notes: 'first curated lang batch'],
+                [area: 'lang',     mode: 'compile+execution', task: 'compileDerbyLangSmokeFunctionTests',               notes: 'basic lang execution subset'],
                 [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangAdditionalSmokeFunctionTests',     notes: 'additional curated lang batch'],
                 [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangCoreSmokeFunctionTests',           notes: 'core SQL/lang batch'],
                 [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangDdlDmlSmokeFunctionTests',         notes: 'DDL/DML lang batch'],
@@ -3242,6 +3388,9 @@ tasks.register('listActivatedDerbyTestIslands') {
                 [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiBroaderSmokeFunctionTests'],
                 [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiBroaderAdditionalSmokeFunctionTests'],
                 [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiBroaderLobStreamSmokeFunctionTests'],
+                [area: 'lang',     bucket: 'lang',      task: 'runDerbyLangBasicSmokeFunctionTests'],
+                [area: 'jdbc4',    bucket: 'jdbc4',     task: 'runDerbyJdbc4BroaderSmokeFunctionTests'],
+                [area: 'derbynet', bucket: 'derbynet',  task: 'runDerbyDerbynetUtilitySmokeFunctionTests'],
                 [area: 'tools',    bucket: 'tools',     task: 'runDerbyToolsBroaderSmokeFunctionTests']
         ]
 
@@ -3249,10 +3398,12 @@ tasks.register('listActivatedDerbyTestIslands') {
                 [task: 'runActivatedDerbyCoreExecutionIslands',       notes: 'core smoke/extended execution'],
                 [task: 'runActivatedDerbyManagementExecutionIslands', notes: 'management execution'],
                 [task: 'runActivatedDerbyLargeDataExecutionIslands',  notes: 'large-data execution'],
+                [task: 'runActivatedDerbyLangExecutionIslands',       notes: 'curated lang execution'],
                 [task: 'runActivatedDerbyToolsExecutionIslands',      notes: 'curated tools execution'],
+                [task: 'runActivatedDerbyDerbynetExecutionIslands',   notes: 'derbynet utility execution'],
                 [task: 'runActivatedDerbyJdbcApiExecutionIslands',    notes: 'JDBC API execution'],
                 [task: 'runActivatedDerbyJdbc4ExecutionIslands',      notes: 'JDBC4 execution'],
-                [task: 'runActivatedDerbyNonJdbcExecutionIslands',    notes: 'core + management + large-data + tools'],
+                [task: 'runActivatedDerbyNonJdbcExecutionIslands',    notes: 'core + management + large-data + lang + tools + derbynet utility'],
                 [task: 'runActivatedDerbyJdbcExecutionIslands',       notes: 'JDBC API + JDBC4'],
                 [task: 'runActivatedDerbySmokeExecutionIslands',      notes: 'fast smoke checkpoint']
         ]
@@ -3273,10 +3424,10 @@ tasks.register('listActivatedDerbyTestIslands') {
                 'LangHarnessJavaTest / _Suite - old harness suite wiring',
                 'CollationTest / FullCollationTests - collation mega-suite dependency',
                 'TriggerTest - currently depends on deferred DatabaseMetaDataTest',
-                'Derbynet execution - server/socket/process/locale-sensitive; compile-only for now',
+                'Derbynet server/process/socket tails - deferred; only utility tests execute now',
                 'Tools dblook/script-resource/sysinfo-metadata tails - still deferred',
                 'Store broader execution - recovery/log/device sensitive; compile-only for now',
-                'Lang broad execution - intentionally not promoted yet'
+                'Lang broad execution - only basic smoke subset promoted; broad/lang semantic tails deferred'
         ]
 
         def sourceCountFor = { taskName ->
@@ -3335,7 +3486,9 @@ tasks.register('listActivatedDerbyTestIslands') {
         println '  ./gradlew :delosdb-tests:runActivatedDerbyCoreExecutionIslands'
         println '  ./gradlew :delosdb-tests:runActivatedDerbyManagementExecutionIslands'
         println '  ./gradlew :delosdb-tests:runActivatedDerbyLargeDataExecutionIslands'
+        println '  ./gradlew :delosdb-tests:runActivatedDerbyLangExecutionIslands'
         println '  ./gradlew :delosdb-tests:runActivatedDerbyToolsExecutionIslands'
+        println '  ./gradlew :delosdb-tests:runActivatedDerbyDerbynetExecutionIslands'
         println '  ./gradlew :delosdb-tests:runActivatedDerbyJdbcApiExecutionIslands'
         println '  ./gradlew :delosdb-tests:runActivatedDerbyJdbc4ExecutionIslands'
         println '  ./gradlew :delosdb-tests:runActivatedDerbyExecutionIslands'
