@@ -1190,6 +1190,7 @@ tasks.register('verifyExtractedEngineProject') {
 // Derby-compatible runtime jar names for now.
 ext.delosdbPublicationMetadata = [
         'delosdb-commons'      : [artifactId: 'delosdb-commons',       jarTask: 'derbySharedJar',        title: 'DelosDB Shared Utilities', dependencies: []],
+        'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'delosDbSpiJar',       title: 'DelosDB SPI Stability Markers', dependencies: []],
         'delosdb-engine'       : [artifactId: 'delosdb-engine',        jarTask: 'derbyJar',              title: 'DelosDB Embedded Engine', dependencies: ['delosdb-commons']],
         'delosdb-client'       : [artifactId: 'delosdb-client',        jarTask: 'derbyClientJar',        title: 'DelosDB Network Client', dependencies: ['delosdb-commons']],
         'delosdb-tools'        : [artifactId: 'delosdb-tools',         jarTask: 'derbyToolsJar',         title: 'DelosDB Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-client']],
@@ -1425,6 +1426,7 @@ tasks.register('verifyCentralizedJavaCompileConventions') {
     def buildFiles = files(
             'build.gradle',
             'delosdb-commons/build.gradle',
+            'delosdb-spi/build.gradle',
             'delosdb-client/build.gradle',
             'delosdb-engine/build.gradle',
             'delosdb-tools/build.gradle',
@@ -1461,6 +1463,7 @@ tasks.register('verifyCentralizedReleaseMetadata') {
     description = 'Ensures extracted runtime jar subprojects use the shared DelosDB release metadata helpers.'
     def buildFiles = files(
             'delosdb-commons/build.gradle',
+            'delosdb-spi/build.gradle',
             'delosdb-client/build.gradle',
             'delosdb-engine/build.gradle',
             'delosdb-tools/build.gradle',
@@ -1726,8 +1729,42 @@ tasks.register('verifyMovedBuildToolsSourceLayout') {
 }
 
 
+
+tasks.register('verifyDelosDbSpiProject') {
+    group = 'verification'
+    description = 'Verifies the DelosDB SPI stability annotation module.'
+    dependsOn ':delosdb-spi:verifyDelosDbSpiSourceLayout', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
+    inputs.file('settings.gradle')
+    inputs.file('delosdb-spi/build.gradle')
+    inputs.dir('delosdb-spi/src/main/java')
+    doLast {
+        if (findProject(':delosdb-spi') == null) {
+            throw new GradleException('Missing extracted subproject :delosdb-spi')
+        }
+        if (!file('settings.gradle').text.contains("include 'delosdb-spi'")) {
+            throw new GradleException('settings.gradle does not include :delosdb-spi')
+        }
+        def sourceRoot = file('delosdb-spi/src/main/java')
+        def moduleInfo = new File(sourceRoot, 'module-info.java')
+        if (!moduleInfo.isFile() || !moduleInfo.text.contains('module io.github.ggeorg.delosdb.spi')) {
+            throw new GradleException("Missing DelosDB SPI module descriptor: ${moduleInfo}")
+        }
+        [
+                'PublicSpi.java',
+                'ExperimentalSpi.java',
+                'InternalApi.java',
+                'LegacyInternal.java'
+        ].each { marker ->
+            def sourceFile = new File(sourceRoot, "io/github/ggeorg/delosdb/spi/annotation/${marker}")
+            if (!sourceFile.isFile()) {
+                throw new GradleException("Missing SPI stability annotation: ${sourceFile}")
+            }
+        }
+    }
+}
+
 tasks.named('check') {
-    dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'verifyGradleOnlyPublicSurface',
+    dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'verifyGradleOnlyPublicSurface', 'verifyDelosDbSpiProject',
             'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
             'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedPackagePrivateTestsSourceLayout', 'verifyMovedDemosSourceLayout', 'verifyMovedLocalesSourceLayout', 'verifyMovedStorelessSourceLayout', 'verifyMovedBuildToolsSourceLayout'

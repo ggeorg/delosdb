@@ -1,0 +1,74 @@
+plugins {
+    id 'base'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = rootProject.version
+group = rootProject.group
+
+def sourceRoot = file('src/main/java')
+def spiClassDir = layout.buildDirectory.dir('classes/spi')
+
+tasks.register('verifyDelosDbSpiSourceLayout') {
+    group = 'verification'
+    description = 'Verifies the DelosDB SPI stability annotation source layout.'
+    inputs.dir(sourceRoot)
+    doLast {
+        def moduleInfo = new File(sourceRoot, 'module-info.java')
+        if (!moduleInfo.isFile()) {
+            throw new GradleException("Missing DelosDB SPI module descriptor: ${moduleInfo}")
+        }
+        if (!moduleInfo.text.contains('module io.github.ggeorg.delosdb.spi')) {
+            throw new GradleException("Unexpected DelosDB SPI module descriptor: ${moduleInfo}")
+        }
+        [
+                'PublicSpi.java',
+                'ExperimentalSpi.java',
+                'InternalApi.java',
+                'LegacyInternal.java'
+        ].each { marker ->
+            def sourceFile = new File(sourceRoot, "io/github/ggeorg/delosdb/spi/annotation/${marker}")
+            if (!sourceFile.isFile()) {
+                throw new GradleException("Missing SPI stability annotation: ${sourceFile}")
+            }
+        }
+    }
+}
+
+tasks.register('compileDelosDbSpi', JavaCompile) {
+    dependsOn 'verifyDelosDbSpiSourceLayout'
+    source = fileTree(sourceRoot) { include '**/*.java' }
+    destinationDirectory = spiClassDir
+    rootProject.ext.delosdbConfigureJavaCompile(delegate)
+}
+
+tasks.register('classes') {
+    dependsOn 'compileDelosDbSpi'
+}
+
+tasks.named('assemble') {
+    dependsOn 'classes'
+}
+
+tasks.register('delosDbSpiJar', Jar) {
+    dependsOn 'compileDelosDbSpi'
+    archiveFileName = 'delosdb-spi.jar'
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from spiClassDir
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB SPI Stability Markers')
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn 'delosDbSpiJar'
+}
+
+tasks.named('check') {
+    dependsOn 'verifyDelosDbSpiSourceLayout', 'compileDelosDbSpi'
+}
