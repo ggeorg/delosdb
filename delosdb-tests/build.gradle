@@ -3018,6 +3018,47 @@ tasks.register('runDerbyJdbcApiBroaderAdditionalSmokeFunctionTests') {
     }
 }
 
+
+// Third JDBC API broader execution promotion. Keep this focused on LOB stream
+// behavior that already validated as isolated JUnit runs; avoid the remaining
+// data-file, authentication, timeout, and client-driver sensitive tails.
+def jdbcApiBroaderLobStreamSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbcapi-broader-lob-stream-smoke-function')
+
+tasks.register('runDerbyJdbcApiBroaderLobStreamSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs curated broader inherited Derby JDBC API LOB stream execution tests.'
+    dependsOn 'compileDerbyJdbcApiBroaderSmokeFunctionTests'
+    doLast {
+        [
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.LobRsGetterTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.LobStreamsTest'
+        ].each { testClassName ->
+            def workDir = new File(jdbcApiBroaderLobStreamSmokeFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
+            delete workDir
+            workDir.mkdirs()
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        jdbcApiSmokeFunctionTestClassDir,
+                        jdbcApiBroaderSmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
 // Bucketed lifecycle aliases for the activated inherited Derby execution islands.
 // These aliases make failures cheaper to isolate without changing which tests are active.
 tasks.register('runActivatedDerbyCoreExecutionIslands') {
@@ -3060,7 +3101,8 @@ tasks.register('runActivatedDerbyJdbcApiExecutionIslands') {
             'runDerbyJdbcApiStatementSmokeFunctionTests',
             'runDerbyJdbcApiMetadataSmokeFunctionTests',
             'runDerbyJdbcApiBroaderSmokeFunctionTests',
-            'runDerbyJdbcApiBroaderAdditionalSmokeFunctionTests'
+            'runDerbyJdbcApiBroaderAdditionalSmokeFunctionTests',
+            'runDerbyJdbcApiBroaderLobStreamSmokeFunctionTests'
 }
 
 
@@ -3199,6 +3241,7 @@ tasks.register('listActivatedDerbyTestIslands') {
                 [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiMetadataSmokeFunctionTests'],
                 [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiBroaderSmokeFunctionTests'],
                 [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiBroaderAdditionalSmokeFunctionTests'],
+                [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiBroaderLobStreamSmokeFunctionTests'],
                 [area: 'tools',    bucket: 'tools',     task: 'runDerbyToolsBroaderSmokeFunctionTests']
         ]
 
