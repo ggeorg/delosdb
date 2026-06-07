@@ -33,7 +33,7 @@ Key outputs:
 
 ## Phase 0.5 — Inherited test activation and harness modernization
 
-Status: active.
+Status: checkpoint-ready.
 
 Goals:
 
@@ -60,9 +60,23 @@ Primary commands:
 ./gradlew fullVerification
 ```
 
+Checkpoint definition:
+
+Phase 0.5 is considered done enough when DelosDB has:
+
+- broad inherited compile activation under Gradle;
+- curated execution islands across core, JDBC API, JDBC4, tools, lang, derbynet, and store smoke coverage;
+- `fullVerification` wired to all activated execution islands;
+- a visible deferred-tail list for tests that remain compile-only or intentionally inactive;
+- no `derbyall`, no old harness execution, and no Ant-supported workflow.
+
+Checkpoint document:
+
+- `docs/PHASE-0.5-TEST-ACTIVATION-CHECKPOINT.md`
+
 ## Phase 1 — API/SPI boundaries and stability markers
 
-Status: next platform phase.
+Status: started.
 
 Goals:
 
@@ -71,14 +85,22 @@ Goals:
 - Separate extension-facing contracts from inherited implementation internals.
 - Keep JDBC as the compatibility baseline while exposing a small modern API layer.
 
-Planned artifacts:
+Delivered artifacts:
 
-- `delosdb-spi` or `delosdb-api` module
+- `delosdb-spi` module
 - `@PublicSpi`
 - `@ExperimentalSpi`
 - `@InternalApi`
 - `@LegacyInternal`
-- API package conventions and compatibility policy
+- `docs/SPI-STABILITY.md`
+- `docs/DERBY-MONITOR-BRIDGE.md`
+- monitor-facing Derby APIs marked as legacy/internal bridge boundary
+
+Remaining near-term artifacts:
+
+- internal extension registry skeleton
+- built-in provider registration concept
+- first experimental provider contract
 
 Definition of done:
 
@@ -205,6 +227,7 @@ Definition of done:
 The next near-term work should stay focused:
 
 1. Keep `fullVerification` green.
-2. Finish the current inherited test activation ledger and smoke execution expansion.
-3. Add the first `delosdb-spi`/`delosdb-api` module and stability annotations.
-4. Avoid broad runtime rewrites until the extension boundaries exist.
+2. Close Phase 0.5 with the test activation checkpoint.
+3. Resume Phase 1 by adding built-in provider registration on top of the internal extension registry.
+4. Add the first experimental provider contract only after registry naming, state, and diagnostics are clear.
+5. Avoid broad runtime rewrites, storage replacement, or optimizer rewrites until the extension boundary is proven.
