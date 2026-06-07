@@ -113,6 +113,28 @@ This is not provider discovery, SQL syntax, catalog persistence, or optimizer
 integration. It only connects the built-in descriptor to the experimental SPI shape
 while keeping Derby implementation classes behind the bridge.
 
+
+### Built-in index provider resolution
+
+The first provider bridge remains deliberately internal:
+
+```text
+ExtensionRegistry descriptor:  INDEX / btree / ENABLED
+        ↓
+IndexProviderResolver
+        ↓
+BuiltInBTreeIndexProvider
+        ↓
+existing Derby B-tree implementation, still reached through Derby internals
+```
+
+This resolver is not public plugin loading. It exists only to prove that DelosDB
+can resolve a stable provider identity (`btree`) to an internal `IndexProvider`
+adapter without exposing Derby Monitor, store, optimizer, or conglomerate APIs.
+
+The resolver must stay behind the engine boundary until catalog lifecycle,
+missing-provider diagnostics, and optimizer integration are designed.
+
 ## Non-goals
 
 This decision does not introduce:

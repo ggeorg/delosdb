@@ -97,11 +97,13 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
                 'ExtensionDescriptor.java',
                 'ExtensionType.java',
                 'ExtensionState.java',
+                'ExtensionResolutionException.java',
                 'InMemoryExtensionRegistry.java',
                 'BuiltInExtensions.java',
                 'package-info.java',
                 'index/BuiltInBTreeIndexProvider.java',
                 'index/BuiltInIndexProviders.java',
+                'index/IndexProviderResolver.java',
                 'index/package-info.java'
         ].each { sourceName ->
             def sourceFile = new File(extensionRoot, sourceName)
@@ -122,6 +124,16 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         }
         if (!btreeAdapter.contains('return Optional.empty()')) {
             throw new GradleException('Built-in B-tree adapter must leave costing to the existing Derby path for now')
+        }
+        def indexProviderResolver = new File(extensionRoot, 'index/IndexProviderResolver.java').text
+        if (!indexProviderResolver.contains('public static IndexProviderResolver builtIns(ExtensionRegistry registry)')) {
+            throw new GradleException('Index provider resolver must expose built-in resolver construction')
+        }
+        if (!indexProviderResolver.contains('requireEnabled(String name)')) {
+            throw new GradleException('Index provider resolver must provide checked enabled-provider resolution')
+        }
+        if (!indexProviderResolver.contains('ExtensionResolutionException')) {
+            throw new GradleException('Index provider resolver must fail with internal extension resolution diagnostics')
         }
         def moduleInfo = file('src/main/java/module-info.java').text
         if (moduleInfo.contains('exports io.github.ggeorg.delosdb.engine.extension')) {
