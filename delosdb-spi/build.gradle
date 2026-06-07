@@ -12,7 +12,7 @@ def spiClassDir = layout.buildDirectory.dir('classes/spi')
 
 tasks.register('verifyDelosDbSpiSourceLayout') {
     group = 'verification'
-    description = 'Verifies the DelosDB SPI stability annotation source layout.'
+    description = 'Verifies the DelosDB SPI source layout.'
     inputs.dir(sourceRoot)
     doLast {
         def moduleInfo = new File(sourceRoot, 'module-info.java')
@@ -31,6 +31,19 @@ tasks.register('verifyDelosDbSpiSourceLayout') {
             def sourceFile = new File(sourceRoot, "io/github/ggeorg/delosdb/spi/annotation/${marker}")
             if (!sourceFile.isFile()) {
                 throw new GradleException("Missing SPI stability annotation: ${sourceFile}")
+            }
+        }
+        [
+                'IndexProvider.java',
+                'IndexCapabilities.java',
+                'IndexMetadata.java',
+                'IndexCostRequest.java',
+                'IndexCostEstimate.java',
+                'package-info.java'
+        ].each { indexContract ->
+            def sourceFile = new File(sourceRoot, "io/github/ggeorg/delosdb/spi/index/${indexContract}")
+            if (!sourceFile.isFile()) {
+                throw new GradleException("Missing experimental IndexProvider SPI contract: ${sourceFile}")
             }
         }
     }

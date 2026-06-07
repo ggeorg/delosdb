@@ -12,10 +12,29 @@ This keeps inherited Derby internals separate from DelosDB platform APIs.
 
 ## Current rule
 
-The initial `delosdb-spi` module contains markers only. Provider contracts such as
-`StorageProvider`, `IndexProvider`, optimizer hooks, and extension registries should
-be added in separate reviewed increments.
+The `delosdb-spi` module starts with stability markers and now contains the first
+contract-only experimental index provider shape. This does not make Derby access
+methods, optimizer classes, monitor/module APIs, or storage internals public SPI.
 
-Before adding real provider contracts, DelosDB records the Derby monitor bridge
+The initial `io.github.ggeorg.delosdb.spi.index` package is intentionally small:
+
+- provider identity
+- provider-neutral index metadata
+- provider capability reporting
+- optional provider cost estimates
+
+It intentionally does not include:
+
+- runtime index open/create/drop hooks
+- SQL `CREATE INDEX ... USING` support
+- catalog persistence
+- `ServiceLoader` discovery
+- Derby B-tree adapters
+- optimizer integration
+
+Those must be added in separate reviewed increments after the registry and bridge
+boundaries are proven.
+
+Before adding real provider behavior, DelosDB records the Derby monitor bridge
 decision in `docs/DERBY-MONITOR-BRIDGE.md`: public SPI contracts sit above Derby's
 existing monitor/module system and must not expose monitor internals directly.
