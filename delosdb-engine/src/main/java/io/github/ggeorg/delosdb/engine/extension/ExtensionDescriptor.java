@@ -29,7 +29,11 @@ public record ExtensionDescriptor(
     }
 
     public static ExtensionDescriptor available(ExtensionType type, String name) {
-        return new ExtensionDescriptor(type, name, "builtin", ExtensionState.AVAILABLE, List.of());
+        return new ExtensionDescriptor(type, name, BuiltInExtensions.BUILTIN_VERSION, ExtensionState.AVAILABLE, List.of());
+    }
+
+    public static ExtensionDescriptor builtIn(ExtensionType type, String name, List<String> capabilities) {
+        return new ExtensionDescriptor(type, name, BuiltInExtensions.BUILTIN_VERSION, ExtensionState.ENABLED, capabilities);
     }
 
     public static String normalizeName(String name) {

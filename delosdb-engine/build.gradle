@@ -98,12 +98,17 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
                 'ExtensionType.java',
                 'ExtensionState.java',
                 'InMemoryExtensionRegistry.java',
+                'BuiltInExtensions.java',
                 'package-info.java'
         ].each { sourceName ->
             def sourceFile = new File(extensionRoot, sourceName)
             if (!sourceFile.isFile()) {
                 throw new GradleException("Missing internal extension registry source: ${sourceFile}")
             }
+        }
+        def builtIns = new File(extensionRoot, 'BuiltInExtensions.java').text
+        if (!builtIns.contains('BTREE_INDEX_PROVIDER = "btree"')) {
+            throw new GradleException('Built-in extension registration must declare the internal btree provider identity')
         }
         def moduleInfo = file('src/main/java/module-info.java').text
         if (moduleInfo.contains('exports io.github.ggeorg.delosdb.engine.extension')) {

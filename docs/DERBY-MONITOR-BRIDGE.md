@@ -79,7 +79,7 @@ Done:  delosdb-spi stability annotation vocabulary
 Now:   document the Derby Monitor bridge decision
 Next:  mark monitor-facing APIs as @LegacyInternal / @InternalApi
 Done:  add internal ExtensionRegistry skeleton with no provider contracts yet
-Then:  register built-in provider descriptors above the Monitor bridge
+Done:  register built-in provider descriptors above the Monitor bridge
 Then:  add the first small @ExperimentalSpi provider contract
 Later: add IndexProvider and StorageProvider bridges after lifecycle boundaries are proven
 ```
@@ -88,6 +88,23 @@ The first real provider contract should be deliberately small. A lightweight
 `ExtensionProvider` or `FunctionProvider` is safer than starting with `StorageProvider`
 or `IndexProvider`, because storage and indexing touch boot, catalog metadata,
 optimizer behavior, locking, recovery, and execution.
+
+
+## Built-in provider descriptors
+
+The first registry-backed provider identity is internal only:
+
+```text
+ExtensionType.INDEX / btree / builtin
+```
+
+This records the default Derby B-tree index family as a DelosDB provider
+descriptor without exposing Derby index, store, optimizer, or monitor classes as
+public SPI. It gives later `CREATE INDEX ... USING btree` work a stable internal
+name to resolve while keeping the implementation behind the bridge.
+
+This is not yet an `IndexProvider` contract, not provider discovery, and not
+optimizer integration. It is only the built-in descriptor registration step.
 
 ## Non-goals
 
