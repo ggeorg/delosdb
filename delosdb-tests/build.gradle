@@ -2932,6 +2932,48 @@ tasks.register('runDerbyToolsBroaderSmokeFunctionTests') {
     }
 }
 
+
+// JDBC API broader execution promotion. Keep this limited to a few already
+// compile-activated, self-contained JDBC API tests that validated cleanly as
+// isolated JUnit runs. Do not promote the full broader JDBC API source set here.
+def jdbcApiBroaderSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbcapi-broader-smoke-function')
+
+tasks.register('runDerbyJdbcApiBroaderSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs a curated broader inherited Derby JDBC API execution island.'
+    dependsOn 'compileDerbyJdbcApiBroaderSmokeFunctionTests'
+    doLast {
+        [
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.ScrollResultSetTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.StreamTest',
+                'org.apache.derbyTesting.functionTests.tests.jdbcapi.PrepStmtNullTest'
+        ].each { testClassName ->
+            def workDir = new File(jdbcApiBroaderSmokeFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
+            delete workDir
+            workDir.mkdirs()
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        jdbcApiSmokeFunctionTestClassDir,
+                        jdbcApiBroaderSmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
 // Bucketed lifecycle aliases for the activated inherited Derby execution islands.
 // These aliases make failures cheaper to isolate without changing which tests are active.
 tasks.register('runActivatedDerbyCoreExecutionIslands') {
@@ -2972,7 +3014,8 @@ tasks.register('runActivatedDerbyJdbcApiExecutionIslands') {
             'runDerbyJdbcApiCallableSmokeFunctionTests',
             'runDerbyJdbcApiBlobAuthSmokeFunctionTests',
             'runDerbyJdbcApiStatementSmokeFunctionTests',
-            'runDerbyJdbcApiMetadataSmokeFunctionTests'
+            'runDerbyJdbcApiMetadataSmokeFunctionTests',
+            'runDerbyJdbcApiBroaderSmokeFunctionTests'
 }
 
 
@@ -3071,7 +3114,7 @@ tasks.register('listActivatedDerbyTestIslands') {
                 [area: 'jdbcapi',  mode: 'compile-only',      task: 'compileDerbyJdbcApiTailSmokeFunctionTests',        notes: 'JDBC API tail batch'],
                 [area: 'jdbcapi',  mode: 'compile+execution', task: 'compileDerbyJdbcApiStatementSmokeFunctionTests',   notes: 'statement smoke'],
                 [area: 'jdbcapi',  mode: 'compile+execution', task: 'compileDerbyJdbcApiMetadataSmokeFunctionTests',    notes: 'metadata smoke'],
-                [area: 'jdbcapi',  mode: 'compile-only',      task: 'compileDerbyJdbcApiBroaderSmokeFunctionTests',     notes: 'broader JDBC API batch'],
+                [area: 'jdbcapi',  mode: 'compile+execution', task: 'compileDerbyJdbcApiBroaderSmokeFunctionTests',     notes: 'broader JDBC API batch'],
                 [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangSmokeFunctionTests',               notes: 'first curated lang batch'],
                 [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangAdditionalSmokeFunctionTests',     notes: 'additional curated lang batch'],
                 [area: 'lang',     mode: 'compile-only',      task: 'compileDerbyLangCoreSmokeFunctionTests',           notes: 'core SQL/lang batch'],
@@ -3109,6 +3152,7 @@ tasks.register('listActivatedDerbyTestIslands') {
                 [area: 'jdbc4',    bucket: 'jdbc4',     task: 'runDerbyJdbc4AbortSmokeFunctionTests'],
                 [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiStatementSmokeFunctionTests'],
                 [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiMetadataSmokeFunctionTests'],
+                [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiBroaderSmokeFunctionTests'],
                 [area: 'tools',    bucket: 'tools',     task: 'runDerbyToolsBroaderSmokeFunctionTests']
         ]
 
