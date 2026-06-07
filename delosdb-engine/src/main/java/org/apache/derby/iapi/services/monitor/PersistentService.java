@@ -21,6 +21,7 @@
 
 package org.apache.derby.iapi.services.monitor;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
 import org.apache.derby.io.StorageFactory;
 
 import org.apache.derby.shared.common.error.StandardException;
@@ -57,6 +58,7 @@ import java.io.IOException;
 	not execute ModuleControl methods for a PersistentService.
 */
 
+@LegacyInternal("Inherited Derby persistent-service contract; future StorageProvider SPI must bridge above it.")
 public interface PersistentService {
 
 	/**

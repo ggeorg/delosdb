@@ -21,6 +21,7 @@
 
 package org.apache.derby.iapi.services.monitor;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
 import java.util.Properties;
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -28,6 +29,7 @@ import org.apache.derby.shared.common.error.StandardException;
 	ModuleControl is <B>optionally</B> implemented by a module's factory class.
 */
 
+@LegacyInternal("Inherited Derby module lifecycle contract; DelosDB provider lifecycle will adapt to it.")
 public interface ModuleControl {
 
 	/**

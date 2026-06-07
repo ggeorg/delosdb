@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.services.monitor;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -85,6 +86,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 
 */
 
+@LegacyInternal("Inherited Derby monitor implementation; DelosDB extension registry must adapt to it rather than replace it.")
 abstract class BaseMonitor
 	implements ModuleFactory, BundleFinder {
 

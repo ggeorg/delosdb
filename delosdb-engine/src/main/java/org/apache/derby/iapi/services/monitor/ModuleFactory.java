@@ -21,6 +21,7 @@
 
 package org.apache.derby.iapi.services.monitor;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
 import org.apache.derby.shared.common.info.ProductVersionHolder;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.stream.InfoStreams;
@@ -37,6 +38,7 @@ The monitor provides a central registry for all modules in the system,
 and manages loading, starting, and finding them.
 */
 
+@LegacyInternal("Inherited Derby module registry contract; public DelosDB SPI must not depend on it directly.")
 public interface ModuleFactory
 {
 

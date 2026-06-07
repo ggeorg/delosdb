@@ -14,6 +14,7 @@ def rootGeneratedSourceRoot = rootProject.layout.buildDirectory.dir("generated/s
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def osgiModuleClassDir = rootProject.project(':delosdb-osgi-stub').layout.buildDirectory.dir('classes/modules/org.osgi.framework')
+def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
 def javaccClasspath = rootProject.files('tools/java/javacc.jar')
 
 def replaceInFile = { File file, Closure<String> transform ->
@@ -52,7 +53,7 @@ tasks.register('generateSqlParser', JavaExec) {
 }
 
 tasks.register('compileDerbyEngine', JavaCompile) {
-    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', 'generateSqlParser'
+    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', ':delosdb-spi:compileDelosDbSpi', 'generateSqlParser'
     source = files(
             fileTree(sourceRoot) { include '**/*.java' },
             fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
@@ -60,12 +61,13 @@ tasks.register('compileDerbyEngine', JavaCompile) {
     destinationDirectory = moduleClassDir
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             osgiModuleClassDir,
-            commonsModuleClassDir
+            commonsModuleClassDir,
+            spiModuleClassDir
     ])
 }
 
 tasks.register('compileClassSizeCatalog', JavaCompile) {
-    dependsOn 'compileDerbyEngine', ':generateClassSizeCatalog'
+    dependsOn 'compileDerbyEngine', ':delosdb-spi:compileDelosDbSpi', ':generateClassSizeCatalog'
     source = files(rootGeneratedSourceRoot.map {
         it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
     })
@@ -73,7 +75,8 @@ tasks.register('compileClassSizeCatalog', JavaCompile) {
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             commonsModuleClassDir,
             moduleClassDir,
-            osgiModuleClassDir
+            osgiModuleClassDir,
+            spiModuleClassDir
     ])
 }
 

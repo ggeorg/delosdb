@@ -21,6 +21,7 @@
 
 package org.apache.derby.iapi.services.monitor;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
 import java.util.Properties;
 
 /**
@@ -28,6 +29,7 @@ import java.util.Properties;
 	before it is selected as an implementation.
 */
 
+@LegacyInternal("Inherited Derby module-selection contract; DelosDB providers will expose typed capability metadata instead.")
 public interface ModuleSupportable {
 
 	/**

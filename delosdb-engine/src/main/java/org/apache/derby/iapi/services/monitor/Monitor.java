@@ -21,6 +21,7 @@
 
 package org.apache.derby.iapi.services.monitor;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
 import java.io.PrintWriter;
 import java.security.AccessControlException;
 import java.util.Locale;
@@ -241,6 +242,7 @@ import org.apache.derby.shared.common.stream.HeaderPrintWriter;
 	application set may be searched using the getProperty() method of ModuleFactory.
 	<BR><B>Should any order be defined for this, should it be automatic?</B>
 */
+@LegacyInternal("Inherited Derby monitor facade; public DelosDB SPI must bridge above it.")
 public class Monitor {
 
 	public static final String SERVICE_TYPE_DIRECTORY = "serviceDirectory";

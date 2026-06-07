@@ -88,6 +88,9 @@ module org.apache.derby.engine
 
     requires static org.osgi.framework;
 
+    // Compile-time stability marker annotations only; not required at runtime.
+    requires static io.github.ggeorg.delosdb.spi;
+
     //
     // DERBY PUBLIC API
     //
