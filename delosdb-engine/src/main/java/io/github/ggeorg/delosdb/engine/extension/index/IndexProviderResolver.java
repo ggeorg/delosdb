@@ -70,6 +70,11 @@ public final class IndexProviderResolver {
         return provider;
     }
 
+
+    public IndexProvider requireDefault() {
+        return requireEnabled(BuiltInIndexProviders.defaultProviderName());
+    }
+
     public List<IndexProvider> providers() {
         return List.copyOf(providersByName.values());
     }

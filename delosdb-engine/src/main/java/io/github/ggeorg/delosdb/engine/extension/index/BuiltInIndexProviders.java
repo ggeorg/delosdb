@@ -1,5 +1,6 @@
 package io.github.ggeorg.delosdb.engine.extension.index;
 
+import io.github.ggeorg.delosdb.engine.extension.BuiltInExtensions;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.index.IndexProvider;
 
@@ -19,6 +20,14 @@ public final class BuiltInIndexProviders {
 
     public static IndexProvider btree() {
         return BuiltInBTreeIndexProvider.INSTANCE;
+    }
+
+    public static String defaultProviderName() {
+        return BuiltInExtensions.DEFAULT_INDEX_PROVIDER;
+    }
+
+    public static IndexProvider defaultProvider() {
+        return btree();
     }
 
     public static List<IndexProvider> all() {

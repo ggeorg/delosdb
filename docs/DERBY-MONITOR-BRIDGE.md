@@ -83,6 +83,7 @@ Done:  register built-in provider descriptors above the Monitor bridge
 Done:  add experimental IndexProvider contract skeleton
 Now:   connect built-in btree identity to an internal IndexProvider adapter
 Later: add SQL/catalog/optimizer bridges after lifecycle boundaries are proven
+Rule:  preserve Derby compatibility by defaulting unnamed index providers to btree
 ```
 
 The first real provider contract is deliberately small. The experimental
@@ -134,6 +135,24 @@ adapter without exposing Derby Monitor, store, optimizer, or conglomerate APIs.
 
 The resolver must stay behind the engine boundary until catalog lifecycle,
 missing-provider diagnostics, and optimizer integration are designed.
+
+### Derby-compatible default provider
+
+DelosDB treats the built-in `btree` provider as the default index provider.
+Existing Derby syntax remains unchanged:
+
+```sql
+CREATE INDEX idx ON t(c);
+```
+
+Future DelosDB syntax is additive and must resolve to the same provider when the
+provider is `btree`:
+
+```sql
+CREATE INDEX idx ON t(c) USING btree;
+```
+
+The detailed compatibility policy is recorded in `docs/DERBY-COMPATIBILITY.md`.
 
 ## Non-goals
 

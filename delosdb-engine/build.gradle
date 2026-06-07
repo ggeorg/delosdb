@@ -115,6 +115,9 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         if (!builtIns.contains('BTREE_INDEX_PROVIDER = "btree"')) {
             throw new GradleException('Built-in extension registration must declare the internal btree provider identity')
         }
+        if (!builtIns.contains('DEFAULT_INDEX_PROVIDER = BTREE_INDEX_PROVIDER')) {
+            throw new GradleException('Built-in extension registration must declare btree as the Derby-compatible default index provider')
+        }
         if (!builtIns.contains('BuiltInIndexProviders.all()')) {
             throw new GradleException('Built-in descriptor registration must be derived from built-in index provider adapters')
         }
@@ -132,8 +135,22 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         if (!indexProviderResolver.contains('requireEnabled(String name)')) {
             throw new GradleException('Index provider resolver must provide checked enabled-provider resolution')
         }
+        if (!indexProviderResolver.contains('requireDefault()')) {
+            throw new GradleException('Index provider resolver must expose Derby-compatible default provider resolution')
+        }
         if (!indexProviderResolver.contains('ExtensionResolutionException')) {
             throw new GradleException('Index provider resolver must fail with internal extension resolution diagnostics')
+        }
+        def builtInIndexProviders = new File(extensionRoot, 'index/BuiltInIndexProviders.java').text
+        if (!builtInIndexProviders.contains('defaultProviderName()')) {
+            throw new GradleException('Built-in index providers must expose the default provider name')
+        }
+        if (!builtInIndexProviders.contains('defaultProvider()')) {
+            throw new GradleException('Built-in index providers must expose the default provider adapter')
+        }
+        def compatibilityDoc = rootProject.file('docs/DERBY-COMPATIBILITY.md').text
+        if (!compatibilityDoc.contains('CREATE INDEX idx ON t(c) USING btree')) {
+            throw new GradleException('Derby compatibility policy must document the additive USING btree rule')
         }
         def moduleInfo = file('src/main/java/module-info.java').text
         if (moduleInfo.contains('exports io.github.ggeorg.delosdb.engine.extension')) {

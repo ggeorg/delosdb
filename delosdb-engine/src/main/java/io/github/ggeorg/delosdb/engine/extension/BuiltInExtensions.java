@@ -21,6 +21,7 @@ import java.util.Objects;
 public final class BuiltInExtensions {
     public static final String BUILTIN_VERSION = "builtin";
     public static final String BTREE_INDEX_PROVIDER = "btree";
+    public static final String DEFAULT_INDEX_PROVIDER = BTREE_INDEX_PROVIDER;
 
     private BuiltInExtensions() {
     }
