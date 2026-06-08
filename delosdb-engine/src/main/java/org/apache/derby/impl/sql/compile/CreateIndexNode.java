@@ -318,6 +318,7 @@ class CreateIndexNode extends DDLStatementNode
                     false, // initiallyDeferred: N/A
                     -1,    // constraintType: N/A
                     indexType,
+                    indexProviderName,
                     sd.getSchemaName(),
                     indexName.getTableName(),
                     tableName.getTableName(),

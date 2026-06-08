@@ -311,7 +311,8 @@ abstract class DDLSingleTableConstantAction extends DDLConstantAction
                                         // since we know we already have a
                                         // unique index
                         DataDictionary.UNIQUE_CONSTRAINT,
-                        cd.getIndexDescriptor().indexType(), 
+                        cd.getIndexDescriptor().indexType(),
+                        null,
                         td.getSchemaName(), 
                         cd.getConglomerateName(), td.getName(), td.getUUID(),
                         cols, cd.getIndexDescriptor().isAscending(),

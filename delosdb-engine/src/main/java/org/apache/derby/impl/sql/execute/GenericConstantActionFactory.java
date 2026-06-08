@@ -229,6 +229,7 @@ public class GenericConstantActionFactory
      *                           deferred mode initially.
      * @param constraintType  The constraint type
      * @param indexType	The type of index (BTREE, for example)
+     * @param indexProviderName Optional DelosDB provider identity; null means default btree
      * @param schemaName			the schema that table (and index) lives in.
      * @param indexName	Name of the index
      * @param tableName	Name of table the index will be on
@@ -248,6 +249,7 @@ public class GenericConstantActionFactory
         boolean         initiallyDeferred,
         int             constraintType,
         String			indexType,
+        String          indexProviderName,
         String			schemaName,
         String			indexName,
         String			tableName,
@@ -266,6 +268,7 @@ public class GenericConstantActionFactory
             initiallyDeferred,
             constraintType,
             indexType,
+            indexProviderName,
             schemaName,
             indexName,
             tableName,

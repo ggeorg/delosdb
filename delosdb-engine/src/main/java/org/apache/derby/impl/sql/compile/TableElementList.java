@@ -1265,6 +1265,7 @@ class TableElementList extends QueryTreeNodeVector<TableElementNode>
                     initiallyDeferred,
                     constraintType,
                     "BTREE", // indexType
+                    null,    // DelosDB indexProviderName: Derby-compatible default
                     sd.getSchemaName(),
                     indexName,
                     tableName,
