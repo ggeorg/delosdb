@@ -164,7 +164,9 @@ CREATE INDEX idx ON t(c) USING btree;
 
 `USING btree` resolves to the same built-in default provider as existing Derby
 syntax without a provider clause. The parser records and validates the provider
-name, but execution still follows Derby's existing B-tree creation path. This is
+name using a local default-provider name. It must not load DelosDB provider
+adapter or SPI classes while compiling ordinary Derby-compatible `CREATE INDEX`
+statements. Execution still follows Derby's existing B-tree creation path. This is
 not catalog persistence, optimizer integration, provider discovery, or alternate
 index implementation.
 

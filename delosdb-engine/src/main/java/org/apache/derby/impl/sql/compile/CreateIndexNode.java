@@ -38,7 +38,6 @@ import org.apache.derby.iapi.sql.dictionary.SchemaDescriptor;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.sql.execute.ConstantAction;
 import org.apache.derby.iapi.types.DataTypeDescriptor;
-import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 
 /**
  * A CreateIndexNode is the root of a QueryTree that represents a CREATE INDEX
@@ -48,6 +47,8 @@ import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 
 class CreateIndexNode extends DDLStatementNode
 {
+    private static final String DEFAULT_INDEX_PROVIDER_NAME = "btree";
+
     private boolean             unique;
     private Properties          properties;
     private String              indexType;
@@ -135,7 +136,7 @@ class CreateIndexNode extends DDLStatementNode
     {
         if (providerName == null)
         {
-            return BuiltInIndexProviders.defaultProviderName();
+            return DEFAULT_INDEX_PROVIDER_NAME;
         }
         return providerName.toLowerCase(Locale.ROOT);
     }
@@ -149,7 +150,7 @@ class CreateIndexNode extends DDLStatementNode
      */
     private void verifyIndexProviderName() throws StandardException
     {
-        if (!BuiltInIndexProviders.defaultProviderName().equals(indexProviderName))
+        if (!DEFAULT_INDEX_PROVIDER_NAME.equals(indexProviderName))
         {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,

@@ -159,8 +159,11 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         if (!createIndexNode.contains('verifyIndexProviderName')) {
             throw new GradleException('CreateIndexNode must verify unsupported index providers before execution')
         }
-        if (!createIndexNode.contains('BuiltInIndexProviders.defaultProviderName()')) {
-            throw new GradleException('CreateIndexNode must default CREATE INDEX provider resolution to built-in btree')
+        if (!createIndexNode.contains('DEFAULT_INDEX_PROVIDER_NAME = "btree"')) {
+            throw new GradleException('CreateIndexNode must keep the Derby-compatible default provider name local to parser plumbing')
+        }
+        if (createIndexNode.contains('BuiltInIndexProviders')) {
+            throw new GradleException('CreateIndexNode must not load provider adapter classes during Derby-compatible CREATE INDEX parsing')
         }
         def sqlGrammar = file('src/main/java/org/apache/derby/impl/sql/compile/sqlgrammar.jj').text
         if (!sqlGrammar.contains('indexProviderClause')) {

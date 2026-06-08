@@ -52,6 +52,16 @@ Existing Derby indexes and indexes created without a provider name must resolve
 to `btree`. Provider metadata, parser support, catalog persistence, and optimizer
 integration must all preserve that default.
 
+
+## Parser compatibility guard
+
+The SQL compiler must not load DelosDB provider adapter or SPI implementation
+classes when compiling ordinary Derby-compatible `CREATE INDEX` statements. The
+optional provider clause is parser-level plumbing at this phase: unnamed indexes
+and `USING btree` normalize to the local default provider name and continue down
+the existing Derby B-tree creation path. This preserves jar/classpath behavior for
+existing Derby-style runtime scenarios.
+
 ## Catalog compatibility
 
 Runtime SQL compatibility and Apache Derby catalog interchangeability are not the
