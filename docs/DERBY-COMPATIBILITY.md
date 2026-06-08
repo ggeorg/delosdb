@@ -37,8 +37,9 @@ CREATE INDEX idx ON t(c) USING btree;
 
 For this phase, `btree` is the only accepted provider name. Unknown providers
 fail before execution with a clean unsupported-feature diagnostic. The statement
-continues through the existing Derby index creation path; no catalog metadata,
-optimizer behavior, or storage behavior changes are introduced by this syntax.
+continues through the existing Derby index creation path; provider metadata is
+stored only as descriptor metadata and does not affect optimizer behavior or
+storage behavior.
 
 ## Provider defaults
 
@@ -72,7 +73,7 @@ catalog metadata may eventually make a database a DelosDB catalog rather than an
 Apache Derby catalog. When that happens, the change must be explicit, documented,
 and migration-aware.
 
-Until catalog metadata is introduced for providers:
+Provider metadata is introduced conservatively as descriptor metadata:
 
 ```text
 no provider metadata  -> default index provider btree
@@ -102,3 +103,30 @@ The safe sequence is:
 4. catalog metadata defaults old indexes to that identity
 5. optimizer bridge falls back to Derby costing if provider declines
 ```
+
+## CREATE INDEX provider metadata plumbing
+
+`CREATE INDEX ... USING btree` is intentionally additive. The parsed provider
+name is carried into the internal `CreateIndexConstantAction` as metadata, but
+it does not change Derby's execution path yet. Existing Derby syntax and
+constraint-backed indexes continue to use the same implicit `btree` default.
+
+The parser and constant-action plumbing must not load provider adapter or
+resolver classes while compiling or executing ordinary Derby-compatible SQL.
+That keeps `derby.jar` smoke and inherited tests independent of SPI runtime
+classes until DelosDB intentionally ships a runtime provider layer.
+
+## Minimal provider catalog persistence
+
+DelosDB persists the normalized index provider name inside the existing serialized
+index descriptor metadata. This is deliberately conservative:
+
+```text
+old Derby-created descriptor with no provider key -> btree
+CREATE INDEX without USING                     -> btree
+CREATE INDEX ... USING btree                   -> btree
+```
+
+No new system catalog table is introduced at this stage, and the persisted
+provider name remains metadata only. Derby's existing physical B-tree creation,
+optimizer costing, and execution path are unchanged.

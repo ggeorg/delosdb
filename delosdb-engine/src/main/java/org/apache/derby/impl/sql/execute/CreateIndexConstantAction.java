@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.sql.execute;
 
+import java.util.Locale;
 import java.util.Properties;
 import org.apache.derby.catalog.UUID;
 import org.apache.derby.catalog.types.StatisticsImpl;
@@ -68,6 +69,8 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 
 class CreateIndexConstantAction extends IndexConstantAction
 {
+    private static final String DEFAULT_INDEX_PROVIDER_NAME = "btree";
+
     /**
      * Is this for a CREATE TABLE, i.e. it is
      * for a constraint declared in a CREATE TABLE
@@ -108,6 +111,12 @@ class CreateIndexConstantAction extends IndexConstantAction
     private final int       constraintType;
     
 	private String			indexType;
+    /**
+     * DelosDB provider identity carried from CREATE INDEX parser plumbing.
+     * The value is metadata only at this stage; execution still uses Derby's
+     * existing B-tree path.
+     */
+    private final String    indexProviderName;
 	private String[]		columnNames;
 	private boolean[]		isAscending;
 	private boolean			isConstraint;
@@ -157,6 +166,8 @@ class CreateIndexConstantAction extends IndexConstantAction
      *                                      a deferred constraint. Implies
      *                                      hasDeferrableChecking.
      * @param indexType	                    type of index (BTREE, for example)
+     * @param indexProviderName             optional DelosDB provider identity;
+     *                                      null means Derby-compatible default
      * @param schemaName	                schema that table (and index) 
      *                                      lives in.
      * @param indexName	                    Name of the index
@@ -180,6 +191,7 @@ class CreateIndexConstantAction extends IndexConstantAction
             boolean         initiallyDeferred,
             int             constraintType,
             String			indexType,
+            String          indexProviderName,
             String			schemaName,
             String			indexName,
             String			tableName,
@@ -200,6 +212,7 @@ class CreateIndexConstantAction extends IndexConstantAction
         this.constraintType             = constraintType;
         this.uniqueDeferrable           = unique && hasDeferrableChecking;
 		this.indexType                  = indexType;
+        this.indexProviderName          = normalizeIndexProviderName(indexProviderName);
 		this.columnNames                = columnNames;
 		this.isAscending                = isAscending;
 		this.isConstraint               = isConstraint;
@@ -254,6 +267,7 @@ class CreateIndexConstantAction extends IndexConstantAction
         this.initiallyDeferred = false;     // N/A
         this.constraintType = -1;           // N/A
 		this.indexType = irg.indexType();
+        this.indexProviderName = irg.indexProviderName();
 		this.columnNames = srcCD.getColumnNames();
 		this.isAscending = irg.isAscending();
 		this.isConstraint = srcCD.isConstraint();
@@ -291,6 +305,28 @@ class CreateIndexConstantAction extends IndexConstantAction
 		// error reporting.
 		return "CREATE INDEX " + indexName;
 	}
+
+	/**
+     * Normalize the DelosDB provider identity carried by parser plumbing.
+     * Null preserves the existing Derby path and maps to the built-in B-tree.
+     */
+    private static String normalizeIndexProviderName(String providerName)
+    {
+        if (providerName == null)
+        {
+            return DEFAULT_INDEX_PROVIDER_NAME;
+        }
+        return providerName.toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Return the DelosDB index provider identity carried by this action.
+     * Package-private for internal verification/plumbing only.
+     */
+    String getIndexProviderName()
+    {
+        return indexProviderName;
+    }
 
 	// INTERFACE METHODS
 
@@ -525,7 +561,8 @@ class CreateIndexConstantAction extends IndexConstantAction
 								! uniqueWithDuplicateNulls);
 			}
 
-			if (possibleShare && indexType.equals(irg.indexType()))
+			if (possibleShare && indexType.equals(irg.indexType()) &&
+                    indexProviderName.equals(irg.indexProviderName()))
 			{
 				for (; j < bcps.length; j++)
 				{
@@ -575,7 +612,8 @@ class CreateIndexConstantAction extends IndexConstantAction
                         false, // deferrable indexes are not shared
 						baseColumnPositions,
 						isAscending,
-						baseColumnPositions.length);
+						baseColumnPositions.length,
+                        indexProviderName);
 
 				//DERBY-655 and DERBY-1343  
 				// Sharing indexes will have unique logical conglomerate UUIDs.
@@ -680,7 +718,8 @@ class CreateIndexConstantAction extends IndexConstantAction
                          constraintType != DataDictionary.FOREIGNKEY_CONSTRAINT),
                         baseColumnPositions,
                         isAscending,
-                        baseColumnPositions.length);
+                        baseColumnPositions.length,
+                        indexProviderName);
 			}
 			else 
             {
@@ -692,7 +731,8 @@ class CreateIndexConstantAction extends IndexConstantAction
                                             false,
                                             baseColumnPositions,
                                             isAscending,
-                                            baseColumnPositions.length);
+                                            baseColumnPositions.length,
+                                            indexProviderName);
 			}
 		}
 

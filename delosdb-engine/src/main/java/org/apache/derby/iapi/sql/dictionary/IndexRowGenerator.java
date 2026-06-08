@@ -53,6 +53,7 @@ import org.apache.derby.iapi.types.DataTypeDescriptor;
  */
 public class IndexRowGenerator implements IndexDescriptor, Formatable
 {
+    private static final String DEFAULT_INDEX_PROVIDER_NAME = "btree";
 	private IndexDescriptor	id;
 	private ExecutionFactory ef;
 
@@ -87,6 +88,27 @@ public class IndexRowGenerator implements IndexDescriptor, Formatable
 								boolean[] isAscending,
 								int numberOfOrderedColumns)
 	{
+        this(indexType, isUnique, isUniqueWithDuplicateNulls,
+                isUniqueDeferrable, hasDeferrableChecking,
+                baseColumnPositions, isAscending, numberOfOrderedColumns,
+                DEFAULT_INDEX_PROVIDER_NAME);
+	}
+
+    /**
+     * Constructor for an IndexRowGeneratorImpl with DelosDB provider metadata.
+     * The provider name is persisted with the index descriptor but does not
+     * change the physical Derby B-tree implementation at this phase.
+     */
+	public IndexRowGenerator(String indexType,
+								boolean isUnique,
+								boolean isUniqueWithDuplicateNulls,
+                                boolean isUniqueDeferrable,
+                                boolean hasDeferrableChecking,
+								int[] baseColumnPositions,
+								boolean[] isAscending,
+								int numberOfOrderedColumns,
+                                String indexProviderName)
+	{
 		id = new IndexDescriptorImpl(indexType,
 									isUnique,
 									isUniqueWithDuplicateNulls,
@@ -94,7 +116,8 @@ public class IndexRowGenerator implements IndexDescriptor, Formatable
                                     hasDeferrableChecking,
 									baseColumnPositions,
 									isAscending,
-									numberOfOrderedColumns);
+									numberOfOrderedColumns,
+                                    indexProviderName);
 
 		if (SanityManager.DEBUG)
 		{
@@ -325,6 +348,20 @@ public class IndexRowGenerator implements IndexDescriptor, Formatable
 	{
 		return id.indexType();
 	}
+
+    /**
+     * Return the DelosDB provider identity associated with this index.
+     * Index descriptors created before DelosDB provider metadata existed
+     * report the Derby-compatible built-in B-tree provider.
+     */
+    public String indexProviderName()
+    {
+        if (id instanceof IndexDescriptorImpl)
+        {
+            return ((IndexDescriptorImpl) id).indexProviderName();
+        }
+        return DEFAULT_INDEX_PROVIDER_NAME;
+    }
 
 	public String toString()
 	{

@@ -47,6 +47,8 @@ import java.io.IOException;
  */
 public class IndexDescriptorImpl implements IndexDescriptor, Formatable
 {
+    private static final String DEFAULT_INDEX_PROVIDER_NAME = "btree";
+    private static final String INDEX_PROVIDER_KEY = "delosdbIndexProviderName";
 	/********************************************************
 	**
 	**	This class implements Formatable. That means that it
@@ -66,6 +68,11 @@ public class IndexDescriptorImpl implements IndexDescriptor, Formatable
 	private boolean[]	isAscending;
 	private int			numberOfOrderedColumns;
 	private String		indexType;
+    /**
+     * DelosDB provider identity for this index descriptor. Old Derby catalogs
+     * do not contain this key and therefore default to the built-in B-tree.
+     */
+    private String      indexProviderName = DEFAULT_INDEX_PROVIDER_NAME;
 	//attribute to indicate the indicates allows duplicate only in
 	//case of non null keys. This attribute has no effect if the isUnique
     //is true. If isUnique is false and isUniqueWithDuplicateNulls is set 
@@ -124,7 +131,29 @@ public class IndexDescriptorImpl implements IndexDescriptor, Formatable
 								boolean[] isAscending,
 								int numberOfOrderedColumns)
 	{
+        this(indexType, isUnique, isUniqueWithDuplicateNulls,
+                isUniqueDeferrable, hasDeferrableChecking,
+                baseColumnPositions, isAscending, numberOfOrderedColumns,
+                DEFAULT_INDEX_PROVIDER_NAME);
+	}
+
+    /**
+     * Constructor for an IndexDescriptorImpl with DelosDB provider metadata.
+     * The provider name is metadata only; Derby's current B-tree path remains
+     * the only supported implementation at this phase.
+     */
+	public IndexDescriptorImpl(String indexType,
+								boolean isUnique,
+								boolean isUniqueWithDuplicateNulls,
+                                boolean isUniqueDeferrable,
+                                boolean hasDeferrableChecking,
+								int[] baseColumnPositions,
+								boolean[] isAscending,
+								int numberOfOrderedColumns,
+                                String indexProviderName)
+	{
 		this.indexType = indexType;
+        this.indexProviderName = normalizeIndexProviderName(indexProviderName);
 		this.isUnique = isUnique;
 		this.isUniqueWithDuplicateNulls = isUniqueWithDuplicateNulls;
         this.isUniqueDeferrable = isUniqueDeferrable;
@@ -214,6 +243,16 @@ public class IndexDescriptorImpl implements IndexDescriptor, Formatable
 	{
 		return indexType;
 	}
+
+    /**
+     * Return the DelosDB provider identity associated with this index.
+     * Old Derby catalogs and indexes created without an explicit provider
+     * are reported as the built-in B-tree provider.
+     */
+    public String indexProviderName()
+    {
+        return indexProviderName;
+    }
 
 	/** @see IndexDescriptor#isAscending */
 	public boolean			isAscending(Integer keyColumnPosition)
@@ -310,6 +349,7 @@ public class IndexDescriptorImpl implements IndexDescriptor, Formatable
 		}
 		numberOfOrderedColumns = fh.getInt("orderedColumns");
 		indexType = (String)fh.get("indexType");
+        indexProviderName = normalizeIndexProviderName((String) fh.get(INDEX_PROVIDER_KEY));
 		//isUniqueWithDuplicateNulls attribute won't be present if the index
 		//was created in older versions  
 		if (fh.containsKey("isUniqueWithDuplicateNulls"))
@@ -352,6 +392,7 @@ public class IndexDescriptorImpl implements IndexDescriptor, Formatable
 		}
 		fh.putInt("orderedColumns", numberOfOrderedColumns);
 		fh.put("indexType", indexType);
+        fh.put(INDEX_PROVIDER_KEY, indexProviderName);
 		//write the new attribut older versions will simply ignore it
 		fh.putBoolean("isUniqueWithDuplicateNulls", 
                                         isUniqueWithDuplicateNulls);
@@ -395,7 +436,8 @@ public class IndexDescriptorImpl implements IndexDescriptor, Formatable
                     this.baseColumnPositions.length) &&
                 (id.numberOfOrderedColumns     == 
                     this.numberOfOrderedColumns)     &&
-                (id.indexType.equals(this.indexType)))
+                (id.indexType.equals(this.indexType)) &&
+                (id.indexProviderName.equals(this.indexProviderName)))
 			{
 				/*
 				** Everything but array elements known to be true -
@@ -434,7 +476,17 @@ public class IndexDescriptorImpl implements IndexDescriptor, Formatable
 			retval *= baseColumnPositions[i];
 		}
 		retval *= indexType.hashCode();
+        retval *= indexProviderName.hashCode();
 
 		return retval;
 	}
+
+    private static String normalizeIndexProviderName(String providerName)
+    {
+        if (providerName == null || providerName.isBlank())
+        {
+            return DEFAULT_INDEX_PROVIDER_NAME;
+        }
+        return providerName.toLowerCase(java.util.Locale.ROOT);
+    }
 }

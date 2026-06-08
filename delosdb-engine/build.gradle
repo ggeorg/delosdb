@@ -162,8 +162,53 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         if (!createIndexNode.contains('DEFAULT_INDEX_PROVIDER_NAME = "btree"')) {
             throw new GradleException('CreateIndexNode must keep the Derby-compatible default provider name local to parser plumbing')
         }
+        if (!createIndexNode.contains('indexProviderName,')) {
+            throw new GradleException('CreateIndexNode must carry the parsed provider name into the CREATE INDEX constant action')
+        }
         if (createIndexNode.contains('BuiltInIndexProviders')) {
             throw new GradleException('CreateIndexNode must not load provider adapter classes during Derby-compatible CREATE INDEX parsing')
+        }
+        def createIndexAction = file('src/main/java/org/apache/derby/impl/sql/execute/CreateIndexConstantAction.java').text
+        if (!createIndexAction.contains('private final String    indexProviderName')) {
+            throw new GradleException('CreateIndexConstantAction must carry DelosDB index provider metadata internally')
+        }
+        if (!createIndexAction.contains('String getIndexProviderName()')) {
+            throw new GradleException('CreateIndexConstantAction must expose provider metadata for internal plumbing verification')
+        }
+        if (!createIndexAction.contains('irg.indexProviderName()')) {
+            throw new GradleException('CREATE INDEX descriptor reconstruction must preserve persisted provider metadata')
+        }
+        if (!createIndexAction.contains('indexProviderName.equals(irg.indexProviderName())')) {
+            throw new GradleException('Shared index matching must include provider metadata')
+        }
+        if (createIndexAction.contains('BuiltInIndexProviders') || createIndexAction.contains('IndexProviderResolver')) {
+            throw new GradleException('CreateIndexConstantAction must not load provider adapter/resolver classes during execution')
+        }
+        def indexDescriptorImpl = file('src/main/java/org/apache/derby/catalog/types/IndexDescriptorImpl.java').text
+        if (!indexDescriptorImpl.contains('INDEX_PROVIDER_KEY = "delosdbIndexProviderName"')) {
+            throw new GradleException('IndexDescriptorImpl must persist DelosDB index provider metadata under a stable key')
+        }
+        if (!indexDescriptorImpl.contains('indexProviderName = normalizeIndexProviderName((String) fh.get(INDEX_PROVIDER_KEY))')) {
+            throw new GradleException('IndexDescriptorImpl must default missing provider metadata to btree when reading old catalogs')
+        }
+        if (!indexDescriptorImpl.contains('fh.put(INDEX_PROVIDER_KEY, indexProviderName)')) {
+            throw new GradleException('IndexDescriptorImpl must write provider metadata for new indexes')
+        }
+        def indexRowGenerator = file('src/main/java/org/apache/derby/iapi/sql/dictionary/IndexRowGenerator.java').text
+        if (!indexRowGenerator.contains('String indexProviderName()')) {
+            throw new GradleException('IndexRowGenerator must expose persisted provider metadata internally')
+        }
+        if (!indexRowGenerator.contains('new IndexDescriptorImpl(indexType,')) {
+            throw new GradleException('IndexRowGenerator must continue constructing Derby index descriptors')
+        }
+
+        def constantActionFactory = file('src/main/java/org/apache/derby/impl/sql/execute/GenericConstantActionFactory.java').text
+        if (!constantActionFactory.contains('String          indexProviderName')) {
+            throw new GradleException('CREATE INDEX constant action factory must accept provider metadata from the parser')
+        }
+        def tableElementList = file('src/main/java/org/apache/derby/impl/sql/compile/TableElementList.java').text
+        if (!tableElementList.contains('null,    // DelosDB indexProviderName: Derby-compatible default')) {
+            throw new GradleException('Constraint-backed indexes must preserve the Derby-compatible default provider')
         }
         def sqlGrammar = file('src/main/java/org/apache/derby/impl/sql/compile/sqlgrammar.jj').text
         if (!sqlGrammar.contains('indexProviderClause')) {
