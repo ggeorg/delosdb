@@ -1,7 +1,12 @@
 connect 'jdbc:derby:build/smoke-db/delosdb;create=true';
 create table smoke_test(id int primary key, name varchar(32));
+create index smoke_test_name_idx on smoke_test(name) using btree;
 insert into smoke_test values (1, 'ok');
 select * from smoke_test;
 drop table smoke_test;
+create table smoke_index_compat(id int, name varchar(32));
+create index smoke_index_default_idx on smoke_index_compat(id);
+create index smoke_index_btree_idx on smoke_index_compat(name) using btree;
+drop table smoke_index_compat;
 disconnect;
 exit;
