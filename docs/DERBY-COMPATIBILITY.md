@@ -130,3 +130,22 @@ CREATE INDEX ... USING btree                   -> btree
 No new system catalog table is introduced at this stage, and the persisted
 provider name remains metadata only. Derby's existing physical B-tree creation,
 optimizer costing, and execution path are unchanged.
+
+## CREATE INDEX provider metadata compatibility
+
+DelosDB records the normalized index provider name in the existing serialized
+index descriptor metadata. Derby-compatible indexes and indexes created without
+`USING` are treated as `btree`. Descriptors created before this metadata existed
+are read as `btree` when the key is absent.
+
+The verification task `verifyCreateIndexProviderMetadataRoundTrip` checks:
+
+```text
+implicit CREATE INDEX metadata -> btree
+explicit USING btree metadata -> btree
+old descriptor metadata without a provider key -> btree
+provider identity participates in descriptor equality
+```
+
+The parser and constant-action path must not require provider adapter/resolver
+classes to execute normal Derby-compatible `CREATE INDEX` statements.

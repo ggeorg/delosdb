@@ -1782,8 +1782,14 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
     }
 }
 
+tasks.register('verifyCreateIndexProviderMetadataRoundTrip') {
+    group = 'verification'
+    description = 'Verifies CREATE INDEX provider metadata defaults and round-trips through Derby index descriptors.'
+    dependsOn ':delosdb-engine:verifyCreateIndexProviderMetadataRoundTrip'
+}
+
 tasks.named('check') {
-    dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'verifyGradleOnlyPublicSurface', 'verifyDelosDbSpiProject', 'verifyDelosDbExtensionRegistrySkeleton',
+    dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'verifyGradleOnlyPublicSurface', 'verifyDelosDbSpiProject', 'verifyDelosDbExtensionRegistrySkeleton', 'verifyCreateIndexProviderMetadataRoundTrip',
             'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
             'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
             'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedPackagePrivateTestsSourceLayout', 'verifyMovedDemosSourceLayout', 'verifyMovedLocalesSourceLayout', 'verifyMovedStorelessSourceLayout', 'verifyMovedBuildToolsSourceLayout'

@@ -84,7 +84,108 @@ tasks.register('classes') {
     dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog'
 }
 
+tasks.register('verifyCreateIndexProviderMetadataRoundTrip') {
+    group = 'verification'
+    description = 'Verifies DelosDB CREATE INDEX provider metadata defaults, serializes, and round-trips without provider SPI runtime classes.'
+    dependsOn 'compileDerbyEngine'
+    inputs.file('src/main/java/org/apache/derby/catalog/types/IndexDescriptorImpl.java')
+    doLast {
+        def urls = [
+                moduleClassDir.get().asFile,
+                commonsModuleClassDir.get().asFile
+        ].collect { it.toURI().toURL() } as URL[]
+        def loader = new URLClassLoader(urls, (ClassLoader) null)
+        try {
+            def descriptorClass = Class.forName('org.apache.derby.catalog.types.IndexDescriptorImpl', true, loader)
+            def constructor = descriptorClass.getConstructor(
+                    String,
+                    Boolean.TYPE,
+                    Boolean.TYPE,
+                    Boolean.TYPE,
+                    Boolean.TYPE,
+                    int[].class,
+                    boolean[].class,
+                    Integer.TYPE,
+                    String)
+            def providerName = { descriptor ->
+                descriptorClass.getMethod('indexProviderName').invoke(descriptor)
+            }
+            def assertProvider = { descriptor, expected, label ->
+                def actual = providerName(descriptor)
+                if (actual != expected) {
+                    throw new GradleException("${label} provider metadata expected ${expected} but was ${actual}")
+                }
+            }
+            def objectInput = { byte[] bytes ->
+                new ObjectInputStream(new ByteArrayInputStream(bytes)) {
+                    @Override
+                    protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
+                        try {
+                            return Class.forName(desc.name, false, loader)
+                        } catch (ClassNotFoundException ignored) {
+                            return super.resolveClass(desc)
+                        }
+                    }
+                }
+            }
+            def serialize = { object ->
+                def bytes = new ByteArrayOutputStream()
+                def out = new ObjectOutputStream(bytes)
+                out.writeObject(object)
+                out.close()
+                bytes.toByteArray()
+            }
+            def roundTrip = { object ->
+                def input = objectInput(serialize(object))
+                try {
+                    return input.readObject()
+                } finally {
+                    input.close()
+                }
+            }
+
+            def implicit = constructor.newInstance('BTREE', false, false, false, false,
+                    [1] as int[], [true] as boolean[], 1, null)
+            assertProvider(implicit, 'btree', 'implicit/default index descriptor')
+            assertProvider(roundTrip(implicit), 'btree', 'round-tripped implicit/default index descriptor')
+
+            def explicit = constructor.newInstance('BTREE', false, false, false, false,
+                    [1] as int[], [true] as boolean[], 1, 'BTREE')
+            assertProvider(explicit, 'btree', 'explicit btree index descriptor')
+            assertProvider(roundTrip(explicit), 'btree', 'round-tripped explicit btree index descriptor')
+
+            def alternate = constructor.newInstance('BTREE', false, false, false, false,
+                    [1] as int[], [true] as boolean[], 1, 'hash_lookup')
+            assertProvider(alternate, 'hash_lookup', 'alternate provider descriptor')
+            if (descriptorClass.getMethod('equals', Object).invoke(explicit, alternate)) {
+                throw new GradleException('Index descriptor equality must include DelosDB provider metadata')
+            }
+
+            def hashtableClass = Class.forName('org.apache.derby.iapi.services.io.FormatableHashtable', true, loader)
+            def oldCatalogState = hashtableClass.getConstructor().newInstance()
+            hashtableClass.getMethod('putBoolean', String, Boolean.TYPE).invoke(oldCatalogState, 'isUnique', false)
+            hashtableClass.getMethod('putInt', String, Integer.TYPE).invoke(oldCatalogState, 'keyLength', 1)
+            hashtableClass.getMethod('putInt', String, Integer.TYPE).invoke(oldCatalogState, 'bcp0', 1)
+            hashtableClass.getMethod('putBoolean', String, Boolean.TYPE).invoke(oldCatalogState, 'isAsc0', true)
+            hashtableClass.getMethod('putInt', String, Integer.TYPE).invoke(oldCatalogState, 'orderedColumns', 1)
+            hashtableClass.getMethod('put', Object, Object).invoke(oldCatalogState, 'indexType', 'BTREE')
+
+            def legacyDescriptor = descriptorClass.getConstructor().newInstance()
+            def legacyInput = objectInput(serialize(oldCatalogState))
+            try {
+                descriptorClass.getMethod('readExternal', ObjectInput).invoke(legacyDescriptor, legacyInput)
+            } finally {
+                legacyInput.close()
+            }
+            assertProvider(legacyDescriptor, 'btree', 'legacy Derby descriptor without provider metadata')
+        } finally {
+            loader.close()
+        }
+    }
+}
+
 tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
+    dependsOn 'verifyCreateIndexProviderMetadataRoundTrip'
     group = 'verification'
     description = 'Verifies the internal DelosDB extension registry skeleton remains contained inside the engine module.'
     dependsOn 'compileDerbyEngine'
@@ -183,6 +284,9 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         }
         if (createIndexAction.contains('BuiltInIndexProviders') || createIndexAction.contains('IndexProviderResolver')) {
             throw new GradleException('CreateIndexConstantAction must not load provider adapter/resolver classes during execution')
+        }
+        if (!tasks.names.contains('verifyCreateIndexProviderMetadataRoundTrip')) {
+            throw new GradleException('Missing CREATE INDEX provider metadata round-trip verification task')
         }
         def indexDescriptorImpl = file('src/main/java/org/apache/derby/catalog/types/IndexDescriptorImpl.java').text
         if (!indexDescriptorImpl.contains('INDEX_PROVIDER_KEY = "delosdbIndexProviderName"')) {
