@@ -163,11 +163,13 @@ tasks.register('verifyCreateIndexProviderMetadataRoundTrip') {
 
             def hashtableClass = Class.forName('org.apache.derby.iapi.services.io.FormatableHashtable', true, loader)
             def oldCatalogState = hashtableClass.getConstructor().newInstance()
-            hashtableClass.getMethod('putBoolean', String, Boolean.TYPE).invoke(oldCatalogState, 'isUnique', false)
-            hashtableClass.getMethod('putInt', String, Integer.TYPE).invoke(oldCatalogState, 'keyLength', 1)
-            hashtableClass.getMethod('putInt', String, Integer.TYPE).invoke(oldCatalogState, 'bcp0', 1)
-            hashtableClass.getMethod('putBoolean', String, Boolean.TYPE).invoke(oldCatalogState, 'isAsc0', true)
-            hashtableClass.getMethod('putInt', String, Integer.TYPE).invoke(oldCatalogState, 'orderedColumns', 1)
+            def putBoolean = hashtableClass.getMethod('putBoolean', Object, Boolean.TYPE)
+            def putInt = hashtableClass.getMethod('putInt', Object, Integer.TYPE)
+            putBoolean.invoke(oldCatalogState, 'isUnique', false)
+            putInt.invoke(oldCatalogState, 'keyLength', 1)
+            putInt.invoke(oldCatalogState, 'bcp0', 1)
+            putBoolean.invoke(oldCatalogState, 'isAsc0', true)
+            putInt.invoke(oldCatalogState, 'orderedColumns', 1)
             hashtableClass.getMethod('put', Object, Object).invoke(oldCatalogState, 'indexType', 'BTREE')
 
             def legacyDescriptor = descriptorClass.getConstructor().newInstance()
