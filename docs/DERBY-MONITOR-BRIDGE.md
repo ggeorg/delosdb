@@ -173,6 +173,27 @@ index implementation.
 Unknown providers remain unsupported until extension catalog/provider loading is
 designed.
 
+
+### Provider capability bridge
+
+The next bridge step resolves persisted provider metadata into provider
+capabilities without changing planning behavior:
+
+```text
+IndexDescriptor
+        ↓
+IndexMetadataBridge
+        ↓
+IndexProviderResolver
+        ↓
+IndexProvider.capabilities(IndexMetadata)
+```
+
+This is diagnostic/preparatory only. It lets DelosDB prove that `btree` is a
+real provider identity with capabilities while the optimizer still uses Derby's
+existing access-path and cost model. Providers see `IndexMetadata`, not Derby
+optimizer, store, or conglomerate objects.
+
 ## Non-goals
 
 This decision does not introduce:

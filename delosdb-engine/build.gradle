@@ -213,6 +213,7 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
                 'index/BuiltInIndexProviders.java',
                 'index/IndexProviderResolver.java',
                 'index/IndexMetadataBridge.java',
+                'index/IndexProviderCapabilityBridge.java',
                 'index/package-info.java'
         ].each { sourceName ->
             def sourceFile = new File(extensionRoot, sourceName)
@@ -269,6 +270,17 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         }
         if (!indexMetadataBridge.contains('baseColumn:')) {
             throw new GradleException('IndexMetadataBridge must avoid exposing Derby column objects in SPI metadata')
+        }
+
+        def indexProviderCapabilityBridge = new File(extensionRoot, 'index/IndexProviderCapabilityBridge.java').text
+        if (!indexProviderCapabilityBridge.contains('IndexMetadataBridge.from(indexName, descriptor)')) {
+            throw new GradleException('IndexProviderCapabilityBridge must adapt Derby descriptors through provider-neutral IndexMetadata')
+        }
+        if (!indexProviderCapabilityBridge.contains('resolver.requireEnabled(metadata.providerName())')) {
+            throw new GradleException('IndexProviderCapabilityBridge must resolve providers by persisted descriptor provider identity')
+        }
+        if (!indexProviderCapabilityBridge.contains('provider.capabilities(metadata)')) {
+            throw new GradleException('IndexProviderCapabilityBridge must ask IndexProvider for capabilities without optimizer coupling')
         }
         def compatibilityDoc = rootProject.file('docs/DERBY-COMPATIBILITY.md').text
         if (!compatibilityDoc.contains('CREATE INDEX idx ON t(c) USING btree')) {
