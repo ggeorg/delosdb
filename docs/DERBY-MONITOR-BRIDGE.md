@@ -190,3 +190,33 @@ This decision does not introduce:
 Derby's monitor remains the internal container. DelosDB SPI becomes the public
 extension surface. The bridge layer is responsible for translating stable provider
 contracts into Derby's existing lifecycle and service model.
+
+## Current CREATE INDEX provider plumbing
+
+The first SQL-facing DelosDB seam is intentionally narrow:
+
+```text
+CREATE INDEX idx ON t(c)              -> implicit provider metadata: btree
+CREATE INDEX idx ON t(c) USING btree  -> explicit provider metadata: btree
+```
+
+For now, this provider name is statement metadata carried from the parser into
+the internal constant action. It is not an optimizer decision, catalog extension,
+or alternate storage/index implementation. The runtime path remains the existing
+Derby B-tree path.
+
+Provider adapter and resolver classes remain behind the internal registry. The
+parser and constant action must stay independent of those classes so
+Derby-compatible SQL does not require SPI runtime classes on the classpath.
+### Provider-neutral index metadata bridge
+
+After provider metadata is persisted in Derby index descriptors, DelosDB maps
+that descriptor state into provider-neutral `IndexMetadata` through an internal
+bridge. The bridge is diagnostic and preparatory only: it carries the provider
+name, index name, key-column positions, and Derby index type into the SPI shape
+without exposing `Conglomerate`, `ScanController`, `StoreCostController`, or
+optimizer implementation classes.
+
+This keeps the next optimizer work honest: providers see DelosDB metadata, not
+Derby implementation objects.
+
