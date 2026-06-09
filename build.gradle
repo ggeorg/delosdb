@@ -653,6 +653,37 @@ tasks.register('modernizationSmoke', JavaExec) {
 }
 
 
+def indexProviderMetadataSmokeClassesDir = layout.buildDirectory.dir('classes/index-provider-metadata-smoke')
+
+tasks.register('compileIndexProviderMetadataSmoke', JavaCompile) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Compiles the CREATE INDEX provider metadata catalog smoke test.'
+    source = files('dev/index-provider-metadata-smoke/src/main/java')
+    destinationDirectory = indexProviderMetadataSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = runtimeJars()
+}
+
+tasks.register('indexProviderMetadataSmoke', JavaExec) {
+    dependsOn 'compileIndexProviderMetadataSmoke', 'verifyReleaseArtifacts'
+    mustRunAfter 'smokeFromJars'
+    group = 'verification'
+    description = 'Verifies CREATE INDEX provider metadata is catalog-visible from assembled Derby-compatible runtime jars.'
+    classpath = files(indexProviderMetadataSmokeClassesDir, runtimeJars())
+    mainClass = 'delosdb.smoke.IndexProviderMetadataSmoke'
+    args layout.buildDirectory.dir('index-provider-metadata-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('index-provider-metadata-smoke').get().asFile
+    doFirst {
+        delete file('build/index-provider-metadata-smoke')
+        workingDir.mkdirs()
+    }
+}
+
+
 def networkServerSmokeClassesDir = layout.buildDirectory.dir('classes/network-server-smoke')
 
 tasks.register('compileNetworkServerSmoke', JavaCompile) {
@@ -1798,7 +1829,7 @@ tasks.named('check') {
 tasks.register('fullVerification') {
     group = 'verification'
     description = 'Runs the full DelosDB verification suite, including integration smoke checks.'
-    dependsOn 'check', 'smoke', 'smokeFromJars', 'modernizationSmoke', 'networkServerSmoke', 'sysinfoFromJars',
+    dependsOn 'check', 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'networkServerSmoke', 'sysinfoFromJars',
             ':delosdb-tests:runActivatedDerbyExecutionIslands'
 }
 
