@@ -241,3 +241,15 @@ optimizer implementation classes.
 This keeps the next optimizer work honest: providers see DelosDB metadata, not
 Derby implementation objects.
 
+
+
+## Index provider cost bridge
+
+`IndexProviderCostBridge` prepares `IndexCostRequest` objects from Derby
+`IndexDescriptor` metadata through `IndexMetadataBridge` and invokes the
+resolved provider's optional cost hook.
+
+This is still preparatory. The bridge does not import Derby optimizer classes,
+does not replace `StoreCostController`, and does not change access-path
+selection. A provider can return an empty estimate to keep Derby's existing cost
+model authoritative.

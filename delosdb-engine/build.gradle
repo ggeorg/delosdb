@@ -214,6 +214,7 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
                 'index/IndexProviderResolver.java',
                 'index/IndexMetadataBridge.java',
                 'index/IndexProviderCapabilityBridge.java',
+                'index/IndexProviderCostBridge.java',
                 'index/package-info.java'
         ].each { sourceName ->
             def sourceFile = new File(extensionRoot, sourceName)
@@ -281,6 +282,23 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         }
         if (!indexProviderCapabilityBridge.contains('provider.capabilities(metadata)')) {
             throw new GradleException('IndexProviderCapabilityBridge must ask IndexProvider for capabilities without optimizer coupling')
+        }
+
+        def indexProviderCostBridge = new File(extensionRoot, 'index/IndexProviderCostBridge.java').text
+        if (!indexProviderCostBridge.contains('IndexCostRequest costRequestFor(')) {
+            throw new GradleException('IndexProviderCostBridge must expose provider-neutral cost request construction')
+        }
+        if (!indexProviderCostBridge.contains('IndexMetadataBridge.from(indexName, descriptor)')) {
+            throw new GradleException('IndexProviderCostBridge must adapt Derby descriptors through IndexMetadataBridge')
+        }
+        if (!indexProviderCostBridge.contains('resolver.requireEnabled(request.metadata().providerName())')) {
+            throw new GradleException('IndexProviderCostBridge must resolve providers by persisted descriptor provider identity')
+        }
+        if (!indexProviderCostBridge.contains('provider.estimateCost(request)')) {
+            throw new GradleException('IndexProviderCostBridge must ask IndexProvider for optional cost estimates')
+        }
+        if (indexProviderCostBridge.contains('OptimizerImpl') || indexProviderCostBridge.contains('StoreCostController') || (indexProviderCostBridge =~ /\bCostEstimate\b/).find()) {
+            throw new GradleException('IndexProviderCostBridge must not depend on Derby optimizer/store cost implementation classes')
         }
         def compatibilityDoc = rootProject.file('docs/DERBY-COMPATIBILITY.md').text
         if (!compatibilityDoc.contains('CREATE INDEX idx ON t(c) USING btree')) {
