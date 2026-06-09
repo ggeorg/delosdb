@@ -21,6 +21,7 @@
 
 package	org.apache.derby.impl.sql.compile;
 
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashSet;
@@ -2050,9 +2051,58 @@ class FromBaseTable extends FromTable
 
 		/* Put the base predicates back in the predicate list */
 		currentJoinStrategy.putBasePredicates(predList,
-									   baseTableRestrictionList);
+								   baseTableRestrictionList);
+
+        probeIndexProviderCostBridge(cd, costEst);
         return costEst;
 	}
+
+    /**
+     * Probe the DelosDB index-provider cost bridge without changing Derby's
+     * optimizer decision. The existing Derby cost path remains authoritative
+     * until a later reviewed island deliberately consumes provider estimates.
+     */
+    private void probeIndexProviderCostBridge(
+            ConglomerateDescriptor cd,
+            CostEstimate derbyCostEstimate) {
+        if (cd == null || !cd.isIndex() || derbyCostEstimate == null) {
+            return;
+        }
+
+        try {
+            Method costProbe = Class.forName(
+                    "io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostBridge")
+                    .getMethod(
+                            "builtInCostEstimateFor",
+                            String.class,
+                            IndexDescriptor.class,
+                            long.class,
+                            long.class,
+                            boolean.class,
+                            boolean.class,
+                            boolean.class);
+            costProbe.invoke(
+                    null,
+                    cd.getConglomerateName(),
+                    cd.getIndexDescriptor(),
+                    nonNegativeLong(baseRowCount()),
+                    nonNegativeLong(derbyCostEstimate.rowCount()),
+                    false,
+                    false,
+                    false);
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
+            // DelosDB provider probes must never break Derby-compatible costing.
+        } catch (StandardException ignored) {
+            // Keep the existing Derby optimizer path authoritative.
+        }
+    }
+
+    private static long nonNegativeLong(double value) {
+        if (!Double.isFinite(value) || value <= 0.0d) {
+            return 0L;
+        }
+        return Math.max(0L, Math.round(value));
+    }
 
 	private double scanCostAfterSelectivity(double originalScanCost,
 											double initialPositionCost,

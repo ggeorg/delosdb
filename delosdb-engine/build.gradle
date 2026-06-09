@@ -300,6 +300,22 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         if (indexProviderCostBridge.contains('OptimizerImpl') || indexProviderCostBridge.contains('StoreCostController') || (indexProviderCostBridge =~ /\bCostEstimate\b/).find()) {
             throw new GradleException('IndexProviderCostBridge must not depend on Derby optimizer/store cost implementation classes')
         }
+        def fromBaseTable = file('src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java').text
+        if (!fromBaseTable.contains('probeIndexProviderCostBridge(cd, costEst)')) {
+            throw new GradleException('FromBaseTable must probe the IndexProvider cost bridge during costing')
+        }
+        if (!fromBaseTable.contains('io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostBridge')) {
+            throw new GradleException('Optimizer probe must target the fallback-only IndexProvider cost bridge')
+        }
+        if (!fromBaseTable.contains('builtInCostEstimateFor')) {
+            throw new GradleException('Optimizer probe must call the fallback-only IndexProvider cost method')
+        }
+        if (!fromBaseTable.contains('catch (ReflectiveOperationException | LinkageError | RuntimeException ignored)')) {
+            throw new GradleException('Optimizer provider probe must fall back when SPI runtime classes are absent')
+        }
+        if (!fromBaseTable.contains('Provider probes must never break Derby-compatible costing')) {
+            throw new GradleException('Optimizer provider probe must document Derby-compatible fallback behavior')
+        }
         def compatibilityDoc = rootProject.file('docs/DERBY-COMPATIBILITY.md').text
         if (!compatibilityDoc.contains('CREATE INDEX idx ON t(c) USING btree')) {
             throw new GradleException('Derby compatibility policy must document the additive USING btree rule')

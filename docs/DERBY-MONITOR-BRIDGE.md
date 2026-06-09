@@ -202,7 +202,7 @@ This decision does not introduce:
 - a Spring/CDI-style runtime container;
 - public access to Derby monitor internals;
 - a storage provider contract;
-- optimizer integration with `IndexProvider`;
+- optimizer behavior changes from `IndexProvider`;
 - old harness execution;
 - Ant as a supported workflow.
 
@@ -253,3 +253,21 @@ This is still preparatory. The bridge does not import Derby optimizer classes,
 does not replace `StoreCostController`, and does not change access-path
 selection. A provider can return an empty estimate to keep Derby's existing cost
 model authoritative.
+## Fallback-only optimizer probe
+
+The first optimizer bridge is deliberately non-authoritative:
+
+```text
+FromBaseTable.estimateCost(...)
+        ↓
+IndexProviderCostBridge.builtInCostEstimateFor(...)
+        ↓
+provider returns Optional.empty() for built-in btree
+        ↓
+Derby's existing StoreCostController cost remains authoritative
+```
+
+The probe is wrapped so missing DelosDB SPI runtime classes, disabled providers,
+or provider diagnostics cannot break Derby-compatible costing. Provider estimates
+are intentionally ignored until a later reviewed island explicitly consumes them.
+

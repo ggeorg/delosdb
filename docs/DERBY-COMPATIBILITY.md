@@ -160,3 +160,10 @@ affect optimizer costing, storage layout, or execution behavior at this phase.
 Smoke coverage reads `SYS.SYSCONGLOMERATES.DESCRIPTOR` through JDBC and uses the
 typed `IndexDescriptor` API to verify that both implicit Derby-compatible indexes
 and explicit `USING btree` indexes report the same provider identity.
+## Optimizer compatibility rule
+
+Initial IndexProvider optimizer probes must be fallback-only. Existing Derby
+costing remains authoritative unless a later reviewed island explicitly consumes
+provider estimates. Missing DelosDB SPI runtime classes must not break ordinary
+Derby-compatible query compilation or cost estimation.
+
