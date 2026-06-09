@@ -169,6 +169,20 @@ public interface IndexDescriptor
 	 */
 	String			indexType();
 
+    /**
+     * Returns the DelosDB index provider identity associated with this index.
+     * <p>
+     * This is an additive DelosDB metadata extension. Existing Derby indexes
+     * and indexes created without an explicit provider are reported as the
+     * Derby-compatible built-in {@code btree} provider.
+     *
+     * @return the DelosDB index provider identity
+     */
+    default String indexProviderName()
+    {
+        return "btree";
+    }
+
 	/**
 	 * Returns array of boolean telling asc/desc info for each index
 	 * key column for convenience of using together with baseColumnPositions

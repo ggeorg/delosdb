@@ -88,6 +88,7 @@ tasks.register('verifyCreateIndexProviderMetadataRoundTrip') {
     group = 'verification'
     description = 'Verifies DelosDB CREATE INDEX provider metadata defaults, serializes, and round-trips without provider SPI runtime classes.'
     dependsOn 'compileDerbyEngine'
+    inputs.file('src/main/java/org/apache/derby/catalog/IndexDescriptor.java')
     inputs.file('src/main/java/org/apache/derby/catalog/types/IndexDescriptorImpl.java')
     doLast {
         def urls = [
@@ -96,6 +97,7 @@ tasks.register('verifyCreateIndexProviderMetadataRoundTrip') {
         ].collect { it.toURI().toURL() } as URL[]
         def loader = new URLClassLoader(urls, (ClassLoader) null)
         try {
+            def descriptorInterface = Class.forName('org.apache.derby.catalog.IndexDescriptor', true, loader)
             def descriptorClass = Class.forName('org.apache.derby.catalog.types.IndexDescriptorImpl', true, loader)
             def constructor = descriptorClass.getConstructor(
                     String,
@@ -108,7 +110,10 @@ tasks.register('verifyCreateIndexProviderMetadataRoundTrip') {
                     Integer.TYPE,
                     String)
             def providerName = { descriptor ->
-                descriptorClass.getMethod('indexProviderName').invoke(descriptor)
+                if (!descriptorInterface.isInstance(descriptor)) {
+                    throw new GradleException("${descriptor.getClass().name} is not an IndexDescriptor")
+                }
+                descriptorInterface.getMethod('indexProviderName').invoke(descriptor)
             }
             def assertProvider = { descriptor, expected, label ->
                 def actual = providerName(descriptor)

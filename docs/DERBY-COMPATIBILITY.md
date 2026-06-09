@@ -149,3 +149,14 @@ provider identity participates in descriptor equality
 
 The parser and constant-action path must not require provider adapter/resolver
 classes to execute normal Derby-compatible `CREATE INDEX` statements.
+
+## Provider metadata diagnostics
+
+The DelosDB provider identity is exposed through the existing index descriptor
+API with `IndexDescriptor.indexProviderName()`. This is diagnostic metadata only:
+existing Derby-compatible indexes still report `btree`, and the value does not
+affect optimizer costing, storage layout, or execution behavior at this phase.
+
+Smoke coverage reads `SYS.SYSCONGLOMERATES.DESCRIPTOR` through JDBC and uses the
+typed `IndexDescriptor` API to verify that both implicit Derby-compatible indexes
+and explicit `USING btree` indexes report the same provider identity.

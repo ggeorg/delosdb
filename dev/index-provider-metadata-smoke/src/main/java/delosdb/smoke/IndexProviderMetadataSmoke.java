@@ -21,7 +21,7 @@
 
 package delosdb.smoke;
 
-import java.lang.reflect.Method;
+import org.apache.derby.catalog.IndexDescriptor;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -34,9 +34,10 @@ import java.util.Locale;
  * Verifies that DelosDB CREATE INDEX provider metadata is visible through
  * Derby's existing catalog descriptor object after real SQL execution.
  *
- * <p>This smoke test intentionally uses only JDBC and reflection. It must run
- * from the Derby-compatible runtime jar set without requiring delosdb-spi.jar
- * or provider adapter classes on the runtime classpath.</p>
+ * <p>This smoke test intentionally uses only JDBC and the public catalog
+ * descriptor API. It must run from the Derby-compatible runtime jar set
+ * without requiring delosdb-spi.jar or provider adapter classes on the
+ * runtime classpath.</p>
  */
 public final class IndexProviderMetadataSmoke
 {
@@ -113,17 +114,15 @@ public final class IndexProviderMetadataSmoke
         }
     }
 
-    private static String indexProviderName(Object descriptor) throws Exception
+    private static String indexProviderName(Object descriptor)
     {
-        Method method = descriptor.getClass().getMethod("indexProviderName");
-        Object value = method.invoke(descriptor);
-        if (!(value instanceof String providerName))
+        if (!(descriptor instanceof IndexDescriptor indexDescriptor))
         {
             throw new IllegalStateException(
-                    "indexProviderName() on " + descriptor.getClass().getName()
-                            + " did not return a String: " + value);
+                    "Descriptor " + descriptor.getClass().getName()
+                            + " is not an IndexDescriptor");
         }
-        return providerName;
+        return indexDescriptor.indexProviderName();
     }
 
     private static void shutdown(String databasePath) throws SQLException

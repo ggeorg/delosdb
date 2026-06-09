@@ -249,6 +249,7 @@ public class IndexDescriptorImpl implements IndexDescriptor, Formatable
      * Old Derby catalogs and indexes created without an explicit provider
      * are reported as the built-in B-tree provider.
      */
+    @Override
     public String indexProviderName()
     {
         return indexProviderName;
