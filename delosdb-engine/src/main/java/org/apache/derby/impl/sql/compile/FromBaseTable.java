@@ -2079,8 +2079,11 @@ class FromBaseTable extends FromTable
         }
 
         String indexName = cd.getConglomerateName();
-        long tableRowCount = nonNegativeLong(baseRowCount());
         long derbyEstimatedRows = nonNegativeLong(derbyCostEstimate.rowCount());
+        // Keep this bridge side-effect free: do not call baseRowCount() here,
+        // because that API can throw StandardException and provider diagnostics
+        // must never introduce a new checked-exception path into Derby costing.
+        long tableRowCount = derbyEstimatedRows;
         double derbyCost = nonNegativeDouble(derbyCostEstimate.getEstimatedCost());
 
         try {
