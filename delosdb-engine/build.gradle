@@ -507,6 +507,13 @@ tasks.register('derbyJar', Jar) {
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from moduleClassDir
+    from(sourceRoot) {
+        include '**/*.properties'
+        include '**/*.policy'
+        include '**/*.xml'
+        exclude '**/messages.xml'
+        exclude '**/*.tmpl'
+    }
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }

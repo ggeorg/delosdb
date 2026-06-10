@@ -58,6 +58,8 @@ public final class IndexProviderMetadataSmoke
         String databasePath = args[0];
         String url = "jdbc:derby:" + databasePath + ";create=true";
 
+        Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
+
         try (Connection connection = DriverManager.getConnection(url);
              Statement statement = connection.createStatement())
         {
