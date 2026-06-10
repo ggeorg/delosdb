@@ -2061,6 +2061,7 @@ class FromBaseTable extends FromTable
      * Probe the DelosDB index-provider cost bridge without changing Derby's
      * optimizer decision. The existing Derby cost path remains authoritative
      * until a later reviewed island deliberately consumes provider estimates.
+     * Provider probes must never break Derby-compatible costing.
      */
     private void probeIndexProviderCostBridge(
             ConglomerateDescriptor cd,
