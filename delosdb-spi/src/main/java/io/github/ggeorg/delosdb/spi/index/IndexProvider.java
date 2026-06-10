@@ -2,20 +2,22 @@ package io.github.ggeorg.delosdb.spi.index;
 
 import io.github.ggeorg.delosdb.spi.annotation.ExperimentalSpi;
 
+import java.util.Objects;
 import java.util.Optional;
 
 /**
  * Experimental DelosDB contract for index provider implementations.
  *
  * <p>This interface is deliberately small. It establishes provider identity,
- * capability reporting, and optional cost estimation without exposing Derby
- * internals such as {@code AccessFactory}, {@code Conglomerate},
- * {@code ScanController}, {@code StoreCostController}, or optimizer classes.</p>
+ * capability reporting, optional cost estimation, and an initial physical
+ * access hook without exposing Derby internals such as {@code AccessFactory},
+ * {@code Conglomerate}, {@code ScanController}, {@code StoreCostController},
+ * or optimizer classes.</p>
  *
- * <p>Runtime open/create/drop hooks will be introduced only after the registry,
- * catalog, and optimizer bridge designs are proven.</p>
+ * <p>The physical access hook is optional in v0 so existing providers can remain
+ * metadata/cost-only while DelosDB builds the Derby adapter layer.</p>
  */
-@ExperimentalSpi("Initial index provider contract; no runtime adapter or optimizer bridge yet.")
+@ExperimentalSpi("Initial index provider contract; physical access hook is optional while adapters mature.")
 public interface IndexProvider {
     /**
      * Returns the stable provider name used by DelosDB metadata.
@@ -38,4 +40,17 @@ public interface IndexProvider {
      * path. Implementations must not depend on Derby optimizer classes here.</p>
      */
     Optional<IndexCostEstimate> estimateCost(IndexCostRequest request);
+
+    /**
+     * Optionally opens physical access for an index owned by this provider.
+     *
+     * <p>The default keeps v0 providers metadata/cost-only. Providers that return
+     * an {@link IndexAccess} must translate engine-specific state through
+     * provider-neutral {@link IndexKey}, {@link RowReference}, and
+     * {@link IndexLookup} values rather than exposing Derby internals.</p>
+     */
+    default Optional<IndexAccess> openAccess(IndexOpenRequest request) throws IndexAccessException {
+        Objects.requireNonNull(request, "request");
+        return Optional.empty();
+    }
 }

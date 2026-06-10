@@ -62,7 +62,7 @@ Primary commands:
 
 ## Phase 1 — API/SPI boundaries and stability markers
 
-Status: active. IndexProvider v0 is checkpointed for the built-in `btree` seam.
+Status: active. IndexProvider v0 is checkpointed for the built-in `btree` seam; the first physical `IndexAccess` SPI contracts are now being added.
 
 Goals:
 
@@ -88,6 +88,7 @@ Definition of done:
 - Existing runtime jars and JDBC behavior remain compatible.
 - IndexProvider v0 records `btree` provider identity, persists metadata, exposes descriptor diagnostics, and supports opt-in provider cost visibility.
 - Controlled internal IndexProvider registration exists before provider discovery or external jar loading.
+- `IndexAccess` begins the physical index provider lifecycle contract without wiring new storage or public provider names yet.
 
 Checkpoint:
 
@@ -219,4 +220,4 @@ The next near-term work should stay focused:
 1. Keep `fullVerification` green.
 2. Keep public index-provider SQL limited to real registered providers.
 3. Prove controlled test-scope provider registration before external discovery.
-4. Avoid storage rewrites until the IndexProvider seam has stable registration and failure-mode diagnostics.
+4. Avoid storage rewrites until the IndexProvider seam has stable registration, physical `IndexAccess` adapters, and failure-mode diagnostics.

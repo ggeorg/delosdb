@@ -58,4 +58,4 @@ broad optimizer rewrites
 
 ## Next work
 
-The next work has moved to controlled registration of non-built-in providers in test scope first, then reviewed provider discovery. StorageProvider work should wait until IndexProvider registration, diagnostics, costing, and failure modes are stable.
+The next work has moved from metadata/cost registration toward physical access contracts. `IndexAccess` is the bridge shape needed before adding a real second provider such as `hash`. StorageProvider work should wait until the built-in `btree` provider can be represented through `IndexAccess` without exposing Derby internals.
