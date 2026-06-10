@@ -17,9 +17,8 @@ import java.util.Optional;
  * experimental {@link IndexProvider} contract without exposing Derby access
  * methods, conglomerates, scan controllers, or optimizer classes.</p>
  *
- * <p>The provider can produce a provider-neutral baseline estimate. Derby's
- * existing optimizer remains authoritative until a reviewed optimizer island
- * explicitly consumes provider estimates.</p>
+ * <p>The baseline cost estimate is provider-neutral and deterministic. Derby
+ * remains authoritative unless the optimizer bridge is explicitly enabled.</p>
  */
 @InternalApi
 final class BuiltInBTreeIndexProvider implements IndexProvider {
@@ -40,37 +39,19 @@ final class BuiltInBTreeIndexProvider implements IndexProvider {
 
     @Override
     public Optional<IndexCostEstimate> estimateCost(IndexCostRequest request) {
-        long estimatedRows = boundedEstimatedRows(request);
-        double startupCost = startupCostFor(request);
-        double totalCost = startupCost
-                + Math.max(1.0d, estimatedRows)
-                + Math.max(1, request.metadata().keyColumns().size());
+        long estimatedRows = request.estimatedQualifiedRowCount() > 0
+                ? request.estimatedQualifiedRowCount()
+                : Math.max(1L, request.tableRowCount());
+        double startupCost = Math.max(1.0d, log2(Math.max(2L, request.tableRowCount())));
+        double rowVisitCost = Math.max(1.0d, estimatedRows);
         return Optional.of(new IndexCostEstimate(
                 startupCost,
-                totalCost,
+                startupCost + rowVisitCost,
                 estimatedRows,
-                "built-in btree provider estimate; Derby cost remains authoritative"));
+                "built-in btree baseline estimate"));
     }
 
-    private static long boundedEstimatedRows(IndexCostRequest request) {
-        long tableRows = request.tableRowCount();
-        long qualifiedRows = request.estimatedQualifiedRowCount();
-        if (tableRows == 0L) {
-            return qualifiedRows;
-        }
-        if (qualifiedRows == 0L) {
-            return request.equalityPredicate() ? 1L : tableRows;
-        }
-        return Math.min(tableRows, qualifiedRows);
-    }
-
-    private static double startupCostFor(IndexCostRequest request) {
-        if (request.equalityPredicate()) {
-            return 1.0d;
-        }
-        if (request.rangePredicate()) {
-            return 2.0d;
-        }
-        return 4.0d;
+    private static double log2(long value) {
+        return Math.log(value) / Math.log(2.0d);
     }
 }

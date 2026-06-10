@@ -33,7 +33,7 @@ Key outputs:
 
 ## Phase 0.5 — Inherited test activation and harness modernization
 
-Status: checkpoint-ready.
+Status: active.
 
 Goals:
 
@@ -60,23 +60,9 @@ Primary commands:
 ./gradlew fullVerification
 ```
 
-Checkpoint definition:
-
-Phase 0.5 is considered done enough when DelosDB has:
-
-- broad inherited compile activation under Gradle;
-- curated execution islands across core, JDBC API, JDBC4, tools, lang, derbynet, and store smoke coverage;
-- `fullVerification` wired to all activated execution islands;
-- a visible deferred-tail list for tests that remain compile-only or intentionally inactive;
-- no `derbyall`, no old harness execution, and no Ant-supported workflow.
-
-Checkpoint document:
-
-- `docs/PHASE-0.5-TEST-ACTIVATION-CHECKPOINT.md`
-
 ## Phase 1 — API/SPI boundaries and stability markers
 
-Status: started.
+Status: active. IndexProvider v0 is checkpointed for the built-in `btree` seam.
 
 Goals:
 
@@ -85,22 +71,14 @@ Goals:
 - Separate extension-facing contracts from inherited implementation internals.
 - Keep JDBC as the compatibility baseline while exposing a small modern API layer.
 
-Delivered artifacts:
+Planned artifacts:
 
-- `delosdb-spi` module
+- `delosdb-spi` or `delosdb-api` module
 - `@PublicSpi`
 - `@ExperimentalSpi`
 - `@InternalApi`
 - `@LegacyInternal`
-- `docs/SPI-STABILITY.md`
-- `docs/DERBY-MONITOR-BRIDGE.md`
-- monitor-facing Derby APIs marked as legacy/internal bridge boundary
-
-Remaining near-term artifacts:
-
-- internal extension registry skeleton
-- built-in provider registration concept
-- first experimental provider contract
+- API package conventions and compatibility policy
 
 Definition of done:
 
@@ -108,6 +86,11 @@ Definition of done:
 - Initial API/SPI module compiles independently.
 - No extension contract depends on an inherited implementation package by accident.
 - Existing runtime jars and JDBC behavior remain compatible.
+- IndexProvider v0 records `btree` provider identity, persists metadata, exposes descriptor diagnostics, and supports opt-in provider cost visibility.
+
+Checkpoint:
+
+- `docs/PHASE-1-INDEX-PROVIDER-V0-CHECKPOINT.md`
 
 ## Phase 2 — Extension registry and provider loading
 
@@ -227,7 +210,6 @@ Definition of done:
 The next near-term work should stay focused:
 
 1. Keep `fullVerification` green.
-2. Close Phase 0.5 with the test activation checkpoint.
-3. Resume Phase 1 by adding built-in provider registration on top of the internal extension registry.
-4. Add the first experimental provider contract only after registry naming, state, and diagnostics are clear.
-5. Avoid broad runtime rewrites, storage replacement, or optimizer rewrites until the extension boundary is proven.
+2. Keep public index-provider SQL limited to real registered providers.
+3. Prove controlled test-scope provider registration before external discovery.
+4. Avoid storage rewrites until the IndexProvider seam has stable registration and failure-mode diagnostics.

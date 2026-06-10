@@ -466,6 +466,10 @@ def runtimeJars = {
     files(runtimeJarNames.collect { layout.buildDirectory.file("libs/${it}") })
 }
 
+def extensionRuntimeJars = {
+    files(runtimeJars(), layout.buildDirectory.file("libs/delosdb-spi.jar"))
+}
+
 def legalFileNames = ['LICENSE', 'NOTICE', 'NOTICE-FORK.md']
 def legalFiles = files(legalFileNames.collect { file(it) })
 
@@ -679,6 +683,37 @@ tasks.register('indexProviderMetadataSmoke', JavaExec) {
     workingDir = layout.buildDirectory.dir('index-provider-metadata-smoke').get().asFile
     doFirst {
         delete file('build/index-provider-metadata-smoke')
+        workingDir.mkdirs()
+    }
+}
+
+
+def indexProviderCostSmokeClassesDir = layout.buildDirectory.dir('classes/index-provider-cost-smoke')
+
+tasks.register('compileIndexProviderCostInfluenceSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:delosDbSpiJar'
+    group = 'verification'
+    description = 'Compiles the opt-in IndexProvider cost influence smoke test.'
+    source = files('dev/index-provider-cost-smoke/src/main/java')
+    destinationDirectory = indexProviderCostSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = extensionRuntimeJars()
+}
+
+tasks.register('indexProviderCostInfluenceSmoke', JavaExec) {
+    dependsOn 'compileIndexProviderCostInfluenceSmoke', 'verifyReleaseArtifacts', ':delosdb-spi:delosDbSpiJar'
+    mustRunAfter 'indexProviderMetadataSmoke'
+    group = 'verification'
+    description = 'Verifies opt-in IndexProvider cost diagnostics and cost consumption for the built-in btree provider.'
+    classpath = files(indexProviderCostSmokeClassesDir, extensionRuntimeJars())
+    mainClass = 'delosdb.smoke.IndexProviderCostInfluenceSmoke'
+    args layout.buildDirectory.dir('index-provider-cost-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('index-provider-cost-smoke').get().asFile
+    doFirst {
+        delete file('build/index-provider-cost-smoke')
         workingDir.mkdirs()
     }
 }
@@ -1829,7 +1864,7 @@ tasks.named('check') {
 tasks.register('fullVerification') {
     group = 'verification'
     description = 'Runs the full DelosDB verification suite, including integration smoke checks.'
-    dependsOn 'check', 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'networkServerSmoke', 'sysinfoFromJars',
+    dependsOn 'check', 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'networkServerSmoke', 'sysinfoFromJars',
             ':delosdb-tests:runActivatedDerbyExecutionIslands'
 }
 

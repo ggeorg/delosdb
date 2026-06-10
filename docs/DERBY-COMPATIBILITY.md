@@ -37,14 +37,10 @@ CREATE INDEX idx ON t(c) USING btree;
 
 For this phase, `btree` is the only accepted provider name. Unknown providers
 fail before execution with a clean unsupported-feature diagnostic. The statement
-continues through the existing Derby index creation path; provider metadata is
-stored only as descriptor metadata and does not affect optimizer behavior or
-storage behavior.
-
-Provider-cost estimates are also non-authoritative in this phase. The built-in
-`btree` provider may return a provider-neutral baseline estimate through the
-internal bridge, but Derby's existing cost model remains the source of truth for
-plan selection.
+continues through the existing Derby index creation path. Provider metadata is
+stored as descriptor metadata. Optimizer provider-cost integration is controlled
+separately by the internal `delosdb.optimizer.indexProviderCost` switch, and the
+default behavior remains Derby-compatible.
 
 ## Provider defaults
 
@@ -96,7 +92,7 @@ Do not change the default physical index implementation.
 Do not require provider metadata for existing indexes.
 Do not expose Derby Monitor or store internals as public SPI.
 Do not remove Derby package names or compatibility jars as part of SPI work.
-Do not make provider costing affect plans until fallback behavior is proven and the consuming optimizer island is reviewed.
+Do not make provider costing affect plans until fallback behavior is proven.
 ```
 
 The safe sequence is:
@@ -106,7 +102,7 @@ The safe sequence is:
 2. optional SQL syntax maps to that identity for `USING btree`
 3. existing syntax defaults to that identity
 4. catalog metadata defaults old indexes to that identity
-5. optimizer bridge asks providers for estimates but still falls back to Derby costing
+5. optimizer bridge falls back to Derby costing if provider declines
 ```
 
 ## CREATE INDEX provider metadata plumbing
@@ -149,7 +145,6 @@ The verification task `verifyCreateIndexProviderMetadataRoundTrip` checks:
 implicit CREATE INDEX metadata -> btree
 explicit USING btree metadata -> btree
 old descriptor metadata without a provider key -> btree
-provider identity participates in descriptor equality
 ```
 
 The parser and constant-action path must not require provider adapter/resolver
@@ -167,8 +162,23 @@ typed `IndexDescriptor` API to verify that both implicit Derby-compatible indexe
 and explicit `USING btree` indexes report the same provider identity.
 ## Optimizer compatibility rule
 
-Initial IndexProvider optimizer probes must be fallback-only. Existing Derby
-costing remains authoritative unless a later reviewed island explicitly consumes
-provider estimates. Missing DelosDB SPI runtime classes must not break ordinary
-Derby-compatible query compilation or cost estimation.
+Existing Derby costing remains authoritative by default. Provider-cost integration
+is explicit-mode only: diagnostic mode records estimates, while enabled mode may
+consume a valid estimate at the narrow index-cost bridge. Missing DelosDB SPI
+runtime classes must not break ordinary Derby-compatible query compilation or
+cost estimation.
 
+
+## IndexProvider cost integration
+
+The built-in `btree` provider now returns a provider-neutral baseline cost estimate. This does not change Derby-compatible behavior by default.
+
+The optimizer bridge is controlled by the internal DelosDB property:
+
+```text
+delosdb.optimizer.indexProviderCost=off          # default; no provider cost probe
+delosdb.optimizer.indexProviderCost=diagnostic  # record provider estimate, keep Derby cost
+delosdb.optimizer.indexProviderCost=enabled     # consume valid provider estimate at the index-cost bridge
+```
+
+Only `btree` is exposed as a public provider name in this checkpoint. Internal diagnostics must not introduce fake public provider names or debug SQL syntax.

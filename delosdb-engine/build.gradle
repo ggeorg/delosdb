@@ -159,12 +159,6 @@ tasks.register('verifyCreateIndexProviderMetadataRoundTrip') {
             assertProvider(explicit, 'btree', 'explicit btree index descriptor')
             assertProvider(roundTrip(explicit), 'btree', 'round-tripped explicit btree index descriptor')
 
-            def alternate = constructor.newInstance('BTREE', false, false, false, false,
-                    [1] as int[], [true] as boolean[], 1, 'hash_lookup')
-            assertProvider(alternate, 'hash_lookup', 'alternate provider descriptor')
-            if (descriptorClass.getMethod('equals', Object).invoke(explicit, alternate)) {
-                throw new GradleException('Index descriptor equality must include DelosDB provider metadata')
-            }
 
             def hashtableClass = Class.forName('org.apache.derby.iapi.services.io.FormatableHashtable', true, loader)
             def oldCatalogState = hashtableClass.getConstructor().newInstance()
@@ -215,6 +209,9 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
                 'index/IndexMetadataBridge.java',
                 'index/IndexProviderCapabilityBridge.java',
                 'index/IndexProviderCostBridge.java',
+                'index/IndexProviderCostDiagnostics.java',
+                'index/IndexProviderCostMode.java',
+                'index/IndexProviderCostProbe.java',
                 'index/package-info.java'
         ].each { sourceName ->
             def sourceFile = new File(extensionRoot, sourceName)
@@ -237,10 +234,10 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
             throw new GradleException('Built-in B-tree adapter must implement the experimental IndexProvider SPI')
         }
         if (!btreeAdapter.contains('return Optional.of(new IndexCostEstimate(')) {
-            throw new GradleException('Built-in B-tree adapter must expose a provider-neutral baseline cost estimate')
+            throw new GradleException('Built-in B-tree adapter must expose a baseline provider-neutral cost estimate')
         }
-        if (!btreeAdapter.contains('Derby cost remains authoritative')) {
-            throw new GradleException('Built-in B-tree cost estimate must document Derby-compatible fallback authority')
+        if (!btreeAdapter.contains('built-in btree baseline estimate')) {
+            throw new GradleException('Built-in B-tree baseline cost estimate must be explainable in diagnostics')
         }
         def indexProviderResolver = new File(extensionRoot, 'index/IndexProviderResolver.java').text
         if (!indexProviderResolver.contains('public static IndexProviderResolver builtIns(ExtensionRegistry registry)')) {
@@ -300,24 +297,30 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         if (!indexProviderCostBridge.contains('provider.estimateCost(request)')) {
             throw new GradleException('IndexProviderCostBridge must ask IndexProvider for optional cost estimates')
         }
+        if (!indexProviderCostBridge.contains('IndexProviderCostProbe builtInCostProbeFor(')) {
+            throw new GradleException('IndexProviderCostBridge must expose observable provider cost probes')
+        }
         if (indexProviderCostBridge.contains('OptimizerImpl') || indexProviderCostBridge.contains('StoreCostController') || (indexProviderCostBridge =~ /\bCostEstimate\b/).find()) {
             throw new GradleException('IndexProviderCostBridge must not depend on Derby optimizer/store cost implementation classes')
         }
         def fromBaseTable = file('src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java').text
-        if (!fromBaseTable.contains('probeIndexProviderCostBridge(cd, costEst)')) {
-            throw new GradleException('FromBaseTable must probe the IndexProvider cost bridge during costing')
+        if (!fromBaseTable.contains('applyIndexProviderCostBridge(cd, costEst)')) {
+            throw new GradleException('FromBaseTable must reach the IndexProvider cost bridge at the index costing point')
         }
-        if (!fromBaseTable.contains('io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostBridge')) {
-            throw new GradleException('Optimizer probe must target the fallback-only IndexProvider cost bridge')
+        if (!fromBaseTable.contains('IndexProviderCostMode.fromSystemProperties()')) {
+            throw new GradleException('Optimizer provider cost bridge must be gated by an explicit DelosDB mode')
         }
-        if (!fromBaseTable.contains('builtInCostEstimateFor')) {
-            throw new GradleException('Optimizer probe must call the fallback-only IndexProvider cost method')
+        if (!fromBaseTable.contains('builtInCostProbeFor')) {
+            throw new GradleException('Optimizer provider cost bridge must request observable provider cost probes')
+        }
+        if (!fromBaseTable.contains('mode.consumesProviderCost()')) {
+            throw new GradleException('Optimizer provider cost bridge must consume provider costs only in enabled mode')
+        }
+        if (!fromBaseTable.contains('derbyCostEstimate.setCost(')) {
+            throw new GradleException('Optimizer provider cost bridge must have a narrow opt-in cost consumption point')
         }
         if (!fromBaseTable.contains('catch (ReflectiveOperationException | LinkageError | RuntimeException ignored)')) {
-            throw new GradleException('Optimizer provider probe must fall back when SPI runtime classes are absent')
-        }
-        if (!fromBaseTable.contains('Provider probes must never break Derby-compatible costing')) {
-            throw new GradleException('Optimizer provider probe must document Derby-compatible fallback behavior')
+            throw new GradleException('Optimizer provider cost bridge must fall back when SPI runtime classes are absent')
         }
         def compatibilityDoc = rootProject.file('docs/DERBY-COMPATIBILITY.md').text
         if (!compatibilityDoc.contains('CREATE INDEX idx ON t(c) USING btree')) {

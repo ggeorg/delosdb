@@ -17,12 +17,65 @@ import java.util.Optional;
  *
  * <p>This class prepares provider-neutral {@link IndexCostRequest} instances
  * and invokes {@link IndexProvider#estimateCost(IndexCostRequest)} without
- * changing Derby optimizer decisions. An empty result means the existing Derby
- * cost path remains authoritative.</p>
+ * exposing Derby optimizer implementation classes to the SPI. The optimizer
+ * decides separately whether a returned estimate is diagnostic-only or
+ * authoritative through an explicit DelosDB switch.</p>
  */
 @InternalApi
 public final class IndexProviderCostBridge {
     private IndexProviderCostBridge() {
+    }
+
+
+    /**
+     * Returns an observable provider-cost probe using the built-in registry.
+     */
+    public static IndexProviderCostProbe builtInCostProbeFor(
+            String mode,
+            String indexName,
+            IndexDescriptor descriptor,
+            long tableRowCount,
+            long estimatedQualifiedRowCount,
+            double derbyCost,
+            boolean equalityPredicate,
+            boolean rangePredicate,
+            boolean orderingRequired) {
+        IndexCostRequest request = costRequestFor(
+                indexName,
+                descriptor,
+                tableRowCount,
+                estimatedQualifiedRowCount,
+                equalityPredicate,
+                rangePredicate,
+                orderingRequired);
+        IndexProvider provider = IndexProviderResolver
+                .builtIns(BuiltInExtensions.newRegistryWithBuiltIns())
+                .requireEnabled(request.metadata().providerName());
+        Optional<IndexCostEstimate> estimate = provider.estimateCost(request);
+        if (estimate.isEmpty()) {
+            return IndexProviderCostProbe.unavailable(
+                    mode,
+                    request.metadata().providerName(),
+                    request.metadata().indexName(),
+                    tableRowCount,
+                    estimatedQualifiedRowCount,
+                    derbyCost,
+                    "provider returned no estimate");
+        }
+        IndexCostEstimate value = estimate.get();
+        return new IndexProviderCostProbe(
+                mode,
+                request.metadata().providerName(),
+                request.metadata().indexName(),
+                tableRowCount,
+                estimatedQualifiedRowCount,
+                derbyCost,
+                true,
+                value.startupCost(),
+                value.totalCost(),
+                value.estimatedRows(),
+                false,
+                value.explanation());
     }
 
     /**

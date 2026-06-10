@@ -20,9 +20,9 @@ public interface IndexProvider {
     /**
      * Returns the stable provider name used by DelosDB metadata.
      *
-     * <p>Examples include {@code btree}, {@code hash_lookup}, or
-     * {@code hnsw_vector}. Names should be lowercase and stable across releases
-     * of the same provider family.</p>
+     * <p>The built-in provider is {@code btree}. Future provider names should be
+     * lowercase, registered explicitly, and stable across releases of the same
+     * provider family.</p>
      */
     String name();
 

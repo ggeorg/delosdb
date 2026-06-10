@@ -26,8 +26,12 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
+import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostDiagnostics;
+import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostMode;
+import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostProbe;
 import org.apache.derby.catalog.IndexDescriptor;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.ClassName;
@@ -2053,48 +2057,92 @@ class FromBaseTable extends FromTable
 		currentJoinStrategy.putBasePredicates(predList,
 								   baseTableRestrictionList);
 
-        probeIndexProviderCostBridge(cd, costEst);
+        applyIndexProviderCostBridge(cd, costEst);
         return costEst;
 	}
 
     /**
-     * Probe the DelosDB index-provider cost bridge without changing Derby's
-     * optimizer decision. The existing Derby cost path remains authoritative
-     * until a later reviewed island deliberately consumes provider estimates.
-     * Provider probes must never break Derby-compatible costing.
+     * Applies the DelosDB index-provider cost bridge only when explicitly
+     * requested. The default mode is Derby-compatible and does not probe the
+     * provider layer. Diagnostic mode records provider estimates. Enabled mode
+     * may consume a valid provider estimate at this narrow bridge point.
      */
-    private void probeIndexProviderCostBridge(
+    private void applyIndexProviderCostBridge(
             ConglomerateDescriptor cd,
             CostEstimate derbyCostEstimate) {
+        IndexProviderCostMode mode = IndexProviderCostMode.fromSystemProperties();
+        if (!mode.probesProviderCost()) {
+            return;
+        }
         if (cd == null || !cd.isIndex() || derbyCostEstimate == null) {
             return;
         }
+
+        String indexName = cd.getConglomerateName();
+        long tableRowCount = nonNegativeLong(baseRowCount());
+        long derbyEstimatedRows = nonNegativeLong(derbyCostEstimate.rowCount());
+        double derbyCost = nonNegativeDouble(derbyCostEstimate.getEstimatedCost());
 
         try {
             Method costProbe = Class.forName(
                     "io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostBridge")
                     .getMethod(
-                            "builtInCostEstimateFor",
+                            "builtInCostProbeFor",
+                            String.class,
                             String.class,
                             IndexDescriptor.class,
                             long.class,
                             long.class,
+                            double.class,
                             boolean.class,
                             boolean.class,
                             boolean.class);
-            costProbe.invoke(
+            IndexProviderCostProbe probe = (IndexProviderCostProbe) costProbe.invoke(
                     null,
-                    cd.getConglomerateName(),
+                    mode.name().toLowerCase(Locale.ROOT),
+                    indexName,
                     cd.getIndexDescriptor(),
-                    nonNegativeLong(baseRowCount()),
-                    nonNegativeLong(derbyCostEstimate.rowCount()),
+                    tableRowCount,
+                    derbyEstimatedRows,
+                    derbyCost,
                     false,
                     false,
                     false);
+            if (mode.consumesProviderCost() && canConsume(probe)) {
+                double providerRows = Math.max(0.0d, probe.providerEstimatedRows());
+                derbyCostEstimate.setCost(
+                        probe.providerTotalCost(),
+                        providerRows,
+                        providerRows);
+                probe = probe.withConsumed(true);
+            }
+            IndexProviderCostDiagnostics.record(probe);
         } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
-            // DelosDB provider probes must never break Derby-compatible costing.
-        } catch (StandardException ignored) {
-            // Keep the existing Derby optimizer path authoritative.
+            IndexProviderCostDiagnostics.record(IndexProviderCostProbe.unavailable(
+                    mode.name().toLowerCase(Locale.ROOT),
+                    providerName(cd),
+                    indexName,
+                    tableRowCount,
+                    derbyEstimatedRows,
+                    derbyCost,
+                    "provider cost bridge unavailable"));
+        }
+    }
+
+    private static boolean canConsume(IndexProviderCostProbe probe) {
+        return probe != null
+                && probe.estimatePresent()
+                && Double.isFinite(probe.providerTotalCost())
+                && probe.providerTotalCost() >= 0.0d
+                && probe.providerEstimatedRows() >= 0L;
+    }
+
+    private static String providerName(ConglomerateDescriptor cd) {
+        try {
+            IndexDescriptor descriptor = cd.getIndexDescriptor();
+            return descriptor == null ? "unknown" : descriptor.indexProviderName();
+        } catch (RuntimeException ignored) {
+            return "unknown";
         }
     }
 
@@ -2103,6 +2151,13 @@ class FromBaseTable extends FromTable
             return 0L;
         }
         return Math.max(0L, Math.round(value));
+    }
+
+    private static double nonNegativeDouble(double value) {
+        if (!Double.isFinite(value) || value <= 0.0d) {
+            return 0.0d;
+        }
+        return value;
     }
 
 	private double scanCostAfterSelectivity(double originalScanCost,

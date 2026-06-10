@@ -249,26 +249,28 @@ Derby implementation objects.
 `IndexDescriptor` metadata through `IndexMetadataBridge` and invokes the
 resolved provider's optional cost hook.
 
-This is still preparatory. The bridge does not import Derby optimizer classes,
-does not replace `StoreCostController`, and does not change access-path
-selection. The built-in `btree` provider now returns a provider-neutral baseline
-estimate, but Derby's existing cost model remains authoritative until a reviewed
-optimizer island explicitly consumes provider estimates.
-## Fallback-only optimizer probe
+The bridge does not import Derby optimizer classes and does not replace
+`StoreCostController`. By default it is not consulted; diagnostic mode records
+provider estimates; enabled mode may consume a valid provider estimate at the
+narrow reviewed bridge point. A provider can return an empty estimate to keep
+Derby's existing cost model authoritative.
+## Optimizer cost bridge
 
-The first optimizer bridge is deliberately non-authoritative:
+The first optimizer bridge is explicit-mode only:
 
 ```text
 FromBaseTable.estimateCost(...)
         ↓
-IndexProviderCostBridge.builtInCostEstimateFor(...)
+IndexProviderCostMode
         ↓
-provider may return a provider-neutral estimate
+IndexProviderCostBridge.builtInCostProbeFor(...)
         ↓
-Derby's existing StoreCostController cost remains authoritative
+btree provider returns a baseline provider-neutral estimate
+        ↓
+diagnostic mode records it; enabled mode may consume it at the bridge point
 ```
 
-The probe is wrapped so missing DelosDB SPI runtime classes, disabled providers,
-or provider diagnostics cannot break Derby-compatible costing. Provider estimates
-are intentionally ignored until a later reviewed island explicitly consumes them.
+The default mode is Derby-compatible and does not probe provider costing. The
+bridge is wrapped so missing DelosDB SPI runtime classes, disabled providers, or
+provider diagnostics cannot break ordinary Derby-compatible costing.
 
