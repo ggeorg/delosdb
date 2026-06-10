@@ -251,8 +251,9 @@ resolved provider's optional cost hook.
 
 This is still preparatory. The bridge does not import Derby optimizer classes,
 does not replace `StoreCostController`, and does not change access-path
-selection. A provider can return an empty estimate to keep Derby's existing cost
-model authoritative.
+selection. The built-in `btree` provider now returns a provider-neutral baseline
+estimate, but Derby's existing cost model remains authoritative until a reviewed
+optimizer island explicitly consumes provider estimates.
 ## Fallback-only optimizer probe
 
 The first optimizer bridge is deliberately non-authoritative:
@@ -262,7 +263,7 @@ FromBaseTable.estimateCost(...)
         ↓
 IndexProviderCostBridge.builtInCostEstimateFor(...)
         ↓
-provider returns Optional.empty() for built-in btree
+provider may return a provider-neutral estimate
         ↓
 Derby's existing StoreCostController cost remains authoritative
 ```

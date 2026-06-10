@@ -236,8 +236,11 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         if (!btreeAdapter.contains('implements IndexProvider')) {
             throw new GradleException('Built-in B-tree adapter must implement the experimental IndexProvider SPI')
         }
-        if (!btreeAdapter.contains('return Optional.empty()')) {
-            throw new GradleException('Built-in B-tree adapter must leave costing to the existing Derby path for now')
+        if (!btreeAdapter.contains('return Optional.of(new IndexCostEstimate(')) {
+            throw new GradleException('Built-in B-tree adapter must expose a provider-neutral baseline cost estimate')
+        }
+        if (!btreeAdapter.contains('Derby cost remains authoritative')) {
+            throw new GradleException('Built-in B-tree cost estimate must document Derby-compatible fallback authority')
         }
         def indexProviderResolver = new File(extensionRoot, 'index/IndexProviderResolver.java').text
         if (!indexProviderResolver.contains('public static IndexProviderResolver builtIns(ExtensionRegistry registry)')) {

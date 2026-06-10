@@ -17,8 +17,9 @@ import java.util.Optional;
  * experimental {@link IndexProvider} contract without exposing Derby access
  * methods, conglomerates, scan controllers, or optimizer classes.</p>
  *
- * <p>Costing deliberately falls back to Derby's existing path until the
- * optimizer bridge is introduced.</p>
+ * <p>The provider can produce a provider-neutral baseline estimate. Derby's
+ * existing optimizer remains authoritative until a reviewed optimizer island
+ * explicitly consumes provider estimates.</p>
  */
 @InternalApi
 final class BuiltInBTreeIndexProvider implements IndexProvider {
@@ -39,6 +40,37 @@ final class BuiltInBTreeIndexProvider implements IndexProvider {
 
     @Override
     public Optional<IndexCostEstimate> estimateCost(IndexCostRequest request) {
-        return Optional.empty();
+        long estimatedRows = boundedEstimatedRows(request);
+        double startupCost = startupCostFor(request);
+        double totalCost = startupCost
+                + Math.max(1.0d, estimatedRows)
+                + Math.max(1, request.metadata().keyColumns().size());
+        return Optional.of(new IndexCostEstimate(
+                startupCost,
+                totalCost,
+                estimatedRows,
+                "built-in btree provider estimate; Derby cost remains authoritative"));
+    }
+
+    private static long boundedEstimatedRows(IndexCostRequest request) {
+        long tableRows = request.tableRowCount();
+        long qualifiedRows = request.estimatedQualifiedRowCount();
+        if (tableRows == 0L) {
+            return qualifiedRows;
+        }
+        if (qualifiedRows == 0L) {
+            return request.equalityPredicate() ? 1L : tableRows;
+        }
+        return Math.min(tableRows, qualifiedRows);
+    }
+
+    private static double startupCostFor(IndexCostRequest request) {
+        if (request.equalityPredicate()) {
+            return 1.0d;
+        }
+        if (request.rangePredicate()) {
+            return 2.0d;
+        }
+        return 4.0d;
     }
 }

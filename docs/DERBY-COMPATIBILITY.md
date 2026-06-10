@@ -41,6 +41,11 @@ continues through the existing Derby index creation path; provider metadata is
 stored only as descriptor metadata and does not affect optimizer behavior or
 storage behavior.
 
+Provider-cost estimates are also non-authoritative in this phase. The built-in
+`btree` provider may return a provider-neutral baseline estimate through the
+internal bridge, but Derby's existing cost model remains the source of truth for
+plan selection.
+
 ## Provider defaults
 
 The built-in default index provider is:
@@ -91,7 +96,7 @@ Do not change the default physical index implementation.
 Do not require provider metadata for existing indexes.
 Do not expose Derby Monitor or store internals as public SPI.
 Do not remove Derby package names or compatibility jars as part of SPI work.
-Do not make provider costing affect plans until fallback behavior is proven.
+Do not make provider costing affect plans until fallback behavior is proven and the consuming optimizer island is reviewed.
 ```
 
 The safe sequence is:
@@ -101,7 +106,7 @@ The safe sequence is:
 2. optional SQL syntax maps to that identity for `USING btree`
 3. existing syntax defaults to that identity
 4. catalog metadata defaults old indexes to that identity
-5. optimizer bridge falls back to Derby costing if provider declines
+5. optimizer bridge asks providers for estimates but still falls back to Derby costing
 ```
 
 ## CREATE INDEX provider metadata plumbing
