@@ -690,8 +690,18 @@ tasks.register('indexProviderMetadataSmoke', JavaExec) {
 
 def indexProviderCostSmokeClassesDir = layout.buildDirectory.dir('classes/index-provider-cost-smoke')
 
+def indexProviderCostSmokeRuntimeClasspath = {
+    files(
+            indexProviderCostSmokeClassesDir,
+            moduleClassDir(moduleNames.engine),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.osgi),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            extensionRuntimeJars())
+}
+
 tasks.register('compileIndexProviderCostInfluenceSmoke', JavaCompile) {
-    dependsOn 'jars', ':delosdb-spi:delosDbSpiJar'
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi'
     group = 'verification'
     description = 'Compiles the opt-in IndexProvider cost influence smoke test.'
     source = files('dev/index-provider-cost-smoke/src/main/java')
@@ -700,15 +710,15 @@ tasks.register('compileIndexProviderCostInfluenceSmoke', JavaCompile) {
     targetCompatibility = javaRelease.toString()
     options.release = javaRelease
     options.encoding = 'UTF-8'
-    classpath = extensionRuntimeJars()
+    classpath = indexProviderCostSmokeRuntimeClasspath()
 }
 
 tasks.register('indexProviderCostInfluenceSmoke', JavaExec) {
-    dependsOn 'compileIndexProviderCostInfluenceSmoke', 'verifyReleaseArtifacts', ':delosdb-spi:delosDbSpiJar'
+    dependsOn 'compileIndexProviderCostInfluenceSmoke', 'verifyReleaseArtifacts', ':delosdb-spi:compileDelosDbSpi'
     mustRunAfter 'indexProviderMetadataSmoke'
     group = 'verification'
     description = 'Verifies opt-in IndexProvider cost diagnostics and cost consumption for the built-in btree provider.'
-    classpath = files(indexProviderCostSmokeClassesDir, extensionRuntimeJars())
+    classpath = indexProviderCostSmokeRuntimeClasspath()
     mainClass = 'delosdb.smoke.IndexProviderCostInfluenceSmoke'
     args layout.buildDirectory.dir('index-provider-cost-smoke/db').get().asFile.absolutePath
     workingDir = layout.buildDirectory.dir('index-provider-cost-smoke').get().asFile
