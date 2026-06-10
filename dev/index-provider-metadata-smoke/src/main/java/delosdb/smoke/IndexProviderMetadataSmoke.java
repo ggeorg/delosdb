@@ -32,7 +32,8 @@ import java.util.Locale;
 
 /**
  * Verifies that DelosDB CREATE INDEX provider metadata is visible through
- * Derby's existing catalog descriptor object after real SQL execution.
+ * Derby's existing catalog descriptor object after real SQL execution and that
+ * indexed predicates continue to execute through Derby-compatible costing.
  *
  * <p>This smoke test intentionally uses only JDBC and the public catalog
  * descriptor API. It must run from the Derby-compatible runtime jar set
@@ -63,9 +64,22 @@ public final class IndexProviderMetadataSmoke
             statement.executeUpdate("create table idx_provider_smoke(id int, name varchar(32), code int)");
             statement.executeUpdate("create index idx_provider_default_idx on idx_provider_smoke(name)");
             statement.executeUpdate("create index idx_provider_explicit_idx on idx_provider_smoke(code) using btree");
+            statement.executeUpdate("insert into idx_provider_smoke values (1, 'alpha', 10)");
+            statement.executeUpdate("insert into idx_provider_smoke values (2, 'beta', 20)");
+            statement.executeUpdate("insert into idx_provider_smoke values (3, 'gamma', 30)");
 
             assertProvider(connection, "IDX_PROVIDER_DEFAULT_IDX", DEFAULT_PROVIDER);
             assertProvider(connection, "IDX_PROVIDER_EXPLICIT_IDX", DEFAULT_PROVIDER);
+            assertSingleId(connection,
+                    "select id from idx_provider_smoke where name = ?",
+                    "beta",
+                    2,
+                    "default-provider indexed predicate");
+            assertSingleId(connection,
+                    "select id from idx_provider_smoke where code = ?",
+                    30,
+                    3,
+                    "explicit-provider indexed predicate");
 
             statement.executeUpdate("drop table idx_provider_smoke");
         }
@@ -109,6 +123,39 @@ public final class IndexProviderMetadataSmoke
                 if (results.next())
                 {
                     throw new IllegalStateException("More than one descriptor found for " + indexName);
+                }
+            }
+        }
+    }
+
+    private static void assertSingleId(
+            Connection connection,
+            String sql,
+            Object value,
+            int expectedId,
+            String label)
+            throws SQLException
+    {
+        try (PreparedStatement statement = connection.prepareStatement(sql))
+        {
+            statement.setObject(1, value);
+            try (ResultSet results = statement.executeQuery())
+            {
+                if (!results.next())
+                {
+                    throw new IllegalStateException("No row returned for " + label);
+                }
+
+                int actualId = results.getInt(1);
+                if (actualId != expectedId)
+                {
+                    throw new IllegalStateException(
+                            label + " expected id " + expectedId + " but was " + actualId);
+                }
+
+                if (results.next())
+                {
+                    throw new IllegalStateException("More than one row returned for " + label);
                 }
             }
         }
