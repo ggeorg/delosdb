@@ -19,7 +19,7 @@ import java.util.Objects;
  * <p>This is deliberately not discovery and not public plugin loading. It lets
  * engine code and tests assemble an explicit registry of provider descriptors
  * and provider adapters, then hand that registry to {@link IndexProviderResolver}.
- * ServiceLoader or catalog-backed loading can be added later on top of this
+ * Automatic or catalog-backed loading can be added later on top of this
  * seam without exposing Derby internals to the public SPI.</p>
  */
 @InternalApi
