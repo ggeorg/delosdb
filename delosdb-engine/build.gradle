@@ -185,8 +185,84 @@ tasks.register('verifyCreateIndexProviderMetadataRoundTrip') {
     }
 }
 
+
+tasks.register('verifyIndexProviderControlledRegistration') {
+    group = 'verification'
+    description = 'Verifies controlled manual IndexProvider registration without ServiceLoader or public SQL debug providers.'
+    dependsOn 'compileDerbyEngine', ':delosdb-spi:compileDelosDbSpi'
+    inputs.dir('src/main/java/io/github/ggeorg/delosdb/engine/extension')
+    doLast {
+        def urls = [
+                moduleClassDir.get().asFile,
+                commonsModuleClassDir.get().asFile,
+                osgiModuleClassDir.get().asFile,
+                spiModuleClassDir.get().asFile
+        ].collect { it.toURI().toURL() } as URL[]
+        def loader = new URLClassLoader(urls, (ClassLoader) null)
+        try {
+            def providerInterface = Class.forName('io.github.ggeorg.delosdb.spi.index.IndexProvider', true, loader)
+            def capabilitiesClass = Class.forName('io.github.ggeorg.delosdb.spi.index.IndexCapabilities', true, loader)
+            def registryClass = Class.forName('io.github.ggeorg.delosdb.engine.extension.index.IndexProviderRegistry', true, loader)
+            def extensionTypeClass = Class.forName('io.github.ggeorg.delosdb.engine.extension.ExtensionType', true, loader)
+
+            def testProvider = java.lang.reflect.Proxy.newProxyInstance(
+                    loader,
+                    [providerInterface] as Class[],
+                    { Object proxy, java.lang.reflect.Method method, Object[] proxyArgs ->
+                        switch (method.name) {
+                            case 'name':
+                                return 'manual_test'
+                            case 'capabilities':
+                                return capabilitiesClass.getMethod('btree').invoke(null)
+                            case 'estimateCost':
+                                return java.util.Optional.empty()
+                            case 'toString':
+                                return 'manual_test IndexProvider'
+                            case 'hashCode':
+                                return System.identityHashCode(proxy)
+                            case 'equals':
+                                return proxy.is(proxyArgs == null ? null : proxyArgs[0])
+                            default:
+                                throw new UnsupportedOperationException(method.toString())
+                        }
+                    } as java.lang.reflect.InvocationHandler)
+
+            def registry = registryClass.getMethod('empty').invoke(null)
+            registryClass.getMethod('registerEnabled', providerInterface, String).invoke(registry, testProvider, 'test-fixture')
+            def resolver = registryClass.getMethod('resolver').invoke(registry)
+            def resolved = resolver.getClass().getMethod('requireEnabled', String).invoke(resolver, 'manual_test')
+            if (!providerInterface.isInstance(resolved)) {
+                throw new GradleException('Controlled IndexProvider registration did not resolve through the SPI interface')
+            }
+            if (providerInterface.getMethod('name').invoke(resolved) != 'manual_test') {
+                throw new GradleException('Controlled IndexProvider registration resolved the wrong provider')
+            }
+
+            def descriptors = registryClass.getMethod('descriptors').invoke(registry)
+            def indexType = Enum.valueOf(extensionTypeClass, 'INDEX')
+            def descriptor = descriptors.getClass().getMethod('find', extensionTypeClass, String).invoke(descriptors, indexType, 'manual_test')
+            if (!descriptor.isPresent()) {
+                throw new GradleException('Controlled IndexProvider registration did not publish an internal descriptor')
+            }
+            def descriptorValue = descriptor.get()
+            def capabilities = descriptorValue.getClass().getMethod('capabilities').invoke(descriptorValue)
+            if (capabilities.contains('default-index-provider')) {
+                throw new GradleException('Manually registered IndexProvider must not become the Derby-compatible default provider')
+            }
+
+            def builtIns = registryClass.getMethod('builtIns').invoke(null)
+            def builtInProviders = registryClass.getMethod('providers').invoke(builtIns)
+            if (builtInProviders.size() != 1 || providerInterface.getMethod('name').invoke(builtInProviders.get(0)) != 'btree') {
+                throw new GradleException('Built-in IndexProvider registry must remain limited to the real btree provider')
+            }
+        } finally {
+            loader.close()
+        }
+    }
+}
+
 tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
-    dependsOn 'verifyCreateIndexProviderMetadataRoundTrip'
+    dependsOn 'verifyCreateIndexProviderMetadataRoundTrip', 'verifyIndexProviderControlledRegistration'
     group = 'verification'
     description = 'Verifies the internal DelosDB extension registry skeleton remains contained inside the engine module.'
     dependsOn 'compileDerbyEngine'
@@ -212,6 +288,7 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
                 'index/IndexProviderCostDiagnostics.java',
                 'index/IndexProviderCostMode.java',
                 'index/IndexProviderCostProbe.java',
+                'index/IndexProviderRegistry.java',
                 'index/package-info.java'
         ].each { sourceName ->
             def sourceFile = new File(extensionRoot, sourceName)
@@ -258,6 +335,19 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         }
         if (!builtInIndexProviders.contains('defaultProvider()')) {
             throw new GradleException('Built-in index providers must expose the default provider adapter')
+        }
+        def indexProviderRegistry = new File(extensionRoot, 'index/IndexProviderRegistry.java').text
+        if (!indexProviderRegistry.contains('registerEnabled(IndexProvider provider')) {
+            throw new GradleException('IndexProviderRegistry must expose controlled manual provider registration')
+        }
+        if (!indexProviderRegistry.contains('IndexProviderRegistry builtIns()')) {
+            throw new GradleException('IndexProviderRegistry must expose built-in registry construction')
+        }
+        if (!indexProviderRegistry.contains('new IndexProviderResolver(descriptors')) {
+            throw new GradleException('IndexProviderRegistry must resolve through the same internal resolver path')
+        }
+        if (indexProviderRegistry.contains('ServiceLoader')) {
+            throw new GradleException('IndexProviderRegistry must not introduce provider discovery yet')
         }
         def indexMetadataBridge = new File(extensionRoot, 'index/IndexMetadataBridge.java').text
         if (!indexMetadataBridge.contains('IndexMetadata from(String indexName, IndexDescriptor descriptor)')) {

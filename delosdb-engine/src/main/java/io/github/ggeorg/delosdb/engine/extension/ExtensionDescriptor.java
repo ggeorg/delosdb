@@ -33,7 +33,15 @@ public record ExtensionDescriptor(
     }
 
     public static ExtensionDescriptor builtIn(ExtensionType type, String name, List<String> capabilities) {
-        return new ExtensionDescriptor(type, name, BuiltInExtensions.BUILTIN_VERSION, ExtensionState.ENABLED, capabilities);
+        return enabled(type, name, BuiltInExtensions.BUILTIN_VERSION, capabilities);
+    }
+
+    public static ExtensionDescriptor enabled(
+            ExtensionType type,
+            String name,
+            String version,
+            List<String> capabilities) {
+        return new ExtensionDescriptor(type, name, version, ExtensionState.ENABLED, capabilities);
     }
 
     public static String normalizeName(String name) {

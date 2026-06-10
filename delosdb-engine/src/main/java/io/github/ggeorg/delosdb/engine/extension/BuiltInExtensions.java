@@ -43,18 +43,32 @@ public final class BuiltInExtensions {
 
     public static ExtensionDescriptor indexProviderDescriptor(IndexProvider provider) {
         Objects.requireNonNull(provider, "provider");
-        IndexMetadata metadata = IndexMetadata.of(provider.name(), "builtin_" + provider.name(), List.of("key"));
-        return ExtensionDescriptor.builtIn(
+        return indexProviderDescriptor(
+                provider,
+                BUILTIN_VERSION,
+                DEFAULT_INDEX_PROVIDER.equals(ExtensionDescriptor.normalizeName(provider.name())));
+    }
+
+    public static ExtensionDescriptor indexProviderDescriptor(
+            IndexProvider provider,
+            String version,
+            boolean defaultProvider) {
+        Objects.requireNonNull(provider, "provider");
+        IndexMetadata metadata = IndexMetadata.of(provider.name(), "provider_" + provider.name(), List.of("key"));
+        return ExtensionDescriptor.enabled(
                 ExtensionType.INDEX,
                 provider.name(),
-                capabilityNames(provider.capabilities(metadata))
+                version,
+                capabilityNames(provider.capabilities(metadata), defaultProvider)
         );
     }
 
-    private static List<String> capabilityNames(IndexCapabilities capabilities) {
+    private static List<String> capabilityNames(IndexCapabilities capabilities, boolean defaultProvider) {
         Objects.requireNonNull(capabilities, "capabilities");
         List<String> names = new ArrayList<>();
-        names.add("default-index-provider");
+        if (defaultProvider) {
+            names.add("default-index-provider");
+        }
         if (capabilities.supportsEqualityLookup()) {
             names.add("equality-lookup");
         }

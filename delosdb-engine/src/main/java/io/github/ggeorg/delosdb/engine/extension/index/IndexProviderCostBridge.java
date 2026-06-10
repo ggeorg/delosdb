@@ -1,6 +1,5 @@
 package io.github.ggeorg.delosdb.engine.extension.index;
 
-import io.github.ggeorg.delosdb.engine.extension.BuiltInExtensions;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.index.IndexCostEstimate;
 import io.github.ggeorg.delosdb.spi.index.IndexCostRequest;
@@ -49,7 +48,7 @@ public final class IndexProviderCostBridge {
                 rangePredicate,
                 orderingRequired);
         IndexProvider provider = IndexProviderResolver
-                .builtIns(BuiltInExtensions.newRegistryWithBuiltIns())
+                .builtIns()
                 .requireEnabled(request.metadata().providerName());
         Optional<IndexCostEstimate> estimate = provider.estimateCost(request);
         if (estimate.isEmpty()) {
@@ -90,7 +89,7 @@ public final class IndexProviderCostBridge {
             boolean rangePredicate,
             boolean orderingRequired) {
         return estimateCostFor(
-                IndexProviderResolver.builtIns(BuiltInExtensions.newRegistryWithBuiltIns()),
+                IndexProviderResolver.builtIns(),
                 indexName,
                 descriptor,
                 tableRowCount,

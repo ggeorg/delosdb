@@ -46,6 +46,10 @@ public final class IndexProviderResolver {
         return new IndexProviderResolver(registry, BuiltInIndexProviders.all());
     }
 
+    public static IndexProviderResolver builtIns() {
+        return IndexProviderRegistry.builtIns().resolver();
+    }
+
     public Optional<IndexProvider> findEnabled(String name) {
         String normalizedName = ExtensionDescriptor.normalizeName(name);
         return registry.find(ExtensionType.INDEX, normalizedName)

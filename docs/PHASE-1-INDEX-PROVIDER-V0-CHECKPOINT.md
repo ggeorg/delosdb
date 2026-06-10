@@ -58,4 +58,4 @@ broad optimizer rewrites
 
 ## Next work
 
-The next work should move toward controlled registration of non-built-in providers in test scope first, then reviewed provider discovery. StorageProvider work should wait until IndexProvider registration, diagnostics, costing, and failure modes are stable.
+The next work has moved to controlled registration of non-built-in providers in test scope first, then reviewed provider discovery. StorageProvider work should wait until IndexProvider registration, diagnostics, costing, and failure modes are stable.

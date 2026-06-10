@@ -87,12 +87,19 @@ Definition of done:
 - No extension contract depends on an inherited implementation package by accident.
 - Existing runtime jars and JDBC behavior remain compatible.
 - IndexProvider v0 records `btree` provider identity, persists metadata, exposes descriptor diagnostics, and supports opt-in provider cost visibility.
+- Controlled internal IndexProvider registration exists before provider discovery or external jar loading.
 
 Checkpoint:
 
 - `docs/PHASE-1-INDEX-PROVIDER-V0-CHECKPOINT.md`
 
 ## Phase 2 — Extension registry and provider loading
+
+Current entry point:
+
+- `IndexProviderRegistry` supports explicit internal registration of provider instances.
+- Built-in `btree` registration remains the only public SQL provider path.
+- `ServiceLoader` and external jar loading are intentionally deferred.
 
 Goals:
 
