@@ -701,7 +701,7 @@ def indexProviderCostSmokeRuntimeClasspath = {
 }
 
 tasks.register('compileIndexProviderCostInfluenceSmoke', JavaCompile) {
-    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi'
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
     group = 'verification'
     description = 'Compiles the opt-in IndexProvider cost influence smoke test.'
     source = files('dev/index-provider-cost-smoke/src/main/java')
