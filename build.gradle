@@ -869,17 +869,17 @@ tasks.register('derbyRuntimeSmoke') {
 
 tasks.register('derbyTestSuite') {
     group = 'verification'
-    description = 'Runs the activated inherited Derby JUnit/function-test execution islands.'
-    dependsOn ':delosdb-tests:runActivatedDerbyExecutionIslands'
+    description = 'Runs the original Derby lang JUnit suite through Gradle.'
+    dependsOn ':delosdb-tests:runDerbyLangSuite'
 }
 
 tasks.named('check') {
-    dependsOn 'derbyRuntimeSmoke', ':delosdb-tests:runActivatedDerbySmokeExecutionIslands'
+    dependsOn 'derbyRuntimeSmoke', ':delosdb-tests:runDerbyLangSuite'
 }
 
 tasks.register('fullVerification') {
     group = 'verification'
-    description = 'Runs Derby-compatible runtime smokes and the activated inherited Derby test suite.'
+    description = 'Runs Derby-compatible runtime smokes and the original Derby lang JUnit suite.'
     dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite'
 }
 

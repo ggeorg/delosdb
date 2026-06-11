@@ -128,30 +128,6 @@ tasks.register('runDerbyLangSuite', Test) {
         showStandardStreams = true
     }
 }
-tasks.register('compileActivatedDerbyTests') {
-    group = 'verification'
-    description = 'Compiles the inherited Derby test module.'
-    dependsOn 'compileDerbyTestsModule'
-}
-
-tasks.register('runActivatedDerbyLangExecutionIslands') {
-    group = 'verification'
-    description = 'Alias for the original Derby lang JUnit suite.'
-    dependsOn 'runDerbyLangSuite'
-}
-
-tasks.register('runActivatedDerbySmokeExecutionIslands') {
-    group = 'verification'
-    description = 'Alias for the original Derby lang JUnit suite.'
-    dependsOn 'runDerbyLangSuite'
-}
-
-tasks.register('runActivatedDerbyExecutionIslands') {
-    group = 'verification'
-    description = 'Alias for the original Derby lang JUnit suite.'
-    dependsOn 'runDerbyLangSuite'
-}
-
 tasks.register('classes') {
     dependsOn 'compileDerbyTestsModule'
 }
@@ -161,5 +137,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'compileDerbyTestsModule'
+    dependsOn 'runDerbyLangSuite'
 }
