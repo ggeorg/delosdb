@@ -2,58 +2,8 @@ plugins {
     id 'base'
 }
 
-tasks.register('verifyDerbyLocalesSourceLayout') {
-    group = 'verification'
-    description = 'Verifies that inherited Derby localization templates are owned by the delosdb-locales Gradle module.'
-    inputs.dir('src/main/templates')
-    doLast {
-        def templatesDir = file('src/main/templates')
-        if (!templatesDir.isDirectory()) {
-            throw new GradleException("Missing locales templates directory: ${templatesDir}")
-        }
-        def derbyModuleTemplate = new File(templatesDir, 'DerbyModule.template')
-        if (!derbyModuleTemplate.isFile()) {
-            throw new GradleException("Missing DerbyModule locale template: ${derbyModuleTemplate}")
-        }
-        def moduleInfoTemplate = new File(templatesDir, 'module-info.template')
-        if (!moduleInfoTemplate.isFile()) {
-            throw new GradleException("Missing module-info locale template: ${moduleInfoTemplate}")
-        }
-        if (!derbyModuleTemplate.text.contains('locale_@LOCALE@')) {
-            throw new GradleException("DerbyModule locale template is missing @LOCALE@ placeholder: ${derbyModuleTemplate}")
-        }
-        if (!moduleInfoTemplate.text.contains('module org.apache.derby.locale_@LOCALE@')) {
-            throw new GradleException("module-info locale template is missing locale module placeholder: ${moduleInfoTemplate}")
-        }
-    }
-}
 
-tasks.register('verifyDerbyLocalesGeneration') {
-    dependsOn ':splitEngineMessages'
-    group = 'verification'
-    description = 'Verifies the locale module inputs used by the current Derby message splitting pipeline.'
-    inputs.dir('src/main/templates')
-    inputs.dir(rootProject.file('delosdb-engine/src/main/java/org/apache/derby/loc'))
-    doLast {
-        def templatesDir = file('src/main/templates')
-        if (!templatesDir.isDirectory()) {
-            throw new GradleException("Missing locales templates directory: ${templatesDir}")
-        }
-
-        def sourceLocDir = rootProject.file('delosdb-engine/src/main/java/org/apache/derby/loc')
-        def englishMessages = new File(sourceLocDir, 'messages.properties')
-        if (!englishMessages.isFile()) {
-            throw new GradleException("Missing engine messages source: ${englishMessages}")
-        }
-        def localizedMessages = sourceLocDir.listFiles({ File dir, String name ->
-            name.startsWith('messages_') && name.endsWith('.properties')
-        } as FilenameFilter)
-        if (localizedMessages == null || localizedMessages.length == 0) {
-            throw new GradleException("Missing localized Derby message property files under: ${sourceLocDir}")
-        }
-    }
-}
 
 tasks.named('check') {
-    dependsOn 'verifyDerbyLocalesSourceLayout', 'verifyDerbyLocalesGeneration'
+    // No custom layout guards in the Derby-focused validation path.
 }

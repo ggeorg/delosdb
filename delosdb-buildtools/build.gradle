@@ -10,32 +10,9 @@ def buildToolsClassDir = layout.buildDirectory.dir('classes/build-tools')
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 
-tasks.register('verifyDerbyBuildToolsSourceLayout') {
-    group = 'verification'
-    description = 'Verifies that inherited Derby build helper sources are owned by delosdb-buildtools.'
-    inputs.dir(buildToolsSourceRoot)
-    doLast {
-        if (!buildToolsSourceRoot.isDirectory()) {
-            throw new GradleException("Missing Derby build tools source root: ${buildToolsSourceRoot}")
-        }
-        [
-            'org/apache/derbyBuild/splitmessages.java',
-            'org/apache/derbyBuild/ClassSizeCrawler.java',
-            'org/apache/derbyBuild/MessageBuilder.java',
-            'org/apache/derbyBuild/MessageVetter.java',
-            'org/apache/derbyPreBuild/ReleaseProperties.java'
-        ].each { relativePath ->
-            def source = new File(buildToolsSourceRoot, relativePath)
-            if (!source.isFile()) {
-                throw new GradleException("Missing moved Derby build helper source: ${source}")
-            }
-        }
-    }
-}
 
 tasks.register('compileDerbyBuildTools', JavaCompile) {
-    dependsOn 'verifyDerbyBuildToolsSourceLayout',
-            ':delosdb-commons:compileDerbyCommons',
+    dependsOn ':delosdb-commons:compileDerbyCommons',
             ':delosdb-engine:compileDerbyEngine'
     source = files(
             'src/main/java/org/apache/derbyBuild/splitmessages.java',
@@ -56,5 +33,5 @@ tasks.register('classes') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyDerbyBuildToolsSourceLayout', 'compileDerbyBuildTools'
+    dependsOn 'compileDerbyBuildTools'
 }

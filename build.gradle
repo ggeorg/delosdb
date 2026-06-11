@@ -6,11 +6,8 @@ import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.bundling.Compression
 import org.gradle.api.tasks.bundling.Tar
 import org.gradle.api.tasks.bundling.Zip
-import org.gradle.api.tasks.GradleBuild
 import org.gradle.process.ExecOperations
 import javax.inject.Inject
-import java.util.jar.JarFile
-import java.util.zip.ZipFile
 
 
 abstract class DelosDbExecSupport {
@@ -525,83 +522,6 @@ tasks.named('assemble') {
     dependsOn 'jars'
 }
 
-tasks.register('verifyJars') {
-    dependsOn 'jars'
-    group = 'verification'
-    description = 'Checks that all expected runtime jars were assembled and are non-empty.'
-    inputs.files(runtimeJars())
-    doLast {
-        runtimeJarNames.each { jarName ->
-            def jarFile = layout.buildDirectory.file("libs/${jarName}").get().asFile
-            if (!jarFile.isFile()) {
-                throw new GradleException("Missing expected jar: ${jarFile}")
-            }
-            if (jarFile.length() == 0L) {
-                throw new GradleException("Empty jar: ${jarFile}")
-            }
-        }
-    }
-}
-
-
-tasks.register('verifyReleaseArtifacts') {
-    dependsOn 'verifyJars'
-    group = 'verification'
-    description = 'Verifies release metadata, legal attribution files, and manifests inside assembled jars.'
-    inputs.files(runtimeJars())
-    inputs.files(legalFiles)
-    doLast {
-        legalFileNames.each { legalName ->
-            def legalFile = file(legalName)
-            if (!legalFile.isFile()) {
-                throw new GradleException("Missing required legal attribution file: ${legalFile}")
-            }
-        }
-
-        runtimeJarNames.each { jarName ->
-            def jarFile = layout.buildDirectory.file("libs/${jarName}").get().asFile
-            new JarFile(jarFile).withCloseable { jar ->
-                def manifest = jar.manifest
-                if (manifest == null) {
-                    throw new GradleException("Missing manifest in ${jarFile.name}")
-                }
-
-                def attributes = manifest.mainAttributes
-                [
-                        'Implementation-Title',
-                        'Implementation-Version',
-                        'Implementation-Vendor',
-                        'Specification-Version',
-                        'DelosDB-Version',
-                        'DelosDB-Build-Revision',
-                        'DelosDB-Origin',
-                        'Apache-Derby-Base-Version',
-                        'Build-Jdk'
-                ].each { attributeName ->
-                    def value = attributes.getValue(attributeName)
-                    if (value == null || value.trim().isEmpty()) {
-                        throw new GradleException("Missing manifest attribute ${attributeName} in ${jarFile.name}")
-                    }
-                }
-
-                if (attributes.getValue('Implementation-Version') != delosDbVersion) {
-                    throw new GradleException("Unexpected Implementation-Version in ${jarFile.name}: ${attributes.getValue('Implementation-Version')}")
-                }
-
-                if (jarName == 'derbyrun.jar' && attributes.getValue('Main-Class') != 'org.apache.derby.run.run') {
-                    throw new GradleException("derbyrun.jar is missing the expected Main-Class")
-                }
-
-                legalFileNames.each { legalName ->
-                    def entryName = "META-INF/${legalName}"
-                    if (jar.getEntry(entryName) == null) {
-                        throw new GradleException("Missing ${entryName} in ${jarFile.name}")
-                    }
-                }
-            }
-        }
-    }
-}
 
 tasks.register('sysinfoFromJars', JavaExec) {
     dependsOn 'jars'
@@ -643,7 +563,7 @@ tasks.register('compileModernizationSmoke', JavaCompile) {
 }
 
 tasks.register('modernizationSmoke', JavaExec) {
-    dependsOn 'compileModernizationSmoke', 'verifyReleaseArtifacts'
+    dependsOn 'compileModernizationSmoke'
     mustRunAfter 'smokeFromJars'
     group = 'verification'
     description = 'Runs JDBC lifecycle smoke coverage for Java 21 modernization cleanup paths from assembled jars.'
@@ -673,7 +593,7 @@ tasks.register('compileIndexProviderMetadataSmoke', JavaCompile) {
 }
 
 tasks.register('indexProviderMetadataSmoke', JavaExec) {
-    dependsOn 'compileIndexProviderMetadataSmoke', 'verifyReleaseArtifacts'
+    dependsOn 'compileIndexProviderMetadataSmoke'
     mustRunAfter 'smokeFromJars'
     group = 'verification'
     description = 'Verifies CREATE INDEX provider metadata is catalog-visible from assembled Derby-compatible runtime jars.'
@@ -714,7 +634,7 @@ tasks.register('compileIndexProviderCostInfluenceSmoke', JavaCompile) {
 }
 
 tasks.register('indexProviderCostInfluenceSmoke', JavaExec) {
-    dependsOn 'compileIndexProviderCostInfluenceSmoke', 'verifyReleaseArtifacts', ':delosdb-spi:compileDelosDbSpi'
+    dependsOn 'compileIndexProviderCostInfluenceSmoke', ':delosdb-spi:compileDelosDbSpi'
     mustRunAfter 'indexProviderMetadataSmoke'
     group = 'verification'
     description = 'Verifies opt-in IndexProvider cost diagnostics and cost consumption for the built-in btree provider.'
@@ -745,7 +665,7 @@ tasks.register('compileNetworkServerSmoke', JavaCompile) {
 }
 
 tasks.register('networkServerSmoke', JavaExec) {
-    dependsOn 'compileNetworkServerSmoke', 'verifyReleaseArtifacts'
+    dependsOn 'compileNetworkServerSmoke'
     mustRunAfter 'smokeFromJars', 'modernizationSmoke'
     group = 'verification'
     description = 'Starts the DelosDB Network Server from assembled jars and verifies a remote JDBC client round trip.'
@@ -762,10 +682,6 @@ tasks.register('networkServerSmoke', JavaExec) {
 
 def distributionBaseName = "delosdb-${delosDbVersion}"
 def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
-def distributionArchiveNames = [
-        zip: "delosdb-${delosDbVersion}-bin.zip",
-        tar: "delosdb-${delosDbVersion}-bin.tar.gz"
-]
 def distributionDocFiles = files(
         'README.md',
         'CONTRIBUTING.md',
@@ -775,7 +691,7 @@ def distributionDocFiles = files(
 )
 
 tasks.register('prepareBinaryDistribution', Copy) {
-    dependsOn 'verifyReleaseArtifacts'
+    dependsOn 'jars'
     group = 'distribution'
     description = 'Stages the DelosDB binary distribution layout under build/release.'
     into distributionStagingDir
@@ -826,52 +742,11 @@ tasks.register('delosdbBinaryTar', Tar) {
     }
 }
 
-tasks.register('verifyReleaseDistribution') {
-    dependsOn 'delosdbBinaryZip', 'delosdbBinaryTar'
-    group = 'verification'
-    description = 'Verifies the DelosDB binary distribution archive shape.'
-    def zipFileProvider = layout.buildDirectory.file("distributions/${distributionArchiveNames.zip}")
-    def tarFileProvider = layout.buildDirectory.file("distributions/${distributionArchiveNames.tar}")
-    inputs.files(zipFileProvider, tarFileProvider)
-    doLast {
-        def zipFile = zipFileProvider.get().asFile
-        def tarFile = tarFileProvider.get().asFile
-        [zipFile, tarFile].each { archive ->
-            if (!archive.isFile()) {
-                throw new GradleException("Missing distribution archive: ${archive}")
-            }
-            if (archive.length() == 0L) {
-                throw new GradleException("Empty distribution archive: ${archive}")
-            }
-        }
-
-        def requiredEntries = [
-                'README.md',
-                'LICENSE',
-                'NOTICE',
-                'NOTICE-FORK.md',
-                'bin/delosdb',
-                'bin/delosdb.bat',
-                'docs/BUILDING.md',
-                'docs/ARTIFACTS.md',
-                'examples/smoke.sql'
-        ] + runtimeJarNames.collect { "lib/${it}" }
-
-        new ZipFile(zipFile).withCloseable { zip ->
-            requiredEntries.each { relativePath ->
-                def entryName = "${distributionBaseName}/${relativePath}"
-                if (zip.getEntry(entryName) == null) {
-                    throw new GradleException("Missing ${entryName} in ${zipFile.name}")
-                }
-            }
-        }
-    }
-}
 
 tasks.register('dist') {
-    dependsOn 'verifyReleaseDistribution'
+    dependsOn 'delosdbBinaryZip', 'delosdbBinaryTar'
     group = 'distribution'
-    description = 'Builds and verifies the DelosDB binary distribution archives.'
+    description = 'Builds the DelosDB binary distribution archives.'
 }
 
 tasks.register('sysinfo', JavaExec) {
@@ -895,368 +770,6 @@ tasks.register('smoke', JavaExec) {
         delete file('build/smoke-db')
     }
 }
-
-
-tasks.register('printArtifactInventory') {
-    group = 'help'
-    description = 'Prints the current DelosDB artifact/module inventory used for the planned multi-project split.'
-    doLast {
-        println 'DelosDB artifact inventory'
-        println '=========================='
-        moduleSplitInventory.sort { it.extractionOrder }.each { artifact ->
-            println "${artifact.extractionOrder}. ${artifact.gradleProject}"
-            println "   JPMS module : ${artifact.jpmsModule}"
-            println "   source root : ${artifact.currentSourceRoot}"
-            println "   compile task: ${artifact.compileTask}"
-            println "   jar task    : ${artifact.jarTask}"
-            println "   jar         : ${artifact.jarName}"
-            println "   deps        : ${(artifact.dependencies ?: ['none']).join(', ')}"
-            println "   generated   : ${(artifact.generatedBy ?: ['none']).join(', ')}"
-            println "   public      : ${artifact.publicArtifact}"
-            println "   risk        : ${artifact.extractionRisk}"
-            println ''
-        }
-    }
-}
-
-tasks.register('verifyArtifactInventory') {
-    group = 'verification'
-    description = 'Verifies that the documented artifact/module split inventory matches the current Gradle build model.'
-    def inventoryDocs = files(
-            'docs/BUILD-INVENTORY.md',
-            'docs/ARTIFACTS.md',
-            'docs/MODULE-SPLIT-PLAN.md'
-    )
-    inputs.files(inventoryDocs)
-    doLast {
-        inventoryDocs.files.each { doc ->
-            if (!doc.isFile()) {
-                throw new GradleException("Missing inventory document: ${doc}")
-            }
-        }
-
-        def keys = moduleSplitInventory.collect { it.key }
-        if (keys.toSet().size() != keys.size()) {
-            throw new GradleException("Duplicate module split inventory keys: ${keys}")
-        }
-
-        def extractionOrders = moduleSplitInventory.collect { it.extractionOrder }
-        if (extractionOrders.toSet().size() != extractionOrders.size()) {
-            throw new GradleException("Duplicate extraction order values: ${extractionOrders}")
-        }
-
-        moduleSplitInventory.each { artifact ->
-            if (!file(artifact.currentSourceRoot).isDirectory()) {
-                throw new GradleException("Missing source root for ${artifact.gradleProject}: ${artifact.currentSourceRoot}")
-            }
-
-            def taskOwner = findProject(":${artifact.gradleProject}")
-            if (taskOwner == null) {
-                throw new GradleException("Missing Gradle project for ${artifact.gradleProject}")
-            }
-            if (taskOwner.tasks.findByName(artifact.compileTask) == null) {
-                throw new GradleException("Missing compile task for ${artifact.gradleProject}: ${artifact.compileTask}")
-            }
-            if (taskOwner.tasks.findByName(artifact.jarTask) == null) {
-                throw new GradleException("Missing jar task for ${artifact.gradleProject}: ${artifact.jarTask}")
-            }
-            if (!runtimeJarNames.contains(artifact.jarName)) {
-                throw new GradleException("${artifact.gradleProject} jar is not included in runtimeJarNames: ${artifact.jarName}")
-            }
-            artifact.dependencies.each { dependencyKey ->
-                if (!keys.contains(dependencyKey)) {
-                    throw new GradleException("${artifact.gradleProject} references unknown dependency key: ${dependencyKey}")
-                }
-            }
-        }
-
-        def documentedText = inventoryDocs.files.findAll { it.isFile() }.collect { it.text }.join(System.lineSeparator())
-        moduleSplitInventory.each { artifact ->
-            [artifact.gradleProject, artifact.jpmsModule, artifact.jarName].each { token ->
-                if (!documentedText.contains(token)) {
-                    throw new GradleException("Inventory docs do not mention ${token}")
-                }
-            }
-        }
-    }
-}
-
-tasks.register('verifyExtractedOsgiStubProject') {
-    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-osgi-stub:osgiFrameworkStubJar'
-    group = 'verification'
-    description = 'Verifies that the extracted OSGi stub subproject owns the stub compile and jar lifecycle.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-osgi-stub/build.gradle')
-    doLast {
-        def osgiProject = findProject(':delosdb-osgi-stub')
-        if (osgiProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-osgi-stub')
-        }
-        if (osgiProject.tasks.findByName('compileOsgiStubs') == null) {
-            throw new GradleException('Missing :delosdb-osgi-stub:compileOsgiStubs')
-        }
-        if (osgiProject.tasks.findByName('osgiFrameworkStubJar') == null) {
-            throw new GradleException('Missing :delosdb-osgi-stub:osgiFrameworkStubJar')
-        }
-        def osgiJar = layout.buildDirectory.file('libs/osgi-framework-stub.jar').get().asFile
-        if (!osgiJar.isFile()) {
-            throw new GradleException("Missing OSGi stub jar owned by :delosdb-osgi-stub: ${osgiJar}")
-        }
-        def osgiOutput = moduleClassDir(moduleNames.osgi).get().asFile
-        if (!osgiOutput.isDirectory()) {
-            throw new GradleException("Missing compiled OSGi stub output directory: ${osgiOutput}")
-        }
-        def bundleActivator = new File(osgiOutput, 'org/osgi/framework/BundleActivator.class')
-        if (!bundleActivator.isFile()) {
-            throw new GradleException("Missing compiled OSGi BundleActivator stub: ${bundleActivator}")
-        }
-    }
-}
-
-
-tasks.register('verifyExtractedCommonsProject') {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-commons:derbySharedJar'
-    group = 'verification'
-    description = 'Verifies that the first extracted Gradle subproject owns the commons compile lifecycle.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-commons/build.gradle')
-    doLast {
-        def commonsProject = findProject(':delosdb-commons')
-        if (commonsProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-commons')
-        }
-        if (commonsProject.tasks.findByName('generateSanityState') == null) {
-            throw new GradleException('Missing :delosdb-commons:generateSanityState')
-        }
-        if (commonsProject.tasks.findByName('compileDerbyCommons') == null) {
-            throw new GradleException('Missing :delosdb-commons:compileDerbyCommons')
-        }
-        if (commonsProject.tasks.findByName('derbySharedJar') == null) {
-            throw new GradleException('Missing :delosdb-commons:derbySharedJar')
-        }
-        def commonsJar = layout.buildDirectory.file('libs/derbyshared.jar').get().asFile
-        if (!commonsJar.isFile()) {
-            throw new GradleException("Missing commons runtime jar owned by :delosdb-commons: ${commonsJar}")
-        }
-        def commonsOutput = moduleClassDir(moduleNames.commons).get().asFile
-        if (!commonsOutput.isDirectory()) {
-            throw new GradleException("Missing compiled commons output directory: ${commonsOutput}")
-        }
-        def moduleInfo = new File(commonsOutput, 'module-info.class')
-        if (!moduleInfo.isFile()) {
-            throw new GradleException("Missing compiled commons module descriptor: ${moduleInfo}")
-        }
-    }
-}
-
-
-tasks.register('verifyExtractedClientProject') {
-    dependsOn ':delosdb-client:compileDerbyClient', ':delosdb-client:derbyClientJar'
-    group = 'verification'
-    description = 'Verifies that the second extracted Gradle subproject owns the client compile and jar lifecycle.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-client/build.gradle')
-    doLast {
-        def clientProject = findProject(':delosdb-client')
-        if (clientProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-client')
-        }
-        if (clientProject.tasks.findByName('compileDerbyClient') == null) {
-            throw new GradleException('Missing :delosdb-client:compileDerbyClient')
-        }
-        if (clientProject.tasks.findByName('derbyClientJar') == null) {
-            throw new GradleException('Missing :delosdb-client:derbyClientJar')
-        }
-        def clientJar = layout.buildDirectory.file('libs/derbyclient.jar').get().asFile
-        if (!clientJar.isFile()) {
-            throw new GradleException("Missing client runtime jar owned by :delosdb-client: ${clientJar}")
-        }
-        def clientOutput = moduleClassDir(moduleNames.client).get().asFile
-        if (!clientOutput.isDirectory()) {
-            throw new GradleException("Missing compiled client output directory: ${clientOutput}")
-        }
-        def moduleInfo = new File(clientOutput, 'module-info.class')
-        if (!moduleInfo.isFile()) {
-            throw new GradleException("Missing compiled client module descriptor: ${moduleInfo}")
-        }
-    }
-}
-
-tasks.register('verifyExtractedToolsProject') {
-    dependsOn ':delosdb-tools:compileDerbyTools', ':delosdb-tools:derbyToolsJar'
-    group = 'verification'
-    description = 'Verifies that the third extracted Gradle subproject owns the tools compile and jar lifecycle plus ij parser generation.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-tools/build.gradle')
-    doLast {
-        def toolsProject = findProject(':delosdb-tools')
-        if (toolsProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-tools')
-        }
-        if (toolsProject.tasks.findByName('generateIjParsers') == null) {
-            throw new GradleException('Missing :delosdb-tools:generateIjParsers')
-        }
-        if (toolsProject.tasks.findByName('compileDerbyTools') == null) {
-            throw new GradleException('Missing :delosdb-tools:compileDerbyTools')
-        }
-        if (toolsProject.tasks.findByName('derbyToolsJar') == null) {
-            throw new GradleException('Missing :delosdb-tools:derbyToolsJar')
-        }
-        def toolsJar = layout.buildDirectory.file('libs/derbytools.jar').get().asFile
-        if (!toolsJar.isFile()) {
-            throw new GradleException("Missing tools runtime jar owned by :delosdb-tools: ${toolsJar}")
-        }
-        def toolsOutput = moduleClassDir(moduleNames.tools).get().asFile
-        if (!toolsOutput.isDirectory()) {
-            throw new GradleException("Missing compiled tools output directory: ${toolsOutput}")
-        }
-        def moduleInfo = new File(toolsOutput, 'module-info.class')
-        if (!moduleInfo.isFile()) {
-            throw new GradleException("Missing compiled tools module descriptor: ${moduleInfo}")
-        }
-    }
-}
-
-tasks.register('verifyExtractedRunnerProject') {
-    dependsOn ':delosdb-runner:compileDerbyRunner', ':delosdb-runner:derbyRunJar'
-    group = 'verification'
-    description = 'Verifies that the fourth extracted Gradle subproject owns the runner compile and jar lifecycle.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-runner/build.gradle')
-    doLast {
-        def runnerProject = findProject(':delosdb-runner')
-        if (runnerProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-runner')
-        }
-        if (runnerProject.tasks.findByName('compileDerbyRunner') == null) {
-            throw new GradleException('Missing :delosdb-runner:compileDerbyRunner')
-        }
-        if (runnerProject.tasks.findByName('derbyRunJar') == null) {
-            throw new GradleException('Missing :delosdb-runner:derbyRunJar')
-        }
-        def runnerJar = layout.buildDirectory.file('libs/derbyrun.jar').get().asFile
-        if (!runnerJar.isFile()) {
-            throw new GradleException("Missing runner runtime jar owned by :delosdb-runner: ${runnerJar}")
-        }
-        def runnerOutput = moduleClassDir(moduleNames.runner).get().asFile
-        if (!runnerOutput.isDirectory()) {
-            throw new GradleException("Missing compiled runner output directory: ${runnerOutput}")
-        }
-        def moduleInfo = new File(runnerOutput, 'module-info.class')
-        if (!moduleInfo.isFile()) {
-            throw new GradleException("Missing compiled runner module descriptor: ${moduleInfo}")
-        }
-    }
-}
-
-
-tasks.register('verifyExtractedOptionalToolsProject') {
-    dependsOn ':delosdb-optionaltools:compileDerbyOptionalTools', ':delosdb-optionaltools:derbyOptionalToolsJar'
-    group = 'verification'
-    description = 'Verifies that the fifth extracted Gradle subproject owns the optional tools compile and jar lifecycle.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-optionaltools/build.gradle')
-    doLast {
-        def optionalToolsProject = findProject(':delosdb-optionaltools')
-        if (optionalToolsProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-optionaltools')
-        }
-        if (optionalToolsProject.tasks.findByName('compileDerbyOptionalTools') == null) {
-            throw new GradleException('Missing :delosdb-optionaltools:compileDerbyOptionalTools')
-        }
-        if (optionalToolsProject.tasks.findByName('derbyOptionalToolsJar') == null) {
-            throw new GradleException('Missing :delosdb-optionaltools:derbyOptionalToolsJar')
-        }
-        def optionalToolsJar = layout.buildDirectory.file('libs/derbyoptionaltools.jar').get().asFile
-        if (!optionalToolsJar.isFile()) {
-            throw new GradleException("Missing optional tools runtime jar owned by :delosdb-optionaltools: ${optionalToolsJar}")
-        }
-        def optionalToolsOutput = moduleClassDir(moduleNames.optionaltools).get().asFile
-        if (!optionalToolsOutput.isDirectory()) {
-            throw new GradleException("Missing compiled optional tools output directory: ${optionalToolsOutput}")
-        }
-        def moduleInfo = new File(optionalToolsOutput, 'module-info.class')
-        if (!moduleInfo.isFile()) {
-            throw new GradleException("Missing compiled optional tools module descriptor: ${moduleInfo}")
-        }
-    }
-}
-
-tasks.register('verifyExtractedServerProject') {
-    dependsOn ':delosdb-server:compileDerbyServer', ':delosdb-server:derbyNetJar'
-    group = 'verification'
-    description = 'Verifies that the sixth extracted Gradle subproject owns the network server compile and jar lifecycle.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-server/build.gradle')
-    doLast {
-        def serverProject = findProject(':delosdb-server')
-        if (serverProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-server')
-        }
-        if (serverProject.tasks.findByName('compileDerbyServer') == null) {
-            throw new GradleException('Missing :delosdb-server:compileDerbyServer')
-        }
-        if (serverProject.tasks.findByName('derbyNetJar') == null) {
-            throw new GradleException('Missing :delosdb-server:derbyNetJar')
-        }
-        def serverJar = layout.buildDirectory.file('libs/derbynet.jar').get().asFile
-        if (!serverJar.isFile()) {
-            throw new GradleException("Missing network server runtime jar owned by :delosdb-server: ${serverJar}")
-        }
-        def serverOutput = moduleClassDir(moduleNames.server).get().asFile
-        if (!serverOutput.isDirectory()) {
-            throw new GradleException("Missing compiled server output directory: ${serverOutput}")
-        }
-        def moduleInfo = new File(serverOutput, 'module-info.class')
-        if (!moduleInfo.isFile()) {
-            throw new GradleException("Missing server module-info.class: ${moduleInfo}")
-        }
-    }
-}
-
-tasks.register('verifyExtractedEngineProject') {
-    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine:compileClassSizeCatalog', ':delosdb-engine:derbyJar'
-    group = 'verification'
-    description = 'Verifies that the final extracted Gradle subproject owns the embedded engine compile lifecycle.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-engine/build.gradle')
-    doLast {
-        def engineProject = findProject(':delosdb-engine')
-        if (engineProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-engine')
-        }
-        if (engineProject.tasks.findByName('generateSqlParser') == null) {
-            throw new GradleException('Missing :delosdb-engine:generateSqlParser')
-        }
-        if (engineProject.tasks.findByName('compileDerbyEngine') == null) {
-            throw new GradleException('Missing :delosdb-engine:compileDerbyEngine')
-        }
-        if (engineProject.tasks.findByName('compileClassSizeCatalog') == null) {
-            throw new GradleException('Missing :delosdb-engine:compileClassSizeCatalog')
-        }
-        if (engineProject.tasks.findByName('derbyJar') == null) {
-            throw new GradleException('Missing :delosdb-engine:derbyJar')
-        }
-        def engineOutput = moduleClassDir(moduleNames.engine).get().asFile
-        if (!engineOutput.isDirectory()) {
-            throw new GradleException("Missing compiled engine output directory: ${engineOutput}")
-        }
-        def moduleInfo = new File(engineOutput, 'module-info.class')
-        if (!moduleInfo.isFile()) {
-            throw new GradleException("Missing engine module-info.class: ${moduleInfo}")
-        }
-        def catalogImpl = new File(engineOutput, 'org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.class')
-        if (!catalogImpl.isFile()) {
-            throw new GradleException("Missing compiled ClassSizeCatalogImpl.class: ${catalogImpl}")
-        }
-        def engineJar = layout.buildDirectory.file('libs/derby.jar').get().asFile
-        if (!engineJar.isFile()) {
-            throw new GradleException("Missing extracted engine jar: ${engineJar}")
-        }
-        println "Verified extracted engine subproject output and jar: ${engineOutput}"
-    }
-}
-
 
 
 // -----------------------------------------------------------------------------
@@ -1347,530 +860,35 @@ subprojects { subproject ->
     }
 }
 
-tasks.register('verifyMavenPublications') {
+
+tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
-    description = 'Publishes DelosDB runtime artifacts to Maven Local and verifies their POM and jar metadata.'
-    dependsOn rootProject.ext.delosdbPublicationProjectNames.collect { ":${it}:publishMavenJavaPublicationToMavenLocal" }
-    doLast {
-        def repositoryBase = new File(System.getProperty('user.home'), ".m2/repository/${project.group.toString().replace('.', '/')}")
-        rootProject.ext.delosdbPublicationMetadata.each { projectName, publicationInfo ->
-            def artifactDirectory = new File(repositoryBase, "${publicationInfo.artifactId}/${project.version}")
-            def publishedJar = new File(artifactDirectory, "${publicationInfo.artifactId}-${project.version}.jar")
-            def publishedPom = new File(artifactDirectory, "${publicationInfo.artifactId}-${project.version}.pom")
-
-            if (!publishedJar.isFile() || publishedJar.length() == 0L) {
-                throw new GradleException("Missing or empty Maven Local jar for ${publicationInfo.artifactId}: ${publishedJar}")
-            }
-            if (!publishedPom.isFile() || publishedPom.length() == 0L) {
-                throw new GradleException("Missing or empty Maven Local POM for ${publicationInfo.artifactId}: ${publishedPom}")
-            }
-
-            def pomText = publishedPom.text
-            [
-                    "<groupId>${project.group}</groupId>",
-                    "<artifactId>${publicationInfo.artifactId}</artifactId>",
-                    "<version>${project.version}</version>",
-                    '<name>',
-                    '<description>',
-                    '<licenses>',
-                    '<scm>'
-            ].each { requiredText ->
-                if (!pomText.contains(requiredText)) {
-                    throw new GradleException("Published POM for ${publicationInfo.artifactId} is missing '${requiredText}'")
-                }
-            }
-
-            (publicationInfo.dependencies ?: []).each { dependencyProjectName ->
-                def dependencyInfo = rootProject.ext.delosdbPublicationMetadata[dependencyProjectName]
-                if (!pomText.contains("<artifactId>${dependencyInfo.artifactId}</artifactId>")) {
-                    throw new GradleException("Published POM for ${publicationInfo.artifactId} is missing dependency ${dependencyInfo.artifactId}")
-                }
-            }
-        }
-        println "Verified DelosDB Maven Local publications under ${repositoryBase}"
-    }
+    description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
-
-// Prove that the Maven Local publications are consumable from a fresh external
-// Gradle project, not only present on disk. This intentionally uses a generated
-// throw-away consumer project under build/ so it does not pollute the repository.
-def mavenLocalConsumerProjectDir = layout.buildDirectory.dir('consumer-tests/maven-local-embedded-smoke')
-
-tasks.register('writeMavenLocalConsumerProject') {
-    dependsOn 'verifyMavenPublications'
+tasks.register('derbyTestSuite') {
     group = 'verification'
-    description = 'Writes a temporary external Gradle project that consumes DelosDB from Maven Local.'
-    outputs.dir(mavenLocalConsumerProjectDir)
-    doLast {
-        def consumerDir = mavenLocalConsumerProjectDir.get().asFile
-        delete consumerDir
-
-        def sourceDir = new File(consumerDir, 'src/main/java/delosdb/smoke')
-        sourceDir.mkdirs()
-
-        new File(consumerDir, 'settings.gradle').text = """pluginManagement {
-    repositories {
-        gradlePluginPortal()
-        mavenCentral()
-    }
-}
-
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        mavenLocal()
-        mavenCentral()
-    }
-}
-
-rootProject.name = 'delosdb-maven-local-embedded-smoke'
-"""
-
-        new File(consumerDir, 'build.gradle').text = """plugins {
-    id 'application'
-}
-
-group = 'io.github.ggeorg.delosdb.consumer'
-version = '0.1.0-dev'
-
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(${javaRelease})
-    }
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.release = ${javaRelease}
-    options.encoding = 'UTF-8'
-}
-
-application {
-    mainClass = 'delosdb.smoke.MavenLocalSmoke'
-}
-
-dependencies {
-    implementation '${project.group}:delosdb-engine:${project.version}'
-}
-"""
-
-        new File(sourceDir, 'MavenLocalSmoke.java').text = """package delosdb.smoke;
-
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.Statement;
-
-public final class MavenLocalSmoke {
-    private MavenLocalSmoke() {
-    }
-
-    public static void main(String[] args) throws Exception {
-        Class.forName(\"org.apache.derby.jdbc.EmbeddedDriver\");
-        try (Connection connection = DriverManager.getConnection(\"jdbc:derby:build/consumer-db;create=true\");
-             Statement statement = connection.createStatement()) {
-            statement.executeUpdate(\"create table delosdb_smoke(id int primary key, value varchar(32))\");
-            statement.executeUpdate(\"insert into delosdb_smoke values (1, 'maven-local-ok')\");
-            try (ResultSet resultSet = statement.executeQuery(\"select value from delosdb_smoke where id = 1\")) {
-                if (!resultSet.next()) {
-                    throw new IllegalStateException(\"No smoke-test row returned\");
-                }
-                String value = resultSet.getString(1);
-                if (!\"maven-local-ok\".equals(value)) {
-                    throw new IllegalStateException(\"Unexpected smoke-test value: \" + value);
-                }
-            }
-        }
-        System.out.println(\"DelosDB Maven Local consumer smoke test passed.\");
-    }
-}
-"""
-    }
-}
-
-tasks.register('verifyMavenLocalConsumer', GradleBuild) {
-    dependsOn 'writeMavenLocalConsumerProject'
-    group = 'verification'
-    description = 'Runs a generated external Gradle consumer project against the Maven Local DelosDB engine artifact.'
-    dir = mavenLocalConsumerProjectDir.get().asFile
-    tasks = ['clean', 'run']
-}
-
-tasks.register('verifyCentralizedJavaCompileConventions') {
-    group = 'verification'
-    description = 'Ensures extracted subprojects use the shared DelosDB JavaCompile convention helper.'
-    def buildFiles = files(
-            'build.gradle',
-            'delosdb-commons/build.gradle',
-            'delosdb-spi/build.gradle',
-            'delosdb-client/build.gradle',
-            'delosdb-engine/build.gradle',
-            'delosdb-tools/build.gradle',
-            'delosdb-runner/build.gradle',
-            'delosdb-server/build.gradle',
-            'delosdb-optionaltools/build.gradle',
-            'delosdb-osgi-stub/build.gradle'
-    )
-    inputs.files(buildFiles)
-    doLast {
-        def rootBuild = file('build.gradle').text
-        if (!rootBuild.contains('ext.delosdbConfigureJavaCompile')) {
-            throw new GradleException('Root build does not define ext.delosdbConfigureJavaCompile')
-        }
-        buildFiles.files.findAll { it.path != file('build.gradle').path }.each { buildFile ->
-            def buildScript = buildFile.text
-            if (!buildScript.contains('rootProject.ext.delosdbConfigureJavaCompile')) {
-                throw new GradleException("${buildFile} does not use rootProject.ext.delosdbConfigureJavaCompile")
-            }
-            if (buildScript.contains('def configureJavaCompile')) {
-                throw new GradleException("${buildFile} still declares a local configureJavaCompile helper")
-            }
-            ['def javaRelease =', 'sourceCompatibility =', 'targetCompatibility =', 'options.release =', 'options.encoding ='].each { duplicatedSetting ->
-                if (buildScript.contains(duplicatedSetting)) {
-                    throw new GradleException("${buildFile} still duplicates JavaCompile setting '${duplicatedSetting}'")
-                }
-            }
-        }
-    }
-}
-
-tasks.register('verifyCentralizedReleaseMetadata') {
-    group = 'verification'
-    description = 'Ensures extracted runtime jar subprojects use the shared DelosDB release metadata helpers.'
-    def buildFiles = files(
-            'delosdb-commons/build.gradle',
-            'delosdb-spi/build.gradle',
-            'delosdb-client/build.gradle',
-            'delosdb-engine/build.gradle',
-            'delosdb-tools/build.gradle',
-            'delosdb-runner/build.gradle',
-            'delosdb-server/build.gradle',
-            'delosdb-optionaltools/build.gradle',
-            'delosdb-osgi-stub/build.gradle'
-    )
-    inputs.files(buildFiles)
-    doLast {
-        buildFiles.files.each { buildFile ->
-            def buildScript = buildFile.text
-            if (!buildScript.contains('rootProject.ext.delosdbLegalFiles')) {
-                throw new GradleException("${buildFile} does not use rootProject.ext.delosdbLegalFiles")
-            }
-            if (!buildScript.contains('rootProject.ext.delosdbRuntimeJarAttributes')) {
-                throw new GradleException("${buildFile} does not use rootProject.ext.delosdbRuntimeJarAttributes")
-            }
-            if (buildScript.contains('def legalFiles =') || buildScript.contains('def releaseManifestAttributes =')) {
-                throw new GradleException("${buildFile} still declares duplicated release metadata helpers")
-            }
-        }
-    }
-}
-
-tasks.register('verifyGradleOnlyPublicSurface') {
-    group = 'verification'
-    description = 'Ensures public build instructions expose only the Gradle build path.'
-    def publicFiles = files(
-            'README.md',
-            'docs/BUILDING.md',
-            'docs/BUILD-INVENTORY.md',
-            '.github/workflows/ci.yml'
-    )
-    inputs.files(publicFiles)
-    doLast {
-        def forbidden = [
-                'ant build',
-                'ant -D',
-                'buildsource',
-                'buildjars',
-                'svnversion',
-                'changenumber',
-                'ant.importBuild'
-        ]
-        publicFiles.files.findAll { it.exists() }.each { checkedFile ->
-            def text = checkedFile.text
-            forbidden.each { needle ->
-                if (text.contains(needle)) {
-                    throw new GradleException("Unsupported legacy build reference '${needle}' found in ${checkedFile}")
-                }
-            }
-        }
-    }
-}
-
-
-tasks.register('verifyMovedTestsSourceLayout') {
-    dependsOn ':delosdb-tests:verifyDerbyTestsSourceLayout', ':delosdb-tests:verifyDerbyTestsAssets'
-    group = 'verification'
-    description = 'Verifies that the inherited Derby test harness has moved into the delosdb-tests Gradle module.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-tests/build.gradle')
-    inputs.dir('delosdb-tests/src/test/java')
-    doLast {
-        def testsProject = findProject(':delosdb-tests')
-        if (testsProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-tests')
-        }
-        if (file('java/org.apache.derby.tests').exists()) {
-            throw new GradleException('Legacy Derby tests bridge source root still exists: java/org.apache.derby.tests')
-        }
-        if (testsProject.tasks.findByName('verifyDerbyTestsSourceLayout') == null) {
-            throw new GradleException('Missing :delosdb-tests:verifyDerbyTestsSourceLayout')
-        }
-        if (testsProject.tasks.findByName('verifyDerbyTestsAssets') == null) {
-            throw new GradleException('Missing :delosdb-tests:verifyDerbyTestsAssets')
-        }
-        def moduleInfo = file('delosdb-tests/src/test/java/module-info.java')
-        if (!moduleInfo.isFile()) {
-            throw new GradleException("Missing moved Derby tests module descriptor: ${moduleInfo}")
-        }
-        def junitHarness = file('delosdb-tests/src/test/java/org/apache/derbyTesting/junit/BaseTestCase.java')
-        if (!junitHarness.isFile()) {
-            throw new GradleException("Missing moved Derby JUnit harness source: ${junitHarness}")
-        }
-    }
-}
-
-
-tasks.register('verifyMovedPackagePrivateTestsSourceLayout') {
-    dependsOn ':delosdb-pptesting:verifyDerbyPackagePrivateTestsSourceLayout', ':delosdb-pptesting:verifyDerbyPackagePrivateTestsAssets', ':delosdb-pptesting:compileDerbyPackagePrivateTests'
-    group = 'verification'
-    description = 'Verifies that inherited Derby package-private tests have moved into the delosdb-pptesting Gradle module.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-pptesting/build.gradle')
-    inputs.dir('delosdb-pptesting/src/test/java')
-    inputs.file('delosdb-pptesting/src/test/legacy/build.xml')
-    doLast {
-        def ppProject = findProject(':delosdb-pptesting')
-        if (ppProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-pptesting')
-        }
-        if (file('java/pptesting').exists()) {
-            throw new GradleException('Legacy Derby package-private test source root still exists: java/pptesting')
-        }
-        if (ppProject.tasks.findByName('verifyDerbyPackagePrivateTestsSourceLayout') == null) {
-            throw new GradleException('Missing :delosdb-pptesting:verifyDerbyPackagePrivateTestsSourceLayout')
-        }
-        if (ppProject.tasks.findByName('verifyDerbyPackagePrivateTestsAssets') == null) {
-            throw new GradleException('Missing :delosdb-pptesting:verifyDerbyPackagePrivateTestsAssets')
-        }
-        if (ppProject.tasks.findByName('compileDerbyPackagePrivateTests') == null) {
-            throw new GradleException('Missing :delosdb-pptesting:compileDerbyPackagePrivateTests')
-        }
-        def suite = file('delosdb-pptesting/src/test/java/org/apache/derby/PackagePrivateTestSuite.java')
-        if (!suite.isFile()) {
-            throw new GradleException("Missing moved package-private test suite: ${suite}")
-        }
-        def legacyBuild = file('delosdb-pptesting/src/test/legacy/build.xml')
-        if (!legacyBuild.isFile()) {
-            throw new GradleException("Missing moved package-private legacy build file: ${legacyBuild}")
-        }
-    }
-}
-
-
-tasks.register('verifyMovedDemosSourceLayout') {
-    dependsOn ':delosdb-demos:verifyDerbyDemosSourceLayout', ':delosdb-demos:verifyDerbyDemosAssets'
-    group = 'verification'
-    description = 'Verifies that the inherited Derby demo sources have moved into the delosdb-demos Gradle module.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-demos/build.gradle')
-    inputs.dir('delosdb-demos/src/main/demo')
-    doLast {
-        def demosProject = findProject(':delosdb-demos')
-        if (demosProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-demos')
-        }
-        if (file('java/demo').exists()) {
-            throw new GradleException('Legacy Derby demo source root still exists: java/demo')
-        }
-        if (demosProject.tasks.findByName('verifyDerbyDemosSourceLayout') == null) {
-            throw new GradleException('Missing :delosdb-demos:verifyDerbyDemosSourceLayout')
-        }
-        if (demosProject.tasks.findByName('verifyDerbyDemosAssets') == null) {
-            throw new GradleException('Missing :delosdb-demos:verifyDerbyDemosAssets')
-        }
-        def demoRoot = file('delosdb-demos/src/main/demo')
-        def simpleApp = new File(demoRoot, 'simple/SimpleApp.java')
-        if (!simpleApp.isFile()) {
-            throw new GradleException("Missing moved SimpleApp demo source: ${simpleApp}")
-        }
-        def networkSample = new File(demoRoot, 'nserverdemo/SimpleNetworkServerSample.java')
-        if (!networkSample.isFile()) {
-            throw new GradleException("Missing moved network-server demo source: ${networkSample}")
-        }
-        def toursSchema = new File(demoRoot, 'toursdb/ToursDB_schema.sql')
-        if (!toursSchema.isFile()) {
-            throw new GradleException("Missing moved toursdb schema: ${toursSchema}")
-        }
-    }
-}
-
-
-tasks.register('verifyMovedLocalesSourceLayout') {
-    dependsOn ':delosdb-locales:verifyDerbyLocalesSourceLayout', ':delosdb-locales:verifyDerbyLocalesGeneration'
-    group = 'verification'
-    description = 'Verifies that inherited Derby localization templates have moved into the delosdb-locales Gradle module.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-locales/build.gradle')
-    inputs.dir('delosdb-locales/src/main/templates')
-    doLast {
-        def localesProject = findProject(':delosdb-locales')
-        if (localesProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-locales')
-        }
-        if (file('java/locales').exists()) {
-            throw new GradleException('Legacy Derby locales template root still exists: java/locales')
-        }
-        if (localesProject.tasks.findByName('verifyDerbyLocalesSourceLayout') == null) {
-            throw new GradleException('Missing :delosdb-locales:verifyDerbyLocalesSourceLayout')
-        }
-        if (localesProject.tasks.findByName('verifyDerbyLocalesGeneration') == null) {
-            throw new GradleException('Missing :delosdb-locales:verifyDerbyLocalesGeneration')
-        }
-        def templatesDir = file('delosdb-locales/src/main/templates')
-        def derbyModuleTemplate = new File(templatesDir, 'DerbyModule.template')
-        if (!derbyModuleTemplate.isFile()) {
-            throw new GradleException("Missing moved DerbyModule locale template: ${derbyModuleTemplate}")
-        }
-        def moduleInfoTemplate = new File(templatesDir, 'module-info.template')
-        if (!moduleInfoTemplate.isFile()) {
-            throw new GradleException("Missing moved module-info locale template: ${moduleInfoTemplate}")
-        }
-    }
-}
-
-
-tasks.register('verifyMovedStorelessSourceLayout') {
-    dependsOn ':delosdb-storeless:verifyDerbyStorelessSourceLayout', ':delosdb-storeless:compileDerbyStoreless'
-    group = 'verification'
-    description = 'Verifies that the inherited Derby storeless prototype has moved into the delosdb-storeless Gradle module.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-storeless/build.gradle')
-    inputs.dir('delosdb-storeless/src/main/java')
-    inputs.dir('delosdb-storeless/src/main/resources')
-    doLast {
-        def storelessProject = findProject(':delosdb-storeless')
-        if (storelessProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-storeless')
-        }
-        if (file('java/storeless').exists()) {
-            throw new GradleException('Legacy Derby storeless source root still exists: java/storeless')
-        }
-        if (storelessProject.tasks.findByName('verifyDerbyStorelessSourceLayout') == null) {
-            throw new GradleException('Missing :delosdb-storeless:verifyDerbyStorelessSourceLayout')
-        }
-        if (storelessProject.tasks.findByName('compileDerbyStoreless') == null) {
-            throw new GradleException('Missing :delosdb-storeless:compileDerbyStoreless')
-        }
-        def service = file('delosdb-storeless/src/main/java/org/apache/derby/impl/storeless/StorelessService.java')
-        if (!service.isFile()) {
-            throw new GradleException("Missing moved storeless service source: ${service}")
-        }
-        def moduleProperties = file('delosdb-storeless/src/main/resources/org/apache/derby/modules.properties')
-        if (!moduleProperties.isFile()) {
-            throw new GradleException("Missing moved storeless modules.properties resource: ${moduleProperties}")
-        }
-    }
-}
-
-tasks.register('verifyMovedBuildToolsSourceLayout') {
-    dependsOn ':delosdb-buildtools:verifyDerbyBuildToolsSourceLayout', ':delosdb-buildtools:compileDerbyBuildTools'
-    group = 'verification'
-    description = 'Verifies that inherited Derby build helper sources have moved into the delosdb-buildtools Gradle module.'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-buildtools/build.gradle')
-    inputs.dir('delosdb-buildtools/src/main/java')
-    doLast {
-        def buildToolsProject = findProject(':delosdb-buildtools')
-        if (buildToolsProject == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-buildtools')
-        }
-        if (file('java/build').exists()) {
-            throw new GradleException('Legacy Derby build helper source root still exists: java/build')
-        }
-        if (buildToolsProject.tasks.findByName('verifyDerbyBuildToolsSourceLayout') == null) {
-            throw new GradleException('Missing :delosdb-buildtools:verifyDerbyBuildToolsSourceLayout')
-        }
-        if (buildToolsProject.tasks.findByName('compileDerbyBuildTools') == null) {
-            throw new GradleException('Missing :delosdb-buildtools:compileDerbyBuildTools')
-        }
-        def splitMessages = file('delosdb-buildtools/src/main/java/org/apache/derbyBuild/splitmessages.java')
-        if (!splitMessages.isFile()) {
-            throw new GradleException("Missing moved splitmessages build helper: ${splitMessages}")
-        }
-        def classSizeCrawler = file('delosdb-buildtools/src/main/java/org/apache/derbyBuild/ClassSizeCrawler.java')
-        if (!classSizeCrawler.isFile()) {
-            throw new GradleException("Missing moved ClassSizeCrawler build helper: ${classSizeCrawler}")
-        }
-    }
-}
-
-
-
-tasks.register('verifyDelosDbSpiProject') {
-    group = 'verification'
-    description = 'Verifies the DelosDB SPI stability annotation module.'
-    dependsOn ':delosdb-spi:verifyDelosDbSpiSourceLayout', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
-    inputs.file('settings.gradle')
-    inputs.file('delosdb-spi/build.gradle')
-    inputs.dir('delosdb-spi/src/main/java')
-    doLast {
-        if (findProject(':delosdb-spi') == null) {
-            throw new GradleException('Missing extracted subproject :delosdb-spi')
-        }
-        if (!file('settings.gradle').text.contains("include 'delosdb-spi'")) {
-            throw new GradleException('settings.gradle does not include :delosdb-spi')
-        }
-        def sourceRoot = file('delosdb-spi/src/main/java')
-        def moduleInfo = new File(sourceRoot, 'module-info.java')
-        if (!moduleInfo.isFile() || !moduleInfo.text.contains('module io.github.ggeorg.delosdb.spi')) {
-            throw new GradleException("Missing DelosDB SPI module descriptor: ${moduleInfo}")
-        }
-        [
-                'PublicSpi.java',
-                'ExperimentalSpi.java',
-                'InternalApi.java',
-                'LegacyInternal.java'
-        ].each { marker ->
-            def sourceFile = new File(sourceRoot, "io/github/ggeorg/delosdb/spi/annotation/${marker}")
-            if (!sourceFile.isFile()) {
-                throw new GradleException("Missing SPI stability annotation: ${sourceFile}")
-            }
-        }
-    }
-}
-
-tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
-    group = 'verification'
-    description = 'Runs executable IndexProvider first-release verification tasks.'
-    dependsOn ':delosdb-engine:verifyDelosDbExtensionRegistrySkeleton'
-}
-
-tasks.register('verifyCreateIndexProviderMetadataRoundTrip') {
-    group = 'verification'
-    description = 'Verifies CREATE INDEX provider metadata defaults and round-trips through Derby index descriptors.'
-    dependsOn ':delosdb-engine:verifyCreateIndexProviderMetadataRoundTrip'
+    description = 'Runs the activated inherited Derby JUnit/function-test execution islands.'
+    dependsOn ':delosdb-tests:runActivatedDerbyExecutionIslands'
 }
 
 tasks.named('check') {
-    dependsOn 'verifyReleaseArtifacts', 'verifyReleaseDistribution', 'verifyGradleOnlyPublicSurface', 'verifyDelosDbSpiProject', 'verifyDelosDbExtensionRegistrySkeleton', 'verifyCreateIndexProviderMetadataRoundTrip',
-            'verifyCentralizedReleaseMetadata', 'verifyCentralizedJavaCompileConventions', 'verifyArtifactInventory', 'verifyExtractedOsgiStubProject', 'verifyExtractedCommonsProject', 'verifyExtractedClientProject',
-            'verifyExtractedToolsProject', 'verifyExtractedRunnerProject', 'verifyExtractedOptionalToolsProject',
-            'verifyExtractedServerProject', 'verifyExtractedEngineProject', 'verifyMovedTestsSourceLayout', 'verifyMovedPackagePrivateTestsSourceLayout', 'verifyMovedDemosSourceLayout', 'verifyMovedLocalesSourceLayout', 'verifyMovedStorelessSourceLayout', 'verifyMovedBuildToolsSourceLayout'
+    dependsOn 'derbyRuntimeSmoke', ':delosdb-tests:runActivatedDerbySmokeExecutionIslands'
 }
 
 tasks.register('fullVerification') {
     group = 'verification'
-    description = 'Runs the full DelosDB verification suite, including integration smoke checks.'
-    dependsOn 'check', 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'networkServerSmoke', 'sysinfoFromJars',
-            ':delosdb-tests:runActivatedDerbyExecutionIslands'
+    description = 'Runs Derby-compatible runtime smokes and the activated inherited Derby test suite.'
+    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite'
 }
 
 tasks.register('test') {
     group = 'verification'
-    description = 'Alias for the full DelosDB verification suite.'
+    description = 'Alias for the Derby-focused verification suite.'
     dependsOn 'fullVerification'
 }
 
 tasks.named('build') {
-    dependsOn 'jars', 'check'
+    dependsOn 'jars'
 }

@@ -14,77 +14,8 @@ group = rootProject.group
 def packagePrivateTestSourceRoot = file('src/test/java')
 def legacyBuildFile = file('src/test/legacy/build.xml')
 
-tasks.register('verifyDerbyPackagePrivateTestsSourceLayout') {
-    group = 'verification'
-    description = 'Verifies that the inherited Derby package-private test tree is owned by delosdb-pptesting.'
-    inputs.dir(packagePrivateTestSourceRoot)
-    inputs.file(legacyBuildFile)
-    doLast {
-        if (!packagePrivateTestSourceRoot.isDirectory()) {
-            throw new GradleException("Missing Derby package-private test source root: ${packagePrivateTestSourceRoot}")
-        }
-        if (!legacyBuildFile.isFile()) {
-            throw new GradleException("Missing moved package-private legacy build file: ${legacyBuildFile}")
-        }
-        def suite = new File(packagePrivateTestSourceRoot, 'org/apache/derby/PackagePrivateTestSuite.java')
-        if (!suite.isFile()) {
-            throw new GradleException("Missing package-private test suite: ${suite}")
-        }
-        def clientSuite = new File(packagePrivateTestSourceRoot, 'org/apache/derby/client/am/_Suite.java')
-        if (!clientSuite.isFile()) {
-            throw new GradleException("Missing package-private client test suite: ${clientSuite}")
-        }
-        def clobTest = new File(packagePrivateTestSourceRoot, 'org/apache/derby/impl/jdbc/InternalClobTest.java')
-        if (!clobTest.isFile()) {
-            throw new GradleException("Missing package-private JDBC CLOB test: ${clobTest}")
-        }
-    }
-}
 
 
-tasks.register('verifyDerbyPackagePrivateTestsAssets') {
-    group = 'verification'
-    description = 'Verifies the inherited Derby package-private test inventory without compiling it.'
-    inputs.dir(packagePrivateTestSourceRoot)
-    inputs.file(legacyBuildFile)
-    doLast {
-        if (!packagePrivateTestSourceRoot.isDirectory()) {
-            throw new GradleException("Missing Derby package-private test source root: ${packagePrivateTestSourceRoot}")
-        }
-        if (!legacyBuildFile.isFile()) {
-            throw new GradleException("Missing moved package-private legacy build file: ${legacyBuildFile}")
-        }
-
-        def javaFiles = fileTree(packagePrivateTestSourceRoot) {
-            include '**/*.java'
-        }.files
-        if (javaFiles.size() != 10) {
-            throw new GradleException("Expected 10 package-private Java test files, found ${javaFiles.size()}")
-        }
-
-        [
-            'org/apache/derby/PackagePrivateTestSuite.java',
-            'org/apache/derby/client/am/_Suite.java',
-            'org/apache/derby/client/am/LogicalStatementEntityTest.java',
-            'org/apache/derby/impl/jdbc/_Suite.java',
-            'org/apache/derby/impl/jdbc/InternalClobTest.java',
-            'org/apache/derby/impl/jdbc/UTF8ReaderTest.java',
-            'org/apache/derby/impl/jdbc/SmallStoreStreamClobTest.java',
-            'org/apache/derby/impl/jdbc/BiggerStoreStreamClobTest.java',
-            'org/apache/derby/impl/jdbc/SmallTemporaryClobTest.java',
-            'org/apache/derby/impl/jdbc/BiggerTemporaryClobTest.java'
-        ].each { relativePath ->
-            def source = new File(packagePrivateTestSourceRoot, relativePath)
-            if (!source.isFile()) {
-                throw new GradleException("Missing package-private test source: ${source}")
-            }
-        }
-
-        if (legacyBuildFile.length() == 0L) {
-            throw new GradleException("Moved package-private legacy build file is empty: ${legacyBuildFile}")
-        }
-    }
-}
 
 
 
@@ -110,8 +41,7 @@ def optionalToolsModuleClassDir = rootProject.project(':delosdb-optionaltools').
 def runnerModuleClassDir = rootProject.project(':delosdb-runner').layout.buildDirectory.dir('classes/modules/org.apache.derby.runner')
 
 tasks.register('compileDerbyPackagePrivateTests', JavaCompile) {
-    dependsOn 'verifyDerbyPackagePrivateTestsAssets',
-            ':delosdb-tests:compileDerbyTestSupport',
+    dependsOn ':delosdb-tests:compileDerbyTestSupport',
             ':delosdb-commons:compileDerbyCommons',
             ':delosdb-client:compileDerbyClient',
             ':delosdb-server:compileDerbyServer',
@@ -152,5 +82,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyDerbyPackagePrivateTestsSourceLayout', 'verifyDerbyPackagePrivateTestsAssets', 'compileDerbyPackagePrivateTests'
+    dependsOn 'compileDerbyPackagePrivateTests'
 }

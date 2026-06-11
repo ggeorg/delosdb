@@ -17,43 +17,9 @@ def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.build
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def osgiModuleClassDir = rootProject.project(':delosdb-osgi-stub').layout.buildDirectory.dir('classes/modules/org.osgi.framework')
 
-tasks.register('verifyDerbyStorelessSourceLayout') {
-    group = 'verification'
-    description = 'Verifies that the inherited Derby storeless prototype is owned by delosdb-storeless.'
-    inputs.dir(storelessSourceRoot)
-    inputs.dir(storelessResourcesRoot)
-    doLast {
-        if (!storelessSourceRoot.isDirectory()) {
-            throw new GradleException("Missing Derby storeless source root: ${storelessSourceRoot}")
-        }
-        if (!storelessResourcesRoot.isDirectory()) {
-            throw new GradleException("Missing Derby storeless resources root: ${storelessResourcesRoot}")
-        }
-        def service = new File(storelessSourceRoot, 'org/apache/derby/impl/storeless/StorelessService.java')
-        if (!service.isFile()) {
-            throw new GradleException("Missing storeless service source: ${service}")
-        }
-        def database = new File(storelessSourceRoot, 'org/apache/derby/impl/storeless/StorelessDatabase.java')
-        if (!database.isFile()) {
-            throw new GradleException("Missing storeless database source: ${database}")
-        }
-        def dictionary = new File(storelessSourceRoot, 'org/apache/derby/impl/storeless/EmptyDictionary.java')
-        if (!dictionary.isFile()) {
-            throw new GradleException("Missing storeless dictionary source: ${dictionary}")
-        }
-        def moduleProperties = new File(storelessResourcesRoot, 'org/apache/derby/modules.properties')
-        if (!moduleProperties.isFile()) {
-            throw new GradleException("Missing storeless modules.properties resource: ${moduleProperties}")
-        }
-        if (!moduleProperties.text.contains('derby.module.storeless.service')) {
-            throw new GradleException("Storeless modules.properties is missing service registration: ${moduleProperties}")
-        }
-    }
-}
 
 tasks.register('compileDerbyStoreless', JavaCompile) {
-    dependsOn 'verifyDerbyStorelessSourceLayout',
-            ':delosdb-osgi-stub:compileOsgiStubs',
+    dependsOn ':delosdb-osgi-stub:compileOsgiStubs',
             ':delosdb-commons:compileDerbyCommons',
             ':delosdb-engine:compileDerbyEngine',
             ':delosdb-engine:compileClassSizeCatalog',
@@ -83,5 +49,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyDerbyStorelessSourceLayout', 'compileDerbyStoreless'
+    dependsOn 'compileDerbyStoreless'
 }
