@@ -1841,21 +1841,8 @@ tasks.register('verifyDelosDbSpiProject') {
 
 tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
     group = 'verification'
-    description = 'Verifies the internal DelosDB extension registry skeleton is compiled and contained.'
+    description = 'Runs executable IndexProvider first-release verification tasks.'
     dependsOn ':delosdb-engine:verifyDelosDbExtensionRegistrySkeleton'
-    inputs.file('delosdb-engine/build.gradle')
-    inputs.dir('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension')
-    inputs.file('delosdb-engine/src/main/java/module-info.java')
-    doLast {
-        def extensionRoot = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension')
-        if (!extensionRoot.isDirectory()) {
-            throw new GradleException("Missing internal extension registry package: ${extensionRoot}")
-        }
-        def moduleInfo = file('delosdb-engine/src/main/java/module-info.java').text
-        if (moduleInfo.contains('exports io.github.ggeorg.delosdb.engine.extension')) {
-            throw new GradleException('Internal extension registry package must not be exported from org.apache.derby.engine')
-        }
-    }
 }
 
 tasks.register('verifyCreateIndexProviderMetadataRoundTrip') {

@@ -12,7 +12,7 @@ DelosDB's first release keeps Derby-compatible index behavior as the product con
 - The optimizer can observe and, behind an explicit opt-in switch, consume provider cost estimates.
 - `IndexAccess` exists as the first physical index provider access contract.
 - The built-in `btree` provider has a structural `IndexAccess` bridge, but Derby's existing B-tree path remains authoritative.
-- `btree` is the only enabled first-release index provider.
+- btree is the only enabled first-release index provider.
 - Unknown provider names such as `hash` or `nonsense` fail before execution with a clean unsupported-feature diagnostic.
 
 ## What is intentionally deferred
