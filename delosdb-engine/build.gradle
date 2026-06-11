@@ -316,8 +316,10 @@ tasks.register('verifyBTreeIndexAccessBridge') {
                 throw new GradleException('B-tree IndexAccess bridge did not preserve diagnostic row-count context: ' + estimatedRows)
             }
 
-            def key = indexKeyClass.getConstructor(byte[].class).newInstance(([1] as byte[]) as Object)
-            def row = rowReferenceClass.getConstructor(byte[].class).newInstance(([2] as byte[]) as Object)
+            def keyBytes = new byte[] { 1 as byte }
+            def rowBytes = new byte[] { 2 as byte }
+            def key = indexKeyClass.getConstructor(byte[].class).newInstance([keyBytes] as Object[])
+            def row = rowReferenceClass.getConstructor(byte[].class).newInstance([rowBytes] as Object[])
             try {
                 accessInterface.getMethod('insert', indexKeyClass, rowReferenceClass).invoke(access, key, row)
                 throw new GradleException('Structural B-tree IndexAccess insert unexpectedly performed physical mutation')
