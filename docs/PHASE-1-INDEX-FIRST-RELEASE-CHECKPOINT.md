@@ -17,7 +17,7 @@ DelosDB's first release keeps Derby-compatible index behavior as the product con
 
 ## What is intentionally deferred
 
-- `hash` is deferred; no `hash` provider ships in the first release.
+- hash is deferred; no `hash` provider ships in the first release.
 - No public non-Derby physical index provider in the first release.
 - No replacement for Derby B-tree storage, scans, locking, uniqueness, or recovery.
 - No external provider discovery or `ServiceLoader` loading in the runtime path.
