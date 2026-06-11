@@ -3055,6 +3055,47 @@ tasks.register('runDerbyLangIndexDdlSmokeFunctionTests') {
 }
 
 
+// Promote one more original Derby lang/table DDL test from compile-only to
+// execution. This stays Derby-focused: no DelosDB verifier, no source wording
+// check, and no old harness/derbyall activation.
+def langTableDdlSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/lang-table-ddl-smoke-function')
+
+tasks.register('runDerbyLangTableDdlSmokeFunctionTests') {
+    group = 'verification'
+    description = 'Runs original Derby lang table DDL execution smoke tests.'
+    dependsOn 'compileDerbyLangCoreSmokeFunctionTests'
+    doLast {
+        [
+                'org.apache.derbyTesting.functionTests.tests.lang.RenameTableTest'
+        ].each { testClassName ->
+            def workDir = new File(langTableDdlSmokeFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
+            delete workDir
+            workDir.mkdirs()
+            javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        langSmokeFunctionTestClassDir,
+                        langAdditionalSmokeFunctionTestClassDir,
+                        langCoreSmokeFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+        }
+    }
+}
+
+
 def jdbc4BroaderExecutionSmokeFunctionTestWorkDir = layout.buildDirectory.dir('test-work/jdbc4-broader-execution-smoke-function')
 
 tasks.register('runDerbyJdbc4BroaderSmokeFunctionTests') {
@@ -3170,7 +3211,8 @@ tasks.register('runActivatedDerbyLangExecutionIslands') {
     group = 'verification'
     description = 'Runs activated inherited Derby lang execution islands.'
     dependsOn 'runDerbyLangBasicSmokeFunctionTests',
-            'runDerbyLangIndexDdlSmokeFunctionTests'
+            'runDerbyLangIndexDdlSmokeFunctionTests',
+            'runDerbyLangTableDdlSmokeFunctionTests'
 }
 
 tasks.register('runActivatedDerbyJdbcApiExecutionIslands') {
@@ -3264,6 +3306,7 @@ tasks.register('runActivatedDerbySmokeExecutionIslands') {
             'runDerbyManagementSmokeFunctionTests',
             'runDerbyLangBasicSmokeFunctionTests',
             'runDerbyLangIndexDdlSmokeFunctionTests',
+            'runDerbyLangTableDdlSmokeFunctionTests',
             'runDerbyToolsBroaderSmokeFunctionTests',
             'runDerbyDerbynetUtilitySmokeFunctionTests',
             'runDerbyJdbcApiSmokeFunctionTests',
@@ -3342,6 +3385,8 @@ tasks.register('listActivatedDerbyTestIslands') {
                 [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiBroaderAdditionalSmokeFunctionTests'],
                 [area: 'jdbcapi',  bucket: 'jdbcapi',   task: 'runDerbyJdbcApiBroaderLobStreamSmokeFunctionTests'],
                 [area: 'lang',     bucket: 'lang',      task: 'runDerbyLangBasicSmokeFunctionTests'],
+                [area: 'lang',     bucket: 'lang',      task: 'runDerbyLangIndexDdlSmokeFunctionTests'],
+                [area: 'lang',     bucket: 'lang',      task: 'runDerbyLangTableDdlSmokeFunctionTests'],
                 [area: 'jdbc4',    bucket: 'jdbc4',     task: 'runDerbyJdbc4BroaderSmokeFunctionTests'],
                 [area: 'derbynet', bucket: 'derbynet',  task: 'runDerbyDerbynetUtilitySmokeFunctionTests'],
                 [area: 'tools',    bucket: 'tools',     task: 'runDerbyToolsBroaderSmokeFunctionTests']
