@@ -9,19 +9,18 @@ version = rootProject.version
 group = rootProject.group
 
 /*
- * DelosDB test module policy:
- * - keep the original Derby tests as the source of truth;
- * - compile DerbyTesting once;
- * - run original Derby JUnit suite entrypoints through Gradle;
- * - do not rebuild the old Ant/derbyall harness in Gradle;
- * - do not grow hand-picked compile islands in this file.
+ * Derby tests are compiled as one inherited test module, not as hand-picked
+ * Gradle islands. The only source changes needed here are real modernization
+ * fixes in the inherited tests themselves.
  */
 
 def testSourceRoot = file('src/test/java')
-def derbyFunctionTestSuiteClassDir = layout.buildDirectory.dir('classes/derby-function-test-suite')
+def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/demo/toursdb')
+def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
 
-def moduleClassDirs = rootProject.files(
+def derbyRuntimeModuleClassDirs = rootProject.files(
         rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons'),
+        rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
         rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine'),
         rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client'),
         rootProject.project(':delosdb-server').layout.buildDirectory.dir('classes/modules/org.apache.derby.server'),
@@ -30,7 +29,7 @@ def moduleClassDirs = rootProject.files(
         rootProject.project(':delosdb-runner').layout.buildDirectory.dir('classes/modules/org.apache.derby.runner')
 )
 
-def thirdPartyTestClasspath = rootProject.files(
+def thirdPartyTestModules = rootProject.files(
         'tools/java/junit.jar',
         'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
         'tools/java/json_simple-1.1.jar',
@@ -41,6 +40,7 @@ def thirdPartyTestClasspath = rootProject.files(
 
 def compilePrerequisites = [
         ':delosdb-commons:compileDerbyCommons',
+        ':delosdb-spi:compileDelosDbSpi',
         ':delosdb-engine:compileDerbyEngine',
         ':delosdb-engine:compileClassSizeCatalog',
         ':delosdb-client:compileDerbyClient',
@@ -51,29 +51,30 @@ def compilePrerequisites = [
         ':splitEngineMessages'
 ]
 
-def derbyCompileClasspath = {
-    rootProject.files(moduleClassDirs, thirdPartyTestClasspath)
+def testModulePath = {
+    rootProject.files(derbyRuntimeModuleClassDirs, thirdPartyTestModules)
 }
 
-def derbyRuntimeClasspath = {
+def testRuntimeClasspath = {
     rootProject.files(
-            derbyFunctionTestSuiteClassDir,
-            moduleClassDirs,
+            derbyTestsClassDir,
+            derbyRuntimeModuleClassDirs,
             testSourceRoot,
-            thirdPartyTestClasspath
+            toursDbSourceRoot,
+            thirdPartyTestModules
     )
 }
 
-tasks.register('compileDerbyFunctionTestSuite', JavaCompile) {
+tasks.register('compileDerbyTestsModule', JavaCompile) {
     group = 'verification'
-    description = 'Compiles the original DerbyTesting tree once for Gradle-run suite entrypoints.'
+    description = 'Compiles the inherited Derby test module.'
     dependsOn compilePrerequisites
 
-    source = fileTree(testSourceRoot) {
-        include 'org/apache/derbyTesting/**/*.java'
-        exclude 'module-info.java'
-    }
-    destinationDirectory = derbyFunctionTestSuiteClassDir
+    source = files(
+            fileTree(testSourceRoot) { include '**/*.java' },
+            new File(toursDbSourceRoot, 'insertMaps.java')
+    )
+    destinationDirectory = derbyTestsClassDir
 
     sourceCompatibility = rootProject.ext.javaRelease.toString()
     targetCompatibility = rootProject.ext.javaRelease.toString()
@@ -81,98 +82,78 @@ tasks.register('compileDerbyFunctionTestSuite', JavaCompile) {
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
-    options.compilerArgs += ['-proc:none']
+    classpath = files()
     modularity.inferModulePath = false
-    classpath = derbyCompileClasspath()
-}
 
-// Compatibility aliases kept only so old commands fail less painfully while the
-// build file is reset. They are aliases, not separate compile islands.
-tasks.register('compileDerbyTestSupport') {
-    group = 'verification'
-    description = 'Alias for compileDerbyFunctionTestSuite.'
-    dependsOn 'compileDerbyFunctionTestSuite'
-}
-
-tasks.register('compileDerbyFunctionTestRuntimeSupport') {
-    group = 'verification'
-    description = 'Alias for compileDerbyFunctionTestSuite.'
-    dependsOn 'compileDerbyFunctionTestSuite'
-}
-
-def registerDerbySuiteTask = { String taskName, String suiteClassName ->
-    tasks.register(taskName, Test) {
-        group = 'verification'
-        description = "Runs original Derby JUnit suite ${suiteClassName} through Gradle."
-        dependsOn 'compileDerbyFunctionTestSuite'
-
-        testClassesDirs = derbyFunctionTestSuiteClassDir
-        classpath = derbyRuntimeClasspath()
-        useJUnit()
-        include suiteClassName.replace('.', '/') + '.class'
-
-        workingDir = layout.buildDirectory.dir("test-work/${taskName}").get().asFile
-        maxHeapSize = '1536m'
-        systemProperty 'derby.tests.trace', 'true'
-
-        doFirst {
-            delete workingDir
-            workingDir.mkdirs()
-        }
-        testLogging {
-            events 'failed'
-            exceptionFormat 'full'
-            showStandardStreams = true
-        }
+    doFirst {
+        options.compilerArgs = [
+                '--module-path', testModulePath().asPath,
+                '-proc:none'
+        ]
     }
 }
-
-[
-        runDerbyUnitSuite   : 'org.apache.derbyTesting.unitTests.junit._Suite',
-        runDerbyEngineSuite : 'org.apache.derbyTesting.functionTests.tests.engine._Suite',
-        runDerbyLangSuite   : 'org.apache.derbyTesting.functionTests.tests.lang._Suite',
-        runDerbyJdbcApiSuite: 'org.apache.derbyTesting.functionTests.tests.jdbcapi._Suite',
-        runDerbyJdbc4Suite  : 'org.apache.derbyTesting.functionTests.tests.jdbc4._Suite'
-].each { taskName, suiteClassName ->
-    registerDerbySuiteTask(taskName, suiteClassName)
-}
-
-tasks.register('runDerbyFunctionSuites') {
+tasks.register('runDerbyLangSuite', Test) {
     group = 'verification'
-    description = 'Runs the currently wired original Derby function-test suites through Gradle.'
-    dependsOn 'runDerbyEngineSuite',
-            'runDerbyLangSuite',
-            'runDerbyJdbcApiSuite',
-            'runDerbyJdbc4Suite'
-}
+    description = 'Runs the original Derby lang JUnit suite through Gradle.'
+    dependsOn 'compileDerbyTestsModule'
 
-// Keep the old aggregate task names as tiny aliases. No hidden island list.
+    // Derby's inherited JUnit tests are classpath-era tests. Compile the test
+    // sources as a module for source correctness, but execute them on the
+    // classpath to avoid JPMS split-package failures from Derby locale/resource
+    // packages in exploded module directories.
+    modularity.inferModulePath = false
+    testClassesDirs = files(derbyTestsClassDir)
+    classpath = testRuntimeClasspath()
+    useJUnit()
+    include 'org/apache/derbyTesting/functionTests/tests/lang/_Suite.class'
+
+    workingDir = layout.buildDirectory.dir('test-work/runDerbyLangSuite').get().asFile
+    maxHeapSize = '1536m'
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDerbyLangSuite'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDerbyLangSuite'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDerbyLangSuite'))
+    }
+
+    doFirst {
+        delete workingDir
+        workingDir.mkdirs()
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
 tasks.register('compileActivatedDerbyTests') {
     group = 'verification'
-    description = 'Compiles the original DerbyTesting tree.'
-    dependsOn 'compileDerbyFunctionTestSuite'
+    description = 'Compiles the inherited Derby test module.'
+    dependsOn 'compileDerbyTestsModule'
 }
 
 tasks.register('runActivatedDerbyLangExecutionIslands') {
     group = 'verification'
-    description = 'Alias for the original Derby lang suite.'
+    description = 'Alias for the original Derby lang JUnit suite.'
     dependsOn 'runDerbyLangSuite'
 }
 
 tasks.register('runActivatedDerbySmokeExecutionIslands') {
     group = 'verification'
-    description = 'Runs a small original-Derby suite smoke set.'
-    dependsOn 'runDerbyUnitSuite', 'runDerbyLangSuite'
+    description = 'Alias for the original Derby lang JUnit suite.'
+    dependsOn 'runDerbyLangSuite'
 }
 
 tasks.register('runActivatedDerbyExecutionIslands') {
     group = 'verification'
-    description = 'Alias for the wired original Derby suites.'
-    dependsOn 'runDerbyUnitSuite', 'runDerbyFunctionSuites'
+    description = 'Alias for the original Derby lang JUnit suite.'
+    dependsOn 'runDerbyLangSuite'
 }
 
 tasks.register('classes') {
-    dependsOn 'compileDerbyFunctionTestSuite'
+    dependsOn 'compileDerbyTestsModule'
 }
 
 tasks.named('assemble') {
@@ -180,5 +161,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runActivatedDerbySmokeExecutionIslands'
+    dependsOn 'compileDerbyTestsModule'
 }

@@ -28,8 +28,7 @@ import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.io.FileInputStream;
 import java.io.BufferedInputStream;
-import java.util.Vector;
-import java.util.Enumeration;
+import java.util.List;
 import org.apache.derby.impl.tools.ij.*;
 
 import org.apache.derby.iapi.tools.i18n.LocalizedResource;
@@ -397,7 +396,7 @@ public class MultiTest
 	/**
 	** Sequentially run scripts
 	*/
-	private static void seqRunCases(Vector cases, String descr, String inputDir, String outputDir) 
+	private static void seqRunCases(List<mtTestCase> cases, String descr, String inputDir, String outputDir) 
 		throws FileNotFoundException, IOException, ijFatalException
 	{
 		LocalizedOutput	out;
@@ -410,11 +409,9 @@ public class MultiTest
 			return;
 		}
 
-		Enumeration e = cases.elements();
-
-		while (e.hasMoreElements())
+		for (mtTestCase testCaseFromList : cases)
 		{
-			testCase = (mtTestCase)e.nextElement();
+			testCase = testCaseFromList;
 			String testName = testCase.getFile();
 			System.out.println("...running "+descr+" via "+testName);
 			String logFileName = 

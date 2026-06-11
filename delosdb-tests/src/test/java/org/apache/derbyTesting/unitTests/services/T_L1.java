@@ -24,7 +24,7 @@ package org.apache.derbyTesting.unitTests.services;
 import org.apache.derby.iapi.services.locks.*;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
-import java.util.Hashtable;
+import java.util.Map;
 
 /**
 	Unit test Lockable
@@ -82,7 +82,7 @@ class T_L1 implements Lockable {
 		latch = null;
 	}
 
-	public boolean lockAttributes(int flag, Hashtable t)
+	public boolean lockAttributes(int flag, Map<String,Object> attributes)
 	{
 		return false;
 	}

@@ -22,7 +22,7 @@
 package org.apache.derbyTesting.unitTests.services;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
-import java.util.Hashtable;
+import java.util.Map;
 import org.apache.derby.iapi.services.locks.*;
 
 /**
@@ -94,7 +94,7 @@ class T_L2 implements Lockable {
             SanityManager.THROWASSERT("unlocked by a compatability space that does not exist");
 	}
 
-	public boolean lockAttributes(int flag, Hashtable t)
+	public boolean lockAttributes(int flag, Map<String,Object> attributes)
 	{
 		return false;
 	}
