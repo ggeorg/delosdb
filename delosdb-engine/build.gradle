@@ -327,7 +327,7 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         if (!derbyBtreeAccess.contains('implements IndexAccess')) {
             throw new GradleException('DerbyBTreeIndexAccess must implement the provider-neutral IndexAccess SPI')
         }
-        if (!derbyBtreeAccess.contains('Derby's existing B-tree path remains authoritative')) {
+        if (!derbyBtreeAccess.contains("Derby's existing B-tree path remains authoritative")) {
             throw new GradleException('DerbyBTreeIndexAccess must document first-release Derby-compatible behavior')
         }
         if (derbyBtreeAccess.contains('TransactionController') || derbyBtreeAccess.contains('ScanController') || derbyBtreeAccess.contains('Conglomerate') || derbyBtreeAccess.contains('RowLocation') || derbyBtreeAccess.contains('DataValueDescriptor')) {
