@@ -58,4 +58,4 @@ broad optimizer rewrites
 
 ## Next work
 
-The next work has moved from metadata/cost registration toward physical access contracts. `IndexAccess` is the bridge shape needed before adding a real second provider such as `hash`. StorageProvider work should wait until the built-in `btree` provider can be represented through `IndexAccess` without exposing Derby internals.
+The next work moved from metadata/cost registration toward physical access contracts. `IndexAccess` now exists and the built-in `btree` provider is bridged structurally through it. A real second provider such as `hash` is deferred beyond the first release; first release priority is 100% Derby-compatible behavior, modern JDK 21, and LEGO-style module boundaries.

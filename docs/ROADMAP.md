@@ -62,7 +62,7 @@ Primary commands:
 
 ## Phase 1 — API/SPI boundaries and stability markers
 
-Status: active. IndexProvider v0 is checkpointed for the built-in `btree` seam; the first physical `IndexAccess` SPI contracts are now being added.
+Status: active. IndexProvider v0 is checkpointed for the built-in `btree` seam; the physical `IndexAccess` SPI exists and `btree` is bridged structurally while Derby remains authoritative for first-release behavior.
 
 Goals:
 
@@ -88,11 +88,14 @@ Definition of done:
 - Existing runtime jars and JDBC behavior remain compatible.
 - IndexProvider v0 records `btree` provider identity, persists metadata, exposes descriptor diagnostics, and supports opt-in provider cost visibility.
 - Controlled internal IndexProvider registration exists before provider discovery or external jar loading.
-- `IndexAccess` begins the physical index provider lifecycle contract without wiring new storage or public provider names yet.
+- `IndexAccess` begins the physical index provider lifecycle contract and the built-in `btree` provider has a structural bridge without wiring new storage or public provider names yet.
+- First release defers `hash` and other non-Derby physical providers in favor of Derby compatibility, Java 21 modernization, and LEGO-style modules.
 
 Checkpoint:
 
 - `docs/PHASE-1-INDEX-PROVIDER-V0-CHECKPOINT.md`
+- `docs/PHASE-1-INDEX-ACCESS-SPI.md`
+- `docs/PHASE-1-INDEX-ACCESS-BTREE-BRIDGE.md`
 
 ## Phase 2 — Extension registry and provider loading
 

@@ -1,6 +1,6 @@
 # Phase 1 IndexAccess SPI Checkpoint
 
-Status: initial physical index access contracts added to `delosdb-spi`.
+Status: initial physical index access contracts added to `delosdb-spi`; built-in `btree` bridge added structurally for first-release compatibility.
 
 ## Why this exists
 
@@ -81,8 +81,4 @@ mutation hooks from Derby DML into external providers
 
 ## Next choices
 
-The next index-specific step is to bridge the built-in `btree` provider to the
-new `IndexAccess` shape. If indexing should pause, the clean alternative is to
-move sideways to another SPI module such as `FunctionProvider` or a small
-storage-location abstraction inspired by H2 `FilePath`, without introducing a
-new physical storage engine yet.
+The built-in `btree` provider is now represented through the new `IndexAccess` shape. Hash indexing is deferred for the first release so DelosDB can keep Derby-compatible behavior while exposing modern Java 21 modular seams. The clean next move is to pause index depth and move sideways to another SPI module such as `FunctionProvider` or a small storage-location abstraction inspired by H2 `FilePath`, without introducing a new physical storage engine yet.

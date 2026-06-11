@@ -280,6 +280,7 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
                 'BuiltInExtensions.java',
                 'package-info.java',
                 'index/BuiltInBTreeIndexProvider.java',
+                'index/DerbyBTreeIndexAccess.java',
                 'index/BuiltInIndexProviders.java',
                 'index/IndexProviderResolver.java',
                 'index/IndexMetadataBridge.java',
@@ -315,6 +316,22 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         }
         if (!btreeAdapter.contains('built-in btree baseline estimate')) {
             throw new GradleException('Built-in B-tree baseline cost estimate must be explainable in diagnostics')
+        }
+        if (!btreeAdapter.contains('openAccess(IndexOpenRequest request)')) {
+            throw new GradleException('Built-in B-tree adapter must expose the IndexAccess open hook')
+        }
+        if (!btreeAdapter.contains('return Optional.of(new DerbyBTreeIndexAccess(request))')) {
+            throw new GradleException('Built-in B-tree adapter must bridge to the internal DerbyBTreeIndexAccess adapter')
+        }
+        def derbyBtreeAccess = new File(extensionRoot, 'index/DerbyBTreeIndexAccess.java').text
+        if (!derbyBtreeAccess.contains('implements IndexAccess')) {
+            throw new GradleException('DerbyBTreeIndexAccess must implement the provider-neutral IndexAccess SPI')
+        }
+        if (!derbyBtreeAccess.contains('Derby's existing B-tree path remains authoritative')) {
+            throw new GradleException('DerbyBTreeIndexAccess must document first-release Derby-compatible behavior')
+        }
+        if (derbyBtreeAccess.contains('TransactionController') || derbyBtreeAccess.contains('ScanController') || derbyBtreeAccess.contains('Conglomerate') || derbyBtreeAccess.contains('RowLocation') || derbyBtreeAccess.contains('DataValueDescriptor')) {
+            throw new GradleException('DerbyBTreeIndexAccess must not expose Derby physical internals through the IndexAccess bridge')
         }
         def indexProviderResolver = new File(extensionRoot, 'index/IndexProviderResolver.java').text
         if (!indexProviderResolver.contains('public static IndexProviderResolver builtIns(ExtensionRegistry registry)')) {
