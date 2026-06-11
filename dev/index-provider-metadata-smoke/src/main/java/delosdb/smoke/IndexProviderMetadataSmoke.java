@@ -66,6 +66,12 @@ public final class IndexProviderMetadataSmoke
             statement.executeUpdate("create table idx_provider_smoke(id int, name varchar(32), code int)");
             statement.executeUpdate("create index idx_provider_default_idx on idx_provider_smoke(name)");
             statement.executeUpdate("create index idx_provider_explicit_idx on idx_provider_smoke(code) using btree");
+            assertUnsupportedProvider(statement,
+                    "create index idx_provider_hash_idx on idx_provider_smoke(id) using hash",
+                    "hash");
+            assertUnsupportedProvider(statement,
+                    "create index idx_provider_nope_idx on idx_provider_smoke(id) using nonsense",
+                    "nonsense");
             statement.executeUpdate("insert into idx_provider_smoke values (1, 'alpha', 10)");
             statement.executeUpdate("insert into idx_provider_smoke values (2, 'beta', 20)");
             statement.executeUpdate("insert into idx_provider_smoke values (3, 'gamma', 30)");
@@ -172,6 +178,37 @@ public final class IndexProviderMetadataSmoke
                             + " is not an IndexDescriptor");
         }
         return indexDescriptor.indexProviderName();
+    }
+
+    private static void assertUnsupportedProvider(
+            Statement statement,
+            String sql,
+            String providerName)
+            throws SQLException
+    {
+        try
+        {
+            statement.executeUpdate(sql);
+            throw new IllegalStateException(
+                    "CREATE INDEX USING " + providerName + " unexpectedly succeeded");
+        }
+        catch (SQLException expected)
+        {
+            String sqlState = expected.getSQLState();
+            if (sqlState == null || !sqlState.startsWith("0A000"))
+            {
+                throw expected;
+            }
+
+            String message = expected.getMessage();
+            if (message == null || !message.toLowerCase(Locale.ROOT).contains(providerName))
+            {
+                throw new IllegalStateException(
+                        "Unsupported provider diagnostic did not name " + providerName
+                                + ": " + message,
+                        expected);
+            }
+        }
     }
 
     private static void shutdown(String databasePath) throws SQLException

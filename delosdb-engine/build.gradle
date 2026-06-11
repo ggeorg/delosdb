@@ -261,8 +261,95 @@ tasks.register('verifyIndexProviderControlledRegistration') {
     }
 }
 
+
+tasks.register('verifyBTreeIndexAccessBridge') {
+    group = 'verification'
+    description = 'Verifies the built-in btree provider opens the structural IndexAccess bridge without exposing Derby internals.'
+    dependsOn 'compileDerbyEngine', ':delosdb-spi:compileDelosDbSpi'
+    inputs.dir('src/main/java/io/github/ggeorg/delosdb/engine/extension/index')
+    inputs.dir(rootProject.file('delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index'))
+    doLast {
+        def urls = [
+                moduleClassDir.get().asFile,
+                commonsModuleClassDir.get().asFile,
+                osgiModuleClassDir.get().asFile,
+                spiModuleClassDir.get().asFile
+        ].collect { it.toURI().toURL() } as URL[]
+        def loader = new URLClassLoader(urls, (ClassLoader) null)
+        try {
+            def resolverClass = Class.forName('io.github.ggeorg.delosdb.engine.extension.index.IndexProviderResolver', true, loader)
+            def providerInterface = Class.forName('io.github.ggeorg.delosdb.spi.index.IndexProvider', true, loader)
+            def metadataClass = Class.forName('io.github.ggeorg.delosdb.spi.index.IndexMetadata', true, loader)
+            def openRequestClass = Class.forName('io.github.ggeorg.delosdb.spi.index.IndexOpenRequest', true, loader)
+            def openModeClass = Class.forName('io.github.ggeorg.delosdb.spi.index.IndexOpenMode', true, loader)
+            def accessInterface = Class.forName('io.github.ggeorg.delosdb.spi.index.IndexAccess', true, loader)
+            def accessExceptionClass = Class.forName('io.github.ggeorg.delosdb.spi.index.IndexAccessException', true, loader)
+            def indexKeyClass = Class.forName('io.github.ggeorg.delosdb.spi.index.IndexKey', true, loader)
+            def rowReferenceClass = Class.forName('io.github.ggeorg.delosdb.spi.index.RowReference', true, loader)
+
+            def resolver = resolverClass.getMethod('builtIns').invoke(null)
+            def provider = resolverClass.getMethod('requireEnabled', String).invoke(resolver, 'btree')
+            if (!providerInterface.isInstance(provider)) {
+                throw new GradleException('Resolved btree provider is not an IndexProvider')
+            }
+
+            def metadata = metadataClass.getConstructor(String, String, List, Map).newInstance(
+                    'btree', 'verify_btree_access_idx', List.of('baseColumn:1'), Map.of())
+            def request = openRequestClass.getConstructor(metadataClass, openModeClass, Boolean.TYPE, Map).newInstance(
+                    metadata,
+                    Enum.valueOf(openModeClass, 'OPEN_EXISTING'),
+                    true,
+                    Map.of('estimatedRowCount', '42'))
+            def optionalAccess = providerInterface.getMethod('openAccess', openRequestClass).invoke(provider, request)
+            if (!optionalAccess.isPresent()) {
+                throw new GradleException('Built-in btree provider did not open an IndexAccess bridge')
+            }
+            def access = optionalAccess.get()
+            if (!accessInterface.isInstance(access)) {
+                throw new GradleException('B-tree access bridge does not implement IndexAccess')
+            }
+            if (!access.getClass().name.endsWith('DerbyBTreeIndexAccess')) {
+                throw new GradleException('B-tree provider opened unexpected IndexAccess adapter: ' + access.getClass().name)
+            }
+            def estimatedRows = accessInterface.getMethod('estimatedRowCount').invoke(access)
+            if (estimatedRows != 42L) {
+                throw new GradleException('B-tree IndexAccess bridge did not preserve diagnostic row-count context: ' + estimatedRows)
+            }
+
+            def key = indexKeyClass.getConstructor(byte[].class).newInstance(([1] as byte[]) as Object)
+            def row = rowReferenceClass.getConstructor(byte[].class).newInstance(([2] as byte[]) as Object)
+            try {
+                accessInterface.getMethod('insert', indexKeyClass, rowReferenceClass).invoke(access, key, row)
+                throw new GradleException('Structural B-tree IndexAccess insert unexpectedly performed physical mutation')
+            } catch (java.lang.reflect.InvocationTargetException expected) {
+                def cause = expected.cause
+                if (!accessExceptionClass.isInstance(cause)) {
+                    throw expected
+                }
+                if (!cause.message.contains("Derby's existing B-tree path remains authoritative")) {
+                    throw new GradleException('Structural B-tree IndexAccess must explain Derby-compatible fallback behavior')
+                }
+            }
+
+            def wrongMetadata = metadataClass.getConstructor(String, String, List, Map).newInstance(
+                    'hash', 'verify_hash_access_idx', List.of('baseColumn:1'), Map.of())
+            def wrongRequest = openRequestClass.getConstructor(metadataClass, openModeClass, Boolean.TYPE, Map).newInstance(
+                    wrongMetadata,
+                    Enum.valueOf(openModeClass, 'OPEN_EXISTING'),
+                    true,
+                    Map.of())
+            def wrongAccess = providerInterface.getMethod('openAccess', openRequestClass).invoke(provider, wrongRequest)
+            if (wrongAccess.isPresent()) {
+                throw new GradleException('Built-in btree provider must not open IndexAccess for non-btree metadata')
+            }
+        } finally {
+            loader.close()
+        }
+    }
+}
+
 tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
-    dependsOn 'verifyCreateIndexProviderMetadataRoundTrip', 'verifyIndexProviderControlledRegistration'
+    dependsOn 'verifyCreateIndexProviderMetadataRoundTrip', 'verifyIndexProviderControlledRegistration', 'verifyBTreeIndexAccessBridge'
     group = 'verification'
     description = 'Verifies the internal DelosDB extension registry skeleton remains contained inside the engine module.'
     dependsOn 'compileDerbyEngine'
@@ -433,12 +520,25 @@ tasks.register('verifyDelosDbExtensionRegistrySkeleton') {
         if (!compatibilityDoc.contains('CREATE INDEX idx ON t(c) USING btree')) {
             throw new GradleException('Derby compatibility policy must document the additive USING btree rule')
         }
+        def firstReleaseCheckpoint = rootProject.file('docs/PHASE-1-INDEX-FIRST-RELEASE-CHECKPOINT.md').text
+        if (!firstReleaseCheckpoint.contains('hash is deferred')) {
+            throw new GradleException('First-release IndexProvider checkpoint must explicitly defer hash')
+        }
+        if (!firstReleaseCheckpoint.contains('btree is the only enabled first-release index provider')) {
+            throw new GradleException('First-release IndexProvider checkpoint must freeze btree as the only enabled provider')
+        }
         def createIndexNode = file('src/main/java/org/apache/derby/impl/sql/compile/CreateIndexNode.java').text
         if (!createIndexNode.contains('normalizeIndexProviderName')) {
             throw new GradleException('CreateIndexNode must normalize the optional DelosDB index provider name')
         }
         if (!createIndexNode.contains('verifyIndexProviderName')) {
             throw new GradleException('CreateIndexNode must verify unsupported index providers before execution')
+        }
+        if (!createIndexNode.contains('SQLState.NOT_IMPLEMENTED')) {
+            throw new GradleException('Unsupported CREATE INDEX providers must fail cleanly before execution')
+        }
+        if (!createIndexNode.contains('CREATE INDEX USING ')) {
+            throw new GradleException('Unsupported CREATE INDEX provider diagnostics must name the provider clause')
         }
         if (!createIndexNode.contains('DEFAULT_INDEX_PROVIDER_NAME = "btree"')) {
             throw new GradleException('CreateIndexNode must keep the Derby-compatible default provider name local to parser plumbing')

@@ -150,6 +150,18 @@ old descriptor metadata without a provider key -> btree
 The parser and constant-action path must not require provider adapter/resolver
 classes to execute normal Derby-compatible `CREATE INDEX` statements.
 
+
+For the first release, provider validation is intentionally strict:
+
+```text
+CREATE INDEX ...                  -> btree
+CREATE INDEX ... USING btree      -> btree
+CREATE INDEX ... USING hash       -> unsupported in first release
+CREATE INDEX ... USING nonsense   -> unsupported provider diagnostic
+```
+
+This keeps public SQL additive and Derby-compatible while making the provider boundary explicit.
+
 ## Provider metadata diagnostics
 
 The DelosDB provider identity is exposed through the existing index descriptor
