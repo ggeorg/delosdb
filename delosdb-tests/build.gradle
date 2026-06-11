@@ -3219,6 +3219,102 @@ tasks.register('runDerbyDerbynetUtilitySmokeFunctionTests') {
     }
 }
 
+
+// Bulk original-Derby lang runner. This is intentionally not another curated
+// verifier: it discovers already-compiled inherited Derby JUnit classes and
+// runs them through JUnit's text runner. It is not wired into check/fullVerification
+// until the failure set has been classified.
+def derbyLangBulkFunctionTestWorkDir = layout.buildDirectory.dir('test-work/lang-bulk-function')
+
+def discoverDerbyJUnitClasses = { List classDirProviders, String packagePrefix ->
+    classDirProviders.collectMany { classDirProvider ->
+        def root = classDirProvider.get().asFile
+        if (!root.exists()) {
+            return []
+        }
+        fileTree(root) {
+            include '**/*Test.class'
+            include '**/*Suite.class'
+            exclude '**/*$*.class'
+        }.files.collect { classFile ->
+            root.toPath().relativize(classFile.toPath()).toString()
+                    .replace(File.separatorChar, '.' as char)
+                    .replaceAll(/\.class$/, '')
+        }
+    }.findAll { className ->
+        className.startsWith(packagePrefix)
+    }.unique().sort()
+}
+
+tasks.register('runDerbyLangBulkFunctionTests') {
+    group = 'verification'
+    description = 'Runs all already-compiled original Derby lang JUnit Test/Suite classes and reports the failing set.'
+    dependsOn 'compileDerbyLangBroadRemainderSmokeFunctionTests'
+    doLast {
+        def langClassDirs = [
+                langSmokeFunctionTestClassDir,
+                langAdditionalSmokeFunctionTestClassDir,
+                langCoreSmokeFunctionTestClassDir,
+                langDdlDmlSmokeFunctionTestClassDir,
+                langBroadRemainderSmokeFunctionTestClassDir
+        ]
+        def testClassNames = discoverDerbyJUnitClasses(
+                langClassDirs,
+                'org.apache.derbyTesting.functionTests.tests.lang.'
+        )
+        if (testClassNames.isEmpty()) {
+            throw new GradleException('No compiled Derby lang JUnit Test/Suite classes were discovered.')
+        }
+
+        println "Running ${testClassNames.size()} original Derby lang JUnit Test/Suite classes"
+
+        def failures = []
+        testClassNames.each { testClassName ->
+            def workDir = new File(derbyLangBulkFunctionTestWorkDir.get().asFile, testClassName.substring(testClassName.lastIndexOf('.') + 1))
+            delete workDir
+            workDir.mkdirs()
+            def result = javaexec {
+                mainClass = 'junit.textui.TestRunner'
+                args testClassName
+                workingDir = workDir
+                ignoreExitValue = true
+                classpath = rootProject.files(
+                        commonsModuleClassDir,
+                        engineModuleClassDir,
+                        clientModuleClassDir,
+                        serverModuleClassDir,
+                        toolsModuleClassDir,
+                        optionalToolsModuleClassDir,
+                        runnerModuleClassDir,
+                        testSupportClassDir,
+                        langSmokeFunctionTestClassDir,
+                        langAdditionalSmokeFunctionTestClassDir,
+                        langCoreSmokeFunctionTestClassDir,
+                        langDdlDmlSmokeFunctionTestClassDir,
+                        langBroadRemainderSmokeFunctionTestClassDir,
+                        jdbcApiSmokeFunctionTestClassDir,
+                        jdbcApiBroaderSmokeFunctionTestClassDir,
+                        jdbc4SmokeFunctionTestClassDir,
+                        jdbc4BroaderSmokeFunctionTestClassDir,
+                        memoryDbFunctionTestClassDir,
+                        junitClasspath,
+                        externalTestClasspath
+                )
+            }
+            if (result.exitValue != 0) {
+                failures.add(testClassName)
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            println ''
+            println 'Failing Derby lang classes:'
+            failures.each { println "  - ${it}" }
+            throw new GradleException("${failures.size()} Derby lang JUnit classes failed out of ${testClassNames.size()}.")
+        }
+    }
+}
+
 // Bucketed lifecycle aliases for the activated inherited Derby execution islands.
 // These aliases make failures cheaper to isolate without changing which tests are active.
 tasks.register('runActivatedDerbyCoreExecutionIslands') {
