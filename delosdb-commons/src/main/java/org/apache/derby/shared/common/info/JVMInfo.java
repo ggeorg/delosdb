@@ -121,7 +121,8 @@ public abstract class JVMInfo
 
 		JDK_ID = id;
 
-        _isModuleAware = (getSystemModulePath() != null);
+        String modulePath = getSystemModulePath();
+        _isModuleAware = (modulePath != null && !modulePath.isEmpty());
 	}
 
 	/**

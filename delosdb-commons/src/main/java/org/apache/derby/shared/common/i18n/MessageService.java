@@ -268,12 +268,8 @@ public final class MessageService {
     {
         if (JVMInfo.isModuleAware())
         {
-            ResourceBundle bundle = lookupBundleInModule(resource, locale);
-
-            if (bundle != null)
-            {
-                return bundle;
-            }
+            ResourceBundle moduleBundle = lookupBundleInModule(resource, locale);
+            if (moduleBundle != null) { return moduleBundle; }
         }
 
         return ResourceBundle.getBundle(resource, locale);
