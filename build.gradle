@@ -179,7 +179,7 @@ tasks.register('generateClassSizeCatalog') {
     // ClassSizeCrawler scans the compiled engine output tree. Gradle 8.14
     // requires every task which writes into that tree to be ordered before
     // this scan, otherwise it reports an implicit dependency problem.
-    dependsOn 'compileDerbyBuildTools', 'splitEngineMessages'
+    dependsOn 'compileDerbyBuildTools', 'splitEngineMessages', 'generateOdbcMetadata'
     def outputFile = generatedSourceDir(moduleNames.engine).map {
         it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
     }
