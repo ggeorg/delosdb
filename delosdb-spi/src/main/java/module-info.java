@@ -4,4 +4,5 @@
 module io.github.ggeorg.delosdb.spi {
     exports io.github.ggeorg.delosdb.spi.annotation;
     exports io.github.ggeorg.delosdb.spi.index;
+    exports io.github.ggeorg.delosdb.spi.storage;
 }

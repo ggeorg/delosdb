@@ -1,10 +1,14 @@
 package io.github.ggeorg.delosdb.engine.extension;
 
 import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
+import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.index.IndexCapabilities;
 import io.github.ggeorg.delosdb.spi.index.IndexMetadata;
 import io.github.ggeorg.delosdb.spi.index.IndexProvider;
+import io.github.ggeorg.delosdb.spi.storage.StorageCapabilities;
+import io.github.ggeorg.delosdb.spi.storage.StorageProvider;
+import io.github.ggeorg.delosdb.spi.storage.TableStorageMetadata;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +26,8 @@ public final class BuiltInExtensions {
     public static final String BUILTIN_VERSION = "builtin";
     public static final String BTREE_INDEX_PROVIDER = "btree";
     public static final String DEFAULT_INDEX_PROVIDER = BTREE_INDEX_PROVIDER;
+    public static final String HEAP_STORAGE_PROVIDER = "heap";
+    public static final String DEFAULT_STORAGE_PROVIDER = HEAP_STORAGE_PROVIDER;
 
     private BuiltInExtensions() {
     }
@@ -29,6 +35,7 @@ public final class BuiltInExtensions {
     public static void registerBuiltIns(ExtensionRegistry registry) {
         Objects.requireNonNull(registry, "registry");
         BuiltInIndexProviders.all().forEach(provider -> registry.register(indexProviderDescriptor(provider)));
+        BuiltInStorageProviders.all().forEach(provider -> registry.register(storageProviderDescriptor(provider)));
     }
 
     public static InMemoryExtensionRegistry newRegistryWithBuiltIns() {
@@ -39,6 +46,10 @@ public final class BuiltInExtensions {
 
     public static ExtensionDescriptor btreeIndexProvider() {
         return indexProviderDescriptor(BuiltInIndexProviders.btree());
+    }
+
+    public static ExtensionDescriptor heapStorageProvider() {
+        return storageProviderDescriptor(BuiltInStorageProviders.heap());
     }
 
     public static ExtensionDescriptor indexProviderDescriptor(IndexProvider provider) {
@@ -63,6 +74,28 @@ public final class BuiltInExtensions {
         );
     }
 
+    public static ExtensionDescriptor storageProviderDescriptor(StorageProvider provider) {
+        Objects.requireNonNull(provider, "provider");
+        return storageProviderDescriptor(
+                provider,
+                BUILTIN_VERSION,
+                DEFAULT_STORAGE_PROVIDER.equals(ExtensionDescriptor.normalizeName(provider.name())));
+    }
+
+    public static ExtensionDescriptor storageProviderDescriptor(
+            StorageProvider provider,
+            String version,
+            boolean defaultProvider) {
+        Objects.requireNonNull(provider, "provider");
+        TableStorageMetadata metadata = TableStorageMetadata.of(provider.name(), "APP", "PROVIDER_" + provider.name());
+        return ExtensionDescriptor.enabled(
+                ExtensionType.STORAGE,
+                provider.name(),
+                version,
+                storageCapabilityNames(provider.capabilities(metadata), defaultProvider)
+        );
+    }
+
     private static List<String> capabilityNames(IndexCapabilities capabilities, boolean defaultProvider) {
         Objects.requireNonNull(capabilities, "capabilities");
         List<String> names = new ArrayList<>();
@@ -83,6 +116,24 @@ public final class BuiltInExtensions {
         }
         if (capabilities.supportsNullableKeys()) {
             names.add("nullable-keys");
+        }
+        return List.copyOf(names);
+    }
+
+    private static List<String> storageCapabilityNames(StorageCapabilities capabilities, boolean defaultProvider) {
+        StorageCapabilities.require(capabilities);
+        List<String> names = new ArrayList<>();
+        if (defaultProvider) {
+            names.add("default-storage-provider");
+        }
+        if (capabilities.rowStore()) {
+            names.add("row-store");
+        }
+        if (capabilities.transactional()) {
+            names.add("transactional");
+        }
+        if (capabilities.derbyHeapCompatible()) {
+            names.add("derby-heap-compatible");
         }
         return List.copyOf(names);
     }

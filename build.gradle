@@ -642,6 +642,42 @@ tasks.register('indexProviderCostInfluenceSmoke', JavaExec) {
 }
 
 
+
+def storageProviderMetadataSmokeClassesDir = layout.buildDirectory.dir('classes/storage-provider-metadata-smoke')
+
+def storageProviderSmokeRuntimeClasspath = {
+    files(
+            storageProviderMetadataSmokeClassesDir,
+            moduleClassDir(moduleNames.engine),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.osgi),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            extensionRuntimeJars())
+}
+
+tasks.register('compileStorageProviderMetadataSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
+    group = 'verification'
+    description = 'Compiles the StorageProvider v0 built-in heap metadata smoke test.'
+    source = files('dev/storage-provider-metadata-smoke/src/main/java')
+    destinationDirectory = storageProviderMetadataSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = storageProviderSmokeRuntimeClasspath()
+}
+
+tasks.register('storageProviderMetadataSmoke', JavaExec) {
+    dependsOn 'compileStorageProviderMetadataSmoke', ':delosdb-spi:compileDelosDbSpi'
+    mustRunAfter 'indexProviderCostInfluenceSmoke'
+    group = 'verification'
+    description = 'Verifies the built-in heap StorageProvider metadata and resolver seam.'
+    classpath = storageProviderSmokeRuntimeClasspath()
+    mainClass = 'delosdb.smoke.StorageProviderMetadataSmoke'
+}
+
+
 def networkServerSmokeClassesDir = layout.buildDirectory.dir('classes/network-server-smoke')
 
 tasks.register('compileNetworkServerSmoke', JavaCompile) {
@@ -857,7 +893,7 @@ subprojects { subproject ->
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {
