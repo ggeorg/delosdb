@@ -37,32 +37,51 @@ def moduleNames = [
         runner       : 'org.apache.derby.runner'
 ]
 
+def moduleProjects = [
+        (moduleNames.osgi)         : ':delosdb-osgi-stub',
+        (moduleNames.commons)      : ':delosdb-commons',
+        (moduleNames.engine)       : ':delosdb-engine',
+        (moduleNames.client)       : ':delosdb-client',
+        (moduleNames.tools)        : ':delosdb-tools',
+        (moduleNames.server)       : ':delosdb-server',
+        (moduleNames.optionaltools): ':delosdb-optionaltools',
+        (moduleNames.runner)       : ':delosdb-runner'
+]
+
+def moduleSourceRoots = [
+        (moduleNames.commons)      : 'delosdb-commons/src/main/java',
+        (moduleNames.engine)       : 'delosdb-engine/src/main/java',
+        (moduleNames.client)       : 'delosdb-client/src/main/java',
+        (moduleNames.tools)        : 'delosdb-tools/src/main/java',
+        (moduleNames.server)       : 'delosdb-server/src/main/java',
+        (moduleNames.optionaltools): 'delosdb-optionaltools/src/main/java',
+        (moduleNames.runner)       : 'delosdb-runner/src/main/java'
+]
+
+def runtimeCompileTasks = [
+        ':delosdb-commons:compileDerbyCommons',
+        ':delosdb-engine:compileDerbyEngine',
+        ':delosdb-client:compileDerbyClient',
+        ':delosdb-tools:compileDerbyTools',
+        ':delosdb-server:compileDerbyServer',
+        ':delosdb-optionaltools:compileDerbyOptionalTools',
+        ':delosdb-runner:compileDerbyRunner'
+]
+
+def productInfoResources = [
+        [module: moduleNames.engine,        path: 'org/apache/derby/info/engine/info.properties',   technology: 'DelosDB Embedded Engine', productFile: 'derby.jar'],
+        [module: moduleNames.tools,         path: 'org/apache/derby/info/tools/info.properties',    technology: 'DelosDB Tools',           productFile: 'derbytools.jar'],
+        [module: moduleNames.server,        path: 'org/apache/derby/info/net/info.properties',      technology: 'DelosDB Network Server',  productFile: 'derbynet.jar'],
+        [module: moduleNames.client,        path: 'org/apache/derby/info/client/info.properties',   technology: 'DelosDB Network Client',  productFile: 'derbyclient.jar'],
+        [module: moduleNames.commons,       path: 'org/apache/derby/info/shared/info.properties',   technology: 'DelosDB Shared Utilities', productFile: 'derbyshared.jar'],
+        [module: moduleNames.optionaltools, path: 'org/apache/derby/optional/info.properties',       technology: 'DelosDB Optional Tools',   productFile: 'derbyoptionaltools.jar']
+]
+
 def moduleClassDir = { String moduleName ->
-    if (moduleName == moduleNames.osgi) {
-        return project(':delosdb-osgi-stub').layout.buildDirectory.dir("classes/modules/${moduleName}")
-    }
-    if (moduleName == moduleNames.commons) {
-        return project(':delosdb-commons').layout.buildDirectory.dir("classes/modules/${moduleName}")
-    }
-    if (moduleName == moduleNames.engine) {
-        return project(':delosdb-engine').layout.buildDirectory.dir("classes/modules/${moduleName}")
-    }
-    if (moduleName == moduleNames.client) {
-        return project(':delosdb-client').layout.buildDirectory.dir("classes/modules/${moduleName}")
-    }
-    if (moduleName == moduleNames.tools) {
-        return project(':delosdb-tools').layout.buildDirectory.dir("classes/modules/${moduleName}")
-    }
-    if (moduleName == moduleNames.runner) {
-        return project(':delosdb-runner').layout.buildDirectory.dir("classes/modules/${moduleName}")
-    }
-    if (moduleName == moduleNames.server) {
-        return project(':delosdb-server').layout.buildDirectory.dir("classes/modules/${moduleName}")
-    }
-    if (moduleName == moduleNames.optionaltools) {
-        return project(':delosdb-optionaltools').layout.buildDirectory.dir("classes/modules/${moduleName}")
-    }
-    layout.buildDirectory.dir("classes/modules/${moduleName}")
+    def moduleProject = moduleProjects[moduleName]
+    moduleProject == null
+            ? layout.buildDirectory.dir("classes/modules/${moduleName}")
+            : project(moduleProject).layout.buildDirectory.dir("classes/modules/${moduleName}")
 }
 
 def buildToolsClassDir = project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools')
@@ -72,6 +91,16 @@ def generatedSourceDir = { String moduleName ->
 }
 
 def execSupport = objects.newInstance(DelosDbExecSupport)
+
+def runBuildTool = { String mainClassName, Collection<Object> extraClasspath, Closure<?> configure ->
+    execSupport.execOperations.javaexec {
+        classpath = files(([buildToolsClassDir] + extraClasspath))
+        mainClass = mainClassName
+        configure.delegate = delegate
+        configure.resolveStrategy = Closure.DELEGATE_FIRST
+        configure.call()
+    }
+}
 
 def buildNumber = providers.provider {
     try {
@@ -188,13 +217,10 @@ tasks.register('generateClassSizeCatalog') {
     doLast {
         def target = outputFile.get().asFile
         target.parentFile.mkdirs()
-        execSupport.execOperations.javaexec {
-            classpath = files(
-                    buildToolsClassDir,
-                    moduleClassDir(moduleNames.commons),
-                    moduleClassDir(moduleNames.engine)
-            )
-            mainClass = 'org.apache.derbyBuild.ClassSizeCrawler'
+        runBuildTool('org.apache.derbyBuild.ClassSizeCrawler', [
+                moduleClassDir(moduleNames.commons),
+                moduleClassDir(moduleNames.engine)
+        ]) {
             systemProperty 'WS', projectDir.absolutePath
             systemProperty 'classDir', moduleClassDir(moduleNames.engine).get().asFile.absolutePath
             systemProperty 'out', target.absolutePath
@@ -214,20 +240,9 @@ tasks.register('generateClassSizeCatalog') {
 }
 
 tasks.register('processDerbyResources') {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine',
-            ':delosdb-client:compileDerbyClient', ':delosdb-tools:compileDerbyTools',
-            ':delosdb-server:compileDerbyServer', ':delosdb-optionaltools:compileDerbyOptionalTools',
-            ':delosdb-runner:compileDerbyRunner'
+    dependsOn runtimeCompileTasks
     doLast {
-        [
-                (moduleNames.commons)      : 'delosdb-commons/src/main/java',
-                (moduleNames.engine)       : 'delosdb-engine/src/main/java',
-                (moduleNames.client)       : 'delosdb-client/src/main/java',
-                (moduleNames.tools)        : 'delosdb-tools/src/main/java',
-                (moduleNames.server)       : 'delosdb-server/src/main/java',
-                (moduleNames.optionaltools): 'delosdb-optionaltools/src/main/java',
-                (moduleNames.runner)       : 'delosdb-runner/src/main/java'
-        ].each { moduleName, sourceDir ->
+        moduleSourceRoots.each { moduleName, sourceDir ->
             copy {
                 from(sourceDir) {
                     include '**/*.properties'
@@ -255,36 +270,13 @@ tasks.register('processDerbyResources') {
         new File(moduleClassDir(moduleNames.client).get().asFile, 'META-INF/services/java.sql.Driver').text =
                 'org.apache.derby.client.ClientAutoloadedDriver\n'
 
-        writeInfoProperties(
-                new File(moduleClassDir(moduleNames.engine).get().asFile, 'org/apache/derby/info/engine/info.properties'),
-                'DelosDB Embedded Engine',
-                'derby.jar'
-        )
-        writeInfoProperties(
-                new File(moduleClassDir(moduleNames.tools).get().asFile, 'org/apache/derby/info/tools/info.properties'),
-                'DelosDB Tools',
-                'derbytools.jar'
-        )
-        writeInfoProperties(
-                new File(moduleClassDir(moduleNames.server).get().asFile, 'org/apache/derby/info/net/info.properties'),
-                'DelosDB Network Server',
-                'derbynet.jar'
-        )
-        writeInfoProperties(
-                new File(moduleClassDir(moduleNames.client).get().asFile, 'org/apache/derby/info/client/info.properties'),
-                'DelosDB Network Client',
-                'derbyclient.jar'
-        )
-        writeInfoProperties(
-                new File(moduleClassDir(moduleNames.commons).get().asFile, 'org/apache/derby/info/shared/info.properties'),
-                'DelosDB Shared Utilities',
-                'derbyshared.jar'
-        )
-        writeInfoProperties(
-                new File(moduleClassDir(moduleNames.optionaltools).get().asFile, 'org/apache/derby/optional/info.properties'),
-                'DelosDB Optional Tools',
-                'derbyoptionaltools.jar'
-        )
+        productInfoResources.each { info ->
+            writeInfoProperties(
+                    new File(moduleClassDir(info.module).get().asFile, info.path),
+                    info.technology,
+                    info.productFile
+            )
+        }
     }
 }
 
@@ -300,9 +292,7 @@ tasks.register('splitEngineMessages') {
         generatedMessagesDir.mkdirs()
         def englishMessages = new File(generatedMessagesDir, 'messages_en.properties')
 
-        execSupport.execOperations.javaexec {
-            classpath = files(buildToolsClassDir)
-            mainClass = 'org.apache.derbyBuild.EnglishMessagePropertiesGenerator'
+        runBuildTool('org.apache.derbyBuild.EnglishMessagePropertiesGenerator', []) {
             args file('delosdb-engine/src/main/java/org/apache/derby/loc/messages.xml').absolutePath,
                     englishMessages.absolutePath
         }
@@ -314,12 +304,7 @@ tasks.register('splitEngineMessages') {
         clientLoc.mkdirs()
         localeLoc.mkdirs()
 
-        execSupport.execOperations.javaexec {
-            classpath = files(
-                    buildToolsClassDir,
-                    moduleClassDir(moduleNames.commons)
-            )
-            mainClass = 'org.apache.derbyBuild.splitmessages'
+        runBuildTool('org.apache.derbyBuild.splitmessages', [moduleClassDir(moduleNames.commons)]) {
             args engineLoc.absolutePath,
                     clientLoc.absolutePath,
                     localeLoc.absolutePath,
@@ -339,13 +324,10 @@ tasks.register('generateOdbcMetadata') {
         def generatedMetadataDir = layout.buildDirectory.dir('generated/metadata').get().asFile
         generatedMetadataDir.mkdirs()
 
-        execSupport.execOperations.javaexec {
-            classpath = files(
-                    buildToolsClassDir,
-                    moduleClassDir(moduleNames.commons),
-                    moduleClassDir(moduleNames.engine)
-            )
-            mainClass = 'org.apache.derbyBuild.ODBCMetadataGenerator'
+        runBuildTool('org.apache.derbyBuild.ODBCMetadataGenerator', [
+                moduleClassDir(moduleNames.commons),
+                moduleClassDir(moduleNames.engine)
+        ]) {
             workingDir = generatedMetadataDir
         }
 
@@ -511,37 +493,6 @@ def extensionRuntimeJars = {
 def legalFileNames = ['LICENSE', 'NOTICE', 'NOTICE-FORK.md']
 def legalFiles = files(legalFileNames.collect { file(it) })
 
-def jarTitleFor = { String archiveName ->
-    [
-            'osgi-framework-stub.jar' : 'DelosDB OSGi Framework Stub',
-            'derbyshared.jar'        : 'DelosDB Shared Utilities',
-            'derby.jar'              : 'DelosDB Embedded Engine',
-            'derbyclient.jar'        : 'DelosDB Network Client',
-            'derbytools.jar'         : 'DelosDB Tools',
-            'derbynet.jar'           : 'DelosDB Network Server',
-            'derbyoptionaltools.jar' : 'DelosDB Optional Tools',
-            'derbyrun.jar'           : 'DelosDB Runner'
-    ][archiveName] ?: "DelosDB ${archiveName}"
-}
-
-def releaseManifestAttributes = { String archiveName ->
-    [
-            'Implementation-Title'        : jarTitleFor(archiveName),
-            'Implementation-Version'      : delosDbVersion,
-            'Implementation-Vendor'       : 'DelosDB Project',
-            'Specification-Title'         : jarTitleFor(archiveName),
-            'Specification-Version'       : derbyCompatibilityVersion,
-            'Specification-Vendor'        : 'DelosDB Project',
-            'DelosDB-Version'             : delosDbVersion,
-            'DelosDB-Build-Revision'      : buildNumber.get(),
-            'DelosDB-Origin'              : 'Forked from Apache Derby 10.17.1.0',
-            'DelosDB-Repository'          : 'https://github.com/ggeorg/delosdb',
-            'Apache-Derby-Base-Version'   : derbyCompatibilityVersion,
-            'Built-By'                    : System.getProperty('user.name', 'unknown'),
-            'Build-Jdk'                   : System.getProperty('java.version'),
-            'Build-Jdk-Vendor'            : System.getProperty('java.vendor')
-    ]
-}
 
 def runtimeBuildTasks = [
         ':delosdb-engine:compileClassSizeCatalog',
