@@ -288,8 +288,7 @@ public class DataSourceSerializationTest
             // that environment, the VM will try to load the classes if
             // reference directly in the source. So, resort to reflection...)
             Method getFactoryClassName =
-                    Class.forName("javax.naming.Reference").getMethod(
-                    "getFactoryClassName", null);
+                    Class.forName("javax.naming.Reference").getMethod("getFactoryClassName");
             String factoryClassName =
                     (String)getFactoryClassName.invoke(dsRef);
             Class<?> clazz = Class.forName(factoryClassName);
