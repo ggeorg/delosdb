@@ -328,6 +328,40 @@ tasks.register('splitEngineMessages') {
     }
 }
 
+tasks.register('generateOdbcMetadata') {
+    dependsOn 'compileDerbyBuildTools', 'processDerbyResources'
+    inputs.file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/metadata.properties')
+    inputs.file('delosdb-buildtools/src/main/java/org/apache/derbyBuild/odbcgen_fragments.properties')
+    outputs.file(moduleClassDir(moduleNames.engine).map {
+        it.file('org/apache/derby/impl/jdbc/metadata.properties')
+    })
+    doLast {
+        def generatedMetadataDir = layout.buildDirectory.dir('generated/metadata').get().asFile
+        generatedMetadataDir.mkdirs()
+
+        execSupport.execOperations.javaexec {
+            classpath = files(
+                    buildToolsClassDir,
+                    moduleClassDir(moduleNames.commons),
+                    moduleClassDir(moduleNames.engine)
+            )
+            mainClass = 'org.apache.derbyBuild.ODBCMetadataGenerator'
+            workingDir = generatedMetadataDir
+        }
+
+        def generated = new File(generatedMetadataDir, 'odbc_metadata.properties')
+        if (!generated.isFile()) {
+            throw new GradleException("ODBC metadata generator did not produce ${generated}")
+        }
+
+        copy {
+            from generated
+            into new File(moduleClassDir(moduleNames.engine).get().asFile, 'org/apache/derby/impl/jdbc')
+            rename { 'metadata.properties' }
+        }
+    }
+}
+
 def moduleDirsForRuntime = files(
         moduleClassDir(moduleNames.osgi),
         moduleClassDir(moduleNames.commons),
@@ -459,7 +493,7 @@ def moduleSplitInventory = [
                 jarTask          : 'derbyJar',
                 jarName          : 'derby.jar',
                 dependencies     : ['osgi', 'commons'],
-                generatedBy      : ['generateSqlParser', 'generateClassSizeCatalog', 'processDerbyResources', 'splitEngineMessages'],
+                generatedBy      : ['generateSqlParser', 'generateClassSizeCatalog', 'processDerbyResources', 'splitEngineMessages', 'generateOdbcMetadata'],
                 publicArtifact   : true,
                 extractionOrder  : 7,
                 extractionRisk   : 'high'
@@ -511,7 +545,8 @@ def releaseManifestAttributes = { String archiveName ->
 
 def runtimeBuildTasks = [
         ':delosdb-engine:compileClassSizeCatalog',
-        'splitEngineMessages'
+        'splitEngineMessages',
+        'generateOdbcMetadata'
 ]
 
 tasks.register('compileAll') {

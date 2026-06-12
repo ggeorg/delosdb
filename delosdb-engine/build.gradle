@@ -98,7 +98,7 @@ tasks.named('assemble') {
 def engineArchiveName = 'derby.jar'
 
 tasks.register('derbyJar', Jar) {
-    dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog', ':processDerbyResources', ':splitEngineMessages'
+    dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog', ':processDerbyResources', ':splitEngineMessages', ':generateOdbcMetadata'
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE

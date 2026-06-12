@@ -743,7 +743,7 @@ public class DatabaseMetaDataTest extends BaseJDBCTestCase {
                     databaseVersion, driverVersion);
         }
         
-        assertEquals("Apache Derby", dmd.getDatabaseProductName());
+        assertEquals("DelosDB", dmd.getDatabaseProductName());
         
         String driverName = dmd.getDriverName();
         if (usingEmbedded())

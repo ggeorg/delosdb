@@ -17,6 +17,7 @@ tasks.register('compileDerbyBuildTools', JavaCompile) {
     source = files(
             'src/main/java/org/apache/derbyBuild/splitmessages.java',
             'src/main/java/org/apache/derbyBuild/EnglishMessagePropertiesGenerator.java',
+            'src/main/java/org/apache/derbyBuild/ODBCMetadataGenerator.java',
             'src/main/java/org/apache/derbyBuild/ClassSizeCrawler.java'
     )
     destinationDirectory = buildToolsClassDir
@@ -27,6 +28,12 @@ tasks.register('compileDerbyBuildTools', JavaCompile) {
     options.deprecation = false
     options.warnings = true
     classpath = rootProject.files(commonsModuleClassDir, engineModuleClassDir)
+    doLast {
+        copy {
+            from 'src/main/java/org/apache/derbyBuild/odbcgen_fragments.properties'
+            into new File(buildToolsClassDir.get().asFile, 'org/apache/derbyBuild')
+        }
+    }
 }
 
 tasks.register('classes') {
