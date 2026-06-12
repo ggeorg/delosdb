@@ -37,6 +37,35 @@ public record IndexProviderCostProbe(
                 explanation);
     }
 
+    /**
+     * Returns a stable, provider-neutral diagnostic line for smoke tests and
+     * future planner tracing. Keep this free of Derby implementation objects so
+     * the diagnostic surface remains safe to expose outside the optimizer.
+     */
+    public String diagnosticSummary() {
+        return "IndexProviderCostProbe{"
+                + "mode=" + mode
+                + ", provider=" + providerName
+                + ", index=" + indexName
+                + ", tableRows=" + tableRowCount
+                + ", derbyRows=" + derbyEstimatedRows
+                + ", derbyCost=" + derbyCost
+                + ", estimatePresent=" + estimatePresent
+                + ", providerStartupCost=" + providerStartupCost
+                + ", providerTotalCost=" + providerTotalCost
+                + ", providerRows=" + providerEstimatedRows
+                + ", consumed=" + consumed
+                + ", explanation=" + sanitize(explanation)
+                + "}";
+    }
+
+    private static String sanitize(String value) {
+        if (value == null || value.isBlank()) {
+            return "none";
+        }
+        return value.replace('\n', ' ').replace('\r', ' ').trim();
+    }
+
     public static IndexProviderCostProbe unavailable(
             String mode,
             String providerName,

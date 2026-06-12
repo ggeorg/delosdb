@@ -68,12 +68,14 @@ public final class IndexProviderCostInfluenceSmoke
             System.setProperty(IndexProviderCostMode.PROPERTY_NAME, "diagnostic");
             IndexProviderCostDiagnostics.clear();
             assertSingleId(connection, 20, 2, "diagnostic provider-cost query");
-            assertProbe(connection, "diagnostic", false);
+            IndexProviderCostProbe diagnosticProbe = assertProbe(connection, "diagnostic", false);
+            System.out.println(diagnosticProbe.diagnosticSummary());
 
             System.setProperty(IndexProviderCostMode.PROPERTY_NAME, "enabled");
             IndexProviderCostDiagnostics.clear();
             assertSingleId(connection, 30, 3, "enabled provider-cost query");
-            assertProbe(connection, "enabled", true);
+            IndexProviderCostProbe enabledProbe = assertProbe(connection, "enabled", true);
+            System.out.println(enabledProbe.diagnosticSummary());
 
             statement.executeUpdate("drop table idx_provider_cost_smoke");
         }
@@ -121,7 +123,7 @@ public final class IndexProviderCostInfluenceSmoke
         }
     }
 
-    private static void assertProbe(
+    private static IndexProviderCostProbe assertProbe(
             Connection connection,
             String expectedMode,
             boolean expectedConsumed)
@@ -165,6 +167,24 @@ public final class IndexProviderCostInfluenceSmoke
         {
             throw new IllegalStateException(
                     "Expected positive provider total cost but was " + probe.providerTotalCost());
+        }
+
+        String summary = probe.diagnosticSummary();
+        assertSummaryContains(summary, "mode=" + expectedMode);
+        assertSummaryContains(summary, "provider=btree");
+        assertSummaryContains(summary, "index=IDX_PROVIDER_COST_IDX");
+        assertSummaryContains(summary, "estimatePresent=true");
+        assertSummaryContains(summary, "consumed=" + expectedConsumed);
+        assertSummaryContains(summary, "providerTotalCost=");
+        return probe;
+    }
+
+    private static void assertSummaryContains(String summary, String expected)
+    {
+        if (!summary.contains(expected))
+        {
+            throw new IllegalStateException(
+                    "Expected diagnostic summary to contain '" + expected + "' but was: " + summary);
         }
     }
 
