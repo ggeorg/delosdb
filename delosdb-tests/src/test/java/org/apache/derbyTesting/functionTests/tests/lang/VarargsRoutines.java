@@ -88,7 +88,7 @@ public  class   VarargsRoutines
     /** Format a message */
     public  static  String  formatMessage( String message, String... args )
     {
-        return MessageFormat.format( message, args );
+        return MessageFormat.format( message, (Object[]) args );
     }
 
     //////////////////////////

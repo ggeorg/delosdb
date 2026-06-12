@@ -97,9 +97,9 @@ public  class   Wrapper41Statement
     public  boolean isClosed()  throws Exception
     {
         java.sql.Statement  stmt = getWrappedObject();
-        Method  method = stmt.getClass().getMethod( "isClosed", null );
+        Method  method = stmt.getClass().getMethod( "isClosed" );
 
-        return ((Boolean) method.invoke( stmt, null )).booleanValue();
+        return ((Boolean) method.invoke( stmt )).booleanValue();
     }
 
     ///////////////////////////////////////////////////////////////////////

@@ -299,23 +299,23 @@ public class Changes10_6 extends UpgradeChange {
     private Object getTypeDescriptor( Object routineAliasDescriptor )
         throws Exception
     {
-        Method  meth = routineAliasDescriptor.getClass().getMethod( "getReturnType", null );
+        Method  meth = routineAliasDescriptor.getClass().getMethod( "getReturnType" );
 
-        return meth.invoke( routineAliasDescriptor, null );
+        return meth.invoke( routineAliasDescriptor );
     }
     private int getJDBCTypeId( Object typeDescriptor )
         throws Exception
     {
-        Method  meth = typeDescriptor.getClass().getMethod( "getJDBCTypeId", null );
+        Method  meth = typeDescriptor.getClass().getMethod( "getJDBCTypeId" );
 
-        return ((Integer) meth.invoke( typeDescriptor, null )).intValue();
+        return ((Integer) meth.invoke( typeDescriptor )).intValue();
     }
     private int getMaximumWidth( Object typeDescriptor )
         throws Exception
     {
-        Method  meth = typeDescriptor.getClass().getMethod( "getMaximumWidth", null );
+        Method  meth = typeDescriptor.getClass().getMethod( "getMaximumWidth" );
 
-        return ((Integer) meth.invoke( typeDescriptor, null )).intValue();
+        return ((Integer) meth.invoke( typeDescriptor )).intValue();
     }
 
     /**

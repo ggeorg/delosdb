@@ -1006,8 +1006,8 @@ public class JDBC {
                 Assert.fail( "The assertParameterTypes() method only works on platforms which support ParameterMetaData." );
             }
 
-            Object pmd = ps.getClass().getMethod( "getParameterMetaData", null ).invoke(  ps, null );
-            int actualParams = ((Integer) pmd.getClass().getMethod( "getParameterCount", null ).invoke( pmd, null )).intValue();
+            Object pmd = ps.getClass().getMethod( "getParameterMetaData" ).invoke( ps );
+            int actualParams = ((Integer) pmd.getClass().getMethod( "getParameterCount" ).invoke( pmd )).intValue();
 
 	        Assert.assertEquals("Unexpected parameter count:",
 	                expectedTypes.length, actualParams );

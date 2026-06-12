@@ -291,7 +291,7 @@ public class DataSourceSerializationTest
                     Class.forName("javax.naming.Reference").getMethod(
                     "getFactoryClassName", null);
             String factoryClassName =
-                    (String)getFactoryClassName.invoke(dsRef, null);
+                    (String)getFactoryClassName.invoke(dsRef);
             Class<?> clazz = Class.forName(factoryClassName);
             Object factory = clazz.getConstructor().newInstance();
             Method getObjectInstance =
