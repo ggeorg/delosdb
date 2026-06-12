@@ -266,8 +266,17 @@ public final class MessageService {
 	*/
 	private static ResourceBundle lookupBundle(String resource, Locale locale)
     {
-        if (JVMInfo.isModuleAware()) { return lookupBundleInModule(resource, locale); }
-        else { return ResourceBundle.getBundle(resource, locale); }
+        if (JVMInfo.isModuleAware())
+        {
+            ResourceBundle bundle = lookupBundleInModule(resource, locale);
+
+            if (bundle != null)
+            {
+                return bundle;
+            }
+        }
+
+        return ResourceBundle.getBundle(resource, locale);
 	}
   
 	/**

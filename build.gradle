@@ -290,7 +290,8 @@ tasks.register('processDerbyResources') {
 
 tasks.register('splitEngineMessages') {
     dependsOn 'compileDerbyBuildTools', 'processDerbyResources'
-    inputs.file('delosdb-engine/src/main/java/org/apache/derby/loc/messages.properties')
+    inputs.file('delosdb-engine/src/main/java/org/apache/derby/loc/messages.xml')
+    outputs.file(layout.buildDirectory.file('generated/messages/messages_en.properties'))
     outputs.dir(moduleClassDir(moduleNames.engine).map { it.dir('org/apache/derby/loc') })
     outputs.dir(moduleClassDir(moduleNames.client).map { it.dir('org/apache/derby/loc/client') })
     outputs.dir(layout.buildDirectory.dir('generated/locale/org/apache/derby/loc'))
@@ -298,7 +299,13 @@ tasks.register('splitEngineMessages') {
         def generatedMessagesDir = layout.buildDirectory.dir('generated/messages').get().asFile
         generatedMessagesDir.mkdirs()
         def englishMessages = new File(generatedMessagesDir, 'messages_en.properties')
-        englishMessages.text = file('delosdb-engine/src/main/java/org/apache/derby/loc/messages.properties').text
+
+        execSupport.execOperations.javaexec {
+            classpath = files(buildToolsClassDir)
+            mainClass = 'org.apache.derbyBuild.EnglishMessagePropertiesGenerator'
+            args file('delosdb-engine/src/main/java/org/apache/derby/loc/messages.xml').absolutePath,
+                    englishMessages.absolutePath
+        }
 
         def engineLoc = new File(moduleClassDir(moduleNames.engine).get().asFile, 'org/apache/derby/loc')
         def clientLoc = new File(moduleClassDir(moduleNames.client).get().asFile, 'org/apache/derby/loc/client')

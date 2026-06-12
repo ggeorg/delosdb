@@ -16,6 +16,7 @@ tasks.register('compileDerbyBuildTools', JavaCompile) {
             ':delosdb-engine:compileDerbyEngine'
     source = files(
             'src/main/java/org/apache/derbyBuild/splitmessages.java',
+            'src/main/java/org/apache/derbyBuild/EnglishMessagePropertiesGenerator.java',
             'src/main/java/org/apache/derbyBuild/ClassSizeCrawler.java'
     )
     destinationDirectory = buildToolsClassDir
