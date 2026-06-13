@@ -4,8 +4,6 @@ import io.github.ggeorg.delosdb.engine.extension.storage.TableStorageMetadataRes
 import io.github.ggeorg.delosdb.spi.storage.TableStorageMetadata;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
 import java.sql.Statement;
 
 /**
@@ -21,9 +19,9 @@ public final class StorageProviderPersistenceSmoke {
         }
 
         String databasePath = args[0];
-        Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
+        SmokeUtils.loadEmbeddedDriver();
 
-        try (Connection connection = DriverManager.getConnection("jdbc:derby:" + databasePath + ";create=true");
+        try (Connection connection = SmokeUtils.connect(databasePath, true);
              Statement statement = connection.createStatement()) {
             statement.executeUpdate("create table storage_provider_default_persist(id int)");
             statement.executeUpdate("create table storage_provider_heap_persist(id int) using heap");
@@ -32,9 +30,9 @@ public final class StorageProviderPersistenceSmoke {
             assertStorageProvider(connection, "APP", "STORAGE_PROVIDER_HEAP_PERSIST", "heap");
         }
 
-        shutdown(databasePath);
+        SmokeUtils.shutdown(databasePath);
 
-        try (Connection connection = DriverManager.getConnection("jdbc:derby:" + databasePath);
+        try (Connection connection = SmokeUtils.connect(databasePath, false);
              Statement statement = connection.createStatement()) {
             assertStorageProvider(connection, "APP", "STORAGE_PROVIDER_DEFAULT_PERSIST", "heap");
             assertStorageProvider(connection, "APP", "STORAGE_PROVIDER_HEAP_PERSIST", "heap");
@@ -42,7 +40,7 @@ public final class StorageProviderPersistenceSmoke {
             statement.executeUpdate("drop table storage_provider_heap_persist");
             statement.executeUpdate("drop table storage_provider_default_persist");
         } finally {
-            shutdown(databasePath);
+            SmokeUtils.shutdown(databasePath);
         }
 
         System.out.println("DelosDB StorageProvider metadata persistence smoke test passed.");
@@ -67,20 +65,4 @@ public final class StorageProviderPersistenceSmoke {
         }
     }
 
-    private static void shutdown(String databasePath) throws SQLException {
-        try {
-            DriverManager.getConnection("jdbc:derby:" + databasePath + ";shutdown=true").close();
-        } catch (SQLException expected) {
-            if ("08006".equals(expected.getSQLState())) {
-                return;
-            }
-
-            String message = expected.getMessage();
-            if (message != null && message.contains("No suitable driver")) {
-                return;
-            }
-
-            throw expected;
-        }
-    }
 }

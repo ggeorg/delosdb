@@ -542,13 +542,15 @@ tasks.register('smokeFromJars', JavaExec) {
 }
 
 
+def smokeUtilsSourceDir = 'dev/smoke-utils/src/main/java'
+
 def modernizationSmokeClassesDir = layout.buildDirectory.dir('classes/modernization-smoke')
 
 tasks.register('compileModernizationSmoke', JavaCompile) {
     dependsOn 'jars'
     group = 'verification'
     description = 'Compiles the Java 21 modernization JDBC smoke test.'
-    source = files('dev/modernization-smoke/src/main/java')
+    source = files('dev/modernization-smoke/src/main/java', smokeUtilsSourceDir)
     destinationDirectory = modernizationSmokeClassesDir
     sourceCompatibility = javaRelease.toString()
     targetCompatibility = javaRelease.toString()
@@ -578,7 +580,7 @@ tasks.register('compileIndexProviderMetadataSmoke', JavaCompile) {
     dependsOn 'jars'
     group = 'verification'
     description = 'Compiles the CREATE INDEX provider metadata catalog smoke test.'
-    source = files('dev/index-provider-metadata-smoke/src/main/java')
+    source = files('dev/index-provider-metadata-smoke/src/main/java', smokeUtilsSourceDir)
     destinationDirectory = indexProviderMetadataSmokeClassesDir
     sourceCompatibility = javaRelease.toString()
     targetCompatibility = javaRelease.toString()
@@ -619,7 +621,7 @@ tasks.register('compileIndexProviderCostInfluenceSmoke', JavaCompile) {
     dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
     group = 'verification'
     description = 'Compiles the opt-in IndexProvider cost influence smoke test.'
-    source = files('dev/index-provider-cost-smoke/src/main/java')
+    source = files('dev/index-provider-cost-smoke/src/main/java', smokeUtilsSourceDir)
     destinationDirectory = indexProviderCostSmokeClassesDir
     sourceCompatibility = javaRelease.toString()
     targetCompatibility = javaRelease.toString()
@@ -667,7 +669,7 @@ def registerFunctionProviderSmokeCompile = { String taskName, Object sourcePath,
         dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
         group = 'verification'
         description = descriptionText
-        source = files(sourcePath)
+        source = files(sourcePath, smokeUtilsSourceDir)
         destinationDirectory = outputDir
         sourceCompatibility = javaRelease.toString()
         targetCompatibility = javaRelease.toString()
@@ -749,7 +751,7 @@ def registerExtensionRegistrySmokeCompile = { String taskName, Object sourcePath
         dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
         group = 'verification'
         description = descriptionText
-        source = files(sourcePath)
+        source = files(sourcePath, smokeUtilsSourceDir)
         destinationDirectory = outputDir
         sourceCompatibility = javaRelease.toString()
         targetCompatibility = javaRelease.toString()
@@ -844,7 +846,7 @@ def registerStorageProviderDatabaseSmoke = { String taskName,
         dependsOn 'jars'
         group = 'verification'
         description = "Compiles ${description}"
-        source = files("dev/${smokeDirName}/src/main/java")
+        source = files("dev/${smokeDirName}/src/main/java", smokeUtilsSourceDir)
         destinationDirectory = classesDir
         sourceCompatibility = javaRelease.toString()
         targetCompatibility = javaRelease.toString()
@@ -899,7 +901,7 @@ tasks.register('compileNetworkServerSmoke', JavaCompile) {
     dependsOn 'jars'
     group = 'verification'
     description = 'Compiles the network server JDBC smoke test.'
-    source = files('dev/network-server-smoke/src/main/java')
+    source = files('dev/network-server-smoke/src/main/java', smokeUtilsSourceDir)
     destinationDirectory = networkServerSmokeClassesDir
     sourceCompatibility = javaRelease.toString()
     targetCompatibility = javaRelease.toString()

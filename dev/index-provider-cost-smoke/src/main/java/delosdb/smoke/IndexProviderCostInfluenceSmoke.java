@@ -28,7 +28,6 @@ import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostProbe;
 import org.apache.derby.catalog.IndexDescriptor;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -56,7 +55,7 @@ public final class IndexProviderCostInfluenceSmoke
         String previousMode = System.getProperty(IndexProviderCostMode.PROPERTY_NAME);
         String url = "jdbc:derby:" + databasePath + ";create=true";
 
-        try (Connection connection = DriverManager.getConnection(url);
+        try (Connection connection = SmokeUtils.connect(databasePath, true);
              Statement statement = connection.createStatement())
         {
             statement.executeUpdate("create table idx_provider_cost_smoke(id int, code int, name varchar(32))");
@@ -84,7 +83,7 @@ public final class IndexProviderCostInfluenceSmoke
         finally
         {
             restoreProperty(previousMode);
-            shutdown(databasePath);
+            SmokeUtils.shutdown(databasePath);
         }
 
         System.out.println("DelosDB IndexProvider cost influence smoke test passed.");
@@ -321,18 +320,4 @@ public final class IndexProviderCostInfluenceSmoke
         }
     }
 
-    private static void shutdown(String databasePath) throws SQLException
-    {
-        try
-        {
-            DriverManager.getConnection("jdbc:derby:" + databasePath + ";shutdown=true").close();
-        }
-        catch (SQLException expected)
-        {
-            if (!"08006".equals(expected.getSQLState()))
-            {
-                throw expected;
-            }
-        }
-    }
 }

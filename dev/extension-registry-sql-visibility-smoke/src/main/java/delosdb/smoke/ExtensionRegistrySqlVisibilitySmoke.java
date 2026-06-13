@@ -28,7 +28,7 @@ public final class ExtensionRegistrySqlVisibilitySmoke {
             String summary = rs.getString(1);
             requireContains(summary, "index btree enabled");
             requireContains(summary, "storage heap enabled");
-            requireContains(summary, "function builtin enabled");
+            requireContains(summary, "function delos enabled");
 
             System.out.println(summary);
         }

@@ -27,6 +27,9 @@ jobs:
       - name: Build
         run: ./gradlew --no-daemon build
 
+      - name: Run DelosDB runtime smokes
+        run: ./gradlew --no-daemon derbyRuntimeSmoke
+
       - name: Verify release artifacts
         run: ./gradlew --no-daemon verifyReleaseArtifacts
 

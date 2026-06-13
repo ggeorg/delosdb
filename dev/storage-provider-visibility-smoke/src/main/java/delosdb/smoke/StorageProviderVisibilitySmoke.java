@@ -3,8 +3,6 @@ package delosdb.smoke;
 import io.github.ggeorg.delosdb.engine.extension.storage.TableStorageMetadataResolver;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
 import java.sql.Statement;
 
 /**
@@ -21,9 +19,9 @@ public final class StorageProviderVisibilitySmoke {
         }
 
         String databasePath = args[0];
-        Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
+        SmokeUtils.loadEmbeddedDriver();
 
-        try (Connection connection = DriverManager.getConnection("jdbc:derby:" + databasePath + ";create=true");
+        try (Connection connection = SmokeUtils.connect(databasePath, true);
              Statement statement = connection.createStatement()) {
             statement.executeUpdate("create table storage_provider_visible_default(id int)");
             statement.executeUpdate("create table storage_provider_visible_heap(id int) using heap");
@@ -38,9 +36,9 @@ public final class StorageProviderVisibilitySmoke {
                     "APP.STORAGE_PROVIDER_VISIBLE_HEAP storageProvider=heap");
         }
 
-        shutdown(databasePath);
+        SmokeUtils.shutdown(databasePath);
 
-        try (Connection connection = DriverManager.getConnection("jdbc:derby:" + databasePath);
+        try (Connection connection = SmokeUtils.connect(databasePath, false);
              Statement statement = connection.createStatement()) {
             assertDiagnostic(connection,
                     "APP",
@@ -54,7 +52,7 @@ public final class StorageProviderVisibilitySmoke {
             statement.executeUpdate("drop table storage_provider_visible_heap");
             statement.executeUpdate("drop table storage_provider_visible_default");
         } finally {
-            shutdown(databasePath);
+            SmokeUtils.shutdown(databasePath);
         }
 
         System.out.println("DelosDB StorageProvider visibility smoke test passed.");
@@ -72,20 +70,4 @@ public final class StorageProviderVisibilitySmoke {
         System.out.println(actual);
     }
 
-    private static void shutdown(String databasePath) throws SQLException {
-        try {
-            DriverManager.getConnection("jdbc:derby:" + databasePath + ";shutdown=true").close();
-        } catch (SQLException expected) {
-            if ("08006".equals(expected.getSQLState())) {
-                return;
-            }
-
-            String message = expected.getMessage();
-            if (message != null && message.contains("No suitable driver")) {
-                return;
-            }
-
-            throw expected;
-        }
-    }
 }

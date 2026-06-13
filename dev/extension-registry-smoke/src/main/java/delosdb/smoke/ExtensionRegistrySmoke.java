@@ -22,7 +22,7 @@ public final class ExtensionRegistrySmoke {
 
         ExtensionDescriptor index = requireDescriptor(registry, ExtensionType.INDEX, "btree");
         ExtensionDescriptor storage = requireDescriptor(registry, ExtensionType.STORAGE, "heap");
-        ExtensionDescriptor function = requireDescriptor(registry, ExtensionType.FUNCTION, "builtin");
+        ExtensionDescriptor function = requireDescriptor(registry, ExtensionType.FUNCTION, "delos");
 
         requireEnabled(index);
         requireEnabled(storage);

@@ -1,6 +1,6 @@
 # Phase 1 IndexProvider Controlled Registration
 
-Status: initial internal seam.
+Status: completed historical decision record.
 
 ## Purpose
 
@@ -47,6 +47,6 @@ CREATE INDEX idx ON t(c) USING btree;
 
 Manually registered providers are not automatically accepted by SQL syntax. SQL provider admission remains a separate product decision.
 
-## Next work
+## Result
 
-The next step is a test-scope provider fixture wired through the controlled registry to prove cost/capability behavior without making that provider public SQL.
+The controlled registration path now supports built-in provider resolution and provider cost/capability proofing without making non-built-in providers public SQL.

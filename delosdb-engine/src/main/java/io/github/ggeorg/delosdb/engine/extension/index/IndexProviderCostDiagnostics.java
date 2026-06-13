@@ -3,25 +3,25 @@ package io.github.ggeorg.delosdb.engine.extension.index;
 /**
  * Internal diagnostic surface for the current IndexProvider optimizer bridge.
  *
- * <p>This is not a public SQL feature. It exists so DelosDB can prove that the
- * optimizer sees provider cost estimates and, when explicitly enabled, can
- * consume them without introducing fake provider names or public debug syntax.</p>
+ * <p>This is not a public SQL feature. Diagnostics are scoped per thread so
+ * concurrent planning cannot overwrite another query's last provider-cost
+ * probe.</p>
  */
 public final class IndexProviderCostDiagnostics {
-    private static volatile IndexProviderCostProbe lastProbe;
+    private static final ThreadLocal<IndexProviderCostProbe> LAST_PROBE = new ThreadLocal<>();
 
     private IndexProviderCostDiagnostics() {
     }
 
     public static void record(IndexProviderCostProbe probe) {
-        lastProbe = probe;
+        LAST_PROBE.set(probe);
     }
 
     public static IndexProviderCostProbe lastProbe() {
-        return lastProbe;
+        return LAST_PROBE.get();
     }
 
     public static void clear() {
-        lastProbe = null;
+        LAST_PROBE.remove();
     }
 }

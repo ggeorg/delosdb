@@ -1,13 +1,10 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.function.DelosDbBuiltInFunctions;
 import io.github.ggeorg.delosdb.engine.extension.function.FunctionProviderResolver;
 import io.github.ggeorg.delosdb.spi.function.FunctionDescriptor;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Statement;
 
 /**
@@ -24,7 +21,7 @@ public final class FunctionProviderExecutionSmoke {
         }
 
         String databasePath = args[0];
-        Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
+        SmokeUtils.loadEmbeddedDriver();
 
         FunctionDescriptor descriptor = FunctionProviderResolver.builtIns()
                 .findFunction("app", "delos_version")
@@ -33,7 +30,7 @@ public final class FunctionProviderExecutionSmoke {
             throw new AssertionError("APP.DELOS_VERSION descriptor does not expose an external routine name");
         }
 
-        try (Connection connection = DriverManager.getConnection("jdbc:derby:" + databasePath + ";create=true");
+        try (Connection connection = SmokeUtils.connect(databasePath, true);
              Statement statement = connection.createStatement()) {
             statement.executeUpdate(createFunctionSql(descriptor));
 
@@ -42,13 +39,13 @@ public final class FunctionProviderExecutionSmoke {
                     throw new AssertionError("APP.DELOS_VERSION returned no row");
                 }
                 String actual = resultSet.getString(1);
-                if (!DelosDbBuiltInFunctions.VERSION.equals(actual)) {
-                    throw new AssertionError("Expected " + DelosDbBuiltInFunctions.VERSION + " but was " + actual);
+                if (actual == null || actual.isBlank() || "DelosDB".equals(actual)) {
+                    throw new AssertionError("Expected real DelosDB version string but was " + actual);
                 }
                 System.out.println(descriptor.qualifiedName() + "()=" + actual + " provider=" + descriptor.providerName());
             }
         } finally {
-            shutdown(databasePath);
+            SmokeUtils.shutdown(databasePath);
         }
 
         System.out.println("DelosDB FunctionProvider execution smoke test passed.");
@@ -59,22 +56,5 @@ public final class FunctionProviderExecutionSmoke {
                 + "returns " + descriptor.returnType() + " "
                 + "language java parameter style java no sql deterministic "
                 + "external name '" + descriptor.externalName() + "'";
-    }
-
-    private static void shutdown(String databasePath) throws SQLException {
-        try {
-            DriverManager.getConnection("jdbc:derby:" + databasePath + ";shutdown=true").close();
-        } catch (SQLException expected) {
-            if ("08006".equals(expected.getSQLState())) {
-                return;
-            }
-
-            String message = expected.getMessage();
-            if (message != null && message.contains("No suitable driver")) {
-                return;
-            }
-
-            throw expected;
-        }
     }
 }

@@ -23,7 +23,6 @@ package delosdb.smoke;
 
 import org.apache.derby.catalog.IndexDescriptor;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -58,9 +57,9 @@ public final class IndexProviderMetadataSmoke
         String databasePath = args[0];
         String url = "jdbc:derby:" + databasePath + ";create=true";
 
-        Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
+        SmokeUtils.loadEmbeddedDriver();
 
-        try (Connection connection = DriverManager.getConnection(url);
+        try (Connection connection = SmokeUtils.connect(databasePath, true);
              Statement statement = connection.createStatement())
         {
             statement.executeUpdate("create table idx_provider_smoke(id int, name varchar(32), code int)");
@@ -93,7 +92,7 @@ public final class IndexProviderMetadataSmoke
         }
         finally
         {
-            shutdown(databasePath);
+            SmokeUtils.shutdown(databasePath);
         }
 
         System.out.println("DelosDB CREATE INDEX provider metadata smoke test passed.");
@@ -212,31 +211,4 @@ public final class IndexProviderMetadataSmoke
         }
     }
 
-    private static void shutdown(String databasePath) throws SQLException
-    {
-        try
-        {
-            DriverManager.getConnection("jdbc:derby:" + databasePath + ";shutdown=true").close();
-        }
-        catch (SQLException expected)
-        {
-            if ("08006".equals(expected.getSQLState()))
-            {
-                return;
-            }
-
-            // The metadata smoke has already opened the embedded database and
-            // verified the catalog descriptor. Some rapid Gradle smoke runs can
-            // leave DriverManager without a registered embedded driver during
-            // the best-effort shutdown cleanup path. Do not turn that cleanup
-            // condition into a false smoke failure.
-            String message = expected.getMessage();
-            if (message != null && message.contains("No suitable driver"))
-            {
-                return;
-            }
-
-            throw expected;
-        }
-    }
 }

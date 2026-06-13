@@ -29,7 +29,7 @@ public final class FunctionProviderMetadataSmoke {
 
         FunctionDescriptor delosVersion = resolver.findFunction("app", "delos_version")
                 .orElseThrow(() -> new AssertionError("Missing built-in APP.DELOS_VERSION function metadata"));
-        assertEquals("builtin", delosVersion.providerName(), "function provider");
+        assertEquals(BuiltInFunctionProviders.defaultProviderName(), delosVersion.providerName(), "function provider");
         assertEquals("APP.DELOS_VERSION", delosVersion.qualifiedName(), "qualified function name");
         assertEquals("VARCHAR(32)", delosVersion.returnType(), "return type");
         assertEquals(List.of(), delosVersion.parameterTypes(), "parameter types");
@@ -39,13 +39,13 @@ public final class FunctionProviderMetadataSmoke {
                 delosVersion.externalName(),
                 "function external name");
 
-        assertTrue(provider.capabilities(delosVersion).scalar(), "function should be scalar");
-        assertTrue(provider.capabilities(delosVersion).deterministic(), "function should be deterministic");
-        assertTrue(!provider.capabilities(delosVersion).readsSqlData(), "function should not read SQL data");
+        assertTrue(provider.capabilities().scalar(), "function should be scalar");
+        assertTrue(provider.capabilities().deterministic(), "function should be deterministic");
+        assertTrue(!provider.capabilities().readsSqlData(), "function should not read SQL data");
 
         ExtensionRegistry descriptors = registry.descriptors();
-        ExtensionDescriptor descriptor = descriptors.find(ExtensionType.FUNCTION, "builtin")
-                .orElseThrow(() -> new AssertionError("Missing builtin FunctionProvider descriptor"));
+        ExtensionDescriptor descriptor = descriptors.find(ExtensionType.FUNCTION, BuiltInFunctionProviders.defaultProviderName())
+                .orElseThrow(() -> new AssertionError("Missing built-in FunctionProvider descriptor"));
         assertEquals(ExtensionState.ENABLED, descriptor.state(), "descriptor state");
         assertEquals(BuiltInExtensions.BUILTIN_VERSION, descriptor.version(), "descriptor version");
         assertContains(descriptor.capabilities(), "default-function-provider");

@@ -1,17 +1,14 @@
 package io.github.ggeorg.delosdb.engine.extension.function;
 
-import io.github.ggeorg.delosdb.engine.extension.ExtensionDescriptor;
 import io.github.ggeorg.delosdb.engine.extension.ExtensionRegistry;
-import io.github.ggeorg.delosdb.engine.extension.ExtensionResolutionException;
-import io.github.ggeorg.delosdb.engine.extension.ExtensionState;
 import io.github.ggeorg.delosdb.engine.extension.ExtensionType;
+import io.github.ggeorg.delosdb.engine.extension.ProviderResolver;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.function.FunctionDescriptor;
 import io.github.ggeorg.delosdb.spi.function.FunctionProvider;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -21,22 +18,19 @@ import java.util.Optional;
  */
 @InternalApi
 public final class FunctionProviderResolver {
-    private final ExtensionRegistry registry;
-    private final Map<String, FunctionProvider> providersByName;
+    private final ProviderResolver<FunctionProvider> providers;
+
+    FunctionProviderResolver(ProviderResolver<FunctionProvider> providers) {
+        this.providers = Objects.requireNonNull(providers, "providers");
+    }
 
     public FunctionProviderResolver(ExtensionRegistry registry, List<FunctionProvider> providers) {
-        this.registry = Objects.requireNonNull(registry, "registry");
-        Objects.requireNonNull(providers, "providers");
-        Map<String, FunctionProvider> providersByName = new LinkedHashMap<>();
-        for (FunctionProvider provider : providers) {
-            Objects.requireNonNull(provider, "provider");
-            String name = ExtensionDescriptor.normalizeName(provider.name());
-            FunctionProvider previous = providersByName.put(name, provider);
-            if (previous != null) {
-                throw new IllegalArgumentException("Duplicate function provider: " + name);
-            }
-        }
-        this.providersByName = Map.copyOf(providersByName);
+        this(new ProviderResolver<>(
+                "function provider",
+                ExtensionType.FUNCTION,
+                registry,
+                providers,
+                FunctionProvider::name));
     }
 
     public static FunctionProviderResolver builtIns(ExtensionRegistry registry) {
@@ -48,27 +42,11 @@ public final class FunctionProviderResolver {
     }
 
     public Optional<FunctionProvider> findEnabled(String name) {
-        String normalizedName = ExtensionDescriptor.normalizeName(name);
-        return registry.find(ExtensionType.FUNCTION, normalizedName)
-                .filter(descriptor -> descriptor.state() == ExtensionState.ENABLED)
-                .flatMap(descriptor -> Optional.ofNullable(providersByName.get(descriptor.name())));
+        return providers.findEnabled(name);
     }
 
     public FunctionProvider requireEnabled(String name) {
-        String normalizedName = ExtensionDescriptor.normalizeName(name);
-        ExtensionDescriptor descriptor = registry.find(ExtensionType.FUNCTION, normalizedName)
-                .orElseThrow(() -> new ExtensionResolutionException(
-                        "Function provider is not registered: " + normalizedName));
-        if (descriptor.state() != ExtensionState.ENABLED) {
-            throw new ExtensionResolutionException(
-                    "Function provider is not enabled: " + normalizedName + " (state=" + descriptor.state() + ")");
-        }
-        FunctionProvider provider = providersByName.get(descriptor.name());
-        if (provider == null) {
-            throw new ExtensionResolutionException(
-                    "Function provider descriptor has no implementation adapter: " + normalizedName);
-        }
-        return provider;
+        return providers.requireEnabled(name);
     }
 
     public FunctionProvider requireDefault() {
@@ -76,10 +54,8 @@ public final class FunctionProviderResolver {
     }
 
     public Optional<FunctionDescriptor> findFunction(String schemaName, String functionName) {
-        String qualifiedName = FunctionDescriptor.of(
-                BuiltInFunctionProviders.defaultProviderName(), schemaName, functionName, "VARCHAR(1)", List.of())
-                .qualifiedName();
-        return providersByName.values().stream()
+        String qualifiedName = qualifiedName(schemaName, functionName);
+        return providers.providers().stream()
                 .flatMap(provider -> provider.functions().stream())
                 .filter(function -> function.qualifiedName().equals(qualifiedName))
                 .findFirst();
@@ -88,7 +64,7 @@ public final class FunctionProviderResolver {
     public String describe(FunctionDescriptor function) {
         Objects.requireNonNull(function, "function");
         FunctionProvider provider = requireEnabled(function.providerName());
-        var capabilities = provider.capabilities(function);
+        var capabilities = provider.capabilities();
         String externalName = function.hasExternalName() ? function.externalName() : "";
         return "FunctionProvider{"
                 + "provider=" + provider.name()
@@ -103,6 +79,20 @@ public final class FunctionProviderResolver {
     }
 
     public List<FunctionProvider> providers() {
-        return List.copyOf(providersByName.values());
+        return providers.providers();
+    }
+
+    private static String qualifiedName(String schemaName, String functionName) {
+        return normalizeIdentifier(schemaName, "schemaName")
+                + "."
+                + normalizeIdentifier(functionName, "functionName");
+    }
+
+    private static String normalizeIdentifier(String identifier, String label) {
+        String normalized = Objects.requireNonNull(identifier, label).trim();
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException(label + " must not be blank");
+        }
+        return normalized.toUpperCase(Locale.ROOT);
     }
 }

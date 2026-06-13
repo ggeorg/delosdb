@@ -3,23 +3,23 @@ package io.github.ggeorg.delosdb.engine.extension.function;
 import io.github.ggeorg.delosdb.engine.extension.BuiltInExtensions;
 import io.github.ggeorg.delosdb.engine.extension.ExtensionDescriptor;
 import io.github.ggeorg.delosdb.engine.extension.ExtensionRegistry;
-import io.github.ggeorg.delosdb.engine.extension.InMemoryExtensionRegistry;
+import io.github.ggeorg.delosdb.engine.extension.ExtensionType;
+import io.github.ggeorg.delosdb.engine.extension.ProviderRegistry;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.function.FunctionProvider;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 
 /**
  * Controlled internal registration path for FunctionProvider implementations.
  */
 @InternalApi
 public final class FunctionProviderRegistry {
-    private final InMemoryExtensionRegistry descriptors = new InMemoryExtensionRegistry();
-    private final Map<String, FunctionProvider> providersByName = new LinkedHashMap<>();
+    private final ProviderRegistry<FunctionProvider> providers = new ProviderRegistry<>(
+            "function provider",
+            ExtensionType.FUNCTION,
+            FunctionProvider::name,
+            BuiltInExtensions::functionProviderDescriptor);
 
     private FunctionProviderRegistry() {
     }
@@ -35,38 +35,28 @@ public final class FunctionProviderRegistry {
     }
 
     public synchronized void registerEnabled(FunctionProvider provider, String version) {
-        register(provider, version, false);
+        providers.registerEnabled(provider, version);
     }
 
     public synchronized void registerEnabled(FunctionProvider provider) {
-        registerEnabled(provider, "manual");
+        providers.registerEnabled(provider);
     }
 
     public synchronized FunctionProviderResolver resolver() {
-        return new FunctionProviderResolver(descriptors, new ArrayList<>(providersByName.values()));
+        return new FunctionProviderResolver(providers.resolver());
     }
 
     public synchronized ExtensionRegistry descriptors() {
-        return descriptors;
+        return providers.descriptors();
     }
 
     public synchronized List<FunctionProvider> providers() {
-        return List.copyOf(providersByName.values());
+        return providers.providers();
     }
 
     private void registerBuiltIn(FunctionProvider provider) {
         boolean defaultProvider = BuiltInExtensions.DEFAULT_FUNCTION_PROVIDER.equals(
                 ExtensionDescriptor.normalizeName(provider.name()));
-        register(provider, BuiltInExtensions.BUILTIN_VERSION, defaultProvider);
-    }
-
-    private void register(FunctionProvider provider, String version, boolean defaultProvider) {
-        Objects.requireNonNull(provider, "provider");
-        String name = ExtensionDescriptor.normalizeName(provider.name());
-        if (providersByName.containsKey(name)) {
-            throw new IllegalArgumentException("Duplicate function provider: " + name);
-        }
-        descriptors.register(BuiltInExtensions.functionProviderDescriptor(provider, version, defaultProvider));
-        providersByName.put(name, provider);
+        providers.registerBuiltIn(provider, defaultProvider);
     }
 }

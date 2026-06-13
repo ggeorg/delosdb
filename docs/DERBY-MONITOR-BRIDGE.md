@@ -97,7 +97,7 @@ Derby access methods, or optimizer implementation classes.
 The first registry-backed provider identity is internal only:
 
 ```text
-ExtensionType.INDEX / btree / builtin
+ExtensionType.INDEX / btree / delos
 ```
 
 This records the default Derby B-tree index family as a DelosDB provider

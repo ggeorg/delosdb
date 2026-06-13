@@ -47,7 +47,7 @@ default behavior remains Derby-compatible.
 The built-in default index provider is:
 
 ```text
-ExtensionType.INDEX / btree / builtin / ENABLED
+ExtensionType.INDEX / btree / delos / ENABLED
 ```
 
 Existing Derby indexes and indexes created without a provider name must resolve

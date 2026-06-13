@@ -1,7 +1,6 @@
 package delosdb.smoke;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -27,9 +26,9 @@ public final class StorageProviderSyntaxSmoke {
         String databasePath = args[0];
         String url = "jdbc:derby:" + databasePath + ";create=true";
 
-        Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
+        SmokeUtils.loadEmbeddedDriver();
 
-        try (Connection connection = DriverManager.getConnection(url);
+        try (Connection connection = SmokeUtils.connect(databasePath, true);
              Statement statement = connection.createStatement()) {
             statement.executeUpdate("create table storage_provider_default(id int, name varchar(32))");
             statement.executeUpdate("create table storage_provider_heap(id int, name varchar(32)) using heap");
@@ -50,7 +49,7 @@ public final class StorageProviderSyntaxSmoke {
             statement.executeUpdate("drop table storage_provider_heap");
             statement.executeUpdate("drop table storage_provider_default");
         } finally {
-            shutdown(databasePath);
+            SmokeUtils.shutdown(databasePath);
         }
 
         System.out.println("DelosDB CREATE TABLE storage provider syntax smoke test passed.");
@@ -95,20 +94,4 @@ public final class StorageProviderSyntaxSmoke {
         }
     }
 
-    private static void shutdown(String databasePath) throws SQLException {
-        try {
-            DriverManager.getConnection("jdbc:derby:" + databasePath + ";shutdown=true").close();
-        } catch (SQLException expected) {
-            if ("08006".equals(expected.getSQLState())) {
-                return;
-            }
-
-            String message = expected.getMessage();
-            if (message != null && message.contains("No suitable driver")) {
-                return;
-            }
-
-            throw expected;
-        }
-    }
 }

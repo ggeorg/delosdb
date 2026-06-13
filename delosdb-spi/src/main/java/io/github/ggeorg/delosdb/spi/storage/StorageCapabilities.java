@@ -1,7 +1,5 @@
 package io.github.ggeorg.delosdb.spi.storage;
 
-import java.util.Objects;
-
 /**
  * Provider-neutral capabilities for DelosDB table storage providers.
  */
@@ -19,9 +17,5 @@ public record StorageCapabilities(
      */
     public static StorageCapabilities heap() {
         return new StorageCapabilities(true, true, true);
-    }
-
-    public static StorageCapabilities require(StorageCapabilities capabilities) {
-        return Objects.requireNonNull(capabilities, "capabilities");
     }
 }

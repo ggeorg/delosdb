@@ -1,7 +1,5 @@
 package io.github.ggeorg.delosdb.spi.function;
 
-import java.util.Objects;
-
 /**
  * Provider-neutral capabilities for DelosDB SQL function providers.
  */
@@ -19,9 +17,5 @@ public record FunctionCapabilities(
      */
     public static FunctionCapabilities deterministicScalar() {
         return new FunctionCapabilities(true, true, false);
-    }
-
-    public static FunctionCapabilities require(FunctionCapabilities capabilities) {
-        return Objects.requireNonNull(capabilities, "capabilities");
     }
 }

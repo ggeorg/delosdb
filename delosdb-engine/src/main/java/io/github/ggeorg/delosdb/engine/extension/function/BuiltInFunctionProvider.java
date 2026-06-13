@@ -6,7 +6,6 @@ import io.github.ggeorg.delosdb.spi.function.FunctionDescriptor;
 import io.github.ggeorg.delosdb.spi.function.FunctionProvider;
 
 import java.util.List;
-import java.util.Objects;
 
 /**
  * Built-in DelosDB function provider.
@@ -43,8 +42,7 @@ final class BuiltInFunctionProvider implements FunctionProvider {
     }
 
     @Override
-    public FunctionCapabilities capabilities(FunctionDescriptor descriptor) {
-        Objects.requireNonNull(descriptor, "descriptor");
+    public FunctionCapabilities capabilities() {
         return FunctionCapabilities.deterministicScalar();
     }
 }

@@ -23,7 +23,7 @@ public interface FunctionProvider {
     List<FunctionDescriptor> functions();
 
     /**
-     * Describes this provider's capabilities for a specific function.
+     * Describes this provider's function capabilities.
      */
-    FunctionCapabilities capabilities(FunctionDescriptor descriptor);
+    FunctionCapabilities capabilities();
 }

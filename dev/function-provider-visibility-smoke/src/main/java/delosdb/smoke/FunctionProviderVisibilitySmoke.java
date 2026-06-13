@@ -17,7 +17,7 @@ public final class FunctionProviderVisibilitySmoke {
                 .orElseThrow(() -> new AssertionError("Missing APP.DELOS_VERSION function metadata"));
 
         String summary = resolver.describe(descriptor);
-        assertContains(summary, "provider=builtin");
+        assertContains(summary, "provider=delos");
         assertContains(summary, "function=APP.DELOS_VERSION");
         assertContains(summary, "returnType=VARCHAR(32)");
         assertContains(summary, "parameters=[]");
