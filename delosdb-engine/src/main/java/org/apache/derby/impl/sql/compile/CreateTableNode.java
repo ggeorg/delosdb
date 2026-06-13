@@ -21,7 +21,11 @@
 
 package	org.apache.derby.impl.sql.compile;
 
+import java.util.Locale;
 import java.util.Properties;
+import io.github.ggeorg.delosdb.engine.extension.ExtensionResolutionException;
+import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
+import io.github.ggeorg.delosdb.engine.extension.storage.StorageProviderResolver;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.Limits;
 import org.apache.derby.shared.common.reference.Property;
@@ -54,6 +58,7 @@ class CreateTableNode extends DDLStatementNode
 	private boolean				onCommitDeleteRows; //If true, on commit delete rows else on commit preserve rows of temporary table.
 	private boolean				onRollbackDeleteRows; //If true, on rollback delete rows from temp table if it was logically modified in that UOW. true is the only supported value
 	private Properties			properties;
+    private String              storageProviderName;
 	private TableElementList	tableElementList;
 	protected int	tableType; //persistent table or global temporary table
 	private ResultColumnList	resultColumns;
@@ -78,6 +83,17 @@ class CreateTableNode extends DDLStatementNode
             Properties       properties,
             char             lockGranularity,
             ContextManager   cm) throws StandardException
+    {
+        this(tableName, tableElementList, properties, null, lockGranularity, cm);
+    }
+
+    CreateTableNode(
+            TableName        tableName,
+            TableElementList tableElementList,
+            Properties       properties,
+            String           storageProviderName,
+            char             lockGranularity,
+            ContextManager   cm) throws StandardException
 	{
         super(tableName, cm);
         this.tableType = TableDescriptor.BASE_TABLE_TYPE;
@@ -96,6 +112,7 @@ class CreateTableNode extends DDLStatementNode
 
         this.tableElementList = tableElementList;
         this.properties = properties;
+        this.storageProviderName = normalizeStorageProviderName(storageProviderName);
 	}
 
 	/**
@@ -128,6 +145,7 @@ class CreateTableNode extends DDLStatementNode
         this.onRollbackDeleteRows = onRollbackDeleteRows;
         this.tableElementList = tableElementList;
         this.properties = properties;
+        this.storageProviderName = normalizeStorageProviderName(null);
 
 		if (SanityManager.DEBUG)
 		{
@@ -160,6 +178,7 @@ class CreateTableNode extends DDLStatementNode
         this.implicitCreateSchema = true;
         this.resultColumns = resultColumns;
         this.queryExpression = queryExpression;
+        this.storageProviderName = normalizeStorageProviderName(null);
 	}
 
 	/**
@@ -207,6 +226,7 @@ class CreateTableNode extends DDLStatementNode
 					(properties != null ?
 					 "properties: " + "\n" + properties + "\n" :
 					 "") +
+                    "storageProviderName: " + storageProviderName + "\n" +
 					"lockGranularity: " + lockGranularity + "\n";
 			return super.toString() +  tempString;
 		}
@@ -240,6 +260,41 @@ class CreateTableNode extends DDLStatementNode
 
 	// We inherit the generate() method from DDLStatementNode.
 
+
+    /**
+     * Normalize the optional DelosDB table storage provider name.
+     * Existing Derby CREATE TABLE syntax stays on the default heap path.
+     */
+    private String normalizeStorageProviderName(String providerName)
+    {
+        if (providerName == null)
+        {
+            return BuiltInStorageProviders.defaultProviderName();
+        }
+        return providerName.toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Verify CREATE TABLE ... USING remains additive for v0.
+     * Only the built-in Derby-compatible heap provider is available now.
+     * Unknown names fail during binding before any physical storage work.
+     *
+     * @exception StandardException Thrown if a non-registered provider is named
+     */
+    private void verifyStorageProviderName() throws StandardException
+    {
+        try
+        {
+            StorageProviderResolver.builtIns().requireEnabled(storageProviderName);
+        }
+        catch (ExtensionResolutionException e)
+        {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "CREATE TABLE USING " + storageProviderName);
+        }
+    }
+
 	/**
 	 * Bind this CreateTableNode.  This means doing any static error checking that can be
 	 * done before actually creating the base table or declaring the global temporary table.
@@ -260,6 +315,8 @@ class CreateTableNode extends DDLStatementNode
 
         SchemaDescriptor sd = getSchemaDescriptor
             ( tableType != TableDescriptor.GLOBAL_TEMPORARY_TABLE_TYPE, true);
+
+        verifyStorageProviderName();
 
 		if (queryExpression != null)
 		{

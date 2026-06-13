@@ -10352,6 +10352,7 @@ tableDefinition() throws StandardException :
 {
 	char				lockGranularity = TableDescriptor.DEFAULT_LOCK_GRANULARITY;
 	Properties			properties = null;
+	String				storageProviderName = null;
 	TableName			tableName;
 	TableElementList	tableElementList;
 	ResultColumnList	resultColumns = null;
@@ -10366,12 +10367,14 @@ tableDefinition() throws StandardException :
 	                   getToken(3).kind != COMMA &&
 	                   getToken(3).kind != RIGHT_PAREN})
 			tableElementList = tableElementList()
+			[ storageProviderName = storageProviderClause() ]
 			[ properties = propertyList(false)<CHECK_PROPERTIES>]
 			{
                 return new CreateTableNode(
 										tableName,
 										tableElementList,
 										properties,
+                                        storageProviderName,
                                         lockGranularity,
 										getContextManager());
 			}
@@ -10404,6 +10407,22 @@ tableDefinition() throws StandardException :
 										getContextManager());
 			}
 	)
+}
+
+
+/*
+ * <A NAME="storageProviderClause">storageProviderClause</A>
+ */
+String
+storageProviderClause() throws StandardException :
+{
+	String storageProviderName;
+}
+{
+	<USING> storageProviderName = identifier(Limits.MAX_IDENTIFIER_LENGTH, true)
+	{
+		return storageProviderName;
+	}
 }
 
 ResultColumnList
