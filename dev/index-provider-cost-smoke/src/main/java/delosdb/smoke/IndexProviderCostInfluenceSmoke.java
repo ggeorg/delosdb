@@ -77,6 +77,8 @@ public final class IndexProviderCostInfluenceSmoke
             IndexProviderCostProbe enabledProbe = assertProbe(connection, "enabled", true);
             System.out.println(enabledProbe.diagnosticSummary());
 
+            assertPlannerSafetyRules();
+
             statement.executeUpdate("drop table idx_provider_cost_smoke");
         }
         finally
@@ -168,15 +170,65 @@ public final class IndexProviderCostInfluenceSmoke
             throw new IllegalStateException(
                     "Expected positive provider total cost but was " + probe.providerTotalCost());
         }
+        if (!probe.canSafelyReplaceDerbyCost())
+        {
+            throw new IllegalStateException(
+                    "Expected provider estimate to pass planner safety checks: "
+                            + probe.diagnosticSummary());
+        }
 
         String summary = probe.diagnosticSummary();
         assertSummaryContains(summary, "mode=" + expectedMode);
         assertSummaryContains(summary, "provider=btree");
         assertSummaryContains(summary, "index=IDX_PROVIDER_COST_IDX");
         assertSummaryContains(summary, "estimatePresent=true");
+        assertSummaryContains(summary, "safeToConsume=true");
         assertSummaryContains(summary, "consumed=" + expectedConsumed);
+        assertSummaryContains(summary, "decision=" + (expectedConsumed ? "consumed" : "available"));
         assertSummaryContains(summary, "providerTotalCost=");
         return probe;
+    }
+
+    private static void assertPlannerSafetyRules()
+    {
+        IndexProviderCostProbe valid = new IndexProviderCostProbe(
+                "enabled", "btree", "IDX_SAFE", 10L, 1L, 100.0d,
+                true, 1.0d, 2.0d, 1L, false, "valid estimate");
+        if (!valid.canSafelyReplaceDerbyCost())
+        {
+            throw new IllegalStateException("Expected valid provider estimate to be safe");
+        }
+        assertSummaryContains(valid.diagnosticSummary(), "decision=available");
+
+        IndexProviderCostProbe zeroCost = new IndexProviderCostProbe(
+                "enabled", "btree", "IDX_ZERO", 10L, 1L, 100.0d,
+                true, 0.0d, 0.0d, 1L, false, "zero estimate");
+        assertUnsafeFallback(zeroCost, "zero total cost");
+
+        IndexProviderCostProbe inconsistentCost = new IndexProviderCostProbe(
+                "enabled", "btree", "IDX_INCONSISTENT", 10L, 1L, 100.0d,
+                true, 5.0d, 2.0d, 1L, false, "total below startup");
+        assertUnsafeFallback(inconsistentCost, "total cost below startup cost");
+
+        IndexProviderCostProbe unavailable = IndexProviderCostProbe.unavailable(
+                "enabled", "btree", "IDX_MISSING", 10L, 1L, 100.0d,
+                "provider returned no estimate");
+        assertUnsafeFallback(unavailable, "missing provider estimate");
+    }
+
+    private static void assertUnsafeFallback(IndexProviderCostProbe probe, String reason)
+    {
+        if (probe.canSafelyReplaceDerbyCost())
+        {
+            throw new IllegalStateException("Expected unsafe provider estimate: "
+                    + probe.diagnosticSummary());
+        }
+        IndexProviderCostProbe fallback = probe.withConsumptionFallback(reason);
+        String summary = fallback.diagnosticSummary();
+        assertSummaryContains(summary, "safeToConsume=false");
+        assertSummaryContains(summary, "consumed=false");
+        assertSummaryContains(summary, "decision=fallback");
+        assertSummaryContains(summary, reason);
     }
 
     private static void assertSummaryContains(String summary, String expected)

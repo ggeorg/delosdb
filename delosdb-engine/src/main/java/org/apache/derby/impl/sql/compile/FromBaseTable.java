@@ -2118,6 +2118,10 @@ class FromBaseTable extends FromTable
                         providerRows,
                         providerRows);
                 probe = probe.withConsumed(true);
+            } else if (mode.consumesProviderCost() && probe != null
+                    && !probe.canSafelyReplaceDerbyCost()) {
+                probe = probe.withConsumptionFallback(
+                        "provider estimate rejected by planner safety checks");
             }
             IndexProviderCostDiagnostics.record(probe);
         } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
@@ -2133,11 +2137,7 @@ class FromBaseTable extends FromTable
     }
 
     private static boolean canConsume(IndexProviderCostProbe probe) {
-        return probe != null
-                && probe.estimatePresent()
-                && Double.isFinite(probe.providerTotalCost())
-                && probe.providerTotalCost() >= 0.0d
-                && probe.providerEstimatedRows() >= 0L;
+        return probe != null && probe.canSafelyReplaceDerbyCost();
     }
 
     private static String providerName(ConglomerateDescriptor cd) {

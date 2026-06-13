@@ -38,6 +38,48 @@ public record IndexProviderCostProbe(
     }
 
     /**
+     * Returns true only when the optimizer can safely replace Derby's native
+     * cost with the provider estimate. Missing, zero, negative, non-finite, or
+     * internally inconsistent estimates remain diagnostic-only and fall back to
+     * Derby costing.
+     */
+    public boolean canSafelyReplaceDerbyCost() {
+        return estimatePresent
+                && Double.isFinite(providerStartupCost)
+                && providerStartupCost >= 0.0d
+                && Double.isFinite(providerTotalCost)
+                && providerTotalCost > 0.0d
+                && providerTotalCost >= providerStartupCost
+                && providerEstimatedRows >= 0L;
+    }
+
+    public IndexProviderCostProbe withConsumptionFallback(String reason) {
+        return new IndexProviderCostProbe(
+                mode,
+                providerName,
+                indexName,
+                tableRowCount,
+                derbyEstimatedRows,
+                derbyCost,
+                estimatePresent,
+                providerStartupCost,
+                providerTotalCost,
+                providerEstimatedRows,
+                false,
+                appendExplanation(explanation, reason));
+    }
+
+    public String plannerDecision() {
+        if (consumed) {
+            return "consumed";
+        }
+        if (canSafelyReplaceDerbyCost()) {
+            return "available";
+        }
+        return "fallback";
+    }
+
+    /**
      * Returns a stable, provider-neutral diagnostic line for smoke tests and
      * future planner tracing. Keep this free of Derby implementation objects so
      * the diagnostic surface remains safe to expose outside the optimizer.
@@ -54,9 +96,23 @@ public record IndexProviderCostProbe(
                 + ", providerStartupCost=" + providerStartupCost
                 + ", providerTotalCost=" + providerTotalCost
                 + ", providerRows=" + providerEstimatedRows
+                + ", safeToConsume=" + canSafelyReplaceDerbyCost()
                 + ", consumed=" + consumed
+                + ", decision=" + plannerDecision()
                 + ", explanation=" + sanitize(explanation)
                 + "}";
+    }
+
+    private static String appendExplanation(String current, String reason) {
+        String sanitizedReason = sanitize(reason);
+        if ("none".equals(sanitizedReason)) {
+            return current == null ? "" : current;
+        }
+        String sanitizedCurrent = sanitize(current);
+        if ("none".equals(sanitizedCurrent)) {
+            return sanitizedReason;
+        }
+        return sanitizedCurrent + "; " + sanitizedReason;
     }
 
     private static String sanitize(String value) {
