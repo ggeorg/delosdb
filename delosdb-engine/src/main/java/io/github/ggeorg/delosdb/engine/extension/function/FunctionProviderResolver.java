@@ -85,6 +85,23 @@ public final class FunctionProviderResolver {
                 .findFirst();
     }
 
+    public String describe(FunctionDescriptor function) {
+        Objects.requireNonNull(function, "function");
+        FunctionProvider provider = requireEnabled(function.providerName());
+        var capabilities = provider.capabilities(function);
+        String externalName = function.hasExternalName() ? function.externalName() : "";
+        return "FunctionProvider{"
+                + "provider=" + provider.name()
+                + ", function=" + function.qualifiedName()
+                + ", returnType=" + function.returnType()
+                + ", parameters=" + function.parameterTypes()
+                + ", scalar=" + capabilities.scalar()
+                + ", deterministic=" + capabilities.deterministic()
+                + ", readsSqlData=" + capabilities.readsSqlData()
+                + ", externalName=" + externalName
+                + "}";
+    }
+
     public List<FunctionProvider> providers() {
         return List.copyOf(providersByName.values());
     }

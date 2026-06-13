@@ -648,11 +648,13 @@ tasks.register('indexProviderCostInfluenceSmoke', JavaExec) {
 
 def functionProviderMetadataSmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-metadata-smoke')
 def functionProviderExecutionSmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-execution-smoke')
+def functionProviderVisibilitySmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-visibility-smoke')
 
 def functionProviderSmokeRuntimeClasspath = {
     files(
             functionProviderMetadataSmokeClassesDir,
             functionProviderExecutionSmokeClassesDir,
+            functionProviderVisibilitySmokeClassesDir,
             moduleClassDir(moduleNames.engine),
             moduleClassDir(moduleNames.commons),
             moduleClassDir(moduleNames.osgi),
@@ -687,6 +689,12 @@ registerFunctionProviderSmokeCompile(
         functionProviderExecutionSmokeClassesDir,
         'Compiles the FunctionProvider v0 built-in execution smoke test.')
 
+registerFunctionProviderSmokeCompile(
+        'compileFunctionProviderVisibilitySmoke',
+        'dev/function-provider-visibility-smoke/src/main/java',
+        functionProviderVisibilitySmokeClassesDir,
+        'Compiles the FunctionProvider v0 metadata visibility smoke test.')
+
 tasks.register('functionProviderMetadataSmoke', JavaExec) {
     dependsOn 'compileFunctionProviderMetadataSmoke', ':delosdb-spi:compileDelosDbSpi'
     mustRunAfter 'storageProviderVisibilitySmoke'
@@ -709,6 +717,15 @@ tasks.register('functionProviderExecutionSmoke', JavaExec) {
         delete file('build/function-provider-execution-smoke')
         workingDir.mkdirs()
     }
+}
+
+tasks.register('functionProviderVisibilitySmoke', JavaExec) {
+    dependsOn 'compileFunctionProviderVisibilitySmoke', ':delosdb-spi:compileDelosDbSpi'
+    mustRunAfter 'functionProviderExecutionSmoke'
+    group = 'verification'
+    description = 'Verifies FunctionProvider metadata visibility for the built-in DelosDB SQL function.'
+    classpath = functionProviderSmokeRuntimeClasspath()
+    mainClass = 'delosdb.smoke.FunctionProviderVisibilitySmoke'
 }
 
 
@@ -1026,7 +1043,7 @@ subprojects { subproject ->
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {
