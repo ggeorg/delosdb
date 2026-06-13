@@ -500,9 +500,7 @@ class HashJoinStrategy extends BaseJoinStrategy {
 		 * Beetle 3458.
 		 */
 		Optimizable hashTableFor = innerTable;
-		if (innerTable instanceof ProjectRestrictNode)
-		{
-			ProjectRestrictNode prn = (ProjectRestrictNode) innerTable;
+		if (innerTable instanceof ProjectRestrictNode prn) {
 			if (prn.getChildResult() instanceof Optimizable)
 				hashTableFor = (Optimizable) (prn.getChildResult());
 		}

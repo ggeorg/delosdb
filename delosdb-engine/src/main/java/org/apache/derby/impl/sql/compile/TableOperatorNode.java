@@ -752,9 +752,7 @@ abstract class TableOperatorNode extends FromTable
 				// then we need to pass those predicates down as part
 				// of the modifyAccessPaths call so that they can be
 				// pushed one last time, in prep for generation.
-				if (this instanceof SetOperatorNode)
-				{
-					SetOperatorNode setOp = (SetOperatorNode)this;
+				if (this instanceof SetOperatorNode setOp) {
 					leftResultSet = leftResultSet.modifyAccessPaths(
 						setOp.getLeftOptPredicateList());
 				}
@@ -777,8 +775,7 @@ abstract class TableOperatorNode extends FromTable
 			}
 			else
 			{
-				if (this instanceof SetOperatorNode) {
-					SetOperatorNode setOp = (SetOperatorNode)this;
+				if (this instanceof SetOperatorNode setOp) {
 					rightResultSet = rightResultSet.modifyAccessPaths(
 						setOp.getRightOptPredicateList());
 				}

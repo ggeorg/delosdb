@@ -546,10 +546,7 @@ private boolean isNullRejecting (
                 vn = andNode.getLeftOperand();
             }
 
-            if (vn instanceof BinaryRelationalOperatorNode) {
-
-                BinaryRelationalOperatorNode relop =
-                    (BinaryRelationalOperatorNode)vn;
+            if (vn instanceof BinaryRelationalOperatorNode relop) {
                 ValueNode leftCol = relop.getLeftOperand();
                 ValueNode rightCol = relop.getRightOperand();
 

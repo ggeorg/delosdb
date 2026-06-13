@@ -654,18 +654,14 @@ class AggregateNode extends UnaryOperatorNode
                 throw StandardException.newException(SQLState.LANG_INVALID_USER_AGGREGATE_DEFINITION2, aggregateDefinitionClassName);
             }
 
-            if (instance instanceof MaxMinAggregateDefinition)
-            {
-                MaxMinAggregateDefinition temp = (MaxMinAggregateDefinition)instance;
+            if (instance instanceof MaxMinAggregateDefinition temp) {
                 if (aggregateName.equals("MAX"))
                     temp.setMaxOrMin(true);
                 else
                     temp.setMaxOrMin(false);
             }
 
-            if (instance instanceof SumAvgAggregateDefinition)
-            {
-                SumAvgAggregateDefinition temp1 = (SumAvgAggregateDefinition)instance;
+            if (instance instanceof SumAvgAggregateDefinition temp1) {
                 if (aggregateName.equals("SUM"))
                     temp1.setSumOrAvg(true);
                 else

@@ -91,9 +91,7 @@ public class CompilerContextImpl extends ContextImpl
 		setInUse(false);
 		resetContext();
 
-		if (error instanceof StandardException) {
-
-			StandardException se = (StandardException) error;
+		if (error instanceof StandardException se) {
 			// if something went wrong with the compile,
 			// we need to mark the statement invalid.
 			// REVISIT: do we want instead to remove it,

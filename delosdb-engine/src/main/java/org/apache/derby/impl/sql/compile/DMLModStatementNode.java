@@ -1314,9 +1314,7 @@ abstract class DMLModStatementNode extends DMLStatementNode
 					}
 				}
 			}
-			else if (cd instanceof ForeignKeyConstraintDescriptor)
-			{
-				ForeignKeyConstraintDescriptor fkcd = (ForeignKeyConstraintDescriptor) cd;
+			else if (cd instanceof ForeignKeyConstraintDescriptor fkcd) {
 				if (dependent == null) 
 				{ 
 					compilerContext.createDependency(fkcd.getReferencedConstraint().getTableDescriptor()); 

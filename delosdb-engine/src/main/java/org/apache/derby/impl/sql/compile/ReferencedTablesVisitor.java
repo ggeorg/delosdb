@@ -64,14 +64,10 @@ class ReferencedTablesVisitor implements Visitor
 		{
 			((ColumnReference)node).getTablesReferenced(tableMap);
 		}
-		else if (node instanceof Predicate)
-		{
-			Predicate pred = (Predicate) node;
+		else if (node instanceof Predicate pred) {
 			tableMap.or(pred.getReferencedSet());
 		}
-		else if (node instanceof ResultSetNode)
-		{
-			ResultSetNode rs = (ResultSetNode) node;
+		else if (node instanceof ResultSetNode rs) {
 			tableMap.or(rs.getReferencedTableMap());
 		}
 

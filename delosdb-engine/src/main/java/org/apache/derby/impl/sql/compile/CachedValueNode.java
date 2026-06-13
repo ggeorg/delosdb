@@ -151,8 +151,7 @@ class CachedValueNode extends ValueNode {
 
     @Override
     boolean isEquivalent(ValueNode other) throws StandardException {
-        if (other instanceof CachedValueNode) {
-            CachedValueNode that = (CachedValueNode) other;
+        if (other instanceof CachedValueNode that) {
             return this.value.isEquivalent(that.value);
         } else {
             return false;

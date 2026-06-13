@@ -921,9 +921,7 @@ class ResultColumn extends ValueNode
         */
         setType(_expression.getTypeServices());
 
-        if (_expression instanceof ColumnReference)
-        {
-            ColumnReference cr = (ColumnReference) _expression;
+        if (_expression instanceof ColumnReference cr) {
             _unqualifiedTableName = cr.getTableName();
             _unqualifiedSourceTableName = cr.getSourceTableName();
             _sourceSchemaName = cr.getSourceSchemaName();
@@ -1785,10 +1783,7 @@ class ResultColumn extends ValueNode
         throws StandardException {
         if (_expression instanceof ColumnReference)
             return ((ColumnReference)_expression).getTableNumber();
-        else if (_expression instanceof VirtualColumnNode)
-        {
-            VirtualColumnNode vcn = (VirtualColumnNode)_expression;
-
+        else if (_expression instanceof VirtualColumnNode vcn) {
             // If the VCN points to a FromBaseTable, just get that
             // table's number.
             if (vcn.getSourceResultSet() instanceof FromBaseTable)

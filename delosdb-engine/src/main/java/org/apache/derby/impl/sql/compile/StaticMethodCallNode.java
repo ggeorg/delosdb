@@ -729,9 +729,7 @@ class StaticMethodCallNode extends MethodCallNode
 
         ValueNode sqlParamNode = null;
 
-        if (methodParms[p] instanceof SQLToJavaValueNode)
-        {
-            SQLToJavaValueNode sql2j = (SQLToJavaValueNode) methodParms[p];
+        if (methodParms[p] instanceof SQLToJavaValueNode sql2j) {
             sqlParamNode = sql2j.getSQLValueNode();
         }
 

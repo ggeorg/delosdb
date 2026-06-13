@@ -187,9 +187,7 @@ class TableElementList extends QueryTreeNodeVector<TableElementNode>
 
         for (TableElementNode tableElement : this)
 		{
-			if (tableElement instanceof ColumnDefinitionNode)
-			{
-                ColumnDefinitionNode cdn = (ColumnDefinitionNode)tableElement;
+			if (tableElement instanceof ColumnDefinitionNode cdn) {
 				if (tableType == TableDescriptor.GLOBAL_TEMPORARY_TABLE_TYPE &&
 					(cdn.getType().getTypeId().isLongConcatableTypeId() ||
 					cdn.getType().getTypeId().isUserDefinedTypeId()))
@@ -251,9 +249,7 @@ class TableElementList extends QueryTreeNodeVector<TableElementNode>
 				{
 
                     destConstraint = constraints.get(i);
-					if (destConstraint instanceof ConstraintDefinitionNode)
-					{
-						ConstraintDefinitionNode destCDN = (ConstraintDefinitionNode)destConstraint;
+					if (destConstraint instanceof ConstraintDefinitionNode destCDN) {
 						destName = destCDN.getConstraintMoniker();
 						destColumnNames = destCDN.getColumnList().getColumnNames();
 					}
@@ -1528,8 +1524,7 @@ class TableElementList extends QueryTreeNodeVector<TableElementNode>
      */
     private ColumnDefinitionNode findColumnDefinition(String colName) {
         for (TableElementNode te : this) {
-            if (te instanceof ColumnDefinitionNode) {
-                ColumnDefinitionNode cdn = (ColumnDefinitionNode) te;
+            if (te instanceof ColumnDefinitionNode cdn) {
                 if (colName.equals(cdn.getName())) {
                     return cdn;
                 }

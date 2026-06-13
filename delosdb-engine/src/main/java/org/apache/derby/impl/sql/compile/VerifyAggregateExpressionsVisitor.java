@@ -70,10 +70,7 @@ class VerifyAggregateExpressionsVisitor implements Visitor
 	public Visitable visit(Visitable node)
 		throws StandardException
 	{
-		if (node instanceof ColumnReference)
-		{
-			ColumnReference cr = (ColumnReference)node;
-		
+		if (node instanceof ColumnReference cr) {
 			if (groupByList == null)
 			{
 				throw StandardException.newException(SQLState.LANG_INVALID_COL_REF_NON_GROUPED_SELECT_LIST, cr.getSQLColumnName());
@@ -94,10 +91,7 @@ class VerifyAggregateExpressionsVisitor implements Visitor
 		**
 		**	select max(x), (select sum(y).toString() from y) from x
 		*/
-		else if (node instanceof SubqueryNode)
-		{
-			SubqueryNode subq = (SubqueryNode)node;
-		
+		else if (node instanceof SubqueryNode subq) {
 			if ((subq.getSubqueryType() != SubqueryNode.EXPRESSION_SUBQUERY) ||
 				 subq.hasCorrelatedCRs())
 			{

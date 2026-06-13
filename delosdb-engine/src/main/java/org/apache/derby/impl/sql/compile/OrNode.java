@@ -168,10 +168,7 @@ class OrNode extends BinaryLogicalOperatorNode
 						 * below.  But if we're running in SANE mode, do a
 						 * quick check to make sure that's still valid.
 					 	 */
-						if (left instanceof BinaryRelationalOperatorNode)
-						{
-                            BinaryRelationalOperatorNode bron =
-                                    (BinaryRelationalOperatorNode)left;
+						if (left instanceof BinaryRelationalOperatorNode bron) {
 							if (!bron.isInListProbeNode())
 							{
 								SanityManager.THROWASSERT(

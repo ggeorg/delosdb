@@ -334,13 +334,10 @@ class ResultColumnList extends QueryTreeNodeVector<ResultColumn>
             while (rc != null) {
                 ValueNode exp = rc.getExpression();
 
-                if (exp instanceof VirtualColumnNode) {
-                    VirtualColumnNode vcn = (VirtualColumnNode)exp;
+                if (exp instanceof VirtualColumnNode vcn) {
                     ResultSetNode rsn = vcn.getSourceResultSet();
 
-                    if (rsn instanceof FromTable) {
-                        FromTable ft = (FromTable)rsn;
-
+                    if (rsn instanceof FromTable ft) {
                         if (ft.getTableNumber() == tableNumber) {
                             // We have the right table, now try to match the
                             // column number. Looking at a join, for a base
@@ -405,9 +402,7 @@ class ResultColumnList extends QueryTreeNodeVector<ResultColumn>
                     } else {
                         rc = null;
                     }
-                } else if (exp instanceof ColumnReference) {
-                    ColumnReference cr = (ColumnReference)exp;
-
+                } else if (exp instanceof ColumnReference cr) {
                     if (cr.getTableNumber() == tableNumber &&
                             cr.getColumnNumber() == columnNumber) {
                         // Found matching (t,c) within this top resultColumn
@@ -3514,9 +3509,7 @@ class ResultColumnList extends QueryTreeNodeVector<ResultColumn>
 			 * is coming from the source result set, ie, that it is not a correlated
 			 * column.
 			 */
-			if (expr instanceof VirtualColumnNode)
-			{
-				VirtualColumnNode vcn = (VirtualColumnNode) expr;
+			if (expr instanceof VirtualColumnNode vcn) {
 				if (vcn.getSourceResultSet() != sourceRS)
 				{
 					vcn.setCorrelated();
@@ -3525,9 +3518,7 @@ class ResultColumnList extends QueryTreeNodeVector<ResultColumn>
 			}
 
 			/* Make sure this is not a correlated CR */
-			if (expr instanceof ColumnReference)
-			{
-				ColumnReference cr = (ColumnReference) expr;
+			if (expr instanceof ColumnReference cr) {
 				if (cr.getCorrelated())
 				{
 					return false;

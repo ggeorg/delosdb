@@ -1619,9 +1619,7 @@ class FromList extends    QueryTreeNodeVector<ResultSetNode>
 		for (int index = 0; index < size; index++)
 		{
 			FromTable fromTable = (FromTable) elementAt(index);
-			if (fromTable instanceof ProjectRestrictNode)
-			{
-				ProjectRestrictNode prn = (ProjectRestrictNode) fromTable;
+			if (fromTable instanceof ProjectRestrictNode prn) {
 				if (prn.getChildResult() instanceof FromBaseTable)
 				{
 					FromBaseTable fbt = (FromBaseTable) prn.getChildResult();

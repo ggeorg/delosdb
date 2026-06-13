@@ -1257,9 +1257,7 @@ abstract class MethodCallNode extends JavaValueNode
 
 		for (int index = 0; index < methodParms.length; index++)
 		{
-			if (methodParms[index] instanceof SQLToJavaValueNode)
-			{
-				SQLToJavaValueNode stjvn = (SQLToJavaValueNode) methodParms[index];
+			if (methodParms[index] instanceof SQLToJavaValueNode stjvn) {
 				if (stjvn.value.requiresTypeFromContext())
 				{
 					isParam[index] = true;

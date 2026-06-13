@@ -875,10 +875,7 @@ public class ColumnReference extends ValueNode
 			VirtualColumnNode vcn =
 				(VirtualColumnNode) (sourceRC.getExpression());
 			ResultSetNode rsn = vcn.getSourceResultSet();
-			if (rsn instanceof FromTable)
-			{
-				FromTable ft = (FromTable)rsn;
-
+			if (rsn instanceof FromTable ft) {
 				/* It's not enough to just set the table number.  Depending
 				 * on the original query specified and on whether or not
 				 * subquery flattening has occurred, it's possible that

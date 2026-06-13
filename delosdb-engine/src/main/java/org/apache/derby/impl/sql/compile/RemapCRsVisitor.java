@@ -66,9 +66,7 @@ class RemapCRsVisitor implements Visitor
 		 * current source ResultColumn.
 		 * This is useful for pushing down single table predicates.
 		 */
-		if (node instanceof ColumnReference)
-		{
-			ColumnReference cr = (ColumnReference) node;
+		if (node instanceof ColumnReference cr) {
 			if (remap)
 			{
 				cr.remapColumnReferences();

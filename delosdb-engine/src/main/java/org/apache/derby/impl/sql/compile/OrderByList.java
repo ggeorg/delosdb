@@ -503,10 +503,7 @@ class OrderByList extends OrderedColumnList<OrderByColumn>
 
 						ValueNode remainingexpr = remainingrc.getExpression();
 
-						if (remainingexpr instanceof ColumnReference)
-						{
-							ColumnReference remainingcr =
-											(ColumnReference) remainingexpr;
+						if (remainingexpr instanceof ColumnReference remainingcr) {
 							if (tableMap.get(remainingcr.getTableNumber()))
 							{
 								return RequiredRowOrdering.SORT_REQUIRED;

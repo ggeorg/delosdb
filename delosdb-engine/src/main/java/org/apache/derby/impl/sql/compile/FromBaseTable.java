@@ -1337,9 +1337,7 @@ class FromBaseTable extends FromTable
 							if (likeNode.getLeftOperand().requiresTypeFromContext())
 							{
 								ValueNode receiver = ((TernaryOperatorNode) likeNode).getReceiver();
-								if (receiver instanceof ColumnReference)
-								{
-									ColumnReference cr = (ColumnReference) receiver;
+								if (receiver instanceof ColumnReference cr) {
 									if (cr.getTableNumber() == firstColumn.getTableNumber() &&
 										cr.getColumnNumber() == firstColumn.getColumnNumber())
 										extraFirstColumnSelectivity *= 0.2;

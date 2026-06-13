@@ -1733,9 +1733,7 @@ class PredicateList extends QueryTreeNodeVector<Predicate>
 			ColumnReference cr2 = null;
 			ValueNode vn = predicate.getAndNode().getLeftOperand();
 
-  			if (vn instanceof BinaryOperatorNode)
-  			{
-    				BinaryOperatorNode bon = (BinaryOperatorNode) vn;
+  			if (vn instanceof BinaryOperatorNode bon) {
    				if (bon.getLeftOperand() instanceof ColumnReference)
     				{
     					cr1 = (ColumnReference) bon.getLeftOperand();
@@ -1745,9 +1743,7 @@ class PredicateList extends QueryTreeNodeVector<Predicate>
     					cr2 = (ColumnReference) bon.getRightOperand();
     				}
   			}
-  			else if (vn instanceof UnaryOperatorNode)
-  			{
-  				UnaryOperatorNode uon = (UnaryOperatorNode) vn;
+  			else if (vn instanceof UnaryOperatorNode uon) {
   				if (uon.getOperand() instanceof ColumnReference)
   				{
   					cr1 = (ColumnReference) uon.getOperand();
@@ -2200,9 +2196,7 @@ class PredicateList extends QueryTreeNodeVector<Predicate>
 				}
 				continue;
 			}
-			else if (operator instanceof BinaryComparisonOperatorNode)
-			{
-				BinaryComparisonOperatorNode bcon = (BinaryComparisonOperatorNode) operator;
+			else if (operator instanceof BinaryComparisonOperatorNode bcon) {
 				ValueNode left = bcon.getLeftOperand();
 				ValueNode right = bcon.getRightOperand();
 

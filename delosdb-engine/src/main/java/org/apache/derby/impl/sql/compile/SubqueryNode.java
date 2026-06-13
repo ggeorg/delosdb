@@ -1124,9 +1124,7 @@ class SubqueryNode extends ValueNode
 			 * its source level as part of flattening so that
 			 * transitive closure will work correctly.
 			 */
-			if (rightOperand instanceof ColumnReference)
-			{
-				ColumnReference cr = (ColumnReference) rightOperand;
+			if (rightOperand instanceof ColumnReference cr) {
 				int tableNumber = cr.getTableNumber();
 				for (int index = 0; index < tableNumbers.length; index++)
 				{
@@ -1808,9 +1806,7 @@ class SubqueryNode extends ValueNode
 		 */
 		if (retval)
 		{
-			if (resultSet instanceof SelectNode)
-			{
-				SelectNode select = (SelectNode) resultSet;
+			if (resultSet instanceof SelectNode select) {
 				FromList fromList = select.getFromList();
 				fromList.setLevel(0);
 			}
@@ -2476,8 +2472,7 @@ class SubqueryNode extends ValueNode
 			throws StandardException
 	{
 		if ( isWhereSubquery() && (isEXISTS() || isANY() || isIN()) ) {
-			if (resultSet instanceof SelectNode){
-				SelectNode sn = (SelectNode) resultSet;
+			if (resultSet instanceof SelectNode sn) {
 				/* 
 				 * Flattening happens in lower QueryTree nodes first and then 
 				 * removes nodes from the whereSubquerys list or whereClause. 
