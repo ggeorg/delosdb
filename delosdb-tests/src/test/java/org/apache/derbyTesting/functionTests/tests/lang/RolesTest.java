@@ -79,6 +79,12 @@ public class RolesTest extends BaseJDBCTestCase
     private final static String roleGrantCircularity     = "4251C";
     private final static String idParseError             = "XCXA0";
 
+    // DelosDB registers one additional SYSCS_UTIL routine for extension
+    // visibility. Inherited Derby role tests count pre-existing PUBLIC
+    // routine execute grants, so keep the product-specific catalog delta
+    // centralized here instead of scattering adjusted literals.
+    private final static int delosdbSystemRoutinePermDelta = 1;
+
     private int MAX_IDENTIFIER_LENGTH = 128;
     /**
      * Users used by all suites when when authLevel == SQLAUTHORIZATION.
@@ -1228,7 +1234,9 @@ public class RolesTest extends BaseJDBCTestCase
         }
 
         assertSystableRowCount("SYS.SYSROUTINEPERMS",
-                               rcNoAuth, rcDbo, rcMereMortal);
+                               rcNoAuth + delosdbSystemRoutinePermDelta,
+                               rcDbo + delosdbSystemRoutinePermDelta,
+                               rcMereMortal + delosdbSystemRoutinePermDelta);
     }
 
 
