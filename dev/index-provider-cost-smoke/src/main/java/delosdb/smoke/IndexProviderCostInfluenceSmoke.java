@@ -69,13 +69,13 @@ public final class IndexProviderCostInfluenceSmoke
             IndexProviderCostDiagnostics.clear();
             assertSingleId(connection, 20, 2, "diagnostic provider-cost query");
             IndexProviderCostProbe diagnosticProbe = assertProbe(connection, "diagnostic", false);
-            System.out.println(diagnosticProbe.diagnosticSummary());
+            System.out.println(diagnosticProbe.plannerDiagnosticLine());
 
             System.setProperty(IndexProviderCostMode.PROPERTY_NAME, "enabled");
             IndexProviderCostDiagnostics.clear();
             assertSingleId(connection, 30, 3, "enabled provider-cost query");
             IndexProviderCostProbe enabledProbe = assertProbe(connection, "enabled", true);
-            System.out.println(enabledProbe.diagnosticSummary());
+            System.out.println(enabledProbe.plannerDiagnosticLine());
 
             assertPlannerSafetyRules();
 
@@ -177,7 +177,9 @@ public final class IndexProviderCostInfluenceSmoke
                             + probe.diagnosticSummary());
         }
 
-        String summary = probe.diagnosticSummary();
+        String summary = probe.plannerDiagnosticLine();
+        assertPlannerDiagnosticShape(summary);
+        assertSummaryContains(summary, "type=index-provider-cost");
         assertSummaryContains(summary, "mode=" + expectedMode);
         assertSummaryContains(summary, "provider=btree");
         assertSummaryContains(summary, "index=IDX_PROVIDER_COST_IDX");
@@ -185,6 +187,7 @@ public final class IndexProviderCostInfluenceSmoke
         assertSummaryContains(summary, "safeToConsume=true");
         assertSummaryContains(summary, "consumed=" + expectedConsumed);
         assertSummaryContains(summary, "decision=" + (expectedConsumed ? "consumed" : "available"));
+        assertSummaryContains(summary, "costSource=" + (expectedConsumed ? "provider" : "derby"));
         assertSummaryContains(summary, "providerTotalCost=");
         return probe;
     }
@@ -198,7 +201,8 @@ public final class IndexProviderCostInfluenceSmoke
         {
             throw new IllegalStateException("Expected valid provider estimate to be safe");
         }
-        assertSummaryContains(valid.diagnosticSummary(), "decision=available");
+        assertSummaryContains(valid.plannerDiagnosticLine(), "decision=available");
+        assertSummaryContains(valid.plannerDiagnosticLine(), "costSource=derby");
 
         IndexProviderCostProbe zeroCost = new IndexProviderCostProbe(
                 "enabled", "btree", "IDX_ZERO", 10L, 1L, 100.0d,
@@ -224,11 +228,25 @@ public final class IndexProviderCostInfluenceSmoke
                     + probe.diagnosticSummary());
         }
         IndexProviderCostProbe fallback = probe.withConsumptionFallback(reason);
-        String summary = fallback.diagnosticSummary();
+        String summary = fallback.plannerDiagnosticLine();
         assertSummaryContains(summary, "safeToConsume=false");
         assertSummaryContains(summary, "consumed=false");
         assertSummaryContains(summary, "decision=fallback");
         assertSummaryContains(summary, reason);
+    }
+
+    private static void assertPlannerDiagnosticShape(String summary)
+    {
+        if (!summary.startsWith("DelosDBPlannerCost{"))
+        {
+            throw new IllegalStateException(
+                    "Expected stable planner diagnostic prefix but was: " + summary);
+        }
+        assertSummaryContains(summary, "type=index-provider-cost");
+        assertSummaryContains(summary, "decision=");
+        assertSummaryContains(summary, "costSource=");
+        assertSummaryContains(summary, "derbyCost=");
+        assertSummaryContains(summary, "providerTotalCost=");
     }
 
     private static void assertSummaryContains(String summary, String expected)

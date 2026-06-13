@@ -80,27 +80,50 @@ public record IndexProviderCostProbe(
     }
 
     /**
+     * Names the cost source used by Derby after the DelosDB bridge evaluated
+     * the provider estimate. This keeps diagnostics explicit: a provider
+     * estimate can be visible without replacing Derby's native cost.
+     */
+    public String costSource() {
+        return consumed ? "provider" : "derby";
+    }
+
+    public boolean usedProviderCost() {
+        return consumed;
+    }
+
+    public boolean usedDerbyCost() {
+        return !consumed;
+    }
+
+    /**
      * Returns a stable, provider-neutral diagnostic line for smoke tests and
      * future planner tracing. Keep this free of Derby implementation objects so
      * the diagnostic surface remains safe to expose outside the optimizer.
      */
-    public String diagnosticSummary() {
-        return "IndexProviderCostProbe{"
-                + "mode=" + mode
+    public String plannerDiagnosticLine() {
+        return "DelosDBPlannerCost{"
+                + "type=index-provider-cost"
+                + ", mode=" + mode
                 + ", provider=" + providerName
                 + ", index=" + indexName
-                + ", tableRows=" + tableRowCount
-                + ", derbyRows=" + derbyEstimatedRows
-                + ", derbyCost=" + derbyCost
-                + ", estimatePresent=" + estimatePresent
-                + ", providerStartupCost=" + providerStartupCost
-                + ", providerTotalCost=" + providerTotalCost
-                + ", providerRows=" + providerEstimatedRows
+                + ", decision=" + plannerDecision()
+                + ", costSource=" + costSource()
                 + ", safeToConsume=" + canSafelyReplaceDerbyCost()
                 + ", consumed=" + consumed
-                + ", decision=" + plannerDecision()
+                + ", derbyCost=" + derbyCost
+                + ", derbyRows=" + derbyEstimatedRows
+                + ", providerTotalCost=" + providerTotalCost
+                + ", providerRows=" + providerEstimatedRows
+                + ", tableRows=" + tableRowCount
+                + ", estimatePresent=" + estimatePresent
+                + ", providerStartupCost=" + providerStartupCost
                 + ", explanation=" + sanitize(explanation)
                 + "}";
+    }
+
+    public String diagnosticSummary() {
+        return plannerDiagnosticLine();
     }
 
     private static String appendExplanation(String current, String reason) {
