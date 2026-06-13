@@ -731,10 +731,12 @@ tasks.register('functionProviderVisibilitySmoke', JavaExec) {
 
 
 def extensionRegistrySmokeClassesDir = layout.buildDirectory.dir('classes/extension-registry-smoke')
+def extensionRegistrySqlVisibilitySmokeClassesDir = layout.buildDirectory.dir('classes/extension-registry-sql-visibility-smoke')
 
 def extensionRegistrySmokeRuntimeClasspath = {
     files(
             extensionRegistrySmokeClassesDir,
+            extensionRegistrySqlVisibilitySmokeClassesDir,
             moduleClassDir(moduleNames.engine),
             moduleClassDir(moduleNames.commons),
             moduleClassDir(moduleNames.osgi),
@@ -742,18 +744,32 @@ def extensionRegistrySmokeRuntimeClasspath = {
             extensionRuntimeJars())
 }
 
-tasks.register('compileExtensionRegistrySmoke', JavaCompile) {
-    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
-    group = 'verification'
-    description = 'Compiles the unified DelosDB extension registry smoke test.'
-    source = files('dev/extension-registry-smoke/src/main/java')
-    destinationDirectory = extensionRegistrySmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    classpath = extensionRegistrySmokeRuntimeClasspath()
+def registerExtensionRegistrySmokeCompile = { String taskName, Object sourcePath, Object outputDir, String descriptionText ->
+    tasks.register(taskName, JavaCompile) {
+        dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
+        group = 'verification'
+        description = descriptionText
+        source = files(sourcePath)
+        destinationDirectory = outputDir
+        sourceCompatibility = javaRelease.toString()
+        targetCompatibility = javaRelease.toString()
+        options.release = javaRelease
+        options.encoding = 'UTF-8'
+        classpath = extensionRegistrySmokeRuntimeClasspath()
+    }
 }
+
+registerExtensionRegistrySmokeCompile(
+        'compileExtensionRegistrySmoke',
+        'dev/extension-registry-smoke/src/main/java',
+        extensionRegistrySmokeClassesDir,
+        'Compiles the unified DelosDB extension registry smoke test.')
+
+registerExtensionRegistrySmokeCompile(
+        'compileExtensionRegistrySqlVisibilitySmoke',
+        'dev/extension-registry-sql-visibility-smoke/src/main/java',
+        extensionRegistrySqlVisibilitySmokeClassesDir,
+        'Compiles the SQL-visible DelosDB extension registry smoke test.')
 
 tasks.register('extensionRegistrySmoke', JavaExec) {
     dependsOn 'compileExtensionRegistrySmoke', ':delosdb-spi:compileDelosDbSpi'
@@ -762,6 +778,21 @@ tasks.register('extensionRegistrySmoke', JavaExec) {
     description = 'Verifies the unified DelosDB extension registry sees built-in index, storage, and function providers.'
     classpath = extensionRegistrySmokeRuntimeClasspath()
     mainClass = 'delosdb.smoke.ExtensionRegistrySmoke'
+}
+
+tasks.register('extensionRegistrySqlVisibilitySmoke', JavaExec) {
+    dependsOn 'compileExtensionRegistrySqlVisibilitySmoke', ':delosdb-spi:compileDelosDbSpi'
+    mustRunAfter 'extensionRegistrySmoke'
+    group = 'verification'
+    description = 'Verifies DelosDB extension registry visibility through SYSCS_UTIL.DELOSDB_EXTENSIONS().'
+    classpath = extensionRegistrySmokeRuntimeClasspath()
+    mainClass = 'delosdb.smoke.ExtensionRegistrySqlVisibilitySmoke'
+    args layout.buildDirectory.dir('extension-registry-sql-visibility-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('extension-registry-sql-visibility-smoke').get().asFile
+    doFirst {
+        delete file('build/extension-registry-sql-visibility-smoke')
+        workingDir.mkdirs()
+    }
 }
 
 
@@ -1079,7 +1110,7 @@ subprojects { subproject ->
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'extensionRegistrySmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {

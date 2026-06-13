@@ -460,6 +460,7 @@ public final class	DataDictionaryImpl
 												"SYSCS_PEEK_AT_SEQUENCE",
 												"SYSCS_PEEK_AT_IDENTITY",
 												"SYSCS_GET_DATABASE_NAME",
+												"DELOSDB_EXTENSIONS",
 												};
 	
 	/**
@@ -13437,6 +13438,23 @@ public final class	DataDictionaryImpl
                     false,
                     false,
                     DataTypeDescriptor.getCatalogType( Types.VARCHAR ),
+                    newlyCreatedRoutines,
+                    tc);
+            }
+
+            // VARCHAR(32672) SYSCS_UTIL.DELOSDB_EXTENSIONS()
+            {
+                createSystemProcedureOrFunction(
+                    "DELOSDB_EXTENSIONS",
+                    sysUtilUUID,
+                    (String[]) null,
+                    (TypeDescriptor[]) null,
+                    0,
+                    0,
+                    RoutineAliasInfo.NO_SQL,
+                    true,
+                    false,
+                    DataTypeDescriptor.getCatalogType( Types.VARCHAR, 32672 ),
                     newlyCreatedRoutines,
                     tc);
             }
