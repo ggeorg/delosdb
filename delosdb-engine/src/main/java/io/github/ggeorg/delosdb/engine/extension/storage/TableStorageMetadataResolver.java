@@ -2,6 +2,8 @@ package io.github.ggeorg.delosdb.engine.extension.storage;
 
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.storage.TableStorageMetadata;
+import org.apache.derby.iapi.services.context.ContextManager;
+import org.apache.derby.iapi.services.context.ContextService;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.dictionary.DataDictionary;
 import org.apache.derby.iapi.sql.dictionary.SchemaDescriptor;
@@ -38,6 +40,23 @@ public final class TableStorageMetadataResolver {
         }
 
         LanguageConnectionContext lcc = embedConnection.getLanguageConnection();
+        ContextManager contextManager = lcc.getContextManager();
+        ContextService contextService = ContextService.getFactory();
+        boolean contextSet = false;
+        try {
+            contextService.setCurrentContextManager(contextManager);
+            contextSet = true;
+            return resolveInLanguageContext(lcc, schemaName, tableName);
+        } finally {
+            if (contextSet) {
+                contextService.resetCurrentContextManager(contextManager);
+            }
+        }
+    }
+
+    private static TableStorageMetadata resolveInLanguageContext(
+            LanguageConnectionContext lcc, String schemaName, String tableName)
+            throws StandardException {
         DataDictionary dataDictionary = lcc.getDataDictionary();
         TransactionController transactionController = lcc.getTransactionExecute();
         SchemaDescriptor schema = schemaName == null || schemaName.isBlank()
