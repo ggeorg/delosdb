@@ -29,11 +29,11 @@ public final class StorageProviderVisibilitySmoke {
             assertDiagnostic(connection,
                     "APP",
                     "STORAGE_PROVIDER_VISIBLE_DEFAULT",
-                    "APP.STORAGE_PROVIDER_VISIBLE_DEFAULT storageProvider=heap source=stored");
+                    "APP.STORAGE_PROVIDER_VISIBLE_DEFAULT storageProvider=heap source=descriptor");
             assertDiagnostic(connection,
                     "APP",
                     "STORAGE_PROVIDER_VISIBLE_HEAP",
-                    "APP.STORAGE_PROVIDER_VISIBLE_HEAP storageProvider=heap source=stored");
+                    "APP.STORAGE_PROVIDER_VISIBLE_HEAP storageProvider=heap source=descriptor");
         }
 
         SmokeUtils.shutdown(databasePath);
@@ -43,11 +43,11 @@ public final class StorageProviderVisibilitySmoke {
             assertDiagnostic(connection,
                     "APP",
                     "STORAGE_PROVIDER_VISIBLE_DEFAULT",
-                    "APP.STORAGE_PROVIDER_VISIBLE_DEFAULT storageProvider=heap source=stored");
+                    "APP.STORAGE_PROVIDER_VISIBLE_DEFAULT storageProvider=heap source=descriptor");
             assertDiagnostic(connection,
                     "APP",
                     "STORAGE_PROVIDER_VISIBLE_HEAP",
-                    "APP.STORAGE_PROVIDER_VISIBLE_HEAP storageProvider=heap source=stored");
+                    "APP.STORAGE_PROVIDER_VISIBLE_HEAP storageProvider=heap source=descriptor");
 
             statement.executeUpdate("drop table storage_provider_visible_heap");
             statement.executeUpdate("drop table storage_provider_visible_default");

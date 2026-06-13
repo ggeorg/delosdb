@@ -6,13 +6,13 @@ import io.github.ggeorg.delosdb.spi.storage.TableStorageMetadata;
 import java.util.Objects;
 
 /**
- * Diagnostic storage-provider metadata with catalog source information.
+ * Diagnostic storage-provider metadata with catalog/descriptor source information.
  */
 @InternalApi
 public record TableStorageCatalogMetadata(
         TableStorageMetadata metadata,
         Source source,
-        String storedProviderName
+        String catalogProviderName
 ) {
     public TableStorageCatalogMetadata {
         metadata = Objects.requireNonNull(metadata, "metadata");
@@ -20,8 +20,14 @@ public record TableStorageCatalogMetadata(
     }
 
     public enum Source {
-        STORED,
-        DEFAULTED
+        DESCRIPTOR
+    }
+
+    /**
+     * Backward-compatible accessor for the short-lived catalog-integrity smoke.
+     */
+    public String storedProviderName() {
+        return catalogProviderName;
     }
 
     public String describe() {
