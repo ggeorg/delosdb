@@ -106,6 +106,22 @@ public class DataDescriptorGenerator
 	}
 
 	/**
+	 * Create a table descriptor with DelosDB StorageProvider v0 metadata.
+	 */
+	public TableDescriptor	newTableDescriptor
+	(
+		String 				tableName,
+		SchemaDescriptor	schema,
+		int					tableType,
+		char				lockGranularity,
+        String              storageProviderName
+    )
+	{
+		return new TableDescriptor
+			(dataDictionary, tableName, schema, tableType, lockGranularity, storageProviderName);
+	}
+
+	/**
 	 * Create a descriptor for the temporary table within the given schema.
 	 *
 	 * @param tableName	The name of the temporary table to get the descriptor for

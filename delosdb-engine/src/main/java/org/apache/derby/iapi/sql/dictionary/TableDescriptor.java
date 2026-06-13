@@ -90,6 +90,8 @@ import org.apache.derby.iapi.util.IdUtil;
 public class TableDescriptor extends UniqueSQLObjectDescriptor
 	implements Provider, Dependent
 {
+    public static final String DEFAULT_STORAGE_PROVIDER_NAME = "heap";
+
 	public static final int BASE_TABLE_TYPE = 0;
 	public static final int SYSTEM_TABLE_TYPE = 1;
 	public static final int VIEW_TYPE = 2;
@@ -136,6 +138,7 @@ public class TableDescriptor extends UniqueSQLObjectDescriptor
 	private boolean					onRollbackDeleteRows; //true means on rollback delete rows. This is the only value supported.
     private boolean                 indexStatsUpToDate = true;
     private String                  indexStatsUpdateReason;
+    private String                  storageProviderName = DEFAULT_STORAGE_PROVIDER_NAME;
 	SchemaDescriptor				schema;
 	String							tableName;
 	UUID							oid;
@@ -251,12 +254,29 @@ public class TableDescriptor extends UniqueSQLObjectDescriptor
 		char				lockGranularity
     )
 	{
+        this(dataDictionary, tableName, schema, tableType, lockGranularity, DEFAULT_STORAGE_PROVIDER_NAME);
+	}
+
+	/**
+	 * Constructor for a TableDescriptor with DelosDB storage-provider metadata.
+	 */
+	public TableDescriptor
+	(
+		DataDictionary		dataDictionary,
+		String				tableName,
+		SchemaDescriptor	schema,
+		int					tableType,
+		char				lockGranularity,
+        String              storageProviderName
+    )
+	{
 		super( dataDictionary );
 
 		this.schema = schema;
 		this.tableName = tableName;
 		this.tableType = tableType;
 		this.lockGranularity = lockGranularity;
+        this.storageProviderName = normalizeStorageProviderName(storageProviderName);
 
 		this.conglomerateDescriptorList = new ConglomerateDescriptorList();
 		this.columnDescriptorList = new ColumnDescriptorList();
@@ -340,6 +360,41 @@ public class TableDescriptor extends UniqueSQLObjectDescriptor
 	{
 		return tableType;
 	}
+
+    /**
+     * Gets the DelosDB storage provider associated with this table.
+     *
+     * <p>StorageProvider v0 maps all Derby-compatible tables to the built-in
+     * heap provider. Future catalog versions can persist non-heap provider
+     * names without changing this descriptor API.</p>
+     *
+     * @return normalized storage provider name
+     */
+    public String getStorageProviderName()
+    {
+        return storageProviderName;
+    }
+
+    /**
+     * Sets the DelosDB storage provider associated with this table.
+     *
+     * @param storageProviderName provider name, or null for the built-in heap provider
+     */
+    public void setStorageProviderName(String storageProviderName)
+    {
+        this.storageProviderName = normalizeStorageProviderName(storageProviderName);
+    }
+
+    private static String normalizeStorageProviderName(String storageProviderName)
+    {
+        if (storageProviderName == null)
+        {
+            return DEFAULT_STORAGE_PROVIDER_NAME;
+        }
+
+        String normalized = storageProviderName.trim().toLowerCase(java.util.Locale.ROOT);
+        return normalized.isEmpty() ? DEFAULT_STORAGE_PROVIDER_NAME : normalized;
+    }
 
 	/**
 	 * Gets the id for the heap conglomerate of the table.

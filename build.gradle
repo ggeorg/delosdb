@@ -923,10 +923,42 @@ subprojects { subproject ->
 }
 
 
+
+
+def storageProviderPersistenceSmokeClassesDir = layout.buildDirectory.dir('classes/storage-provider-persistence-smoke')
+
+tasks.register('compileStorageProviderPersistenceSmoke', JavaCompile) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Compiles the StorageProvider v0 table metadata persistence smoke test.'
+    source = files('dev/storage-provider-persistence-smoke/src/main/java')
+    destinationDirectory = storageProviderPersistenceSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = runtimeJars()
+}
+
+tasks.register('storageProviderPersistenceSmoke', JavaExec) {
+    dependsOn 'compileStorageProviderPersistenceSmoke'
+    mustRunAfter 'storageProviderSyntaxSmoke'
+    group = 'verification'
+    description = 'Verifies StorageProvider table metadata can be resolved after descriptor reload.'
+    classpath = files(storageProviderPersistenceSmokeClassesDir, runtimeJars())
+    mainClass = 'delosdb.smoke.StorageProviderPersistenceSmoke'
+    args layout.buildDirectory.dir('storage-provider-persistence-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('storage-provider-persistence-smoke').get().asFile
+    doFirst {
+        delete file('build/storage-provider-persistence-smoke')
+        workingDir.mkdirs()
+    }
+}
+
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {

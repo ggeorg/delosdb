@@ -76,6 +76,7 @@ class CreateTableConstantAction extends DDLConstantAction
 	private ColumnInfo[]			columnInfo;
 	private CreateConstraintConstantAction[]	constraintActions;
 	private Properties				properties;
+    private String                  storageProviderName;
 	
 	/**
 	 *	Make the ConstantAction for a CREATE TABLE statement.
@@ -88,6 +89,7 @@ class CreateTableConstantAction extends DDLConstantAction
 	 *  @param constraintActions	CreateConstraintConstantAction[] for constraints
 	 *  @param properties	Optional table properties
 	 * @param lockGranularity	The lock granularity.
+     * @param storageProviderName DelosDB storage provider name.
 	 * @param onCommitDeleteRows	If true, on commit delete rows else on commit preserve rows of temporary table.
 	 * @param onRollbackDeleteRows	If true, on rollback, delete rows from temp tables which were logically modified. true is the only supported value
 	 */
@@ -99,6 +101,7 @@ class CreateTableConstantAction extends DDLConstantAction
 								CreateConstraintConstantAction[] constraintActions,
 								Properties		properties,
 								char			lockGranularity,
+                                String          storageProviderName,
 								boolean			onCommitDeleteRows,
 								boolean			onRollbackDeleteRows)
 	{
@@ -109,6 +112,7 @@ class CreateTableConstantAction extends DDLConstantAction
 		this.constraintActions = constraintActions;
 		this.properties = properties;
 		this.lockGranularity = lockGranularity;
+        this.storageProviderName = storageProviderName;
 		this.onCommitDeleteRows = onCommitDeleteRows;
 		this.onRollbackDeleteRows = onRollbackDeleteRows;
 
@@ -237,7 +241,7 @@ class CreateTableConstantAction extends DDLConstantAction
 
 		if ( tableType != TableDescriptor.GLOBAL_TEMPORARY_TABLE_TYPE )
 		{
-			td = ddg.newTableDescriptor(tableName, sd, tableType, lockGranularity);
+			td = ddg.newTableDescriptor(tableName, sd, tableType, lockGranularity, storageProviderName);
 			dd.addDescriptor(td, sd, DataDictionary.SYSTABLES_CATALOG_NUM, false, tc);
 		} else
 		{

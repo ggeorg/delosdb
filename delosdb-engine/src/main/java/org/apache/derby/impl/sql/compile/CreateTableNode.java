@@ -619,6 +619,7 @@ class CreateTableNode extends DDLStatementNode
                 conActions,
                 properties,
                 lockGranularity,
+                storageProviderName,
                 onCommitDeleteRows,
                 onRollbackDeleteRows));
 	}

@@ -378,6 +378,7 @@ public class GenericConstantActionFactory
      *  @param constraintActions	CreateConstraintConstantAction[] for constraints
      *  @param properties	Optional table properties
      * @param lockGranularity	The lock granularity.
+     * @param storageProviderName DelosDB storage provider name.
      * @param onCommitDeleteRows	If true, on commit delete rows else on commit preserve rows of temporary table.
      * @param onRollbackDeleteRows	If true, on rollback, delete rows from temp tables which were logically modified. true is the only supported value
      */
@@ -390,11 +391,13 @@ public class GenericConstantActionFactory
         CreateConstraintConstantAction[] constraintActions,
         Properties		properties,
         char			lockGranularity,
+        String          storageProviderName,
         boolean			onCommitDeleteRows,
         boolean			onRollbackDeleteRows) {
         return new CreateTableConstantAction( schemaName, tableName, tableType, columnInfo,
                                               constraintActions, properties,
-                                              lockGranularity, onCommitDeleteRows, onRollbackDeleteRows);
+                                              lockGranularity, storageProviderName,
+                                              onCommitDeleteRows, onRollbackDeleteRows);
     }
 
     /**
