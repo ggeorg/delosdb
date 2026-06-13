@@ -652,16 +652,17 @@ def functionProviderMetadataSmokeClassesDir = layout.buildDirectory.dir('classes
 def functionProviderExecutionSmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-execution-smoke')
 def functionProviderVisibilitySmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-visibility-smoke')
 
-def functionProviderSmokeRuntimeClasspath = {
+def functionProviderSmokeBaseClasspath = {
     files(
-            functionProviderMetadataSmokeClassesDir,
-            functionProviderExecutionSmokeClassesDir,
-            functionProviderVisibilitySmokeClassesDir,
             moduleClassDir(moduleNames.engine),
             moduleClassDir(moduleNames.commons),
             moduleClassDir(moduleNames.osgi),
             project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
             extensionRuntimeJars())
+}
+
+def functionProviderSmokeRuntimeClasspath = { Object classesDir ->
+    files(classesDir, functionProviderSmokeBaseClasspath())
 }
 
 def registerFunctionProviderSmokeCompile = { String taskName, Object sourcePath, Object outputDir, String descriptionText ->
@@ -675,7 +676,7 @@ def registerFunctionProviderSmokeCompile = { String taskName, Object sourcePath,
         targetCompatibility = javaRelease.toString()
         options.release = javaRelease
         options.encoding = 'UTF-8'
-        classpath = functionProviderSmokeRuntimeClasspath()
+        classpath = functionProviderSmokeBaseClasspath()
     }
 }
 
@@ -702,7 +703,7 @@ tasks.register('functionProviderMetadataSmoke', JavaExec) {
     mustRunAfter 'storageProviderVisibilitySmoke'
     group = 'verification'
     description = 'Verifies the built-in FunctionProvider metadata and resolver seam.'
-    classpath = functionProviderSmokeRuntimeClasspath()
+    classpath = functionProviderSmokeRuntimeClasspath(functionProviderMetadataSmokeClassesDir)
     mainClass = 'delosdb.smoke.FunctionProviderMetadataSmoke'
 }
 
@@ -711,7 +712,7 @@ tasks.register('functionProviderExecutionSmoke', JavaExec) {
     mustRunAfter 'functionProviderMetadataSmoke'
     group = 'verification'
     description = 'Verifies provider-backed execution of the built-in DelosDB SQL function.'
-    classpath = functionProviderSmokeRuntimeClasspath()
+    classpath = functionProviderSmokeRuntimeClasspath(functionProviderExecutionSmokeClassesDir)
     mainClass = 'delosdb.smoke.FunctionProviderExecutionSmoke'
     args layout.buildDirectory.dir('function-provider-execution-smoke/db').get().asFile.absolutePath
     workingDir = layout.buildDirectory.dir('function-provider-execution-smoke').get().asFile
@@ -726,7 +727,7 @@ tasks.register('functionProviderVisibilitySmoke', JavaExec) {
     mustRunAfter 'functionProviderExecutionSmoke'
     group = 'verification'
     description = 'Verifies FunctionProvider metadata visibility for the built-in DelosDB SQL function.'
-    classpath = functionProviderSmokeRuntimeClasspath()
+    classpath = functionProviderSmokeRuntimeClasspath(functionProviderVisibilitySmokeClassesDir)
     mainClass = 'delosdb.smoke.FunctionProviderVisibilitySmoke'
 }
 
@@ -735,15 +736,17 @@ tasks.register('functionProviderVisibilitySmoke', JavaExec) {
 def extensionRegistrySmokeClassesDir = layout.buildDirectory.dir('classes/extension-registry-smoke')
 def extensionRegistrySqlVisibilitySmokeClassesDir = layout.buildDirectory.dir('classes/extension-registry-sql-visibility-smoke')
 
-def extensionRegistrySmokeRuntimeClasspath = {
+def extensionRegistrySmokeBaseClasspath = {
     files(
-            extensionRegistrySmokeClassesDir,
-            extensionRegistrySqlVisibilitySmokeClassesDir,
             moduleClassDir(moduleNames.engine),
             moduleClassDir(moduleNames.commons),
             moduleClassDir(moduleNames.osgi),
             project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
             extensionRuntimeJars())
+}
+
+def extensionRegistrySmokeRuntimeClasspath = { Object classesDir ->
+    files(classesDir, extensionRegistrySmokeBaseClasspath())
 }
 
 def registerExtensionRegistrySmokeCompile = { String taskName, Object sourcePath, Object outputDir, String descriptionText ->
@@ -757,7 +760,7 @@ def registerExtensionRegistrySmokeCompile = { String taskName, Object sourcePath
         targetCompatibility = javaRelease.toString()
         options.release = javaRelease
         options.encoding = 'UTF-8'
-        classpath = extensionRegistrySmokeRuntimeClasspath()
+        classpath = extensionRegistrySmokeBaseClasspath()
     }
 }
 
@@ -778,7 +781,7 @@ tasks.register('extensionRegistrySmoke', JavaExec) {
     mustRunAfter 'functionProviderVisibilitySmoke'
     group = 'verification'
     description = 'Verifies the unified DelosDB extension registry sees built-in index, storage, and function providers.'
-    classpath = extensionRegistrySmokeRuntimeClasspath()
+    classpath = extensionRegistrySmokeRuntimeClasspath(extensionRegistrySmokeClassesDir)
     mainClass = 'delosdb.smoke.ExtensionRegistrySmoke'
 }
 
@@ -787,7 +790,7 @@ tasks.register('extensionRegistrySqlVisibilitySmoke', JavaExec) {
     mustRunAfter 'extensionRegistrySmoke'
     group = 'verification'
     description = 'Verifies DelosDB extension registry visibility through SYSCS_UTIL.DELOSDB_EXTENSIONS().'
-    classpath = extensionRegistrySmokeRuntimeClasspath()
+    classpath = extensionRegistrySmokeRuntimeClasspath(extensionRegistrySqlVisibilitySmokeClassesDir)
     mainClass = 'delosdb.smoke.ExtensionRegistrySqlVisibilitySmoke'
     args layout.buildDirectory.dir('extension-registry-sql-visibility-smoke/db').get().asFile.absolutePath
     workingDir = layout.buildDirectory.dir('extension-registry-sql-visibility-smoke').get().asFile
@@ -801,14 +804,17 @@ tasks.register('extensionRegistrySqlVisibilitySmoke', JavaExec) {
 
 def storageProviderMetadataSmokeClassesDir = layout.buildDirectory.dir('classes/storage-provider-metadata-smoke')
 
-def storageProviderSmokeRuntimeClasspath = {
+def storageProviderSmokeBaseClasspath = {
     files(
-            storageProviderMetadataSmokeClassesDir,
             moduleClassDir(moduleNames.engine),
             moduleClassDir(moduleNames.commons),
             moduleClassDir(moduleNames.osgi),
             project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
             extensionRuntimeJars())
+}
+
+def storageProviderSmokeRuntimeClasspath = { Object classesDir ->
+    files(classesDir, storageProviderSmokeBaseClasspath())
 }
 
 tasks.register('compileStorageProviderMetadataSmoke', JavaCompile) {
@@ -821,7 +827,7 @@ tasks.register('compileStorageProviderMetadataSmoke', JavaCompile) {
     targetCompatibility = javaRelease.toString()
     options.release = javaRelease
     options.encoding = 'UTF-8'
-    classpath = storageProviderSmokeRuntimeClasspath()
+    classpath = storageProviderSmokeBaseClasspath()
 }
 
 tasks.register('storageProviderMetadataSmoke', JavaExec) {
@@ -829,7 +835,7 @@ tasks.register('storageProviderMetadataSmoke', JavaExec) {
     mustRunAfter 'indexProviderCostInfluenceSmoke'
     group = 'verification'
     description = 'Verifies the built-in heap StorageProvider metadata and resolver seam.'
-    classpath = storageProviderSmokeRuntimeClasspath()
+    classpath = storageProviderSmokeRuntimeClasspath(storageProviderMetadataSmokeClassesDir)
     mainClass = 'delosdb.smoke.StorageProviderMetadataSmoke'
 }
 
