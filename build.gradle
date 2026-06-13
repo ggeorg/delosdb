@@ -680,35 +680,65 @@ tasks.register('storageProviderMetadataSmoke', JavaExec) {
 }
 
 
-def storageProviderSyntaxSmokeClassesDir = layout.buildDirectory.dir('classes/storage-provider-syntax-smoke')
+def registerStorageProviderDatabaseSmoke = { String taskName,
+                                            String smokeDirName,
+                                            String mainClassName,
+                                            String description,
+                                            List<String> mustRunAfterTasks ->
+    def classesDir = layout.buildDirectory.dir("classes/${smokeDirName}")
+    def compileTaskName = "compile${taskName.capitalize()}"
 
-tasks.register('compileStorageProviderSyntaxSmoke', JavaCompile) {
-    dependsOn 'jars'
-    group = 'verification'
-    description = 'Compiles the CREATE TABLE storage provider syntax smoke test.'
-    source = files('dev/storage-provider-syntax-smoke/src/main/java')
-    destinationDirectory = storageProviderSyntaxSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    classpath = runtimeJars()
-}
+    tasks.register(compileTaskName, JavaCompile) {
+        dependsOn 'jars'
+        group = 'verification'
+        description = "Compiles ${description}"
+        source = files("dev/${smokeDirName}/src/main/java")
+        destinationDirectory = classesDir
+        sourceCompatibility = javaRelease.toString()
+        targetCompatibility = javaRelease.toString()
+        options.release = javaRelease
+        options.encoding = 'UTF-8'
+        classpath = runtimeJars()
+    }
 
-tasks.register('storageProviderSyntaxSmoke', JavaExec) {
-    dependsOn 'compileStorageProviderSyntaxSmoke'
-    mustRunAfter 'storageProviderMetadataSmoke'
-    group = 'verification'
-    description = 'Verifies CREATE TABLE ... USING heap accepts only the built-in heap storage provider.'
-    classpath = files(storageProviderSyntaxSmokeClassesDir, runtimeJars())
-    mainClass = 'delosdb.smoke.StorageProviderSyntaxSmoke'
-    args layout.buildDirectory.dir('storage-provider-syntax-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('storage-provider-syntax-smoke').get().asFile
-    doFirst {
-        delete file('build/storage-provider-syntax-smoke')
-        workingDir.mkdirs()
+    tasks.register(taskName, JavaExec) {
+        dependsOn compileTaskName
+        if (!mustRunAfterTasks.isEmpty()) {
+            mustRunAfter mustRunAfterTasks
+        }
+        group = 'verification'
+        description = description
+        classpath = files(classesDir, runtimeJars())
+        mainClass = mainClassName
+        args layout.buildDirectory.dir("${smokeDirName}/db").get().asFile.absolutePath
+        workingDir = layout.buildDirectory.dir(smokeDirName).get().asFile
+        doFirst {
+            delete file("build/${smokeDirName}")
+            workingDir.mkdirs()
+        }
     }
 }
+
+registerStorageProviderDatabaseSmoke(
+        'storageProviderSyntaxSmoke',
+        'storage-provider-syntax-smoke',
+        'delosdb.smoke.StorageProviderSyntaxSmoke',
+        'Verifies CREATE TABLE ... USING heap accepts only the built-in heap storage provider.',
+        ['storageProviderMetadataSmoke'])
+
+registerStorageProviderDatabaseSmoke(
+        'storageProviderPersistenceSmoke',
+        'storage-provider-persistence-smoke',
+        'delosdb.smoke.StorageProviderPersistenceSmoke',
+        'Verifies StorageProvider table metadata can be resolved after descriptor reload.',
+        ['storageProviderSyntaxSmoke'])
+
+registerStorageProviderDatabaseSmoke(
+        'storageProviderVisibilitySmoke',
+        'storage-provider-visibility-smoke',
+        'delosdb.smoke.StorageProviderVisibilitySmoke',
+        'Verifies StorageProvider table metadata is visible through the internal diagnostic resolver.',
+        ['storageProviderPersistenceSmoke'])
 
 
 def networkServerSmokeClassesDir = layout.buildDirectory.dir('classes/network-server-smoke')
@@ -925,40 +955,10 @@ subprojects { subproject ->
 
 
 
-def storageProviderPersistenceSmokeClassesDir = layout.buildDirectory.dir('classes/storage-provider-persistence-smoke')
-
-tasks.register('compileStorageProviderPersistenceSmoke', JavaCompile) {
-    dependsOn 'jars'
-    group = 'verification'
-    description = 'Compiles the StorageProvider v0 table metadata persistence smoke test.'
-    source = files('dev/storage-provider-persistence-smoke/src/main/java')
-    destinationDirectory = storageProviderPersistenceSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    classpath = runtimeJars()
-}
-
-tasks.register('storageProviderPersistenceSmoke', JavaExec) {
-    dependsOn 'compileStorageProviderPersistenceSmoke'
-    mustRunAfter 'storageProviderSyntaxSmoke'
-    group = 'verification'
-    description = 'Verifies StorageProvider table metadata can be resolved after descriptor reload.'
-    classpath = files(storageProviderPersistenceSmokeClassesDir, runtimeJars())
-    mainClass = 'delosdb.smoke.StorageProviderPersistenceSmoke'
-    args layout.buildDirectory.dir('storage-provider-persistence-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('storage-provider-persistence-smoke').get().asFile
-    doFirst {
-        delete file('build/storage-provider-persistence-smoke')
-        workingDir.mkdirs()
-    }
-}
-
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {

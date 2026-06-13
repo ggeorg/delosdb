@@ -54,6 +54,17 @@ public final class TableStorageMetadataResolver {
         }
     }
 
+
+    public static String describe(Connection connection, String schemaName, String tableName)
+            throws SQLException, StandardException {
+        TableStorageMetadata metadata = resolve(connection, schemaName, tableName);
+        return metadata.schemaName()
+                + "."
+                + metadata.tableName()
+                + " storageProvider="
+                + metadata.providerName();
+    }
+
     private static TableStorageMetadata resolveInLanguageContext(
             LanguageConnectionContext lcc, String schemaName, String tableName)
             throws StandardException {
