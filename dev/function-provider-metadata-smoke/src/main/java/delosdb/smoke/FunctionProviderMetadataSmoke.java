@@ -14,7 +14,7 @@ import io.github.ggeorg.delosdb.spi.function.FunctionProvider;
 import java.util.List;
 
 /**
- * Verifies the metadata-only FunctionProvider v0 seam.
+ * Verifies the metadata FunctionProvider v0 seam.
  */
 public final class FunctionProviderMetadataSmoke {
     private FunctionProviderMetadataSmoke() {
@@ -27,12 +27,17 @@ public final class FunctionProviderMetadataSmoke {
         FunctionProvider provider = resolver.requireDefault();
         assertEquals(BuiltInFunctionProviders.defaultProviderName(), provider.name(), "default provider name");
 
-        FunctionDescriptor delosVersion = resolver.findFunction("sys", "delos_version")
-                .orElseThrow(() -> new AssertionError("Missing built-in SYS.DELOS_VERSION function metadata"));
+        FunctionDescriptor delosVersion = resolver.findFunction("app", "delos_version")
+                .orElseThrow(() -> new AssertionError("Missing built-in APP.DELOS_VERSION function metadata"));
         assertEquals("builtin", delosVersion.providerName(), "function provider");
-        assertEquals("SYS.DELOS_VERSION", delosVersion.qualifiedName(), "qualified function name");
+        assertEquals("APP.DELOS_VERSION", delosVersion.qualifiedName(), "qualified function name");
         assertEquals("VARCHAR(32)", delosVersion.returnType(), "return type");
         assertEquals(List.of(), delosVersion.parameterTypes(), "parameter types");
+        assertTrue(delosVersion.hasExternalName(), "function should expose its Java routine external name");
+        assertEquals(
+                "io.github.ggeorg.delosdb.engine.extension.function.DelosDbBuiltInFunctions.delosVersion",
+                delosVersion.externalName(),
+                "function external name");
 
         assertTrue(provider.capabilities(delosVersion).scalar(), "function should be scalar");
         assertTrue(provider.capabilities(delosVersion).deterministic(), "function should be deterministic");

@@ -11,8 +11,9 @@ import java.util.Objects;
 /**
  * Built-in DelosDB function provider.
  *
- * <p>FunctionProvider v0 is metadata-only. The descriptor records the stable
- * provider/function identity used by later execution/catalog work.</p>
+ * <p>FunctionProvider v0 exposes built-in function metadata and the Java
+ * routine entry point used by the execution smoke. External loading remains
+ * intentionally deferred.</p>
  */
 @InternalApi
 final class BuiltInFunctionProvider implements FunctionProvider {
@@ -21,10 +22,11 @@ final class BuiltInFunctionProvider implements FunctionProvider {
     private static final List<FunctionDescriptor> FUNCTIONS = List.of(
             FunctionDescriptor.of(
                     BuiltInFunctionProviders.defaultProviderName(),
-                    "SYS",
+                    "APP",
                     "DELOS_VERSION",
                     "VARCHAR(32)",
-                    List.of())
+                    List.of(),
+                    "io.github.ggeorg.delosdb.engine.extension.function.DelosDbBuiltInFunctions.delosVersion")
     );
 
     private BuiltInFunctionProvider() {

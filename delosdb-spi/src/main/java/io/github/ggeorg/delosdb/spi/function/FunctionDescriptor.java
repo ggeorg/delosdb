@@ -12,7 +12,8 @@ public record FunctionDescriptor(
         String schemaName,
         String functionName,
         String returnType,
-        List<String> parameterTypes
+        List<String> parameterTypes,
+        String externalName
 ) {
     public FunctionDescriptor {
         providerName = normalizeProviderName(providerName);
@@ -23,6 +24,7 @@ public record FunctionDescriptor(
                 .stream()
                 .map(parameterType -> normalizeType(parameterType, "parameterType"))
                 .toList());
+        externalName = normalizeOptionalExternalName(externalName);
     }
 
     public static FunctionDescriptor of(
@@ -31,11 +33,25 @@ public record FunctionDescriptor(
             String functionName,
             String returnType,
             List<String> parameterTypes) {
-        return new FunctionDescriptor(providerName, schemaName, functionName, returnType, parameterTypes);
+        return new FunctionDescriptor(providerName, schemaName, functionName, returnType, parameterTypes, "");
+    }
+
+    public static FunctionDescriptor of(
+            String providerName,
+            String schemaName,
+            String functionName,
+            String returnType,
+            List<String> parameterTypes,
+            String externalName) {
+        return new FunctionDescriptor(providerName, schemaName, functionName, returnType, parameterTypes, externalName);
     }
 
     public String qualifiedName() {
         return schemaName + "." + functionName;
+    }
+
+    public boolean hasExternalName() {
+        return !externalName.isEmpty();
     }
 
     private static String normalizeProviderName(String providerName) {
@@ -62,5 +78,12 @@ public record FunctionDescriptor(
             throw new IllegalArgumentException(label + " must not be blank");
         }
         return normalized.toUpperCase(Locale.ROOT);
+    }
+
+    private static String normalizeOptionalExternalName(String externalName) {
+        if (externalName == null) {
+            return "";
+        }
+        return externalName.trim();
     }
 }

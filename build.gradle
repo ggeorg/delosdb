@@ -647,10 +647,12 @@ tasks.register('indexProviderCostInfluenceSmoke', JavaExec) {
 
 
 def functionProviderMetadataSmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-metadata-smoke')
+def functionProviderExecutionSmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-execution-smoke')
 
 def functionProviderSmokeRuntimeClasspath = {
     files(
             functionProviderMetadataSmokeClassesDir,
+            functionProviderExecutionSmokeClassesDir,
             moduleClassDir(moduleNames.engine),
             moduleClassDir(moduleNames.commons),
             moduleClassDir(moduleNames.osgi),
@@ -658,18 +660,32 @@ def functionProviderSmokeRuntimeClasspath = {
             extensionRuntimeJars())
 }
 
-tasks.register('compileFunctionProviderMetadataSmoke', JavaCompile) {
-    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
-    group = 'verification'
-    description = 'Compiles the FunctionProvider v0 built-in metadata smoke test.'
-    source = files('dev/function-provider-metadata-smoke/src/main/java')
-    destinationDirectory = functionProviderMetadataSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    classpath = functionProviderSmokeRuntimeClasspath()
+def registerFunctionProviderSmokeCompile = { String taskName, Object sourcePath, Object outputDir, String descriptionText ->
+    tasks.register(taskName, JavaCompile) {
+        dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
+        group = 'verification'
+        description = descriptionText
+        source = files(sourcePath)
+        destinationDirectory = outputDir
+        sourceCompatibility = javaRelease.toString()
+        targetCompatibility = javaRelease.toString()
+        options.release = javaRelease
+        options.encoding = 'UTF-8'
+        classpath = functionProviderSmokeRuntimeClasspath()
+    }
 }
+
+registerFunctionProviderSmokeCompile(
+        'compileFunctionProviderMetadataSmoke',
+        'dev/function-provider-metadata-smoke/src/main/java',
+        functionProviderMetadataSmokeClassesDir,
+        'Compiles the FunctionProvider v0 built-in metadata smoke test.')
+
+registerFunctionProviderSmokeCompile(
+        'compileFunctionProviderExecutionSmoke',
+        'dev/function-provider-execution-smoke/src/main/java',
+        functionProviderExecutionSmokeClassesDir,
+        'Compiles the FunctionProvider v0 built-in execution smoke test.')
 
 tasks.register('functionProviderMetadataSmoke', JavaExec) {
     dependsOn 'compileFunctionProviderMetadataSmoke', ':delosdb-spi:compileDelosDbSpi'
@@ -678,6 +694,21 @@ tasks.register('functionProviderMetadataSmoke', JavaExec) {
     description = 'Verifies the built-in FunctionProvider metadata and resolver seam.'
     classpath = functionProviderSmokeRuntimeClasspath()
     mainClass = 'delosdb.smoke.FunctionProviderMetadataSmoke'
+}
+
+tasks.register('functionProviderExecutionSmoke', JavaExec) {
+    dependsOn 'compileFunctionProviderExecutionSmoke', ':delosdb-spi:compileDelosDbSpi'
+    mustRunAfter 'functionProviderMetadataSmoke'
+    group = 'verification'
+    description = 'Verifies provider-backed execution of the built-in DelosDB SQL function.'
+    classpath = functionProviderSmokeRuntimeClasspath()
+    mainClass = 'delosdb.smoke.FunctionProviderExecutionSmoke'
+    args layout.buildDirectory.dir('function-provider-execution-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('function-provider-execution-smoke').get().asFile
+    doFirst {
+        delete file('build/function-provider-execution-smoke')
+        workingDir.mkdirs()
+    }
 }
 
 
@@ -995,7 +1026,7 @@ subprojects { subproject ->
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {
