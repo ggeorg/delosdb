@@ -21,6 +21,8 @@
 
 package org.apache.derby.iapi.sql.dictionary;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
+
 import java.sql.Timestamp;
 import org.apache.derby.catalog.ReferencedColumns;
 import org.apache.derby.catalog.UUID;
@@ -41,6 +43,7 @@ import org.apache.derby.iapi.types.DataTypeDescriptor;
  * @version 0.1
  */
 
+@LegacyInternal("Inherited Derby descriptor factory used by catalog bridge code; not a public DelosDB provider contract.")
 public class DataDescriptorGenerator 
 {
 	private 	UUIDFactory uuidf;

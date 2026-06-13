@@ -21,6 +21,8 @@
 
 package org.apache.derby.catalog;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
+
 import java.security.Policy;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -95,6 +97,7 @@ import org.apache.derby.shared.common.error.MessageUtils;
 	Also used for builtin-routines, such as SYSFUN functions, when direct calls
 	into Java libraries cannot be made.
 */
+@LegacyInternal("Inherited Derby system routine host with DelosDB built-ins; public extension visibility must remain through SQL functions/procedures.")
 public class SystemProcedures  {
 
 

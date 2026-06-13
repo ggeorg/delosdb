@@ -21,6 +21,8 @@
 
 package org.apache.derby.iapi.sql.dictionary;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
+
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.depend.DependencyManager;
 import org.apache.derby.iapi.sql.depend.Provider;
@@ -59,6 +61,7 @@ import org.apache.derby.iapi.services.monitor.Monitor;
  * @version 0.1
  */
 
+@LegacyInternal("Inherited Derby conglomerate descriptor; IndexProvider bridge may adapt it, but it is not a DelosDB SPI type.")
 public final class ConglomerateDescriptor extends UniqueTupleDescriptor
 	implements Provider
 {

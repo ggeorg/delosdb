@@ -21,6 +21,8 @@
 
 package org.apache.derby.impl.sql.catalog;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -168,6 +170,7 @@ import org.apache.derby.shared.common.error.MessageUtils;
  * that stores the information in the system catalogs.
  */
 @SuppressWarnings("UseOfObsoleteCollectionType")
+@LegacyInternal("Inherited Derby catalog implementation; DelosDB extension metadata must use narrow bridge points, not depend on this class as SPI.")
 public final class	DataDictionaryImpl
 	implements DataDictionary, CacheableFactory, ModuleControl, ModuleSupportable
 {

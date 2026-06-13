@@ -21,6 +21,8 @@
 
 package org.apache.derby.iapi.sql.dictionary;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
+
 import java.util.List;
 
 import org.apache.derby.catalog.Dependable;
@@ -87,6 +89,7 @@ import org.apache.derby.iapi.util.IdUtil;
 		</ol>
 	*/
 
+@LegacyInternal("Inherited Derby table catalog descriptor; StorageProvider metadata bridge may read it, but providers must not depend on it directly.")
 public class TableDescriptor extends UniqueSQLObjectDescriptor
 	implements Provider, Dependent
 {

@@ -21,6 +21,8 @@
 
 package org.apache.derby.impl.sql.compile;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
+
 import java.util.HashMap;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -59,6 +61,7 @@ import org.apache.derby.iapi.util.StringUtil;
  * clauses between permutations yet.)
  */
 
+@LegacyInternal("Inherited Derby optimizer implementation; CostModel/IndexProvider work must bridge through DelosDB adapter points.")
 class OptimizerImpl implements Optimizer 
 {
 	private LanguageConnectionContext lcc;

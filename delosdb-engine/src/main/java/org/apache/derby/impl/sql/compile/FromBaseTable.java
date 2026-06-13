@@ -21,6 +21,8 @@
 
 package	org.apache.derby.impl.sql.compile;
 
+import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
+
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -107,6 +109,7 @@ import org.apache.derby.impl.sql.catalog.SYSUSERSRowFactory;
  *
  */
 
+@LegacyInternal("Inherited Derby optimizer table node; provider-cost diagnostics touch it only through internal bridge code.")
 class FromBaseTable extends FromTable
 {
 	static final int UNSET = -1;
