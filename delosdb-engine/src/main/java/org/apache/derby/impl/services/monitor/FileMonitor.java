@@ -112,6 +112,18 @@ public final class FileMonitor extends BaseMonitor
         InputStream versionStream = getClass().getResourceAsStream("/" + ProductGenusNames.DBMS_INFO);
 
         engineVersion = ProductVersionHolder.getProductVersionHolderFromMyEnv(versionStream);
+        if (engineVersion == null) {
+            engineVersion = ProductVersionHolder.getProductVersionHolder(
+                    "DelosDB Project",
+                    "DelosDB",
+                    "DelosDB Embedded Engine",
+                    10,
+                    17,
+                    ProductVersionHolder.MAINT_ENCODING,
+                    0,
+                    "local",
+                    Boolean.FALSE);
+        }
 
         String systemHome;
         // create the system home directory if it doesn't exist

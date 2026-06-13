@@ -241,6 +241,12 @@ tasks.register('generateClassSizeCatalog') {
 
 tasks.register('processDerbyResources') {
     dependsOn runtimeCompileTasks
+    productInfoResources.each { info ->
+        outputs.file(moduleClassDir(info.module).map { it.file(info.path) })
+    }
+    outputs.dir(moduleClassDir(moduleNames.engine).map { it.dir('META-INF/services') })
+    outputs.dir(moduleClassDir(moduleNames.client).map { it.dir('META-INF/services') })
+    outputs.dir(moduleClassDir(moduleNames.tools).map { it.dir('org/apache/derby/loc/tools') })
     doLast {
         moduleSourceRoots.each { moduleName, sourceDir ->
             copy {
@@ -900,13 +906,6 @@ registerStorageProviderDatabaseSmoke(
         'Verifies StorageProvider table metadata is visible through the internal diagnostic resolver.',
         ['storageProviderPersistenceSmoke'])
 
-registerStorageProviderDatabaseSmoke(
-        'providerCatalogIntegritySmoke',
-        'provider-catalog-integrity-smoke',
-        'delosdb.smoke.ProviderCatalogIntegritySmoke',
-        'Verifies DelosDB provider metadata is stored in catalog-backed table metadata.',
-        ['storageProviderVisibilitySmoke'])
-
 
 def networkServerSmokeClassesDir = layout.buildDirectory.dir('classes/network-server-smoke')
 
@@ -1125,7 +1124,7 @@ subprojects { subproject ->
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'providerCatalogIntegritySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {

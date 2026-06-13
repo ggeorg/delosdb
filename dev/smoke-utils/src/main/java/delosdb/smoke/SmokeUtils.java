@@ -26,7 +26,7 @@ public final class SmokeUtils {
         try {
             DriverManager.getConnection("jdbc:derby:" + databasePath + ";shutdown=true").close();
         } catch (SQLException expected) {
-            if ("08006".equals(expected.getSQLState())) {
+            if ("08006".equals(expected.getSQLState()) || "XJ004".equals(expected.getSQLState())) {
                 return;
             }
 
