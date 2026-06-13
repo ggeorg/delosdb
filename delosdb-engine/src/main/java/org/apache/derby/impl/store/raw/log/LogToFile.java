@@ -5164,12 +5164,9 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 				readOnly = !privCanWrite(getControlFileName());
 			}catch(StandardException se)
 			{
-				//Exception should never have come here
-				//because getControlFileName() is called 
-				//earlier at boot time, if there were problems
-				//it should have showed up earlier.							
-				//We just ignore this error and hope that
-				//datafactory must have market it as read only if that is the case.
+				SanityManager.THROWASSERT(
+						"Unable to re-check log control-file write access during recovery",
+						se);
 			}
 
 			readOnly = readOnly || (dataFactory == null ? false :dataFactory.isReadOnly());

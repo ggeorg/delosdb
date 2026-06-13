@@ -63,7 +63,11 @@ public class OptimizerTrace
 		{
             ConnectionUtil.getCurrentLCC().setOptimizerTracer( tracer );
 		}
-		catch (Throwable t) {}
+		catch (Throwable t)
+		{
+			// Optimizer tracing is optional diagnostics. Do not let tracing
+			// setup/teardown failure affect statement execution.
+		}
 	}
 
 	/**
@@ -77,7 +81,12 @@ public class OptimizerTrace
 		{
             return ConnectionUtil.getCurrentLCC().getOptimizerTracer();
 		}
-		catch (Throwable t) { return null; }
+		catch (Throwable t)
+		{
+			// Optimizer tracing is optional diagnostics. If no current LCC is
+			// available, behave as though tracing is disabled.
+			return null;
+		}
 	}
 
 
@@ -113,7 +122,8 @@ public class OptimizerTrace
 		}
 		catch (Throwable t)
 		{
-			// eat all exceptions, simply return null
+			// Optimizer trace output is optional diagnostics. Preserve the
+			// historical contract by returning null when trace extraction fails.
 		}
 
 		return retCode;

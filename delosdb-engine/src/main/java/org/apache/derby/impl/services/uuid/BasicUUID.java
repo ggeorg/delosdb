@@ -143,17 +143,20 @@ public class BasicUUID implements UUID, Formatable
 				value <<= 4;
 
 				int nibble;
-				if (c <= '9')
+				if (c >= '0' && c <= '9')
 					nibble = c - '0';
-				else if (c <= 'F')
+				else if (c >= 'A' && c <= 'F')
 					nibble = c - 'A' + 10;
-				else
+				else if (c >= 'a' && c <= 'f')
 					nibble = c - 'a' + 10;
+				else
+					throw new IllegalArgumentException("Invalid UUID character: " + (char) c);
 				value += nibble;
 			}
 		}
-		catch (Exception e)
+		catch (IOException ioe)
 		{
+			throw new IllegalArgumentException("Unable to parse UUID", ioe);
 		}
 
 		return value;

@@ -159,6 +159,8 @@ public final class SQLDecimal extends NumberDataType implements VariableSizeData
 				return (int) lv;
 
 		} catch (StandardException se) {
+			// getLong() could not produce an integral value; fall through to
+			// the standard range error for this target SQL type.
 		}
 
 		throw StandardException.newException(SQLState.LANG_OUTSIDE_RANGE_FOR_DATATYPE, "INTEGER");
@@ -179,6 +181,8 @@ public final class SQLDecimal extends NumberDataType implements VariableSizeData
 				return (byte) lv;
 
 		} catch (StandardException se) {
+			// getLong() could not produce an integral value; fall through to
+			// the standard range error for this target SQL type.
 		}
 
 		throw StandardException.newException(SQLState.LANG_OUTSIDE_RANGE_FOR_DATATYPE, "TINYINT");
@@ -199,6 +203,8 @@ public final class SQLDecimal extends NumberDataType implements VariableSizeData
 				return (short) lv;
 
 		} catch (StandardException se) {
+			// getLong() could not produce an integral value; fall through to
+			// the standard range error for this target SQL type.
 		}
 
 		throw StandardException.newException(SQLState.LANG_OUTSIDE_RANGE_FOR_DATATYPE, "SMALLINT");

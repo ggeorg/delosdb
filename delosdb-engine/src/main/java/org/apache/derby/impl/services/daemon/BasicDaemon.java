@@ -581,7 +581,7 @@ public class BasicDaemon implements DaemonService, Runnable
 			}
 			catch (InterruptedException ie)
 			{
-				// someone interrupt us, see what's going on
+				InterruptStatus.setInterrupted();
 			}
 
 			nextService = 0;

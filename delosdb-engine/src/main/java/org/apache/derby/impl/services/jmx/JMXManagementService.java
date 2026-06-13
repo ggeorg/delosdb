@@ -278,12 +278,11 @@ public final class JMXManagementService implements ManagementService, ModuleCont
         try {
             mbeanServer.unregisterMBean(mbeanName);
         }
-        // TODO - this is called on shutdown where
-        // we don't really care about errors.
-        // JMException jme = (JMException) pae.getException();
-        //if (!(jme instanceof InstanceNotFoundException))
-        // throw StandardException.plainWrapException(jme);
-        catch (Exception infe) {}
+        catch (Exception infe) {
+            Monitor.getStream().printlnWithHeader(
+                    "Ignoring JMX unregister failure during management shutdown: "
+                            + infe.getMessage());
+        }
     }
 
     public synchronized boolean isManagementActive() {
@@ -320,7 +319,9 @@ public final class JMXManagementService implements ManagementService, ModuleCont
             try {
                 jmxRegister(registeredMbeans.get(mbeanName), mbeanName);
             } catch (JMException e) {
-                // TODO - what to do here?
+                Monitor.getStream().printlnWithHeader(
+                        "Unable to register JMX MBean " + mbeanName + ": "
+                                + e.getMessage());
             }
         }
     }
