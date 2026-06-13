@@ -1,11 +1,15 @@
 package io.github.ggeorg.delosdb.engine.extension;
 
+import io.github.ggeorg.delosdb.engine.extension.function.BuiltInFunctionProviders;
 import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.index.IndexCapabilities;
 import io.github.ggeorg.delosdb.spi.index.IndexMetadata;
 import io.github.ggeorg.delosdb.spi.index.IndexProvider;
+import io.github.ggeorg.delosdb.spi.function.FunctionCapabilities;
+import io.github.ggeorg.delosdb.spi.function.FunctionDescriptor;
+import io.github.ggeorg.delosdb.spi.function.FunctionProvider;
 import io.github.ggeorg.delosdb.spi.storage.StorageCapabilities;
 import io.github.ggeorg.delosdb.spi.storage.StorageProvider;
 import io.github.ggeorg.delosdb.spi.storage.TableStorageMetadata;
@@ -28,6 +32,8 @@ public final class BuiltInExtensions {
     public static final String DEFAULT_INDEX_PROVIDER = BTREE_INDEX_PROVIDER;
     public static final String HEAP_STORAGE_PROVIDER = "heap";
     public static final String DEFAULT_STORAGE_PROVIDER = HEAP_STORAGE_PROVIDER;
+    public static final String BUILTIN_FUNCTION_PROVIDER = "builtin";
+    public static final String DEFAULT_FUNCTION_PROVIDER = BUILTIN_FUNCTION_PROVIDER;
 
     private BuiltInExtensions() {
     }
@@ -36,6 +42,7 @@ public final class BuiltInExtensions {
         Objects.requireNonNull(registry, "registry");
         BuiltInIndexProviders.all().forEach(provider -> registry.register(indexProviderDescriptor(provider)));
         BuiltInStorageProviders.all().forEach(provider -> registry.register(storageProviderDescriptor(provider)));
+        BuiltInFunctionProviders.all().forEach(provider -> registry.register(functionProviderDescriptor(provider)));
     }
 
     public static InMemoryExtensionRegistry newRegistryWithBuiltIns() {
@@ -50,6 +57,10 @@ public final class BuiltInExtensions {
 
     public static ExtensionDescriptor heapStorageProvider() {
         return storageProviderDescriptor(BuiltInStorageProviders.heap());
+    }
+
+    public static ExtensionDescriptor builtinFunctionProvider() {
+        return functionProviderDescriptor(BuiltInFunctionProviders.builtin());
     }
 
     public static ExtensionDescriptor indexProviderDescriptor(IndexProvider provider) {
@@ -96,6 +107,30 @@ public final class BuiltInExtensions {
         );
     }
 
+    public static ExtensionDescriptor functionProviderDescriptor(FunctionProvider provider) {
+        Objects.requireNonNull(provider, "provider");
+        return functionProviderDescriptor(
+                provider,
+                BUILTIN_VERSION,
+                DEFAULT_FUNCTION_PROVIDER.equals(ExtensionDescriptor.normalizeName(provider.name())));
+    }
+
+    public static ExtensionDescriptor functionProviderDescriptor(
+            FunctionProvider provider,
+            String version,
+            boolean defaultProvider) {
+        Objects.requireNonNull(provider, "provider");
+        FunctionDescriptor descriptor = provider.functions().stream()
+                .findFirst()
+                .orElse(FunctionDescriptor.of(provider.name(), "SYS", "PROVIDER_" + provider.name(), "VARCHAR(1)", List.of()));
+        return ExtensionDescriptor.enabled(
+                ExtensionType.FUNCTION,
+                provider.name(),
+                version,
+                functionCapabilityNames(provider.capabilities(descriptor), defaultProvider, !provider.functions().isEmpty())
+        );
+    }
+
     private static List<String> capabilityNames(IndexCapabilities capabilities, boolean defaultProvider) {
         Objects.requireNonNull(capabilities, "capabilities");
         List<String> names = new ArrayList<>();
@@ -134,6 +169,30 @@ public final class BuiltInExtensions {
         }
         if (capabilities.derbyHeapCompatible()) {
             names.add("derby-heap-compatible");
+        }
+        return List.copyOf(names);
+    }
+
+    private static List<String> functionCapabilityNames(
+            FunctionCapabilities capabilities,
+            boolean defaultProvider,
+            boolean hasFunctions) {
+        FunctionCapabilities.require(capabilities);
+        List<String> names = new ArrayList<>();
+        if (defaultProvider) {
+            names.add("default-function-provider");
+        }
+        if (hasFunctions) {
+            names.add("function-metadata");
+        }
+        if (capabilities.scalar()) {
+            names.add("scalar-function");
+        }
+        if (capabilities.deterministic()) {
+            names.add("deterministic");
+        }
+        if (!capabilities.readsSqlData()) {
+            names.add("no-sql-data");
         }
         return List.copyOf(names);
     }
