@@ -48,8 +48,10 @@ def compilePrerequisites = [
         ':delosdb-tools:compileDerbyTools',
         ':delosdb-optionaltools:compileDerbyOptionalTools',
         ':delosdb-runner:compileDerbyRunner',
+        ':processDerbyResources',
         ':splitEngineMessages',
-        ':generateOdbcMetadata'
+        ':generateOdbcMetadata',
+        ':ensureCatalogMetadataResources'
 ]
 
 def testModulePath = {

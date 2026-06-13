@@ -350,6 +350,21 @@ tasks.register('generateOdbcMetadata') {
     }
 }
 
+
+tasks.register('ensureCatalogMetadataResources') {
+    dependsOn 'processDerbyResources', 'generateOdbcMetadata'
+    inputs.file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/metadata_net.properties')
+    outputs.file(moduleClassDir(moduleNames.engine).map {
+        it.file('org/apache/derby/impl/sql/catalog/metadata_net.properties')
+    })
+    doLast {
+        copy {
+            from('delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/metadata_net.properties')
+            into new File(moduleClassDir(moduleNames.engine).get().asFile, 'org/apache/derby/impl/sql/catalog')
+        }
+    }
+}
+
 def moduleDirsForRuntime = files(
         project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
         moduleClassDir(moduleNames.osgi),
@@ -483,7 +498,7 @@ def moduleSplitInventory = [
                 jarTask          : 'derbyJar',
                 jarName          : 'derby.jar',
                 dependencies     : ['osgi', 'commons'],
-                generatedBy      : ['generateSqlParser', 'generateClassSizeCatalog', 'processDerbyResources', 'splitEngineMessages', 'generateOdbcMetadata'],
+                generatedBy      : ['generateSqlParser', 'generateClassSizeCatalog', 'processDerbyResources', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'],
                 publicArtifact   : true,
                 extractionOrder  : 7,
                 extractionRisk   : 'high'
@@ -505,7 +520,8 @@ def legalFiles = files(legalFileNames.collect { file(it) })
 def runtimeBuildTasks = [
         ':delosdb-engine:compileClassSizeCatalog',
         'splitEngineMessages',
-        'generateOdbcMetadata'
+        'generateOdbcMetadata',
+        'ensureCatalogMetadataResources'
 ]
 
 tasks.register('compileAll') {
