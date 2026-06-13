@@ -22,23 +22,23 @@
 package org.apache.derby.impl.services.timer;
 
 import java.util.Properties;
-import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.shared.common.i18n.MessageService;
 import org.apache.derby.iapi.services.monitor.ModuleControl;
 import org.apache.derby.iapi.services.timer.TimerFactory;
-import org.apache.derby.shared.common.reference.MessageId;
-import org.apache.derby.shared.common.sanity.SanityManager;
-
 
 /**
  * This class implements the TimerFactory interface.
- * It creates a singleton Timer instance.
+ * It creates a singleton scheduled executor instance.
  *
  * The class implements the ModuleControl interface,
- * because it needs to cancel the Timer at system shutdown.
+ * because it needs to shut down the executor at system shutdown.
  *
  * @see TimerFactory
  * @see ModuleControl
@@ -49,16 +49,16 @@ public class SingletonTimerFactory
         ModuleControl
 {
     /**
-     * Singleton Timer instance.
+     * Singleton scheduled executor instance.
      */
-    private final Timer singletonTimer;
+    private final ScheduledThreadPoolExecutor executor;
 
     /**
-     * The number of times {@link #cancel(TimerTask)} has been called.
-     * Used for determining whether it's time to purge cancelled tasks from
-     * the timer.
+     * Scheduled tasks mapped to their executor futures so cancellation removes
+     * tasks from the queue immediately.
      */
-    private final AtomicInteger cancelCount = new AtomicInteger();
+    private final ConcurrentMap<TimerTask, ScheduledFuture<?>> scheduledTasks =
+            new ConcurrentHashMap<>();
 
     /**
      * Initialization warnings. See {@link #getWarnings}.
@@ -66,65 +66,47 @@ public class SingletonTimerFactory
     private StringBuilder warnings = new StringBuilder();
 
     /**
-     * Initializes this TimerFactory with a singleton Timer instance.
+     * Initializes this TimerFactory with a singleton scheduled executor.
      */
     public SingletonTimerFactory()
     {
-        /**
-         * Even though we implement the ModuleControl interface,
-         * we initialize the object here rather than in boot, since
-         * a) We avoid synchronizing access to singletonTimer later
-         * b) We don't need any properties
-         */
-         // DERBY-3745 We want to avoid leaking class loaders, so 
-         // we make sure the context class loader is null before
-         // creating the thread
-        ClassLoader savecl = getContextClassLoader();
-        if (savecl != null) {
-            setContextClassLoader(null);
-        }
-
-        singletonTimer = new Timer(true); // Run as daemon
-
-        if (savecl != null) {
-            // Restore the original context class loader.
-            setContextClassLoader(savecl);
-        }
+        executor = new ScheduledThreadPoolExecutor(1, daemonThreadFactory());
+        executor.setRemoveOnCancelPolicy(true);
+        executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+        executor.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
     }
 
     // TimerFactory interface methods
 
     @Override
     public void schedule(TimerTask task, long delay) {
-        singletonTimer.schedule(task, delay);
+        ScheduledFuture<?> future = executor.schedule(() -> {
+            try {
+                task.run();
+            } finally {
+                scheduledTasks.remove(task);
+            }
+        }, delay, TimeUnit.MILLISECONDS);
+
+        scheduledTasks.put(task, future);
+        if (future.isDone()) {
+            scheduledTasks.remove(task, future);
+        }
     }
 
     @Override
     public void cancel(TimerTask task) {
         task.cancel();
-
-        // DERBY-6114: Cancelled tasks stay in the timer's queue until they
-        // are scheduled to run, unless we call the purge() method. This
-        // prevents garbage collection of the tasks. Even though the tasks
-        // are small objects, there could be many of them, especially when
-        // both the transaction throughput and tasks' delays are high, it
-        // could lead to OutOfMemoryErrors. Since purge() could be a heavy
-        // operation if the queue is big, we don't call it every time a task
-        // is cancelled.
-        //
-        // When Java 7 has been made the lowest supported level, we should
-        // consider replacing the java.util.Timer instance with a
-        // java.util.concurrent.ScheduledThreadPoolExecutor, and call
-        // setRemoveOnCancelPolicy(true) on the executor.
-        if (cancelCount.incrementAndGet() % 1000 == 0) {
-            singletonTimer.purge();
+        ScheduledFuture<?> future = scheduledTasks.remove(task);
+        if (future != null) {
+            future.cancel(false);
         }
     }
 
     // ModuleControl interface methods
 
     /**
-     * Currently does nothing, singleton Timer instance is initialized
+     * Currently does nothing, singleton scheduled executor is initialized
      * in the constructor.
      *
      * Implements the ModuleControl interface.
@@ -139,11 +121,11 @@ public class SingletonTimerFactory
         throws
             StandardException
     {
-        // Do nothing, instance already initialized in constructor
+        // Do nothing, executor already initialized in constructor
     }
 
     /**
-     * Cancels the singleton Timer instance.
+     * Shuts down the singleton scheduled executor.
      * 
      * Implements the ModuleControl interface.
      *
@@ -152,44 +134,24 @@ public class SingletonTimerFactory
     @Override
     public void stop()
     {
-        singletonTimer.cancel();
+        executor.shutdownNow();
+        scheduledTasks.clear();
     }
 
     // Helper methods
 
     /**
-     * Check if the current context class loader could cause a memory leak
-     * (DERBY-3745) if it is inherited by the timer thread, and return it if
-     * that is the case.
-     *
-     * @return the context class loader of the current thread if it is
-     *   not the same class loader as the one used by the system classes
-     *   or the Derby classes and we have permission to read the class
-     *   loaders, or {@code null} otherwise
+     * Create daemon timer threads with a null context class loader.
+     * This preserves the DERBY-3745 class-loader leak guard without mutating
+     * the calling thread's context class loader.
      */
-    private ClassLoader getContextClassLoader() {
-        ClassLoader cl =
-            Thread.currentThread().getContextClassLoader();
-        if (cl == getClass().getClassLoader() ||
-            cl == Thread.class.getClassLoader()) {
-            // If the context class loader is the same as any of
-            // these class loaders, we are not worried that the
-            // timer thread will leak a class loader. These
-            // class loaders will stay in memory at least for the
-            // lifetime of the Derby engine anyway, so it's not
-            // a problem that the timer thread keeps a reference
-            // to any of them until the engine is shut down.
-            //
-            // Return null to signal that the context class loader
-            // doesn't need to be changed.
-            return null;
-        } else {
-            return cl;
-        }
-    }
-
-    private void setContextClassLoader(final ClassLoader cl) {
-        Thread.currentThread().setContextClassLoader(cl);
+    private static ThreadFactory daemonThreadFactory() {
+        return runnable -> {
+            Thread thread = new Thread(runnable, "derby.timer");
+            thread.setDaemon(true);
+            thread.setContextClassLoader(null);
+            return thread;
+        };
     }
 
     /**
