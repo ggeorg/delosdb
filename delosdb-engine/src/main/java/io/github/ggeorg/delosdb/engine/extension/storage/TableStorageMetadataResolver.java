@@ -8,6 +8,7 @@ import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.dictionary.DataDictionary;
 import org.apache.derby.iapi.sql.dictionary.SchemaDescriptor;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
+import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.impl.jdbc.EmbedConnection;
 import org.apache.derby.shared.common.error.StandardException;
@@ -16,6 +17,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Properties;
 
 /**
  * Internal helper for StorageProvider v0 metadata proofs.
@@ -31,6 +33,12 @@ public final class TableStorageMetadataResolver {
     }
 
     public static TableStorageMetadata resolve(Connection connection, String schemaName, String tableName)
+            throws SQLException, StandardException {
+        return resolveCatalogMetadata(connection, schemaName, tableName).metadata();
+    }
+
+    public static TableStorageCatalogMetadata resolveCatalogMetadata(
+            Connection connection, String schemaName, String tableName)
             throws SQLException, StandardException {
         Objects.requireNonNull(connection, "connection");
         Objects.requireNonNull(tableName, "tableName");
@@ -54,18 +62,12 @@ public final class TableStorageMetadataResolver {
         }
     }
 
-
     public static String describe(Connection connection, String schemaName, String tableName)
             throws SQLException, StandardException {
-        TableStorageMetadata metadata = resolve(connection, schemaName, tableName);
-        return metadata.schemaName()
-                + "."
-                + metadata.tableName()
-                + " storageProvider="
-                + metadata.providerName();
+        return resolveCatalogMetadata(connection, schemaName, tableName).describe();
     }
 
-    private static TableStorageMetadata resolveInLanguageContext(
+    private static TableStorageCatalogMetadata resolveInLanguageContext(
             LanguageConnectionContext lcc, String schemaName, String tableName)
             throws StandardException {
         DataDictionary dataDictionary = lcc.getDataDictionary();
@@ -80,9 +82,47 @@ public final class TableStorageMetadataResolver {
                     + schema.getSchemaName() + "." + tableName);
         }
 
-        String providerName = table.getStorageProviderName();
+        String storedProviderName = readStoredProviderName(transactionController, table);
+        if (storedProviderName != null && !storedProviderName.isBlank()) {
+            String providerName = StorageProviderCatalogMetadata.normalizeProviderName(storedProviderName);
+            StorageProviderResolver.builtIns().requireEnabled(providerName);
+            return new TableStorageCatalogMetadata(
+                    TableStorageMetadata.of(providerName, schema.getSchemaName(), table.getName()),
+                    TableStorageCatalogMetadata.Source.STORED,
+                    providerName);
+        }
+
+        String providerName = StorageProviderCatalogMetadata.normalizeProviderName(table.getStorageProviderName());
         StorageProviderResolver.builtIns().requireEnabled(providerName);
-        return TableStorageMetadata.of(providerName, schema.getSchemaName(), table.getName());
+        return new TableStorageCatalogMetadata(
+                TableStorageMetadata.of(providerName, schema.getSchemaName(), table.getName()),
+                TableStorageCatalogMetadata.Source.DEFAULTED,
+                null);
+    }
+
+    private static String readStoredProviderName(TransactionController transactionController, TableDescriptor table)
+            throws StandardException {
+        if (table.getTableType() != TableDescriptor.BASE_TABLE_TYPE) {
+            return null;
+        }
+
+        ConglomerateController controller = null;
+        try {
+            controller = transactionController.openConglomerate(
+                    table.getHeapConglomerateId(),
+                    false,
+                    TransactionController.OPENMODE_FOR_LOCK_ONLY,
+                    TransactionController.MODE_TABLE,
+                    TransactionController.ISOLATION_REPEATABLE_READ);
+            Properties properties = new Properties();
+            properties.put(StorageProviderCatalogMetadata.STORAGE_PROVIDER_PROPERTY, "");
+            controller.getTableProperties(properties);
+            return properties.getProperty(StorageProviderCatalogMetadata.STORAGE_PROVIDER_PROPERTY);
+        } finally {
+            if (controller != null) {
+                controller.close();
+            }
+        }
     }
 
     private static String normalizeIdentifier(String identifier) {

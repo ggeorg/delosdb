@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.sql.execute;
 
+import io.github.ggeorg.delosdb.engine.extension.storage.StorageProviderCatalogMetadata;
 import org.apache.derby.iapi.sql.execute.ConstantAction;
 import org.apache.derby.iapi.store.access.TransactionController;
 
@@ -199,6 +200,8 @@ class CreateTableConstantAction extends DDLConstantAction
             collation_ids[ix] = col_info.dataType.getCollationType();
 		}
 
+
+        properties = StorageProviderCatalogMetadata.withStorageProvider(properties, storageProviderName);
 
 		/* create the conglomerate to hold the table's rows
 		 * RESOLVE - If we ever have a conglomerate creator
