@@ -201,11 +201,12 @@ public final class IndexProviderMetadataSmoke
             }
 
             String message = expected.getMessage();
-            if (message == null || !message.toLowerCase(Locale.ROOT).contains(providerName))
+            String lowerMessage = message == null ? "" : message.toLowerCase(Locale.ROOT);
+            if (!lowerMessage.contains("create index using " + providerName.toLowerCase(Locale.ROOT)))
             {
                 throw new IllegalStateException(
-                        "Unsupported provider diagnostic did not name " + providerName
-                                + ": " + message,
+                        "Unsupported index provider diagnostic did not identify CREATE INDEX USING "
+                                + providerName + ": " + message,
                         expected);
             }
         }

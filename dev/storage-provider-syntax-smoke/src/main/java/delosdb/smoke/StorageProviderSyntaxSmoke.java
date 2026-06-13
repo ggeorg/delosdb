@@ -85,9 +85,11 @@ public final class StorageProviderSyntaxSmoke {
             }
 
             String message = expected.getMessage();
-            if (message == null || !message.toLowerCase(Locale.ROOT).contains(providerName)) {
+            String lowerMessage = message == null ? "" : message.toLowerCase(Locale.ROOT);
+            if (!lowerMessage.contains("create table using " + providerName.toLowerCase(Locale.ROOT))) {
                 throw new IllegalStateException(
-                        "Unsupported storage provider diagnostic did not name " + providerName + ": " + message,
+                        "Unsupported storage provider diagnostic did not identify CREATE TABLE USING "
+                                + providerName + ": " + message,
                         expected);
             }
         }

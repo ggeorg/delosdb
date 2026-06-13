@@ -21,11 +21,8 @@
 
 package	org.apache.derby.impl.sql.compile;
 
-import java.util.Locale;
 import java.util.Properties;
-import io.github.ggeorg.delosdb.engine.extension.ExtensionResolutionException;
-import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
-import io.github.ggeorg.delosdb.engine.extension.storage.StorageProviderResolver;
+import io.github.ggeorg.delosdb.engine.extension.sql.SqlExtensionProviderValidation;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.Limits;
 import org.apache.derby.shared.common.reference.Property;
@@ -112,7 +109,7 @@ class CreateTableNode extends DDLStatementNode
 
         this.tableElementList = tableElementList;
         this.properties = properties;
-        this.storageProviderName = normalizeStorageProviderName(storageProviderName);
+        this.storageProviderName = SqlExtensionProviderValidation.normalizeStorageProviderName(storageProviderName);
 	}
 
 	/**
@@ -145,7 +142,7 @@ class CreateTableNode extends DDLStatementNode
         this.onRollbackDeleteRows = onRollbackDeleteRows;
         this.tableElementList = tableElementList;
         this.properties = properties;
-        this.storageProviderName = normalizeStorageProviderName(null);
+        this.storageProviderName = SqlExtensionProviderValidation.normalizeStorageProviderName(null);
 
 		if (SanityManager.DEBUG)
 		{
@@ -178,7 +175,7 @@ class CreateTableNode extends DDLStatementNode
         this.implicitCreateSchema = true;
         this.resultColumns = resultColumns;
         this.queryExpression = queryExpression;
-        this.storageProviderName = normalizeStorageProviderName(null);
+        this.storageProviderName = SqlExtensionProviderValidation.normalizeStorageProviderName(null);
 	}
 
 	/**
@@ -262,37 +259,15 @@ class CreateTableNode extends DDLStatementNode
 
 
     /**
-     * Normalize the optional DelosDB table storage provider name.
-     * Existing Derby CREATE TABLE syntax stays on the default heap path.
-     */
-    private String normalizeStorageProviderName(String providerName)
-    {
-        if (providerName == null)
-        {
-            return BuiltInStorageProviders.defaultProviderName();
-        }
-        return providerName.toLowerCase(Locale.ROOT);
-    }
-
-    /**
      * Verify CREATE TABLE ... USING remains additive for v0.
-     * Only the built-in Derby-compatible heap provider is available now.
-     * Unknown names fail during binding before any physical storage work.
+     * Only enabled providers registered in the DelosDB extension registry are
+     * accepted. The built-in heap provider maps to existing Derby heap storage.
      *
-     * @exception StandardException Thrown if a non-registered provider is named
+     * @exception StandardException Thrown if the provider is not registered/enabled
      */
     private void verifyStorageProviderName() throws StandardException
     {
-        try
-        {
-            StorageProviderResolver.builtIns().requireEnabled(storageProviderName);
-        }
-        catch (ExtensionResolutionException e)
-        {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "CREATE TABLE USING " + storageProviderName);
-        }
+        SqlExtensionProviderValidation.requireStorageProvider(storageProviderName);
     }
 
 	/**

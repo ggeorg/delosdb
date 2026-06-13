@@ -23,8 +23,8 @@ package	org.apache.derby.impl.sql.compile;
 
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Properties;
+import io.github.ggeorg.delosdb.engine.extension.sql.SqlExtensionProviderValidation;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.Limits;
 import org.apache.derby.shared.common.reference.Property;
@@ -47,8 +47,6 @@ import org.apache.derby.iapi.types.DataTypeDescriptor;
 
 class CreateIndexNode extends DDLStatementNode
 {
-    private static final String DEFAULT_INDEX_PROVIDER_NAME = "btree";
-
     private boolean             unique;
     private Properties          properties;
     private String              indexType;
@@ -88,7 +86,7 @@ class CreateIndexNode extends DDLStatementNode
         super(indexName, cm);
         this.unique = unique;
         this.indexType = indexType;
-        this.indexProviderName = normalizeIndexProviderName(indexProviderName);
+        this.indexProviderName = SqlExtensionProviderValidation.normalizeIndexProviderName(indexProviderName);
         this.indexName = indexName;
         this.tableName = tableName;
         this.columnNameList = columnNameList;
@@ -127,35 +125,15 @@ class CreateIndexNode extends DDLStatementNode
 	// We inherit the generate() method from DDLStatementNode.
 
     /**
-     * Normalize an optional DelosDB provider name for CREATE INDEX ... USING.
-     * For now, only the built-in Derby-compatible provider is accepted.
-     * Existing Derby CREATE INDEX syntax passes null and stays on the same
-     * implicit B-tree path.
-     */
-    private String normalizeIndexProviderName(String providerName)
-    {
-        if (providerName == null)
-        {
-            return DEFAULT_INDEX_PROVIDER_NAME;
-        }
-        return providerName.toLowerCase(Locale.ROOT);
-    }
-
-    /**
      * Verify the optional DelosDB provider clause remains additive.
-     * Unknown providers are rejected until extension catalog/provider loading
-     * exists. The default provider is the existing Derby B-tree behavior.
+     * Unknown providers are rejected until external provider loading exists.
+     * The default provider is the existing Derby-compatible B-tree behavior.
      *
-     * @exception StandardException Thrown if a non-default provider is named
+     * @exception StandardException Thrown if the provider is not registered/enabled
      */
     private void verifyIndexProviderName() throws StandardException
     {
-        if (!DEFAULT_INDEX_PROVIDER_NAME.equals(indexProviderName))
-        {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "CREATE INDEX USING " + indexProviderName);
-        }
+        SqlExtensionProviderValidation.requireIndexProvider(indexProviderName);
     }
 
 	/**
