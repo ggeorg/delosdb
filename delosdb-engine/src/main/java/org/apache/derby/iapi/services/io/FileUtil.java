@@ -105,50 +105,21 @@ public abstract class FileUtil {
 
 	public static boolean copyFile(File from, File to, byte[] buf)
 	{
-		if (buf == null)
-			buf = new byte[BUFFER_SIZE];
-
 		//
 		//		System.out.println("Copy file ("+from+","+to+")");
-		FileInputStream from_s = null;
-		FileOutputStream to_s = null;
-
-		try {
-			from_s = new FileInputStream(from);
-			to_s = new FileOutputStream(to);
+		try (FileInputStream from_s = new FileInputStream(from);
+			 FileOutputStream to_s = new FileOutputStream(to))
+		{
             limitAccessToOwner(to);
+            copyContents(from_s, to_s, buf);
 
-			for (int bytesRead = from_s.read(buf);
-				 bytesRead != -1;
-				 bytesRead = from_s.read(buf))
-				to_s.write(buf,0,bytesRead);
-
-			from_s.close();
-			from_s = null;
-
-			to_s.getFD().sync();  // RESOLVE: sync or no sync?
-			to_s.close();
-			to_s = null;
+			to_s.getFD().sync();
+			return true;
 		}
 		catch (IOException ioe)
 		{
 			return false;
 		}
-		finally
-		{
-			if (from_s != null)
-			{
-				try { from_s.close(); }
-				catch (IOException ioe) {}
-			}
-			if (to_s != null)
-			{
-				try { to_s.close(); }
-				catch (IOException ioe) {}
-			}
-		}
-
-		return true;
 	}
 
 
@@ -238,48 +209,19 @@ public abstract class FileUtil {
     
 	public static boolean copyFile( StorageFactory storageFactory, StorageFile from, File to, byte[] buf)
 	{
-		InputStream from_s = null;
-		FileOutputStream to_s = null;
-
-		try {
-			from_s = from.getInputStream();
-			to_s = new FileOutputStream( to);
+		try (InputStream from_s = from.getInputStream();
+			 FileOutputStream to_s = new FileOutputStream(to))
+		{
             limitAccessToOwner(to);
+            copyContents(from_s, to_s, buf);
 
-			if (buf == null)
-				buf = new byte[BUFFER_SIZE]; // reuse this buffer to copy files
-
-			for (int bytesRead = from_s.read(buf);
-				 bytesRead != -1;
-				 bytesRead = from_s.read(buf))
-				to_s.write(buf,0,bytesRead);
-
-			from_s.close();
-			from_s = null;
-
-			to_s.getFD().sync();  // RESOLVE: sync or no sync?
-			to_s.close();
-			to_s = null;
+			to_s.getFD().sync();
+			return true;
 		}
 		catch (IOException ioe)
 		{
 			return false;
 		}
-		finally
-		{
-			if (from_s != null)
-			{
-				try { from_s.close(); }
-				catch (IOException ioe) {}
-			}
-			if (to_s != null)
-			{
-				try { to_s.close(); }
-				catch (IOException ioe) {}
-			}
-		}
-
-		return true;
 	} // end of copyFile( StorageFactory storageFactory, StorageFile from, File to, byte[] buf)
 
     public static boolean copyDirectory( WritableStorageFactory storageFactory,
@@ -364,93 +306,36 @@ public abstract class FileUtil {
     
 	public static boolean copyFile( WritableStorageFactory storageFactory, File from, StorageFile to, byte[] buf)
 	{
-		InputStream from_s = null;
-		OutputStream to_s = null;
+		try (InputStream from_s = new FileInputStream(from);
+			 OutputStream to_s = to.getOutputStream())
+		{
+            copyContents(from_s, to_s, buf);
 
-		try {
-			from_s = new FileInputStream( from);
-			to_s = to.getOutputStream();
-
-			if (buf == null)
-				buf = new byte[BUFFER_SIZE]; // reuse this buffer to copy files
-
-			for (int bytesRead = from_s.read(buf);
-				 bytesRead != -1;
-				 bytesRead = from_s.read(buf))
-				to_s.write(buf,0,bytesRead);
-
-			from_s.close();
-			from_s = null;
-
-			storageFactory.sync( to_s, false);  // RESOLVE: sync or no sync?
-			to_s.close();
-			to_s = null;
+			storageFactory.sync(to_s, false);
+			return true;
 		}
 		catch (IOException ioe)
 		{
 			return false;
 		}
-		finally
-		{
-			if (from_s != null)
-			{
-				try { from_s.close(); }
-				catch (IOException ioe) {}
-			}
-			if (to_s != null)
-			{
-				try { to_s.close(); }
-				catch (IOException ioe) {}
-			}
-		}
-
-		return true;
 	} // end of copyFile
 
 
     public static boolean copyFile( WritableStorageFactory storageFactory, 
                                     StorageFile from, StorageFile to)
     {
-		InputStream from_s = null;
-		OutputStream to_s = null;
+		try (InputStream from_s = from.getInputStream();
+			 OutputStream to_s = to.getOutputStream())
+		{
+            copyContents(from_s, to_s, null);
 
-		try {
-			from_s = from.getInputStream();
-			to_s = to.getOutputStream();
-
-            byte[] buf = new byte[BUFFER_SIZE];
-
-			for (int bytesRead = from_s.read(buf);
-				 bytesRead != -1;
-				 bytesRead = from_s.read(buf))
-				to_s.write(buf,0,bytesRead);
-
-			from_s.close();
-			from_s = null;
-
-			storageFactory.sync( to_s, false);  // RESOLVE: sync or no sync?
-			to_s.close();
-			to_s = null;
+			storageFactory.sync(to_s, false);
+			return true;
 		}
 		catch (IOException ioe)
 		{
 			return false;
 		}
-		finally
-		{
-			if (from_s != null)
-			{
-				try { from_s.close(); }
-				catch (IOException ioe) {}
-			}
-			if (to_s != null)
-			{
-				try { to_s.close(); }
-				catch (IOException ioe) {}
-			}
-		}
-
-		return true;
 	} // end of copyFile
 
 	/**
@@ -469,11 +354,25 @@ public abstract class FileUtil {
             URL url = (new URI(originalName)).toURL();
             result = url.getFile();
         }
-        catch (MalformedURLException ex) {}
-        catch (URISyntaxException u) {}
-        catch (IllegalArgumentException u) {}
+        catch (MalformedURLException | URISyntaxException | IllegalArgumentException ex) {
+            // Not a URL/URI form Derby recognizes here. Keep the original name.
+        }
 
         return result;
+    }
+
+    private static void copyContents(InputStream from, OutputStream to, byte[] buf)
+            throws IOException {
+        if (buf == null || buf.length == 0) {
+            from.transferTo(to);
+            return;
+        }
+
+        for (int bytesRead = from.read(buf);
+             bytesRead != -1;
+             bytesRead = from.read(buf)) {
+            to.write(buf, 0, bytesRead);
+        }
     }
 
     /**
