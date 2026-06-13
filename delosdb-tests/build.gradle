@@ -38,6 +38,22 @@ def thirdPartyTestModules = rootProject.files(
         'tools/java/lucene-queryparser.jar'
 )
 
+// Execute the inherited Derby JUnit suite against the assembled runtime jars,
+// not the exploded module output trees. The jars are the supported runtime
+// shape and contain the generated/copy-only boot resources such as
+// org/apache/derby/modules.properties and catalog metadata resources.
+def derbyRuntimeJars = rootProject.files(
+        rootProject.layout.buildDirectory.file('libs/delosdb-spi.jar'),
+        rootProject.layout.buildDirectory.file('libs/osgi-framework-stub.jar'),
+        rootProject.layout.buildDirectory.file('libs/derbyshared.jar'),
+        rootProject.layout.buildDirectory.file('libs/derby.jar'),
+        rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+        rootProject.layout.buildDirectory.file('libs/derbytools.jar'),
+        rootProject.layout.buildDirectory.file('libs/derbynet.jar'),
+        rootProject.layout.buildDirectory.file('libs/derbyoptionaltools.jar'),
+        rootProject.layout.buildDirectory.file('libs/derbyrun.jar')
+)
+
 def compilePrerequisites = [
         ':delosdb-commons:compileDerbyCommons',
         ':delosdb-spi:compileDelosDbSpi',
@@ -61,7 +77,7 @@ def testModulePath = {
 def testRuntimeClasspath = {
     rootProject.files(
             derbyTestsClassDir,
-            derbyRuntimeModuleClassDirs,
+            derbyRuntimeJars,
             testSourceRoot,
             toursDbSourceRoot,
             thirdPartyTestModules
@@ -98,7 +114,7 @@ tasks.register('compileDerbyTestsModule', JavaCompile) {
 tasks.register('runDerbyLangSuite', Test) {
     group = 'verification'
     description = 'Runs the original Derby lang JUnit suite through Gradle.'
-    dependsOn 'compileDerbyTestsModule'
+    dependsOn 'compileDerbyTestsModule', ':jars'
 
     // Derby's inherited JUnit tests are classpath-era tests. Compile the test
     // sources as a module for source correctness, but execute them on the
