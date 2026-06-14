@@ -1,26 +1,26 @@
-# DelosDB SQL extension surface
+# DelosDB SQL Extension Surface
 
-DelosDB keeps Derby SQL/JDBC compatibility as the default behavior and adds
-small, explicit SQL extension points only where a product seam already exists.
-This page documents the current supported surface. It is not a roadmap for
-future syntax.
+DelosDB keeps Derby SQL/JDBC compatibility as the default behavior and adds small
+SQL extension points only where a product seam already exists. This file
+records the supported surface, not future syntax.
 
-## Supported syntax
+## Index providers
 
-### Index providers
-
-```sql
-CREATE INDEX index_name ON table_name(column_name) USING btree;
-```
-
-`btree` is the built-in Derby-compatible index provider. Omitting `USING btree`
-is equivalent to using the default provider:
+Default Derby-compatible form:
 
 ```sql
 CREATE INDEX index_name ON table_name(column_name);
 ```
 
-`memory` is a registered IndexProvider v2 proof provider, but it is not a
+Explicit default-provider form:
+
+```sql
+CREATE INDEX index_name ON table_name(column_name) USING btree;
+```
+
+`btree` is the built-in Derby-compatible SQL-backed index provider.
+
+`memory` is a registered `IndexProvider` v2 proof provider, but it is not a
 SQL-creatable physical Derby index yet:
 
 ```sql
@@ -31,19 +31,9 @@ The statement above is intentionally rejected during validation. The memory
 provider proves the provider-owned runtime abstraction, not Derby executor/storage
 integration.
 
-Unknown index providers are rejected during binding before physical index work
-starts.
+## Storage providers
 
-### Storage providers
-
-```sql
-CREATE TABLE table_name (
-  id int
-) USING heap;
-```
-
-`heap` is the built-in Derby-compatible storage provider. Omitting `USING heap`
-is equivalent to using the default provider:
+Default Derby-compatible form:
 
 ```sql
 CREATE TABLE table_name (
@@ -51,13 +41,20 @@ CREATE TABLE table_name (
 );
 ```
 
-Unknown storage providers are rejected during binding before physical storage
-work starts.
+Explicit default-provider form:
 
-## Supported read-only visibility routines
+```sql
+CREATE TABLE table_name (
+  id int
+) USING heap;
+```
 
-The registered built-in DelosDB providers are visible through the Derby-style
-utility surface:
+`heap` is the built-in Derby-compatible storage provider. Unknown storage
+providers are rejected before physical storage work starts.
+
+## Read-only visibility routines
+
+Registered built-in DelosDB providers are visible through:
 
 ```sql
 VALUES SYSCS_UTIL.DELOSDB_EXTENSIONS();
@@ -81,32 +78,31 @@ Built-in Derby type metadata is visible through:
 VALUES SYSCS_UTIL.DELOSDB_TYPES();
 ```
 
-The type visibility routine reports the provider name, SQL type name, JDBC type,
-Java type, nullable flag, and comparable flag. It is metadata-only. It does not
-add new SQL type semantics.
+The type routine reports provider name, SQL type name, JDBC type, Java type,
+nullable flag, and comparable flag. It is metadata-only and does not add new SQL
+type semantics.
 
 ## Not supported yet
 
 The current surface deliberately does not include:
 
-- `SHOW EXTENSIONS`
-- external provider loading
-- `CREATE INDEX ... USING memory` as a physical SQL index
-- custom physical storage engines
-- JSON/type-provider syntax
-- planner replacement syntax
-- public cost-model provider loading
-- new provider families
+- `SHOW EXTENSIONS`;
+- external provider loading;
+- physical SQL indexes backed by `index memory`;
+- custom physical storage engines;
+- JSON/type-provider syntax;
+- planner replacement syntax;
+- public cost-model provider loading;
+- new provider families.
 
 ## Verification
-
-The SQL extension surface is covered by the existing product smokes:
 
 ```bash
 ./gradlew indexProviderV2Smoke
 ./gradlew indexProviderMetadataSmoke
 ./gradlew storageProviderSyntaxSmoke
 ./gradlew costModelProviderStoreCostSmoke
+./gradlew extensionRegistrySmoke
 ./gradlew extensionRegistrySqlVisibilitySmoke
 ./gradlew typeProviderSqlVisibilitySmoke
 ./gradlew :delosdb-tests:runDerbyLangSuite

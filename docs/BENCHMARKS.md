@@ -1,18 +1,18 @@
-# DelosDB benchmark baseline
+# DelosDB Benchmark Baseline
 
-DelosDB keeps a small local benchmark baseline so modernization work can be checked against obvious performance regressions.
+DelosDB keeps a small local benchmark baseline so modernization work can be
+checked against obvious regressions. This is a developer regression signal, not a
+formal benchmark suite and not a marketing claim.
 
-The current benchmark is intentionally simple. It is not a formal microbenchmark suite and should not be used for marketing claims. Its purpose is to give contributors a quick local signal while Java 21 cleanup, lifecycle cleanup, and collection modernization are in progress.
+## Run
 
-## Embedded baseline
-
-Build the runtime jars first:
+Build first:
 
 ```bash
 ./gradlew clean build
 ```
 
-Run the embedded benchmark baseline:
+Run the embedded baseline:
 
 ```bash
 ./dev/benchmark-baseline.sh
@@ -30,7 +30,7 @@ Example:
 ./dev/benchmark-baseline.sh 10000 2500
 ```
 
-The script writes a report to:
+The report is written to:
 
 ```text
 build/reports/benchmarks/embedded-baseline.md
@@ -40,24 +40,22 @@ build/reports/benchmarks/embedded-baseline.md
 
 The embedded baseline currently measures:
 
-```text
-create database connection
-create schema and index
-batch insert rows
-primary-key lookups
-indexed count queries
-full-table count
-```
+- database connection creation;
+- schema and index creation;
+- batch inserts;
+- primary-key lookups;
+- indexed count queries;
+- full-table count.
 
 ## Rules for using the numbers
 
-Use the benchmark as a local regression signal only:
+Use the numbers only as a local before/after signal:
 
-```text
-Run it before and after risky cleanup.
-Compare the same machine, same JDK, same working tree state.
-Do not compare one-off results across different machines.
-Do not treat the output as a formal benchmark claim.
-```
+- compare the same machine;
+- compare the same JDK;
+- compare the same working-tree state except for the change being tested;
+- do not compare one-off results across machines;
+- do not present the output as a formal benchmark result.
 
-A later benchmark phase should add JMH or a dedicated repeatable harness for formal measurements.
+A later benchmark phase may add JMH or another repeatable harness, but that is
+not part of the current cleanup/provider-hardening work.

@@ -3,22 +3,21 @@
 Last updated: 2026-06-14
 
 DelosDB is a Gradle-only Java 21 modernization fork of Apache Derby with a
-Derby-compatible SQL/JDBC baseline and a controlled extension platform.
+Derby-compatible SQL/JDBC baseline and a controlled DelosDB extension surface.
+The current priority is completion, verification, and cleanup — not expansion.
 
-The current priority is completion and verification, not expansion. Workspace
-metadata such as `.git/`, `.gradle/`, and `.idea/` is valid local state, may
-appear in developer ZIP snapshots, and must not be deleted by cleanup scripts.
+Workspace metadata such as `.git/`, `.gradle/`, and `.idea/` is valid local
+state and may appear in developer ZIP snapshots. Cleanup scripts must not delete
+it.
 
 ## Current verification gates
-
-Use these local gates for current product work:
 
 ```bash
 ./gradlew derbyRuntimeSmoke
 ./gradlew :delosdb-tests:runDerbyLangSuite
 ```
 
-For broader release checks:
+Broader checks:
 
 ```bash
 ./gradlew fullVerification
@@ -26,11 +25,11 @@ For broader release checks:
 ./dev/benchmark-baseline.sh
 ```
 
-## Finished seams
+## Finished provider seams
 
 ### CostModelProvider v2
 
-Green locally. The native cost path is now resolver-driven through
+Green locally. The native cost path is resolver-driven through
 `StoreCostControllerBridge` and supports two built-in providers:
 
 ```text
@@ -53,7 +52,7 @@ memory -> provider-owned runtime proof
 `CREATE INDEX ... USING memory` remains intentionally rejected until DelosDB
 builds a real Derby executor/storage bridge for non-B-tree physical indexes.
 
-## Shallow seams intentionally held
+## Frozen shallow seams
 
 - `StorageProvider`: heap-only provider surface; no second storage engine yet.
 - `FunctionProvider`: built-in DelosDB function surface; no external function
@@ -61,58 +60,35 @@ builds a real Derby executor/storage bridge for non-B-tree physical indexes.
 - `TypeProvider`: metadata-only type visibility; no parser, binder, or storage
   changes yet.
 
-No new provider family should be added while these existing seams remain shallow.
-
-## Current product seams
+## Current product state
 
 Green locally:
 
-- Derby runtime/product smokes through `derbyRuntimeSmoke`.
-- inherited Derby lang/JDBC suite through Gradle.
-- `CostModelProvider` v2 through heap and B-tree store-cost providers.
-- `IndexProvider` v2 through B-tree and memory providers.
-- `StorageProvider` v0/v1 surface.
-- `FunctionProvider` v0/v1 surface.
-- `TypeProvider` v0 metadata and SQL visibility.
-- unified extension registry through `SYSCS_UTIL.DELOSDB_EXTENSIONS()`.
-- type metadata visibility through `SYSCS_UTIL.DELOSDB_TYPES()`.
-- system-routine permission test baseline centralized in `DelosDbTestBaselines`.
+- runtime/product smokes through `derbyRuntimeSmoke`;
+- inherited Derby language suite through `:delosdb-tests:runDerbyLangSuite`;
+- CostModelProvider v2 through heap and B-tree store-cost providers;
+- IndexProvider v2 through B-tree and memory providers;
+- StorageProvider syntax/metadata/visibility for heap;
+- FunctionProvider metadata/execution/visibility for built-in DelosDB function;
+- TypeProvider metadata and SQL visibility;
+- unified extension registry through `DELOSDB_EXTENSIONS()`;
+- type metadata visibility through `DELOSDB_TYPES()`;
+- system-routine permission baseline centralized in `DelosDbTestBaselines`.
 
-## Current modernization status
+## Current book state
 
-Completed modernization work includes:
-
-- Java 21 Gradle-only build path.
-- runtime jar verification and Maven Local publication checks.
-- binary distribution foundation.
-- inherited Derby message/resource generation through Gradle.
-- inherited Derby lang/JDBC suite on the Gradle classpath.
-- production modernization audit script.
-- benchmark baseline script.
-- selected Java 21 cleanup batches for finalizers, diagnostics, collection usage,
-  timers, logging, and test activation.
-
-## Current book status
-
-Source-checked chapters:
-
-- Chapters 1--11 are source-checked for the claims they currently make.
-- Chapter 5 now covers the access-manager/storage-engine boundary with
-  source-backed evidence.
-
-Future edits must keep chapter verification-status paragraphs accurate and update
-evidence maps when source claims change.
+Chapters 1--11 are source-checked for the claims they currently make. Future
+edits must keep chapter verification-status paragraphs and evidence maps aligned
+with source changes.
 
 ## Current cleanup priority
 
 Before adding features:
 
-1. remove stale checkpoint documents with `scripts/remove-checkpoint-docs.sh`,
-2. keep generated LaTeX/PDF build outputs out of source control,
-3. never delete local `.git/`, `.gradle/`, or `.idea/`,
-4. verify book source citations chapter by chapter before treating the manuscript
-   as reliable,
-5. reduce inherited `RESOLVE` comments in focused batches,
-6. reduce `instanceof`-then-cast patterns only where ownership and behavior are
-   clear,
-7. avoid opening a new provider family.
+1. remove stale/duplicate docs;
+2. keep generated LaTeX/PDF build outputs out of source control;
+3. never delete local `.git/`, `.gradle/`, or `.idea/`;
+4. reduce inherited `RESOLVE` comments in focused batches;
+5. reduce `instanceof`-then-cast patterns only where ownership and behavior are
+   clear;
+6. avoid opening a new provider family.
