@@ -23,11 +23,9 @@ package org.apache.derby.impl.sql.compile;
 import java.io.PrintWriter;
 import java.util.Date;
 import java.util.Stack;
-import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.OutputKeys;
 import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import org.apache.derby.shared.common.error.StandardException;
@@ -46,6 +44,7 @@ import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.dictionary.AliasDescriptor;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.sql.dictionary.ConglomerateDescriptor;
+import org.apache.derby.iapi.xml.SecureXmlFactory;
 import org.apache.derby.iapi.sql.dictionary.UniqueTupleDescriptor;
 import org.apache.derby.iapi.util.IdUtil;
 import org.apache.derby.iapi.util.JBitSet;
@@ -230,7 +229,7 @@ class   XMLOptTrace implements  OptTrace
     public  XMLOptTrace()
         throws ParserConfigurationException
     {
-        _doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument();
+        _doc = SecureXmlFactory.newDocumentBuilderFactory(false, false).newDocumentBuilder().newDocument();
         _root = createElement( null, "optimizerTrace", null );
         _doc.appendChild( _root );
     }
@@ -494,8 +493,7 @@ class   XMLOptTrace implements  OptTrace
     public  void    printToWriter( PrintWriter out )
     {
         try {
-            TransformerFactory transformerFactory = TransformerFactory.newInstance();
-            Transformer transformer = transformerFactory.newTransformer();
+            Transformer transformer = SecureXmlFactory.newTransformerFactory().newTransformer();
             DOMSource source = new DOMSource( _doc );
             StreamResult result = new StreamResult( out );
 

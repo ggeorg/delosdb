@@ -24,6 +24,7 @@ package org.apache.derby.iapi.types;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.sanity.SanityManager;
+import org.apache.derby.iapi.xml.SecureXmlFactory;
 
 import java.util.Properties;
 import java.util.ArrayList;
@@ -55,6 +56,7 @@ import javax.xml.namespace.QName;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.FactoryConfigurationError;
 
 import javax.xml.transform.OutputKeys;
 import javax.xml.transform.Transformer;
@@ -158,17 +160,18 @@ public class SqlXmlUtil
              * is unable to validate the XML values s/he inserts.
              *
              * Note that, even with validation turned off, XMLPARSE
-             * _will_ still check the well-formedness of the values,
-             * and it _will_ still process DTDs to get default values,
-             * etc--but that's it; no validation errors will be thrown.
+             * _will_ still check the well-formedness of the values.
+             * DelosDB keeps that non-validating behavior but hardens
+             * the JAXP factory so external entities and external DTDs
+             * are not loaded while parsing XML values.
              */
 
             DocumentBuilderFactory dBF = null;
             try {
 
-                dBF = DocumentBuilderFactory.newInstance();
+                dBF = SecureXmlFactory.newDocumentBuilderFactory(false, true);
 
-            } catch (Throwable e) {
+            } catch (FactoryConfigurationError e) {
 
                 /* We assume that if we get an error creating the
                  * DocumentBuilderFactory, it's because there's no
@@ -194,13 +197,6 @@ public class SqlXmlUtil
                      SQLState.LANG_MISSING_XML_CLASSES, "JAXP");
 
             }
-
-            dBF.setValidating(false);
-            dBF.setNamespaceAware(true);
-
-            dBF.setFeature( XMLConstants.FEATURE_SECURE_PROCESSING, true );
-            dBF.setFeature(
-                "http://xml.org/sax/features/external-general-entities", false );
 
             // Load document builder that can be used for parsing XML.
             dBuilder = dBF.newDocumentBuilder();
@@ -649,7 +645,7 @@ public class SqlXmlUtil
         props.setProperty(OutputKeys.ENCODING, "UTF-8");
 
         // Load the serializer with the correct properties.
-        serializer = TransformerFactory.newInstance().newTransformer();
+        serializer = SecureXmlFactory.newTransformerFactory().newTransformer();
         serializer.setOutputProperties(props);
     }
 

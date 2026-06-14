@@ -1453,6 +1453,27 @@ tasks.register('deprecatedApiCleanupAudit', Exec) {
 }
 
 
+tasks.register('secureXmlFactoryProbe', JavaExec) {
+    group = 'verification'
+    description = 'Probes hardened XML parser/transformer factory behavior, including external entity blocking.'
+    dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
+    classpath = files(
+            project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools'),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine)
+    )
+    mainClass = 'org.apache.derbyBuild.SecureXmlFactoryProbe'
+}
+
+
+tasks.register('xmlHardeningAudit', Exec) {
+    group = 'verification'
+    description = 'Verifies Java 21 XML parser/transformer hardening guardrails.'
+    dependsOn 'secureXmlFactoryProbe'
+    commandLine 'bash', 'dev/xml-hardening-audit.sh', '--verify'
+}
+
+
 tasks.register('inheritedCodeQualityAudit', Exec) {
     group = 'verification'
     description = 'Writes an inherited Derby code-quality hotspot report for guarded cleanup work.'

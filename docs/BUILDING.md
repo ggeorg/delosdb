@@ -35,6 +35,7 @@ For inherited Derby cleanup planning, generate the guarded hotspot reports:
 ./gradlew generatedBytecodeJvm21Proof
 ./gradlew generatedMethodDispatchAudit
 ./gradlew deprecatedApiCleanupAudit
+./gradlew xmlHardeningAudit
 ```
 
 `legacyDerbyHarnessAudit` classifies the old Derby function-test harness before
@@ -57,6 +58,11 @@ common generated methods.
 the old non-locator CLOB deprecated byte-stream helper. The replacement keeps
 the inherited low-byte mapping so the legacy wire path remains compatibility
 focused rather than silently switching to charset conversion.
+
+`xmlHardeningAudit` verifies the guarded XML parser/transformer hardening pass.
+It also runs `secureXmlFactoryProbe`, which checks that the centralized XML
+factory helper blocks external entity expansion before broader SQL/XML cleanup
+continues.
 
 When a previous test run was interrupted, start with a clean build:
 

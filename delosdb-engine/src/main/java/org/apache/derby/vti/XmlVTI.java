@@ -33,9 +33,9 @@ import java.sql.SQLException;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.util.ArrayList;
+import org.apache.derby.iapi.xml.SecureXmlFactory;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.XMLConstants;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -422,11 +422,8 @@ public  class   XmlVTI  extends StringColumnVTI
      */
     private    void    readRows() throws Exception
     {
-        DocumentBuilderFactory  factory = DocumentBuilderFactory.newInstance();
-        
-	    factory.setFeature( XMLConstants.FEATURE_SECURE_PROCESSING, true );
-	    factory.setFeature(
-            "http://xml.org/sax/features/external-general-entities", false );
+        DocumentBuilderFactory  factory =
+            SecureXmlFactory.newDocumentBuilderFactory(false, false);
 
         _builder = factory.newDocumentBuilder();
         _builder.setErrorHandler(new XMLErrorHandler());
