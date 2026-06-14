@@ -33,6 +33,7 @@ import junit.framework.Test;
 import org.apache.derbyTesting.junit.BaseJDBCTestCase;
 import org.apache.derbyTesting.junit.BaseTestSuite;
 import org.apache.derbyTesting.junit.DatabasePropertyTestSetup;
+import org.apache.derbyTesting.junit.DelosDbTestBaselines;
 import org.apache.derbyTesting.junit.J2EEDataSource;
 import org.apache.derbyTesting.junit.JDBC;
 import org.apache.derbyTesting.junit.TestConfiguration;
@@ -78,12 +79,6 @@ public class RolesTest extends BaseJDBCTestCase
     private final static String loginFailed              = "08004";
     private final static String roleGrantCircularity     = "4251C";
     private final static String idParseError             = "XCXA0";
-
-    // DelosDB registers one additional SYSCS_UTIL routine for extension
-    // visibility. Inherited Derby role tests count pre-existing PUBLIC
-    // routine execute grants, so keep the product-specific catalog delta
-    // centralized here instead of scattering adjusted literals.
-    private final static int delosdbSystemRoutinePermDelta = 2;
 
     private int MAX_IDENTIFIER_LENGTH = 128;
     /**
@@ -1234,9 +1229,12 @@ public class RolesTest extends BaseJDBCTestCase
         }
 
         assertSystableRowCount("SYS.SYSROUTINEPERMS",
-                               rcNoAuth + delosdbSystemRoutinePermDelta,
-                               rcDbo + delosdbSystemRoutinePermDelta,
-                               rcMereMortal + delosdbSystemRoutinePermDelta);
+                               DelosDbTestBaselines
+                                   .withExtraSystemRoutinePermissions(rcNoAuth),
+                               DelosDbTestBaselines
+                                   .withExtraSystemRoutinePermissions(rcDbo),
+                               DelosDbTestBaselines
+                                   .withExtraSystemRoutinePermissions(rcMereMortal));
     }
 
 

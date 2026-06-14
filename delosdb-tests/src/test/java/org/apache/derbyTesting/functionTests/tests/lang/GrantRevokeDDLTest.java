@@ -33,6 +33,7 @@ import org.apache.derbyTesting.junit.BaseJDBCTestCase;
 import org.apache.derbyTesting.junit.BaseTestSuite;
 import org.apache.derbyTesting.junit.CleanDatabaseTestSetup;
 import org.apache.derbyTesting.junit.DatabasePropertyTestSetup;
+import org.apache.derbyTesting.junit.DelosDbTestBaselines;
 import org.apache.derbyTesting.junit.JDBC;
 import org.apache.derbyTesting.junit.SupportFilesSetup;
 import org.apache.derbyTesting.junit.TestConfiguration;
@@ -7276,22 +7277,8 @@ public final class GrantRevokeDDLTest extends BaseJDBCTestCase {
         expColNames = new String [] {"GRANTEE", "GRANTOR", "GRANTOPTION"};
         JDBC.assertColumnNames(rs, expColNames);
         
-        expRS = new String [][]
-        {
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-        };
+        expRS = DelosDbTestBaselines
+            .publicSystemRoutinePermissionRows("TEST_DBO");
         
         JDBC.assertFullResultSet(rs, expRS, true);
         
@@ -7328,23 +7315,9 @@ public final class GrantRevokeDDLTest extends BaseJDBCTestCase {
         expColNames = new String [] {"GRANTEE", "GRANTOR", "GRANTOPTION"};
         JDBC.assertColumnNames(rs, expColNames);
         
-        expRS = new String [][]
-        {
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"PUBLIC", "TEST_DBO", "N"},
-            {"USER2", "USER1", "N"}
-        };
+        expRS = DelosDbTestBaselines.publicSystemRoutinePermissionRows(
+            "TEST_DBO",
+            new String[][] { {"USER2", "USER1", "N"} });
         
         JDBC.assertFullResultSet(rs, expRS, true);
         
