@@ -23,7 +23,6 @@ package org.apache.derby.impl.sql.execute.rts;
 
 import org.apache.derby.iapi.sql.execute.ResultSetStatistics;
 import org.apache.derby.catalog.UUID;
-import org.apache.derby.impl.sql.catalog.XPLAINResultSetDescriptor;
 import org.apache.derby.impl.sql.catalog.XPLAINResultSetTimingsDescriptor;
 import org.apache.derby.impl.sql.execute.xplain.XPLAINUtil;
 
@@ -144,30 +143,10 @@ abstract class RealNoRowsResultSetStatistics
     public Object getResultSetDescriptor(Object rsID, Object parentID,
             Object scanID, Object sortID, Object stmtID, Object timingID)
     {
-        return new XPLAINResultSetDescriptor(
-           (UUID)rsID,
-           getRSXplainType(),
-           getRSXplainDetails(),
-           null,                              // the number of opens
-           null,                              // the number of index updates 
-           null,                           // lock mode
-           null,                           // lock granularity
-           (UUID)parentID,
-           null,                             // estimated row count
-           null,                             // estimated cost
-           null,                             // affected rows
-           null,                             // deferred rows.
-           null,                              // the input rows
-           null,                              // the seen rows left
-           null,                              // the seen rows right
-           null,                              // the filtered rows
-           null,                              // the returned rows
-           null,                              // the empty right rows
-           null,                           // index key optimization
-           (UUID)scanID,
-           (UUID)sortID,
-           (UUID)stmtID,
-           (UUID)timingID);
+        return XPLAINResultSetDescriptorBuilder
+            .descriptor(rsID, parentID, scanID, sortID, stmtID, timingID)
+            .operation(getRSXplainType(), getRSXplainDetails())
+            .build();
     }
     public Object getResultSetTimingsDescriptor(Object timingID)
     {

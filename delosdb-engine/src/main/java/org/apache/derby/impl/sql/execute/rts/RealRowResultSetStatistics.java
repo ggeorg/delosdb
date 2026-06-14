@@ -33,7 +33,6 @@ import java.io.ObjectInput;
 import java.io.IOException;
 
 import org.apache.derby.catalog.UUID;
-import org.apache.derby.impl.sql.catalog.XPLAINResultSetDescriptor;
 import org.apache.derby.impl.sql.catalog.XPLAINResultSetTimingsDescriptor;
 import org.apache.derby.impl.sql.execute.xplain.XPLAINUtil;
 import org.apache.derby.iapi.sql.execute.xplain.XPLAINVisitor;
@@ -159,29 +158,18 @@ public class RealRowResultSetStatistics
     public Object getResultSetDescriptor(Object rsID, Object parentID,
             Object scanID, Object sortID, Object stmtID, Object timingID)
     {
-        return new XPLAINResultSetDescriptor(
-           (UUID)rsID,
-           getRSXplainType(),
-           getRSXplainDetails(),
-           this.numOpens,
-           null,                              // the number of index updates 
-           null,                           // lock mode
-           null,                           // lock granularity
-           (UUID)parentID,
-           this.optimizerEstimatedRowCount,
-           this.optimizerEstimatedCost,
-           null,                              // the affected rows
-           null,                              // the deferred rows
-           null,                              // the input rows
-           this.rowsSeen,
-           null,                              // the seen rows right
-           this.rowsFiltered,
-           this.rowsReturned,
-           null,                              // the empty right rows
-           null,                           // index key optimization
-           (UUID)scanID,
-           (UUID)sortID,
-           (UUID)stmtID,
-           (UUID)timingID);
+        return XPLAINResultSetDescriptorBuilder
+            .descriptor(rsID, parentID, scanID, sortID, stmtID, timingID)
+            .operation(getRSXplainType(), getRSXplainDetails())
+            .opens(this.numOpens)
+            .optimizerEstimate(
+                this.optimizerEstimatedRowCount,
+                this.optimizerEstimatedCost)
+            .rows(
+                this.rowsSeen,
+                null,
+                this.rowsFiltered,
+                this.rowsReturned)
+            .build();
     }
 }
