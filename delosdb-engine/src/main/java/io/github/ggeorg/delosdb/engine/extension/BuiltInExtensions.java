@@ -5,6 +5,7 @@ import io.github.ggeorg.delosdb.engine.extension.cost.CostModelProvider;
 import io.github.ggeorg.delosdb.engine.extension.function.BuiltInFunctionProviders;
 import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
+import io.github.ggeorg.delosdb.engine.extension.type.BuiltInTypeProviders;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.index.IndexCapabilities;
 import io.github.ggeorg.delosdb.spi.index.IndexMetadata;
@@ -13,6 +14,8 @@ import io.github.ggeorg.delosdb.spi.function.FunctionCapabilities;
 import io.github.ggeorg.delosdb.spi.function.FunctionProvider;
 import io.github.ggeorg.delosdb.spi.storage.StorageCapabilities;
 import io.github.ggeorg.delosdb.spi.storage.StorageProvider;
+import io.github.ggeorg.delosdb.spi.type.TypeCapabilities;
+import io.github.ggeorg.delosdb.spi.type.TypeProvider;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +39,8 @@ public final class BuiltInExtensions {
     public static final String DEFAULT_FUNCTION_PROVIDER = BUILTIN_FUNCTION_PROVIDER;
     public static final String BUILTIN_COST_MODEL_PROVIDER = "btree";
     public static final String DEFAULT_COST_MODEL_PROVIDER = BUILTIN_COST_MODEL_PROVIDER;
+    public static final String BUILTIN_TYPE_PROVIDER = "derby";
+    public static final String DEFAULT_TYPE_PROVIDER = BUILTIN_TYPE_PROVIDER;
 
     private BuiltInExtensions() {
     }
@@ -46,6 +51,7 @@ public final class BuiltInExtensions {
         BuiltInStorageProviders.all().forEach(provider -> registry.register(storageProviderDescriptor(provider)));
         BuiltInFunctionProviders.all().forEach(provider -> registry.register(functionProviderDescriptor(provider)));
         BuiltInCostModelProviders.all().forEach(provider -> registry.register(costModelProviderDescriptor(provider)));
+        BuiltInTypeProviders.all().forEach(provider -> registry.register(typeProviderDescriptor(provider)));
     }
 
     public static InMemoryExtensionRegistry newRegistryWithBuiltIns() {
@@ -68,6 +74,10 @@ public final class BuiltInExtensions {
 
     public static ExtensionDescriptor btreeCostModelProvider() {
         return costModelProviderDescriptor(BuiltInCostModelProviders.btree());
+    }
+
+    public static ExtensionDescriptor derbyTypeProvider() {
+        return typeProviderDescriptor(BuiltInTypeProviders.derby());
     }
 
     public static ExtensionDescriptor indexProviderDescriptor(IndexProvider provider) {
@@ -155,6 +165,28 @@ public final class BuiltInExtensions {
         );
     }
 
+
+    public static ExtensionDescriptor typeProviderDescriptor(TypeProvider provider) {
+        Objects.requireNonNull(provider, "provider");
+        return typeProviderDescriptor(
+                provider,
+                BUILTIN_VERSION,
+                DEFAULT_TYPE_PROVIDER.equals(ExtensionDescriptor.normalizeName(provider.name())));
+    }
+
+    public static ExtensionDescriptor typeProviderDescriptor(
+            TypeProvider provider,
+            String version,
+            boolean defaultProvider) {
+        Objects.requireNonNull(provider, "provider");
+        return ExtensionDescriptor.enabled(
+                ExtensionType.TYPE,
+                provider.name(),
+                version,
+                typeCapabilityNames(provider.capabilities(), defaultProvider, !provider.types().isEmpty())
+        );
+    }
+
     private static List<String> capabilityNames(IndexCapabilities capabilities, boolean defaultProvider) {
         Objects.requireNonNull(capabilities, "capabilities");
         List<String> names = new ArrayList<>();
@@ -208,6 +240,34 @@ public final class BuiltInExtensions {
         names.add("enabled-mode");
         if (DEFAULT_COST_MODEL_PROVIDER.equals(ExtensionDescriptor.normalizeName(provider.name()))) {
             names.add("btree-access-method");
+        }
+        return List.copyOf(names);
+    }
+
+
+    private static List<String> typeCapabilityNames(
+            TypeCapabilities capabilities,
+            boolean defaultProvider,
+            boolean hasTypes) {
+        Objects.requireNonNull(capabilities, "capabilities");
+        List<String> names = new ArrayList<>();
+        if (defaultProvider) {
+            names.add("default-type-provider");
+        }
+        if (hasTypes) {
+            names.add("type-metadata");
+        }
+        if (capabilities.builtInCatalogTypes()) {
+            names.add("derby-built-in-types");
+        }
+        if (capabilities.scalarTypes()) {
+            names.add("scalar-types");
+        }
+        if (capabilities.jdbcMetadata()) {
+            names.add("jdbc-metadata");
+        }
+        if (capabilities.comparableTypes()) {
+            names.add("comparable-types");
         }
         return List.copyOf(names);
     }

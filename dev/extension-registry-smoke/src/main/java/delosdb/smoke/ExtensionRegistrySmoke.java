@@ -24,11 +24,13 @@ public final class ExtensionRegistrySmoke {
         ExtensionDescriptor storage = requireDescriptor(registry, ExtensionType.STORAGE, "heap");
         ExtensionDescriptor function = requireDescriptor(registry, ExtensionType.FUNCTION, "delos");
         ExtensionDescriptor costModel = requireDescriptor(registry, ExtensionType.COST_MODEL, "btree");
+        ExtensionDescriptor typeProvider = requireDescriptor(registry, ExtensionType.TYPE, "derby");
 
         requireEnabled(index);
         requireEnabled(storage);
         requireEnabled(function);
         requireEnabled(costModel);
+        requireEnabled(typeProvider);
 
         requireCapability(index, "default-index-provider");
         requireCapability(storage, "default-storage-provider");
@@ -36,6 +38,9 @@ public final class ExtensionRegistrySmoke {
         requireCapability(function, "function-metadata");
         requireCapability(costModel, "default-cost-model-provider");
         requireCapability(costModel, "native-store-cost-controller-adapter");
+        requireCapability(typeProvider, "default-type-provider");
+        requireCapability(typeProvider, "type-metadata");
+        requireCapability(typeProvider, "derby-built-in-types");
 
         List<ExtensionDescriptor> descriptors = registry.descriptors().stream()
                 .sorted(Comparator
@@ -48,7 +53,8 @@ public final class ExtensionRegistrySmoke {
             if (descriptor.type() == ExtensionType.INDEX
                     || descriptor.type() == ExtensionType.STORAGE
                     || descriptor.type() == ExtensionType.FUNCTION
-                    || descriptor.type() == ExtensionType.COST_MODEL) {
+                    || descriptor.type() == ExtensionType.COST_MODEL
+                    || descriptor.type() == ExtensionType.TYPE) {
                 System.out.println("  " + describe(descriptor));
             }
         }

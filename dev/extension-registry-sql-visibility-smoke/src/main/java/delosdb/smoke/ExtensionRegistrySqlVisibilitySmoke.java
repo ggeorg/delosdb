@@ -30,6 +30,7 @@ public final class ExtensionRegistrySqlVisibilitySmoke {
             requireContains(summary, "storage heap enabled");
             requireContains(summary, "function delos enabled");
             requireContains(summary, "cost_model btree enabled");
+            requireContains(summary, "type derby enabled");
 
             System.out.println(summary);
         }
