@@ -3,9 +3,6 @@ package io.github.ggeorg.delosdb.engine.extension.storage;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.storage.StorageCapabilities;
 import io.github.ggeorg.delosdb.spi.storage.StorageProvider;
-import io.github.ggeorg.delosdb.spi.storage.TableStorageMetadata;
-
-import java.util.Objects;
 
 /**
  * Built-in storage provider describing Derby's current heap table storage.
@@ -27,8 +24,7 @@ final class BuiltInHeapStorageProvider implements StorageProvider {
     }
 
     @Override
-    public StorageCapabilities capabilities(TableStorageMetadata metadata) {
-        Objects.requireNonNull(metadata, "metadata");
+    public StorageCapabilities capabilities() {
         return StorageCapabilities.heap();
     }
 }

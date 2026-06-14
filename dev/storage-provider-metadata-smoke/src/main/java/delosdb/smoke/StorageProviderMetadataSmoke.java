@@ -59,9 +59,19 @@ public final class StorageProviderMetadataSmoke {
         assertEquals("APP", metadata.schemaName(), "metadata schema");
         assertEquals("STORAGE_PROVIDER_SMOKE", metadata.tableName(), "metadata table");
 
-        StorageCapabilities capabilities = defaultProvider.capabilities(metadata);
-        if (!capabilities.rowStore() || !capabilities.transactional() || !capabilities.derbyHeapCompatible()) {
-            throw new IllegalStateException("Heap storage provider capabilities are incomplete: " + capabilities);
+        StorageCapabilities providerCapabilities = defaultProvider.capabilities();
+        if (!providerCapabilities.rowStore()
+                || !providerCapabilities.transactional()
+                || !providerCapabilities.derbyHeapCompatible()) {
+            throw new IllegalStateException(
+                    "Heap storage provider-level capabilities are incomplete: " + providerCapabilities);
+        }
+
+        StorageCapabilities tableCapabilities = defaultProvider.capabilities(metadata);
+        if (!tableCapabilities.equals(providerCapabilities)) {
+            throw new IllegalStateException(
+                    "StorageProvider v0 table capabilities should match provider capabilities: "
+                            + tableCapabilities + " vs " + providerCapabilities);
         }
 
         System.out.println("DelosDB StorageProvider metadata smoke test passed.");

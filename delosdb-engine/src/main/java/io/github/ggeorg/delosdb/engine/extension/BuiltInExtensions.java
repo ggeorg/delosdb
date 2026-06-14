@@ -13,7 +13,6 @@ import io.github.ggeorg.delosdb.spi.function.FunctionCapabilities;
 import io.github.ggeorg.delosdb.spi.function.FunctionProvider;
 import io.github.ggeorg.delosdb.spi.storage.StorageCapabilities;
 import io.github.ggeorg.delosdb.spi.storage.StorageProvider;
-import io.github.ggeorg.delosdb.spi.storage.TableStorageMetadata;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -106,12 +105,11 @@ public final class BuiltInExtensions {
             String version,
             boolean defaultProvider) {
         Objects.requireNonNull(provider, "provider");
-        TableStorageMetadata metadata = TableStorageMetadata.of(provider.name(), "APP", "PROVIDER_" + provider.name());
         return ExtensionDescriptor.enabled(
                 ExtensionType.STORAGE,
                 provider.name(),
                 version,
-                storageCapabilityNames(provider.capabilities(metadata), defaultProvider)
+                storageCapabilityNames(provider.capabilities(), defaultProvider)
         );
     }
 
