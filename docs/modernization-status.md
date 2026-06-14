@@ -5,11 +5,9 @@ Last updated: 2026-06-14
 DelosDB is a Gradle-only Java 21 modernization fork of Apache Derby with a
 Derby-compatible SQL/JDBC baseline and a controlled extension platform.
 
-The current priority is cleanup and completion, not expansion. No new provider
-family should be added until `CostModelProvider` reaches a v2 proof with two real
-implementations. Workspace metadata such as `.git/`, `.gradle/`, and `.idea/` is
-valid local state, may appear in developer ZIP snapshots, and must not be deleted
-by cleanup scripts.
+The current priority is completion and verification, not expansion. Workspace
+metadata such as `.git/`, `.gradle/`, and `.idea/` is valid local state, may
+appear in developer ZIP snapshots, and must not be deleted by cleanup scripts.
 
 ## Current verification gates
 
@@ -28,16 +26,53 @@ For broader release checks:
 ./dev/benchmark-baseline.sh
 ```
 
+## Finished seams
+
+### CostModelProvider v2
+
+Green locally. The native cost path is now resolver-driven through
+`StoreCostControllerBridge` and supports two built-in providers:
+
+```text
+heap  -> factory id 0
+btree -> factory id 1
+```
+
+The old `FromBaseTable` / `IndexProviderCostBridge` path is legacy diagnostic
+only. It must not consume or mutate planner cost.
+
+### IndexProvider v2
+
+Green locally. The index provider abstraction has two built-in implementations:
+
+```text
+btree  -> Derby-compatible SQL-backed provider
+memory -> provider-owned runtime proof
+```
+
+`CREATE INDEX ... USING memory` remains intentionally rejected until DelosDB
+builds a real Derby executor/storage bridge for non-B-tree physical indexes.
+
+## Shallow seams intentionally held
+
+- `StorageProvider`: heap-only provider surface; no second storage engine yet.
+- `FunctionProvider`: built-in DelosDB function surface; no external function
+  loading yet.
+- `TypeProvider`: metadata-only type visibility; no parser, binder, or storage
+  changes yet.
+
+No new provider family should be added while these existing seams remain shallow.
+
 ## Current product seams
 
 Green locally:
 
 - Derby runtime/product smokes through `derbyRuntimeSmoke`.
 - inherited Derby lang/JDBC suite through Gradle.
-- `IndexProvider` v0/v1 surface.
-- `StorageProvider` v0 surface.
-- `FunctionProvider` v0 surface.
-- `CostModelProvider` v1 native store-cost adapter.
+- `CostModelProvider` v2 through heap and B-tree store-cost providers.
+- `IndexProvider` v2 through B-tree and memory providers.
+- `StorageProvider` v0/v1 surface.
+- `FunctionProvider` v0/v1 surface.
 - `TypeProvider` v0 metadata and SQL visibility.
 - unified extension registry through `SYSCS_UTIL.DELOSDB_EXTENSIONS()`.
 - type metadata visibility through `SYSCS_UTIL.DELOSDB_TYPES()`.
@@ -57,16 +92,28 @@ Completed modernization work includes:
 - selected Java 21 cleanup batches for finalizers, diagnostics, collection usage,
   timers, logging, and test activation.
 
+## Current book status
+
+Source-checked chapters:
+
+- Chapter 3: optimizer/cost vocabulary.
+- Chapter 6: heap, B-tree, factory-id registration, and access-method behavior.
+- Chapter 8: extension platform, provider registry, CostModelProvider v2,
+  IndexProvider v2, TypeProvider v0 visibility.
+- Chapter 11: CostModelProvider v2.
+
+Other chapters remain source-reading or lab drafts until verified.
+
 ## Current cleanup priority
 
 Before adding features:
 
 1. remove stale checkpoint documents with `scripts/remove-checkpoint-docs.sh`,
-2. create shareable ZIP snapshots with `scripts/create-clean-snapshot.sh` instead of deleting local `.git/`, `.gradle/`, or `.idea/`,
-3. keep generated LaTeX/PDF build outputs out of source control,
+2. keep generated LaTeX/PDF build outputs out of source control,
+3. never delete local `.git/`, `.gradle/`, or `.idea/`,
 4. verify book source citations chapter by chapter before treating the manuscript
    as reliable,
 5. reduce inherited `RESOLVE` comments in focused batches,
 6. reduce `instanceof`-then-cast patterns only where ownership and behavior are
    clear,
-7. finish `CostModelProvider` v2 with heap and B-tree provider implementations.
+7. avoid opening a new provider family.

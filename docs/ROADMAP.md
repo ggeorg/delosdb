@@ -14,8 +14,8 @@ where the existing seams are too narrow.
 
 ## Current rule
 
-Do not start another provider family until one provider seam reaches a real v2
-proof. Cleanup and verification are allowed; new provider surfaces are not.
+Do not start another provider family until the already-open provider seams are
+finished, verified, or explicitly frozen at their current depth.
 
 Workspace metadata is not a cleanup target. Local snapshots may contain `.git/`,
 `.gradle/`, and `.idea/`. These directories must be ignored during review and
@@ -23,18 +23,69 @@ must never be deleted by cleanup scripts. Overlay ZIPs produced for DelosDB must
 exclude workspace metadata, but the developer workspace ZIP workflow remains
 unchanged.
 
-For the current line of work, that seam is `CostModelProvider`:
+## Finished seams
+
+### CostModelProvider v2
+
+Status: finished seam, green locally.
+
+The active native path is:
 
 ```text
 RAMTransaction.openStoreCost()
   -> StoreCostControllerBridge
+  -> CostModelProviderResolver
   -> CostModelProvider
-  -> diagnostic / enabled proof
 ```
 
-The next product milestone is not another v0 surface. It is a second real cost
-model implementation, reached through the same store-cost path, proving that the
-provider abstraction is not only a renamed B-tree path.
+Proven implementations:
+
+```text
+factory id 0 -> heap CostModelProvider
+factory id 1 -> btree CostModelProvider
+```
+
+The old `FromBaseTable` / `IndexProviderCostBridge` path is now legacy
+optimizer-side diagnostic history. It may expose a provider estimate for review,
+but it must not mutate planner cost. The native consumption path is the
+`StoreCostController` adapter.
+
+Remaining known boundary: `CostModelEstimate.startupCost()` is captured and
+validated, but Derby's `StoreCostResult` cannot propagate startup cost yet. Only
+total cost and estimated row count are consumed through this store-cost seam.
+
+### IndexProvider v2
+
+Status: finished abstraction proof, green locally.
+
+Proven implementations:
+
+```text
+index btree  -> Derby-compatible SQL-backed index provider
+index memory -> provider-owned in-memory index operations proof
+```
+
+`btree` remains the only SQL-creatable index provider. `memory` is intentionally
+visible in the registry but rejected by `CREATE INDEX ... USING memory` until a
+real Derby executor/storage bridge exists. The v2 proof is that the SPI is not a
+single-provider facade: the second provider owns insert, delete, equality lookup,
+range lookup, full scan, truncate, and row-count estimation behavior in its own
+runtime proof.
+
+## Shallow seams deliberately frozen
+
+These provider families are useful metadata surfaces today, but they are not
+finished external plugin products:
+
+- `StorageProvider`: keep at heap-only v0/v1 unless we are ready to build a real
+  second storage implementation.
+- `FunctionProvider`: keep as the built-in DelosDB function metadata/execution
+  seam unless we are ready for external function loading.
+- `TypeProvider`: keep metadata-only. Do not touch parser, binder, type system,
+  or storage format until we intentionally start type-system work.
+
+Do not start `RewriteRuleProvider`, `ExternalTableProvider`, or
+`SecurityPolicyProvider` while these seams remain shallow.
 
 ## Current foundation
 
@@ -62,51 +113,42 @@ Implemented and green:
 - Derby-compatible SQL/JDBC baseline through Gradle.
 - `derbyRuntimeSmoke` covering runtime/product smokes.
 - inherited Derby lang/JDBC suite through `:delosdb-tests:runDerbyLangSuite`.
-- `IndexProvider` v0/v1 surface: `CREATE INDEX ... USING btree`, metadata,
-  registry visibility, provider-cost diagnostics, and the factory-id registry
-  proof needed for future non-B-tree access methods.
-- `StorageProvider` v0 surface: `CREATE TABLE ... USING heap`, metadata,
+- `CostModelProvider` v2: heap and B-tree cost providers selected through the
+  native `StoreCostController` bridge.
+- `IndexProvider` v2: B-tree provider plus memory provider runtime proof.
+- `StorageProvider` v0/v1 surface: `CREATE TABLE ... USING heap`, metadata,
   persistence, visibility, and provider-level capabilities without synthetic
   table metadata.
-- `FunctionProvider` v0 surface: built-in `APP.DELOS_VERSION()`, metadata,
+- `FunctionProvider` v0/v1 surface: built-in `APP.DELOS_VERSION()`, metadata,
   execution, and visibility.
-- `CostModelProvider` v1 surface: native `StoreCostController` adapter with
-  diagnostic and enabled modes.
 - `TypeProvider` v0 surface: Derby built-in type metadata and
   `SYSCS_UTIL.DELOSDB_TYPES()` visibility.
 - unified extension registry through `SYSCS_UTIL.DELOSDB_EXTENSIONS()`.
 - centralized test baseline for DelosDB system routines in
   `DelosDbTestBaselines`.
 
-None of these are complete external plugin products yet. They are controlled
-engine seams. A seam is complete only after a second real implementation proves
-that the abstraction is independent of the built-in Derby path.
+## Book verification rule
 
-## Next milestone: finish the cost seam
+No new book chapter should be added until existing cited chapters are checked.
+Current trusted chapters:
 
-Goal: turn `CostModelProvider` from v1 to v2. This is the only feature milestone
-after cleanup. No `RewriteRuleProvider`, new storage engine, new index family,
-or additional book chapter should be started before this gate is green.
+- Chapter 3: source-checked optimizer/cost vocabulary.
+- Chapter 6: source-checked heap/B-tree and factory-id behavior.
+- Chapter 8: source-checked extension-platform chapter, updated through
+  IndexProvider v2.
+- Chapter 11: source-checked CostModelProvider v2 chapter.
 
-Required proof:
+Other chapters remain source-reading or lab drafts until verified.
 
-```text
-factory id 0 -> heap CostModelProvider
-factory id 1 -> btree CostModelProvider
-```
+## Next milestone
 
-The v2 gate should prove:
+The next work is not a new provider. Choose one of these, in order:
 
-1. two provider implementations are registered,
-2. the store-cost bridge resolves providers through the registry/resolver, not a
-   hardcoded B-tree check,
-3. heap and B-tree scans produce distinct provider probes,
-4. diagnostic mode records Derby and provider estimates without changing Derby's
-   result,
-5. enabled mode consumes safe provider estimates,
-6. the inherited Derby language suite remains green.
-
-Only after this is green should Chapter 11 be updated.
+1. finish any remaining cleanup required by the CostModelProvider and
+   IndexProvider v2 proofs,
+2. verify the next untrusted book chapter against source,
+3. only then decide whether StorageProvider, FunctionProvider, or TypeProvider
+   deserves a real v2 implementation.
 
 ## Cleanup policy before new features
 
@@ -114,11 +156,11 @@ Before adding more provider families or book chapters:
 
 1. remove stale checkpoint documents instead of maintaining parallel history,
 2. keep generated book artifacts out of source control,
-3. use `scripts/create-clean-snapshot.sh` for shareable ZIPs instead of deleting local workspace metadata,
+3. never delete `.git/`, `.gradle/`, or `.idea/`,
 4. mark every book chapter with a verification status,
 5. verify book citations before presenting a chapter as evidence-backed,
 6. reduce `RESOLVE` comments and legacy casts in focused batches,
-7. keep existing docs short and current instead of adding new tracking files.
+7. prefer finishing one seam to starting another one.
 
 ## Explicitly out of scope for now
 
@@ -127,10 +169,10 @@ Before adding more provider families or book chapters:
 - PostgreSQL wire protocol
 - MySQL compatibility
 - external plugin marketplace
-- custom physical index implementation beyond the next focused proof
+- new provider families
 - custom storage engine
 - full JSON engine
 - vector database behavior
 
-These may become future projects, but they must not distract from finishing one
-provider seam to v2.
+These may become future projects, but they must not distract from finishing and
+verifying the seams already opened.

@@ -5,7 +5,7 @@ small, explicit SQL extension points only where a product seam already exists.
 This page documents the current supported surface. It is not a roadmap for
 future syntax.
 
-## Supported v0 syntax
+## Supported syntax
 
 ### Index providers
 
@@ -19,6 +19,17 @@ is equivalent to using the default provider:
 ```sql
 CREATE INDEX index_name ON table_name(column_name);
 ```
+
+`memory` is a registered IndexProvider v2 proof provider, but it is not a
+SQL-creatable physical Derby index yet:
+
+```sql
+CREATE INDEX index_name ON table_name(column_name) USING memory;
+```
+
+The statement above is intentionally rejected during validation. The memory
+provider proves the provider-owned runtime abstraction, not Derby executor/storage
+integration.
 
 Unknown index providers are rejected during binding before physical index work
 starts.
@@ -52,12 +63,14 @@ utility surface:
 VALUES SYSCS_UTIL.DELOSDB_EXTENSIONS();
 ```
 
-Current built-in extension families include:
+Current built-in extension entries include:
 
 ```text
+cost_model heap
 cost_model btree
 function   delos
 index      btree
+index      memory
 storage    heap
 type       derby
 ```
@@ -74,23 +87,26 @@ add new SQL type semantics.
 
 ## Not supported yet
 
-The current v0/v1 surface deliberately does not include:
+The current surface deliberately does not include:
 
 - `SHOW EXTENSIONS`
 - external provider loading
+- `CREATE INDEX ... USING memory` as a physical SQL index
 - custom physical storage engines
-- non-btree index implementations
 - JSON/type-provider syntax
 - planner replacement syntax
 - public cost-model provider loading
+- new provider families
 
 ## Verification
 
 The SQL extension surface is covered by the existing product smokes:
 
 ```bash
+./gradlew indexProviderV2Smoke
 ./gradlew indexProviderMetadataSmoke
 ./gradlew storageProviderSyntaxSmoke
+./gradlew costModelProviderStoreCostSmoke
 ./gradlew extensionRegistrySqlVisibilitySmoke
 ./gradlew typeProviderSqlVisibilitySmoke
 ./gradlew :delosdb-tests:runDerbyLangSuite
