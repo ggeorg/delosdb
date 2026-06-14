@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Verifies the first unified DelosDB extension registry surface.
+ * Verifies the unified DelosDB extension registry surface, including the internal CostModelProvider family.
  */
 public final class ExtensionRegistrySmoke {
     private ExtensionRegistrySmoke() {
@@ -23,15 +23,19 @@ public final class ExtensionRegistrySmoke {
         ExtensionDescriptor index = requireDescriptor(registry, ExtensionType.INDEX, "btree");
         ExtensionDescriptor storage = requireDescriptor(registry, ExtensionType.STORAGE, "heap");
         ExtensionDescriptor function = requireDescriptor(registry, ExtensionType.FUNCTION, "delos");
+        ExtensionDescriptor costModel = requireDescriptor(registry, ExtensionType.COST_MODEL, "btree");
 
         requireEnabled(index);
         requireEnabled(storage);
         requireEnabled(function);
+        requireEnabled(costModel);
 
         requireCapability(index, "default-index-provider");
         requireCapability(storage, "default-storage-provider");
         requireCapability(function, "default-function-provider");
         requireCapability(function, "function-metadata");
+        requireCapability(costModel, "default-cost-model-provider");
+        requireCapability(costModel, "native-store-cost-controller-adapter");
 
         List<ExtensionDescriptor> descriptors = registry.descriptors().stream()
                 .sorted(Comparator
@@ -43,7 +47,8 @@ public final class ExtensionRegistrySmoke {
         for (ExtensionDescriptor descriptor : descriptors) {
             if (descriptor.type() == ExtensionType.INDEX
                     || descriptor.type() == ExtensionType.STORAGE
-                    || descriptor.type() == ExtensionType.FUNCTION) {
+                    || descriptor.type() == ExtensionType.FUNCTION
+                    || descriptor.type() == ExtensionType.COST_MODEL) {
                 System.out.println("  " + describe(descriptor));
             }
         }

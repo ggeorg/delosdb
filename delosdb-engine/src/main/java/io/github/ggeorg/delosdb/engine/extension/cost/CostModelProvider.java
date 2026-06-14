@@ -1,5 +1,7 @@
 package io.github.ggeorg.delosdb.engine.extension.cost;
 
+import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
+
 import java.util.Optional;
 
 /**
@@ -9,7 +11,8 @@ import java.util.Optional;
  * to validate the correct Derby integration point first: an adapter around
  * {@code StoreCostController}, not another optimizer-side reflection hook.</p>
  */
-interface CostModelProvider {
+@InternalApi
+public interface CostModelProvider {
     String name();
 
     Optional<CostModelEstimate> estimateScanCost(CostModelRequest request);

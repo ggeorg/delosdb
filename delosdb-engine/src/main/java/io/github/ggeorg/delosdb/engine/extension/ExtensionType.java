@@ -13,6 +13,7 @@ public enum ExtensionType {
     INDEX,
     STORAGE,
     FUNCTION,
+    COST_MODEL,
     TYPE,
     REWRITE_RULE,
     EXTERNAL_TABLE,

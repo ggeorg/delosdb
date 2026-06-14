@@ -1,5 +1,7 @@
 package io.github.ggeorg.delosdb.engine.extension;
 
+import io.github.ggeorg.delosdb.engine.extension.cost.BuiltInCostModelProviders;
+import io.github.ggeorg.delosdb.engine.extension.cost.CostModelProvider;
 import io.github.ggeorg.delosdb.engine.extension.function.BuiltInFunctionProviders;
 import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
@@ -33,6 +35,8 @@ public final class BuiltInExtensions {
     public static final String DEFAULT_STORAGE_PROVIDER = HEAP_STORAGE_PROVIDER;
     public static final String BUILTIN_FUNCTION_PROVIDER = "delos";
     public static final String DEFAULT_FUNCTION_PROVIDER = BUILTIN_FUNCTION_PROVIDER;
+    public static final String BUILTIN_COST_MODEL_PROVIDER = "btree";
+    public static final String DEFAULT_COST_MODEL_PROVIDER = BUILTIN_COST_MODEL_PROVIDER;
 
     private BuiltInExtensions() {
     }
@@ -42,6 +46,7 @@ public final class BuiltInExtensions {
         BuiltInIndexProviders.all().forEach(provider -> registry.register(indexProviderDescriptor(provider)));
         BuiltInStorageProviders.all().forEach(provider -> registry.register(storageProviderDescriptor(provider)));
         BuiltInFunctionProviders.all().forEach(provider -> registry.register(functionProviderDescriptor(provider)));
+        BuiltInCostModelProviders.all().forEach(provider -> registry.register(costModelProviderDescriptor(provider)));
     }
 
     public static InMemoryExtensionRegistry newRegistryWithBuiltIns() {
@@ -60,6 +65,10 @@ public final class BuiltInExtensions {
 
     public static ExtensionDescriptor builtinFunctionProvider() {
         return functionProviderDescriptor(BuiltInFunctionProviders.builtin());
+    }
+
+    public static ExtensionDescriptor btreeCostModelProvider() {
+        return costModelProviderDescriptor(BuiltInCostModelProviders.btree());
     }
 
     public static ExtensionDescriptor indexProviderDescriptor(IndexProvider provider) {
@@ -127,6 +136,27 @@ public final class BuiltInExtensions {
         );
     }
 
+    public static ExtensionDescriptor costModelProviderDescriptor(CostModelProvider provider) {
+        Objects.requireNonNull(provider, "provider");
+        return costModelProviderDescriptor(
+                provider,
+                BUILTIN_VERSION,
+                DEFAULT_COST_MODEL_PROVIDER.equals(ExtensionDescriptor.normalizeName(provider.name())));
+    }
+
+    public static ExtensionDescriptor costModelProviderDescriptor(
+            CostModelProvider provider,
+            String version,
+            boolean defaultProvider) {
+        Objects.requireNonNull(provider, "provider");
+        return ExtensionDescriptor.enabled(
+                ExtensionType.COST_MODEL,
+                provider.name(),
+                version,
+                costModelCapabilityNames(provider, defaultProvider)
+        );
+    }
+
     private static List<String> capabilityNames(IndexCapabilities capabilities, boolean defaultProvider) {
         Objects.requireNonNull(capabilities, "capabilities");
         List<String> names = new ArrayList<>();
@@ -165,6 +195,21 @@ public final class BuiltInExtensions {
         }
         if (capabilities.derbyHeapCompatible()) {
             names.add("derby-heap-compatible");
+        }
+        return List.copyOf(names);
+    }
+
+    private static List<String> costModelCapabilityNames(CostModelProvider provider, boolean defaultProvider) {
+        Objects.requireNonNull(provider, "provider");
+        List<String> names = new ArrayList<>();
+        if (defaultProvider) {
+            names.add("default-cost-model-provider");
+        }
+        names.add("native-store-cost-controller-adapter");
+        names.add("diagnostic-mode");
+        names.add("enabled-mode");
+        if (DEFAULT_COST_MODEL_PROVIDER.equals(ExtensionDescriptor.normalizeName(provider.name()))) {
+            names.add("btree-access-method");
         }
         return List.copyOf(names);
     }
