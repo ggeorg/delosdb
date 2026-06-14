@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build and smoke test
+    name: Build, smoke, and inherited suite
     runs-on: ubuntu-latest
 
     steps:
@@ -24,29 +24,19 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build
-        run: ./gradlew --no-daemon build
+      - name: Check cleanup invariants
+        run: |
+          ./scripts/remove-checkpoint-docs.sh
+          git diff --exit-code
+
+      - name: Full verification
+        run: ./gradlew --no-daemon fullVerification
 
       - name: Run DelosDB runtime smokes
         run: ./gradlew --no-daemon derbyRuntimeSmoke
 
-      - name: Verify release artifacts
-        run: ./gradlew --no-daemon verifyReleaseArtifacts
-
-      - name: Verify binary distribution
-        run: ./gradlew --no-daemon verifyReleaseDistribution
-
-      - name: Verify Maven Local publications
-        run: ./gradlew --no-daemon verifyMavenPublications
-
-      - name: Verify Maven Local consumer
-        run: ./gradlew --no-daemon verifyMavenLocalConsumer
-
-      - name: Verify centralized Gradle conventions
-        run: ./gradlew --no-daemon verifyCentralizedReleaseMetadata verifyCentralizedJavaCompileConventions
-
-      - name: Verify artifact inventory
-        run: ./gradlew --no-daemon verifyArtifactInventory printArtifactInventory
+      - name: Run inherited Derby language suite
+        run: ./gradlew --no-daemon :delosdb-tests:runDerbyLangSuite
 
       - name: Sysinfo from jars
         run: ./gradlew --no-daemon sysinfoFromJars

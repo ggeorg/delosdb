@@ -15,7 +15,13 @@ where the existing seams are too narrow.
 ## Current rule
 
 Do not start another provider family until one provider seam reaches a real v2
-proof.
+proof. Cleanup and verification are allowed; new provider surfaces are not.
+
+Workspace metadata is not a cleanup target. Local snapshots may contain `.git/`,
+`.gradle/`, and `.idea/`. These directories must be ignored during review and
+must never be deleted by cleanup scripts. Clean shareable archives should be
+created with `scripts/create-clean-snapshot.sh`, which excludes those directories
+from the archive without touching the workspace.
 
 For the current line of work, that seam is `CostModelProvider`:
 
@@ -78,7 +84,9 @@ that the abstraction is independent of the built-in Derby path.
 
 ## Next milestone: finish the cost seam
 
-Goal: turn `CostModelProvider` from v1 to v2.
+Goal: turn `CostModelProvider` from v1 to v2. This is the only feature milestone
+after cleanup. No `RewriteRuleProvider`, new storage engine, new index family,
+or additional book chapter should be started before this gate is green.
 
 Required proof:
 
@@ -106,10 +114,11 @@ Before adding more provider families or book chapters:
 
 1. remove stale checkpoint documents instead of maintaining parallel history,
 2. keep generated book artifacts out of source control,
-3. mark every book chapter with a verification status,
-4. verify book citations before presenting a chapter as evidence-backed,
-5. reduce `RESOLVE` comments and legacy casts in focused batches,
-6. keep existing docs short and current instead of adding new tracking files.
+3. use `scripts/create-clean-snapshot.sh` for shareable ZIPs instead of deleting local workspace metadata,
+4. mark every book chapter with a verification status,
+5. verify book citations before presenting a chapter as evidence-backed,
+6. reduce `RESOLVE` comments and legacy casts in focused batches,
+7. keep existing docs short and current instead of adding new tracking files.
 
 ## Explicitly out of scope for now
 

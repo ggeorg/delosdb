@@ -7,7 +7,8 @@ Derby-compatible SQL/JDBC baseline and a controlled extension platform.
 
 The current priority is cleanup and completion, not expansion. No new provider
 family should be added until `CostModelProvider` reaches a v2 proof with two real
-implementations.
+implementations. Workspace metadata such as `.git/`, `.gradle/`, and `.idea/` is
+valid local state and must not be deleted by cleanup scripts.
 
 ## Current verification gates
 
@@ -60,10 +61,11 @@ Completed modernization work includes:
 Before adding features:
 
 1. remove stale checkpoint documents with `scripts/remove-checkpoint-docs.sh`,
-2. keep generated LaTeX/PDF build outputs out of source control,
-3. verify book source citations chapter by chapter before treating the manuscript
+2. create shareable ZIP snapshots with `scripts/create-clean-snapshot.sh` instead of deleting local `.git/`, `.gradle/`, or `.idea/`,
+3. keep generated LaTeX/PDF build outputs out of source control,
+4. verify book source citations chapter by chapter before treating the manuscript
    as reliable,
-4. reduce inherited `RESOLVE` comments in focused batches,
-5. reduce `instanceof`-then-cast patterns only where ownership and behavior are
+5. reduce inherited `RESOLVE` comments in focused batches,
+6. reduce `instanceof`-then-cast patterns only where ownership and behavior are
    clear,
-6. finish `CostModelProvider` v2 with heap and B-tree provider implementations.
+7. finish `CostModelProvider` v2 with heap and B-tree provider implementations.
