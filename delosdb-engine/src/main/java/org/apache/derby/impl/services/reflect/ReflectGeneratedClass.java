@@ -34,8 +34,10 @@ import java.util.concurrent.ConcurrentMap;
 
 public final class ReflectGeneratedClass extends LoadedGeneratedClass {
 
-	private final ConcurrentMap<String,GeneratedMethod> methodCache;
+	private static final Class<?>[] NO_PARAMETER_TYPES = new Class<?>[0];
 	private static final GeneratedMethod[] directs;
+
+	private final ConcurrentMap<String,GeneratedMethod> methodCache;
 
 	static {
 		directs = new GeneratedMethod[10];
@@ -52,33 +54,42 @@ public final class ReflectGeneratedClass extends LoadedGeneratedClass {
 	public GeneratedMethod getMethod(String simpleName)
 		throws StandardException {
 
-		GeneratedMethod rm = methodCache.get(simpleName);
-		if (rm != null)
-			return rm;
+		GeneratedMethod cached = methodCache.get(simpleName);
+		if (cached != null)
+			return cached;
 
-		// Only look for methods that take no arguments
+		GeneratedMethod resolved = resolveMethod(simpleName);
+		GeneratedMethod previous = methodCache.putIfAbsent(simpleName, resolved);
+		return previous == null ? resolved : previous;
+	}
+
+	private GeneratedMethod resolveMethod(String simpleName)
+		throws StandardException {
+
+		// Derby-generated activation methods e0..e9 have a hot direct-call path.
+		// Keep that path explicit: it avoids reflective dispatch for the common
+		// generated-method names and makes invalid names such as "ex" fall through
+		// to the normal no-such-method diagnostic instead of an array bounds error.
+		if (isDirectCallName(simpleName)) {
+			return directs[simpleName.charAt(1) - '0'];
+		}
+
+		// Only look for public methods that take no arguments.
 		try {
-			if ((simpleName.length() == 2) && simpleName.startsWith("e")) {
-
-				int id = ((int) simpleName.charAt(1)) - '0';
-
-				rm = directs[id];
-
-
-			}
-			else
-			{
-				Method m = getJVMClass().getMethod(simpleName, (Class []) null);
-				
-				rm = new ReflectMethod(m);
-			}
-			methodCache.put(simpleName, rm);
-			return rm;
+			Method m = getJVMClass().getMethod(simpleName, NO_PARAMETER_TYPES);
+			return new ReflectMethod(m);
 
 		} catch (NoSuchMethodException nsme) {
 			throw StandardException.newException(SQLState.GENERATED_CLASS_NO_SUCH_METHOD,
 				nsme, getName(), simpleName);
 		}
+	}
+
+	private static boolean isDirectCallName(String simpleName) {
+		return simpleName.length() == 2
+			&& simpleName.charAt(0) == 'e'
+			&& simpleName.charAt(1) >= '0'
+			&& simpleName.charAt(1) <= '9';
 	}
 }
 

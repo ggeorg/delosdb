@@ -1439,6 +1439,13 @@ tasks.register('generatedBytecodeJvm21Proof', Exec) {
 }
 
 
+tasks.register('generatedMethodDispatchAudit', Exec) {
+    group = 'verification'
+    description = 'Writes a generated-method dispatch audit after ReflectGeneratedClass cleanup.'
+    commandLine 'bash', 'dev/generated-method-dispatch-audit.sh', '--verify'
+}
+
+
 tasks.register('inheritedCodeQualityAudit', Exec) {
     group = 'verification'
     description = 'Writes an inherited Derby code-quality hotspot report for guarded cleanup work.'
