@@ -193,6 +193,11 @@ write_file_list "Legacy Derby harness launcher/JVM files" "${harness_files[@]}"
 
 {
   echo
+  echo "Detailed harness classification"
+  echo
+  echo "Run dev/legacy-derby-harness-audit.sh --verify before quarantining or removing old Derby harness files."
+
+  echo
   echo "## JPMS exports"
   echo
   if [[ ${#module_info_files[@]} -eq 0 ]]; then

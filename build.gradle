@@ -1424,6 +1424,13 @@ tasks.register('inheritedCodeQualityAudit', Exec) {
     commandLine 'bash', 'dev/inherited-code-quality-audit.sh', '--verify'
 }
 
+
+tasks.register('legacyDerbyHarnessAudit', Exec) {
+    group = 'verification'
+    description = 'Classifies old Derby function-test harness entrypoints before quarantine/removal.'
+    commandLine 'bash', 'dev/legacy-derby-harness-audit.sh', '--verify'
+}
+
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
