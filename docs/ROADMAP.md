@@ -132,13 +132,12 @@ Implemented and green:
 No new book chapter should be added until existing cited chapters are checked.
 Current trusted chapters:
 
-- Chapter 3: source-checked optimizer/cost vocabulary.
-- Chapter 6: source-checked heap/B-tree and factory-id behavior.
-- Chapter 8: source-checked extension-platform chapter, updated through
-  IndexProvider v2.
-- Chapter 11: source-checked CostModelProvider v2 chapter.
+- Chapters 1--11: source-checked for the claims they currently make.
+- Chapter 5 now covers the access-manager/storage-engine boundary with
+  source-backed evidence, not as an unverified orientation draft.
 
-Other chapters remain source-reading or lab drafts until verified.
+Future chapter changes must preserve the verification-status paragraph and update
+the evidence map before being treated as reliable.
 
 ## Next milestone
 

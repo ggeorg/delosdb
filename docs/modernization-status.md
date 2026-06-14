@@ -96,13 +96,12 @@ Completed modernization work includes:
 
 Source-checked chapters:
 
-- Chapter 3: optimizer/cost vocabulary.
-- Chapter 6: heap, B-tree, factory-id registration, and access-method behavior.
-- Chapter 8: extension platform, provider registry, CostModelProvider v2,
-  IndexProvider v2, TypeProvider v0 visibility.
-- Chapter 11: CostModelProvider v2.
+- Chapters 1--11 are source-checked for the claims they currently make.
+- Chapter 5 now covers the access-manager/storage-engine boundary with
+  source-backed evidence.
 
-Other chapters remain source-reading or lab drafts until verified.
+Future edits must keep chapter verification-status paragraphs accurate and update
+evidence maps when source claims change.
 
 ## Current cleanup priority
 
