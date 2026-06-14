@@ -1,24 +1,19 @@
 # Building DelosDB
 
-DelosDB is built with Gradle. Ant is not a supported build path.
+DelosDB is built with Gradle.
 
-The main contributor commands are:
+Use the Gradle wrapper from the repository root:
 
 ```bash
 ./gradlew build
+```
+
+Common verification commands:
+
+```bash
 ./gradlew derbyRuntimeSmoke
 ./gradlew :delosdb-tests:runDerbyLangSuite
 ./gradlew fullVerification
 ```
 
-For detailed build notes, see `docs/BUILDING.md`.
-
-## Verification levels
-
-Use `./gradlew build` for the normal compile/package check.
-
-Use `./gradlew derbyRuntimeSmoke` to run the DelosDB runtime smoke suite, including the extension-provider smokes.
-
-Use `./gradlew :delosdb-tests:runDerbyLangSuite` to run the active inherited Derby language/JDBC compatibility suite.
-
-Use `./gradlew fullVerification` before merging larger changes.
+The old inherited Derby Ant build is not supported in DelosDB. Current build and verification notes live under `docs/BUILDING.md`.

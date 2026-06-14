@@ -121,6 +121,17 @@ def buildNumber = providers.provider {
 ext.buildNumberProvider = buildNumber
 ext.derbyCompatibilityVersion = derbyCompatibilityVersion
 
+ext.junitPlatformConsoleVersion = '1.11.4'
+
+configurations {
+    delosdbJunit5Console
+}
+
+dependencies {
+    // Test-only dependency for new DelosDB tests. Inherited Derby tests remain JUnit 3.
+    delosdbJunit5Console "org.junit.platform:junit-platform-console-standalone:${junitPlatformConsoleVersion}"
+}
+
 ext.delosdbLegalFiles = files(
         file('LICENSE'),
         file('NOTICE'),
@@ -593,6 +604,31 @@ tasks.register('modernizationSmoke', JavaExec) {
         delete file('build/modernization-smoke/modernization-smoke-db')
         workingDir.mkdirs()
     }
+}
+
+
+def accessMethodFactoryRegistrySmokeClassesDir = layout.buildDirectory.dir('classes/access-method-factory-registry-smoke')
+
+tasks.register('compileAccessMethodFactoryRegistrySmoke', JavaCompile) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Compiles the access-method factory-id registry smoke test.'
+    source = files('dev/access-method-factory-registry-smoke/src/main/java')
+    destinationDirectory = accessMethodFactoryRegistrySmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = runtimeJars()
+}
+
+tasks.register('accessMethodFactoryRegistrySmoke', JavaExec) {
+    dependsOn 'compileAccessMethodFactoryRegistrySmoke'
+    mustRunAfter 'modernizationSmoke'
+    group = 'verification'
+    description = 'Proves a test-only conglomerate factory id 2 can register and resolve without heap/B-tree changes.'
+    classpath = files(accessMethodFactoryRegistrySmokeClassesDir, runtimeJars())
+    mainClass = 'org.apache.derby.impl.store.access.AccessMethodFactoryRegistrySmoke'
 }
 
 
@@ -1139,6 +1175,39 @@ subprojects { subproject ->
 
 
 
+
+def junit5ModernizationSmokeClassesDir = layout.buildDirectory.dir('classes/junit5-modernization-smoke')
+
+tasks.register('compileJunit5ModernizationSmoke', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles new DelosDB JUnit 5 modernization smoke tests.'
+    dependsOn 'jars'
+    source = files('dev/junit5-modernization-smoke/src/test/java')
+    destinationDirectory = junit5ModernizationSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = files(configurations.delosdbJunit5Console, runtimeJars())
+}
+
+tasks.register('junit5ModernizationSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Runs new DelosDB JUnit 5 smoke tests without touching inherited Derby JUnit 3 tests.'
+    dependsOn 'compileJunit5ModernizationSmoke'
+    classpath = configurations.delosdbJunit5Console
+    mainClass = 'org.junit.platform.console.ConsoleLauncher'
+    args '--class-path', files(junit5ModernizationSmokeClassesDir, runtimeJars()).asPath,
+            '--select-class', 'delosdb.smoke.Junit5ModernizationSmokeTest',
+            '--details', 'summary'
+}
+
+tasks.register('jdkInfrastructureModernizationSmoke') {
+    group = 'verification'
+    description = 'Verifies Batch 8 JDK-only modernization: ScheduledExecutor timer, JUL bridge, and JUnit 5 for new tests.'
+    dependsOn 'junit5ModernizationSmoke'
+}
+
 tasks.register('verifyDeprecatedAnnotations') {
     group = 'verification'
     description = 'Fails when source Javadoc @deprecated entries are missing Java @Deprecated annotations.'
@@ -1207,7 +1276,7 @@ tasks.register('verifyDeprecatedAnnotations') {
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'accessMethodFactoryRegistrySmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {
@@ -1230,13 +1299,13 @@ tasks.register('verifyInheritedDemosStatus') {
 }
 
 tasks.named('check') {
-    dependsOn 'derbyRuntimeSmoke', ':delosdb-tests:runDerbyLangSuite', 'verifyDeprecatedAnnotations', 'storelessPrototypeSmoke', 'verifyInheritedDemosStatus'
+    dependsOn 'derbyRuntimeSmoke', ':delosdb-tests:runDerbyLangSuite', 'verifyDeprecatedAnnotations', 'storelessPrototypeSmoke', 'verifyInheritedDemosStatus', 'jdkInfrastructureModernizationSmoke'
 }
 
 tasks.register('fullVerification') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime smokes and the original Derby lang JUnit suite.'
-    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite', 'verifyDeprecatedAnnotations', 'storelessPrototypeSmoke', 'verifyInheritedDemosStatus'
+    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite', 'verifyDeprecatedAnnotations', 'storelessPrototypeSmoke', 'verifyInheritedDemosStatus', 'jdkInfrastructureModernizationSmoke'
 }
 
 tasks.register('test') {

@@ -68,6 +68,7 @@ import org.apache.derby.catalog.UUID;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.reference.Attribute;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -81,6 +82,11 @@ public abstract class RAMAccessManager
                ModuleControl, 
                PropertySetCallback
 {
+    private static final int CONGLOMERATE_FACTORY_ID_MASK = 0x0f;
+    private static final int MAX_CONGLOMERATE_FACTORY_ID = CONGLOMERATE_FACTORY_ID_MASK;
+    private static final int MIN_CONGLOMERATE_FACTORY_MAP_SIZE =
+            ConglomerateFactory.BTREE_FACTORY_ID + 1;
+
     /**************************************************************************
      * Fields of the class
      **************************************************************************
@@ -139,11 +145,10 @@ public abstract class RAMAccessManager
      * representation from disk.
      *
      * An internal mapping of the encoding of conglomerate identity in the
-     * conglomerate number to the actual conglomerate implementation.  Encoding
-     * this means that we can't dynamically add conglomerate implementations
-     * into the system, so when we want to do that this mapping will have to
-     * be more dynamic - but for now store knows exactly what implementations
-     * there are.
+     * conglomerate number to the actual conglomerate implementation.  Heap and
+     * B-tree keep their historical ids, but the map can grow during access
+     * method registration so DelosDB can prove additional factory ids without
+     * changing existing on-disk ids.
      **/
     protected ConglomerateFactory conglom_map[];
 
@@ -197,9 +202,13 @@ public abstract class RAMAccessManager
     private void boot_load_conglom_map()
         throws StandardException
     {
-        // System.out.println("before new code.");
-
-        conglom_map = new ConglomerateFactory[2];
+        // Derby encodes the conglomerate factory id in the low four bits of
+        // the conglomerate id.  Heap and B-tree must keep ids 0 and 1 for
+        // on-disk compatibility, but the in-memory lookup table must not be
+        // permanently limited to those two ids.  DelosDB access-method work
+        // needs to prove that a future id 2 can be registered without changing
+        // the external SQL surface.
+        conglom_map = new ConglomerateFactory[MIN_CONGLOMERATE_FACTORY_MAP_SIZE];
 
 		// Find the appropriate factory for the desired implementation.
 		MethodFactory mfactory = findMethodFactoryByImpl("heap");
@@ -210,8 +219,7 @@ public abstract class RAMAccessManager
                     SQLState.AM_NO_SUCH_CONGLOMERATE_TYPE, "heap");
         }
 
-        conglom_map[ConglomerateFactory.HEAP_FACTORY_ID] = 
-            (ConglomerateFactory) mfactory;
+        registerConglomerateFactory((ConglomerateFactory) mfactory);
 
 		// Find the appropriate factory for the desired implementation.
 		mfactory = findMethodFactoryByImpl("BTREE");
@@ -221,11 +229,38 @@ public abstract class RAMAccessManager
 			throw StandardException.newException(
                     SQLState.AM_NO_SUCH_CONGLOMERATE_TYPE, "BTREE");
         }
-        conglom_map[ConglomerateFactory.BTREE_FACTORY_ID] = 
-            (ConglomerateFactory) mfactory;
+        registerConglomerateFactory((ConglomerateFactory) mfactory);
+    }
 
-        // System.out.println("conglom_map[0] = " + conglom_map[0]);
-        // System.out.println("conglom_map[1] = " + conglom_map[1]);
+    private void registerConglomerateFactory(ConglomerateFactory factory)
+        throws StandardException
+    {
+        int factoryId = factory.getConglomerateFactoryId();
+        if (factoryId < 0 || factoryId > MAX_CONGLOMERATE_FACTORY_ID)
+        {
+            throw StandardException.newException(
+                    SQLState.STORE_CONGLOMERATE_DOES_NOT_EXIST,
+                    factoryId);
+        }
+
+        if (conglom_map == null)
+        {
+            conglom_map = new ConglomerateFactory[Math.max(
+                    MIN_CONGLOMERATE_FACTORY_MAP_SIZE, factoryId + 1)];
+        }
+        else if (factoryId >= conglom_map.length)
+        {
+            conglom_map = Arrays.copyOf(conglom_map, factoryId + 1);
+        }
+
+        ConglomerateFactory existingFactory = conglom_map[factoryId];
+        if (existingFactory != null && existingFactory != factory)
+        {
+            throw StandardException.newException(
+                    SQLState.STORE_CONGLOMERATE_DOES_NOT_EXIST,
+                    factoryId);
+        }
+        conglom_map[factoryId] = factory;
     }
 
 
@@ -378,17 +413,20 @@ public abstract class RAMAccessManager
     long    conglom_id)
 		throws StandardException
     {
-        try
+        int factoryId = (int) (CONGLOMERATE_FACTORY_ID_MASK & conglom_id);
+        if (conglom_map != null && factoryId < conglom_map.length)
         {
-            return(conglom_map[((int) (0x0f & conglom_id))]);
+            ConglomerateFactory factory = conglom_map[factoryId];
+            if (factory != null)
+            {
+                return factory;
+            }
         }
-        catch (java.lang.ArrayIndexOutOfBoundsException e)
-        {
-            // just in case language passes in a bad factory id.
-			throw StandardException.newException(
-                SQLState.STORE_CONGLOMERATE_DOES_NOT_EXIST, 
-                conglom_id);
-        }
+
+        // just in case language passes in a bad factory id.
+		throw StandardException.newException(
+            SQLState.STORE_CONGLOMERATE_DOES_NOT_EXIST, 
+            conglom_id);
     }
 
 
@@ -829,6 +867,21 @@ public abstract class RAMAccessManager
 
     public void registerAccessMethod(MethodFactory factory)
     {
+        if (factory instanceof ConglomerateFactory conglomerateFactory)
+        {
+            try
+            {
+                registerConglomerateFactory(conglomerateFactory);
+            }
+            catch (StandardException se)
+            {
+                throw new IllegalArgumentException(
+                        "Invalid conglomerate factory id: "
+                                + conglomerateFactory.getConglomerateFactoryId(),
+                        se);
+            }
+        }
+
         // Put the access method's primary implementation type in
         // a hash table so we can find it quickly.
         implhash.put(factory.primaryImplementationType(), factory);
