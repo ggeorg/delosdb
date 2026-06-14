@@ -106,9 +106,10 @@ Before adding more provider families or book chapters:
 
 1. remove stale checkpoint documents instead of maintaining parallel history,
 2. keep generated book artifacts out of source control,
-3. verify book citations before presenting a chapter as evidence-backed,
-4. reduce `RESOLVE` comments and legacy casts in focused batches,
-5. keep existing docs short and current instead of adding new tracking files.
+3. mark every book chapter with a verification status,
+4. verify book citations before presenting a chapter as evidence-backed,
+5. reduce `RESOLVE` comments and legacy casts in focused batches,
+6. keep existing docs short and current instead of adding new tracking files.
 
 ## Explicitly out of scope for now
 
