@@ -1,9 +1,13 @@
 # DelosDB Modernization Status
 
-Last updated: 2026-06-13
+Last updated: 2026-06-14
 
 DelosDB is a Gradle-only Java 21 modernization fork of Apache Derby with a
-Derby-compatible SQL/JDBC baseline and an emerging extension platform.
+Derby-compatible SQL/JDBC baseline and a controlled extension platform.
+
+The current priority is cleanup and completion, not expansion. No new provider
+family should be added until `CostModelProvider` reaches a v2 proof with two real
+implementations.
 
 ## Current verification gates
 
@@ -28,12 +32,14 @@ Green locally:
 
 - Derby runtime/product smokes through `derbyRuntimeSmoke`.
 - inherited Derby lang/JDBC suite through Gradle.
-- `IndexProvider` v0.
-- `StorageProvider` v0.
-- `FunctionProvider` v0.
-- unified extension registry.
-- SQL extension visibility through `SYSCS_UTIL.DELOSDB_EXTENSIONS()`.
-- provider cost diagnostics/fallback safety.
+- `IndexProvider` v0/v1 surface.
+- `StorageProvider` v0 surface.
+- `FunctionProvider` v0 surface.
+- `CostModelProvider` v1 native store-cost adapter.
+- `TypeProvider` v0 metadata and SQL visibility.
+- unified extension registry through `SYSCS_UTIL.DELOSDB_EXTENSIONS()`.
+- type metadata visibility through `SYSCS_UTIL.DELOSDB_TYPES()`.
+- system-routine permission test baseline centralized in `DelosDbTestBaselines`.
 
 ## Current modernization status
 
@@ -46,14 +52,18 @@ Completed modernization work includes:
 - inherited Derby lang/JDBC suite on the Gradle classpath.
 - production modernization audit script.
 - benchmark baseline script.
+- selected Java 21 cleanup batches for finalizers, diagnostics, collection usage,
+  timers, logging, and test activation.
 
-## Current near-term priority
+## Current cleanup priority
 
-Before adding new provider families, keep the existing extension platform clean:
+Before adding features:
 
-1. CI runs `derbyRuntimeSmoke`.
-2. provider registry/resolver infrastructure is shared.
-3. function provider metadata semantics are clean.
-4. smoke tests use common helpers.
-5. planner cost diagnostics are scoped per thread.
-6. provider metadata catalog integrity is proven.
+1. remove stale checkpoint documents with `scripts/remove-checkpoint-docs.sh`,
+2. keep generated LaTeX/PDF build outputs out of source control,
+3. verify book source citations chapter by chapter before treating the manuscript
+   as reliable,
+4. reduce inherited `RESOLVE` comments in focused batches,
+5. reduce `instanceof`-then-cast patterns only where ownership and behavior are
+   clear,
+6. finish `CostModelProvider` v2 with heap and B-tree provider implementations.

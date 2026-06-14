@@ -43,7 +43,7 @@ CREATE TABLE table_name (
 Unknown storage providers are rejected during binding before physical storage
 work starts.
 
-### Extension visibility
+## Supported read-only visibility routines
 
 The registered built-in DelosDB providers are visible through the Derby-style
 utility surface:
@@ -52,12 +52,29 @@ utility surface:
 VALUES SYSCS_UTIL.DELOSDB_EXTENSIONS();
 ```
 
-The v0 utility surface is read-only and reports built-in provider families such
-as index, storage, and function providers.
+Current built-in extension families include:
+
+```text
+cost_model btree
+function   delos
+index      btree
+storage    heap
+type       derby
+```
+
+Built-in Derby type metadata is visible through:
+
+```sql
+VALUES SYSCS_UTIL.DELOSDB_TYPES();
+```
+
+The type visibility routine reports the provider name, SQL type name, JDBC type,
+Java type, nullable flag, and comparable flag. It is metadata-only. It does not
+add new SQL type semantics.
 
 ## Not supported yet
 
-The current v0 surface deliberately does not include:
+The current v0/v1 surface deliberately does not include:
 
 - `SHOW EXTENSIONS`
 - external provider loading
@@ -65,6 +82,7 @@ The current v0 surface deliberately does not include:
 - non-btree index implementations
 - JSON/type-provider syntax
 - planner replacement syntax
+- public cost-model provider loading
 
 ## Verification
 
@@ -74,5 +92,6 @@ The SQL extension surface is covered by the existing product smokes:
 ./gradlew indexProviderMetadataSmoke
 ./gradlew storageProviderSyntaxSmoke
 ./gradlew extensionRegistrySqlVisibilitySmoke
+./gradlew typeProviderSqlVisibilitySmoke
 ./gradlew :delosdb-tests:runDerbyLangSuite
 ```

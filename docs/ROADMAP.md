@@ -8,103 +8,107 @@ North star:
 ```text
 A Java developer can implement a new database capability — an index type,
 storage model, function, type, or cost model — and run it against a real SQL
-engine quickly, without modifying thousands of lines of C.
+engine quickly, while DelosDB opens and improves the inherited Derby engine
+where the existing seams are too narrow.
 ```
+
+## Current rule
+
+Do not start another provider family until one provider seam reaches a real v2
+proof.
+
+For the current line of work, that seam is `CostModelProvider`:
+
+```text
+RAMTransaction.openStoreCost()
+  -> StoreCostControllerBridge
+  -> CostModelProvider
+  -> diagnostic / enabled proof
+```
+
+The next product milestone is not another v0 surface. It is a second real cost
+model implementation, reached through the same store-cost path, proving that the
+provider abstraction is not only a renamed B-tree path.
 
 ## Current foundation
 
 Status: active and green locally.
 
-Completed product seams:
-
-- Derby-compatible SQL/JDBC baseline through Gradle.
-- `derbyRuntimeSmoke` covering runtime/product smokes.
-- inherited Derby lang/JDBC suite through `:delosdb-tests:runDerbyLangSuite`.
-- `IndexProvider` v0: `CREATE INDEX ... USING btree`, metadata, provider-cost hook, diagnostics.
-- `StorageProvider` v0: `CREATE TABLE ... USING heap`, metadata, persistence, visibility.
-- `FunctionProvider` v0: built-in `APP.DELOS_VERSION()`, metadata, execution, visibility.
-- `ExtensionRegistry` v0: unified provider registry plus `SYSCS_UTIL.DELOSDB_EXTENSIONS()` SQL visibility.
-
-## Pillar 1 — Compatibility
-
-Goal: preserve a trustworthy Derby-compatible base while DelosDB adds extension
-seams.
-
-Primary gates:
+Green gates:
 
 ```bash
 ./gradlew derbyRuntimeSmoke
 ./gradlew :delosdb-tests:runDerbyLangSuite
 ```
 
-Compatibility is not the product by itself; it is the safety net that makes the
-extension platform credible.
+Broader gates:
 
-## Pillar 2 — Extension Platform
+```bash
+./gradlew fullVerification
+./dev/modernization-audit.sh --verify
+./dev/benchmark-baseline.sh
+```
 
-Goal: make database capabilities explicit, inspectable, and provider-owned.
+## Current product seams
 
-Current provider families:
+Implemented and green:
 
-- `IndexProvider`
-- `StorageProvider`
-- `FunctionProvider`
+- Derby-compatible SQL/JDBC baseline through Gradle.
+- `derbyRuntimeSmoke` covering runtime/product smokes.
+- inherited Derby lang/JDBC suite through `:delosdb-tests:runDerbyLangSuite`.
+- `IndexProvider` v0/v1 surface: `CREATE INDEX ... USING btree`, metadata,
+  registry visibility, provider-cost diagnostics, and the factory-id registry
+  proof needed for future non-B-tree access methods.
+- `StorageProvider` v0 surface: `CREATE TABLE ... USING heap`, metadata,
+  persistence, visibility, and provider-level capabilities without synthetic
+  table metadata.
+- `FunctionProvider` v0 surface: built-in `APP.DELOS_VERSION()`, metadata,
+  execution, and visibility.
+- `CostModelProvider` v1 surface: native `StoreCostController` adapter with
+  diagnostic and enabled modes.
+- `TypeProvider` v0 surface: Derby built-in type metadata and
+  `SYSCS_UTIL.DELOSDB_TYPES()` visibility.
+- unified extension registry through `SYSCS_UTIL.DELOSDB_EXTENSIONS()`.
+- centralized test baseline for DelosDB system routines in
+  `DelosDbTestBaselines`.
 
-Near-term work:
+None of these are complete external plugin products yet. They are controlled
+engine seams. A seam is complete only after a second real implementation proves
+that the abstraction is independent of the built-in Derby path.
 
-1. Provider infrastructure hygiene: shared registry/resolver infrastructure.
-2. Catalog provider metadata integrity: prove stored provider metadata is real, not default coincidence.
-3. Extension platform demo: one coherent SQL walkthrough using table, index, function, and registry visibility.
-4. `TypeProvider` v0 as a provider proof, not as a full JSON product feature.
+## Next milestone: finish the cost seam
 
-## Pillar 3 — Planner Research
+Goal: turn `CostModelProvider` from v1 to v2.
 
-Goal: expose controlled optimizer hooks for research without breaking Derby's
-planner correctness.
+Required proof:
 
-Current state:
+```text
+factory id 0 -> heap CostModelProvider
+factory id 1 -> btree CostModelProvider
+```
 
-- Index provider cost request/estimate bridge exists.
-- Provider-cost consumption is opt-in.
-- Planner cost diagnostics are visible and provider-neutral.
+The v2 gate should prove:
 
-Next research direction:
+1. two provider implementations are registered,
+2. the store-cost bridge resolves providers through the registry/resolver, not a
+   hardcoded B-tree check,
+3. heap and B-tree scans produce distinct provider probes,
+4. diagnostic mode records Derby and provider estimates without changing Derby's
+   result,
+5. enabled mode consumes safe provider estimates,
+6. the inherited Derby language suite remains green.
 
-- `CostModelProvider` v0.
-- cardinality/cost estimate replacement experiments.
-- fallback safety when provider estimates are missing or unsafe.
-- diagnostics explaining planner decisions.
+Only after this is green should Chapter 11 be updated.
 
-This is the strongest research path: a learned or experimental cost model should
-be pluggable without rewriting the inherited optimizer.
+## Cleanup policy before new features
 
-## Pillar 4 — Storage Research
+Before adding more provider families or book chapters:
 
-Goal: keep Derby heap storage as the trusted default while opening a path for
-controlled storage experiments later.
-
-Current state:
-
-- Built-in `heap` provider is explicit.
-- Table metadata records the selected storage provider.
-- Custom storage engines are intentionally not supported yet.
-
-Later candidates:
-
-- in-memory provider for tests.
-- LSM-style provider.
-- columnar/append-only provider.
-- disaggregated/remote storage experiments.
-
-## Pillar 5 — Modern Types and Functions
-
-Goal: support modern data capabilities through provider seams.
-
-Near-term framing:
-
-- JSON should be the first `TypeProvider` proof, not a claim of complete JSON support.
-- JSON v0 may map safely to an existing Derby type until real semantics exist.
-- no JSON operators, path indexes, or binary format until the type seam is proven.
+1. remove stale checkpoint documents instead of maintaining parallel history,
+2. keep generated book artifacts out of source control,
+3. verify book citations before presenting a chapter as evidence-backed,
+4. reduce `RESOLVE` comments and legacy casts in focused batches,
+5. keep existing docs short and current instead of adding new tracking files.
 
 ## Explicitly out of scope for now
 
@@ -113,10 +117,10 @@ Near-term framing:
 - PostgreSQL wire protocol
 - MySQL compatibility
 - external plugin marketplace
-- custom physical index implementation
+- custom physical index implementation beyond the next focused proof
 - custom storage engine
 - full JSON engine
 - vector database behavior
 
-These may become future projects, but they must not distract from the v0
-extension platform.
+These may become future projects, but they must not distract from finishing one
+provider seam to v2.

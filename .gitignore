@@ -27,3 +27,19 @@ Thumbs.db
 # Gradle
 .gradle/
 .gradle-cache/
+
+
+# Book build artifacts
+/docs/book/derby-delosdb-internals.pdf
+/docs/book/derby-delosdb-internals.aux
+/docs/book/derby-delosdb-internals.fdb_latexmk
+/docs/book/derby-delosdb-internals.fls
+/docs/book/derby-delosdb-internals.idx
+/docs/book/derby-delosdb-internals.ilg
+/docs/book/derby-delosdb-internals.ind
+/docs/book/derby-delosdb-internals.log
+/docs/book/derby-delosdb-internals.out
+/docs/book/derby-delosdb-internals.toc
+
+# Archive metadata accidentally created by macOS ZIP tools
+__MACOSX/
