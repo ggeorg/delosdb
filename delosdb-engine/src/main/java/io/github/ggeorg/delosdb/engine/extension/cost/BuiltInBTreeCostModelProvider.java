@@ -3,8 +3,8 @@ package io.github.ggeorg.delosdb.engine.extension.cost;
 import java.util.Optional;
 
 /**
- * Deterministic built-in B-tree cost model used only for the native adapter
- * proof. Factory id 1 is Derby's B-tree access method.
+ * Deterministic built-in B-tree cost model used for the native adapter proof.
+ * Factory id 1 is Derby's B-tree access method.
  */
 final class BuiltInBTreeCostModelProvider implements CostModelProvider {
     static final int BTREE_FACTORY_ID = 1;
@@ -19,8 +19,13 @@ final class BuiltInBTreeCostModelProvider implements CostModelProvider {
     }
 
     @Override
+    public int accessMethodFactoryId() {
+        return BTREE_FACTORY_ID;
+    }
+
+    @Override
     public Optional<CostModelEstimate> estimateScanCost(CostModelRequest request) {
-        if (request.factoryId() != BTREE_FACTORY_ID) {
+        if (request.factoryId() != accessMethodFactoryId()) {
             return Optional.empty();
         }
 

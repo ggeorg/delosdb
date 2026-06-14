@@ -41,6 +41,11 @@ public final class CostModelProviderResolver {
         return providers.findEnabled(name);
     }
 
+    public Optional<CostModelProvider> findEnabledForFactoryId(int factoryId) {
+        return BuiltInCostModelProviders.providerNameForFactoryId(factoryId)
+                .flatMap(this::findEnabled);
+    }
+
     public CostModelProvider requireEnabled(String name) {
         return providers.requireEnabled(name);
     }

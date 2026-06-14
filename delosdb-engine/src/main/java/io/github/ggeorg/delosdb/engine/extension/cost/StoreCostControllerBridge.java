@@ -17,6 +17,7 @@ import java.util.Optional;
  */
 public final class StoreCostControllerBridge {
     private static final int FACTORY_ID_MASK = 0x0f;
+    private static final CostModelProviderResolver BUILT_IN_RESOLVER = CostModelProviderResolver.builtIns();
 
     private StoreCostControllerBridge() {
     }
@@ -25,11 +26,15 @@ public final class StoreCostControllerBridge {
         Objects.requireNonNull(delegate, "delegate");
         CostModelMode mode = CostModelMode.fromSystemProperties();
         int factoryId = factoryId(conglomerateId);
-        if (!mode.probesProviderCost()
-                || factoryId != BuiltInBTreeCostModelProvider.BTREE_FACTORY_ID) {
+        if (!mode.probesProviderCost()) {
             return delegate;
         }
-        return new Adapter(conglomerateId, factoryId, delegate, mode);
+
+        Optional<CostModelProvider> provider = BUILT_IN_RESOLVER.findEnabledForFactoryId(factoryId);
+        if (provider.isEmpty()) {
+            return delegate;
+        }
+        return new Adapter(conglomerateId, factoryId, delegate, mode, provider.get());
     }
 
     private static int factoryId(long conglomerateId) {
@@ -47,12 +52,13 @@ public final class StoreCostControllerBridge {
                 long conglomerateId,
                 int factoryId,
                 StoreCostController delegate,
-                CostModelMode mode) {
+                CostModelMode mode,
+                CostModelProvider provider) {
             this.conglomerateId = conglomerateId;
             this.factoryId = factoryId;
             this.delegate = delegate;
             this.mode = mode;
-            this.provider = BuiltInBTreeCostModelProvider.INSTANCE;
+            this.provider = Objects.requireNonNull(provider, "provider");
         }
 
         @Override

@@ -1,19 +1,25 @@
 package io.github.ggeorg.delosdb.engine.extension.cost;
 
-import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
-
 import java.util.Optional;
 
 /**
- * Internal prototype for DelosDB cost-model providers.
+ * Internal DelosDB cost provider shape.
  *
- * <p>This is deliberately not a public SPI yet. The purpose of this proof is
- * to validate the correct Derby integration point first: an adapter around
- * {@code StoreCostController}, not another optimizer-side reflection hook.</p>
+ * <p>This is not public SPI yet. It deliberately models only the data that
+ * DelosDB can safely adapt into Derby's native {@code StoreCostController}
+ * path.</p>
  */
-@InternalApi
 public interface CostModelProvider {
     String name();
+
+    /**
+     * Derby access-method factory id handled by this provider.
+     *
+     * <p>Today this is still tied to inherited Derby factory ids: heap is 0
+     * and B-tree is 1. Keeping it on the provider avoids hardcoded provider
+     * selection inside the store-cost bridge.</p>
+     */
+    int accessMethodFactoryId();
 
     Optional<CostModelEstimate> estimateScanCost(CostModelRequest request);
 }

@@ -37,7 +37,9 @@ public final class BuiltInExtensions {
     public static final String DEFAULT_STORAGE_PROVIDER = HEAP_STORAGE_PROVIDER;
     public static final String BUILTIN_FUNCTION_PROVIDER = "delos";
     public static final String DEFAULT_FUNCTION_PROVIDER = BUILTIN_FUNCTION_PROVIDER;
-    public static final String BUILTIN_COST_MODEL_PROVIDER = "btree";
+    public static final String HEAP_COST_MODEL_PROVIDER = "heap";
+    public static final String BTREE_COST_MODEL_PROVIDER = "btree";
+    public static final String BUILTIN_COST_MODEL_PROVIDER = BTREE_COST_MODEL_PROVIDER;
     public static final String DEFAULT_COST_MODEL_PROVIDER = BUILTIN_COST_MODEL_PROVIDER;
     public static final String BUILTIN_TYPE_PROVIDER = "derby";
     public static final String DEFAULT_TYPE_PROVIDER = BUILTIN_TYPE_PROVIDER;
@@ -70,6 +72,10 @@ public final class BuiltInExtensions {
 
     public static ExtensionDescriptor builtinFunctionProvider() {
         return functionProviderDescriptor(BuiltInFunctionProviders.builtin());
+    }
+
+    public static ExtensionDescriptor heapCostModelProvider() {
+        return costModelProviderDescriptor(BuiltInCostModelProviders.heap());
     }
 
     public static ExtensionDescriptor btreeCostModelProvider() {
@@ -236,9 +242,12 @@ public final class BuiltInExtensions {
             names.add("default-cost-model-provider");
         }
         names.add("native-store-cost-controller-adapter");
+        names.add("registry-resolved-provider");
         names.add("diagnostic-mode");
         names.add("enabled-mode");
-        if (DEFAULT_COST_MODEL_PROVIDER.equals(ExtensionDescriptor.normalizeName(provider.name()))) {
+        if (provider.accessMethodFactoryId() == 0) {
+            names.add("heap-access-method");
+        } else if (provider.accessMethodFactoryId() == 1) {
             names.add("btree-access-method");
         }
         return List.copyOf(names);

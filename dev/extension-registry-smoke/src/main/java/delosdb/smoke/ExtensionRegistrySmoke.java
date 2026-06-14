@@ -23,21 +23,28 @@ public final class ExtensionRegistrySmoke {
         ExtensionDescriptor index = requireDescriptor(registry, ExtensionType.INDEX, "btree");
         ExtensionDescriptor storage = requireDescriptor(registry, ExtensionType.STORAGE, "heap");
         ExtensionDescriptor function = requireDescriptor(registry, ExtensionType.FUNCTION, "delos");
-        ExtensionDescriptor costModel = requireDescriptor(registry, ExtensionType.COST_MODEL, "btree");
+        ExtensionDescriptor heapCostModel = requireDescriptor(registry, ExtensionType.COST_MODEL, "heap");
+        ExtensionDescriptor btreeCostModel = requireDescriptor(registry, ExtensionType.COST_MODEL, "btree");
         ExtensionDescriptor typeProvider = requireDescriptor(registry, ExtensionType.TYPE, "derby");
 
         requireEnabled(index);
         requireEnabled(storage);
         requireEnabled(function);
-        requireEnabled(costModel);
+        requireEnabled(heapCostModel);
+        requireEnabled(btreeCostModel);
         requireEnabled(typeProvider);
 
         requireCapability(index, "default-index-provider");
         requireCapability(storage, "default-storage-provider");
         requireCapability(function, "default-function-provider");
         requireCapability(function, "function-metadata");
-        requireCapability(costModel, "default-cost-model-provider");
-        requireCapability(costModel, "native-store-cost-controller-adapter");
+        requireCapability(heapCostModel, "native-store-cost-controller-adapter");
+        requireCapability(heapCostModel, "registry-resolved-provider");
+        requireCapability(heapCostModel, "heap-access-method");
+        requireCapability(btreeCostModel, "default-cost-model-provider");
+        requireCapability(btreeCostModel, "native-store-cost-controller-adapter");
+        requireCapability(btreeCostModel, "registry-resolved-provider");
+        requireCapability(btreeCostModel, "btree-access-method");
         requireCapability(typeProvider, "default-type-provider");
         requireCapability(typeProvider, "type-metadata");
         requireCapability(typeProvider, "derby-built-in-types");

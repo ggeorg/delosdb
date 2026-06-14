@@ -33,11 +33,11 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 /**
- * Proves CostModelProvider v1's intended integration point: DelosDB can adapt
+ * Proves CostModelProvider's intended integration point: DelosDB adapts
  * provider cost into Derby's native StoreCostController#getScanCost path.
  *
  * <p>The smoke deliberately leaves the older FromBaseTable IndexProvider bridge
- * disabled. The observable diagnostic must therefore come from the store-cost
+ * disabled. The observable diagnostics must therefore come from the store-cost
  * adapter, not from the optimizer reflection bridge.</p>
  */
 public final class CostModelProviderStoreCostSmoke {
@@ -65,16 +65,12 @@ public final class CostModelProviderStoreCostSmoke {
             System.clearProperty(IndexProviderCostMode.PROPERTY_NAME);
 
             System.setProperty(CostModelMode.PROPERTY_NAME, "diagnostic");
-            CostModelDiagnostics.clear();
-            assertSingleId(connection, 80, 8, "diagnostic native store-cost query", 1);
-            CostModelProbe diagnosticProbe = assertProbe("diagnostic", false);
-            System.out.println(diagnosticProbe.diagnosticLine());
+            assertHeapProvider(connection, "diagnostic", false, 1);
+            assertBTreeProvider(connection, "diagnostic", false, 2);
 
             System.setProperty(CostModelMode.PROPERTY_NAME, "enabled");
-            CostModelDiagnostics.clear();
-            assertSingleId(connection, 120, 12, "enabled native store-cost query", 2);
-            CostModelProbe enabledProbe = assertProbe("enabled", true);
-            System.out.println(enabledProbe.diagnosticLine());
+            assertHeapProvider(connection, "enabled", true, 3);
+            assertBTreeProvider(connection, "enabled", true, 4);
 
             statement.executeUpdate("drop table cost_model_store_smoke");
         } finally {
@@ -86,44 +82,98 @@ public final class CostModelProviderStoreCostSmoke {
         System.out.println("DelosDB CostModelProvider StoreCostController smoke test passed.");
     }
 
-    private static void assertSingleId(
+    private static void assertHeapProvider(
+            Connection connection,
+            String expectedMode,
+            boolean expectedConsumed,
+            int recompileToken) throws SQLException {
+        CostModelDiagnostics.clear();
+        assertSingleIdByHeapScan(connection, "name6", 6, expectedMode + " heap store-cost query", recompileToken);
+        CostModelProbe probe = assertProbe(expectedMode, "heap", 0, expectedConsumed);
+        System.out.println(probe.diagnosticLine());
+    }
+
+    private static void assertBTreeProvider(
+            Connection connection,
+            String expectedMode,
+            boolean expectedConsumed,
+            int recompileToken) throws SQLException {
+        CostModelDiagnostics.clear();
+        assertSingleIdByBTreeScan(connection, 120, 12, expectedMode + " btree store-cost query", recompileToken);
+        CostModelProbe probe = assertProbe(expectedMode, "btree", 1, expectedConsumed);
+        System.out.println(probe.diagnosticLine());
+    }
+
+    private static void assertSingleIdByHeapScan(
+            Connection connection,
+            String name,
+            int expectedId,
+            String label,
+            int recompileToken) throws SQLException {
+        // The name column is intentionally not indexed, so the optimizer must
+        // cost the heap access-method path.
+        String sql = "select id from cost_model_store_smoke "
+                + "where name = ? and " + recompileToken + " = " + recompileToken;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, name);
+            assertSingleRow(statement, expectedId, label);
+        }
+    }
+
+    private static void assertSingleIdByBTreeScan(
             Connection connection,
             int code,
             int expectedId,
             String label,
             int recompileToken) throws SQLException {
-        // Keep the two optimizer probes as distinct SQL texts. Derby can reuse
-        // compiled statements inside a connection; if the enabled pass reuses
-        // the diagnostic plan, no new StoreCostController probe is produced.
-        // The constant predicate is always true but forces a fresh compile path.
+        // Keep optimizer probes as distinct SQL texts. Derby can reuse compiled
+        // statements inside a connection; if a later pass reuses an earlier
+        // plan, no new StoreCostController probe is produced.
         String sql = "select id from cost_model_store_smoke "
                 + "--DERBY-PROPERTIES index=COST_MODEL_STORE_IDX\n"
                 + "where code = ? and " + recompileToken + " = " + recompileToken;
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setInt(1, code);
-            try (ResultSet results = statement.executeQuery()) {
-                if (!results.next()) {
-                    throw new AssertionError("No row returned for " + label);
-                }
-                int actualId = results.getInt(1);
-                if (actualId != expectedId) {
-                    throw new AssertionError(label + " expected id " + expectedId + " but was " + actualId);
-                }
-                if (results.next()) {
-                    throw new AssertionError("More than one row returned for " + label);
-                }
+            assertSingleRow(statement, expectedId, label);
+        }
+    }
+
+    private static void assertSingleRow(
+            PreparedStatement statement,
+            int expectedId,
+            String label) throws SQLException {
+        try (ResultSet results = statement.executeQuery()) {
+            if (!results.next()) {
+                throw new AssertionError("No row returned for " + label);
+            }
+            int actualId = results.getInt(1);
+            if (actualId != expectedId) {
+                throw new AssertionError(label + " expected id " + expectedId + " but was " + actualId);
+            }
+            if (results.next()) {
+                throw new AssertionError("More than one row returned for " + label);
             }
         }
     }
 
-    private static CostModelProbe assertProbe(String expectedMode, boolean expectedConsumed) {
-        CostModelProbe probe = CostModelDiagnostics.lastProbe();
-        if (probe == null) {
-            throw new AssertionError("Expected native StoreCostController adapter diagnostic probe");
-        }
+    private static CostModelProbe assertProbe(
+            String expectedMode,
+            String expectedProvider,
+            int expectedFactoryId,
+            boolean expectedConsumed) {
+        CostModelProbe probe = CostModelDiagnostics.probes().stream()
+                .filter(candidate -> expectedMode.equals(candidate.mode()))
+                .filter(candidate -> expectedProvider.equals(candidate.providerName()))
+                .filter(candidate -> candidate.factoryId() == expectedFactoryId)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "Expected native StoreCostController adapter probe for "
+                                + expectedProvider + " factory id " + expectedFactoryId
+                                + " in mode " + expectedMode
+                                + " but saw " + CostModelDiagnostics.probes()));
         SmokeUtils.assertEquals(expectedMode, probe.mode(), "cost model mode");
-        SmokeUtils.assertEquals("btree", probe.providerName(), "cost model provider");
-        SmokeUtils.assertEquals(1, probe.factoryId(), "B-tree factory id");
+        SmokeUtils.assertEquals(expectedProvider, probe.providerName(), "cost model provider");
+        SmokeUtils.assertEquals(expectedFactoryId, probe.factoryId(), "access-method factory id");
         SmokeUtils.assertEquals(true, probe.estimatePresent(), "provider estimate present");
         SmokeUtils.assertEquals(expectedConsumed, probe.consumed(), "provider cost consumed");
         SmokeUtils.assertEquals(expectedConsumed ? "provider" : "derby", probe.costSource(), "cost source");
@@ -141,7 +191,8 @@ public final class CostModelProviderStoreCostSmoke {
 
         String line = probe.diagnosticLine();
         SmokeUtils.assertContains(line, "type=cost-model-provider", "diagnostic line");
-        SmokeUtils.assertContains(line, "factoryId=1", "diagnostic line");
+        SmokeUtils.assertContains(line, "provider=" + expectedProvider, "diagnostic line");
+        SmokeUtils.assertContains(line, "factoryId=" + expectedFactoryId, "diagnostic line");
         SmokeUtils.assertContains(line, "costSource=" + (expectedConsumed ? "provider" : "derby"), "diagnostic line");
         return probe;
     }

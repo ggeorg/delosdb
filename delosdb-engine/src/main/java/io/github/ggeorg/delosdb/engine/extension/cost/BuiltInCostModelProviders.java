@@ -1,21 +1,27 @@
 package io.github.ggeorg.delosdb.engine.extension.cost;
 
 import io.github.ggeorg.delosdb.engine.extension.BuiltInExtensions;
+import io.github.ggeorg.delosdb.engine.extension.ExtensionDescriptor;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Built-in DelosDB cost-model providers known to the engine.
  *
- * <p>The provider family is still engine-internal. This class makes the
- * built-in proof provider visible to the same registry machinery used by
- * index, storage, and function providers without exposing Derby cost classes
+ * <p>The provider family is still engine-internal. This class makes built-in
+ * proof providers visible to the same registry machinery used by index,
+ * storage, function, and type providers without exposing Derby cost classes
  * as public SPI.</p>
  */
 @InternalApi
 public final class BuiltInCostModelProviders {
     private BuiltInCostModelProviders() {
+    }
+
+    public static CostModelProvider heap() {
+        return BuiltInHeapCostModelProvider.INSTANCE;
     }
 
     public static CostModelProvider btree() {
@@ -27,6 +33,14 @@ public final class BuiltInCostModelProviders {
     }
 
     public static List<CostModelProvider> all() {
-        return List.of(btree());
+        return List.of(heap(), btree());
+    }
+
+    public static Optional<String> providerNameForFactoryId(int factoryId) {
+        return all().stream()
+                .filter(provider -> provider.accessMethodFactoryId() == factoryId)
+                .map(CostModelProvider::name)
+                .map(ExtensionDescriptor::normalizeName)
+                .findFirst();
     }
 }
