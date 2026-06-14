@@ -27,6 +27,12 @@ For the broader release/modernization gate:
 ./dev/benchmark-baseline.sh
 ```
 
+For inherited Derby cleanup planning, generate the guarded hotspot report:
+
+```bash
+./gradlew inheritedCodeQualityAudit
+```
+
 When a previous test run was interrupted, start with a clean build:
 
 ```bash

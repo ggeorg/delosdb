@@ -1418,6 +1418,12 @@ tasks.register('verifyDeprecatedAnnotations') {
     }
 }
 
+tasks.register('inheritedCodeQualityAudit', Exec) {
+    group = 'verification'
+    description = 'Writes an inherited Derby code-quality hotspot report for guarded cleanup work.'
+    commandLine 'bash', 'dev/inherited-code-quality-audit.sh', '--verify'
+}
+
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
