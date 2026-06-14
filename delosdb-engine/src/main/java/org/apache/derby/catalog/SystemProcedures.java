@@ -76,6 +76,8 @@ import org.apache.derby.iapi.store.access.TransactionController;
 
 import io.github.ggeorg.delosdb.engine.extension.BuiltInExtensions;
 import io.github.ggeorg.delosdb.engine.extension.ExtensionDescriptor;
+import io.github.ggeorg.delosdb.engine.extension.type.BuiltInTypeProviders;
+import io.github.ggeorg.delosdb.spi.type.TypeProvider;
 import org.apache.derby.iapi.sql.dictionary.AliasDescriptor;
 import org.apache.derby.iapi.sql.dictionary.DataDictionary;
 import org.apache.derby.iapi.sql.dictionary.DataDescriptorGenerator;
@@ -2792,6 +2794,40 @@ public class SystemProcedures  {
                     .append(' ')
                     .append(descriptor.state().name().toLowerCase(Locale.ROOT));
         }
+        return summary.toString();
+    }
+
+    /**
+     * Return a compact, SQL-visible list of SQL type metadata known to the
+     * built-in DelosDB TypeProvider. TypeProvider v0 is metadata-only; this
+     * routine is a diagnostic catalog view, not a hook for parser, binder, or
+     * storage-format behavior.
+     *
+     * @return newline-separated type descriptors
+     */
+    public static String DELOSDB_TYPES()
+    {
+        TypeProvider provider = BuiltInTypeProviders.derby();
+
+        StringBuilder summary = new StringBuilder();
+        provider.types().stream()
+                .sorted(Comparator.comparing(type -> type.typeName()))
+                .forEach(type -> {
+                    if (summary.length() > 0) {
+                        summary.append('\n');
+                    }
+                    summary.append(provider.name())
+                            .append(' ')
+                            .append(type.typeName())
+                            .append(" jdbc=")
+                            .append(type.jdbcTypeName())
+                            .append(" java=")
+                            .append(type.javaTypeName())
+                            .append(" nullable=")
+                            .append(type.nullable())
+                            .append(" comparable=")
+                            .append(type.comparable());
+                });
         return summary.toString();
     }
 

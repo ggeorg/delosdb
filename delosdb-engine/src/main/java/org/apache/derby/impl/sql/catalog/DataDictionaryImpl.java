@@ -464,6 +464,7 @@ public final class	DataDictionaryImpl
 												"SYSCS_PEEK_AT_IDENTITY",
 												"SYSCS_GET_DATABASE_NAME",
 												"DELOSDB_EXTENSIONS",
+												"DELOSDB_TYPES",
 												};
 	
 	/**
@@ -13449,6 +13450,23 @@ public final class	DataDictionaryImpl
             {
                 createSystemProcedureOrFunction(
                     "DELOSDB_EXTENSIONS",
+                    sysUtilUUID,
+                    (String[]) null,
+                    (TypeDescriptor[]) null,
+                    0,
+                    0,
+                    RoutineAliasInfo.NO_SQL,
+                    true,
+                    false,
+                    DataTypeDescriptor.getCatalogType( Types.VARCHAR, 32672 ),
+                    newlyCreatedRoutines,
+                    tc);
+            }
+
+            // VARCHAR(32672) SYSCS_UTIL.DELOSDB_TYPES()
+            {
+                createSystemProcedureOrFunction(
+                    "DELOSDB_TYPES",
                     sysUtilUUID,
                     (String[]) null,
                     (TypeDescriptor[]) null,

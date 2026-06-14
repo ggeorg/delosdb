@@ -834,6 +834,7 @@ tasks.register('functionProviderVisibilitySmoke', JavaExec) {
 
 
 def typeProviderMetadataSmokeClassesDir = layout.buildDirectory.dir('classes/type-provider-metadata-smoke')
+def typeProviderSqlVisibilitySmokeClassesDir = layout.buildDirectory.dir('classes/type-provider-sql-visibility-smoke')
 
 def typeProviderSmokeBaseClasspath = {
     files(
@@ -861,6 +862,19 @@ tasks.register('compileTypeProviderMetadataSmoke', JavaCompile) {
     classpath = typeProviderSmokeBaseClasspath()
 }
 
+tasks.register('compileTypeProviderSqlVisibilitySmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
+    group = 'verification'
+    description = 'Compiles the TypeProvider SQL visibility smoke test.'
+    source = files('dev/type-provider-sql-visibility-smoke/src/main/java')
+    destinationDirectory = typeProviderSqlVisibilitySmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = typeProviderSmokeBaseClasspath()
+}
+
 tasks.register('typeProviderMetadataSmoke', JavaExec) {
     dependsOn 'compileTypeProviderMetadataSmoke', ':delosdb-spi:compileDelosDbSpi'
     mustRunAfter 'functionProviderVisibilitySmoke'
@@ -868,6 +882,21 @@ tasks.register('typeProviderMetadataSmoke', JavaExec) {
     description = 'Verifies the built-in TypeProvider metadata and resolver seam.'
     classpath = typeProviderSmokeRuntimeClasspath(typeProviderMetadataSmokeClassesDir)
     mainClass = 'delosdb.smoke.TypeProviderMetadataSmoke'
+}
+
+tasks.register('typeProviderSqlVisibilitySmoke', JavaExec) {
+    dependsOn 'compileTypeProviderSqlVisibilitySmoke', ':delosdb-spi:compileDelosDbSpi'
+    mustRunAfter 'typeProviderMetadataSmoke'
+    group = 'verification'
+    description = 'Verifies TypeProvider metadata visibility through SYSCS_UTIL.DELOSDB_TYPES().'
+    classpath = typeProviderSmokeRuntimeClasspath(typeProviderSqlVisibilitySmokeClassesDir)
+    mainClass = 'delosdb.smoke.TypeProviderSqlVisibilitySmoke'
+    args layout.buildDirectory.dir('type-provider-sql-visibility-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('type-provider-sql-visibility-smoke').get().asFile
+    doFirst {
+        delete file('build/type-provider-sql-visibility-smoke')
+        workingDir.mkdirs()
+    }
 }
 
 
@@ -917,9 +946,9 @@ registerExtensionRegistrySmokeCompile(
 
 tasks.register('extensionRegistrySmoke', JavaExec) {
     dependsOn 'compileExtensionRegistrySmoke', ':delosdb-spi:compileDelosDbSpi'
-    mustRunAfter 'typeProviderMetadataSmoke'
+    mustRunAfter 'typeProviderSqlVisibilitySmoke'
     group = 'verification'
-    description = 'Verifies the unified DelosDB extension registry sees built-in index, storage, and function providers.'
+    description = 'Verifies the unified DelosDB extension registry sees built-in index, storage, function, cost-model, and type providers.'
     classpath = extensionRegistrySmokeRuntimeClasspath(extensionRegistrySmokeClassesDir)
     mainClass = 'delosdb.smoke.ExtensionRegistrySmoke'
 }
@@ -1357,7 +1386,7 @@ tasks.register('verifyDeprecatedAnnotations') {
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'accessMethodFactoryRegistrySmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'costModelProviderStoreCostSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'typeProviderMetadataSmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'accessMethodFactoryRegistrySmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'costModelProviderStoreCostSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'typeProviderMetadataSmoke', 'typeProviderSqlVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {
