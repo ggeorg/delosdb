@@ -23,7 +23,6 @@ package org.apache.derby.impl.sql.execute.rts;
 
 import org.apache.derby.iapi.sql.execute.ResultSetStatistics;
 import org.apache.derby.catalog.UUID;
-import org.apache.derby.impl.sql.catalog.XPLAINResultSetDescriptor;
 import org.apache.derby.impl.sql.catalog.XPLAINResultSetTimingsDescriptor;
 import org.apache.derby.impl.sql.execute.xplain.XPLAINUtil;
 
@@ -112,29 +111,17 @@ public class RealHashLeftOuterJoinStatistics
     public Object getResultSetDescriptor(Object rsID, Object parentID,
             Object scanID, Object sortID, Object stmtID, Object timingID)
     {
-        return new XPLAINResultSetDescriptor(
-           (UUID)rsID,
-           getRSXplainType(),
-           getRSXplainDetails(),
-           this.numOpens,
-           null,                           // index updates
-           null,                           // lock mode
-           null,                           // lock granularity
-           (UUID)parentID,
-           this.optimizerEstimatedRowCount,
-           this.optimizerEstimatedCost,
-           null,                              // affected rows
-           null,                              // deferred rows
-           null,                              // the input rows
-           this.rowsSeenLeft,
-           this.rowsSeenRight,
-           this.rowsFiltered,
-           this.rowsReturned,
-           this.emptyRightRowsReturned,
-           null,                           // index key optimization
-           (UUID)scanID,
-           (UUID)sortID,
-           (UUID)stmtID,
-           (UUID)timingID);
+        return XPLAINResultSetDescriptorBuilder
+           .descriptor(rsID, parentID, scanID, sortID, stmtID, timingID)
+           .operation(getRSXplainType(), getRSXplainDetails())
+           .opens(this.numOpens)
+           .optimizerEstimate(this.optimizerEstimatedRowCount,
+                              this.optimizerEstimatedCost)
+           .rows(this.rowsSeenLeft,
+                 this.rowsSeenRight,
+                 this.rowsFiltered,
+                 this.rowsReturned)
+           .emptyRightRows(this.emptyRightRowsReturned)
+           .build();
     }
 }
