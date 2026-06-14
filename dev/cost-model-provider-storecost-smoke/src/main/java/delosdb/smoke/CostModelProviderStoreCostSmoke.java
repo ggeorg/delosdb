@@ -66,13 +66,13 @@ public final class CostModelProviderStoreCostSmoke {
 
             System.setProperty(CostModelMode.PROPERTY_NAME, "diagnostic");
             CostModelDiagnostics.clear();
-            assertSingleId(connection, 80, 8, "diagnostic native store-cost query");
+            assertSingleId(connection, 80, 8, "diagnostic native store-cost query", 1);
             CostModelProbe diagnosticProbe = assertProbe("diagnostic", false);
             System.out.println(diagnosticProbe.diagnosticLine());
 
             System.setProperty(CostModelMode.PROPERTY_NAME, "enabled");
             CostModelDiagnostics.clear();
-            assertSingleId(connection, 120, 12, "enabled native store-cost query");
+            assertSingleId(connection, 120, 12, "enabled native store-cost query", 2);
             CostModelProbe enabledProbe = assertProbe("enabled", true);
             System.out.println(enabledProbe.diagnosticLine());
 
@@ -90,10 +90,15 @@ public final class CostModelProviderStoreCostSmoke {
             Connection connection,
             int code,
             int expectedId,
-            String label) throws SQLException {
+            String label,
+            int recompileToken) throws SQLException {
+        // Keep the two optimizer probes as distinct SQL texts. Derby can reuse
+        // compiled statements inside a connection; if the enabled pass reuses
+        // the diagnostic plan, no new StoreCostController probe is produced.
+        // The constant predicate is always true but forces a fresh compile path.
         String sql = "select id from cost_model_store_smoke "
                 + "--DERBY-PROPERTIES index=COST_MODEL_STORE_IDX\n"
-                + "where code = ?";
+                + "where code = ? and " + recompileToken + " = " + recompileToken;
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setInt(1, code);
             try (ResultSet results = statement.executeQuery()) {
