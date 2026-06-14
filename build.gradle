@@ -705,6 +705,48 @@ tasks.register('indexProviderCostInfluenceSmoke', JavaExec) {
 
 
 
+def costModelProviderStoreCostSmokeClassesDir = layout.buildDirectory.dir('classes/cost-model-provider-storecost-smoke')
+
+def costModelProviderStoreCostSmokeRuntimeClasspath = {
+    files(
+            costModelProviderStoreCostSmokeClassesDir,
+            moduleClassDir(moduleNames.engine),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.osgi),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            extensionRuntimeJars())
+}
+
+tasks.register('compileCostModelProviderStoreCostSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
+    group = 'verification'
+    description = 'Compiles the native StoreCostController CostModelProvider adapter smoke test.'
+    source = files('dev/cost-model-provider-storecost-smoke/src/main/java', smokeUtilsSourceDir)
+    destinationDirectory = costModelProviderStoreCostSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = costModelProviderStoreCostSmokeRuntimeClasspath()
+}
+
+tasks.register('costModelProviderStoreCostSmoke', JavaExec) {
+    dependsOn 'compileCostModelProviderStoreCostSmoke', ':delosdb-spi:compileDelosDbSpi'
+    mustRunAfter 'indexProviderCostInfluenceSmoke'
+    group = 'verification'
+    description = 'Proves CostModelProvider estimates can be consumed through Derby StoreCostController.getScanCost.'
+    classpath = costModelProviderStoreCostSmokeRuntimeClasspath()
+    mainClass = 'delosdb.smoke.CostModelProviderStoreCostSmoke'
+    args layout.buildDirectory.dir('cost-model-provider-storecost-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('cost-model-provider-storecost-smoke').get().asFile
+    doFirst {
+        delete file('build/cost-model-provider-storecost-smoke')
+        workingDir.mkdirs()
+    }
+}
+
+
+
 
 def functionProviderMetadataSmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-metadata-smoke')
 def functionProviderExecutionSmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-execution-smoke')
@@ -1276,7 +1318,7 @@ tasks.register('verifyDeprecatedAnnotations') {
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'accessMethodFactoryRegistrySmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'accessMethodFactoryRegistrySmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'costModelProviderStoreCostSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {

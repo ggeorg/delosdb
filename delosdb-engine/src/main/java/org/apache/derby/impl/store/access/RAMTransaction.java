@@ -21,6 +21,8 @@
 
 package org.apache.derby.impl.store.access;
 
+import io.github.ggeorg.delosdb.engine.extension.cost.StoreCostControllerBridge;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -1642,7 +1644,7 @@ public class RAMTransaction
 		// Get a scan controller.
 		StoreCostController scc = conglom.openStoreCost(this, rawtran);
 
-		return(scc);
+		return StoreCostControllerBridge.wrap(conglomId, scc);
     }
 
 	/**
