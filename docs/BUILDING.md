@@ -34,6 +34,7 @@ For inherited Derby cleanup planning, generate the guarded hotspot reports:
 ./gradlew legacyDerbyHarnessAudit
 ./gradlew generatedBytecodeJvm21Proof
 ./gradlew generatedMethodDispatchAudit
+./gradlew deprecatedApiCleanupAudit
 ```
 
 `legacyDerbyHarnessAudit` classifies the old Derby function-test harness before
@@ -51,6 +52,11 @@ verifier behavior for generated activation classes is proven.
 the small `ReflectGeneratedClass` cleanup. The hot `e0..e9` generated activation
 methods remain direct calls; the reflective fallback remains in place for less
 common generated methods.
+
+`deprecatedApiCleanupAudit` verifies that Java 21 cleanup does not reintroduce
+the old non-locator CLOB deprecated byte-stream helper. The replacement keeps
+the inherited low-byte mapping so the legacy wire path remains compatibility
+focused rather than silently switching to charset conversion.
 
 When a previous test run was interrupted, start with a clean build:
 

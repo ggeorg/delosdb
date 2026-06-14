@@ -1446,6 +1446,13 @@ tasks.register('generatedMethodDispatchAudit', Exec) {
 }
 
 
+tasks.register('deprecatedApiCleanupAudit', Exec) {
+    group = 'verification'
+    description = 'Verifies Java 21 deprecated API cleanup guardrails for inherited Derby code.'
+    commandLine 'bash', 'dev/deprecated-api-cleanup-audit.sh', '--verify'
+}
+
+
 tasks.register('inheritedCodeQualityAudit', Exec) {
     group = 'verification'
     description = 'Writes an inherited Derby code-quality hotspot report for guarded cleanup work.'

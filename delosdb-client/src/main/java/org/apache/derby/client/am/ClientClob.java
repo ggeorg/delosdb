@@ -979,16 +979,82 @@ public class ClientClob extends Lob implements Clob {
      *
      * @param newString the new value
      */
-    // The StringBufferInputStream class is deprecated, but we don't care too
-    // much since this code is only for talking to very old servers. Suppress
-    // the deprecation warnings for now.
-    @SuppressWarnings("deprecation")
     void reInitForNonLocator(String newString) {
         string_ = newString;
-        asciiStream_ = new java.io.StringBufferInputStream(string_);
-        unicodeStream_ = new java.io.StringBufferInputStream(string_);
+        asciiStream_ = new LegacyStringByteInputStream(string_);
+        unicodeStream_ = new LegacyStringByteInputStream(string_);
         characterStream_ = new StringReader(string_);
         setSqlLength(string_.length());
+    }
+
+    /**
+     * InputStream replacement for the removed deprecated JDK
+     * low-byte string stream usage in the non-locator CLOB path.
+     *
+     * <p>The old JDK class exposed each UTF-16 character as the low eight bits
+     * of a byte. That behavior is odd, but this path is legacy wire-protocol
+     * compatibility code, so the replacement intentionally preserves the byte
+     * mapping instead of using charset conversion.</p>
+     */
+    private static final class LegacyStringByteInputStream extends InputStream {
+        private final String value;
+        private int position;
+
+        private LegacyStringByteInputStream(String value) {
+            this.value = value;
+        }
+
+        @Override
+        public int read() {
+            if (position >= value.length()) {
+                return -1;
+            }
+            return value.charAt(position++) & 0xff;
+        }
+
+        @Override
+        public int read(byte[] bytes, int offset, int length) {
+            if (bytes == null) {
+                throw new NullPointerException();
+            }
+            if (offset < 0 || length < 0 || length > bytes.length - offset) {
+                throw new IndexOutOfBoundsException();
+            }
+            if (length == 0) {
+                return 0;
+            }
+            if (position >= value.length()) {
+                return -1;
+            }
+
+            int copied = Math.min(length, value.length() - position);
+            for (int i = 0; i < copied; i++) {
+                bytes[offset + i] = (byte) value.charAt(position + i);
+            }
+            position += copied;
+            return copied;
+        }
+
+        @Override
+        public long skip(long bytesToSkip) {
+            if (bytesToSkip <= 0) {
+                return 0;
+            }
+
+            int skipped = (int) Math.min(bytesToSkip, value.length() - position);
+            position += skipped;
+            return skipped;
+        }
+
+        @Override
+        public int available() {
+            return value.length() - position;
+        }
+
+        @Override
+        public void reset() {
+            position = 0;
+        }
     }
 
 
