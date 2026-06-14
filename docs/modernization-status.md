@@ -8,7 +8,8 @@ Derby-compatible SQL/JDBC baseline and a controlled extension platform.
 The current priority is cleanup and completion, not expansion. No new provider
 family should be added until `CostModelProvider` reaches a v2 proof with two real
 implementations. Workspace metadata such as `.git/`, `.gradle/`, and `.idea/` is
-valid local state and must not be deleted by cleanup scripts.
+valid local state, may appear in developer ZIP snapshots, and must not be deleted
+by cleanup scripts.
 
 ## Current verification gates
 

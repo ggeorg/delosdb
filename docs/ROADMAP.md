@@ -19,9 +19,9 @@ proof. Cleanup and verification are allowed; new provider surfaces are not.
 
 Workspace metadata is not a cleanup target. Local snapshots may contain `.git/`,
 `.gradle/`, and `.idea/`. These directories must be ignored during review and
-must never be deleted by cleanup scripts. Clean shareable archives should be
-created with `scripts/create-clean-snapshot.sh`, which excludes those directories
-from the archive without touching the workspace.
+must never be deleted by cleanup scripts. Overlay ZIPs produced for DelosDB must
+exclude workspace metadata, but the developer workspace ZIP workflow remains
+unchanged.
 
 For the current line of work, that seam is `CostModelProvider`:
 
