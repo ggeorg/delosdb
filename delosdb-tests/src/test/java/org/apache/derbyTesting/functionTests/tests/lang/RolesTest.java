@@ -83,7 +83,7 @@ public class RolesTest extends BaseJDBCTestCase
     // visibility. Inherited Derby role tests count pre-existing PUBLIC
     // routine execute grants, so keep the product-specific catalog delta
     // centralized here instead of scattering adjusted literals.
-    private final static int delosdbSystemRoutinePermDelta = 1;
+    private final static int delosdbSystemRoutinePermDelta = 2;
 
     private int MAX_IDENTIFIER_LENGTH = 128;
     /**
