@@ -32,6 +32,7 @@ import java.util.Objects;
 public final class BuiltInExtensions {
     public static final String BUILTIN_VERSION = "builtin";
     public static final String BTREE_INDEX_PROVIDER = "btree";
+    public static final String MEMORY_INDEX_PROVIDER = "memory";
     public static final String DEFAULT_INDEX_PROVIDER = BTREE_INDEX_PROVIDER;
     public static final String HEAP_STORAGE_PROVIDER = "heap";
     public static final String DEFAULT_STORAGE_PROVIDER = HEAP_STORAGE_PROVIDER;
@@ -64,6 +65,10 @@ public final class BuiltInExtensions {
 
     public static ExtensionDescriptor btreeIndexProvider() {
         return indexProviderDescriptor(BuiltInIndexProviders.btree());
+    }
+
+    public static ExtensionDescriptor memoryIndexProvider() {
+        return indexProviderDescriptor(BuiltInIndexProviders.memory());
     }
 
     public static ExtensionDescriptor heapStorageProvider() {

@@ -5,6 +5,7 @@ import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.index.IndexProvider;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Internal registry of index providers built into the current engine.
@@ -22,6 +23,10 @@ public final class BuiltInIndexProviders {
         return BuiltInBTreeIndexProvider.INSTANCE;
     }
 
+    public static IndexProvider memory() {
+        return BuiltInMemoryIndexProvider.INSTANCE;
+    }
+
     public static String defaultProviderName() {
         return BuiltInExtensions.DEFAULT_INDEX_PROVIDER;
     }
@@ -31,6 +36,14 @@ public final class BuiltInIndexProviders {
     }
 
     public static List<IndexProvider> all() {
-        return List.of(btree());
+        return List.of(btree(), memory());
+    }
+
+    public static boolean isSqlCreatable(String providerName) {
+        return sqlCreatableProviderNames().contains(providerName);
+    }
+
+    public static Set<String> sqlCreatableProviderNames() {
+        return Set.of(BuiltInExtensions.BTREE_INDEX_PROVIDER);
     }
 }

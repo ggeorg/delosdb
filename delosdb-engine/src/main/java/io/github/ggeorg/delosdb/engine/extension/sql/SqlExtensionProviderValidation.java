@@ -33,10 +33,14 @@ public final class SqlExtensionProviderValidation {
     }
 
     public static void requireIndexProvider(String providerName) throws StandardException {
+        String normalizedName = normalizeIndexProviderName(providerName);
         try {
-            IndexProviderResolver.builtIns().requireEnabled(normalizeIndexProviderName(providerName));
+            IndexProviderResolver.builtIns().requireEnabled(normalizedName);
         } catch (ExtensionResolutionException e) {
-            throw unsupportedProvider("CREATE INDEX", normalizeIndexProviderName(providerName));
+            throw unsupportedProvider("CREATE INDEX", normalizedName);
+        }
+        if (!BuiltInIndexProviders.isSqlCreatable(normalizedName)) {
+            throw unsupportedProvider("CREATE INDEX", normalizedName);
         }
     }
 

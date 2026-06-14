@@ -69,6 +69,9 @@ public final class IndexProviderMetadataSmoke
                     "create index idx_provider_hash_idx on idx_provider_smoke(id) using hash",
                     "hash");
             assertUnsupportedProvider(statement,
+                    "create index idx_provider_memory_idx on idx_provider_smoke(id) using memory",
+                    "memory");
+            assertUnsupportedProvider(statement,
                     "create index idx_provider_nope_idx on idx_provider_smoke(id) using nonsense",
                     "nonsense");
             statement.executeUpdate("insert into idx_provider_smoke values (1, 'alpha', 10)");

@@ -663,6 +663,41 @@ tasks.register('indexProviderMetadataSmoke', JavaExec) {
 }
 
 
+def indexProviderV2SmokeClassesDir = layout.buildDirectory.dir('classes/index-provider-v2-smoke')
+
+def indexProviderV2SmokeRuntimeClasspath = {
+    files(
+            indexProviderV2SmokeClassesDir,
+            moduleClassDir(moduleNames.engine),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.osgi),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            extensionRuntimeJars())
+}
+
+tasks.register('compileIndexProviderV2Smoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
+    group = 'verification'
+    description = 'Compiles the IndexProvider v2 two-implementation smoke test.'
+    source = files('dev/index-provider-v2-smoke/src/main/java', smokeUtilsSourceDir)
+    destinationDirectory = indexProviderV2SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = indexProviderV2SmokeRuntimeClasspath()
+}
+
+tasks.register('indexProviderV2Smoke', JavaExec) {
+    dependsOn 'compileIndexProviderV2Smoke', ':delosdb-spi:compileDelosDbSpi'
+    mustRunAfter 'indexProviderMetadataSmoke'
+    group = 'verification'
+    description = 'Proves IndexProvider has two independent implementations: btree structural access and memory runtime access.'
+    classpath = indexProviderV2SmokeRuntimeClasspath()
+    mainClass = 'delosdb.smoke.IndexProviderV2Smoke'
+}
+
+
 def indexProviderCostSmokeClassesDir = layout.buildDirectory.dir('classes/index-provider-cost-smoke')
 
 def indexProviderCostSmokeRuntimeClasspath = {
@@ -1386,7 +1421,7 @@ tasks.register('verifyDeprecatedAnnotations') {
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'accessMethodFactoryRegistrySmoke', 'indexProviderMetadataSmoke', 'indexProviderCostInfluenceSmoke', 'costModelProviderStoreCostSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'typeProviderMetadataSmoke', 'typeProviderSqlVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'accessMethodFactoryRegistrySmoke', 'indexProviderMetadataSmoke', 'indexProviderV2Smoke', 'indexProviderCostInfluenceSmoke', 'costModelProviderStoreCostSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'typeProviderMetadataSmoke', 'typeProviderSqlVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {

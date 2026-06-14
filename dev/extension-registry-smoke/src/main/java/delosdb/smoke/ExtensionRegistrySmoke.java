@@ -21,6 +21,7 @@ public final class ExtensionRegistrySmoke {
         ExtensionRegistry registry = BuiltInExtensions.newRegistryWithBuiltIns();
 
         ExtensionDescriptor index = requireDescriptor(registry, ExtensionType.INDEX, "btree");
+        ExtensionDescriptor memoryIndex = requireDescriptor(registry, ExtensionType.INDEX, "memory");
         ExtensionDescriptor storage = requireDescriptor(registry, ExtensionType.STORAGE, "heap");
         ExtensionDescriptor function = requireDescriptor(registry, ExtensionType.FUNCTION, "delos");
         ExtensionDescriptor heapCostModel = requireDescriptor(registry, ExtensionType.COST_MODEL, "heap");
@@ -28,6 +29,7 @@ public final class ExtensionRegistrySmoke {
         ExtensionDescriptor typeProvider = requireDescriptor(registry, ExtensionType.TYPE, "derby");
 
         requireEnabled(index);
+        requireEnabled(memoryIndex);
         requireEnabled(storage);
         requireEnabled(function);
         requireEnabled(heapCostModel);
@@ -35,6 +37,8 @@ public final class ExtensionRegistrySmoke {
         requireEnabled(typeProvider);
 
         requireCapability(index, "default-index-provider");
+        requireCapability(memoryIndex, "equality-lookup");
+        requireCapability(memoryIndex, "range-scan");
         requireCapability(storage, "default-storage-provider");
         requireCapability(function, "default-function-provider");
         requireCapability(function, "function-metadata");
