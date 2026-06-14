@@ -1418,6 +1418,27 @@ tasks.register('verifyDeprecatedAnnotations') {
     }
 }
 
+tasks.register('generatedBytecodeClassfileHeaderProbe', JavaExec) {
+    group = 'verification'
+    description = 'Emits and checks the classfile header produced by Derby inherited bytecode writer.'
+    dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
+    classpath = files(
+            project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools'),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine)
+    )
+    mainClass = 'org.apache.derbyBuild.GeneratedBytecodeVersionProbe'
+}
+
+
+tasks.register('generatedBytecodeJvm21Proof', Exec) {
+    group = 'verification'
+    description = 'Writes a JVM 21 generated-bytecode proof report before bytecode-generator modernization.'
+    dependsOn 'generatedBytecodeClassfileHeaderProbe'
+    commandLine 'bash', 'dev/generated-bytecode-jvm21-proof.sh', '--verify'
+}
+
+
 tasks.register('inheritedCodeQualityAudit', Exec) {
     group = 'verification'
     description = 'Writes an inherited Derby code-quality hotspot report for guarded cleanup work.'

@@ -32,12 +32,19 @@ For inherited Derby cleanup planning, generate the guarded hotspot reports:
 ```bash
 ./gradlew inheritedCodeQualityAudit
 ./gradlew legacyDerbyHarnessAudit
+./gradlew generatedBytecodeJvm21Proof
 ```
 
 `legacyDerbyHarnessAudit` classifies the old Derby function-test harness before
 any removal or source-set quarantine. It verifies that the active DelosDB Gradle
 language-suite path runs the JUnit `_Suite` class directly instead of the old
 `RunSuite` launcher.
+
+`generatedBytecodeJvm21Proof` records the inherited Derby generated-class path
+before JVM 21 bytecode modernization. It checks the current `ClassHolder`
+classfile header, writes `build/reports/generated-bytecode-jvm21/generated-bytecode-jvm21-proof.md`,
+and keeps the rule explicit: do not bump generated classfile versions until the
+verifier behavior for generated activation classes is proven.
 
 When a previous test run was interrupted, start with a clean build:
 
