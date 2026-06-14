@@ -1,3 +1,0 @@
-# exclude these files if you are building javadoc on Java 7 or earlier
-
-**/*42.java

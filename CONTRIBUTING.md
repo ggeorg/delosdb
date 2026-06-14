@@ -1,35 +1,41 @@
 # Contributing to DelosDB
 
-DelosDB is in early bootstrap mode. The current priority is safe modernization:
+DelosDB is in a provider-hardening phase. The current rule is simple: finish and verify existing seams before opening new ones.
 
-1. preserve existing Derby behavior,
-2. add reproducible builds and smoke tests,
-3. improve documentation,
-4. modernize Java internals incrementally,
-5. avoid large rewrites without benchmarks and compatibility tests.
+## Supported local workflow
 
-## Local workflow
-
-```bash
-gradle build
-gradle smoke
-```
-
-After the Gradle Wrapper is committed:
+Use the checked-in Gradle Wrapper from the repository root:
 
 ```bash
 ./gradlew build
-./gradlew smoke
+./gradlew derbyRuntimeSmoke
+./gradlew :delosdb-tests:runDerbyLangSuite
 ```
 
-## Pull request rules
+For the broader gate:
 
-- Keep patches focused.
-- Explain compatibility impact.
-- Add or update tests when behavior changes.
-- Do not remove existing license headers.
-- Do not use Apache Derby branding for modified distributions.
+```bash
+./gradlew fullVerification
+./dev/modernization-audit.sh --verify
+./dev/benchmark-baseline.sh
+```
 
-## Code style
+If a Derby test run was interrupted, run `./gradlew clean` before retrying.
 
-For now, preserve the existing source style unless a specific cleanup issue states otherwise. Mechanical style-only rewrites should wait until CI and compatibility tests are stronger.
+## Contribution rules
+
+- Keep changes focused and source-backed.
+- Do not start a new provider family while existing seams are still being finished.
+- Add or update a smoke/proof when behavior changes.
+- Update documentation only after the code proof is green.
+- Do not add stale checkpoint documents; update the existing roadmap/status docs instead.
+- Do not remove Apache license headers or attribution.
+- Do not use Apache Derby branding for modified DelosDB distributions.
+
+## Workspace metadata
+
+Developer workspaces may contain `.git/`, `.gradle/`, and `.idea/`. Cleanup scripts must not delete them. Assistant overlay ZIPs must not include them.
+
+## Style
+
+Preserve inherited Derby style unless the cleanup is deliberate and behavior-preserving. Prefer small verified changes over mechanical rewrites.

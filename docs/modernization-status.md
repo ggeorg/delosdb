@@ -85,10 +85,10 @@ with source changes.
 
 Before adding features:
 
-1. remove stale/duplicate docs;
-2. keep generated LaTeX/PDF build outputs out of source control;
-3. never delete local `.git/`, `.gradle/`, or `.idea/`;
-4. reduce inherited `RESOLVE` comments in focused batches;
-5. reduce `instanceof`-then-cast patterns only where ownership and behavior are
-   clear;
-6. avoid opening a new provider family.
+1. keep the root project layout modern: supported modules, `dev/`, `docs/`, `bin/`, and `tools/java/` only for required checked-in build jars;
+2. remove stale inherited Derby web/release artifacts and old Ant/release helper folders through `scripts/remove-checkpoint-docs.sh`;
+3. keep generated LaTeX/PDF build outputs out of source control;
+4. never delete local `.git/`, `.gradle/`, or `.idea/`;
+5. reduce inherited `RESOLVE` comments in focused batches;
+6. reduce `instanceof`-then-cast patterns only where ownership and behavior are clear;
+7. avoid opening a new provider family.

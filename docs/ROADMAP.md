@@ -118,7 +118,7 @@ and update its evidence map when source claims change.
 
 Choose one focused track at a time:
 
-1. reduce stale docs and duplicated status text;
+1. keep root/docs structure clean: no stale inherited web/release artifacts, no duplicate build/status docs;
 2. reduce inherited `RESOLVE` comments in reviewed batches;
 3. reduce `instanceof`-then-cast patterns where ownership is clear;
 4. only then decide whether `StorageProvider`, `FunctionProvider`, or

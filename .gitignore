@@ -53,3 +53,21 @@ __MACOSX/
 /docs/book/*-preview.pdf
 /docs/book/render/
 /docs/book/chapter-renders/
+
+# Stale inherited Derby root artifacts removed from DelosDB source layout
+/RELEASE-NOTES.html
+/index.html
+/published_api_overview.html
+/STATUS
+/releaseSummary.xml
+/KEYS
+/maven2/
+/plugins/
+/release/
+/java/
+/tools/ide/
+/tools/j2ee/
+/tools/l10n/
+/tools/release/
+/tools/javadoc/
+/tools/testing/

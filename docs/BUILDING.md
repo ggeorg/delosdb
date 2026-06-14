@@ -35,6 +35,25 @@ When a previous test run was interrupted, start with a clean build:
 ./gradlew :delosdb-tests:runDerbyLangSuite
 ```
 
+
+## Repository layout and inherited cleanup
+
+DelosDB keeps the active build structure small and Gradle-owned:
+
+```text
+delosdb-*        Gradle subprojects
+dev/             focused proof/smoke/audit scripts
+docs/            maintained docs and book sources
+bin/             distribution launchers
+tools/java/      checked-in build/test jars still required by the Gradle build
+```
+
+The inherited Derby Ant/release layout is not supported in the DelosDB workflow. Cleanup removes stale top-level web/release artifacts such as `index.html`, `RELEASE-NOTES.html`, `published_api_overview.html`, `STATUS`, and `releaseSummary.xml`, and removes unused inherited directories such as `maven2/`, `plugins/`, `release/`, and empty `java/`.
+
+Do not remove `tools/java/` during cleanup. The Gradle build still references its checked-in jars for JavaCC, JUnit, Lucene optional-tool compilation, and inherited servlet/json dependencies. Other old `tools/*` Ant/release/Javadoc helper folders are not part of the supported build.
+
+Workspace metadata such as `.git/`, `.gradle/`, and `.idea/` may exist locally and must not be deleted by cleanup scripts.
+
 ## Runtime subprojects and artifacts
 
 The runtime build is split into Gradle subprojects. Source packages remain

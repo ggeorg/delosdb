@@ -95,6 +95,23 @@ If a previous Derby suite run was interrupted, start with:
 | `:delosdb-buildtools` | build-time generators/scanners | build tooling |
 | `:delosdb-locales` | generated locale verification | verification module |
 
+
+## Repository layout
+
+The root is intentionally small. Product modules, verification helpers, and documentation each have one home.
+
+| Path | Purpose | Status |
+|---|---|---|
+| `delosdb-*` | Gradle subprojects for runtime, tools, tests, build tools, demos, and compatibility modules | supported |
+| `dev/` | focused smoke/proof programs and local audit/benchmark scripts | supported |
+| `docs/` | maintained documentation and the source-checked internals book | supported |
+| `bin/` | launchers included in the binary distribution | supported |
+| `tools/java/` | checked-in build/test jars required by the Gradle build | supported legacy dependency bucket |
+| `tools/*` other than `tools/java/` | inherited Ant/release/Javadoc helpers | removed by cleanup |
+| `maven2/`, `plugins/`, `release/`, `java/` | inherited Derby release/IDE/empty layout | removed by cleanup |
+
+Workspace metadata such as `.git/`, `.gradle/`, and `.idea/` may appear in local ZIP snapshots. They are not project cleanup targets and must not be deleted by cleanup scripts.
+
 ## Runtime artifacts
 
 Runtime jars are written to `build/libs/` and intentionally keep Derby-compatible
@@ -153,7 +170,15 @@ additional fork attribution.
 
 ## Documentation
 
-Current top-level docs:
+Root-level Markdown is limited to project-facing essentials:
+
+- `README.md` — orientation and current state.
+- `CONTRIBUTING.md` — contribution workflow and current project rules.
+- `GOVERNANCE.md` — maintainer model and release gates.
+- `SECURITY.md` — vulnerability-reporting policy.
+- `NOTICE-FORK.md` — Apache Derby fork attribution.
+
+Maintained technical docs live under `docs/`:
 
 - `docs/BUILDING.md` — build, test, distribution, and Maven Local workflow.
 - `docs/ROADMAP.md` — current product direction and frozen/finished seams.
