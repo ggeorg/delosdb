@@ -38,9 +38,10 @@ CREATE INDEX idx ON t(c) USING btree;
 For this phase, `btree` is the only accepted provider name. Unknown providers
 fail before execution with a clean unsupported-feature diagnostic. The statement
 continues through the existing Derby index creation path. Provider metadata is
-stored as descriptor metadata. Optimizer provider-cost integration is controlled
-separately by the internal `delosdb.optimizer.indexProviderCost` switch, and the
-default behavior remains Derby-compatible.
+stored as descriptor metadata. The older optimizer-side
+`delosdb.optimizer.indexProviderCost` switch is now legacy diagnostic-only;
+native provider cost consumption belongs to CostModelProvider through the
+StoreCostController seam. The default behavior remains Derby-compatible.
 
 ## Provider defaults
 
@@ -181,16 +182,16 @@ runtime classes must not break ordinary Derby-compatible query compilation or
 cost estimation.
 
 
-## IndexProvider cost integration
+## Legacy IndexProvider cost diagnostics
 
-The built-in `btree` provider now returns a provider-neutral baseline cost estimate. This does not change Derby-compatible behavior by default.
+The built-in `btree` provider can still return a provider-neutral baseline cost estimate. This path is kept as an internal diagnostic for IndexProvider metadata and catalog plumbing. It no longer consumes provider cost or mutates Derby's optimizer cost. Native provider cost consumption is handled by CostModelProvider through `StoreCostController`.
 
-The optimizer bridge is controlled by the internal DelosDB property:
+The legacy optimizer bridge is controlled by the internal DelosDB property:
 
 ```text
 delosdb.optimizer.indexProviderCost=off          # default; no provider cost probe
 delosdb.optimizer.indexProviderCost=diagnostic  # record provider estimate, keep Derby cost
-delosdb.optimizer.indexProviderCost=enabled     # consume valid provider estimate at the index-cost bridge
+delosdb.optimizer.indexProviderCost=enabled     # accepted legacy spelling; still diagnostic-only
 ```
 
 Only `btree` is exposed as a public provider name in this checkpoint. Internal diagnostics must not introduce fake public provider names or debug SQL syntax.

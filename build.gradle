@@ -678,7 +678,7 @@ def indexProviderCostSmokeRuntimeClasspath = {
 tasks.register('compileIndexProviderCostInfluenceSmoke', JavaCompile) {
     dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
     group = 'verification'
-    description = 'Compiles the opt-in IndexProvider cost influence smoke test.'
+    description = 'Compiles the legacy IndexProvider cost diagnostic smoke test.'
     source = files('dev/index-provider-cost-smoke/src/main/java', smokeUtilsSourceDir)
     destinationDirectory = indexProviderCostSmokeClassesDir
     sourceCompatibility = javaRelease.toString()
@@ -692,7 +692,7 @@ tasks.register('indexProviderCostInfluenceSmoke', JavaExec) {
     dependsOn 'compileIndexProviderCostInfluenceSmoke', ':delosdb-spi:compileDelosDbSpi'
     mustRunAfter 'indexProviderMetadataSmoke'
     group = 'verification'
-    description = 'Verifies opt-in IndexProvider cost diagnostics and cost consumption for the built-in btree provider.'
+    description = 'Verifies the legacy IndexProvider optimizer bridge remains diagnostic-only for the built-in btree provider.'
     classpath = indexProviderCostSmokeRuntimeClasspath()
     mainClass = 'delosdb.smoke.IndexProviderCostInfluenceSmoke'
     args layout.buildDirectory.dir('index-provider-cost-smoke/db').get().asFile.absolutePath

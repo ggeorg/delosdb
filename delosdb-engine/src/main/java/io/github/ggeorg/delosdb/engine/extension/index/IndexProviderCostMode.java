@@ -3,17 +3,18 @@ package io.github.ggeorg.delosdb.engine.extension.index;
 import java.util.Locale;
 
 /**
- * Internal optimizer switch for DelosDB IndexProvider cost integration.
+ * Legacy optimizer-side switch for DelosDB IndexProvider cost diagnostics.
  *
- * <p>The default remains Derby-compatible: provider costs are not consulted.
- * Diagnostic mode records provider estimates without changing the Derby cost.
- * Enabled mode may replace the Derby cost with a valid provider estimate at the
- * narrow index-cost bridge point.</p>
+ * <p>The native cost-consumption path is now {@code CostModelProvider} through
+ * Derby's {@code StoreCostController} seam. This older bridge remains only as
+ * a diagnostic checkpoint for IndexProvider metadata and catalog plumbing. Both
+ * diagnostic and enabled spellings record provider estimates without replacing
+ * Derby's optimizer cost.</p>
  */
 public enum IndexProviderCostMode {
     OFF(false, false),
     DIAGNOSTIC(true, false),
-    ENABLED(true, true);
+    ENABLED(true, false);
 
     public static final String PROPERTY_NAME = "delosdb.optimizer.indexProviderCost";
 
@@ -31,6 +32,10 @@ public enum IndexProviderCostMode {
 
     public boolean consumesProviderCost() {
         return consumesProviderCost;
+    }
+
+    public boolean legacyDiagnosticOnly() {
+        return probesProviderCost && !consumesProviderCost;
     }
 
     public static IndexProviderCostMode fromSystemProperties() {

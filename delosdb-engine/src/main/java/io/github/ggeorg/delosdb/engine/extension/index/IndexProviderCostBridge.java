@@ -11,14 +11,15 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Internal bridge from Derby index descriptors to DelosDB index-provider cost
- * requests.
+ * Legacy diagnostic bridge from Derby index descriptors to DelosDB
+ * index-provider cost requests.
  *
  * <p>This class prepares provider-neutral {@link IndexCostRequest} instances
  * and invokes {@link IndexProvider#estimateCost(IndexCostRequest)} without
- * exposing Derby optimizer implementation classes to the SPI. The optimizer
- * decides separately whether a returned estimate is diagnostic-only or
- * authoritative through an explicit DelosDB switch.</p>
+ * exposing Derby optimizer implementation classes to the SPI. It no longer
+ * feeds provider cost back into the planner. Native provider cost consumption
+ * is handled by {@code CostModelProvider} through Derby's
+ * {@code StoreCostController} seam.</p>
  */
 @InternalApi
 public final class IndexProviderCostBridge {

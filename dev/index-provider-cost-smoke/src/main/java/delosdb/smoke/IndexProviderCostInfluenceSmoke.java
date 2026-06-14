@@ -34,9 +34,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 /**
- * Proves that the built-in {@code btree} provider estimate is visible to the
- * optimizer and can influence costing only under the explicit DelosDB opt-in
- * switch. The public SQL remains the real provider syntax: {@code USING btree}.
+ * Proves that the legacy optimizer-side IndexProvider cost bridge remains
+ * observable but diagnostic-only. Real provider cost consumption now belongs to
+ * CostModelProvider through Derby's StoreCostController seam. The public SQL
+ * remains the real provider syntax: {@code USING btree}.
  */
 public final class IndexProviderCostInfluenceSmoke
 {
@@ -73,9 +74,10 @@ public final class IndexProviderCostInfluenceSmoke
             System.setProperty(IndexProviderCostMode.PROPERTY_NAME, "enabled");
             IndexProviderCostDiagnostics.clear();
             assertSingleId(connection, 30, 3, "enabled provider-cost query");
-            IndexProviderCostProbe enabledProbe = assertProbe(connection, "enabled", true);
+            IndexProviderCostProbe enabledProbe = assertProbe(connection, "enabled", false);
             System.out.println(enabledProbe.plannerDiagnosticLine());
 
+            assertLegacyModeIsDiagnosticOnly();
             assertPlannerSafetyRules();
 
             statement.executeUpdate("drop table idx_provider_cost_smoke");
@@ -86,7 +88,7 @@ public final class IndexProviderCostInfluenceSmoke
             SmokeUtils.shutdown(databasePath);
         }
 
-        System.out.println("DelosDB IndexProvider cost influence smoke test passed.");
+        System.out.println("DelosDB IndexProvider legacy cost diagnostic smoke test passed.");
     }
 
     private static void assertSingleId(
@@ -139,8 +141,7 @@ public final class IndexProviderCostInfluenceSmoke
              * must not depend on a fake SQL provider name, so fall back to the
              * same production bridge using the real catalog-persisted btree
              * IndexDescriptor. This still proves the real provider estimate is
-             * available and can be marked consumed only under the explicit
-             * enabled mode.
+             * available without mutating Derby planner cost.
              */
             probe = catalogBackedProbe(connection, expectedMode, expectedConsumed);
             IndexProviderCostDiagnostics.record(probe);
@@ -189,6 +190,20 @@ public final class IndexProviderCostInfluenceSmoke
         assertSummaryContains(summary, "costSource=" + (expectedConsumed ? "provider" : "derby"));
         assertSummaryContains(summary, "providerTotalCost=");
         return probe;
+    }
+
+    private static void assertLegacyModeIsDiagnosticOnly()
+    {
+        if (IndexProviderCostMode.ENABLED.consumesProviderCost())
+        {
+            throw new IllegalStateException(
+                    "Legacy IndexProvider cost mode must not consume planner cost");
+        }
+        if (!IndexProviderCostMode.ENABLED.legacyDiagnosticOnly())
+        {
+            throw new IllegalStateException(
+                    "Expected enabled spelling to remain diagnostic-only");
+        }
     }
 
     private static void assertPlannerSafetyRules()
@@ -274,7 +289,12 @@ public final class IndexProviderCostInfluenceSmoke
                 true,
                 false,
                 false);
-        return consumed ? probe.withConsumed(true) : probe;
+        if (consumed)
+        {
+            throw new IllegalStateException(
+                    "Legacy IndexProvider cost bridge must remain diagnostic-only");
+        }
+        return probe;
     }
 
     private static IndexDescriptor indexDescriptor(Connection connection) throws SQLException

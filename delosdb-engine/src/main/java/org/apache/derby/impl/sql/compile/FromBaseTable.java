@@ -2063,10 +2063,11 @@ class FromBaseTable extends FromTable
 	}
 
     /**
-     * Applies the DelosDB index-provider cost bridge only when explicitly
-     * requested. The default mode is Derby-compatible and does not probe the
-     * provider layer. Diagnostic mode records provider estimates. Enabled mode
-     * may consume a valid provider estimate at this narrow bridge point.
+     * Applies the legacy DelosDB index-provider cost diagnostic bridge only
+     * when explicitly requested. The default mode is Derby-compatible and does
+     * not probe the provider layer. Diagnostic and enabled spellings both record
+     * provider estimates without replacing Derby's optimizer cost. Native cost
+     * consumption belongs to CostModelProvider through StoreCostController.
      */
     private void applyIndexProviderCostBridge(
             ConglomerateDescriptor cd,
@@ -2112,18 +2113,14 @@ class FromBaseTable extends FromTable
                     false,
                     false,
                     false);
-            if (mode.consumesProviderCost() && canConsume(probe)) {
-                double providerRows = Math.max(0.0d, probe.providerEstimatedRows());
-                derbyCostEstimate.setCost(
-                        probe.providerTotalCost(),
-                        providerRows,
-                        providerRows);
-                probe = probe.withConsumed(true);
-            } else if (mode.consumesProviderCost() && probe != null
-                    && !probe.canSafelyReplaceDerbyCost()) {
-                probe = probe.withConsumptionFallback(
-                        "provider estimate rejected by planner safety checks");
-            }
+            /*
+             * This bridge is intentionally diagnostic-only. Earlier DelosDB
+             * experiments allowed this optimizer-side hook to replace Derby's
+             * cost estimate. CostModelProvider v2 moved real consumption to the
+             * StoreCostController path, where heap and B-tree are both selected
+             * through the provider resolver. Keeping this hook read-only avoids
+             * two independent provider-cost paths mutating planner state.
+             */
             IndexProviderCostDiagnostics.record(probe);
         } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
             IndexProviderCostDiagnostics.record(IndexProviderCostProbe.unavailable(
@@ -2135,10 +2132,6 @@ class FromBaseTable extends FromTable
                     derbyCost,
                     "provider cost bridge unavailable"));
         }
-    }
-
-    private static boolean canConsume(IndexProviderCostProbe probe) {
-        return probe != null && probe.canSafelyReplaceDerbyCost();
     }
 
     private static String providerName(ConglomerateDescriptor cd) {
