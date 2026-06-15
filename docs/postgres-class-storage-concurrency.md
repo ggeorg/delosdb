@@ -59,6 +59,18 @@ org.apache.derby.iapi.store.access.StoreCostController
 io.github.ggeorg.delosdb.engine.extension.cost
 ```
 
+First observability proof:
+
+```bash
+./gradlew optimizerPathObservabilitySmoke
+```
+
+This smoke keeps Derby enumeration unchanged. It records the selected runtime
+scan shape from Derby runtime statistics and prints a stable
+`DelosDBOptimizerPath{...}` diagnostic line beside the native
+`StoreCostControllerBridge` `CostModelProvider` v2 probe. The purpose is to make
+path facts visible before introducing any richer path/cost model.
+
 ### 4. Indexing needs careful concurrency and latching design
 
 DelosDB has only touched page-local B-tree search cleanup after boundary proof

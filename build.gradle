@@ -783,6 +783,49 @@ tasks.register('costModelProviderStoreCostSmoke', JavaExec) {
 
 
 
+def optimizerPathObservabilitySmokeClassesDir = layout.buildDirectory.dir('classes/optimizer-path-observability-smoke')
+
+def optimizerPathObservabilitySmokeRuntimeClasspath = {
+    files(
+            optimizerPathObservabilitySmokeClassesDir,
+            moduleClassDir(moduleNames.engine),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.osgi),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            extensionRuntimeJars())
+}
+
+tasks.register('compileOptimizerPathObservabilitySmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-spi:delosDbSpiJar'
+    group = 'verification'
+    description = 'Compiles the DelosDB optimizer path observability smoke test.'
+    source = files('dev/optimizer-path-observability-smoke/src/main/java', smokeUtilsSourceDir)
+    destinationDirectory = optimizerPathObservabilitySmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = optimizerPathObservabilitySmokeRuntimeClasspath()
+}
+
+tasks.register('optimizerPathObservabilitySmoke', JavaExec) {
+    dependsOn 'compileOptimizerPathObservabilitySmoke', ':delosdb-spi:compileDelosDbSpi'
+    mustRunAfter 'costModelProviderStoreCostSmoke'
+    group = 'verification'
+    description = 'Shows the selected Derby scan path beside DelosDB CostModelProvider v2 diagnostics.'
+    classpath = optimizerPathObservabilitySmokeRuntimeClasspath()
+    mainClass = 'delosdb.smoke.OptimizerPathObservabilitySmoke'
+    args layout.buildDirectory.dir('optimizer-path-observability-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('optimizer-path-observability-smoke').get().asFile
+    doFirst {
+        delete file('build/optimizer-path-observability-smoke')
+        workingDir.mkdirs()
+    }
+}
+
+
+
+
 def functionProviderMetadataSmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-metadata-smoke')
 def functionProviderExecutionSmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-execution-smoke')
 def functionProviderVisibilitySmokeClassesDir = layout.buildDirectory.dir('classes/function-provider-visibility-smoke')
@@ -1524,7 +1567,7 @@ tasks.register('legacyDerbyHarnessAudit', Exec) {
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'accessMethodFactoryRegistrySmoke', 'indexProviderMetadataSmoke', 'indexProviderV2Smoke', 'indexProviderCostInfluenceSmoke', 'costModelProviderStoreCostSmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'typeProviderMetadataSmoke', 'typeProviderSqlVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'modernizationSmoke', 'accessMethodFactoryRegistrySmoke', 'indexProviderMetadataSmoke', 'indexProviderV2Smoke', 'indexProviderCostInfluenceSmoke', 'costModelProviderStoreCostSmoke', 'optimizerPathObservabilitySmoke', 'storageProviderMetadataSmoke', 'storageProviderSyntaxSmoke', 'storageProviderPersistenceSmoke', 'storageProviderVisibilitySmoke', 'functionProviderMetadataSmoke', 'functionProviderExecutionSmoke', 'functionProviderVisibilitySmoke', 'typeProviderMetadataSmoke', 'typeProviderSqlVisibilitySmoke', 'extensionRegistrySmoke', 'extensionRegistrySqlVisibilitySmoke', 'networkServerSmoke', 'sysinfoFromJars'
 }
 
 tasks.register('derbyTestSuite') {

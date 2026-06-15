@@ -29,6 +29,19 @@ public record CostModelProbe(
         return ADAPTER_PATH;
     }
 
+    /**
+     * Stable access-method label derived from Derby's inherited access-method
+     * factory id. This is intentionally diagnostic-only; it does not expose
+     * Derby store objects as public SPI.
+     */
+    public String accessMethod() {
+        return switch (factoryId) {
+            case 0 -> "heap";
+            case 1 -> "btree";
+            default -> "factory-" + factoryId;
+        };
+    }
+
     public boolean canSafelyReplaceDerbyCost() {
         return estimatePresent
                 && Double.isFinite(providerStartupCost)
@@ -77,6 +90,7 @@ public record CostModelProbe(
                 + ", path=" + adapterPath()
                 + ", mode=" + mode
                 + ", provider=" + providerName
+                + ", accessMethod=" + accessMethod()
                 + ", conglomId=" + conglomerateId
                 + ", factoryId=" + factoryId
                 + ", scanType=" + scanType

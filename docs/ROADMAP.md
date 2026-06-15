@@ -166,3 +166,11 @@ ideas become implementation work.
 - custom storage engine;
 - full JSON/type-system work;
 - vector database behavior.
+
+
+## PostgreSQL-class optimizer path observability
+
+The first optimizer-path step is observability, not enumeration rewrite.
+`optimizerPathObservabilitySmoke` records the selected Derby runtime scan shape
+next to the DelosDB `CostModelProvider` v2 store-cost probe so future path
+infrastructure can be grounded in current behavior.
