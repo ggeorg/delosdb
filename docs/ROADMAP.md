@@ -218,3 +218,11 @@ Root alias:
 ```bash
 ./gradlew mvccCoreModelTest
 ```
+
+
+## Experimental MVCC storage module progress
+
+The MVCC storage module now has both a core visibility model and a table-scan
+model. The table-scan model proves snapshot-stable enumeration of visible rows
+before any SQL, Derby heap, B-tree, WAL, or recovery integration. This keeps
+future `delos_mvcc` work opt-in and separate from Derby-compatible storage.

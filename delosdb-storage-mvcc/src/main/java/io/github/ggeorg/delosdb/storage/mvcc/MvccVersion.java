@@ -1,5 +1,6 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
+import java.util.Objects;
 import java.util.Optional;
 
 /** A physical row version in the experimental MVCC kernel. */
@@ -12,7 +13,7 @@ public final class MvccVersion<V> {
         if (createdBy == null || createdBy.isNone()) {
             throw new IllegalArgumentException("createdBy must be a real transaction id");
         }
-        this.value = value;
+        this.value = Objects.requireNonNull(value, "value");
         this.createdBy = createdBy;
         this.deletedBy = MvccTransactionId.NONE;
     }

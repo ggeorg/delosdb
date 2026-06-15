@@ -192,3 +192,20 @@ Proof task:
 This checkpoint keeps the extensibility direction honest: MVCC is being built as
 an opt-in storage implementation, not as a silent reinterpretation of existing
 Derby tables.
+
+
+### MVCC table-scan model proof
+
+The experimental `delosdb-storage-mvcc` module now includes a table-scan model proof.
+`MvccTable.openScan(...)` materializes the rows visible to a captured snapshot and
+returns them through `MvccScan`. This remains intentionally independent of Derby
+heap, B-tree, WAL, and SQL execution. The proof task is:
+
+```bash
+./gradlew :delosdb-storage-mvcc:runMvccTableScanModelTest
+```
+
+The proof covers stable snapshot scans, update/delete visibility, aborted rows,
+cleanup interaction, and scan cursor contracts. This is the next step toward an
+opt-in `delos_mvcc` storage family without risking existing Derby database
+compatibility.

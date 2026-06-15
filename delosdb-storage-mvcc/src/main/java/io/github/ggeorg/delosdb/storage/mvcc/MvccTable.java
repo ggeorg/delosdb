@@ -1,7 +1,9 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -26,6 +28,22 @@ public final class MvccTable<K, V> {
             return Optional.empty();
         }
         return chain.visibleValue(snapshot, catalog);
+    }
+
+    public synchronized MvccScan<K, V> openScan(MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
+        requireSnapshotAndCatalog(snapshot, catalog);
+        List<MvccRow<K, V>> visibleRows = new ArrayList<>();
+        for (Map.Entry<K, MvccVersionChain<V>> entry : rows.entrySet()) {
+            entry.getValue().visibleValue(snapshot, catalog)
+                    .ifPresent(value -> visibleRows.add(new MvccRow<>(entry.getKey(), value)));
+        }
+        return MvccScan.fromVisibleRows(visibleRows);
+    }
+
+    public synchronized int visibleRowCount(MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
+        try (MvccScan<K, V> scan = openScan(snapshot, catalog)) {
+            return scan.visibleRowCount();
+        }
     }
 
     public synchronized void update(K key, V value, MvccTransaction transaction, MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
@@ -53,6 +71,15 @@ public final class MvccTable<K, V> {
             }
         }
         return result;
+    }
+
+    private static void requireSnapshotAndCatalog(MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
+        if (snapshot == null) {
+            throw new IllegalArgumentException("snapshot must not be null");
+        }
+        if (catalog == null) {
+            throw new IllegalArgumentException("catalog must not be null");
+        }
     }
 
     private MvccVersionChain<V> chainForExistingKey(K key) {

@@ -57,6 +57,32 @@ tasks.register('runMvccCoreModelTest', Test) {
     }
 }
 
+
+tasks.register('runMvccTableScanModelTest', Test) {
+    group = 'verification'
+    description = 'Runs the experimental DelosDB MVCC table-scan model tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/MvccTableScanModelTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccTableScanModelTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccTableScanModelTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccTableScanModelTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
 tasks.register('classes') {
     dependsOn 'compileDelosDbStorageMvcc'
 }
@@ -80,5 +106,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest'
 }
