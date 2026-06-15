@@ -1455,7 +1455,7 @@ tasks.register('deprecatedApiCleanupAudit', Exec) {
 
 tasks.register('secureXmlFactoryProbe', JavaExec) {
     group = 'verification'
-    description = 'Probes hardened XML parser/transformer factory behavior, including external entity blocking.'
+    description = 'Probes XML parser/transformer factory behavior, including XXE blocking and Derby-compatible DTD defaults.'
     dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
     classpath = files(
             project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools'),
@@ -1468,7 +1468,7 @@ tasks.register('secureXmlFactoryProbe', JavaExec) {
 
 tasks.register('xmlHardeningAudit', Exec) {
     group = 'verification'
-    description = 'Verifies Java 21 XML parser/transformer hardening guardrails.'
+    description = 'Verifies Java 21 XML parser/transformer compatibility hardening guardrails.'
     dependsOn 'secureXmlFactoryProbe'
     commandLine 'bash', 'dev/xml-hardening-audit.sh', '--verify'
 }

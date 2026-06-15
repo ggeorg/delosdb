@@ -28,31 +28,33 @@ import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.TransformerFactory;
 
 /**
- * Centralizes the XML factory hardening used by inherited Derby XML paths.
+ * Centralizes the XML factory setup used by inherited Derby XML paths.
  *
- * <p>The goal is deliberately narrow: keep Derby's existing DOM/XPath based
- * XML implementation, but make the parser and transformer factory setup
- * explicit on Java 21.  Callers still decide validation and namespace policy;
- * this helper blocks external XML resources and enables secure processing.</p>
+ * <p>This helper is intentionally compatibility-preserving.  Apache Derby
+ * 10.17 already enables secure processing and disables external general
+ * entities on the SQL/XML and XML VTI parser paths.  DelosDB keeps those
+ * semantics in one place so future hardening can be tested without silently
+ * changing SQL/XML behavior.</p>
+ *
+ * <p>In particular, do not disable DTD loading or entity-reference expansion
+ * here.  Existing Derby SQL/XML behavior relies on non-validating DTD
+ * processing for default attributes, and Derby's billion-laughs protection
+ * relies on the parser expanding internal entities until the secure-processing
+ * entity-expansion limit raises the expected SQL/XML parse error.</p>
  */
 public final class SecureXmlFactory
 {
     private static final String EXTERNAL_GENERAL_ENTITIES =
         "http://xml.org/sax/features/external-general-entities";
 
-    private static final String EXTERNAL_PARAMETER_ENTITIES =
-        "http://xml.org/sax/features/external-parameter-entities";
-
-    private static final String LOAD_EXTERNAL_DTD =
-        "http://apache.org/xml/features/nonvalidating/load-external-dtd";
-
     private SecureXmlFactory()
     {
     }
 
     /**
-     * Create a hardened DOM parser factory while preserving the caller's
-     * validation and namespace policy.
+     * Create a DOM parser factory while preserving Derby's historical XML
+     * semantics: non-validating callers may still process DTD defaults, but
+     * external general entity expansion is disabled.
      */
     public static DocumentBuilderFactory newDocumentBuilderFactory(
             boolean validating,
@@ -63,22 +65,14 @@ public final class SecureXmlFactory
 
         factory.setValidating(validating);
         factory.setNamespaceAware(namespaceAware);
-        factory.setXIncludeAware(false);
-        factory.setExpandEntityReferences(false);
-
-        setRequiredFeature(factory, XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        setRequiredFeature(factory, EXTERNAL_GENERAL_ENTITIES, false);
-        setRequiredFeature(factory, EXTERNAL_PARAMETER_ENTITIES, false);
-        setRequiredFeature(factory, LOAD_EXTERNAL_DTD, false);
-
-        setRequiredAttribute(factory, XMLConstants.ACCESS_EXTERNAL_DTD, "");
-        setRequiredAttribute(factory, XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        factory.setFeature(EXTERNAL_GENERAL_ENTITIES, false);
 
         return factory;
     }
 
     /**
-     * Create a hardened transformer factory for XML serialization/export paths.
+     * Create a transformer factory for XML serialization/export paths.
      */
     public static TransformerFactory newTransformerFactory()
         throws TransformerConfigurationException
@@ -86,38 +80,13 @@ public final class SecureXmlFactory
         TransformerFactory factory = TransformerFactory.newInstance();
 
         factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        setRequiredAttribute(factory, XMLConstants.ACCESS_EXTERNAL_DTD, "");
-        setRequiredAttribute(factory, XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
+        setOptionalAttribute(factory, XMLConstants.ACCESS_EXTERNAL_DTD, "");
+        setOptionalAttribute(factory, XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
 
         return factory;
     }
 
-    private static void setRequiredFeature(
-            DocumentBuilderFactory factory,
-            String feature,
-            boolean value)
-        throws ParserConfigurationException
-    {
-        factory.setFeature(feature, value);
-    }
-
-    private static void setRequiredAttribute(
-            DocumentBuilderFactory factory,
-            String name,
-            String value)
-        throws ParserConfigurationException
-    {
-        try {
-            factory.setAttribute(name, value);
-        } catch (IllegalArgumentException iae) {
-            ParserConfigurationException pce = new ParserConfigurationException(
-                "XML parser does not support required secure attribute: " + name);
-            pce.initCause(iae);
-            throw pce;
-        }
-    }
-
-    private static void setRequiredAttribute(
+    private static void setOptionalAttribute(
             TransformerFactory factory,
             String name,
             String value)
@@ -126,10 +95,10 @@ public final class SecureXmlFactory
         try {
             factory.setAttribute(name, value);
         } catch (IllegalArgumentException iae) {
-            TransformerConfigurationException tce = new TransformerConfigurationException(
-                "XML transformer does not support required secure attribute: " + name);
-            tce.initCause(iae);
-            throw tce;
+            // Some JAXP implementations do not support these Java 7+ access
+            // controls.  Parser hardening above is required for SQL/XML input;
+            // transformer output paths should remain compatible with older
+            // transformer implementations if the attribute is unavailable.
         }
     }
 }

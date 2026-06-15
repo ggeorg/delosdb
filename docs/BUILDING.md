@@ -61,10 +61,11 @@ the old non-locator CLOB deprecated byte-stream helper. The replacement keeps
 the inherited low-byte mapping so the legacy wire path remains compatibility
 focused rather than silently switching to charset conversion.
 
-`xmlHardeningAudit` verifies the guarded XML parser/transformer hardening pass.
-It also runs `secureXmlFactoryProbe`, which checks that the centralized XML
-factory helper blocks external entity expansion before broader SQL/XML cleanup
-continues.
+`xmlHardeningAudit` verifies the guarded XML parser/transformer compatibility
+hardening pass. It also runs `secureXmlFactoryProbe`, which checks that the
+centralized XML factory helper blocks external general entity expansion while
+preserving Derby SQL/XML behavior for DTD default attributes and internal entity
+expansion-limit errors.
 
 `sortMemoryObservabilityAudit` verifies the inherited external-sort buffer
 sizing guardrail. It also runs `sortMemoryPolicyProbe`, which records the
