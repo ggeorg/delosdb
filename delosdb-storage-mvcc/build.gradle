@@ -1,0 +1,84 @@
+plugins {
+    id 'base'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.tasks.testing.Test
+
+version = rootProject.version
+group = rootProject.group
+
+def sourceRoot = file('src/main/java')
+def testSourceRoot = file('src/test/java')
+def mainClassDir = layout.buildDirectory.dir('classes/main')
+def testClassDir = layout.buildDirectory.dir('classes/test')
+
+tasks.register('compileDelosDbStorageMvcc', JavaCompile) {
+    source = fileTree(sourceRoot) { include '**/*.java' }
+    destinationDirectory = mainClassDir
+    rootProject.ext.delosdbConfigureJavaCompile(delegate)
+}
+
+tasks.register('compileDelosDbStorageMvccTests', JavaCompile) {
+    dependsOn 'compileDelosDbStorageMvcc'
+    source = fileTree(testSourceRoot) { include '**/*.java' }
+    destinationDirectory = testClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(mainClassDir, rootProject.configurations.delosdbJunit5Console)
+}
+
+tasks.register('runMvccCoreModelTest', Test) {
+    group = 'verification'
+    description = 'Runs the experimental DelosDB MVCC core model tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/MvccCoreModelTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccCoreModelTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccCoreModelTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccCoreModelTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+tasks.register('classes') {
+    dependsOn 'compileDelosDbStorageMvcc'
+}
+
+tasks.register('delosDbStorageMvccJar', Jar) {
+    dependsOn 'compileDelosDbStorageMvcc'
+    archiveFileName = 'delosdb-storage-mvcc.jar'
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from mainClassDir
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Experimental MVCC Storage')
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn 'classes', 'delosDbStorageMvccJar'
+}
+
+tasks.named('check') {
+    dependsOn 'runMvccCoreModelTest'
+}
