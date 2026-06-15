@@ -135,23 +135,30 @@ module org.apache.derby.engine
     opens org.apache.derby.impl.jdbc to org.apache.derby.commons;
 
     //
-    // FIXME! EXPOSED SO THAT THESE PACKAGES CAN BE ACCESSED
-    // BY THE QUERY PLANS WHICH ARE CODE-GENERATED
-    // INTO THE UNNAMED MODULE.
+    // GENERATED PLAN / SQL-ENTRY COMPATIBILITY EXPORTS
     //
-    exports org.apache.derby.diag;
-    exports org.apache.derby.iapi.db;
-    exports org.apache.derby.iapi.services.io;
-    exports org.apache.derby.iapi.services.loader;
-    exports org.apache.derby.iapi.sql;
-    exports org.apache.derby.iapi.sql.conn;
-    exports org.apache.derby.iapi.sql.execute;
-    exports org.apache.derby.iapi.store.access;
-    exports org.apache.derby.iapi.types;
-    exports org.apache.derby.iapi.util;
-    exports org.apache.derby.impl.sql.execute;
-    exports org.apache.derby.impl.load;
-    exports org.apache.derby.impl.jdbc;
+    // Derby's legacy compiler emits activation and expression classes which are
+    // defined outside the org.apache.derby.engine module. While that remains true,
+    // these packages must stay unqualified exports: a qualified export cannot target
+    // the unnamed module which currently hosts generated plans.
+    //
+    // These exports are intentionally broader than a normal JPMS boundary. Do not
+    // narrow them until generated-plan loading has moved to a named module or a
+    // replacement code-generation path has proved the smaller access surface.
+    //
+    exports org.apache.derby.diag;                 // SQL-visible diagnostic VTIs.
+    exports org.apache.derby.iapi.db;              // Factory references from generated/procedure code.
+    exports org.apache.derby.iapi.services.io;     // Storable and serialization helpers.
+    exports org.apache.derby.iapi.services.loader; // GeneratedByteCode / GeneratedClass surface.
+    exports org.apache.derby.iapi.sql;             // Row and activation-facing SQL contracts.
+    exports org.apache.derby.iapi.sql.conn;        // LanguageConnectionContext references.
+    exports org.apache.derby.iapi.sql.execute;     // ExecutionFactory / ResultSetFactory contracts.
+    exports org.apache.derby.iapi.store.access;    // Qualifier and access-method runtime contracts.
+    exports org.apache.derby.iapi.types;           // DataValueDescriptor/DataValueFactory contracts.
+    exports org.apache.derby.iapi.util;            // StringUtil and generated expression helpers.
+    exports org.apache.derby.impl.sql.execute;     // BaseActivation and generated execution base classes.
+    exports org.apache.derby.impl.load;            // SQL import/export classes used by engine entry points.
+    exports org.apache.derby.impl.jdbc;            // LOBStoredProcedure and embedded JDBC procedure helpers.
 
     //
     // DERBY INTERNAL EXPORTS
@@ -289,84 +296,9 @@ module org.apache.derby.engine
     opens org.apache.derby.mbeans;
 
     //
-    // STANZAS FOR USE WHEN QUERY PLANS ARE GENERATED INTO
-    // SOME MODULE OTHER THAN THE UNNAMED MODULE.
-    //
-    //
-    // QUERY PLANS REFERENCE org.apache.derby.iapi.services.io.Storable
-    //
-    //    exports org.apache.derby.iapi.services.io to
-    //        org.apache.derby.server,
-    //        org.apache.derby.optionaltools,
-    //        org.apache.derby.tests;
-    //
-    //
-    // QUERY PLANS REFERENCE GeneratedByteCode
-    //
-    //exports org.apache.derby.iapi.services.loader to
-    //    org.apache.derby.optionaltools,
-    //    org.apache.derby.tests;
-    //
-    // QUERY PLANS REFERENCE Row
-    //
-    //exports org.apache.derby.iapi.sql to
-    //    org.apache.derby.tests;
-    //
-    //
-    // QUERY PLANS REFEREENCE LanguageConnectionContext
-    //
-    //    exports org.apache.derby.iapi.sql.conn to
-    //        org.apache.derby.optionaltools,
-    //        org.apache.derby.tests;
-    //
-    //
-    // QUERY PLANS REFERENCE ExecutionFactory
-    //
-    //exports org.apache.derby.iapi.sql.execute to
-    //    org.apache.derby.tests;
-    //
-    //
-    // QUERY PLANS REFERENCE org.apache.derby.iapi.store.access.Qualifier
-    //
-    //exports org.apache.derby.iapi.store.access to
-    //    org.apache.derby.tests;
-    //
-    //
-    // QUERY PLANS REFERENCE DataValueFactory
-    //
-    //exports org.apache.derby.iapi.types to
-    //    org.apache.derby.optionaltools,
-    //    org.apache.derby.tests;
-    //
-    //
-    // QUERY PLANS REFERENCE org.apache.derby.iapi.util.StringUtil
-    //
-    //    exports org.apache.derby.iapi.util to
-    //        org.apache.derby.server,
-    //        org.apache.derby.tools,
-    //        org.apache.derby.optionaltools,
-    //        org.apache.derby.tests;
-    //
-    //
-    // QUERY PLANS EXTEND BaseActivation
-    //
-    //exports org.apache.derby.impl.sql.execute to
-    //    org.apache.derby.tests;
-    //
-    //
-    // QUERY PLANS REFERENCE org.apache.derby.iapi.db.Factory
-    //    exports org.apache.derby.iapi.db to
-    //        org.apache.derby.server,
-    //        org.apache.derby.tools,
-    //        org.apache.derby.optionaltools,
-    //        org.apache.derby.tests;
-    //
-    //
-    // QUERY PLANS REFERENCE org.apache.derby.impl.jdbc.LOBStoredProcedure
-    //    exports org.apache.derby.impl.jdbc to
-    //        org.apache.derby.server,
-    //        org.apache.derby.tools,
-    //        org.apache.derby.optionaltools,
-    //        org.apache.derby.tests;
+    // The legacy Derby comment block which listed possible future qualified exports
+    // has been folded into the compatibility export classification above. Keeping
+    // the live exports and their reasons together makes this module boundary easier
+    // to review before any future generated-code/module-loader change.
 
 }
