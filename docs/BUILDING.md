@@ -64,6 +64,12 @@ It also runs `secureXmlFactoryProbe`, which checks that the centralized XML
 factory helper blocks external entity expansion before broader SQL/XML cleanup
 continues.
 
+`sortMemoryObservabilityAudit` verifies the inherited external-sort buffer
+sizing guardrail. It also runs `sortMemoryPolicyProbe`, which records the
+current row-count based policy, the approximately 1 MiB default memory target,
+the slush adjustment, and the minimum clamp before any JVM 21 sort-memory tuning
+is attempted.
+
 When a previous test run was interrupted, start with a clean build:
 
 ```bash

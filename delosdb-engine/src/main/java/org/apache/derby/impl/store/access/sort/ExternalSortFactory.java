@@ -132,6 +132,103 @@ public class ExternalSortFactory implements
 		return new MergeSort();
 	}
 
+	/**
+	 * Calculates the inherited Derby row-count based sort buffer limit.
+	 * <p>
+	 * DelosDB keeps the policy unchanged here. The method exists so that the
+	 * old fixed-memory assumptions can be audited and tested before any JVM 21
+	 * tuning changes are attempted.
+	 */
+	static SortBufferSizing estimateSortBufferSizing(
+	int templateColumnCount,
+	long estimatedRows,
+	int estimatedRowSize,
+	boolean userSpecified,
+	int defaultSortBufferMax)
+	{
+		int calculatedSortBufferMax;
+		int effectiveEstimatedRowSize = estimatedRowSize;
+		String policy;
+		boolean slushAdjusted = false;
+
+		if (!userSpecified)	
+		{
+			// derby.storage.sortBufferMax is not specified by the
+			// user, use default or try to figure out a reasonable sort
+			// size.
+
+			// if we have some idea on row size, set sort approx 1 meg of
+			// memory sort.
+			if (estimatedRowSize > 0)
+			{
+				// 
+				// for each column, there is a reference from the key array and
+				//   the 4 bytes reference to the column object plus 12 bytes
+				//   tax on the  column object  
+				// for each row, SORT_ROW_OVERHEAD is the Node and 4 bytes to
+				//   point to the column array and 4 for alignment
+				//
+				effectiveEstimatedRowSize += SORT_ROW_OVERHEAD +
+					(templateColumnCount*(4+12)) + 8; 
+				calculatedSortBufferMax = DEFAULT_MEM_USE/effectiveEstimatedRowSize;
+				policy = "estimated-row-size";
+			}
+			else
+			{
+				calculatedSortBufferMax = defaultSortBufferMax;
+				policy = "default-row-count";
+			}
+			
+			// if there are barely more rows than sortBufferMax, use 2
+			// smaller runs of similar size instead of one larger run
+			//
+			// 10% slush is added to estimated Rows to catch the case where
+			// estimated rows underestimate the actual number of rows by 10%.
+			//
+			if (estimatedRows > calculatedSortBufferMax &&
+				(estimatedRows*1.1) < calculatedSortBufferMax*2)
+			{
+				calculatedSortBufferMax =
+					(int)(estimatedRows/2 + estimatedRows/10);
+				slushAdjusted = true;
+			}
+
+			// Make sure it is at least the minimum sort buffer size
+			if (calculatedSortBufferMax < MINIMUM_SORTBUFFERMAX)
+				calculatedSortBufferMax = MINIMUM_SORTBUFFERMAX;
+		}
+		else
+		{
+			// if user specified derby.storage.sortBufferMax, use it.
+			calculatedSortBufferMax = defaultSortBufferMax;
+			policy = "user-property";
+		}
+
+		return new SortBufferSizing(
+			calculatedSortBufferMax, effectiveEstimatedRowSize,
+			policy, slushAdjusted);
+	}
+
+	static final class SortBufferSizing
+	{
+		final int sortBufferMax;
+		final int effectiveEstimatedRowSize;
+		final String policy;
+		final boolean slushAdjusted;
+
+		SortBufferSizing(
+		int sortBufferMax,
+		int effectiveEstimatedRowSize,
+		String policy,
+		boolean slushAdjusted)
+		{
+			this.sortBufferMax = sortBufferMax;
+			this.effectiveEstimatedRowSize = effectiveEstimatedRowSize;
+			this.policy = policy;
+			this.slushAdjusted = slushAdjusted;
+		}
+	}
+
 	/*
 	** Methods of SortFactory
 	*/
@@ -167,51 +264,11 @@ public class ExternalSortFactory implements
         //        the current free memory can the current sort use.
         //
 
-		if (!userSpecified)	
-		{
-			// derby.storage.sortBufferMax is not specified by the
-			// user, use default or try to figure out a reasonable sort
-			// size.
 
-			// if we have some idea on row size, set sort approx 1 meg of
-			// memory sort.
-			if (estimatedRowSize > 0)
-			{
-				// 
-				// for each column, there is a reference from the key array and
-				//   the 4 bytes reference to the column object plus 12 bytes
-				//   tax on the  column object  
-				// for each row, SORT_ROW_OVERHEAD is the Node and 4 bytes to
-				// point to the column array and 4 for alignment
-				//
-				estimatedRowSize += SORT_ROW_OVERHEAD +
-					(template.length*(4+12)) + 8; 
-				sortBufferMax = DEFAULT_MEM_USE/estimatedRowSize;
-			}
-			else
-			{
-				sortBufferMax = defaultSortBufferMax;
-			}
-			
-			// if there are barely more rows than sortBufferMax, use 2
-			// smaller runs of similar size instead of one larger run
-			//
-			// 10% slush is added to estimated Rows to catch the case where
-			// estimated rows underestimate the actual number of rows by 10%.
-			//
-			if (estimatedRows > sortBufferMax &&
-				(estimatedRows*1.1) < sortBufferMax*2)
-				sortBufferMax = (int)(estimatedRows/2 + estimatedRows/10);
-
-			// Make sure it is at least the minimum sort buffer size
-			if (sortBufferMax < MINIMUM_SORTBUFFERMAX)
-				sortBufferMax = MINIMUM_SORTBUFFERMAX;
-		}
-		else
-		{
-			// if user specified derby.storage.sortBufferMax, use it.
-				sortBufferMax = defaultSortBufferMax;
-		}
+		SortBufferSizing sortBufferSizing = estimateSortBufferSizing(
+			template.length, estimatedRows, estimatedRowSize,
+			userSpecified, defaultSortBufferMax);
+		sortBufferMax = sortBufferSizing.sortBufferMax;
 
 		if (SanityManager.DEBUG)
         {
@@ -221,6 +278,10 @@ public class ExternalSortFactory implements
                     "sortBufferMax = " + sortBufferMax + 
                     " estimatedRows = " + estimatedRows +
                     " estimatedRowSize = " + estimatedRowSize +
+                    " effectiveEstimatedRowSize = " +
+                        sortBufferSizing.effectiveEstimatedRowSize +
+                    " sizingPolicy = " + sortBufferSizing.policy +
+                    " slushAdjusted = " + sortBufferSizing.slushAdjusted +
                     " defaultSortBufferMax = " + defaultSortBufferMax);
             }
         }

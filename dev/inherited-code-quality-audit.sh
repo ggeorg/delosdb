@@ -104,6 +104,7 @@ vm_descriptor="$(find_single_file 'delosdb-engine/src/main/java/org/apache/derby
 reflect_generated_class="$(find_single_file 'delosdb-engine/src/main/java/org/apache/derby/impl/services/reflect/ReflectGeneratedClass.java')"
 reflect_method="$(find_single_file 'delosdb-engine/src/main/java/org/apache/derby/impl/services/reflect/ReflectMethod.java')"
 legacy_cost_bridge="$(find_single_file 'delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/index/IndexProviderCostBridge.java')"
+sort_factory="$(find_single_file 'delosdb-engine/src/main/java/org/apache/derby/impl/store/access/sort/ExternalSortFactory.java')"
 
 production_finalizers="$(count_matches 'protected[[:space:]]+void[[:space:]]+finalize[[:space:]]*\(' "${PRODUCTION_ROOTS[@]}")"
 all_finalizers="$(count_matches 'protected[[:space:]]+void[[:space:]]+finalize[[:space:]]*\(' "${all_java_roots[@]}")"
@@ -112,6 +113,10 @@ thread_stop_suspend_resume="$(count_matches '\.stop[[:space:]]*\(|\.suspend[[:sp
 xml_factory_usage="$(count_matches 'DocumentBuilderFactory|SAXParserFactory|XMLInputFactory|TransformerFactory' "${PRODUCTION_ROOTS[@]}")"
 reflection_invocation_usage="$(count_matches '\.invoke[[:space:]]*\(|getMethod[[:space:]]*\(|getDeclaredMethod[[:space:]]*\(' "${PRODUCTION_ROOTS[@]}")"
 xplain_descriptor_constructors="$(count_matches 'new[[:space:]]+XPLAINResultSetDescriptor[[:space:]]*\(' "$ROOT_DIR/delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/rts")"
+sort_memory_policy_landmarks=0
+if [[ -n "$sort_factory" ]]; then
+  sort_memory_policy_landmarks="$({ grep -E 'DEFAULT_MEM_USE|estimateSortBufferSizing|SortTuning|sizingPolicy' "$sort_factory" 2>/dev/null || true; } | wc -l | tr -d ' ')"
+fi
 
 harness_files=()
 if [[ -d "$ROOT_DIR/delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/harness" ]]; then
@@ -164,6 +169,7 @@ This is a guardrail report for inherited Apache Derby implementation code. It do
 | Production XML factory references | ${xml_factory_usage} |
 | Production reflection method lookup/invoke references | ${reflection_invocation_usage} |
 | Runtime statistics XPLAIN descriptor constructors | ${xplain_descriptor_constructors} |
+| Sort memory policy landmarks | ${sort_memory_policy_landmarks} |
 | Legacy Derby harness launcher/JVM files | ${legacy_harness_count} |
 | module-info.java files | ${#module_info_files[@]} |
 | JPMS exports | ${module_export_count} |
@@ -189,6 +195,9 @@ write_matches "Production lifecycle stop/suspend/resume-looking calls" '\.stop[[
 write_matches "Production XML factory references" 'DocumentBuilderFactory|SAXParserFactory|XMLInputFactory|TransformerFactory' "${PRODUCTION_ROOTS[@]}"
 write_matches "Production reflection method lookup/invoke references" '\.invoke[[:space:]]*\(|getMethod[[:space:]]*\(|getDeclaredMethod[[:space:]]*\(' "${PRODUCTION_ROOTS[@]}"
 write_matches "Runtime statistics XPLAIN descriptor constructors" 'new[[:space:]]+XPLAINResultSetDescriptor[[:space:]]*\(' "$ROOT_DIR/delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/rts"
+if [[ -n "$sort_factory" ]]; then
+  write_matches "Sort memory policy landmarks" 'DEFAULT_MEM_USE|estimateSortBufferSizing|SortTuning|sizingPolicy' "$ROOT_DIR/delosdb-engine/src/main/java/org/apache/derby/impl/store/access/sort"
+fi
 write_file_list "Legacy Derby harness launcher/JVM files" "${harness_files[@]}"
 
 {
@@ -246,6 +255,7 @@ if [[ "$VERIFY" == true ]]; then
     "$ROOT_DIR/delosdb-engine/src/main/java/org/apache/derby/impl/services/reflect/ReflectGeneratedClass.java"
     "$ROOT_DIR/delosdb-engine/src/main/java/org/apache/derby/impl/services/reflect/ReflectMethod.java"
     "$ROOT_DIR/delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/rts/RealTableScanStatistics.java"
+    "$ROOT_DIR/delosdb-engine/src/main/java/org/apache/derby/impl/store/access/sort/ExternalSortFactory.java"
   )
 
   for file in "${required_files[@]}"; do
@@ -262,6 +272,11 @@ if [[ "$VERIFY" == true ]]; then
 
   if [[ "$module_export_count" == "0" ]]; then
     echo "Inherited code quality audit failed: no JPMS exports were found; update the audit pattern." >&2
+    failed=true
+  fi
+
+  if [[ "$sort_memory_policy_landmarks" == "0" ]]; then
+    echo "Inherited code quality audit failed: no sort memory policy landmarks were found; update the audit pattern." >&2
     failed=true
   fi
 

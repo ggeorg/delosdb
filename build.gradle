@@ -1474,6 +1474,27 @@ tasks.register('xmlHardeningAudit', Exec) {
 }
 
 
+tasks.register('sortMemoryPolicyProbe', JavaExec) {
+    group = 'verification'
+    description = 'Probes the inherited Derby external sort memory-sizing policy before JVM 21 tuning.'
+    dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
+    classpath = files(
+            project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools'),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine)
+    )
+    mainClass = 'org.apache.derby.impl.store.access.sort.SortMemoryPolicyProbe'
+}
+
+
+tasks.register('sortMemoryObservabilityAudit', Exec) {
+    group = 'verification'
+    description = 'Verifies inherited Derby sort memory policy observability before tuning.'
+    dependsOn 'sortMemoryPolicyProbe'
+    commandLine 'bash', 'dev/sort-memory-observability-audit.sh', '--verify'
+}
+
+
 tasks.register('inheritedCodeQualityAudit', Exec) {
     group = 'verification'
     description = 'Writes an inherited Derby code-quality hotspot report for guarded cleanup work.'
