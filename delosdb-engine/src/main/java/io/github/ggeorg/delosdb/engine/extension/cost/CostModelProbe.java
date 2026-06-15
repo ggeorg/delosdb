@@ -19,6 +19,16 @@ public record CostModelProbe(
         boolean consumed,
         String explanation
 ) {
+    /**
+     * Stable diagnostic label for the native DelosDB cost path. The legacy
+     * optimizer-side IndexProviderCostBridge must not use this label.
+     */
+    public static final String ADAPTER_PATH = "store-cost-controller";
+
+    public String adapterPath() {
+        return ADAPTER_PATH;
+    }
+
     public boolean canSafelyReplaceDerbyCost() {
         return estimatePresent
                 && Double.isFinite(providerStartupCost)
@@ -64,6 +74,7 @@ public record CostModelProbe(
     public String diagnosticLine() {
         return "DelosDBStoreCost{"
                 + "type=cost-model-provider"
+                + ", path=" + adapterPath()
                 + ", mode=" + mode
                 + ", provider=" + providerName
                 + ", conglomId=" + conglomerateId

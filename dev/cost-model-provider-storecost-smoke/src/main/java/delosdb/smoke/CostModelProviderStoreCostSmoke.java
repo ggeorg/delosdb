@@ -24,6 +24,7 @@ package delosdb.smoke;
 import io.github.ggeorg.delosdb.engine.extension.cost.CostModelDiagnostics;
 import io.github.ggeorg.delosdb.engine.extension.cost.CostModelMode;
 import io.github.ggeorg.delosdb.engine.extension.cost.CostModelProbe;
+import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostDiagnostics;
 import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostMode;
 
 import java.sql.Connection;
@@ -63,6 +64,7 @@ public final class CostModelProviderStoreCostSmoke {
             }
 
             System.clearProperty(IndexProviderCostMode.PROPERTY_NAME);
+            IndexProviderCostDiagnostics.clear();
 
             System.setProperty(CostModelMode.PROPERTY_NAME, "diagnostic");
             assertHeapProvider(connection, "diagnostic", false, 1);
@@ -88,8 +90,10 @@ public final class CostModelProviderStoreCostSmoke {
             boolean expectedConsumed,
             int recompileToken) throws SQLException {
         CostModelDiagnostics.clear();
+        IndexProviderCostDiagnostics.clear();
         assertSingleIdByHeapScan(connection, "name6", 6, expectedMode + " heap store-cost query", recompileToken);
         CostModelProbe probe = assertProbe(expectedMode, "heap", 0, expectedConsumed);
+        assertLegacyIndexProviderBridgeDidNotFire(expectedMode + " heap store-cost query");
         System.out.println(probe.diagnosticLine());
     }
 
@@ -99,8 +103,10 @@ public final class CostModelProviderStoreCostSmoke {
             boolean expectedConsumed,
             int recompileToken) throws SQLException {
         CostModelDiagnostics.clear();
+        IndexProviderCostDiagnostics.clear();
         assertSingleIdByBTreeScan(connection, 120, 12, expectedMode + " btree store-cost query", recompileToken);
         CostModelProbe probe = assertProbe(expectedMode, "btree", 1, expectedConsumed);
+        assertLegacyIndexProviderBridgeDidNotFire(expectedMode + " btree store-cost query");
         System.out.println(probe.diagnosticLine());
     }
 
@@ -176,6 +182,7 @@ public final class CostModelProviderStoreCostSmoke {
         SmokeUtils.assertEquals(expectedFactoryId, probe.factoryId(), "access-method factory id");
         SmokeUtils.assertEquals(true, probe.estimatePresent(), "provider estimate present");
         SmokeUtils.assertEquals(expectedConsumed, probe.consumed(), "provider cost consumed");
+        SmokeUtils.assertEquals(CostModelProbe.ADAPTER_PATH, probe.adapterPath(), "adapter path");
         SmokeUtils.assertEquals(expectedConsumed ? "provider" : "derby", probe.costSource(), "cost source");
         SmokeUtils.assertEquals(expectedConsumed ? "consumed" : "available", probe.decision(), "decision");
         if (!probe.canSafelyReplaceDerbyCost()) {
@@ -191,10 +198,19 @@ public final class CostModelProviderStoreCostSmoke {
 
         String line = probe.diagnosticLine();
         SmokeUtils.assertContains(line, "type=cost-model-provider", "diagnostic line");
+        SmokeUtils.assertContains(line, "path=" + CostModelProbe.ADAPTER_PATH, "diagnostic line");
         SmokeUtils.assertContains(line, "provider=" + expectedProvider, "diagnostic line");
         SmokeUtils.assertContains(line, "factoryId=" + expectedFactoryId, "diagnostic line");
         SmokeUtils.assertContains(line, "costSource=" + (expectedConsumed ? "provider" : "derby"), "diagnostic line");
         return probe;
+    }
+
+    private static void assertLegacyIndexProviderBridgeDidNotFire(String label) {
+        if (IndexProviderCostDiagnostics.lastProbe() != null) {
+            throw new AssertionError(
+                    "Legacy IndexProviderCostBridge fired during " + label
+                            + "; CostModelProvider v2 must use StoreCostControllerBridge");
+        }
     }
 
     private static void restoreProperty(String propertyName, String previousValue) {
