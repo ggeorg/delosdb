@@ -62,6 +62,16 @@ public final class SortMemoryPolicyProbe
             SortMemoryPolicy.defaultMemoryUse(512L * 1024L * 1024L));
         requireEquals("defaultMemoryUse.cap", SortMemoryPolicy.MAX_AUTOMATIC_MEM_USE,
             SortMemoryPolicy.defaultMemoryUse(8L * 1024L * 1024L * 1024L));
+
+        requireEquals("growPolicy.negativeEstimate", true,
+            SortMemoryPolicy.shouldGrowInMemoryBuffer(-1L, 1024L, 1024L));
+        requireEquals("growPolicy.lessThanHalfFree", true,
+            SortMemoryPolicy.shouldGrowInMemoryBuffer(100L, 1000L, 2000L));
+        requireEquals("growPolicy.smallJvmLegacyBudget", true,
+            SortMemoryPolicy.shouldGrowInMemoryBuffer(100L, 0L, 4L * 1024L * 1024L));
+        requireEquals("growPolicy.spill", false,
+            SortMemoryPolicy.shouldGrowInMemoryBuffer(1024L * 1024L, 1L,
+                128L * 1024L * 1024L));
     }
 
     private static void probe(

@@ -38,6 +38,7 @@ final class SortMemoryPolicy
     static final int MAX_AUTOMATIC_MEM_USE = 16 * 1024 * 1024;
 
     private static final int AUTOMATIC_MEM_USE_HEAP_DIVISOR = 256;
+    private static final int SMALL_JVM_TOTAL_MEMORY_THRESHOLD = 5 * 1024 * 1024;
 
     // sizeof Node + reference to Node + 12 bytes tax
     private static final int SORT_ROW_OVERHEAD = 8 * 4 + 12;
@@ -129,6 +130,28 @@ final class SortMemoryPolicy
             policy,
             slushAdjusted,
             automaticMemoryUse);
+    }
+
+    /**
+     * Decide whether Derby should grow the in-memory sort buffer instead of
+     * immediately spilling to a merge run.
+     *
+     * <p>This is the inherited Derby heuristic extracted from
+     * {@link MergeInserter}: grow when GC made the estimate unusable, when a
+     * doubled buffer would still consume less than half of currently available
+     * memory, or when the JVM is still very small and the sort has used less
+     * than the legacy 1 MiB budget.</p>
+     */
+    static boolean shouldGrowInMemoryBuffer(
+    long estimatedMemoryUsed,
+    long currentFreeMemory,
+    long currentTotalMemory)
+    {
+        return estimatedMemoryUsed < 0 ||
+            ((2 * estimatedMemoryUsed) <
+                ((estimatedMemoryUsed + currentFreeMemory) / 2)) ||
+            (2 * estimatedMemoryUsed < LEGACY_DEFAULT_MEM_USE &&
+                currentTotalMemory < SMALL_JVM_TOTAL_MEMORY_THRESHOLD);
     }
 
     static int defaultMemoryUse(long maxMemory)

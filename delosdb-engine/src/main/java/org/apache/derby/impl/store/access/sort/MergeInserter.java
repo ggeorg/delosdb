@@ -38,6 +38,9 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 
 final class MergeInserter implements SortController
 {
+    private static final String SORT_TYPE_INTERNAL = "internal";
+    private static final String SORT_TYPE_EXTERNAL = "external";
+
 	/**
 	The sort this inserter is for.
 	**/
@@ -107,76 +110,9 @@ final class MergeInserter implements SortController
 		{
 			if (avoidMergeRun)
 			{
-				Runtime jvm = Runtime.getRuntime();
-				if (SanityManager.DEBUG)
-                {
-                    if (SanityManager.DEBUG_ON("SortTuning"))
-                    {
-                        jvm.gc();
-                        jvm.gc();
-                        jvm.gc();
-                    }
-                }
-
-                long currentFreeMemory = jvm.freeMemory();
-                long currentTotalMemory = jvm.totalMemory();
-                long currentMemoryUsage =
-                        currentTotalMemory - currentFreeMemory;
-
-				// before we create an external sort, which is expensive, see if
-                // we can use up more in-memory sort buffer
-				// we see how much memory has been used between now and the
-				// beginning of the sort.  Not all of this memory is used by
-				// the sort and GC may have kicked in and release some memory.
-				// But it is a rough guess.
-                long estimatedMemoryUsed =
-                        currentMemoryUsage - beginMemoryUsage;
-
- 				if (SanityManager.DEBUG)
-                {
-                    if (SanityManager.DEBUG_ON("SortTuning"))
-                    {
-						SanityManager.DEBUG("SortTuning",
-							"Growing sortBuffer dynamically, " +
-							"current sortBuffer capacity= " + 
-                                sortBuffer.capacity() +
-							" estimatedMemoryUsed = " + estimatedMemoryUsed +
-							" currentTotalMemory = " + currentTotalMemory +
-							" currentFreeMemory = " + currentFreeMemory +
-							" numcolumn = " + row.length +
-							" real per row memory = " + 
-                                (estimatedMemoryUsed / sortBuffer.capacity()));
-                    }
-                }
-
-                if (estimatedMemoryUsed < 0) {
-                    // We use less memory now than before we started filling
-                    // the sort buffer, probably because gc has happened. This
-                    // means we don't have a good estimate for how much memory
-                    // the sort buffer has occupied. To compensate for that,
-                    // set the begin memory usage to the current memory usage,
-                    // so that we get a more correct (but probably still too
-                    // low) estimate the next time we get here. See DERBY-5416.
-                    beginMemoryUsage = currentMemoryUsage;
-                }
-
-				// we want to double the sort buffer size if that will result
-				// in the sort to use up no more than 1/2 of all the free
-				// memory (including the sort memory)
-				// or if GC is so effective we are now using less memory than before
-				// or if we are using less than 1Meg of memory and the jvm is
-				// using < 5 meg of memory (this indicates that the JVM can
-				// afford to be more bloated ?)
-				if (estimatedMemoryUsed < 0 ||
-					((2*estimatedMemoryUsed) < (estimatedMemoryUsed+currentFreeMemory)/2) ||
-					(2*estimatedMemoryUsed < ExternalSortFactory.DEFAULT_MEM_USE &&
-					 currentTotalMemory < (5*1024*1024)))
+				if (tryGrowInMemorySortBuffer(row))
 				{
-					// ok, double the sort buffer size
-					sortBuffer.grow(100);
-
-					if (sortBuffer.insert(row) != SortBuffer.INSERT_FULL)
-						return;
+					return;
 				}
 
 				avoidMergeRun = false; // once we did it, too late to do in
@@ -186,7 +122,7 @@ final class MergeInserter implements SortController
 			// The sort buffer became full.  Empty it into a
 			// merge run, and add the merge run to the vector
 			// of merge runs.
-            stat_sortType = "external";
+            stat_sortType = SORT_TYPE_EXTERNAL;
 			long conglomid = sort.createMergeRun(tran, sortBuffer);
 			if (mergeRuns == null)
 				mergeRuns = new ArrayList<Long>();
@@ -207,6 +143,77 @@ final class MergeInserter implements SortController
 	}
 
 	/**
+	 * Try to grow the in-memory sort buffer before creating a merge run.
+	 *
+	 * <p>This keeps the inherited Derby behavior, but moves the grow/no-grow
+	 * policy into {@link SortMemoryPolicy} so memory-budget decisions are not
+	 * embedded inside the row insertion path.</p>
+	 */
+	private boolean tryGrowInMemorySortBuffer(DataValueDescriptor[] row)
+		throws StandardException
+	{
+		Runtime jvm = Runtime.getRuntime();
+		if (SanityManager.DEBUG)
+        {
+            if (SanityManager.DEBUG_ON("SortTuning"))
+            {
+                jvm.gc();
+                jvm.gc();
+                jvm.gc();
+            }
+        }
+
+        long currentFreeMemory = jvm.freeMemory();
+        long currentTotalMemory = jvm.totalMemory();
+        long currentMemoryUsage = currentTotalMemory - currentFreeMemory;
+
+		// Before creating an external sort, which is expensive, see if
+        // we can use more in-memory sort buffer. We estimate how much memory
+		// has been used since the beginning of the sort. Not all of this memory
+		// is used by the sort and GC may have released some memory, so this
+		// remains the same rough Derby heuristic as before.
+        long estimatedMemoryUsed = currentMemoryUsage - beginMemoryUsage;
+
+ 		if (SanityManager.DEBUG)
+        {
+            if (SanityManager.DEBUG_ON("SortTuning"))
+            {
+				SanityManager.DEBUG("SortTuning",
+					"Growing sortBuffer dynamically, " +
+					"current sortBuffer capacity= " + sortBuffer.capacity() +
+					" estimatedMemoryUsed = " + estimatedMemoryUsed +
+					" currentTotalMemory = " + currentTotalMemory +
+					" currentFreeMemory = " + currentFreeMemory +
+					" numcolumn = " + row.length +
+					" real per row memory = " +
+                    (estimatedMemoryUsed / sortBuffer.capacity()));
+            }
+        }
+
+        if (estimatedMemoryUsed < 0) {
+            // We use less memory now than before we started filling
+            // the sort buffer, probably because gc has happened. This
+            // means we don't have a good estimate for how much memory
+            // the sort buffer has occupied. To compensate for that,
+            // set the begin memory usage to the current memory usage,
+            // so that we get a more correct (but probably still too
+            // low) estimate the next time we get here. See DERBY-5416.
+            beginMemoryUsage = currentMemoryUsage;
+        }
+
+		if (!SortMemoryPolicy.shouldGrowInMemoryBuffer(
+			estimatedMemoryUsed, currentFreeMemory, currentTotalMemory))
+		{
+			return false;
+		}
+
+		// ok, double the sort buffer size
+		sortBuffer.grow(100);
+
+		return sortBuffer.insert(row) != SortBuffer.INSERT_FULL;
+	}
+
+	/**
      * Called when the caller has completed
      * inserting rows into the sorter.
 
@@ -224,7 +231,7 @@ final class MergeInserter implements SortController
         // be one last merge run with the contents of the
         // current sortBuffer. It will be created when the user
         // reads the result of the sort using openSortScan
-        if (stat_sortType == "external")
+        if (SORT_TYPE_EXTERNAL.equals(stat_sortType))
         {
             stat_numMergeRuns++;
             stat_mergeRunsSize.add(stat_numRowsInput - totalRunSize);
@@ -281,7 +288,7 @@ final class MergeInserter implements SortController
 
         beginMemoryUsage = jvm.totalMemory() - jvm.freeMemory();
 		avoidMergeRun = true;		// not an external sort
-        stat_sortType = "internal";
+        stat_sortType = SORT_TYPE_INTERNAL;
         stat_numMergeRuns = 0;
         stat_numRowsInput = 0;
         stat_numRowsOutput = 0;
