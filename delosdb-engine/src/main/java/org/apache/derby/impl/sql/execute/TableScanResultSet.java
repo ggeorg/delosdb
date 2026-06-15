@@ -120,6 +120,36 @@ class TableScanResultSet extends ScanResultSet
     //
     // class interface
     //
+    TableScanResultSet(TableScanResultSetParameters params)
+            throws StandardException
+    {
+        this(params.conglomId,
+                params.scoci,
+                params.activation,
+                params.resultRowTemplate,
+                params.resultSetNumber,
+                params.startKeyGetter,
+                params.startSearchOperator,
+                params.stopKeyGetter,
+                params.stopSearchOperator,
+                params.sameStartStopPosition,
+                params.qualifiers,
+                params.tableName,
+                params.userSuppliedOptimizerOverrides,
+                params.indexName,
+                params.isConstraint,
+                params.forUpdate,
+                params.colRefItem,
+                params.indexColItem,
+                params.lockMode,
+                params.tableLocked,
+                params.isolationLevel,
+                params.rowsPerRead,
+                params.oneRowScan,
+                params.optimizerEstimatedRowCount,
+                params.optimizerEstimatedCost);
+    }
+
     TableScanResultSet(long conglomId,
 		StaticCompiledOpenConglomInfo scoci, 
 		Activation activation, 

@@ -24,11 +24,7 @@ package org.apache.derby.impl.sql.execute;
 import org.apache.derby.shared.common.error.ExceptionUtil;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
-import org.apache.derby.iapi.services.loader.GeneratedMethod;
-import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.execute.CursorResultSet;
-import org.apache.derby.iapi.store.access.Qualifier;
-import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 
 /**
  * Special result set used when checking deferred CHECK constraints.  Activated
@@ -44,55 +40,12 @@ final class ValidateCheckConstraintResultSet extends TableScanResultSet
     implements CursorResultSet, Cloneable
 {
 
-    ValidateCheckConstraintResultSet(long conglomId,
-        StaticCompiledOpenConglomInfo scoci,
-        Activation activation,
-        int resultRowTemplate,
-        int resultSetNumber,
-        GeneratedMethod startKeyGetter, int startSearchOperator,
-        GeneratedMethod stopKeyGetter, int stopSearchOperator,
-        boolean sameStartStopPosition,
-        Qualifier[][] qualifiers,
-        String tableName,
-        String userSuppliedOptimizerOverrides,
-        String indexName,
-        boolean isConstraint,
-        boolean forUpdate,
-        int colRefItem,
-        int indexColItem,
-        int lockMode,
-        boolean tableLocked,
-        int isolationLevel,
-        int rowsPerRead,
-        boolean oneRowScan,
-        double optimizerEstimatedRowCount,
-        double optimizerEstimatedCost)
+    ValidateCheckConstraintResultSet(TableScanResultSetParameters params)
             throws StandardException
     {
-        super(conglomId,
-                scoci,
-                activation,
-                resultRowTemplate,
-                resultSetNumber,
-                startKeyGetter, startSearchOperator,
-                stopKeyGetter, stopSearchOperator,
-                sameStartStopPosition,
-                qualifiers,
-                tableName,
-                userSuppliedOptimizerOverrides,
-                indexName,
-                isConstraint,
-                forUpdate,
-                colRefItem,
-                indexColItem,
-                lockMode,
-                tableLocked,
-                isolationLevel,
-                rowsPerRead,
-                oneRowScan,
-                optimizerEstimatedRowCount,
-                optimizerEstimatedCost);
+        super(params);
     }
+
 
     @Override
     boolean loopControl(boolean moreRows) throws StandardException {

@@ -24,12 +24,8 @@ package org.apache.derby.impl.sql.execute;
 import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
-import org.apache.derby.iapi.services.loader.GeneratedMethod;
 
-import org.apache.derby.iapi.store.access.Qualifier;
-import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 
-import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.compile.RowOrdering;
 import org.apache.derby.iapi.sql.execute.CursorResultSet;
 import org.apache.derby.iapi.sql.execute.ExecIndexRow;
@@ -103,60 +99,19 @@ class MultiProbeTableScanResultSet extends TableScanResultSet
      * @see ResultSetFactory#getMultiProbeTableScanResultSet
      * @exception StandardException thrown on failure to open
      */
-    MultiProbeTableScanResultSet(long conglomId,
-        StaticCompiledOpenConglomInfo scoci, Activation activation, 
-        int resultRowTemplate,
-        int resultSetNumber,
-        GeneratedMethod startKeyGetter, int startSearchOperator,
-        GeneratedMethod stopKeyGetter, int stopSearchOperator,
-        boolean sameStartStopPosition,
-        Qualifier[][] qualifiers,
-        DataValueDescriptor [] probingVals,
-        int sortRequired,
-        String tableName,
-        String userSuppliedOptimizerOverrides,
-        String indexName,
-        boolean isConstraint,
-        boolean forUpdate,
-        int colRefItem,
-        int indexColItem,
-        int lockMode,
-        boolean tableLocked,
-        int isolationLevel,
-        boolean oneRowScan,
-        double optimizerEstimatedRowCount,
-        double optimizerEstimatedCost)
+    MultiProbeTableScanResultSet(
+            TableScanResultSetParameters params,
+            DataValueDescriptor[] probingVals,
+            int sortRequired)
             throws StandardException
     {
         /* Note: We use '1' as rows per read because we do not currently
          * allow bulk fetching when multi-probing.  If that changes in
          * the future then we will need to update rowsPerRead accordingly.
          */
-        super(conglomId,
-            scoci,
-            activation,
-            resultRowTemplate,
-            resultSetNumber,
-            startKeyGetter,
-            startSearchOperator,
-            stopKeyGetter,
-            stopSearchOperator,
-            sameStartStopPosition,
-            qualifiers,
-            tableName,
-            userSuppliedOptimizerOverrides,
-            indexName,
-            isConstraint,
-            forUpdate,
-            colRefItem,
-            indexColItem,
-            lockMode,
-            tableLocked,
-            isolationLevel,
-            1, // rowsPerRead
-            oneRowScan,
-            optimizerEstimatedRowCount,
-            optimizerEstimatedCost);
+        super(params.withRowsPerRead(
+                TableScanResultSetParameters.NON_BULK_ROWS_PER_READ));
+
 
         if (SanityManager.DEBUG)
         {

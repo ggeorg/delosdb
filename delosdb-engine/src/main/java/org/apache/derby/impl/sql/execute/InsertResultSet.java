@@ -2368,33 +2368,34 @@ class InsertResultSet extends DMLWriteGeneratedColumnsResultSet implements Targe
         {
             tableScan = 
                 new BulkTableScanResultSet(
-                    conglomId,
-                    tc.getStaticCompiledConglomInfo(conglomId),
-                    activation,
-                    fullTemplateId,
-                    0,						// result set number
-                    (GeneratedMethod)null, 	// start key getter
-                    0, 						// start search operator
-                    (GeneratedMethod)null,	// stop key getter
-                    0, 						// start search operator
-                    false,
-                    (Qualifier[][])null,	// qualifiers
-                    "tableName",
-                    (String)null,
-                    (String)null,			// index name
-                    false,					// is constraint
-                    false,					// for update
-                    -1,						// saved object for referenced bitImpl
-                    -1,
-                    TransactionController.MODE_TABLE,
-                    true,					// table locked
-                    TransactionController.ISOLATION_READ_COMMITTED,
-                    LanguageProperties.BULK_FETCH_DEFAULT_INT,	// rows per read
-                    false,                  // never disable bulk fetch
-                    false,					// not a 1 row per scan
-                    0d,						// estimated rows
-                    0d 					// estimated cost
-                    );
+                    new TableScanResultSetParameters(
+                        conglomId,
+                        tc.getStaticCompiledConglomInfo(conglomId),
+                        activation,
+                        fullTemplateId,
+                        0,                      // result set number
+                        (GeneratedMethod)null,  // start key getter
+                        0,                      // start search operator
+                        (GeneratedMethod)null,  // stop key getter
+                        0,                      // stop search operator
+                        false,
+                        (Qualifier[][])null,    // qualifiers
+                        "tableName",
+                        (String)null,
+                        (String)null,           // index name
+                        false,                  // is constraint
+                        false,                  // for update
+                        -1,                     // saved object for referenced bitImpl
+                        -1,
+                        TransactionController.MODE_TABLE,
+                        true,                   // table locked
+                        TransactionController.ISOLATION_READ_COMMITTED,
+                        LanguageProperties.BULK_FETCH_DEFAULT_INT,
+                        false,                  // not a 1 row per scan
+                        0d,                     // estimated rows
+                        0d),                    // estimated cost
+                    LanguageProperties.BULK_FETCH_DEFAULT_INT,
+                    false);                     // never disable bulk fetch
             tableScan.openCore();
         }
         else

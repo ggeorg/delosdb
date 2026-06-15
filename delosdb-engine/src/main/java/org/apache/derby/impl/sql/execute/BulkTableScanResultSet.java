@@ -27,9 +27,7 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
-import org.apache.derby.iapi.sql.ResultSet;
 import org.apache.derby.iapi.sql.execute.ExecRow;
-import org.apache.derby.iapi.sql.execute.ExecIndexRow;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
 
 import org.apache.derby.iapi.sql.Activation;
@@ -37,13 +35,10 @@ import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.store.access.GroupFetchScanController;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.ScanController;
-import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
 
-import org.apache.derby.iapi.types.RowLocation;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
-import org.apache.derby.iapi.services.loader.GeneratedMethod;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -86,56 +81,15 @@ class BulkTableScanResultSet extends TableScanResultSet
 	 *
 	 * @exception StandardException thrown on failure to open
 	 */
-    BulkTableScanResultSet(long conglomId,
-		StaticCompiledOpenConglomInfo scoci, Activation activation, 
-		int resultRowTemplate,
-		int resultSetNumber,
-		GeneratedMethod startKeyGetter, int startSearchOperator,
-		GeneratedMethod stopKeyGetter, int stopSearchOperator,
-		boolean sameStartStopPosition,
-		Qualifier[][] qualifiers,
-		String tableName,
-		String userSuppliedOptimizerOverrides,
-		String indexName,
-		boolean isConstraint,
-		boolean forUpdate,
-		int colRefItem,
-		int indexColItem,
-		int lockMode,
-		boolean tableLocked,
-		int isolationLevel,
-		int rowsPerRead,
-        boolean disableForHoldable,
-		boolean oneRowScan,
-		double optimizerEstimatedRowCount,
-		double optimizerEstimatedCost)
-			throws StandardException
+    BulkTableScanResultSet(
+            TableScanResultSetParameters params,
+            int rowsPerRead,
+            boolean disableForHoldable)
+            throws StandardException
     {
-		super(conglomId,
-			scoci,
-			activation,
-			resultRowTemplate,
-			resultSetNumber,
-			startKeyGetter,
-			startSearchOperator,
-			stopKeyGetter,
-			stopSearchOperator,
-			sameStartStopPosition,
-			qualifiers,
-			tableName,
-			userSuppliedOptimizerOverrides,
-			indexName,
-			isConstraint,
-			forUpdate,
-			colRefItem,
-			indexColItem,
-			lockMode,
-			tableLocked,
-			isolationLevel,
-            adjustBulkFetchSize(activation, rowsPerRead, disableForHoldable),
-			oneRowScan,
-			optimizerEstimatedRowCount,
-			optimizerEstimatedCost);
+        super(params.withRowsPerRead(
+                adjustBulkFetchSize(
+                        params.activation, rowsPerRead, disableForHoldable)));
 
 		if (SanityManager.DEBUG)
 		{
@@ -150,7 +104,7 @@ class BulkTableScanResultSet extends TableScanResultSet
 			/* Bulk table scan implies that scan is not
 			 * a 1 row scan.
 			 */
-			if (oneRowScan)
+			if (params.oneRowScan)
 			{
 				SanityManager.THROWASSERT(
 					"oneRowScan expected to be false - " +
