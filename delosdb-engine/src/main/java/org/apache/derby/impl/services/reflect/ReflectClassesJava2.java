@@ -25,15 +25,18 @@ import org.apache.derby.iapi.sql.compile.CodeGeneration;
 import org.apache.derby.iapi.util.ByteArray;
 
 /**
-	Reflect loader with Privileged block for Java 2 security. 
-*/
+ * Reflect-based class factory for Derby generated classes.
+ *
+ * <p>The class name is inherited from Derby's Java 2 split, but DelosDB runs
+ * on Java 21 and no longer needs the old mutable action/privileged-dispatch
+ * shim. The generated class loader and context class loader are selected
+ * directly at the call sites below.</p>
+ */
 
 public class ReflectClassesJava2 extends DatabaseClasses
 {
 
     private java.util.HashMap<String,ReflectGeneratedClass> preCompiled;
-
-    private int action = -1;
 
     synchronized LoadedGeneratedClass loadGeneratedClassFromData(String fullyQualifiedName, ByteArray classDump) {
 
@@ -73,26 +76,9 @@ public class ReflectClassesJava2 extends DatabaseClasses
             throw new IllegalArgumentException( fullyQualifiedName );
         }
         
-        action = 1;
-        return ((ReflectLoaderJava2) run()).loadGeneratedClass(fullyQualifiedName, classDump);
-    }
-
-    public final Object run() {
-
-        try {
-            // SECURITY PERMISSION - MP2
-            switch (action) {
-            case 1:
-                return new ReflectLoaderJava2(getClass().getClassLoader(), this);
-            case 2:
-                return Thread.currentThread().getContextClassLoader();
-            default:
-                return null;
-            }
-        } finally {
-            action = -1;
-        }
-		
+        ReflectLoaderJava2 generatedClassLoader =
+                new ReflectLoaderJava2(getClass().getClassLoader(), this);
+        return generatedClassLoader.loadGeneratedClass(fullyQualifiedName, classDump);
     }
 
     Class loadClassNotInDatabaseJar(String name) throws ClassNotFoundException {
@@ -110,14 +96,8 @@ public class ReflectClassesJava2 extends DatabaseClasses
         // (the classLoader that loaded Derby). 
         // So we call Class.forName to ensure that we find the class.
         try {
-            ClassLoader cl;
-            synchronized(this) {
-                action = 2;
-                cl = (ClassLoader) run();
-            }
-			
-            foundClass = (cl != null) ?  cl.loadClass(name) 
-                :Class.forName(name);
+            ClassLoader cl = Thread.currentThread().getContextClassLoader();
+            foundClass = (cl != null) ? cl.loadClass(name) : Class.forName(name);
         } catch (ClassNotFoundException cnfe) {
             foundClass = Class.forName(name);
         }

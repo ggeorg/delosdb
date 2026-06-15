@@ -1075,11 +1075,8 @@ nextModule:
             // or
             // derby.subSubProtocol.<modulename>=<classname>
             
-			if (key.startsWith(Property.MODULE_PREFIX)) {
-				tag = key.substring(Property.MODULE_PREFIX.length());
-            } else if (key.startsWith(Property.SUB_SUB_PROTOCOL_PREFIX)) {
-                tag = key.substring(Property.MODULE_PREFIX.length());
-            } else {
+			tag = moduleTagForPropertyKey(key);
+            if (tag == null) {
                 continue nextModule;
             }
             
@@ -1218,6 +1215,25 @@ nextModule:
 
 		return implementations;
 	}
+
+    /**
+     * Return the module tag carried by a module-list property key.
+     *
+     * <p>Derby supports both regular modules
+     * ({@code derby.module.<tag>}) and storage-factory sub-sub-protocols
+     * ({@code derby.subSubProtocol.<tag>}). Keep the tag extraction in one
+     * place so the monitor does not accidentally register a storage factory
+     * under a truncated or prefixed name.</p>
+     */
+    private static String moduleTagForPropertyKey(String key) {
+        if (key.startsWith(Property.MODULE_PREFIX)) {
+            return key.substring(Property.MODULE_PREFIX.length());
+        }
+        if (key.startsWith(Property.SUB_SUB_PROTOCOL_PREFIX)) {
+            return key.substring(Property.SUB_SUB_PROTOCOL_PREFIX.length());
+        }
+        return null;
+    }
 
     private boolean getPersistentServiceImplementation( Class<?> possibleModule)
     {
