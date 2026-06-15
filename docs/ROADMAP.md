@@ -174,3 +174,10 @@ The first optimizer-path step is observability, not enumeration rewrite.
 `optimizerPathObservabilitySmoke` records the selected Derby runtime scan shape
 next to the DelosDB `CostModelProvider` v2 store-cost probe so future path
 infrastructure can be grounded in current behavior.
+
+## PostgreSQL-class index concurrency proof
+
+The first index-concurrency step is proof coverage, not latch redesign.
+`runBTreeIndexConcurrencyArchitectureProofTest` pins down the SQL-visible
+unique-index conflict and rollback contract while leaving B-tree page latches,
+split logic, scan repositioning, and delete/compact behavior unchanged.

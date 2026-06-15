@@ -77,11 +77,20 @@ DelosDB has only touched page-local B-tree search cleanup after boundary proof
 tests. It must not refactor page split, latch, reposition, delete/compact, or
 scan traversal behavior without stronger proof coverage.
 
-Proof task:
+Proof tasks:
 
 ```bash
 ./gradlew :delosdb-tests:runBTreeSearchRefactorProofTests
+./gradlew :delosdb-tests:runBTreeIndexConcurrencyArchitectureProofTest
 ```
+
+`runBTreeSearchRefactorProofTests` protects page-local search, max-scan,
+and split/deadlock boundaries. `runBTreeIndexConcurrencyArchitectureProofTest`
+protects the SQL-visible contract around unique-index conflicts, rollback of
+indexed inserts, and committed duplicate-key rejection. This still does not
+inspect page latches directly; latches are a source-level mechanism. The proof
+pins down the transactional behavior that latch and logical-lock changes must
+preserve.
 
 Source trail:
 

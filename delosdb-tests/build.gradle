@@ -297,6 +297,40 @@ tasks.register('runBTreeSearchRefactorProofTests', Test) {
 }
 
 
+tasks.register('runBTreeIndexConcurrencyArchitectureProofTest', Test) {
+    group = 'verification'
+    description = 'Runs focused B-tree unique-key concurrency and rollback proof tests.'
+    dependsOn 'compileDerbyTestsModule', ':jars'
+
+    modularity.inferModulePath = false
+    testClassesDirs = files(derbyTestsClassDir)
+    classpath = testRuntimeClasspath()
+    useJUnit()
+    include 'org/apache/derbyTesting/functionTests/tests/store/BTreeIndexConcurrencyArchitectureProofTest.class'
+
+    workingDir = layout.buildDirectory.dir('test-work/runBTreeIndexConcurrencyArchitectureProofTest').get().asFile
+    maxHeapSize = '1536m'
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runBTreeIndexConcurrencyArchitectureProofTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runBTreeIndexConcurrencyArchitectureProofTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runBTreeIndexConcurrencyArchitectureProofTest'))
+    }
+
+    doFirst {
+        delete workingDir
+        workingDir.mkdirs()
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+
 tasks.register('runExternalSortJvmPolicyProofTest', Test) {
     group = 'verification'
     description = 'Runs focused ORDER BY, DISTINCT, and GROUP BY proof tests for the JVM-aware external sort policy.'
@@ -337,6 +371,7 @@ tasks.register('runPostgresClassArchitectureProofTests') {
     dependsOn 'runWalRecoveryArchitectureProofTest'
     dependsOn 'runTransactionLockingRecoveryProofTest'
     dependsOn 'runBTreeSearchRefactorProofTests'
+    dependsOn 'runBTreeIndexConcurrencyArchitectureProofTest'
     dependsOn 'runExternalSortJvmPolicyProofTest'
 }
 
