@@ -76,6 +76,15 @@ public class ExternalSortFactory implements
 	protected static final int LEGACY_DEFAULT_MEM_USE = 1024*1024;
 
 	/**
+	 * Compatibility alias for inherited sort-buffer growth code.
+	 * <p>
+	 * {@link MergeInserter} still uses Derby's old 1 MiB threshold as a small-heap
+	 * growth heuristic. Keep that threshold stable while {@link #defaultMemoryUse(long)}
+	 * controls the newer JVM-aware initial sizing policy.
+	 */
+	protected static final int DEFAULT_MEM_USE = LEGACY_DEFAULT_MEM_USE;
+
+	/**
 	 * Conservative upper bound for the automatic JVM-aware sort memory budget.
 	 * This avoids turning one large heap into one very large sort allocation while
 	 * still moving past the inherited fixed 1 MiB assumption on Java 21.
