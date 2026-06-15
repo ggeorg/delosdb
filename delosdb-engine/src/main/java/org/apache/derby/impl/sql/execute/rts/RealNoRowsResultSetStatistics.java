@@ -22,8 +22,6 @@
 package org.apache.derby.impl.sql.execute.rts;
 
 import org.apache.derby.iapi.sql.execute.ResultSetStatistics;
-import org.apache.derby.catalog.UUID;
-import org.apache.derby.impl.sql.catalog.XPLAINResultSetTimingsDescriptor;
 import org.apache.derby.impl.sql.execute.xplain.XPLAINUtil;
 
 import org.apache.derby.iapi.services.io.Formatable;
@@ -150,19 +148,10 @@ abstract class RealNoRowsResultSetStatistics
     }
     public Object getResultSetTimingsDescriptor(Object timingID)
     {
-        return new XPLAINResultSetTimingsDescriptor(
-           (UUID)timingID,
-           null,                                   // the constructor time
-           null,                                   // the open time
-           null,                                   // the next time
-           null,                                   // the close time
-           this.executeTime,             // the execute time
-           null,                                   // the avg next time/row
-           null,                                   // the projection time
-           null,                                   // the restriction time
-           null,                                   // the temp_cong_create_time
-           null                                    // the temo_cong_fetch_time
-        );
+        return XPLAINResultSetTimingsDescriptorBuilder
+            .descriptor(timingID)
+            .executeTime(this.executeTime)
+            .build();
     }
     public Object getSortPropsDescriptor(Object UUID)
     {

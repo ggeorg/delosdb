@@ -22,9 +22,6 @@
 package org.apache.derby.impl.sql.execute.rts;
 
 import org.apache.derby.iapi.sql.execute.ResultSetStatistics;
-import org.apache.derby.catalog.UUID;
-import org.apache.derby.impl.sql.catalog.XPLAINResultSetTimingsDescriptor;
-import org.apache.derby.impl.sql.execute.xplain.XPLAINUtil;
 
 import org.apache.derby.shared.common.util.ArrayUtil;
 import org.apache.derby.iapi.services.io.StoredFormatIds;
@@ -34,6 +31,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 
 import org.apache.derby.iapi.services.io.FormatableHashtable;
 import org.apache.derby.iapi.sql.execute.xplain.XPLAINVisitor;
+import org.apache.derby.impl.sql.execute.xplain.XPLAINUtil;
 
 import java.io.ObjectOutput;
 import java.io.ObjectInput;
@@ -316,18 +314,17 @@ public class RealProjectRestrictStatistics
     }
     public Object getResultSetTimingsDescriptor(Object timingID)
     {
-        return new XPLAINResultSetTimingsDescriptor(
-           (UUID)timingID,
-           this.constructorTime,
-           this.openTime,
-           this.nextTime,
-           this.closeTime,
-           this.getNodeTime(),
-           XPLAINUtil.getAVGNextTime( (long)this.nextTime, this.rowsSeen),
-           this.projectionTime,
-           this.restrictionTime,
-           null,                          // the temp_cong_create_time
-           null                           // the temo_cong_fetch_time
-        );
+        return XPLAINResultSetTimingsDescriptorBuilder
+            .descriptor(timingID)
+            .lifecycle(
+                this.constructorTime,
+                this.openTime,
+                this.nextTime,
+                this.closeTime)
+            .executeTime(this.getNodeTime())
+            .avgNextTime(this.nextTime, this.rowsSeen)
+            .projectionTime(this.projectionTime)
+            .restrictionTime(this.restrictionTime)
+            .build();
     }
 }

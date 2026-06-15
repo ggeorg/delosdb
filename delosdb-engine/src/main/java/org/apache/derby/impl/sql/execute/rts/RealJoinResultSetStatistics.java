@@ -21,9 +21,6 @@
 
 package org.apache.derby.impl.sql.execute.rts;
 
-import org.apache.derby.catalog.UUID;
-import org.apache.derby.impl.sql.catalog.XPLAINResultSetTimingsDescriptor;
-import org.apache.derby.impl.sql.execute.xplain.XPLAINUtil;
 
 import org.apache.derby.iapi.services.io.StoredFormatIds;
 
@@ -122,19 +119,15 @@ public abstract class RealJoinResultSetStatistics
     }
     public Object getResultSetTimingsDescriptor(Object timingID)
     {
-        return new XPLAINResultSetTimingsDescriptor(
-           (UUID)timingID,
-           this.constructorTime,
-           this.openTime,
-           this.nextTime,
-           this.closeTime,
-           this.getNodeTime(),
-           XPLAINUtil.getAVGNextTime(
-               (long)this.nextTime, (this.rowsSeenLeft+this.rowsSeenRight)),
-           null,                          // the projection time
-           null,                          // the restriction time
-           null,                          // the temp_cong_create_time
-           null                           // the temo_cong_fetch_time
-        );
+        return XPLAINResultSetTimingsDescriptorBuilder
+            .descriptor(timingID)
+            .lifecycle(
+                this.constructorTime,
+                this.openTime,
+                this.nextTime,
+                this.closeTime)
+            .executeTime(this.getNodeTime())
+            .avgNextTime(this.nextTime, this.rowsSeenLeft + this.rowsSeenRight)
+            .build();
     }
 }

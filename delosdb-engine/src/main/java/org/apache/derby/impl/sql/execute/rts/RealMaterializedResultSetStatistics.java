@@ -22,9 +22,6 @@
 package org.apache.derby.impl.sql.execute.rts;
 
 import org.apache.derby.iapi.sql.execute.ResultSetStatistics;
-import org.apache.derby.catalog.UUID;
-import org.apache.derby.impl.sql.catalog.XPLAINResultSetTimingsDescriptor;
-import org.apache.derby.impl.sql.execute.xplain.XPLAINUtil;
 
 
 import org.apache.derby.iapi.services.io.StoredFormatIds;
@@ -39,6 +36,7 @@ import java.io.ObjectInput;
 import java.io.IOException;
 
 import org.apache.derby.iapi.sql.execute.xplain.XPLAINVisitor;
+import org.apache.derby.impl.sql.execute.xplain.XPLAINUtil;
 
 /**
   ResultSetStatistics implemenation for MaterializedResultSet.
@@ -185,18 +183,16 @@ public class RealMaterializedResultSetStatistics
   
     public Object getResultSetTimingsDescriptor(Object timingID)
     {
-        return new XPLAINResultSetTimingsDescriptor(
-           (UUID)timingID,
-           this.constructorTime,
-           this.openTime,
-           this.nextTime,
-           this.closeTime,
-           this.getNodeTime(),
-           XPLAINUtil.getAVGNextTime( (long)this.nextTime, this.rowsSeen),
-           null,                          // the projection time
-           null,                          // the restriction time
-           this.createTCTime,
-           this.fetchTCTime
-        );
+        return XPLAINResultSetTimingsDescriptorBuilder
+            .descriptor(timingID)
+            .lifecycle(
+                this.constructorTime,
+                this.openTime,
+                this.nextTime,
+                this.closeTime)
+            .executeTime(this.getNodeTime())
+            .avgNextTime(this.nextTime, this.rowsSeen)
+            .temporaryConglomerate(this.createTCTime, this.fetchTCTime)
+            .build();
     }
 }
