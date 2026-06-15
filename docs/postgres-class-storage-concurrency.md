@@ -109,7 +109,22 @@ need a crash-safe cleanup model tied to the oldest active transaction, index
 entries that may point at dead versions, and scans that may still need older
 versions.
 
-For now this remains design-only because there are no row versions yet.
+Current DelosDB has no MVCC row versions yet, so the first proof is a
+visibility/cleanup boundary test against the inherited lock-based store. It pins
+down what future MVCC visibility and vacuum must preserve: rolled-back indexed
+updates must not leave the new key searchable, committed indexed updates must
+move the visible key, rolled-back deletes must preserve the visible key, and
+committed deletes must remove the row from both heap-visible and index-visible
+access paths.
+
+Proof task:
+
+```bash
+./gradlew :delosdb-tests:runVersionCleanupArchitectureProofTest
+```
+
+This is not vacuum and it is not MVCC. It is the SQL-visible contract that a
+future version store and cleanup process must keep true.
 
 ### 6. Runtime/executor code must stay evolvable
 

@@ -181,3 +181,13 @@ The first index-concurrency step is proof coverage, not latch redesign.
 `runBTreeIndexConcurrencyArchitectureProofTest` pins down the SQL-visible
 unique-index conflict and rollback contract while leaving B-tree page latches,
 split logic, scan repositioning, and delete/compact behavior unchanged.
+
+## PostgreSQL-class version cleanup proof
+
+The first version-cleanup step is not MVCC implementation. It is a SQL-visible
+proof of the current Derby/DelosDB cleanup contract around indexed updates and
+deletes. `runVersionCleanupArchitectureProofTest` pins down the behavior a
+future MVCC visibility and vacuum subsystem must preserve: rolled-back updates
+and deletes do not leave searchable index garbage, committed updates move the
+visible key, and committed deletes remove the visible row from heap and index
+access paths.
