@@ -925,6 +925,12 @@ public abstract class ControlRow implements AuxObject, TypedFormat
     This method performs a binary search on the page and finds the entry i on
     the page such that entry[i] &lt;= key &lt; entry[i+1].  The result of the search
     is filled into the passed in params structure.
+    <P>
+    DelosDB note: this page-slot boundary rule is shared by visible forward
+    index range behavior and by the backward/max-scan boundary cases protected
+    in BTreeDirectionalBoundaryScanTest.  Do not extract the duplicate search
+    body below until those boundary cases and the split/reposition tests stay
+    green.
 
     @param params the parameters of the search
 
@@ -1063,6 +1069,12 @@ public abstract class ControlRow implements AuxObject, TypedFormat
         return;
     }
 
+    /**
+     * Backward-search sibling retained from Derby's B-tree control-row code.
+     * The implementation intentionally mirrors {@link #searchForEntry} so the
+     * exact slot-boundary and hint-update behavior can be proven before any
+     * common helper is introduced.
+     */
     protected void searchForEntryBackward(SearchParameters params)
 		throws StandardException
     {
