@@ -70,8 +70,25 @@ class DistinctGroupedAggregateResultSet extends GroupedAggregateResultSet
 					double optimizerEstimatedCost,
 					boolean isRollup) throws StandardException 
 	{
-		super(s, isInSortedOrder, aggregateItem, orderingItem,
-			  a, ra, maxRowSize, resultSetNumber, optimizerEstimatedRowCount, optimizerEstimatedCost, isRollup);
+        this(new AggregateResultSetParameters(
+                s,
+                isInSortedOrder,
+                aggregateItem,
+                orderingItem,
+                a,
+                ra,
+                maxRowSize,
+                resultSetNumber,
+                false,
+                isRollup,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost));
+    }
+
+    DistinctGroupedAggregateResultSet(AggregateResultSetParameters parameters)
+            throws StandardException
+    {
+        super(parameters);
     }
 
 

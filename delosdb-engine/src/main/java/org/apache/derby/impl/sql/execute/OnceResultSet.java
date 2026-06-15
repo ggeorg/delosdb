@@ -81,13 +81,30 @@ public class OnceResultSet extends NoPutResultSetImpl
 						 double optimizerEstimatedRowCount,
 						 double optimizerEstimatedCost)
 	{
-		super(a, resultSetNumber, optimizerEstimatedRowCount, optimizerEstimatedCost);
-        source = s;
-		this.emptyRowFun = emptyRowFun;
-		this.cardinalityCheck = cardinalityCheck;
-		this.subqueryNumber = subqueryNumber;
-		this.pointOfAttachment = pointOfAttachment;
-		recordConstructorTime();
+        this(new SubqueryResultSetParameters(
+                s,
+                a,
+                emptyRowFun,
+                cardinalityCheck,
+                resultSetNumber,
+                subqueryNumber,
+                pointOfAttachment,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost));
+    }
+
+    OnceResultSet(SubqueryResultSetParameters parameters)
+    {
+        super(parameters.activation,
+              parameters.resultSetNumber,
+              parameters.optimizerEstimatedRowCount,
+              parameters.optimizerEstimatedCost);
+        source = parameters.source;
+        this.emptyRowFun = parameters.emptyRow;
+        this.cardinalityCheck = parameters.cardinalityCheck;
+        this.subqueryNumber = parameters.subqueryNumber;
+        this.pointOfAttachment = parameters.pointOfAttachment;
+        recordConstructorTime();
     }
 
 	//

@@ -91,19 +91,33 @@ class DistinctScalarAggregateResultSet extends ScalarAggregateResultSet
 				    double optimizerEstimatedRowCount,
 				    double optimizerEstimatedCost) throws StandardException 
 	{
-		super(s, isInSortedOrder, aggregateItem, a, ra,
-			  resultSetNumber, 
-			  singleInputRow,
-			  optimizerEstimatedRowCount,
-			  optimizerEstimatedCost);
+        this(new AggregateResultSetParameters(
+                s,
+                isInSortedOrder,
+                aggregateItem,
+                orderingItem,
+                a,
+                ra,
+                maxRowSize,
+                resultSetNumber,
+                singleInputRow,
+                false,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost));
+    }
+
+    DistinctScalarAggregateResultSet(AggregateResultSetParameters parameters)
+            throws StandardException
+    {
+        super(parameters);
 
         order = ((FormatableArrayHolder)
-                    (a.getPreparedStatement().getSavedObject(orderingItem)))
+                    (parameters.activation.getPreparedStatement().getSavedObject(parameters.orderingItem)))
                         .getArray(ColumnOrdering[].class);
 
-		this.maxRowSize = maxRowSize;
+        this.maxRowSize = parameters.maxRowSize;
 
-		recordConstructorTime();
+        recordConstructorTime();
     }
 
 

@@ -461,19 +461,24 @@ public class GenericResultSetFactory implements ResultSetFactory
 		double optimizerEstimatedCost)
 			throws StandardException
 	{
-		return new HashTableResultSet(source, source.getActivation(), 
-			singleTableRestriction, 
-            equijoinQualifiers,
-			projection, resultSetNumber, 
-			mapRefItem, 
-			reuseResult,
-			keyColItem, removeDuplicates,
-			maxInMemoryRowCount,
-			initialCapacity,
-			loadFactor,
-			true,		// Skip rows with 1 or more null key columns
-		    optimizerEstimatedRowCount,
-			optimizerEstimatedCost);
+        return new HashTableResultSet(
+                new HashTableResultSetParameters(
+                        source,
+                        source.getActivation(),
+                        singleTableRestriction,
+                        equijoinQualifiers,
+                        projection,
+                        resultSetNumber,
+                        mapRefItem,
+                        reuseResult,
+                        keyColItem,
+                        removeDuplicates,
+                        maxInMemoryRowCount,
+                        initialCapacity,
+                        loadFactor,
+                        true,		// Skip rows with 1 or more null key columns
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
 	/**
@@ -521,11 +526,20 @@ public class GenericResultSetFactory implements ResultSetFactory
 		double optimizerEstimatedCost) 
 			throws StandardException
 	{
-		return new ScalarAggregateResultSet(
-						source, isInSortedOrder, aggregateItem, source.getActivation(),
-						rowAllocator, resultSetNumber, singleInputRow,
-						optimizerEstimatedRowCount,
-						optimizerEstimatedCost);
+        return new ScalarAggregateResultSet(
+                new AggregateResultSetParameters(
+                        source,
+                        isInSortedOrder,
+                        aggregateItem,
+                        orderItem,
+                        source.getActivation(),
+                        rowAllocator,
+                        maxRowSize,
+                        resultSetNumber,
+                        singleInputRow,
+                        false,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
 	/**
@@ -544,11 +558,20 @@ public class GenericResultSetFactory implements ResultSetFactory
 		double optimizerEstimatedCost) 
 			throws StandardException
 	{
-		return new DistinctScalarAggregateResultSet(
-						source, isInSortedOrder, aggregateItem, orderItem, source.getActivation(),
-						rowAllocator, maxRowSize, resultSetNumber, singleInputRow,
-						optimizerEstimatedRowCount,
-						optimizerEstimatedCost);
+        return new DistinctScalarAggregateResultSet(
+                new AggregateResultSetParameters(
+                        source,
+                        isInSortedOrder,
+                        aggregateItem,
+                        orderItem,
+                        source.getActivation(),
+                        rowAllocator,
+                        maxRowSize,
+                        resultSetNumber,
+                        singleInputRow,
+                        false,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
 	/**
@@ -567,10 +590,20 @@ public class GenericResultSetFactory implements ResultSetFactory
 		boolean isRollup) 
 			throws StandardException
 	{
-		return new GroupedAggregateResultSet(
-						source, isInSortedOrder, aggregateItem, orderItem, source.getActivation(),
-						rowAllocator, maxRowSize, resultSetNumber, optimizerEstimatedRowCount,
-						optimizerEstimatedCost, isRollup);
+        return new GroupedAggregateResultSet(
+                new AggregateResultSetParameters(
+                        source,
+                        isInSortedOrder,
+                        aggregateItem,
+                        orderItem,
+                        source.getActivation(),
+                        rowAllocator,
+                        maxRowSize,
+                        resultSetNumber,
+                        false,
+                        isRollup,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
 	/**
@@ -589,10 +622,20 @@ public class GenericResultSetFactory implements ResultSetFactory
 		boolean isRollup) 
 			throws StandardException
 	{
-		return new DistinctGroupedAggregateResultSet(
-						source, isInSortedOrder, aggregateItem, orderItem, source.getActivation(),
-						rowAllocator, maxRowSize, resultSetNumber, optimizerEstimatedRowCount,
-						optimizerEstimatedCost, isRollup);
+        return new DistinctGroupedAggregateResultSet(
+                new AggregateResultSetParameters(
+                        source,
+                        isInSortedOrder,
+                        aggregateItem,
+                        orderItem,
+                        source.getActivation(),
+                        rowAllocator,
+                        maxRowSize,
+                        resultSetNumber,
+                        false,
+                        isRollup,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 											
 
@@ -607,11 +650,17 @@ public class GenericResultSetFactory implements ResultSetFactory
 		double optimizerEstimatedCost)
 			throws StandardException
 	{
-		return new AnyResultSet(source,
-					 source.getActivation(), emptyRowFun, resultSetNumber,
-					 subqueryNumber, pointOfAttachment,
-					 optimizerEstimatedRowCount,
-					 optimizerEstimatedCost);
+        return new AnyResultSet(
+                new SubqueryResultSetParameters(
+                        source,
+                        source.getActivation(),
+                        emptyRowFun,
+                        -1,
+                        resultSetNumber,
+                        subqueryNumber,
+                        pointOfAttachment,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
 	/**
@@ -626,12 +675,17 @@ public class GenericResultSetFactory implements ResultSetFactory
 		double optimizerEstimatedCost)
 			throws StandardException
 	{
-		return new OnceResultSet(source,
-					 source.getActivation(), emptyRowFun, 
-					 cardinalityCheck, resultSetNumber,
-					 subqueryNumber, pointOfAttachment,
-				     optimizerEstimatedRowCount,
-					 optimizerEstimatedCost);
+        return new OnceResultSet(
+                new SubqueryResultSetParameters(
+                        source,
+                        source.getActivation(),
+                        emptyRowFun,
+                        cardinalityCheck,
+                        resultSetNumber,
+                        subqueryNumber,
+                        pointOfAttachment,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
 	/**

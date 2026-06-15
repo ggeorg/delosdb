@@ -119,8 +119,33 @@ class HashTableResultSet extends NoPutResultSetImpl
 					double optimizerEstimatedCost) 
 		throws StandardException
 	{
-		super(a, resultSetNumber, optimizerEstimatedRowCount, optimizerEstimatedCost);
-        source = s;
+        this(new HashTableResultSetParameters(
+                s,
+                a,
+                str,
+                nextQualifiers,
+                p,
+                resultSetNumber,
+                mapRefItem,
+                reuseResult,
+                keyColItem,
+                removeDuplicates,
+                maxInMemoryRowCount,
+                initialCapacity,
+                loadFactor,
+                skipNullKeyColumns,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost));
+    }
+
+    HashTableResultSet(HashTableResultSetParameters parameters)
+        throws StandardException
+    {
+        super(parameters.activation,
+              parameters.resultSetNumber,
+              parameters.optimizerEstimatedRowCount,
+              parameters.optimizerEstimatedCost);
+        source = parameters.source;
 		// source expected to be non-null, mystery stress test bug
 		// - sometimes get NullPointerException in openCore().
 		if (SanityManager.DEBUG)
@@ -128,11 +153,11 @@ class HashTableResultSet extends NoPutResultSetImpl
 			SanityManager.ASSERT(source != null,
 				"HTRS(), source expected to be non-null");
 		}
-        singleTableRestriction = str;
-		this.nextQualifiers = nextQualifiers;
-        projection = p;
-		projectMapping = ((ReferencedColumnsDescriptorImpl) a.getPreparedStatement().getSavedObject(mapRefItem)).getReferencedColumnPositions();
-		FormatableArrayHolder fah = (FormatableArrayHolder) a.getPreparedStatement().getSavedObject(keyColItem);
+        singleTableRestriction = parameters.singleTableRestriction;
+        this.nextQualifiers = parameters.nextQualifiers;
+        projection = parameters.projection;
+        projectMapping = ((ReferencedColumnsDescriptorImpl) parameters.activation.getPreparedStatement().getSavedObject(parameters.mapRefItem)).getReferencedColumnPositions();
+        FormatableArrayHolder fah = (FormatableArrayHolder) parameters.activation.getPreparedStatement().getSavedObject(parameters.keyColumnItem);
         FormatableIntHolder[] fihArray = fah.getArray(FormatableIntHolder[].class);
 		keyColumns = new int[fihArray.length];
 		for (int index = 0; index < fihArray.length; index++)
@@ -140,12 +165,12 @@ class HashTableResultSet extends NoPutResultSetImpl
 			keyColumns[index] = fihArray[index].getInt();
 		}
 
-		this.reuseResult = reuseResult;
-		this.removeDuplicates = removeDuplicates;
-		this.maxInMemoryRowCount = maxInMemoryRowCount;
-		this.initialCapacity = initialCapacity;
-		this.loadFactor = loadFactor;
-		this.skipNullKeyColumns = skipNullKeyColumns;
+        this.reuseResult = parameters.reuseResult;
+        this.removeDuplicates = parameters.removeDuplicates;
+        this.maxInMemoryRowCount = parameters.maxInMemoryRowCount;
+        this.initialCapacity = parameters.initialCapacity;
+        this.loadFactor = parameters.loadFactor;
+        this.skipNullKeyColumns = parameters.skipNullKeyColumns;
 
 		// Allocate a result row if all of the columns are mapped from the source
 		if (projection == null)

@@ -162,19 +162,43 @@ class GroupedAggregateResultSet extends GenericAggregateResultSet
 					double optimizerEstimatedCost,
 					boolean isRollup) throws StandardException 
 	{
-		super(s, aggregateItem, a, ra, resultSetNumber, optimizerEstimatedRowCount, optimizerEstimatedCost);
-		this.isInSortedOrder = isInSortedOrder;
-		rollup = isRollup;
-		finishedResults = new ArrayList<ExecRow>();
+        this(new AggregateResultSetParameters(
+                s,
+                isInSortedOrder,
+                aggregateItem,
+                orderingItem,
+                a,
+                ra,
+                maxRowSize,
+                resultSetNumber,
+                false,
+                isRollup,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost));
+    }
+
+    GroupedAggregateResultSet(AggregateResultSetParameters parameters)
+            throws StandardException
+    {
+        super(parameters.source,
+              parameters.aggregateItem,
+              parameters.activation,
+              parameters.rowAllocator,
+              parameters.resultSetNumber,
+              parameters.optimizerEstimatedRowCount,
+              parameters.optimizerEstimatedCost);
+        this.isInSortedOrder = parameters.isInSortedOrder;
+        rollup = parameters.rollup;
+        finishedResults = new ArrayList<ExecRow>();
         order = ((FormatableArrayHolder)
-                    (a.getPreparedStatement().getSavedObject(orderingItem)))
+                    (parameters.activation.getPreparedStatement().getSavedObject(parameters.orderingItem)))
                         .getArray(ColumnOrdering[].class);
 
-		if (SanityManager.DEBUG)
-		{
-			SanityManager.DEBUG("AggregateTrace","execution time: "+ 
-					a.getPreparedStatement().getSavedObject(aggregateItem));
-		}
+        if (SanityManager.DEBUG)
+        {
+            SanityManager.DEBUG("AggregateTrace","execution time: "+
+                    parameters.activation.getPreparedStatement().getSavedObject(parameters.aggregateItem));
+        }
 		hasDistinctAggregate = aggInfoList.hasDistinct();
 		// If there is no ROLLUP, and no DISTINCT, and the data are
 		// not in sorted order, then we can use AggregateSortObserver

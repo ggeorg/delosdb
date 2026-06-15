@@ -72,12 +72,29 @@ public class AnyResultSet extends NoPutResultSetImpl
 						double optimizerEstimatedRowCount,
 						double optimizerEstimatedCost)
 	{
-		super(a, resultSetNumber, optimizerEstimatedRowCount, optimizerEstimatedCost);
-        source = s;
-		this.emptyRowFun = emptyRowFun;
-		this.subqueryNumber = subqueryNumber;
-		this.pointOfAttachment = pointOfAttachment;
-		recordConstructorTime();
+        this(new SubqueryResultSetParameters(
+                s,
+                a,
+                emptyRowFun,
+                -1,
+                resultSetNumber,
+                subqueryNumber,
+                pointOfAttachment,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost));
+    }
+
+    AnyResultSet(SubqueryResultSetParameters parameters)
+    {
+        super(parameters.activation,
+              parameters.resultSetNumber,
+              parameters.optimizerEstimatedRowCount,
+              parameters.optimizerEstimatedCost);
+        source = parameters.source;
+        this.emptyRowFun = parameters.emptyRow;
+        this.subqueryNumber = parameters.subqueryNumber;
+        this.pointOfAttachment = parameters.pointOfAttachment;
+        recordConstructorTime();
     }
 
 	//

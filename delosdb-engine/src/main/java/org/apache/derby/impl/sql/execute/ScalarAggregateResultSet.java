@@ -79,8 +79,32 @@ class ScalarAggregateResultSet extends GenericAggregateResultSet
 				    double optimizerEstimatedRowCount,
 				    double optimizerEstimatedCost) throws StandardException 
 	{
-		super(s, aggregateItem, a, ra, resultSetNumber, optimizerEstimatedRowCount, optimizerEstimatedCost);
-		this.isInSortedOrder = isInSortedOrder;
+        this(new AggregateResultSetParameters(
+                s,
+                isInSortedOrder,
+                aggregateItem,
+                -1,
+                a,
+                ra,
+                -1,
+                resultSetNumber,
+                singleInputRow,
+                false,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost));
+    }
+
+    ScalarAggregateResultSet(AggregateResultSetParameters parameters)
+            throws StandardException
+    {
+        super(parameters.source,
+              parameters.aggregateItem,
+              parameters.activation,
+              parameters.rowAllocator,
+              parameters.resultSetNumber,
+              parameters.optimizerEstimatedRowCount,
+              parameters.optimizerEstimatedCost);
+        this.isInSortedOrder = parameters.isInSortedOrder;
 		// source expected to be non-null, mystery stress test bug
 		// - sometimes get NullPointerException in openCore().
 		if (SanityManager.DEBUG)
@@ -88,13 +112,13 @@ class ScalarAggregateResultSet extends GenericAggregateResultSet
 			SanityManager.ASSERT(source != null,
 				"SARS(), source expected to be non-null");
 		}
-		this.singleInputRow = singleInputRow;
+        this.singleInputRow = parameters.singleInputRow;
 
-		if (SanityManager.DEBUG)
-		{
-			SanityManager.DEBUG("AggregateTrace","execution time: "+ 
-					a.getPreparedStatement().getSavedObject(aggregateItem));
-		}
+        if (SanityManager.DEBUG)
+        {
+            SanityManager.DEBUG("AggregateTrace","execution time: "+
+                    parameters.activation.getPreparedStatement().getSavedObject(parameters.aggregateItem));
+        }
 		recordConstructorTime();
     }
 
