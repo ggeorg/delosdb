@@ -251,13 +251,14 @@ public class GenericResultSetFactory implements ResultSetFactory
 		Activation activation = source.getActivation();
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
 
-        return new InsertResultSet(source,
-                                   generationClauses,
-                                   checkGM,
-                                   fullTemplate,
-                                   schemaName,
-                                   tableName,
-                                   activation);
+        return new InsertResultSet(new InsertResultSetParameters(
+                source,
+                generationClauses,
+                checkGM,
+                fullTemplate,
+                schemaName,
+                tableName,
+                activation));
 	}
 
 	/**
@@ -322,10 +323,12 @@ public class GenericResultSetFactory implements ResultSetFactory
 	{
 		Activation activation = source.getActivation();
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
-		return new DeleteCascadeResultSet(source, activation, 
-										  constantActionItem,
-										  dependentResultSets, 
-										  resultSetId);
+		return new DeleteCascadeResultSet(new DeleteCascadeResultSetParameters(
+                source,
+                activation,
+                constantActionItem,
+                dependentResultSets,
+                resultSetId));
 	}
 
 
@@ -351,7 +354,8 @@ public class GenericResultSetFactory implements ResultSetFactory
 			SanityManager.ASSERT(getAuthorizer(activation) != null, "Authorizer is null");
 		}
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
-		return new UpdateResultSet(source, generationClauses, checkGM, activation);
+		return new UpdateResultSet(UpdateResultSetParameters.normal(
+                source, generationClauses, checkGM, activation));
 	}
 
 	/**
@@ -381,8 +385,13 @@ public class GenericResultSetFactory implements ResultSetFactory
 	{
 		Activation activation = source.getActivation();
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
-		return new UpdateResultSet(source, generationClauses, checkGM, activation,
-								   constantActionItem, rsdItem);
+		return new UpdateResultSet(UpdateResultSetParameters.cascade(
+                source,
+                generationClauses,
+                checkGM,
+                activation,
+                constantActionItem,
+                rsdItem));
 	}
 
 
@@ -1401,7 +1410,8 @@ public class GenericResultSetFactory implements ResultSetFactory
 	public NoPutResultSet getCurrentOfResultSet(String cursorName, 
 	    Activation activation, int resultSetNumber)
 	{
-		return new CurrentOfResultSet(cursorName, activation, resultSetNumber);
+		return new CurrentOfResultSet(new CurrentOfResultSetParameters(
+                cursorName, activation, resultSetNumber));
 	}
 
 	/**

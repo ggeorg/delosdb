@@ -126,7 +126,7 @@ class UpdateResultSet extends DMLWriteGeneratedColumnsResultSet
 						   Activation activation)
       throws StandardException
     {
-		this(source, generationClauses, checkGM , activation, activation.getConstantAction(),null);
+		this(UpdateResultSetParameters.normal(source, generationClauses, checkGM, activation));
 	}
 
     /*
@@ -150,12 +150,29 @@ class UpdateResultSet extends DMLWriteGeneratedColumnsResultSet
 						   int rsdItem)
       throws StandardException
     {
-		this(source, generationClauses, checkGM , activation,
-			  ((ConstantAction)activation.getPreparedStatement().getSavedObject(constantActionItem)),
-			 (ResultDescription) activation.getPreparedStatement().getSavedObject(rsdItem));
-	
-		// In case of referential action update, we do a deferred updates
-		deferred = true;
+		this(UpdateResultSetParameters.cascade(source,
+                                             generationClauses,
+                                             checkGM,
+                                             activation,
+                                             constantActionItem,
+                                             rsdItem));
+	}
+
+    UpdateResultSet(UpdateResultSetParameters parameters)
+      throws StandardException
+    {
+		this(parameters.source,
+             parameters.generationClauses,
+             parameters.checkGM,
+             parameters.activation,
+             parameters.constantAction,
+             parameters.resultDescription);
+
+		if (parameters.forceDeferred)
+        {
+            // In case of referential action update, we do a deferred updates
+            deferred = true;
+        }
 	}
 
 

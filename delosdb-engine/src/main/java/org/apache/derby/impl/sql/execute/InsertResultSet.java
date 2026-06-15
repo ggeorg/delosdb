@@ -322,14 +322,26 @@ class InsertResultSet extends DMLWriteGeneratedColumnsResultSet implements Targe
                     String tableName,
                     Activation activation)
         throws StandardException {
-        super(activation);
-        sourceResultSet = source;
+        this(new InsertResultSetParameters(source,
+                                           generationClauses,
+                                           checkGM,
+                                           fullTemplate,
+                                           schemaName,
+                                           tableName,
+                                           activation));
+    }
+
+    InsertResultSet(InsertResultSetParameters parameters)
+        throws StandardException {
+        super(parameters.activation);
+        Activation activation = parameters.activation;
+        sourceResultSet = parameters.source;
         constants = (InsertConstantAction) constantAction;
-        this.generationClauses = generationClauses;
-        this.checkGM = checkGM;
-        this.fullTemplateId = fullTemplate;
-        this.schemaName = schemaName;
-        this.tableName = tableName;
+        this.generationClauses = parameters.generationClauses;
+        this.checkGM = parameters.checkGM;
+        this.fullTemplateId = parameters.fullTemplate;
+        this.schemaName = parameters.schemaName;
+        this.tableName = parameters.tableName;
         heapConglom = constants.conglomId;
         identitySequenceUUIDString = constants.identitySequenceUUIDString;
 

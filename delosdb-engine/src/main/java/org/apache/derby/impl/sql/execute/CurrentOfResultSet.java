@@ -66,10 +66,15 @@ class CurrentOfResultSet extends NoPutResultSetImpl
     CurrentOfResultSet(String cursorName, Activation activation, 
 							  int resultSetNumber)
 	{
-		super(activation, resultSetNumber, 0.0d, 0.0d);
+		this(new CurrentOfResultSetParameters(cursorName, activation, resultSetNumber));
+    }
+
+    CurrentOfResultSet(CurrentOfResultSetParameters parameters)
+	{
+		super(parameters.activation, parameters.resultSetNumber, 0.0d, 0.0d);
 		if (SanityManager.DEBUG)
-			SanityManager.ASSERT( cursorName!=null, "current of scan must get cursor name");
-        this.cursorName = cursorName;
+			SanityManager.ASSERT( parameters.cursorName!=null, "current of scan must get cursor name");
+        this.cursorName = parameters.cursorName;
     }
 
 	//

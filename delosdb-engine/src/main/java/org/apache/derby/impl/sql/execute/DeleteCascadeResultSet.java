@@ -29,7 +29,6 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.ResultSet;
-import org.apache.derby.iapi.sql.execute.ConstantAction;
 import org.apache.derby.iapi.sql.execute.CursorResultSet;
 import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
@@ -71,28 +70,30 @@ class DeleteCascadeResultSet extends DeleteResultSet
 	)
 		throws StandardException
     {
+		this(new DeleteCascadeResultSetParameters(source,
+                                                activation,
+                                                constantActionItem,
+                                                dependentResultSets,
+                                                resultSetId));
+	}
 
-		super(source,
-			  ((constantActionItem == -1) ?activation.getConstantAction() :
-			  (ConstantAction)activation.getPreparedStatement().getSavedObject(constantActionItem)),
-			  activation);
+    public DeleteCascadeResultSet(DeleteCascadeResultSetParameters parameters)
+		throws StandardException
+    {
 
-		ConstantAction passedInConstantAction;
-		if(constantActionItem == -1)
-			passedInConstantAction = activation.getConstantAction(); //root table
-		else
+		super(parameters.source, parameters.constantAction, parameters.activation);
+
+		if (!parameters.isRootTable())
 		{
-			passedInConstantAction = 
-				(ConstantAction) activation.getPreparedStatement().getSavedObject(constantActionItem);
 			resultDescription = constants.resultDescription;
 		}
 		cascadeDelete = true;
-		this.resultSetId = resultSetId;
+		this.resultSetId = parameters.resultSetId;
 		
-		if(dependentResultSets != null)
+		if(parameters.dependentResultSets != null)
 		{
-			noDependents = dependentResultSets.length;
-			this.dependentResultSets = dependentResultSets;
+			noDependents = parameters.dependentResultSets.length;
+			this.dependentResultSets = parameters.dependentResultSets;
 		}
 
 	}
