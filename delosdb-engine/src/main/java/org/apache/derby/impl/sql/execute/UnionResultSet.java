@@ -70,11 +70,23 @@ class UnionResultSet extends NoPutResultSetImpl
 					      double optimizerEstimatedRowCount,
 						  double optimizerEstimatedCost) 
 	{
-		
-		super(activation, resultSetNumber, 
-			  optimizerEstimatedRowCount, optimizerEstimatedCost);
-        this.source1 = source1;
-        this.source2 = source2;
+        this(new UnionResultSetParameters(
+                source1,
+                source2,
+                activation,
+                resultSetNumber,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost));
+    }
+
+    UnionResultSet(UnionResultSetParameters parameters)
+    {
+		super(parameters.activation,
+                parameters.resultSetNumber,
+			  parameters.optimizerEstimatedRowCount,
+                parameters.optimizerEstimatedCost);
+        this.source1 = parameters.source1;
+        this.source2 = parameters.source2;
         recordConstructorTime();
     }
 

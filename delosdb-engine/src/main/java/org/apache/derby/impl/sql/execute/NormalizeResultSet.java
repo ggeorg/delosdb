@@ -86,13 +86,28 @@ class NormalizeResultSet extends NoPutResultSetImpl
 							  double optimizerEstimatedCost,
 							  boolean forUpdate) throws StandardException
 	{
-		super(activation, resultSetNumber, optimizerEstimatedRowCount, 
-			  optimizerEstimatedCost);
-		this.source = source;
+        this(new NormalizeResultSetParameters(
+                source,
+                activation,
+                resultSetNumber,
+                erdNumber,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost,
+                forUpdate));
+	}
+
+    NormalizeResultSet(NormalizeResultSetParameters parameters)
+            throws StandardException
+    {
+		super(parameters.activation,
+                parameters.resultSetNumber,
+                parameters.optimizerEstimatedRowCount,
+			  parameters.optimizerEstimatedCost);
+		this.source = parameters.source;
 
 		if (SanityManager.DEBUG)
 		{
-			if (! (activation.getPreparedStatement().getSavedObject(erdNumber)
+			if (! (parameters.activation.getPreparedStatement().getSavedObject(parameters.erdNumber)
 							 instanceof ResultDescription))
 			{
 				SanityManager.THROWASSERT(
@@ -107,12 +122,12 @@ class NormalizeResultSet extends NoPutResultSetImpl
 		}
 
 		this.resultDescription = 
-			(ResultDescription) activation.getPreparedStatement().getSavedObject(erdNumber);
+			(ResultDescription) parameters.activation.getPreparedStatement().getSavedObject(parameters.erdNumber);
 
 		numCols = resultDescription.getColumnCount();
 		
-		startCol = computeStartColumn( forUpdate, resultDescription );
-		normalizedRow = activation.getExecutionFactory().getValueRow(numCols);
+		startCol = computeStartColumn( parameters.forUpdate, resultDescription );
+		normalizedRow = parameters.activation.getExecutionFactory().getValueRow(numCols);
         cachedDestinations = new DataValueDescriptor[numCols];
 		recordConstructorTime();
 	}

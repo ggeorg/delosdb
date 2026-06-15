@@ -63,6 +63,14 @@ public class GenericResultSetFactory implements ResultSetFactory
 	{
 	}
 
+    private static StaticCompiledOpenConglomInfo savedConglomInfo(
+            Activation activation,
+            int scociItem)
+    {
+        return (StaticCompiledOpenConglomInfo) activation.getPreparedStatement()
+                .getSavedObject(scociItem);
+    }
+
     private static TableScanResultSetParameters tableScanParameters(
             Activation activation,
             long conglomId,
@@ -90,13 +98,9 @@ public class GenericResultSetFactory implements ResultSetFactory
             double optimizerEstimatedRowCount,
             double optimizerEstimatedCost)
     {
-        StaticCompiledOpenConglomInfo scoci =
-                (StaticCompiledOpenConglomInfo) activation.getPreparedStatement()
-                        .getSavedObject(scociItem);
-
         return new TableScanResultSetParameters(
                 conglomId,
-                scoci,
+                savedConglomInfo(activation, scociItem),
                 activation,
                 resultRowTemplate,
                 resultSetNumber,
@@ -118,6 +122,116 @@ public class GenericResultSetFactory implements ResultSetFactory
                 isolationLevel,
                 rowsPerRead,
                 oneRowScan,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost);
+    }
+
+    private static HashScanResultSetParameters hashScanParameters(
+            Activation activation,
+            long conglomId,
+            int scociItem,
+            int resultRowTemplate,
+            int resultSetNumber,
+            GeneratedMethod startKeyGetter,
+            int startSearchOperator,
+            GeneratedMethod stopKeyGetter,
+            int stopSearchOperator,
+            boolean sameStartStopPosition,
+            Qualifier[][] scanQualifiers,
+            Qualifier[][] nextQualifiers,
+            int initialCapacity,
+            float loadFactor,
+            int maxCapacity,
+            int hashKeyColumn,
+            String tableName,
+            String userSuppliedOptimizerOverrides,
+            String indexName,
+            boolean isConstraint,
+            boolean forUpdate,
+            int colRefItem,
+            int lockMode,
+            boolean tableLocked,
+            int isolationLevel,
+            boolean skipNullKeyColumns,
+            double optimizerEstimatedRowCount,
+            double optimizerEstimatedCost)
+    {
+        return new HashScanResultSetParameters(
+                conglomId,
+                savedConglomInfo(activation, scociItem),
+                activation,
+                resultRowTemplate,
+                resultSetNumber,
+                startKeyGetter,
+                startSearchOperator,
+                stopKeyGetter,
+                stopSearchOperator,
+                sameStartStopPosition,
+                scanQualifiers,
+                nextQualifiers,
+                initialCapacity,
+                loadFactor,
+                maxCapacity,
+                hashKeyColumn,
+                tableName,
+                userSuppliedOptimizerOverrides,
+                indexName,
+                isConstraint,
+                forUpdate,
+                colRefItem,
+                lockMode,
+                tableLocked,
+                isolationLevel,
+                skipNullKeyColumns,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost);
+    }
+
+    private static HashScanResultSetParameters distinctScanParameters(
+            Activation activation,
+            long conglomId,
+            int scociItem,
+            int resultRowTemplate,
+            int resultSetNumber,
+            int hashKeyColumn,
+            String tableName,
+            String userSuppliedOptimizerOverrides,
+            String indexName,
+            boolean isConstraint,
+            int colRefItem,
+            int lockMode,
+            boolean tableLocked,
+            int isolationLevel,
+            double optimizerEstimatedRowCount,
+            double optimizerEstimatedCost)
+    {
+        return hashScanParameters(
+                activation,
+                conglomId,
+                scociItem,
+                resultRowTemplate,
+                resultSetNumber,
+                null,
+                0,
+                null,
+                0,
+                false,
+                null,
+                null,
+                HashScanResultSet.DEFAULT_INITIAL_CAPACITY,
+                HashScanResultSet.DEFAULT_LOADFACTOR,
+                HashScanResultSet.DEFAULT_MAX_CAPACITY,
+                hashKeyColumn,
+                tableName,
+                userSuppliedOptimizerOverrides,
+                indexName,
+                isConstraint,
+                false,
+                colRefItem,
+                lockMode,
+                tableLocked,
+                isolationLevel,
+                false,
                 optimizerEstimatedRowCount,
                 optimizerEstimatedCost);
     }
@@ -310,15 +424,22 @@ public class GenericResultSetFactory implements ResultSetFactory
             .getUUIDFactory()
             .recreateUUID( validatingBaseTableUUIDString );
 
-		return new ProjectRestrictResultSet(source, source.getActivation(), 
-			restriction, projection, resultSetNumber, 
-            constantRestriction, mapRefItem, cloneMapItem,
-			reuseResult,
-			doesProjection,
-            validatingCheckConstraint,
-            validatingBaseTableUUID,
-		    optimizerEstimatedRowCount,
-			optimizerEstimatedCost);
+		return new ProjectRestrictResultSet(
+                new ProjectRestrictResultSetParameters(
+                        source,
+                        source.getActivation(),
+                        restriction,
+                        projection,
+                        resultSetNumber,
+                        constantRestriction,
+                        mapRefItem,
+                        cloneMapItem,
+                        reuseResult,
+                        doesProjection,
+                        validatingCheckConstraint,
+                        validatingBaseTableUUID,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
 	/**
@@ -370,16 +491,18 @@ public class GenericResultSetFactory implements ResultSetFactory
 		double optimizerEstimatedCost)
 			throws StandardException
 	{
-		return new SortResultSet(source, 
-			distinct, 
-			isInSortedOrder,
-			orderItem,
-			source.getActivation(), 
-			rowAllocator, 
-			maxRowSize,
-			resultSetNumber, 
-		    optimizerEstimatedRowCount,
-			optimizerEstimatedCost);
+		return new SortResultSet(
+                new SortResultSetParameters(
+                        source,
+                        distinct,
+                        isInSortedOrder,
+                        orderItem,
+                        source.getActivation(),
+                        rowAllocator,
+                        maxRowSize,
+                        resultSetNumber,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
 	/**
@@ -607,38 +730,36 @@ public class GenericResultSetFactory implements ResultSetFactory
 									double optimizerEstimatedCost)
 			throws StandardException
 	{
-        StaticCompiledOpenConglomInfo scoci = (StaticCompiledOpenConglomInfo)(activation.getPreparedStatement().
-						getSavedObject(scociItem));
-
-		return new HashScanResultSet(
-								conglomId,
-								scoci,
-								activation,
-								resultRowTemplate,
-								resultSetNumber,
-								startKeyGetter,
-								startSearchOperator,
-								stopKeyGetter,
-								stopSearchOperator,
-								sameStartStopPosition,
-								scanQualifiers,
-								nextQualifiers,
-								initialCapacity,
-								loadFactor,
-								maxCapacity,
-								hashKeyColumn,
-								tableName,
-								userSuppliedOptimizerOverrides,
-								indexName,
-								isConstraint,
-								forUpdate,
-								colRefItem,
-								lockMode,
-								tableLocked,
-								isolationLevel,
-								true,		// Skip rows with 1 or more null key columns
-								optimizerEstimatedRowCount,
-								optimizerEstimatedCost);
+        return new HashScanResultSet(
+                hashScanParameters(
+                        activation,
+                        conglomId,
+                        scociItem,
+                        resultRowTemplate,
+                        resultSetNumber,
+                        startKeyGetter,
+                        startSearchOperator,
+                        stopKeyGetter,
+                        stopSearchOperator,
+                        sameStartStopPosition,
+                        scanQualifiers,
+                        nextQualifiers,
+                        initialCapacity,
+                        loadFactor,
+                        maxCapacity,
+                        hashKeyColumn,
+                        tableName,
+                        userSuppliedOptimizerOverrides,
+                        indexName,
+                        isConstraint,
+                        forUpdate,
+                        colRefItem,
+                        lockMode,
+                        tableLocked,
+                        isolationLevel,
+                        true,		// Skip rows with 1 or more null key columns
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
 	/**
@@ -665,25 +786,24 @@ public class GenericResultSetFactory implements ResultSetFactory
 									double optimizerEstimatedCost)
 			throws StandardException
 	{
-        StaticCompiledOpenConglomInfo scoci = (StaticCompiledOpenConglomInfo)(activation.getPreparedStatement().
-						getSavedObject(scociItem));
-		return new DistinctScanResultSet(
-								conglomId,
-								scoci,
-								activation,
-								resultRowTemplate,
-								resultSetNumber,
-								hashKeyColumn,
-								tableName,
-								userSuppliedOptimizerOverrides,
-								indexName,
-								isConstraint,
-								colRefItem,
-								lockMode,
-								tableLocked,
-								isolationLevel,
-								optimizerEstimatedRowCount,
-								optimizerEstimatedCost);
+        return new DistinctScanResultSet(
+                distinctScanParameters(
+                        activation,
+                        conglomId,
+                        scociItem,
+                        resultRowTemplate,
+                        resultSetNumber,
+                        hashKeyColumn,
+                        tableName,
+                        userSuppliedOptimizerOverrides,
+                        indexName,
+                        isConstraint,
+                        colRefItem,
+                        lockMode,
+                        tableLocked,
+                        isolationLevel,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
 	/**
@@ -969,23 +1089,24 @@ public class GenericResultSetFactory implements ResultSetFactory
 								int baseColumnCount )
 			throws StandardException
 	{
-		return new IndexRowToBaseRowResultSet(
-								conglomId,
-								scociItem,
-								source.getActivation(),
-								source,
-								resultRowAllocator,
-								resultSetNumber,
-								indexName,
-								heapColRefItem,
-								allColRefItem,
-								heapOnlyColRefItem,
-								indexColMapItem,
-								restriction,
-								forUpdate,
-							    optimizerEstimatedRowCount,
-								optimizerEstimatedCost,
-								baseColumnCount);
+        return new IndexRowToBaseRowResultSet(
+                new IndexRowToBaseRowResultSetParameters(
+                        conglomId,
+                        scociItem,
+                        source.getActivation(),
+                        source,
+                        resultRowAllocator,
+                        resultSetNumber,
+                        indexName,
+                        heapColRefItem,
+                        allColRefItem,
+                        heapOnlyColRefItem,
+                        indexColMapItem,
+                        restriction,
+                        forUpdate,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost,
+                        baseColumnCount));
 	}
 
 	/**
@@ -1209,10 +1330,15 @@ public class GenericResultSetFactory implements ResultSetFactory
 							boolean forUpdate)
 		throws StandardException
 	{
-		return new NormalizeResultSet(source, source.getActivation(), 
-									  resultSetNumber, erdNumber, 
-									  optimizerEstimatedRowCount,
-									  optimizerEstimatedCost, forUpdate);
+		return new NormalizeResultSet(
+                new NormalizeResultSetParameters(
+                        source,
+                        source.getActivation(),
+                        resultSetNumber,
+                        erdNumber,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost,
+                        forUpdate));
 	}
 
 	/**
@@ -1258,11 +1384,14 @@ public class GenericResultSetFactory implements ResultSetFactory
 								   double optimizerEstimatedCost)
 			throws StandardException
 	{
-		return new UnionResultSet(leftResultSet, rightResultSet, 
-				                  leftResultSet.getActivation(),
-								  resultSetNumber, 
-								  optimizerEstimatedRowCount,
-								  optimizerEstimatedCost);
+		return new UnionResultSet(
+                new UnionResultSetParameters(
+                        leftResultSet,
+                        rightResultSet,
+                        leftResultSet.getActivation(),
+                        resultSetNumber,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
     public NoPutResultSet getSetOpResultSet( NoPutResultSet leftSource,
@@ -1278,17 +1407,19 @@ public class GenericResultSetFactory implements ResultSetFactory
                                              int intermediateOrderByNullsLowSavedObject)
         throws StandardException
     {
-        return new SetOpResultSet( leftSource,
-                                   rightSource,
-                                   activation,
-                                   resultSetNumber,
-                                   optimizerEstimatedRowCount,
-                                   optimizerEstimatedCost,
-                                   opType,
-                                   all,
-                                   intermediateOrderByColumnsSavedObject,
-                                   intermediateOrderByDirectionSavedObject,
-                                   intermediateOrderByNullsLowSavedObject);
+        return new SetOpResultSet(
+                new SetOpResultSetParameters(
+                        leftSource,
+                        rightSource,
+                        activation,
+                        resultSetNumber,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost,
+                        opType,
+                        all,
+                        intermediateOrderByColumnsSavedObject,
+                        intermediateOrderByDirectionSavedObject,
+                        intermediateOrderByNullsLowSavedObject));
     }
 
 	/**
@@ -1337,20 +1468,21 @@ public class GenericResultSetFactory implements ResultSetFactory
 		double 				optimizerEstimatedCost
 	) throws StandardException
 	{
-		return new LastIndexKeyResultSet(
-					activation,
-					resultSetNumber,
-					resultRowTemplate,
-					conglomId,
-					tableName,
-					userSuppliedOptimizerOverrides,
-					indexName,
-					colRefItem,
-					lockMode,
-					tableLocked,
-					isolationLevel,
-					optimizerEstimatedRowCount,
-					optimizerEstimatedCost);
+        return new LastIndexKeyResultSet(
+                new LastIndexKeyResultSetParameters(
+                        activation,
+                        resultSetNumber,
+                        resultRowTemplate,
+                        conglomId,
+                        tableName,
+                        userSuppliedOptimizerOverrides,
+                        indexName,
+                        colRefItem,
+                        lockMode,
+                        tableLocked,
+                        isolationLevel,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost));
 	}
 
 

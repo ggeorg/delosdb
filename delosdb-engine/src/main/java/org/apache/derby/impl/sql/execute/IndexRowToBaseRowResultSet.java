@@ -90,6 +90,27 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
     //
     // class interface
     //
+    IndexRowToBaseRowResultSet(IndexRowToBaseRowResultSetParameters params)
+            throws StandardException
+    {
+        this(params.conglomId,
+                params.scociItem,
+                params.activation,
+                params.source,
+                params.resultRowAllocator,
+                params.resultSetNumber,
+                params.indexName,
+                params.heapColRefItem,
+                params.allColRefItem,
+                params.heapOnlyColRefItem,
+                params.indexColMapItem,
+                params.restriction,
+                params.forUpdate,
+                params.optimizerEstimatedRowCount,
+                params.optimizerEstimatedCost,
+                params.baseColumnCount);
+    }
+
     IndexRowToBaseRowResultSet(
 					long conglomId,
 					int scociItem,

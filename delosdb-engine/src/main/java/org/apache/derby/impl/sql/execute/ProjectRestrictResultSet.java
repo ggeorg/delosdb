@@ -94,8 +94,31 @@ class ProjectRestrictResultSet extends NoPutResultSetImpl
 					double optimizerEstimatedCost) 
 		throws StandardException
 	{
-		super(a, resultSetNumber, optimizerEstimatedRowCount, optimizerEstimatedCost);
-        source = s;
+        this(new ProjectRestrictResultSetParameters(
+                s,
+                a,
+                r,
+                p,
+                resultSetNumber,
+                cr,
+                mapRefItem,
+                cloneMapItem,
+                reuseResult,
+                doesProjection,
+                validatingCheckConstraint,
+                validatingBaseTableUUID,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost));
+    }
+
+    ProjectRestrictResultSet(ProjectRestrictResultSetParameters parameters)
+            throws StandardException
+	{
+		super(parameters.activation,
+                parameters.resultSetNumber,
+                parameters.optimizerEstimatedRowCount,
+                parameters.optimizerEstimatedCost);
+        source = parameters.source;
 		// source expected to be non-null, mystery stress test bug
 		// - sometimes get NullPointerException in openCore().
 		if (SanityManager.DEBUG)
@@ -103,14 +126,14 @@ class ProjectRestrictResultSet extends NoPutResultSetImpl
 			SanityManager.ASSERT(source != null,
 				"PRRS(), source expected to be non-null");
 		}
-        restriction = r;
-        projection = p;
-		constantRestriction = cr;
-		projectMapping = ((ReferencedColumnsDescriptorImpl) a.getPreparedStatement().getSavedObject(mapRefItem)).getReferencedColumnPositions();
-		this.reuseResult = reuseResult;
-		this.doesProjection = doesProjection;
-        this.validatingCheckConstraint = validatingCheckConstraint;
-        this.validatingBaseTableUUID = validatingBaseTableUUID;
+        restriction = parameters.restriction;
+        projection = parameters.projection;
+		constantRestriction = parameters.constantRestriction;
+		projectMapping = ((ReferencedColumnsDescriptorImpl) parameters.activation.getPreparedStatement().getSavedObject(parameters.mapRefItem)).getReferencedColumnPositions();
+		this.reuseResult = parameters.reuseResult;
+		this.doesProjection = parameters.doesProjection;
+        this.validatingCheckConstraint = parameters.validatingCheckConstraint;
+        this.validatingBaseTableUUID = parameters.validatingBaseTableUUID;
 
 		// Allocate a result row if all of the columns are mapped from the source
 		if (projection == null)
@@ -119,7 +142,7 @@ class ProjectRestrictResultSet extends NoPutResultSetImpl
 		}
 
         cloneMap =
-            ((boolean[])a.getPreparedStatement().getSavedObject(cloneMapItem));
+            ((boolean[])parameters.activation.getPreparedStatement().getSavedObject(parameters.cloneMapItem));
 
 		/* Remember whether or not RunTimeStatistics is on */
 		runTimeStatsOn = getLanguageConnectionContext().getRunTimeStatisticsMode();

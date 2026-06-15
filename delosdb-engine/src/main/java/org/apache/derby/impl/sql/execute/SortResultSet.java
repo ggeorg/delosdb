@@ -168,19 +168,37 @@ class SortResultSet extends NoPutResultSetImpl
 				    double optimizerEstimatedRowCount,
 				    double optimizerEstimatedCost) throws StandardException 
 	{
-		super(a, resultSetNumber, optimizerEstimatedRowCount, optimizerEstimatedCost);
-		this.distinct = distinct;
-		this.isInSortedOrder = isInSortedOrder;
-        source = s;
-        originalSource = s;
-		this.maxRowSize = maxRowSize;
+        this(new SortResultSetParameters(
+                s,
+                distinct,
+                isInSortedOrder,
+                orderingItem,
+                a,
+                ra,
+                maxRowSize,
+                resultSetNumber,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost));
+	}
 
-        ExecPreparedStatement ps = a.getPreparedStatement();
+    SortResultSet(SortResultSetParameters parameters) throws StandardException
+    {
+		super(parameters.activation,
+                parameters.resultSetNumber,
+                parameters.optimizerEstimatedRowCount,
+                parameters.optimizerEstimatedCost);
+		this.distinct = parameters.distinct;
+		this.isInSortedOrder = parameters.isInSortedOrder;
+        source = parameters.source;
+        originalSource = parameters.source;
+		this.maxRowSize = parameters.maxRowSize;
 
-		sortTemplateRow = ((ExecRowBuilder) ps.getSavedObject(ra))
-                                .build(a.getExecutionFactory());
+        ExecPreparedStatement ps = parameters.activation.getPreparedStatement();
 
-        order = ((FormatableArrayHolder) ps.getSavedObject(orderingItem))
+		sortTemplateRow = ((ExecRowBuilder) ps.getSavedObject(parameters.rowAllocator))
+                                .build(parameters.activation.getExecutionFactory());
+
+        order = ((FormatableArrayHolder) ps.getSavedObject(parameters.orderingItem))
                 .getArray(ColumnOrdering[].class);
 
 		/* NOTE: We need to save order to another variable
@@ -195,7 +213,7 @@ class SortResultSet extends NoPutResultSetImpl
 		** Create a sort observer that are retained by the
 		** sort.
 		*/
-		observer = new BasicSortObserver(true, distinct, sortTemplateRow, true);
+		observer = new BasicSortObserver(true, parameters.distinct, sortTemplateRow, true);
 
 		recordConstructorTime();
     }

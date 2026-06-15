@@ -49,6 +49,15 @@ class DistinctScanResultSet extends HashScanResultSet
     //
     // class interface
     //
+    DistinctScanResultSet(HashScanResultSetParameters params)
+            throws StandardException
+    {
+        super(params);
+
+        // Tell super class to eliminate duplicates
+        eliminateDuplicates = true;
+    }
+
     DistinctScanResultSet(long conglomId, 
 		StaticCompiledOpenConglomInfo scoci, Activation activation, 
 		int resultRowTemplate,

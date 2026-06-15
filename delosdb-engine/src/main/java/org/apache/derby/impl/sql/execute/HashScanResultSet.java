@@ -108,6 +108,39 @@ public class HashScanResultSet extends ScanResultSet
     //
     // class interface
     //
+    HashScanResultSet(HashScanResultSetParameters params)
+            throws StandardException
+    {
+        this(params.conglomId,
+                params.scoci,
+                params.activation,
+                params.resultRowTemplate,
+                params.resultSetNumber,
+                params.startKeyGetter,
+                params.startSearchOperator,
+                params.stopKeyGetter,
+                params.stopSearchOperator,
+                params.sameStartStopPosition,
+                params.scanQualifiers,
+                params.nextQualifiers,
+                params.initialCapacity,
+                params.loadFactor,
+                params.maxCapacity,
+                params.hashKeyItem,
+                params.tableName,
+                params.userSuppliedOptimizerOverrides,
+                params.indexName,
+                params.isConstraint,
+                params.forUpdate,
+                params.colRefItem,
+                params.lockMode,
+                params.tableLocked,
+                params.isolationLevel,
+                params.skipNullKeyColumns,
+                params.optimizerEstimatedRowCount,
+                params.optimizerEstimatedCost);
+    }
+
     HashScanResultSet(long conglomId,
 		StaticCompiledOpenConglomInfo scoci, Activation activation, 
 		int resultRowTemplate,

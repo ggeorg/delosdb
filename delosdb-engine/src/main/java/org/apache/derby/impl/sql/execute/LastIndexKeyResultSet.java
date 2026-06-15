@@ -78,6 +78,24 @@ class LastIndexKeyResultSet extends ScanResultSet
 	 * @exception StandardException thrown when unable to create the
 	 * 				result set
 	 */
+    public LastIndexKeyResultSet(LastIndexKeyResultSetParameters params)
+            throws StandardException
+    {
+        this(params.activation,
+                params.resultSetNumber,
+                params.resultRowTemplate,
+                params.conglomId,
+                params.tableName,
+                params.userSuppliedOptimizerOverrides,
+                params.indexName,
+                params.colRefItem,
+                params.lockMode,
+                params.tableLocked,
+                params.isolationLevel,
+                params.optimizerEstimatedRowCount,
+                params.optimizerEstimatedCost);
+    }
+
 	public LastIndexKeyResultSet
 	(
 		Activation activation, 

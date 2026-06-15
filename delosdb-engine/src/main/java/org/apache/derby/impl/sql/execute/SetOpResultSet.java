@@ -79,19 +79,37 @@ class SetOpResultSet extends NoPutResultSetImpl
                     int intermediateOrderByDirectionSavedObject,
                     int intermediateOrderByNullsLowSavedObject)
     {
-		super(activation, resultSetNumber, 
-			  optimizerEstimatedRowCount, optimizerEstimatedCost);
-        this.leftSource = leftSource;
-        this.rightSource = rightSource;
-        this.activation = activation;
-        this.resultSetNumber = resultSetNumber;
-        this.opType = opType;
-        this.all = all;
+        this(new SetOpResultSetParameters(
+                leftSource,
+                rightSource,
+                activation,
+                resultSetNumber,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost,
+                opType,
+                all,
+                intermediateOrderByColumnsSavedObject,
+                intermediateOrderByDirectionSavedObject,
+                intermediateOrderByNullsLowSavedObject));
+    }
 
-        ExecPreparedStatement eps = activation.getPreparedStatement();
-        intermediateOrderByColumns = (int[]) eps.getSavedObject(intermediateOrderByColumnsSavedObject);
-        intermediateOrderByDirection = (int[]) eps.getSavedObject(intermediateOrderByDirectionSavedObject);
-        intermediateOrderByNullsLow = (boolean[]) eps.getSavedObject(intermediateOrderByNullsLowSavedObject);
+    SetOpResultSet(SetOpResultSetParameters parameters)
+    {
+		super(parameters.activation,
+                parameters.resultSetNumber,
+			  parameters.optimizerEstimatedRowCount,
+                parameters.optimizerEstimatedCost);
+        this.leftSource = parameters.leftSource;
+        this.rightSource = parameters.rightSource;
+        this.activation = parameters.activation;
+        this.resultSetNumber = parameters.resultSetNumber;
+        this.opType = parameters.opType;
+        this.all = parameters.all;
+
+        ExecPreparedStatement eps = parameters.activation.getPreparedStatement();
+        intermediateOrderByColumns = (int[]) eps.getSavedObject(parameters.intermediateOrderByColumnsSavedObject);
+        intermediateOrderByDirection = (int[]) eps.getSavedObject(parameters.intermediateOrderByDirectionSavedObject);
+        intermediateOrderByNullsLow = (boolean[]) eps.getSavedObject(parameters.intermediateOrderByNullsLowSavedObject);
         recordConstructorTime();
     }
 
