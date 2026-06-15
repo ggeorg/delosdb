@@ -296,11 +296,25 @@ class NestedLoopJoinResultSet extends JoinResultSet
 								   double optimizerEstimatedCost,
 								   String userSuppliedOptimizerOverrides)
     {
-		super(leftResultSet, leftNumCols, rightResultSet, rightNumCols,
-			  activation, restriction, resultSetNumber, 
-			  oneRowRightSide, notExistsRightSide, optimizerEstimatedRowCount, 
-			  optimizerEstimatedCost, userSuppliedOptimizerOverrides);
-		if (notExistsRightSide)
-			rightTemplate = getExecutionFactory().getValueRow(rightNumCols);
+        this(new JoinResultSetParameters(
+                leftResultSet,
+                leftNumCols,
+                rightResultSet,
+                rightNumCols,
+                activation,
+                restriction,
+                resultSetNumber,
+                oneRowRightSide,
+                notExistsRightSide,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost,
+                userSuppliedOptimizerOverrides));
+    }
+
+    NestedLoopJoinResultSet(JoinResultSetParameters parameters)
+    {
+		super(parameters);
+		if (parameters.notExistsRightSide)
+			rightTemplate = getExecutionFactory().getValueRow(parameters.rightNumCols);
     }
 }

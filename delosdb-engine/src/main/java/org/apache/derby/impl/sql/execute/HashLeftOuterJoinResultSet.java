@@ -49,11 +49,26 @@ class HashLeftOuterJoinResultSet extends NestedLoopLeftOuterJoinResultSet
 						double optimizerEstimatedCost,
 						String userSuppliedOptimizerOverrides)
     {
-		super(leftResultSet, leftNumCols, rightResultSet, rightNumCols,
-			  activation, restriction, resultSetNumber, 
-			  emptyRowFun, wasRightOuterJoin,
-			  oneRowRightSide, notExistsRightSide,
-			  optimizerEstimatedRowCount, optimizerEstimatedCost, 
-			  userSuppliedOptimizerOverrides);
+        this(new LeftOuterJoinResultSetParameters(
+                new JoinResultSetParameters(
+                        leftResultSet,
+                        leftNumCols,
+                        rightResultSet,
+                        rightNumCols,
+                        activation,
+                        restriction,
+                        resultSetNumber,
+                        oneRowRightSide,
+                        notExistsRightSide,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost,
+                        userSuppliedOptimizerOverrides),
+                emptyRowFun,
+                wasRightOuterJoin));
+    }
+
+    HashLeftOuterJoinResultSet(LeftOuterJoinResultSetParameters parameters)
+    {
+		super(parameters);
     }
 }

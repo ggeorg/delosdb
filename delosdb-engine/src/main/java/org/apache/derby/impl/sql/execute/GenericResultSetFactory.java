@@ -1217,15 +1217,20 @@ public class GenericResultSetFactory implements ResultSetFactory
 								   String userSuppliedOptimizerOverrides)
 			throws StandardException
 	{
-		return new NestedLoopJoinResultSet(leftResultSet, leftNumCols,
-										   rightResultSet, rightNumCols,
-										   leftResultSet.getActivation(), joinClause,
-										   resultSetNumber, 
-										   oneRowRightSide, 
-										   notExistsRightSide, 
-										   optimizerEstimatedRowCount,
-										   optimizerEstimatedCost,
-										   userSuppliedOptimizerOverrides);
+		return new NestedLoopJoinResultSet(
+                new JoinResultSetParameters(
+                        leftResultSet,
+                        leftNumCols,
+                        rightResultSet,
+                        rightNumCols,
+                        leftResultSet.getActivation(),
+                        joinClause,
+                        resultSetNumber,
+                        oneRowRightSide,
+                        notExistsRightSide,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost,
+                        userSuppliedOptimizerOverrides));
 	}
 
 	/**
@@ -1246,15 +1251,20 @@ public class GenericResultSetFactory implements ResultSetFactory
 								   String userSuppliedOptimizerOverrides)
 			throws StandardException
 	{
-		return new HashJoinResultSet(leftResultSet, leftNumCols,
-										   rightResultSet, rightNumCols,
-										   leftResultSet.getActivation(), joinClause,
-										   resultSetNumber, 
-										   oneRowRightSide, 
-										   notExistsRightSide, 
-										   optimizerEstimatedRowCount,
-										   optimizerEstimatedCost,
-										   userSuppliedOptimizerOverrides);
+		return new HashJoinResultSet(
+                new JoinResultSetParameters(
+                        leftResultSet,
+                        leftNumCols,
+                        rightResultSet,
+                        rightNumCols,
+                        leftResultSet.getActivation(),
+                        joinClause,
+                        resultSetNumber,
+                        oneRowRightSide,
+                        notExistsRightSide,
+                        optimizerEstimatedRowCount,
+                        optimizerEstimatedCost,
+                        userSuppliedOptimizerOverrides));
 	}
 
 	/**
@@ -1277,17 +1287,23 @@ public class GenericResultSetFactory implements ResultSetFactory
 								   String userSuppliedOptimizerOverrides)
 			throws StandardException
 	{
-		return new NestedLoopLeftOuterJoinResultSet(leftResultSet, leftNumCols,
-										   rightResultSet, rightNumCols,
-										   leftResultSet.getActivation(), joinClause,
-										   resultSetNumber, 
-										   emptyRowFun, 
-										   wasRightOuterJoin,
-										   oneRowRightSide,
-										   notExistsRightSide,
-										   optimizerEstimatedRowCount,
-										   optimizerEstimatedCost,
-										   userSuppliedOptimizerOverrides);
+		return new NestedLoopLeftOuterJoinResultSet(
+                new LeftOuterJoinResultSetParameters(
+                        new JoinResultSetParameters(
+                                leftResultSet,
+                                leftNumCols,
+                                rightResultSet,
+                                rightNumCols,
+                                leftResultSet.getActivation(),
+                                joinClause,
+                                resultSetNumber,
+                                oneRowRightSide,
+                                notExistsRightSide,
+                                optimizerEstimatedRowCount,
+                                optimizerEstimatedCost,
+                                userSuppliedOptimizerOverrides),
+                        emptyRowFun,
+                        wasRightOuterJoin));
 	}
 
 	/**
@@ -1310,17 +1326,23 @@ public class GenericResultSetFactory implements ResultSetFactory
 								   String userSuppliedOptimizerOverrides)
 			throws StandardException
 	{
-		return new HashLeftOuterJoinResultSet(leftResultSet, leftNumCols,
-										   rightResultSet, rightNumCols,
-										   leftResultSet.getActivation(), joinClause,
-										   resultSetNumber, 
-										   emptyRowFun, 
-										   wasRightOuterJoin,
-										   oneRowRightSide,
-										   notExistsRightSide,
-										   optimizerEstimatedRowCount,
-										   optimizerEstimatedCost,
-										   userSuppliedOptimizerOverrides);
+		return new HashLeftOuterJoinResultSet(
+                new LeftOuterJoinResultSetParameters(
+                        new JoinResultSetParameters(
+                                leftResultSet,
+                                leftNumCols,
+                                rightResultSet,
+                                rightNumCols,
+                                leftResultSet.getActivation(),
+                                joinClause,
+                                resultSetNumber,
+                                oneRowRightSide,
+                                notExistsRightSide,
+                                optimizerEstimatedRowCount,
+                                optimizerEstimatedCost,
+                                userSuppliedOptimizerOverrides),
+                        emptyRowFun,
+                        wasRightOuterJoin));
 	}
 
 	/**

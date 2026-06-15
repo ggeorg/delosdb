@@ -84,17 +84,35 @@ abstract class JoinResultSet extends NoPutResultSetImpl
 								   double optimizerEstimatedCost,
 								   String userSuppliedOptimizerOverrides)
     {
-		super(activation, resultSetNumber, optimizerEstimatedRowCount, 
-			  optimizerEstimatedCost);
-        this.leftResultSet = leftResultSet;
-		this.leftNumCols = leftNumCols;
-        this.rightResultSet = rightResultSet;
-		this.rightNumCols = rightNumCols;
-        this.restriction = restriction;
-		this.oneRowRightSide = oneRowRightSide;
-		this.notExistsRightSide = notExistsRightSide;
+        this(new JoinResultSetParameters(
+                leftResultSet,
+                leftNumCols,
+                rightResultSet,
+                rightNumCols,
+                activation,
+                restriction,
+                resultSetNumber,
+                oneRowRightSide,
+                notExistsRightSide,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost,
+                userSuppliedOptimizerOverrides));
+    }
 
-		this.userSuppliedOptimizerOverrides = userSuppliedOptimizerOverrides;
+    JoinResultSet(JoinResultSetParameters parameters)
+    {
+		super(parameters.activation, parameters.resultSetNumber,
+              parameters.optimizerEstimatedRowCount,
+			  parameters.optimizerEstimatedCost);
+        this.leftResultSet = parameters.leftResultSet;
+		this.leftNumCols = parameters.leftNumCols;
+        this.rightResultSet = parameters.rightResultSet;
+		this.rightNumCols = parameters.rightNumCols;
+        this.restriction = parameters.restriction;
+		this.oneRowRightSide = parameters.oneRowRightSide;
+		this.notExistsRightSide = parameters.notExistsRightSide;
+
+		this.userSuppliedOptimizerOverrides = parameters.userSuppliedOptimizerOverrides;
 		
 		recordConstructorTime();
     }
