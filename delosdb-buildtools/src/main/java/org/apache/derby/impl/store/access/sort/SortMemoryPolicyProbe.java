@@ -28,40 +28,40 @@ public final class SortMemoryPolicyProbe
         System.out.println("# Sort memory policy probe");
         System.out.println();
         System.out.println("factory=org.apache.derby.impl.store.access.sort.ExternalSortFactory");
-        System.out.println("policy=DelosDB JVM-aware row-count policy");
-        System.out.println("legacyDefaultMemUseBytes=" + ExternalSortFactory.LEGACY_DEFAULT_MEM_USE);
-        System.out.println("maxAutomaticMemUseBytes=" + ExternalSortFactory.MAX_AUTOMATIC_MEM_USE);
+        System.out.println("policy=org.apache.derby.impl.store.access.sort.SortMemoryPolicy");
+        System.out.println("legacyDefaultMemUseBytes=" + SortMemoryPolicy.LEGACY_DEFAULT_MEM_USE);
+        System.out.println("maxAutomaticMemUseBytes=" + SortMemoryPolicy.MAX_AUTOMATIC_MEM_USE);
         System.out.println("runtimeDefaultMemUseBytes="
-            + ExternalSortFactory.defaultMemoryUse(Runtime.getRuntime().maxMemory()));
+            + SortMemoryPolicy.defaultMemoryUse(Runtime.getRuntime().maxMemory()));
         System.out.println();
         System.out.println("| Case | Columns | Estimated rows | Estimated row size | User property | Default max | Automatic memory | Effective row size | Sort buffer max | Policy | Slush adjusted |");
         System.out.println("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|");
 
         probe("unknown-row-size", 3, 10000L, -1, false, 1024,
-            ExternalSortFactory.LEGACY_DEFAULT_MEM_USE, 1024, -1,
+            SortMemoryPolicy.LEGACY_DEFAULT_MEM_USE, 1024, -1,
             "default-row-count", false);
         probe("estimated-row-size-legacy-floor", 3, 10000L, 100, false, 1024,
-            ExternalSortFactory.LEGACY_DEFAULT_MEM_USE, 5242, 200,
+            SortMemoryPolicy.LEGACY_DEFAULT_MEM_USE, 5242, 200,
             "estimated-row-size-jvm-aware", false);
         probe("estimated-row-size-jvm-budget", 3, 10000L, 100, false, 1024,
             8 * 1024 * 1024, 41943, 200,
             "estimated-row-size-jvm-aware", false);
         probe("slush-adjusted", 3, 1500L, -1, false, 1024,
-            ExternalSortFactory.LEGACY_DEFAULT_MEM_USE, 900, -1,
+            SortMemoryPolicy.LEGACY_DEFAULT_MEM_USE, 900, -1,
             "default-row-count", true);
         probe("minimum-clamped", 3, 10000L, 2097152, false, 1024,
-            ExternalSortFactory.LEGACY_DEFAULT_MEM_USE, 4, 2097252,
+            SortMemoryPolicy.LEGACY_DEFAULT_MEM_USE, 4, 2097252,
             "estimated-row-size-jvm-aware", false);
         probe("user-property", 3, 10000L, 100, true, 20,
             8 * 1024 * 1024, 20, 100,
             "user-property", false);
 
-        requireEquals("defaultMemoryUse.floor", ExternalSortFactory.LEGACY_DEFAULT_MEM_USE,
-            ExternalSortFactory.defaultMemoryUse(128L * 1024L * 1024L));
+        requireEquals("defaultMemoryUse.floor", SortMemoryPolicy.LEGACY_DEFAULT_MEM_USE,
+            SortMemoryPolicy.defaultMemoryUse(128L * 1024L * 1024L));
         requireEquals("defaultMemoryUse.scaled", 2 * 1024 * 1024,
-            ExternalSortFactory.defaultMemoryUse(512L * 1024L * 1024L));
-        requireEquals("defaultMemoryUse.cap", ExternalSortFactory.MAX_AUTOMATIC_MEM_USE,
-            ExternalSortFactory.defaultMemoryUse(8L * 1024L * 1024L * 1024L));
+            SortMemoryPolicy.defaultMemoryUse(512L * 1024L * 1024L));
+        requireEquals("defaultMemoryUse.cap", SortMemoryPolicy.MAX_AUTOMATIC_MEM_USE,
+            SortMemoryPolicy.defaultMemoryUse(8L * 1024L * 1024L * 1024L));
     }
 
     private static void probe(
@@ -77,8 +77,8 @@ public final class SortMemoryPolicyProbe
     String expectedPolicy,
     boolean expectedSlushAdjusted)
     {
-        ExternalSortFactory.SortBufferSizing sizing =
-            ExternalSortFactory.estimateSortBufferSizing(
+        SortMemoryPolicy.Sizing sizing =
+            SortMemoryPolicy.estimate(
                 columnCount,
                 estimatedRows,
                 estimatedRowSize,

@@ -64,42 +64,20 @@ public class ExternalSortFactory implements
 	private static final String IMPLEMENTATIONID = "sort external";
 	private static final String FORMATUUIDSTRING = "D2976090-D9F5-11d0-B54D-00A024BF8879";
 	private UUID formatUUID = null;
-	private static final int DEFAULT_SORTBUFFERMAX = 1024;
-	private static final int MINIMUM_SORTBUFFERMAX = 4;
-
-	/**
-	 * Inherited Derby floor for automatic sort memory. Older Derby code aimed for
-	 * about 1 MiB when converting estimated row size into a row-count buffer.
-	 * DelosDB keeps this value as the minimum automatic budget, not as the fixed
-	 * budget on modern JVMs.
-	 */
-	protected static final int LEGACY_DEFAULT_MEM_USE = 1024*1024;
 
 	/**
 	 * Compatibility alias for inherited sort-buffer growth code.
 	 * <p>
 	 * {@link MergeInserter} still uses Derby's old 1 MiB threshold as a small-heap
-	 * growth heuristic. Keep that threshold stable while {@link #defaultMemoryUse(long)}
+	 * growth heuristic. Keep that threshold stable while {@link SortMemoryPolicy}
 	 * controls the newer JVM-aware initial sizing policy.
 	 */
-	protected static final int DEFAULT_MEM_USE = LEGACY_DEFAULT_MEM_USE;
-
-	/**
-	 * Conservative upper bound for the automatic JVM-aware sort memory budget.
-	 * This avoids turning one large heap into one very large sort allocation while
-	 * still moving past the inherited fixed 1 MiB assumption on Java 21.
-	 */
-	protected static final int MAX_AUTOMATIC_MEM_USE = 16*1024*1024;
-
-	private static final int AUTOMATIC_MEM_USE_HEAP_DIVISOR = 256;
+	protected static final int DEFAULT_MEM_USE =
+		SortMemoryPolicy.LEGACY_DEFAULT_MEM_USE;
 
 	// how many sort runs to combined into a larger sort run
     // (DERBY-1661)
 	protected static final int DEFAULT_MAX_MERGE_RUN = 512; 
-
-	// sizeof Node + reference to Node + 12 bytes tax
-	private static final int SORT_ROW_OVERHEAD = 8*4+12; 
-
 
 	/*
 	** Methods of MethodFactory
@@ -160,138 +138,17 @@ public class ExternalSortFactory implements
 	/**
 	 * Calculates the row-count based sort buffer limit.
 	 * <p>
-	 * Derby historically used a fixed 1 MiB memory target when estimated row size
-	 * was available. DelosDB keeps the same row-count contract but makes the
-	 * automatic memory target conservative and JVM-aware: at least the inherited
-	 * 1 MiB floor, at most 16 MiB, and otherwise roughly 1/256 of the maximum heap.
-	 * The user-specified {@code derby.storage.sortBufferMax} property remains a
-	 * hard row-count override.
+	 * Keep this factory focused on Derby's sort service lifecycle and delegate the
+	 * JVM-aware sizing decision to {@link SortMemoryPolicy}.
 	 */
-	static SortBufferSizing estimateSortBufferSizing(
+	private SortMemoryPolicy.Sizing estimateSortBufferSizing(
 	int templateColumnCount,
 	long estimatedRows,
-	int estimatedRowSize,
-	boolean userSpecified,
-	int defaultSortBufferMax)
+	int estimatedRowSize)
 	{
-		return estimateSortBufferSizing(
+		return SortMemoryPolicy.estimate(
 			templateColumnCount, estimatedRows, estimatedRowSize,
-			userSpecified, defaultSortBufferMax,
-			defaultMemoryUse(Runtime.getRuntime().maxMemory()));
-	}
-
-	static SortBufferSizing estimateSortBufferSizing(
-	int templateColumnCount,
-	long estimatedRows,
-	int estimatedRowSize,
-	boolean userSpecified,
-	int defaultSortBufferMax,
-	int automaticMemoryUse)
-	{
-		int calculatedSortBufferMax;
-		int effectiveEstimatedRowSize = estimatedRowSize;
-		String policy;
-		boolean slushAdjusted = false;
-
-		if (!userSpecified)	
-		{
-			// derby.storage.sortBufferMax is not specified by the
-			// user, use default or try to figure out a reasonable sort
-			// size.
-
-			// if we have some idea on row size, set sort approx 1 meg of
-			// memory sort.
-			if (estimatedRowSize > 0)
-			{
-				// 
-				// for each column, there is a reference from the key array and
-				//   the 4 bytes reference to the column object plus 12 bytes
-				//   tax on the  column object  
-				// for each row, SORT_ROW_OVERHEAD is the Node and 4 bytes to
-				//   point to the column array and 4 for alignment
-				//
-				effectiveEstimatedRowSize += SORT_ROW_OVERHEAD +
-					(templateColumnCount*(4+12)) + 8; 
-				calculatedSortBufferMax =
-					automaticMemoryUse/effectiveEstimatedRowSize;
-				policy = "estimated-row-size-jvm-aware";
-			}
-			else
-			{
-				calculatedSortBufferMax = defaultSortBufferMax;
-				policy = "default-row-count";
-			}
-			
-			// if there are barely more rows than sortBufferMax, use 2
-			// smaller runs of similar size instead of one larger run
-			//
-			// 10% slush is added to estimated Rows to catch the case where
-			// estimated rows underestimate the actual number of rows by 10%.
-			//
-			if (estimatedRows > calculatedSortBufferMax &&
-				(estimatedRows*1.1) < calculatedSortBufferMax*2)
-			{
-				calculatedSortBufferMax =
-					(int)(estimatedRows/2 + estimatedRows/10);
-				slushAdjusted = true;
-			}
-
-			// Make sure it is at least the minimum sort buffer size
-			if (calculatedSortBufferMax < MINIMUM_SORTBUFFERMAX)
-				calculatedSortBufferMax = MINIMUM_SORTBUFFERMAX;
-		}
-		else
-		{
-			// if user specified derby.storage.sortBufferMax, use it.
-			calculatedSortBufferMax = defaultSortBufferMax;
-			policy = "user-property";
-		}
-
-		return new SortBufferSizing(
-			calculatedSortBufferMax, effectiveEstimatedRowSize,
-			policy, slushAdjusted, automaticMemoryUse);
-	}
-
-	static int defaultMemoryUse(long maxMemory)
-	{
-		if (maxMemory <= 0 || maxMemory == Long.MAX_VALUE)
-		{
-			return LEGACY_DEFAULT_MEM_USE;
-		}
-
-		long heapScaled = maxMemory / AUTOMATIC_MEM_USE_HEAP_DIVISOR;
-		if (heapScaled < LEGACY_DEFAULT_MEM_USE)
-		{
-			return LEGACY_DEFAULT_MEM_USE;
-		}
-		if (heapScaled > MAX_AUTOMATIC_MEM_USE)
-		{
-			return MAX_AUTOMATIC_MEM_USE;
-		}
-		return (int)heapScaled;
-	}
-
-	static final class SortBufferSizing
-	{
-		final int sortBufferMax;
-		final int effectiveEstimatedRowSize;
-		final String policy;
-		final boolean slushAdjusted;
-		final int automaticMemoryUse;
-
-		SortBufferSizing(
-		int sortBufferMax,
-		int effectiveEstimatedRowSize,
-		String policy,
-		boolean slushAdjusted,
-		int automaticMemoryUse)
-		{
-			this.sortBufferMax = sortBufferMax;
-			this.effectiveEstimatedRowSize = effectiveEstimatedRowSize;
-			this.policy = policy;
-			this.slushAdjusted = slushAdjusted;
-			this.automaticMemoryUse = automaticMemoryUse;
-		}
+			userSpecified, defaultSortBufferMax);
 	}
 
 	/*
@@ -330,9 +187,8 @@ public class ExternalSortFactory implements
         //
 
 
-		SortBufferSizing sortBufferSizing = estimateSortBufferSizing(
-			template.length, estimatedRows, estimatedRowSize,
-			userSpecified, defaultSortBufferMax);
+		SortMemoryPolicy.Sizing sortBufferSizing = estimateSortBufferSizing(
+			template.length, estimatedRows, estimatedRowSize);
 		sortBufferMax = sortBufferSizing.sortBufferMax;
 
 		if (SanityManager.DEBUG)
@@ -501,13 +357,13 @@ public class ExternalSortFactory implements
 		if (defaultSortBufferMax == 0)
 		{
 			userSpecified = false;
-			defaultSortBufferMax = DEFAULT_SORTBUFFERMAX;
+			defaultSortBufferMax = SortMemoryPolicy.DEFAULT_SORTBUFFERMAX;
 		}
 		else
 		{
 			userSpecified = true;
-			if (defaultSortBufferMax < MINIMUM_SORTBUFFERMAX)
-				defaultSortBufferMax = MINIMUM_SORTBUFFERMAX;
+			if (defaultSortBufferMax < SortMemoryPolicy.MINIMUM_SORTBUFFERMAX)
+				defaultSortBufferMax = SortMemoryPolicy.MINIMUM_SORTBUFFERMAX;
 		}
 
 	}
