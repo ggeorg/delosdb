@@ -33,12 +33,11 @@ import java.util.Map;
 import org.apache.derby.iapi.util.ByteArray;
 
 
-/** Based upon "THE class FILE FORMAT" chapter of "The Java Virtual Machine Specification"
-    corresponding to version 1.0.2 of the Java Virtual Machine and 1.0.2 of the
-	Java Language Specification.
-
-    ISBN  0-201-63452-X, September 1996.
-	*/
+/** Based upon the original Derby classfile writer, which was written around
+    the early JVM classfile format. DelosDB still uses this writer for generated
+    SQL activation classes, but the emitted classfile version is controlled by
+    {@link VMDescriptor#JAVA_CLASS_FORMAT_MAJOR_VERSION} and
+    {@link VMDescriptor#JAVA_CLASS_FORMAT_MINOR_VERSION}. */
 
 public class ClassHolder {
 
@@ -52,21 +51,17 @@ public class ClassHolder {
 	*/
     
     /**
-     * Minor class format number defaults to 
-     * VMDescriptor.JAVA_CLASS_FORMAT_MINOR_VERSION
-     * which currently corresponds to a really old (JDK 1.0.2) setting.
-     * The default major and minor value is used by the generated code for Derby's
-     * SQL statements. Currently there is no need to bump the version
-     * number as the generated code does not take advantage of any of the
-     * new elements in the class file format. If such a need exists then
-     * this can be bumped. One issue is that the change in format numbers
-     * is not well documented.
+     * Minor class format number defaults to
+     * VMDescriptor.JAVA_CLASS_FORMAT_MINOR_VERSION.
+     * The default major/minor pair is used by generated SQL activation classes.
+     * DelosDB keeps this below classfile 51 until the inherited bytecode writer
+     * can emit StackMapTable attributes for all generated control-flow shapes.
      */
     protected int minor_version = VMDescriptor.JAVA_CLASS_FORMAT_MINOR_VERSION;
 
     /**
-     * Minor class format number defaults to 
-     * VMDescriptor.JAVA_CLASS_FORMAT_MAJOR_VERSION
+     * Major class format number defaults to
+     * VMDescriptor.JAVA_CLASS_FORMAT_MAJOR_VERSION.
      */
     protected int major_version = VMDescriptor.JAVA_CLASS_FORMAT_MAJOR_VERSION;
     

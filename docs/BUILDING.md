@@ -47,15 +47,16 @@ the tree for reference, but the active Gradle language-suite path runs the JUnit
 `RunSuite` launcher from test-module compilation.
 
 `generatedBytecodeJvm21Proof` records the inherited Derby generated-class path
-before JVM 21 bytecode modernization. It checks the current `ClassHolder`
+after the JVM 21 bytecode modernization step. It checks the current `ClassHolder`
 classfile header, writes `build/reports/generated-bytecode-jvm21/generated-bytecode-jvm21-proof.md`,
-and keeps the rule explicit: do not bump generated classfile versions until the
-verifier behavior for generated activation classes is proven.
+and keeps the rule explicit: DelosDB currently targets classfile 50.0 and must
+not move to classfile 51+ until StackMapTable generation is proven for generated
+activation classes.
 
-`generatedBytecodeVersionExperimentProbe` is the next guarded JVM step. It does
-not change production bytecode generation; it defines and invokes tiny
-Derby-written classfiles at legacy candidate versions 45, 49, and 50 so the
-project has evidence before considering a real version bump.
+`generatedBytecodeVersionExperimentProbe` remains the guarded experiment for
+legacy classfile targets. It defines and invokes tiny Derby-written classfiles
+at candidate versions 45, 49, and 50 so the project keeps evidence for the
+production 50.0 target and for any future version work.
 
 `generatedMethodDispatchAudit` records the generated-method dispatch path after
 the small `ReflectGeneratedClass` cleanup. The hot `e0..e9` generated activation

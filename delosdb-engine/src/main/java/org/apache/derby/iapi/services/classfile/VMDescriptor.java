@@ -76,7 +76,14 @@ public interface VMDescriptor {
 	/** Magic number for class file format - page 84 */
 	int JAVA_CLASS_FORMAT_MAGIC = 0xCAFEBABE;
 
-	/** Major and minor versions numbers - 1.0.2 release - page 85 */
-	int JAVA_CLASS_FORMAT_MAJOR_VERSION = 45;
-	int JAVA_CLASS_FORMAT_MINOR_VERSION = 3;
+	/**
+	 * Major and minor version numbers for generated SQL activation classes.
+	 *
+	 * <p>Apache Derby inherited a 45.3 target. DelosDB uses the Java 6-era
+	 * 50.0 target as the highest legacy classfile version that still avoids the
+	 * Java 7+ StackMapTable requirement while giving Java 21 a less ancient
+	 * generated-class target.</p>
+	 */
+	int JAVA_CLASS_FORMAT_MAJOR_VERSION = 50;
+	int JAVA_CLASS_FORMAT_MINOR_VERSION = 0;
 }

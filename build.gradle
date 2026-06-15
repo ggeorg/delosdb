@@ -1420,7 +1420,7 @@ tasks.register('verifyDeprecatedAnnotations') {
 
 tasks.register('generatedBytecodeClassfileHeaderProbe', JavaExec) {
     group = 'verification'
-    description = 'Emits and checks the classfile header produced by Derby inherited bytecode writer.'
+    description = 'Emits and checks the classfile header produced by the inherited Derby bytecode writer.'
     dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
     classpath = files(
             project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools'),
@@ -1433,7 +1433,7 @@ tasks.register('generatedBytecodeClassfileHeaderProbe', JavaExec) {
 
 tasks.register('generatedBytecodeJvm21Proof', Exec) {
     group = 'verification'
-    description = 'Writes a JVM 21 generated-bytecode proof report before bytecode-generator modernization.'
+    description = 'Writes a JVM 21 generated-bytecode proof report for the DelosDB generated classfile target.'
     dependsOn 'generatedBytecodeClassfileHeaderProbe'
     commandLine 'bash', 'dev/generated-bytecode-jvm21-proof.sh', '--verify'
 }
