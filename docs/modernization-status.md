@@ -81,6 +81,13 @@ Chapters 1--11 are source-checked for the claims they currently make. Future
 edits must keep chapter verification-status paragraphs and evidence maps aligned
 with source changes.
 
+## Current inherited-code static analysis
+
+The regenerated inherited-code summary is maintained in
+`docs/inherited-code-static-analysis.md`. It records the current Derby-vs-DelosDB
+source delta, the modernization areas completed in the inherited engine, and the
+remaining algorithmic areas that must stay conservative.
+
 ## Current cleanup priority
 
 Before adding features:
