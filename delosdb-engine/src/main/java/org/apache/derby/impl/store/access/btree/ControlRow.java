@@ -929,9 +929,9 @@ public abstract class ControlRow implements AuxObject, TypedFormat
     DelosDB note: this page-slot boundary rule is shared by visible forward
     index range behavior and by the backward/max-scan boundary cases protected
     in BTreeDirectionalBoundaryScanTest and by the inherited split/reposition
-    cases grouped by runBTreeSearchRefactorProofTests.  Do not extract the
-    duplicate search body below until that focused proof task and the wider
-    store/lang suites stay green.
+    cases grouped by runBTreeSearchRefactorProofTests.  The formerly duplicated page-local search body now lives in a single
+    helper below; keep the focused proof task and the wider store/lang suites
+    green before changing the helper semantics.
 
     @param params the parameters of the search
 
@@ -943,140 +943,27 @@ public abstract class ControlRow implements AuxObject, TypedFormat
     protected void searchForEntry(SearchParameters params)
 		throws StandardException
     {
-        if (SanityManager.DEBUG)
-        {
-            // System.out.println("searchForEntry() enter: params:" + params);
-            // System.out.println("searchForEntry() enter: this:"   + this);
-            // System.out.println("searchForEntry() enter: this page:"   + debugPage(params.btree));
-        }
-
-
-        // leftrange and rightrange indicates the range of slots to search.
-        // The range starts as all the slots on the page not including slot
-        // 0 which is the control row.
-        int leftrange  = 1;
-        int rightrange = page.recordCount() - 1;
-
-        // leftslot and rightslot if non-zero, mean that the key has been
-        // compared to the row at that slot.  If non-zero the key must be
-        // greater than the key at leftslot and the key must be lest than
-        // the key at rightslot.
-        int leftslot  = 0;
-        int rightslot = rightrange + 1;
-
-        int midslot;
-        int compare_ret;
-
-        // search until you either exactly find the key, or you have 
-        // compared 2 adjacent rows and found the value must exist between
-        // the 2.
-
-
-        if (this.use_last_search_result_hint)
-        {
-            // make sure to set midslot to point to somwhere in the legal range.
-            midslot = 
-                ((this.last_search_result == 0) ? 1 : this.last_search_result);
-
-            if (midslot > rightrange)
-                midslot = rightrange;
-        }
-        else
-        {
-            // if we don't think we have a good hint where to start the search
-            // just go to the middle.
-            midslot = (leftrange + rightrange) / 2;
-        }
-
-        if (SanityManager.DEBUG)
-        {
-            if ((leftslot != (rightslot - 1)) &&
-                !(midslot >= leftrange && midslot <= rightrange))
-            {
-                SanityManager.THROWASSERT(
-                    "midslot = "     + midslot +
-                    ";leftrange = "  + leftrange +
-                    ";rightrange = " + rightrange);
-            }
-        }
-
-        
-        while (leftslot != (rightslot - 1))
-        {
-			// Compare the index row to the key.
-			compare_ret = 
-                compareIndexRowFromPageToKey(
-                    this,
-                    midslot,
-                    params.template, params.searchKey, 
-                    params.btree.getConglomerate().nUniqueColumns, 
-                    params.partial_key_match_op,
-                    params.btree.getConglomerate().ascDescInfo);
-
-            if (compare_ret == 0)
-            {
-                // Found exact match
-				params.resultSlot = midslot;
-				params.resultExact = true;
-
-                // update the hints based on result of the search.
-                use_last_search_result_hint = 
-                    (midslot == this.last_search_result) ? true : false;
-                this.last_search_result = midslot;
-
-                return;
-            }
-            else if (compare_ret > 0)
-            {
-                // key falls to the left of midslot
-                rightslot  = midslot;
-                rightrange = midslot - 1;
-            }
-            else
-            {
-                // key falls to the right of midslot
-                leftslot   = midslot;
-                leftrange  = midslot + 1;
-            }
-
-            midslot = (leftrange + rightrange) / 2;
-            //midslot = (leftrange + rightrange) >> 1;
-        }
-
-        // update the hints based on result of the search.
-        this.use_last_search_result_hint = 
-            (leftslot == this.last_search_result);
-        this.last_search_result = leftslot;
-
-        // no exact match found, leftslot will point at the slot on the
-        // page just before where the row should be inserted.  In the case
-        // where the key is before rows on the page then leftslot will be
-        // 0 (an empty page is a special case of this).
-        if (SanityManager.DEBUG)
-        {
-			if (leftslot != rightslot - 1)
-            	SanityManager.THROWASSERT(
-                	"leftslot = " + leftslot + "; rightslot = " + rightslot);
-        }
-
-        params.resultSlot  = leftslot;
-        params.resultExact = false;
-
-        if (SanityManager.DEBUG)
-        {
-            // System.out.println("searchForEntry() exit: params:" + params);
-        }
-
-        return;
+        searchForEntryOnPage(params);
     }
 
     /**
-     * Backward-search sibling retained from Derby's B-tree control-row code.
-     * The implementation intentionally mirrors {@link #searchForEntry} so the
-     * exact slot-boundary and hint-update behavior can be proven before any
-     * common helper is introduced.
+     * Backward-search sibling retained for the callers which enter the B-tree
+     * from the right edge.  It shares the same page-local binary search helper
+     * as the forward path; the caller still controls the traversal direction
+     * before and after this page-slot lookup.
      */
     protected void searchForEntryBackward(SearchParameters params)
+		throws StandardException
+    {
+        searchForEntryOnPage(params);
+    }
+
+    /**
+     * Search this index page for the slot immediately at or before the search
+     * key, preserving Derby's inherited exact-match, insert-position, and
+     * last-search hint semantics.
+     */
+    private void searchForEntryOnPage(SearchParameters params)
 		throws StandardException
     {
         if (SanityManager.DEBUG)
