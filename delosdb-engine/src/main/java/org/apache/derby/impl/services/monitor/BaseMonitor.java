@@ -655,25 +655,7 @@ abstract class BaseMonitor
 
 		Throwable t;
 		try {
-			Object result = ci.getNewInstance();
-/*
-				if (SanityManager.DEBUG) {
-					if(SanityManager.DEBUG_ON(Monitor.NEW_INSTANCE_FROM_ID_TRACE_DEBUG_FLAG))
-					{
-						String traceResult = "null";
-
-						if (result != null) traceResult = "not null";
-
-						SanityManager.DEBUG(Monitor.NEW_INSTANCE_FROM_ID_TRACE_DEBUG_FLAG,
-											"newInstanceFromIdentifier("+identifier+") "+
-											" ClassName: "+
-											result.getClass().getName() +
-											" returned "+
-											traceResult);
-					}
-				}
-*/
-			return result;
+			return ci.getNewInstance();
 		}
 		catch (InstantiationException ie) {
 			t = ie;
@@ -809,7 +791,8 @@ abstract class BaseMonitor
 			report(classObject.getName() + " " + e.toString());
 		}
  		catch (InvocationTargetException e) {
-            report(classObject.getName() + " " + e.getCause().toString());
+            Throwable cause = e.getCause();
+            report(classObject.getName() + " " + (cause == null ? e.toString() : cause.toString()));
 		}
 		catch (LinkageError le) {
 			report(classObject.getName() + " " + le.toString());

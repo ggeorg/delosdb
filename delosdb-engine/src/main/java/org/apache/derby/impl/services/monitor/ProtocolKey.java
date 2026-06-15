@@ -23,6 +23,7 @@ package org.apache.derby.impl.services.monitor;
 
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.monitor.Monitor;
+import java.util.Objects;
 
 
 /**
@@ -39,12 +40,12 @@ class ProtocolKey {
 	/**
 		The class of the factory
 	*/
-	protected Class<?> factoryInterface;
+	private final Class<?> factoryInterface;
 
 	/**
-		name of module, can be null
+		Name of module, can be null.
 	*/
-	protected String		identifier;
+	private final String identifier;
 
 	/*
 	** Constructor
@@ -96,27 +97,13 @@ class ProtocolKey {
 	}
 
 	public boolean equals(Object other) {
-		if (other instanceof ProtocolKey) {
-			ProtocolKey otherKey = (ProtocolKey) other;
-
-			if (factoryInterface != otherKey.factoryInterface)
-				return false;
-
-			if (identifier == null) {
-				if (otherKey.identifier != null)
-					return false;
-			} else {
-
-				if (otherKey.identifier == null)
-					return false;
-
-				if (!identifier.equals(otherKey.identifier))
-					return false;
-			}
-
-			return true;
+		if (!(other instanceof ProtocolKey)) {
+			return false;
 		}
-		return false;
+
+		ProtocolKey otherKey = (ProtocolKey) other;
+		return factoryInterface == otherKey.factoryInterface
+			&& Objects.equals(identifier, otherKey.identifier);
 	}
 
 	public String toString() {

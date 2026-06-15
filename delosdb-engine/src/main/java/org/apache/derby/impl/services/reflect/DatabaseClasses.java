@@ -146,21 +146,21 @@ abstract class DatabaseClasses
 
 			} catch (LinkageError le) {
 
-			    WriteClassFile(fullyQualifiedName, classDump, le);
+			    writeClassFile(fullyQualifiedName, classDump, le);
 
 				throw StandardException.newException(SQLState.GENERATED_CLASS_LINKAGE_ERROR,
 							le, fullyQualifiedName);
 
     		} catch (VirtualMachineError vme) { // these may be beyond saving, but fwiw
 
-			    WriteClassFile(fullyQualifiedName, classDump, vme);
+			    writeClassFile(fullyQualifiedName, classDump, vme);
 
 			    throw vme;
 		    }
 
 	}
 
-    private static void WriteClassFile(String fullyQualifiedName, ByteArray bytecode, Throwable t) {
+    private static void writeClassFile(String fullyQualifiedName, ByteArray bytecode, Throwable t) {
 
         // get the un-qualified name and add the extension
         int lastDot = fullyQualifiedName.lastIndexOf((int)'.');
@@ -174,15 +174,13 @@ abstract class DatabaseClasses
         // find the error stream
         HeaderPrintWriter errorStream = Monitor.getStream();
 
-        try {
-            FileOutputStream fis = new FileOutputStream(classFile);
-            fis.write(bytecode.getArray(),
+        try (FileOutputStream classOut = new FileOutputStream(classFile)) {
+            classOut.write(bytecode.getArray(),
                       bytecode.getOffset(), bytecode.getLength());
-            fis.flush();
-            if (t!=null) {				
+            classOut.flush();
+            if (t != null) {
                 errorStream.printlnWithHeader(MessageService.getTextMessage(MessageId.CM_WROTE_CLASS_FILE, fullyQualifiedName, classFile, t));
             }
-            fis.close();
         } catch (IOException e) {
             if (SanityManager.DEBUG)
                 SanityManager.THROWASSERT("Unable to write .class file", e);
@@ -239,7 +237,7 @@ abstract class DatabaseClasses
 			// be malicious code inserted into a jar.
 			loadError = le;	
 		}
-		throw new ClassNotFoundException(className + " : " + loadError.getMessage());
+		throw new ClassNotFoundException(className + " : " + loadError.getMessage(), loadError);
 	}
 	
 	abstract Class loadClassNotInDatabaseJar(String className)
