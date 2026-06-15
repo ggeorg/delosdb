@@ -263,6 +263,48 @@ tasks.register('runBTreeSearchRefactorProofTests', Test) {
 }
 
 
+tasks.register('runExternalSortJvmPolicyProofTest', Test) {
+    group = 'verification'
+    description = 'Runs focused ORDER BY, DISTINCT, and GROUP BY proof tests for the JVM-aware external sort policy.'
+    dependsOn 'compileDerbyTestsModule', ':jars'
+
+    modularity.inferModulePath = false
+    testClassesDirs = files(derbyTestsClassDir)
+    classpath = testRuntimeClasspath()
+    useJUnit()
+    include 'org/apache/derbyTesting/functionTests/tests/store/ExternalSortJvmPolicyProofTest.class'
+
+    workingDir = layout.buildDirectory.dir('test-work/runExternalSortJvmPolicyProofTest').get().asFile
+    maxHeapSize = '1536m'
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runExternalSortJvmPolicyProofTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runExternalSortJvmPolicyProofTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runExternalSortJvmPolicyProofTest'))
+    }
+
+    doFirst {
+        delete workingDir
+        workingDir.mkdirs()
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+tasks.register('runInheritedAlgorithmClosureProofTests') {
+    group = 'verification'
+    description = 'Runs focused closure proof tests for the inherited Derby modernization campaign.'
+    dependsOn 'runBTreeSearchRefactorProofTests'
+    dependsOn 'runTransactionLockingRecoveryProofTest'
+    dependsOn 'runExternalSortJvmPolicyProofTest'
+}
+
+
 tasks.register('classes') {
     dependsOn 'compileDerbyTestsModule'
 }

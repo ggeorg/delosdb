@@ -68,6 +68,7 @@ public class _Suite extends BaseTestCase  {
         suite.addTest(ClobReclamationTest.suite());
         suite.addTest(IndexSplitDeadlockTest.suite());
         suite.addTest(HoldCursorJDBC30Test.suite());
+        suite.addTest(ExternalSortJvmPolicyProofTest.suite());
         suite.addTest(AccessTest.suite());
         suite.addTest(AutomaticIndexStatisticsTest.suite());
         suite.addTest(Derby5582AutomaticIndexStatisticsTest.suite());

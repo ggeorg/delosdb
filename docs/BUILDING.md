@@ -249,3 +249,18 @@ The old document split between artifact inventory, build inventory, publishing,
 legacy artifacts, and Java cleanup has been collapsed into this file plus the
 current status/roadmap files. Keep build instructions here and avoid creating
 parallel build-status documents.
+
+### Inherited Derby modernization closure proofs
+
+After the inherited-code quality cleanup overlays, run the focused closure proof
+task before treating the campaign as complete:
+
+```bash
+./gradlew :delosdb-tests:runInheritedAlgorithmClosureProofTests
+./gradlew :delosdb-tests:runDerbyLangSuite
+```
+
+The closure task groups the risky inherited algorithm boundaries that were
+touched or pinned down during the cleanup pass: B-tree page search boundaries,
+transaction/locking/recovery boundaries, and the JVM-aware external sort policy.
+
