@@ -6,6 +6,7 @@ import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.bundling.Compression
 import org.gradle.api.tasks.bundling.Tar
 import org.gradle.api.tasks.bundling.Zip
+import org.gradle.api.attributes.Bundling
 import org.gradle.process.ExecOperations
 import javax.inject.Inject
 
@@ -124,7 +125,13 @@ ext.derbyCompatibilityVersion = derbyCompatibilityVersion
 ext.junitPlatformConsoleVersion = '1.11.4'
 
 configurations {
-    delosdbJunit5Console
+    delosdbJunit5Console {
+        canBeConsumed = false
+        canBeResolved = true
+        attributes {
+            attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling, Bundling.EXTERNAL))
+        }
+    }
 }
 
 dependencies {
