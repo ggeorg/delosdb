@@ -36,12 +36,14 @@ For inherited Derby cleanup planning, generate the guarded hotspot reports:
 ./gradlew generatedMethodDispatchAudit
 ./gradlew deprecatedApiCleanupAudit
 ./gradlew xmlHardeningAudit
+./gradlew sortMemoryObservabilityAudit
 ```
 
-`legacyDerbyHarnessAudit` classifies the old Derby function-test harness before
-any removal or source-set quarantine. It verifies that the active DelosDB Gradle
-language-suite path runs the JUnit `_Suite` class directly instead of the old
-`RunSuite` launcher.
+`legacyDerbyHarnessAudit` classifies the old Derby function-test harness and
+verifies the active source quarantine. DelosDB keeps the historical sources in
+the tree for reference, but the active Gradle language-suite path runs the JUnit
+`_Suite` class directly and excludes obsolete VM adapter classes plus the old
+`RunSuite` launcher from test-module compilation.
 
 `generatedBytecodeJvm21Proof` records the inherited Derby generated-class path
 before JVM 21 bytecode modernization. It checks the current `ClassHolder`
@@ -175,6 +177,21 @@ For a compile-only check of the activated Derby test module:
 
 ```bash
 ./gradlew :delosdb-tests:compileDerbyTestsModule
+```
+
+The inherited Derby harness still contains old Ant-era process-launcher code and
+obsolete concrete VM adapter classes for JDK/IBM/J9 variants. DelosDB keeps those
+sources in the tree for source reference, but the active Gradle test module
+quarantines the proven-unused adapter layer from compilation. Keep
+`RunTest.java`, `RunList.java`, `NetServer.java`, `jvm.java`, and
+`currentjvm.java` compiled until the remaining inherited utility references are
+removed.
+
+The harness quarantine guardrail is:
+
+```bash
+./dev/legacy-derby-harness-audit.sh --verify
+./gradlew legacyDerbyHarnessAudit
 ```
 
 `runDerbyLangSuite` uses an isolated Gradle test work directory. If a suite run
