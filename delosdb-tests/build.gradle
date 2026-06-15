@@ -15,6 +15,46 @@ group = rootProject.group
  */
 
 def testSourceRoot = file('src/test/java')
+
+// Keep the historical Derby harness sources in the repository for reference, but
+// do not compile the stale VM launcher/adaptor layer in the active Gradle test
+// module. The active DelosDB gate is the JUnit language suite, not the old
+// Ant-era RunSuite process launcher. RunTest/RunList/NetServer remain compiled
+// for inherited utility compatibility; only the proven-unused VM adapters and
+// RunSuite entrypoint are quarantined from active compilation.
+def legacyHarnessQuarantineExcludes = [
+        'org/apache/derbyTesting/functionTests/harness/RunSuite.java',
+        'org/apache/derbyTesting/functionTests/harness/ibm13.java',
+        'org/apache/derbyTesting/functionTests/harness/ibm14.java',
+        'org/apache/derbyTesting/functionTests/harness/ibm15.java',
+        'org/apache/derbyTesting/functionTests/harness/ibm16.java',
+        'org/apache/derbyTesting/functionTests/harness/ibm17.java',
+        'org/apache/derbyTesting/functionTests/harness/ibm18.java',
+        'org/apache/derbyTesting/functionTests/harness/j9_13.java',
+        'org/apache/derbyTesting/functionTests/harness/j9_22.java',
+        'org/apache/derbyTesting/functionTests/harness/j9_foundation.java',
+        'org/apache/derbyTesting/functionTests/harness/j9_foundation11.java',
+        'org/apache/derbyTesting/functionTests/harness/j9dee15.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk110.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk111.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk112.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk113.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk114.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk115.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk116.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk117.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk118.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk119.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk120.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk121.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk13.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk14.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk15.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk16.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk17.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk18.java',
+        'org/apache/derbyTesting/functionTests/harness/jdk19.java'
+]
 def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/demo/toursdb')
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
 
@@ -90,7 +130,10 @@ tasks.register('compileDerbyTestsModule', JavaCompile) {
     dependsOn compilePrerequisites
 
     source = files(
-            fileTree(testSourceRoot) { include '**/*.java' },
+            fileTree(testSourceRoot) {
+                include '**/*.java'
+                exclude legacyHarnessQuarantineExcludes
+            },
             new File(toursDbSourceRoot, 'insertMaps.java')
     )
     destinationDirectory = derbyTestsClassDir
@@ -148,25 +191,27 @@ tasks.register('runDerbyLangSuite', Test) {
     }
 }
 
-tasks.register('runBTreeDirectionalBoundaryScanTest', Test) {
+
+tasks.register('runTransactionLockingRecoveryProofTest', Test) {
     group = 'verification'
-    description = 'Runs the focused B-tree directional boundary JUnit proof.'
+    description = 'Runs focused transaction, locking, checkpoint, and restart recovery boundary proof tests.'
     dependsOn 'compileDerbyTestsModule', ':jars'
 
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
     classpath = testRuntimeClasspath()
     useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/store/BTreeDirectionalBoundaryScanTest.class'
+    include 'org/apache/derbyTesting/functionTests/tests/store/TransactionLockingRecoveryProofTest.class'
+    include 'org/apache/derbyTesting/functionTests/tests/store/RecoveryTest.class'
 
-    workingDir = layout.buildDirectory.dir('test-work/runBTreeDirectionalBoundaryScanTest').get().asFile
+    workingDir = layout.buildDirectory.dir('test-work/runTransactionLockingRecoveryProofTest').get().asFile
     maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runBTreeDirectionalBoundaryScanTest'))
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runTransactionLockingRecoveryProofTest'))
     reports {
         junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runBTreeDirectionalBoundaryScanTest'))
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runTransactionLockingRecoveryProofTest'))
         html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runBTreeDirectionalBoundaryScanTest'))
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runTransactionLockingRecoveryProofTest'))
     }
 
     doFirst {
@@ -180,6 +225,7 @@ tasks.register('runBTreeDirectionalBoundaryScanTest', Test) {
         showStandardStreams = true
     }
 }
+
 tasks.register('classes') {
     dependsOn 'compileDerbyTestsModule'
 }
