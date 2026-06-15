@@ -33,6 +33,7 @@ For inherited Derby cleanup planning, generate the guarded hotspot reports:
 ./gradlew inheritedCodeQualityAudit
 ./gradlew legacyDerbyHarnessAudit
 ./gradlew generatedBytecodeJvm21Proof
+./gradlew generatedBytecodeVersionExperimentProbe
 ./gradlew generatedMethodDispatchAudit
 ./gradlew deprecatedApiCleanupAudit
 ./gradlew xmlHardeningAudit
@@ -50,6 +51,11 @@ before JVM 21 bytecode modernization. It checks the current `ClassHolder`
 classfile header, writes `build/reports/generated-bytecode-jvm21/generated-bytecode-jvm21-proof.md`,
 and keeps the rule explicit: do not bump generated classfile versions until the
 verifier behavior for generated activation classes is proven.
+
+`generatedBytecodeVersionExperimentProbe` is the next guarded JVM step. It does
+not change production bytecode generation; it defines and invokes tiny
+Derby-written classfiles at legacy candidate versions 45, 49, and 50 so the
+project has evidence before considering a real version bump.
 
 `generatedMethodDispatchAudit` records the generated-method dispatch path after
 the small `ReflectGeneratedClass` cleanup. The hot `e0..e9` generated activation

@@ -1439,6 +1439,19 @@ tasks.register('generatedBytecodeJvm21Proof', Exec) {
 }
 
 
+tasks.register('generatedBytecodeVersionExperimentProbe', JavaExec) {
+    group = 'verification'
+    description = 'Experimentally defines and invokes Derby-written classfiles at legacy candidate versions 45, 49, and 50.'
+    dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
+    classpath = files(
+            project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools'),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine)
+    )
+    mainClass = 'org.apache.derby.iapi.services.classfile.GeneratedBytecodeVersionExperimentProbe'
+}
+
+
 tasks.register('generatedMethodDispatchAudit', Exec) {
     group = 'verification'
     description = 'Writes a generated-method dispatch audit after ReflectGeneratedClass cleanup.'
