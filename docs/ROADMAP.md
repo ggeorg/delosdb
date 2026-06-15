@@ -124,6 +124,37 @@ Choose one focused track at a time:
 4. only then decide whether `StorageProvider`, `FunctionProvider`, or
    `TypeProvider` deserves a real v2 implementation.
 
+
+## PostgreSQL-class storage/concurrency direction
+
+After the inherited Derby cleanup pass, the next long-term database architecture
+work is source-proof driven, not provider-family driven:
+
+```text
+1. MVCC is the long-term concurrency direction.
+2. WAL/recovery is a core subsystem.
+3. Optimizer work needs real cost/path infrastructure.
+4. Indexing needs careful concurrency/latching design.
+5. Vacuum/version cleanup belongs to MVCC design.
+6. Runtime/executor code must stay evolvable.
+```
+
+Current checkpoint document:
+
+```text
+docs/postgres-class-storage-concurrency.md
+```
+
+Current focused proof gate:
+
+```bash
+./gradlew :delosdb-tests:runPostgresClassArchitectureProofTests
+```
+
+This does not make DelosDB MVCC yet. It defines the source boundaries that must
+be understood before MVCC, version cleanup, or PostgreSQL-class optimizer/index
+ideas become implementation work.
+
 ## Explicitly out of scope for now
 
 - distributed SQL;
