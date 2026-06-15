@@ -67,11 +67,10 @@ centralized XML factory helper blocks external general entity expansion while
 preserving Derby SQL/XML behavior for DTD default attributes and internal entity
 expansion-limit errors.
 
-`sortMemoryObservabilityAudit` verifies the inherited external-sort buffer
-sizing guardrail. It also runs `sortMemoryPolicyProbe`, which records the
-current row-count based policy, the approximately 1 MiB default memory target,
-the slush adjustment, and the minimum clamp before any JVM 21 sort-memory tuning
-is attempted.
+`sortMemoryObservabilityAudit` verifies the external-sort buffer sizing
+guardrail. It also runs `sortMemoryPolicyProbe`, which records the DelosDB
+JVM-aware automatic memory target, the inherited 1 MiB floor, the 16 MiB cap,
+the row-count override path, the slush adjustment, and the minimum clamp.
 
 When a previous test run was interrupted, start with a clean build:
 

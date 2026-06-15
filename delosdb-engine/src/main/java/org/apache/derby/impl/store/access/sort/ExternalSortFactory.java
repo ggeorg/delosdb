@@ -67,7 +67,23 @@ public class ExternalSortFactory implements
 	private static final int DEFAULT_SORTBUFFERMAX = 1024;
 	private static final int MINIMUM_SORTBUFFERMAX = 4;
 
-	protected static final int DEFAULT_MEM_USE = 1024*1024; // aim for about 1Meg
+	/**
+	 * Inherited Derby floor for automatic sort memory. Older Derby code aimed for
+	 * about 1 MiB when converting estimated row size into a row-count buffer.
+	 * DelosDB keeps this value as the minimum automatic budget, not as the fixed
+	 * budget on modern JVMs.
+	 */
+	protected static final int LEGACY_DEFAULT_MEM_USE = 1024*1024;
+
+	/**
+	 * Conservative upper bound for the automatic JVM-aware sort memory budget.
+	 * This avoids turning one large heap into one very large sort allocation while
+	 * still moving past the inherited fixed 1 MiB assumption on Java 21.
+	 */
+	protected static final int MAX_AUTOMATIC_MEM_USE = 16*1024*1024;
+
+	private static final int AUTOMATIC_MEM_USE_HEAP_DIVISOR = 256;
+
 	// how many sort runs to combined into a larger sort run
     // (DERBY-1661)
 	protected static final int DEFAULT_MAX_MERGE_RUN = 512; 
@@ -133,11 +149,14 @@ public class ExternalSortFactory implements
 	}
 
 	/**
-	 * Calculates the inherited Derby row-count based sort buffer limit.
+	 * Calculates the row-count based sort buffer limit.
 	 * <p>
-	 * DelosDB keeps the policy unchanged here. The method exists so that the
-	 * old fixed-memory assumptions can be audited and tested before any JVM 21
-	 * tuning changes are attempted.
+	 * Derby historically used a fixed 1 MiB memory target when estimated row size
+	 * was available. DelosDB keeps the same row-count contract but makes the
+	 * automatic memory target conservative and JVM-aware: at least the inherited
+	 * 1 MiB floor, at most 16 MiB, and otherwise roughly 1/256 of the maximum heap.
+	 * The user-specified {@code derby.storage.sortBufferMax} property remains a
+	 * hard row-count override.
 	 */
 	static SortBufferSizing estimateSortBufferSizing(
 	int templateColumnCount,
@@ -145,6 +164,20 @@ public class ExternalSortFactory implements
 	int estimatedRowSize,
 	boolean userSpecified,
 	int defaultSortBufferMax)
+	{
+		return estimateSortBufferSizing(
+			templateColumnCount, estimatedRows, estimatedRowSize,
+			userSpecified, defaultSortBufferMax,
+			defaultMemoryUse(Runtime.getRuntime().maxMemory()));
+	}
+
+	static SortBufferSizing estimateSortBufferSizing(
+	int templateColumnCount,
+	long estimatedRows,
+	int estimatedRowSize,
+	boolean userSpecified,
+	int defaultSortBufferMax,
+	int automaticMemoryUse)
 	{
 		int calculatedSortBufferMax;
 		int effectiveEstimatedRowSize = estimatedRowSize;
@@ -170,8 +203,9 @@ public class ExternalSortFactory implements
 				//
 				effectiveEstimatedRowSize += SORT_ROW_OVERHEAD +
 					(templateColumnCount*(4+12)) + 8; 
-				calculatedSortBufferMax = DEFAULT_MEM_USE/effectiveEstimatedRowSize;
-				policy = "estimated-row-size";
+				calculatedSortBufferMax =
+					automaticMemoryUse/effectiveEstimatedRowSize;
+				policy = "estimated-row-size-jvm-aware";
 			}
 			else
 			{
@@ -206,7 +240,26 @@ public class ExternalSortFactory implements
 
 		return new SortBufferSizing(
 			calculatedSortBufferMax, effectiveEstimatedRowSize,
-			policy, slushAdjusted);
+			policy, slushAdjusted, automaticMemoryUse);
+	}
+
+	static int defaultMemoryUse(long maxMemory)
+	{
+		if (maxMemory <= 0 || maxMemory == Long.MAX_VALUE)
+		{
+			return LEGACY_DEFAULT_MEM_USE;
+		}
+
+		long heapScaled = maxMemory / AUTOMATIC_MEM_USE_HEAP_DIVISOR;
+		if (heapScaled < LEGACY_DEFAULT_MEM_USE)
+		{
+			return LEGACY_DEFAULT_MEM_USE;
+		}
+		if (heapScaled > MAX_AUTOMATIC_MEM_USE)
+		{
+			return MAX_AUTOMATIC_MEM_USE;
+		}
+		return (int)heapScaled;
 	}
 
 	static final class SortBufferSizing
@@ -215,17 +268,20 @@ public class ExternalSortFactory implements
 		final int effectiveEstimatedRowSize;
 		final String policy;
 		final boolean slushAdjusted;
+		final int automaticMemoryUse;
 
 		SortBufferSizing(
 		int sortBufferMax,
 		int effectiveEstimatedRowSize,
 		String policy,
-		boolean slushAdjusted)
+		boolean slushAdjusted,
+		int automaticMemoryUse)
 		{
 			this.sortBufferMax = sortBufferMax;
 			this.effectiveEstimatedRowSize = effectiveEstimatedRowSize;
 			this.policy = policy;
 			this.slushAdjusted = slushAdjusted;
+			this.automaticMemoryUse = automaticMemoryUse;
 		}
 	}
 
@@ -282,6 +338,8 @@ public class ExternalSortFactory implements
                         sortBufferSizing.effectiveEstimatedRowSize +
                     " sizingPolicy = " + sortBufferSizing.policy +
                     " slushAdjusted = " + sortBufferSizing.slushAdjusted +
+                    " automaticMemoryUse = " +
+                        sortBufferSizing.automaticMemoryUse +
                     " defaultSortBufferMax = " + defaultSortBufferMax);
             }
         }
