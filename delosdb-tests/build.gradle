@@ -407,6 +407,7 @@ tasks.register('runPostgresClassArchitectureProofTests') {
     dependsOn 'runBTreeSearchRefactorProofTests'
     dependsOn 'runBTreeIndexConcurrencyArchitectureProofTest'
     dependsOn 'runVersionCleanupArchitectureProofTest'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest'
     dependsOn 'runExternalSortJvmPolicyProofTest'
 }
 

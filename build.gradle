@@ -1608,3 +1608,10 @@ tasks.register('test') {
 tasks.named('build') {
     dependsOn 'jars'
 }
+
+
+tasks.register('mvccCoreModelTest') {
+    group = 'verification'
+    description = 'Runs the experimental DelosDB MVCC core model tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest'
+}

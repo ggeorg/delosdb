@@ -163,7 +163,7 @@ ideas become implementation work.
 - MySQL compatibility;
 - external plugin marketplace;
 - new provider families;
-- custom storage engine;
+- production custom storage engine; experimental storage kernels remain opt-in and isolated;
 - full JSON/type-system work;
 - vector database behavior.
 
@@ -191,3 +191,30 @@ future MVCC visibility and vacuum subsystem must preserve: rolled-back updates
 and deletes do not leave searchable index garbage, committed updates move the
 visible key, and committed deletes remove the visible row from heap and index
 access paths.
+
+## Experimental MVCC storage module
+
+The first MVCC implementation step is deliberately isolated in a new Gradle
+module:
+
+```text
+delosdb-storage-mvcc
+```
+
+This module is not wired into Derby heap, B-tree, WAL, recovery, SQL execution,
+or existing database open paths. It contains an in-memory MVCC core model for
+transaction ids, commit sequences, snapshots, version chains, visibility, and
+cleanup. That keeps existing Derby-compatible databases on the normal heap path
+while DelosDB develops a future versioned-storage implementation safely.
+
+Focused proof task:
+
+```bash
+./gradlew :delosdb-storage-mvcc:runMvccCoreModelTest
+```
+
+Root alias:
+
+```bash
+./gradlew mvccCoreModelTest
+```

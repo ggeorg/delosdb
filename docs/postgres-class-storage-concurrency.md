@@ -157,3 +157,38 @@ PostgreSQL lock manager:        src/backend/storage/lmgr/lock.c
 The DelosDB question is not "can Derby become PostgreSQL?" The useful question
 is: which source boundaries must DelosDB expose and clean before PostgreSQL-class
 ideas can be engineered safely in a Java-native, Derby-compatible engine?
+
+## Experimental MVCC storage module checkpoint
+
+The MVCC implementation starts as an isolated module, not as a mutation of
+Derby heap storage:
+
+```text
+delosdb-storage-mvcc
+```
+
+The module owns the first in-memory model for:
+
+```text
+- transaction ids
+- commit sequences
+- snapshots
+- row-version chains
+- visibility checks
+- cleanup safety based on the oldest active snapshot
+```
+
+This is intentionally not `CREATE TABLE ... USING delos_mvcc` yet. SQL wiring,
+Derby heap integration, WAL record integration, index integration, and recovery
+replay are later steps. Existing Derby databases continue to open through the
+Derby-compatible heap path.
+
+Proof task:
+
+```bash
+./gradlew :delosdb-storage-mvcc:runMvccCoreModelTest
+```
+
+This checkpoint keeps the extensibility direction honest: MVCC is being built as
+an opt-in storage implementation, not as a silent reinterpretation of existing
+Derby tables.
