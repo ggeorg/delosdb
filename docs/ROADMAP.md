@@ -259,3 +259,14 @@ This completes the provider-boundary step before SQL metadata work. The next
 milestone is to parse/record or deliberately reject `CREATE TABLE ... USING
 delos_mvcc` with a clean diagnostic, without touching Derby-compatible heap
 storage.
+
+### Experimental MVCC SQL metadata guard
+
+The experimental `delosdb-storage-mvcc` module is now visible through the
+`VersionedStorageProvider` registry as `delos_mvcc`. SQL recognition remains
+intentionally conservative: `CREATE TABLE ... USING delos_mvcc` is recognized
+as a versioned-storage provider name, but it fails with a clear
+"SQL execution is not implemented yet" diagnostic until the executor bridge
+exists. This prevents DelosDB from accidentally creating a Derby heap table
+whose metadata claims MVCC storage.
+

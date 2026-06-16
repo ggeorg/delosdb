@@ -262,3 +262,14 @@ Focused proof task:
 The next safe step after this checkpoint is SQL metadata handling for
 `CREATE TABLE ... USING delos_mvcc`, initially rejected or metadata-only until the
 executor bridge is intentionally added.
+
+### Experimental MVCC SQL metadata guard
+
+The experimental `delosdb-storage-mvcc` module is now visible through the
+`VersionedStorageProvider` registry as `delos_mvcc`. SQL recognition remains
+intentionally conservative: `CREATE TABLE ... USING delos_mvcc` is recognized
+as a versioned-storage provider name, but it fails with a clear
+"SQL execution is not implemented yet" diagnostic until the executor bridge
+exists. This prevents DelosDB from accidentally creating a Derby heap table
+whose metadata claims MVCC storage.
+

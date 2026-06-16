@@ -5,6 +5,7 @@ import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderResolver;
 import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
 import io.github.ggeorg.delosdb.engine.extension.storage.StorageProviderResolver;
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.KnownVersionedStorageProviders;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -45,10 +46,15 @@ public final class SqlExtensionProviderValidation {
     }
 
     public static void requireStorageProvider(String providerName) throws StandardException {
+        String normalizedName = normalizeStorageProviderName(providerName);
         try {
-            StorageProviderResolver.builtIns().requireEnabled(normalizeStorageProviderName(providerName));
+            StorageProviderResolver.builtIns().requireEnabled(normalizedName);
+            return;
         } catch (ExtensionResolutionException e) {
-            throw unsupportedProvider("CREATE TABLE", normalizeStorageProviderName(providerName));
+            if (KnownVersionedStorageProviders.isKnownVersionedProvider(normalizedName)) {
+                throw versionedStorageProviderNotExecutable(normalizedName);
+            }
+            throw unsupportedProvider("CREATE TABLE", normalizedName);
         }
     }
 
@@ -63,5 +69,13 @@ public final class SqlExtensionProviderValidation {
         return StandardException.newException(
                 SQLState.NOT_IMPLEMENTED,
                 statementName + " USING " + providerName);
+    }
+
+    private static StandardException versionedStorageProviderNotExecutable(String providerName) {
+        return StandardException.newException(
+                SQLState.NOT_IMPLEMENTED,
+                "CREATE TABLE USING " + providerName
+                        + " is registry-visible as a VersionedStorageProvider"
+                        + " but SQL execution is not implemented yet");
     }
 }

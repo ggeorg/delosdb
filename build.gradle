@@ -1153,6 +1153,13 @@ registerStorageProviderDatabaseSmoke(
         'Verifies StorageProvider table metadata is visible through the internal diagnostic resolver.',
         ['storageProviderPersistenceSmoke'])
 
+registerStorageProviderDatabaseSmoke(
+        'versionedStorageSqlMetadataSmoke',
+        'versioned-storage-sql-metadata-smoke',
+        'delosdb.smoke.VersionedStorageSqlMetadataSmoke',
+        'Verifies CREATE TABLE ... USING delos_mvcc is recognized but rejected until SQL execution exists.',
+        ['storageProviderVisibilitySmoke', 'versionedStorageProviderRegistrySmoke'])
+
 
 def networkServerSmokeClassesDir = layout.buildDirectory.dir('classes/network-server-smoke')
 
@@ -1671,5 +1678,5 @@ tasks.register('mvccStorageModelTest') {
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
     description = 'Runs MVCC storage model tests plus the VersionedStorageProvider registry smoke test.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke'
 }
