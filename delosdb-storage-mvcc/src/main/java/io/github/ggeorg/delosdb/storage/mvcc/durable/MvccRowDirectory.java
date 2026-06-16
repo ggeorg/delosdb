@@ -48,6 +48,11 @@ public final class MvccRowDirectory {
         return row == null ? Optional.empty() : row.newestVersionId();
     }
 
+    synchronized Optional<StoredVersion> newestStoredVersionForKey(String key) {
+        RowState row = rowsByKey.get(MvccRowPayload.requireKey(key));
+        return row == null ? Optional.empty() : row.newestStoredVersion();
+    }
+
     public synchronized Optional<MvccRowPayload> read(String key, MvccCommitSequence snapshotSequence) {
         RowState row = rowsByKey.get(MvccRowPayload.requireKey(key));
         return row == null ? Optional.empty() : row.visiblePayload(snapshotSequence);
@@ -154,6 +159,12 @@ public final class MvccRowDirectory {
             return newestFirst.isEmpty()
                     ? Optional.empty()
                     : Optional.of(newestFirst.get(0).record().header().versionId());
+        }
+
+        private Optional<StoredVersion> newestStoredVersion() {
+            return newestFirst.isEmpty()
+                    ? Optional.empty()
+                    : Optional.of(newestFirst.get(0));
         }
 
         private Optional<MvccRowPayload> visiblePayload(MvccCommitSequence snapshotSequence) {
