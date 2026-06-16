@@ -238,3 +238,27 @@ Proof task:
 This keeps the migration story safe: existing Derby-compatible heap tables still
 open through the existing heap path, while future `delos_mvcc` tables can use the
 new versioned-storage boundary explicitly.
+
+### VersionedStorageProvider registry checkpoint
+
+The experimental `delos_mvcc` provider can now be registered and resolved through
+an engine-side versioned-storage provider registry. This is still deliberately
+short of SQL execution. The checkpoint proves the extension boundary can describe
+an opt-in MVCC provider without adding MVCC logic to Derby heap storage:
+
+```text
+ExtensionType.VERSIONED_STORAGE
+  -> VersionedStorageProviderRegistry
+  -> VersionedStorageProviderResolver
+  -> delos_mvcc descriptor and capabilities
+```
+
+Focused proof task:
+
+```bash
+./gradlew versionedStorageProviderRegistrySmoke
+```
+
+The next safe step after this checkpoint is SQL metadata handling for
+`CREATE TABLE ... USING delos_mvcc`, initially rejected or metadata-only until the
+executor bridge is intentionally added.

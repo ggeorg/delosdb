@@ -1617,6 +1617,38 @@ tasks.named('build') {
 }
 
 
+def versionedStorageProviderRegistrySmokeClassesDir = layout.buildDirectory.dir('classes/versioned-storage-provider-registry-smoke')
+def versionedStorageProviderRegistrySmokeClasspath = {
+    files(
+            moduleClassDir(moduleNames.engine),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.osgi),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            project(':delosdb-storage-mvcc').layout.buildDirectory.dir('classes/main'),
+            extensionRuntimeJars())
+}
+
+tasks.register('compileVersionedStorageProviderRegistrySmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:compileDelosDbStorageMvcc'
+    group = 'verification'
+    description = 'Compiles the experimental VersionedStorageProvider registry smoke test.'
+    source = files('dev/versioned-storage-provider-registry-smoke/src/main/java')
+    destinationDirectory = versionedStorageProviderRegistrySmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = versionedStorageProviderRegistrySmokeClasspath()
+}
+
+tasks.register('versionedStorageProviderRegistrySmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageProviderRegistrySmoke'
+    group = 'verification'
+    description = 'Verifies delos_mvcc can be registered and resolved as an experimental VersionedStorageProvider.'
+    classpath = files(versionedStorageProviderRegistrySmokeClassesDir, versionedStorageProviderRegistrySmokeClasspath())
+    mainClass = 'delosdb.smoke.VersionedStorageProviderRegistrySmoke'
+}
+
 tasks.register('mvccCoreModelTest') {
     group = 'verification'
     description = 'Runs the experimental DelosDB MVCC core model tests.'
@@ -1633,4 +1665,11 @@ tasks.register('mvccStorageModelTest') {
     group = 'verification'
     description = 'Runs all experimental DelosDB MVCC storage model tests.'
     dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest'
+}
+
+
+tasks.register('mvccVersionedStorageProviderTest') {
+    group = 'verification'
+    description = 'Runs MVCC storage model tests plus the VersionedStorageProvider registry smoke test.'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke'
 }

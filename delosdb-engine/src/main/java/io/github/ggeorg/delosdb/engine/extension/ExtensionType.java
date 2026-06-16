@@ -12,6 +12,7 @@ import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 public enum ExtensionType {
     INDEX,
     STORAGE,
+    VERSIONED_STORAGE,
     FUNCTION,
     COST_MODEL,
     TYPE,

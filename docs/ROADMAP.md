@@ -241,3 +241,21 @@ Focused check:
 ```bash
 ./gradlew :delosdb-storage-mvcc:runVersionedStorageProviderSpiTest
 ```
+
+### MVCC registry checkpoint
+
+The experimental MVCC module is now visible at the provider-registry boundary as
+`ExtensionType.VERSIONED_STORAGE`. The `delos_mvcc` provider remains opt-in and
+non-executable from SQL, but DelosDB can describe and resolve it as a versioned
+storage provider.
+
+Focused check:
+
+```bash
+./gradlew versionedStorageProviderRegistrySmoke
+```
+
+This completes the provider-boundary step before SQL metadata work. The next
+milestone is to parse/record or deliberately reject `CREATE TABLE ... USING
+delos_mvcc` with a clean diagnostic, without touching Derby-compatible heap
+storage.
