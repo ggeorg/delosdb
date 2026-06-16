@@ -142,6 +142,32 @@ tasks.register('runMvccRecoveryLogTest', Test) {
     }
 }
 
+
+tasks.register('runDelosMvccProviderOwnedIndexTest', Test) {
+    group = 'verification'
+    description = 'Runs the experimental DelosDB MVCC provider-owned index tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/DelosMvccProviderOwnedIndexTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccProviderOwnedIndexTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccProviderOwnedIndexTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccProviderOwnedIndexTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
 tasks.register('classes') {
     dependsOn 'compileDelosDbStorageMvcc'
 }
@@ -166,5 +192,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest'
 }

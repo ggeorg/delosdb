@@ -48,6 +48,7 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
         capabilityValues.add(VersionedStorageCapabilities.SNAPSHOT_VISIBILITY);
         capabilityValues.add(VersionedStorageCapabilities.TABLE_SCAN);
         capabilityValues.add(VersionedStorageCapabilities.MANUAL_CLEANUP);
+        capabilityValues.add(VersionedStorageCapabilities.PROVIDER_OWNED_INDEXES);
         capabilityValues.add(VersionedStorageCapabilities.IN_MEMORY_PROTOTYPE);
         if (storageLog.isEnabled()) {
             capabilityValues.add(VersionedStorageCapabilities.APPEND_ONLY_RECOVERY_LOG);

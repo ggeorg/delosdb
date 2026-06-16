@@ -1632,7 +1632,7 @@ tasks.register('mvccTableScanModelTest') {
 tasks.register('mvccStorageModelTest') {
     group = 'verification'
     description = 'Runs all experimental DelosDB MVCC storage model tests.'
-    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest'
 }
 
 tasks.register('mvccRecoveryLogTest') {
@@ -1736,8 +1736,24 @@ tasks.register('versionedStorageUniqueKeySmoke', JavaExec) {
     }
 }
 
+
+tasks.register('versionedStorageProviderOwnedIndexSmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
+    mustRunAfter 'versionedStorageUniqueKeySmoke'
+    group = 'verification'
+    description = 'Verifies Phase 8 provider-owned index lookup/update/delete behavior for experimental delos_mvcc storage.'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+    mainClass = 'delosdb.smoke.VersionedStorageProviderOwnedIndexSmoke'
+    args layout.buildDirectory.dir('versioned-storage-provider-owned-index-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('versioned-storage-provider-owned-index-smoke').get().asFile
+    doFirst {
+        delete file('build/versioned-storage-provider-owned-index-smoke')
+        workingDir.mkdirs()
+    }
+}
+
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
     description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke'
 }

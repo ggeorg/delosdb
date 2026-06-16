@@ -297,3 +297,15 @@ Focused check:
 ```bash
 ./gradlew versionedStorageUniqueKeySmoke
 ```
+
+### MVCC provider-owned index checkpoint
+
+The experimental `delos_mvcc` path now includes a Phase 8 provider-owned index
+model. Index entries point to MVCC row keys, and lookup rechecks snapshot-visible
+row versions before returning data. The SQL bridge supports the first indexed
+lookup path with `CREATE INDEX ... ON ...`, `SELECT ... WHERE`, and narrow indexed
+`UPDATE`/`DELETE` proofs.
+
+This is still not Derby B-tree integration and not optimizer costing. It is the
+storage-engine checkpoint before deeper snapshot isolation, cleanup/vacuum, and
+real path-cost work.

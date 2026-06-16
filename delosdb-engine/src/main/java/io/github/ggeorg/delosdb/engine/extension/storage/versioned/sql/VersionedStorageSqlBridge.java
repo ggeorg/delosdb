@@ -3,6 +3,8 @@ package io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql;
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.VersionedStorageProviderDiscovery;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
@@ -40,6 +42,10 @@ import java.util.regex.Pattern;
  * INSERT INTO name VALUES (1, 'alpha')
  * SELECT * FROM name
  * SELECT COUNT(*) FROM name
+ * CREATE INDEX idx_name ON name(column_name)
+ * SELECT * FROM name WHERE column_name = 'literal'
+ * UPDATE name SET column_name = 'new' WHERE indexed_column = 'old'
+ * DELETE FROM name WHERE indexed_column = 'old'
  * </pre>
  *
  * <p>Auto-commit statements commit through the provider-local transaction coordinator.
@@ -56,10 +62,18 @@ public final class VersionedStorageSqlBridge {
             "(?is)^create\\s+table\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s*\\((.*)\\)\\s+using\\s+delos_mvcc$");
     private static final Pattern INSERT_VALUES = Pattern.compile(
             "(?is)^insert\\s+into\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+values\\s*\\((.*)\\)$");
+    private static final Pattern CREATE_INDEX = Pattern.compile(
+            "(?is)^create\\s+index\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s+on\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\)$");
     private static final Pattern SELECT_ALL = Pattern.compile(
             "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)(?:\\s+order\\s+by\\s+[a-zA-Z_][a-zA-Z0-9_]*)?$");
     private static final Pattern SELECT_COUNT = Pattern.compile(
             "(?is)^select\\s+count\\s*\\(\\s*\\*\\s*\\)\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)$");
+    private static final Pattern SELECT_WHERE_EQUALS = Pattern.compile(
+            "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)$");
+    private static final Pattern UPDATE_WHERE_EQUALS = Pattern.compile(
+            "(?is)^update\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+set\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)$");
+    private static final Pattern DELETE_WHERE_EQUALS = Pattern.compile(
+            "(?is)^delete\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)$");
 
     private static final Object LOCK = new Object();
     private static final Map<VersionedTableMetadata, TableDefinition> TABLES = new HashMap<>();
@@ -101,6 +115,49 @@ public final class VersionedStorageSqlBridge {
             Optional<TableDefinition> table = findTable(insert.group(1));
             if (table.isPresent()) {
                 return insertValues(table.get(), insert.group(2), transactionOwner, autoCommit);
+            }
+            return null;
+        }
+
+        Matcher createIndex = CREATE_INDEX.matcher(normalizedSql);
+        if (createIndex.matches()) {
+            Optional<TableDefinition> table = findTable(createIndex.group(2));
+            if (table.isPresent()) {
+                return createIndex(table.get(), createIndex.group(1), createIndex.group(3));
+            }
+            return null;
+        }
+
+        Matcher updateWhere = UPDATE_WHERE_EQUALS.matcher(normalizedSql);
+        if (updateWhere.matches()) {
+            Optional<TableDefinition> table = findTable(updateWhere.group(1));
+            if (table.isPresent()) {
+                return updateWhereEquals(
+                        table.get(),
+                        updateWhere.group(2),
+                        updateWhere.group(3),
+                        updateWhere.group(4),
+                        updateWhere.group(5),
+                        transactionOwner,
+                        autoCommit);
+            }
+            return null;
+        }
+
+        Matcher deleteWhere = DELETE_WHERE_EQUALS.matcher(normalizedSql);
+        if (deleteWhere.matches()) {
+            Optional<TableDefinition> table = findTable(deleteWhere.group(1));
+            if (table.isPresent()) {
+                return deleteWhereEquals(table.get(), deleteWhere.group(2), deleteWhere.group(3), transactionOwner, autoCommit);
+            }
+            return null;
+        }
+
+        Matcher selectWhere = SELECT_WHERE_EQUALS.matcher(normalizedSql);
+        if (selectWhere.matches()) {
+            Optional<TableDefinition> table = findTable(selectWhere.group(1));
+            if (table.isPresent()) {
+                return selectWhereEquals(table.get(), selectWhere.group(2), selectWhere.group(3), transactionOwner, autoCommit);
             }
             return null;
         }
@@ -163,6 +220,107 @@ public final class VersionedStorageSqlBridge {
             table.table().insert(rowKey, values, statementTx.context());
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.updateCount(1L);
+        } catch (RuntimeException | SQLException e) {
+            failStatementTransaction(transactionOwner, statementTx);
+            throw e;
+        }
+    }
+
+    private static VersionedStorageSqlResult createIndex(
+            TableDefinition table,
+            String indexName,
+            String columnName) throws SQLException {
+        int columnIndex = table.columnIndex(columnName);
+        StatementTransaction statementTx = beginStatementTransaction(table, VersionedStorageSqlBridge.class, true);
+        try {
+            VersionedIndexMetadata indexMetadata = new VersionedIndexMetadata(
+                    table.metadata(),
+                    indexName,
+                    table.columns().get(columnIndex).name(),
+                    false);
+            table.createIndex(indexMetadata, columnIndex, statementTx.context());
+            finishStatementTransaction(statementTx);
+            return VersionedStorageSqlResult.updateCount(0L);
+        } catch (RuntimeException | SQLException e) {
+            failStatementTransaction(VersionedStorageSqlBridge.class, statementTx);
+            throw e;
+        }
+    }
+
+    private static VersionedStorageSqlResult selectWhereEquals(
+            TableDefinition table,
+            String columnName,
+            String rawValue,
+            Object transactionOwner,
+            boolean autoCommit) throws SQLException {
+        int columnIndex = table.columnIndex(columnName);
+        Object indexKey = table.columns().get(columnIndex).parseValue(rawValue.trim());
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
+        try {
+            VersionedIndex<Long, List<Object>> index = table.indexForColumn(columnIndex);
+            CachedRowSet rowSet = newRowSet(table.columns());
+            List<List<Object>> rows = new ArrayList<>();
+            try (VersionedScan<Long, List<Object>> scan = index.lookup(indexKey, statementTx.context().currentView())) {
+                while (scan.next()) {
+                    rows.add(scan.row().value());
+                }
+            }
+            for (int i = rows.size() - 1; i >= 0; i--) {
+                append(rowSet, rows.get(i), table.columns());
+            }
+            rowSet.beforeFirst();
+            finishStatementTransaction(statementTx);
+            return VersionedStorageSqlResult.rows(rowSet);
+        } catch (RuntimeException | SQLException e) {
+            failStatementTransaction(transactionOwner, statementTx);
+            throw e;
+        }
+    }
+
+    private static VersionedStorageSqlResult updateWhereEquals(
+            TableDefinition table,
+            String setColumnName,
+            String rawSetValue,
+            String whereColumnName,
+            String rawWhereValue,
+            Object transactionOwner,
+            boolean autoCommit) throws SQLException {
+        int setColumnIndex = table.columnIndex(setColumnName);
+        int whereColumnIndex = table.columnIndex(whereColumnName);
+        Object newValue = table.columns().get(setColumnIndex).parseValue(rawSetValue.trim());
+        Object whereValue = table.columns().get(whereColumnIndex).parseValue(rawWhereValue.trim());
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
+        try {
+            List<VersionedRow<Long, List<Object>>> rows = table.indexedRows(whereColumnIndex, whereValue, statementTx.context());
+            for (VersionedRow<Long, List<Object>> row : rows) {
+                List<Object> replacement = new ArrayList<>(row.value());
+                replacement.set(setColumnIndex, newValue);
+                table.table().update(row.key(), List.copyOf(replacement), statementTx.context());
+            }
+            finishStatementTransaction(statementTx);
+            return VersionedStorageSqlResult.updateCount(rows.size());
+        } catch (RuntimeException | SQLException e) {
+            failStatementTransaction(transactionOwner, statementTx);
+            throw e;
+        }
+    }
+
+    private static VersionedStorageSqlResult deleteWhereEquals(
+            TableDefinition table,
+            String whereColumnName,
+            String rawWhereValue,
+            Object transactionOwner,
+            boolean autoCommit) throws SQLException {
+        int whereColumnIndex = table.columnIndex(whereColumnName);
+        Object whereValue = table.columns().get(whereColumnIndex).parseValue(rawWhereValue.trim());
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
+        try {
+            List<VersionedRow<Long, List<Object>>> rows = table.indexedRows(whereColumnIndex, whereValue, statementTx.context());
+            for (VersionedRow<Long, List<Object>> row : rows) {
+                table.table().delete(row.key(), statementTx.context());
+            }
+            finishStatementTransaction(statementTx);
+            return VersionedStorageSqlResult.updateCount(rows.size());
         } catch (RuntimeException | SQLException e) {
             failStatementTransaction(transactionOwner, statementTx);
             throw e;
@@ -438,6 +596,8 @@ public final class VersionedStorageSqlBridge {
         private final List<ColumnDefinition> columns;
         private final List<UniqueConstraint> uniqueConstraints;
         private final Map<UniqueKey, UniqueReservation> uniqueReservations = new HashMap<>();
+        private final Map<String, IndexDefinition> indexesByName = new HashMap<>();
+        private final Map<Integer, IndexDefinition> indexesByColumnIndex = new HashMap<>();
         private final VersionedTable<Long, List<Object>> table;
         private final VersionedTransactionCoordinator coordinator;
         private long nextKey = 1L;
@@ -468,6 +628,57 @@ public final class VersionedStorageSqlBridge {
 
         private VersionedTransactionCoordinator coordinator() {
             return coordinator;
+        }
+
+        private synchronized void createIndex(VersionedIndexMetadata metadata, int columnIndex, TxContext buildContext) throws SQLException {
+            String indexName = metadata.indexName();
+            if (indexesByName.containsKey(indexName)) {
+                throw sqlException("X0Y32", "delos_mvcc index already exists: " + metadata.qualifiedName());
+            }
+            if (indexesByColumnIndex.containsKey(columnIndex)) {
+                throw sqlException("X0MV2", "delos_mvcc Phase 8 supports one provider-owned index per column: "
+                        + columns.get(columnIndex).name());
+            }
+            VersionedIndex<Long, List<Object>> index = table.createIndex(
+                    metadata,
+                    row -> row.get(columnIndex),
+                    buildContext.currentView());
+            IndexDefinition definition = new IndexDefinition(metadata, columnIndex, index);
+            indexesByName.put(indexName, definition);
+            indexesByColumnIndex.put(columnIndex, definition);
+        }
+
+        private synchronized VersionedIndex<Long, List<Object>> indexForColumn(int columnIndex) throws SQLException {
+            IndexDefinition definition = indexesByColumnIndex.get(columnIndex);
+            if (definition == null) {
+                throw sqlException("0A000", "delos_mvcc Phase 8 requires a provider-owned index on column "
+                        + columns.get(columnIndex).name() + " before indexed lookup");
+            }
+            return definition.index();
+        }
+
+        private List<VersionedRow<Long, List<Object>>> indexedRows(
+                int columnIndex,
+                Object indexKey,
+                TxContext context) throws SQLException {
+            VersionedIndex<Long, List<Object>> index = indexForColumn(columnIndex);
+            List<VersionedRow<Long, List<Object>>> rows = new ArrayList<>();
+            try (VersionedScan<Long, List<Object>> scan = index.lookup(indexKey, context.currentView())) {
+                while (scan.next()) {
+                    rows.add(scan.row());
+                }
+            }
+            return rows;
+        }
+
+        private int columnIndex(String columnName) throws SQLException {
+            String normalized = columnName.trim().toUpperCase(Locale.ROOT);
+            for (int i = 0; i < columns.size(); i++) {
+                if (columns.get(i).name().equals(normalized)) {
+                    return i;
+                }
+            }
+            throw sqlException("42X04", "Column not found in delos_mvcc table " + metadata.qualifiedName() + ": " + columnName);
         }
 
         private synchronized long nextRowKey() {
@@ -559,6 +770,12 @@ public final class VersionedStorageSqlBridge {
             }
             return List.copyOf(constraints);
         }
+    }
+
+    private record IndexDefinition(
+            VersionedIndexMetadata metadata,
+            int columnIndex,
+            VersionedIndex<Long, List<Object>> index) {
     }
 
     private record UniqueConstraint(String name, int columnIndex, boolean primaryKey) {

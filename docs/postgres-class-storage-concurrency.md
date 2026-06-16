@@ -280,3 +280,15 @@ block concurrent duplicates, and rollback releases the reservation.
 This is intentionally not the final index design. It does not add a B-tree,
 secondary-index storage, optimizer path selection, or Derby heap changes. It is
 a behavior checkpoint before real index structures are attached to MVCC rows.
+
+### Phase 8 checkpoint: provider-owned MVCC index model
+
+`delos_mvcc` now has the first provider-owned index structure. The index stores
+candidate row identifiers and always rechecks MVCC table/version visibility before
+returning a row. This follows the PostgreSQL design rule that an index entry is
+not independently visible; the heap/version chain remains authoritative.
+
+The SQL proof is intentionally narrow: `CREATE INDEX ... ON mvcc_table(column)`,
+`SELECT * ... WHERE column = literal`, plus indexed `UPDATE` and `DELETE` through
+the experimental bridge. The index is not Derby B-tree integration, does not add
+optimizer costing, and does not reinterpret Derby heap pages.

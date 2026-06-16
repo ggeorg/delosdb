@@ -35,6 +35,8 @@ public final class VersionedStorageProviderRegistrySmoke {
                 "descriptor must expose table-scan capability");
         assertTrue(descriptor.capabilities().contains(VersionedStorageCapabilities.MANUAL_CLEANUP),
                 "descriptor must expose manual-cleanup capability");
+        assertTrue(descriptor.capabilities().contains(VersionedStorageCapabilities.PROVIDER_OWNED_INDEXES),
+                "descriptor must expose provider-owned-indexes capability");
         assertTrue(descriptor.capabilities().contains(VersionedStorageCapabilities.IN_MEMORY_PROTOTYPE),
                 "descriptor must expose in-memory prototype capability");
 
