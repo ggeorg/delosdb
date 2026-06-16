@@ -18,6 +18,7 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -41,8 +42,10 @@ import java.util.regex.Pattern;
  * SELECT COUNT(*) FROM name
  * </pre>
  *
- * <p>Every write is committed through the provider-local transaction
- * coordinator. Mapping Derby transaction commit/rollback to MVCC is Phase 5.</p>
+ * <p>Auto-commit statements commit through the provider-local transaction coordinator.
+ * When Derby auto-commit is disabled, the bridge now keeps one provider-local
+ * MVCC transaction per JDBC connection owner and completes it from
+ * {@link #commit(Object)} or {@link #rollback(Object)}.</p>
  */
 @InternalApi
 public final class VersionedStorageSqlBridge {
@@ -60,6 +63,8 @@ public final class VersionedStorageSqlBridge {
 
     private static final Object LOCK = new Object();
     private static final Map<VersionedTableMetadata, TableDefinition> TABLES = new HashMap<>();
+    private static final Map<Object, SessionTransaction> SESSION_TRANSACTIONS = new IdentityHashMap<>();
+    private static VersionedStorageProvider cachedProvider;
 
     private VersionedStorageSqlBridge() {
     }
@@ -71,6 +76,19 @@ public final class VersionedStorageSqlBridge {
      *         normal Derby execution should continue.
      */
     public static VersionedStorageSqlResult tryExecute(String sql) throws SQLException {
+        return tryExecute(sql, VersionedStorageSqlBridge.class, true);
+    }
+
+    /**
+     * Attempts to execute a supported experimental MVCC SQL statement using
+     * the supplied transaction owner. The owner is normally the current
+     * EmbedConnection; it lets explicit commit/rollback complete the provider
+     * transaction without leaking MVCC state into Derby heap storage.
+     */
+    public static VersionedStorageSqlResult tryExecute(
+            String sql,
+            Object transactionOwner,
+            boolean autoCommit) throws SQLException {
         String normalizedSql = stripTerminator(sql);
 
         Matcher create = CREATE_TABLE.matcher(normalizedSql);
@@ -82,7 +100,7 @@ public final class VersionedStorageSqlBridge {
         if (insert.matches()) {
             Optional<TableDefinition> table = findTable(insert.group(1));
             if (table.isPresent()) {
-                return insertValues(table.get(), insert.group(2));
+                return insertValues(table.get(), insert.group(2), transactionOwner, autoCommit);
             }
             return null;
         }
@@ -91,7 +109,7 @@ public final class VersionedStorageSqlBridge {
         if (selectAll.matches()) {
             Optional<TableDefinition> table = findTable(selectAll.group(1));
             if (table.isPresent()) {
-                return selectAll(table.get());
+                return selectAll(table.get(), transactionOwner, autoCommit);
             }
             return null;
         }
@@ -100,7 +118,7 @@ public final class VersionedStorageSqlBridge {
         if (selectCount.matches()) {
             Optional<TableDefinition> table = findTable(selectCount.group(1));
             if (table.isPresent()) {
-                return selectCount(table.get());
+                return selectCount(table.get(), transactionOwner, autoCommit);
             }
             return null;
         }
@@ -128,29 +146,36 @@ public final class VersionedStorageSqlBridge {
         return VersionedStorageSqlResult.updateCount(0L);
     }
 
-    private static VersionedStorageSqlResult insertValues(TableDefinition table, String valueList) throws SQLException {
+    private static VersionedStorageSqlResult insertValues(
+            TableDefinition table,
+            String valueList,
+            Object transactionOwner,
+            boolean autoCommit) throws SQLException {
         List<Object> values = parseValues(valueList, table.columns());
         if (values.size() != table.columns().size()) {
             throw sqlException("42802", "INSERT value count does not match delos_mvcc table column count");
         }
 
-        TxContext tx = table.coordinator().begin();
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
         try {
-            table.table().insert(table.nextRowKey(), values, tx);
-            table.coordinator().commit(tx);
+            table.table().insert(table.nextRowKey(), values, statementTx.context());
+            finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.updateCount(1L);
-        } catch (RuntimeException e) {
-            table.coordinator().abort(tx);
+        } catch (RuntimeException | SQLException e) {
+            failStatementTransaction(transactionOwner, statementTx);
             throw e;
         }
     }
 
-    private static VersionedStorageSqlResult selectAll(TableDefinition table) throws SQLException {
-        TxContext tx = table.coordinator().begin();
+    private static VersionedStorageSqlResult selectAll(
+            TableDefinition table,
+            Object transactionOwner,
+            boolean autoCommit) throws SQLException {
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
         try {
             CachedRowSet rowSet = newRowSet(table.columns());
             List<List<Object>> rows = new ArrayList<>();
-            try (VersionedScan<Long, List<Object>> scan = table.table().openScan(tx.currentView())) {
+            try (VersionedScan<Long, List<Object>> scan = table.table().openScan(statementTx.context().currentView())) {
                 while (scan.next()) {
                     VersionedRow<Long, List<Object>> row = scan.row();
                     rows.add(row.value());
@@ -162,25 +187,28 @@ public final class VersionedStorageSqlBridge {
                 append(rowSet, rows.get(i), table.columns());
             }
             rowSet.beforeFirst();
-            table.coordinator().commit(tx);
+            finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
         } catch (RuntimeException | SQLException e) {
-            table.coordinator().abort(tx);
+            failStatementTransaction(transactionOwner, statementTx);
             throw e;
         }
     }
 
-    private static VersionedStorageSqlResult selectCount(TableDefinition table) throws SQLException {
-        TxContext tx = table.coordinator().begin();
+    private static VersionedStorageSqlResult selectCount(
+            TableDefinition table,
+            Object transactionOwner,
+            boolean autoCommit) throws SQLException {
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
         try {
-            long visibleRows = table.table().stats(tx.currentView()).visibleRowCount();
+            long visibleRows = table.table().stats(statementTx.context().currentView()).visibleRowCount();
             CachedRowSet rowSet = newRowSet(List.of(new ColumnDefinition("1", Types.INTEGER, "INTEGER")));
             append(rowSet, List.of(Math.toIntExact(visibleRows)), List.of(new ColumnDefinition("1", Types.INTEGER, "INTEGER")));
             rowSet.beforeFirst();
-            table.coordinator().commit(tx);
+            finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
         } catch (RuntimeException | SQLException e) {
-            table.coordinator().abort(tx);
+            failStatementTransaction(transactionOwner, statementTx);
             throw e;
         }
     }
@@ -219,11 +247,95 @@ public final class VersionedStorageSqlBridge {
     }
 
     private static VersionedStorageProvider provider() throws SQLException {
-        return VersionedStorageProviderDiscovery.discover()
-                .stream()
-                .filter(candidate -> PROVIDER_NAME.equals(candidate.name()))
-                .findFirst()
-                .orElseThrow(() -> sqlException("0A000", "VersionedStorageProvider not discovered: " + PROVIDER_NAME));
+        synchronized (LOCK) {
+            if (cachedProvider == null) {
+                cachedProvider = VersionedStorageProviderDiscovery.discover()
+                        .stream()
+                        .filter(candidate -> PROVIDER_NAME.equals(candidate.name()))
+                        .findFirst()
+                        .orElseThrow(() -> sqlException("0A000", "VersionedStorageProvider not discovered: " + PROVIDER_NAME));
+            }
+            return cachedProvider;
+        }
+    }
+
+    /** Completes the active provider-local MVCC transaction for a Derby connection. */
+    public static void commit(Object transactionOwner) throws SQLException {
+        completeSessionTransaction(transactionOwner, true);
+    }
+
+    /** Rolls back the active provider-local MVCC transaction for a Derby connection. */
+    public static void rollback(Object transactionOwner) throws SQLException {
+        completeSessionTransaction(transactionOwner, false);
+    }
+
+    private static StatementTransaction beginStatementTransaction(
+            TableDefinition table,
+            Object transactionOwner,
+            boolean autoCommit) throws SQLException {
+        if (autoCommit || transactionOwner == null) {
+            return new StatementTransaction(table.coordinator(), table.coordinator().begin(), true);
+        }
+
+        synchronized (LOCK) {
+            SessionTransaction session = SESSION_TRANSACTIONS.get(transactionOwner);
+            if (session == null) {
+                session = new SessionTransaction(table.coordinator(), table.coordinator().begin());
+                SESSION_TRANSACTIONS.put(transactionOwner, session);
+            } else if (session.coordinator() != table.coordinator()) {
+                throw sqlException("0A000", "A delos_mvcc SQL transaction cannot span multiple provider coordinators");
+            }
+            return new StatementTransaction(session.coordinator(), session.context(), false);
+        }
+    }
+
+    private static void finishStatementTransaction(StatementTransaction statementTx) throws SQLException {
+        if (statementTx.autoCommit()) {
+            try {
+                statementTx.coordinator().commit(statementTx.context());
+            } catch (RuntimeException e) {
+                throw sqlException("X0MV1", "Could not commit delos_mvcc statement transaction: " + e.getMessage());
+            }
+        }
+    }
+
+    private static void failStatementTransaction(Object transactionOwner, StatementTransaction statementTx) throws SQLException {
+        if (statementTx.autoCommit()) {
+            abort(statementTx);
+            return;
+        }
+        completeSessionTransaction(transactionOwner, false);
+    }
+
+    private static void completeSessionTransaction(Object transactionOwner, boolean commit) throws SQLException {
+        if (transactionOwner == null) {
+            return;
+        }
+        SessionTransaction session;
+        synchronized (LOCK) {
+            session = SESSION_TRANSACTIONS.remove(transactionOwner);
+        }
+        if (session == null) {
+            return;
+        }
+        try {
+            if (commit) {
+                session.coordinator().commit(session.context());
+            } else {
+                session.coordinator().abort(session.context());
+            }
+        } catch (RuntimeException e) {
+            throw sqlException("X0MV1", "Could not " + (commit ? "commit" : "rollback")
+                    + " delos_mvcc transaction: " + e.getMessage());
+        }
+    }
+
+    private static void abort(StatementTransaction statementTx) throws SQLException {
+        try {
+            statementTx.coordinator().abort(statementTx.context());
+        } catch (RuntimeException e) {
+            throw sqlException("X0MV1", "Could not abort delos_mvcc statement transaction: " + e.getMessage());
+        }
     }
 
     private static List<ColumnDefinition> parseColumns(String columnList) throws SQLException {
@@ -289,6 +401,17 @@ public final class VersionedStorageSqlBridge {
 
     private static SQLException sqlException(String sqlState, String message) {
         return new SQLException(message, sqlState);
+    }
+
+    private record SessionTransaction(
+            VersionedTransactionCoordinator coordinator,
+            TxContext context) {
+    }
+
+    private record StatementTransaction(
+            VersionedTransactionCoordinator coordinator,
+            TxContext context,
+            boolean autoCommit) {
     }
 
     private static final class TableDefinition {

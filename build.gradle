@@ -1684,7 +1684,7 @@ def versionedStorageSqlMetadataSmokeClasspath = {
 tasks.register('compileVersionedStorageSqlMetadataSmoke', JavaCompile) {
     dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
     group = 'verification'
-    description = 'Compiles the SQL table-scan smoke for experimental versioned storage.'
+    description = 'Compiles the SQL table-scan and transaction-lifecycle smoke for experimental versioned storage.'
     source = files('dev/versioned-storage-sql-metadata-smoke/src/main/java', smokeUtilsSourceDir)
     destinationDirectory = versionedStorageSqlMetadataSmokeClassesDir
     sourceCompatibility = javaRelease.toString()
@@ -1698,7 +1698,7 @@ tasks.register('versionedStorageSqlMetadataSmoke', JavaExec) {
     dependsOn 'compileVersionedStorageSqlMetadataSmoke'
     mustRunAfter 'versionedStorageProviderRegistrySmoke'
     group = 'verification'
-    description = 'Verifies CREATE TABLE/INSERT/SELECT table scan for experimental delos_mvcc storage.'
+    description = 'Verifies CREATE TABLE/INSERT/SELECT plus commit/rollback lifecycle for experimental delos_mvcc storage.'
     classpath = versionedStorageSqlMetadataSmokeClasspath()
     mainClass = 'delosdb.smoke.VersionedStorageSqlMetadataSmoke'
     args layout.buildDirectory.dir('versioned-storage-sql-metadata-smoke/db').get().asFile.absolutePath
@@ -1709,8 +1709,14 @@ tasks.register('versionedStorageSqlMetadataSmoke', JavaExec) {
     }
 }
 
+tasks.register('versionedStorageTransactionLifecycleSmoke') {
+    group = 'verification'
+    description = 'Alias for the Phase 5 delos_mvcc SQL commit/rollback lifecycle smoke.'
+    dependsOn 'versionedStorageSqlMetadataSmoke'
+}
+
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
-    description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan smokes.'
+    description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
     dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke'
 }

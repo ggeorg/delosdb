@@ -5,11 +5,12 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 
 /**
- * Phase 4 smoke for the experimental delos_mvcc SQL table-scan path.
+ * Phase 5 smoke for the experimental delos_mvcc SQL table-scan path.
  *
- * <p>This is intentionally narrow: CREATE TABLE, INSERT, SELECT table scan,
- * and COUNT(*) through the versioned-storage provider. Derby-compatible heap
- * tables continue to use the inherited execution path.</p>
+ * <p>This still stays narrow: CREATE TABLE, INSERT, SELECT table scan,
+ * COUNT(*), and explicit JDBC commit/rollback mapped to the provider-local
+ * MVCC transaction lifecycle. Derby-compatible heap tables continue to use the
+ * inherited execution path.</p>
  */
 public final class VersionedStorageSqlMetadataSmoke {
     private VersionedStorageSqlMetadataSmoke() {
@@ -35,27 +36,62 @@ public final class VersionedStorageSqlMetadataSmoke {
             statement.executeUpdate("insert into versioned_storage_mvcc values (1, 'alpha')");
             statement.executeUpdate("insert into versioned_storage_mvcc values (2, 'beta')");
 
-            try (ResultSet rs = statement.executeQuery("select * from versioned_storage_mvcc")) {
-                assertNext(rs, 1, "alpha");
-                assertNext(rs, 2, "beta");
-                if (rs.next()) {
-                    throw new AssertionError("Unexpected extra row from delos_mvcc table scan");
-                }
-            }
+            assertTableRows(statement, new Object[][]{
+                    {1, "alpha"},
+                    {2, "beta"}
+            });
+            assertCount(statement, 2, "auto-committed delos_mvcc rows");
 
-            try (ResultSet rs = statement.executeQuery("select count(*) from versioned_storage_mvcc")) {
-                if (!rs.next()) {
-                    throw new AssertionError("COUNT(*) returned no row for delos_mvcc table");
-                }
-                SmokeUtils.assertEquals("2", String.valueOf(rs.getInt(1)), "delos_mvcc COUNT(*)");
-            }
+            connection.setAutoCommit(false);
+            statement.executeUpdate("insert into versioned_storage_mvcc values (3, 'rollback-me')");
+            assertCount(statement, 3, "own uncommitted delos_mvcc insert is visible to same JDBC transaction");
+            assertCountFromNewConnection(databasePath, 2, "uncommitted delos_mvcc insert is hidden from another JDBC transaction");
+            connection.rollback();
+            connection.setAutoCommit(true);
+            assertCount(statement, 2, "rolled-back delos_mvcc insert is not visible");
+
+            connection.setAutoCommit(false);
+            statement.executeUpdate("insert into versioned_storage_mvcc values (3, 'gamma')");
+            assertCount(statement, 3, "own pending delos_mvcc commit row is visible");
+            assertCountFromNewConnection(databasePath, 2, "pending delos_mvcc commit row is hidden before commit");
+            connection.commit();
+            connection.setAutoCommit(true);
+            assertCount(statement, 3, "committed delos_mvcc insert is visible");
+            assertCountFromNewConnection(databasePath, 3, "committed delos_mvcc insert is visible to another JDBC transaction");
 
             statement.executeUpdate("drop table versioned_storage_heap");
         } finally {
             SmokeUtils.shutdown(databasePath);
         }
 
-        System.out.println("DelosDB versioned-storage SQL table-scan smoke test passed.");
+        System.out.println("DelosDB versioned-storage SQL transaction lifecycle smoke test passed.");
+    }
+
+    private static void assertTableRows(Statement statement, Object[][] expectedRows) throws Exception {
+        try (ResultSet rs = statement.executeQuery("select * from versioned_storage_mvcc")) {
+            for (Object[] expected : expectedRows) {
+                assertNext(rs, (Integer) expected[0], (String) expected[1]);
+            }
+            if (rs.next()) {
+                throw new AssertionError("Unexpected extra row from delos_mvcc table scan");
+            }
+        }
+    }
+
+    private static void assertCountFromNewConnection(String databasePath, int expected, String message) throws Exception {
+        try (Connection other = SmokeUtils.connect(databasePath, false);
+             Statement otherStatement = other.createStatement()) {
+            assertCount(otherStatement, expected, message);
+        }
+    }
+
+    private static void assertCount(Statement statement, int expected, String message) throws Exception {
+        try (ResultSet rs = statement.executeQuery("select count(*) from versioned_storage_mvcc")) {
+            if (!rs.next()) {
+                throw new AssertionError("COUNT(*) returned no row for delos_mvcc table");
+            }
+            SmokeUtils.assertEquals(String.valueOf(expected), String.valueOf(rs.getInt(1)), message);
+        }
     }
 
     private static void assertNext(ResultSet rs, int expectedId, String expectedName) throws Exception {

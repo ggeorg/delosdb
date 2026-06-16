@@ -9,11 +9,9 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordi
  * Small provider-local transaction coordinator for the experimental MVCC
  * module.
  *
- * <p>The DelosDB engine will eventually map Derby transactions to the SPI
- * {@code TxContext}. Until then this class gives provider tests and prototype
- * callers one disciplined way to create, commit, abort, and view MVCC
- * transactions without reaching directly into the lower-level transaction
- * table.</p>
+ * <p>The DelosDB engine maps JDBC commit/rollback to this coordinator for the
+ * experimental SQL table-scan path. The coordinator still remains provider
+ * local: it does not depend on Derby heap pages, locks, or log records.</p>
  */
 public final class DelosMvccTransactionCoordinator implements VersionedTransactionCoordinator {
     private final MvccTransactionManager transactionManager = new MvccTransactionManager();

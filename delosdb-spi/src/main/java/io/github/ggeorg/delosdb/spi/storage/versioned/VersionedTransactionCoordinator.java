@@ -3,9 +3,9 @@ package io.github.ggeorg.delosdb.spi.storage.versioned;
 /**
  * Provider-owned transaction coordinator for experimental versioned storage.
  *
- * <p>This is intentionally not Derby transaction integration. It gives the
- * first SQL table-scan bridge a provider-local transaction lifecycle while the
- * Derby transaction-to-MVCC mapping remains a later phase.</p>
+ * <p>The provider owns the MVCC transaction objects. The DelosDB engine may map
+ * JDBC commit/rollback to these callbacks, but the provider remains isolated
+ * from Derby heap, lock, and log internals.</p>
  */
 public interface VersionedTransactionCoordinator {
     TxContext begin();
