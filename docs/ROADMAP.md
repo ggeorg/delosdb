@@ -418,3 +418,21 @@ Focused checks:
 ./gradlew mvccOrderedIndexOrderByTest
 ./gradlew versionedStorageOrderByPathSmoke
 ```
+
+### MVCC ordered-index LIMIT checkpoint
+
+The experimental `delos_mvcc` path now has a Phase 16 bounded ordered-index
+proof. `SELECT * FROM mvcc_table ORDER BY indexed_column LIMIT n` can use a
+provider-owned ordered MVCC index when one exists. Without an index, the bridge
+falls back to a table scan, sort, and limit.
+
+The bounded index scan still rechecks MVCC visibility and current indexed value
+before returning rows. Stale candidates left by updates or deletes are skipped
+and do not count toward the requested limit.
+
+Focused checks:
+
+```bash
+./gradlew mvccOrderedIndexLimitTest
+./gradlew versionedStorageOrderByLimitSmoke
+```

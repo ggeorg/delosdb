@@ -1629,10 +1629,17 @@ tasks.register('mvccTableScanModelTest') {
     dependsOn ':delosdb-storage-mvcc:runMvccTableScanModelTest'
 }
 
+
+tasks.register('mvccPageFileTest') {
+    group = 'verification'
+    description = 'Runs Phase A1 delos_mvcc durable page-file tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccPageFileTest'
+}
+
 tasks.register('mvccStorageModelTest') {
     group = 'verification'
     description = 'Runs all experimental DelosDB MVCC storage model tests.'
-    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest', ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest', ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest', ':delosdb-storage-mvcc:runDelosMvccIndexStatsTest', ':delosdb-storage-mvcc:runDelosMvccOrderedIndexRangeTest'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest', ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest', ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest', ':delosdb-storage-mvcc:runDelosMvccIndexStatsTest', ':delosdb-storage-mvcc:runDelosMvccOrderedIndexRangeTest', ':delosdb-storage-mvcc:runMvccPageFileTest'
 }
 
 tasks.register('mvccRecoveryLogTest') {

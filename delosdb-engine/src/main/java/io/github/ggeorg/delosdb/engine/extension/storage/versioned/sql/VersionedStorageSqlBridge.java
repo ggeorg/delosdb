@@ -45,7 +45,8 @@ import java.util.regex.Pattern;
  * CREATE TABLE name (id INT, value VARCHAR(40)) USING delos_mvcc
  * INSERT INTO name VALUES (1, 'alpha')
  * SELECT * FROM name
- * SELECT * FROM name ORDER BY indexed_column [ASC|DESC]
+ * SELECT * FROM name ORDER BY indexed_column [ASC|DESC] [LIMIT n]
+ * SELECT * FROM name LIMIT n
  * SELECT COUNT(*) FROM name
  * CREATE INDEX idx_name ON name(column_name)
  * SELECT * FROM name WHERE column_name = 'literal'
@@ -72,7 +73,7 @@ public final class VersionedStorageSqlBridge {
     private static final Pattern CREATE_INDEX = Pattern.compile(
             "(?is)^create\\s+index\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s+on\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\)$");
     private static final Pattern SELECT_ALL = Pattern.compile(
-            "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)(?:\\s+order\\s+by\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s+(asc|desc))?)?$");
+            "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)(?:\\s+order\\s+by\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s+(asc|desc))?)?(?:\\s+limit\\s+([0-9]+))?$");
     private static final Pattern SELECT_COUNT = Pattern.compile(
             "(?is)^select\\s+count\\s*\\(\\s*\\*\\s*\\)\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)$");
     private static final Pattern SELECT_WHERE_EQUALS = Pattern.compile(
@@ -240,7 +241,7 @@ public final class VersionedStorageSqlBridge {
         if (selectAll.matches()) {
             Optional<TableDefinition> table = findTable(selectAll.group(1));
             if (table.isPresent()) {
-                return selectAll(table.get(), selectAll.group(2), selectAll.group(3), transactionOwner, autoCommit, transactionIsolation);
+                return selectAll(table.get(), selectAll.group(2), selectAll.group(3), selectAll.group(4), transactionOwner, autoCommit, transactionIsolation);
             }
             return null;
         }
@@ -667,19 +668,21 @@ public final class VersionedStorageSqlBridge {
             TableDefinition table,
             String orderColumnName,
             String orderDirection,
+            String rawLimit,
             Object transactionOwner,
             boolean autoCommit,
             int transactionIsolation) throws SQLException {
+        long limit = parseLimit(rawLimit);
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
             VersionedTableStats tableStats = table.table().stats(statementTx.context().currentView());
             long tableScanCost = estimateTableScanCost(tableStats);
             AccessPathSelection selection;
             if (orderColumnName == null) {
-                List<List<Object>> rows = scanAllRows(table, statementTx);
+                List<List<Object>> rows = limitRows(scanAllRows(table, statementTx), limit);
                 selection = new AccessPathSelection(rows, new VersionedStorageAccessPath(
                         table.metadata().qualifiedName(),
-                        "select-all",
+                        limit == Long.MAX_VALUE ? "select-all" : "select-limit",
                         VersionedStorageAccessPath.TABLE_SCAN,
                         "",
                         "",
@@ -691,7 +694,7 @@ public final class VersionedStorageSqlBridge {
                         tableScanCost,
                         0L));
             } else {
-                selection = selectAllOrdered(table, orderColumnName, orderDirection, statementTx, tableStats, tableScanCost);
+                selection = selectAllOrdered(table, orderColumnName, orderDirection, limit, statementTx, tableStats, tableScanCost);
             }
 
             CachedRowSet rowSet = newRowSet(table.columns());
@@ -715,6 +718,7 @@ public final class VersionedStorageSqlBridge {
             TableDefinition table,
             String orderColumnName,
             String orderDirection,
+            long limit,
             StatementTransaction statementTx,
             VersionedTableStats tableStats,
             long tableScanCost) throws SQLException {
@@ -724,13 +728,17 @@ public final class VersionedStorageSqlBridge {
         if (indexDefinition.isPresent()) {
             IndexDefinition index = indexDefinition.get();
             VersionedIndexStats indexStats = index.index().statsRange(null, true, null, true, statementTx.context().currentView());
-            List<List<Object>> rows = valuesFrom(index.index().lookupRange(null, true, null, true, statementTx.context().currentView()));
+            List<List<Object>> rows = valuesFrom(index.index().lookupRange(null, true, null, true, limit, statementTx.context().currentView()));
             if (descending) {
+                rows = valuesFrom(index.index().lookupRange(null, true, null, true, statementTx.context().currentView()));
                 java.util.Collections.reverse(rows);
+                rows = limitRows(rows, limit);
             }
             return new AccessPathSelection(rows, new VersionedStorageAccessPath(
                     table.metadata().qualifiedName(),
-                    descending ? "select-order-desc" : "select-order",
+                    limit == Long.MAX_VALUE
+                            ? (descending ? "select-order-desc" : "select-order")
+                            : (descending ? "select-order-limit-desc" : "select-order-limit"),
                     VersionedStorageAccessPath.INDEX_SCAN,
                     table.columns().get(orderColumnIndex).name(),
                     index.metadata().indexName(),
@@ -745,9 +753,12 @@ public final class VersionedStorageSqlBridge {
 
         List<List<Object>> rows = scanAllRows(table, statementTx);
         sortRows(rows, orderColumnIndex, descending);
+        rows = limitRows(rows, limit);
         return new AccessPathSelection(rows, new VersionedStorageAccessPath(
                 table.metadata().qualifiedName(),
-                descending ? "select-order-desc" : "select-order",
+                limit == Long.MAX_VALUE
+                        ? (descending ? "select-order-desc" : "select-order")
+                        : (descending ? "select-order-limit-desc" : "select-order-limit"),
                 VersionedStorageAccessPath.TABLE_SCAN,
                 table.columns().get(orderColumnIndex).name(),
                 "",
@@ -778,6 +789,28 @@ public final class VersionedStorageSqlBridge {
         if (descending) {
             java.util.Collections.reverse(rows);
         }
+    }
+
+    private static long parseLimit(String rawLimit) throws SQLException {
+        if (rawLimit == null || rawLimit.isBlank()) {
+            return Long.MAX_VALUE;
+        }
+        try {
+            long limit = Long.parseLong(rawLimit.trim());
+            if (limit < 0) {
+                throw sqlException("2201W", "delos_mvcc LIMIT must be non-negative: " + rawLimit);
+            }
+            return limit;
+        } catch (NumberFormatException e) {
+            throw sqlException("2201W", "Invalid delos_mvcc LIMIT: " + rawLimit);
+        }
+    }
+
+    private static List<List<Object>> limitRows(List<List<Object>> rows, long limit) {
+        if (limit == Long.MAX_VALUE || rows.size() <= limit) {
+            return rows;
+        }
+        return new ArrayList<>(rows.subList(0, Math.toIntExact(limit)));
     }
 
     private static VersionedStorageSqlResult selectCount(

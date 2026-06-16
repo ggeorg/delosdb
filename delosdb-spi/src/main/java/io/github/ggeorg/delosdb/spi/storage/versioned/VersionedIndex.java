@@ -43,4 +43,18 @@ public interface VersionedIndex<K, V> {
             Object upperBound,
             boolean upperInclusive,
             TxView view);
+
+    /**
+     * Looks up at most {@code maxRows} rows inside an ordered range. This is the
+     * provider-owned counterpart of PostgreSQL-style bounded index scans for
+     * {@code ORDER BY ... LIMIT}: the storage provider can stop producing
+     * candidates once enough MVCC-visible rows have been found.
+     */
+    VersionedScan<K, V> lookupRange(
+            Object lowerBound,
+            boolean lowerInclusive,
+            Object upperBound,
+            boolean upperInclusive,
+            long maxRows,
+            TxView view);
 }

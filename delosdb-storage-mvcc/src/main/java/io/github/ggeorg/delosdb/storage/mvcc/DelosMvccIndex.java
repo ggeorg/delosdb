@@ -136,6 +136,24 @@ public final class DelosMvccIndex<K, V> implements VersionedIndex<K, V> {
             Object upperBound,
             boolean upperInclusive,
             TxView view) {
+        return lookupRange(lowerBound, lowerInclusive, upperBound, upperInclusive, Long.MAX_VALUE, view);
+    }
+
+    @Override
+    public synchronized VersionedScan<K, V> lookupRange(
+            Object lowerBound,
+            boolean lowerInclusive,
+            Object upperBound,
+            boolean upperInclusive,
+            long maxRows,
+            TxView view) {
+        if (maxRows < 0) {
+            throw new IllegalArgumentException("maxRows must be non-negative");
+        }
+        if (maxRows == 0) {
+            return new DelosMvccScan<>(MvccScan.fromVisibleRows(List.of()));
+        }
+
         DelosMvccTxView mvccView = requireMvccView(view);
         List<MvccRow<K, V>> visibleRows = new ArrayList<>();
         for (Map.Entry<Object, LinkedHashSet<K>> bucket : rangeEntries(lowerBound, lowerInclusive, upperBound, upperInclusive)) {
@@ -146,6 +164,9 @@ public final class DelosMvccIndex<K, V> implements VersionedIndex<K, V> {
                     if (Objects.equals(bucket.getKey(), visibleIndexKey)
                             && indexKeyInRange(visibleIndexKey, lowerBound, lowerInclusive, upperBound, upperInclusive)) {
                         visibleRows.add(new MvccRow<>(rowKey, visibleValue.get()));
+                        if (visibleRows.size() >= maxRows) {
+                            return new DelosMvccScan<>(MvccScan.fromVisibleRows(visibleRows));
+                        }
                     }
                 }
             }

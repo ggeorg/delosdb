@@ -389,3 +389,17 @@ or deletes from producing duplicate rows when the range is unbounded, as in
 This is still provider-owned index behavior. It does not integrate Derby's
 B-tree implementation, does not add full Derby optimizer enumeration, and does
 not change Derby-compatible heap storage.
+
+### Phase 16 checkpoint: bounded ordered-index LIMIT path
+
+`delos_mvcc` now has a provider-owned bounded ordered-index scan for narrow
+`ORDER BY ... LIMIT` queries. This follows the PostgreSQL planner lesson that an
+ordered index path can stop early when the query only needs the first N rows.
+The provider still treats index entries as candidates only: each candidate is
+rechecked against the authoritative MVCC version chain, and stale update/delete
+candidates do not count toward the limit.
+
+This is not full Derby optimizer integration and not Derby B-tree support. It is
+a provider-local behavior checkpoint: the MVCC index can produce a bounded
+ordered visible stream, while the SQL bridge records whether the selected path
+was a table scan plus sort or an ordered MVCC index scan.
