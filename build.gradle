@@ -1632,13 +1632,19 @@ tasks.register('mvccTableScanModelTest') {
 tasks.register('mvccStorageModelTest') {
     group = 'verification'
     description = 'Runs all experimental DelosDB MVCC storage model tests.'
-    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest', ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest'
 }
 
 tasks.register('mvccRecoveryLogTest') {
     group = 'verification'
     description = 'Runs the experimental delos_mvcc provider recovery-log tests.'
     dependsOn ':delosdb-storage-mvcc:runMvccRecoveryLogTest'
+}
+
+tasks.register('mvccRecoveryHardeningTest') {
+    group = 'verification'
+    description = 'Runs Phase 11 delos_mvcc recovery hardening tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest'
 }
 
 tasks.register('mvccSnapshotIsolationTest') {

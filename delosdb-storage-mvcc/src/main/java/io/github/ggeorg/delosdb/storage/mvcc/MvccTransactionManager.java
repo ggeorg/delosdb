@@ -58,6 +58,16 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
         return new MvccCommitSequence(currentCommitSequence);
     }
 
+    public synchronized int activeTransactionCount() {
+        int active = 0;
+        for (TransactionState state : transactions.values()) {
+            if (state.status == MvccTransactionStatus.ACTIVE) {
+                active++;
+            }
+        }
+        return active;
+    }
+
     /**
      * Returns the oldest snapshot high-water mark still held by an active
      * transaction. If no transaction is active, cleanup may use the current

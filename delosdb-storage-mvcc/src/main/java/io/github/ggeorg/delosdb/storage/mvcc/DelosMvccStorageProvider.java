@@ -96,6 +96,34 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
         return result;
     }
 
+    /**
+     * Rewrites the provider-local recovery log into a compact committed image.
+     *
+     * <p>This is a prototype checkpoint, not Derby WAL. It is intentionally
+     * conservative: compaction is refused while a provider transaction is
+     * active, because old snapshots may still need pre-cleanup versions that a
+     * compact image would not preserve.</p>
+     */
+    public synchronized void checkpoint() {
+        if (!storageLog.isEnabled()) {
+            return;
+        }
+        if (transactionCoordinator.hasActiveTransactions()) {
+            throw new IllegalStateException("Cannot checkpoint delos_mvcc while provider transactions are active");
+        }
+
+        DelosMvccTxContext checkpointReader = transactionCoordinator.begin();
+        List<DelosMvccStorageLog.CheckpointRow> rows = new ArrayList<>();
+        try {
+            for (DelosMvccTable<?, ?> table : tables.values()) {
+                rows.addAll(table.checkpointRows(checkpointReader.currentView()));
+            }
+        } finally {
+            transactionCoordinator.abort(checkpointReader);
+        }
+        storageLog.rewriteCheckpoint(listTables(), rows);
+    }
+
     @Override
     public synchronized <K, V> VersionedTable<K, V> openTable(VersionedTableMetadata metadata) {
         Objects.requireNonNull(metadata, "metadata");

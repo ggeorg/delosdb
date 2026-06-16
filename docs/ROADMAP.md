@@ -345,3 +345,23 @@ closed.
 This remains manual provider-local cleanup. It is not a background vacuum
 process, Derby heap compaction, or optimizer statistics integration yet.
 
+
+### MVCC recovery hardening checkpoint
+
+The experimental `delos_mvcc` provider now has a Phase 11 recovery-hardening
+checkpoint. The provider-local log is still not Derby WAL, but it now behaves
+more like a durable WAL prefix for the prototype:
+
+- repeated terminal records are idempotent during recovery;
+- an incomplete final log record is ignored as a torn tail;
+- committed insert/update/delete state survives provider reopen;
+- aborted and incomplete transactions remain invisible; and
+- a conservative provider checkpoint can rewrite the log to a compact committed
+  image when no provider-local transactions are active.
+
+Focused checks:
+
+```bash
+./gradlew mvccRecoveryHardeningTest
+./gradlew mvccRecoveryLogTest
+```

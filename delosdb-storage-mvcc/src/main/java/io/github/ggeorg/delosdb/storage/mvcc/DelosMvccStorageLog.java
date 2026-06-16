@@ -9,6 +9,7 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -68,66 +69,46 @@ final class DelosMvccStorageLog {
             return RecoveryImage.empty();
         }
 
-        List<String> lines;
+        String content;
         try {
-            lines = Files.readAllLines(logFile, StandardCharsets.UTF_8);
+            content = Files.readString(logFile, StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not read delos_mvcc storage log: " + logFile, e);
+        }
+        if (content.isEmpty()) {
+            return RecoveryImage.empty();
+        }
+
+        boolean hasCompleteFinalLine = content.endsWith("\n") || content.endsWith("\r");
+        String[] lines = content.split("\\R", -1);
+        int lastLineIndex = lines.length - 1;
+        if (hasCompleteFinalLine && lastLineIndex >= 0 && lines[lastLineIndex].isEmpty()) {
+            lastLineIndex--;
         }
 
         Set<VersionedTableMetadata> tables = new LinkedHashSet<>();
         Map<Long, List<RecoveredChange>> changesByTransaction = new LinkedHashMap<>();
-        Set<Long> abortedTransactions = new LinkedHashSet<>();
-        List<Long> committedTransactions = new ArrayList<>();
+        Map<Long, TerminalState> terminalStates = new LinkedHashMap<>();
+        List<Long> terminalOrder = new ArrayList<>();
 
-        for (int i = 0; i < lines.size(); i++) {
-            String line = lines.get(i).trim();
+        for (int i = 0; i <= lastLineIndex; i++) {
+            String line = lines[i].trim();
             if (line.isEmpty()) {
                 continue;
             }
-            String[] parts = line.split("\\t", -1);
-            require(parts.length >= 2, i, "record has too few fields");
-            require(VERSION.equals(parts[0]), i, "unsupported log version: " + parts[0]);
-            String type = parts[1];
-            switch (type) {
-            case CREATE_TABLE -> {
-                require(parts.length == 4, i, "CREATE_TABLE requires schema and table");
-                tables.add(new VersionedTableMetadata(decode(parts[2]), decode(parts[3])));
-            }
-            case INSERT, UPDATE -> {
-                require(parts.length == 7, i, type + " requires tx, schema, table, key, values");
-                long txId = parseLong(parts[2], i, "transaction id");
-                VersionedTableMetadata metadata = new VersionedTableMetadata(decode(parts[3]), decode(parts[4]));
-                tables.add(metadata);
-                changesByTransaction.computeIfAbsent(txId, ignored -> new ArrayList<>())
-                        .add(new RecoveredChange(type, metadata, parseLong(parts[5], i, "row key"), decodeValues(parts[6])));
-            }
-            case DELETE -> {
-                require(parts.length == 6, i, "DELETE requires tx, schema, table, key");
-                long txId = parseLong(parts[2], i, "transaction id");
-                VersionedTableMetadata metadata = new VersionedTableMetadata(decode(parts[3]), decode(parts[4]));
-                tables.add(metadata);
-                changesByTransaction.computeIfAbsent(txId, ignored -> new ArrayList<>())
-                        .add(new RecoveredChange(type, metadata, parseLong(parts[5], i, "row key"), List.of()));
-            }
-            case COMMIT -> {
-                require(parts.length == 3, i, "COMMIT requires tx");
-                long txId = parseLong(parts[2], i, "transaction id");
-                if (!abortedTransactions.contains(txId)) {
-                    committedTransactions.add(txId);
+            try {
+                parseRecord(line, i, tables, changesByTransaction, terminalStates, terminalOrder);
+            } catch (IllegalStateException e) {
+                if (i == lastLineIndex && !hasCompleteFinalLine) {
+                    break;
                 }
-            }
-            case ABORT -> {
-                require(parts.length == 3, i, "ABORT requires tx");
-                abortedTransactions.add(parseLong(parts[2], i, "transaction id"));
-            }
-            default -> throw corrupt(i, "unknown record type: " + type);
+                throw e;
             }
         }
 
         List<CommittedTransaction> committed = new ArrayList<>();
-        for (Long txId : committedTransactions) {
-            if (abortedTransactions.contains(txId)) {
+        for (Long txId : terminalOrder) {
+            if (terminalStates.get(txId) != TerminalState.COMMITTED) {
                 continue;
             }
             List<RecoveredChange> changes = changesByTransaction.getOrDefault(txId, List.of());
@@ -183,12 +164,90 @@ final class DelosMvccStorageLog {
         append(ABORT, Long.toString(txId));
     }
 
-    private synchronized void append(String type, String... fields) {
-        StringBuilder line = new StringBuilder(VERSION).append('\t').append(type);
-        for (String field : fields) {
-            line.append('\t').append(field);
+    synchronized void rewriteCheckpoint(List<VersionedTableMetadata> tables, List<CheckpointRow> rows) {
+        if (!isEnabled()) {
+            return;
         }
-        line.append('\n');
+        Objects.requireNonNull(tables, "tables");
+        Objects.requireNonNull(rows, "rows");
+
+        StringBuilder content = new StringBuilder();
+        for (VersionedTableMetadata metadata : tables) {
+            appendLine(content, CREATE_TABLE, encode(metadata.schemaName()), encode(metadata.tableName()));
+        }
+        if (!rows.isEmpty()) {
+            long checkpointTxId = 1L;
+            for (CheckpointRow row : rows) {
+                appendLine(content, INSERT,
+                        Long.toString(checkpointTxId),
+                        encode(row.metadata().schemaName()),
+                        encode(row.metadata().tableName()),
+                        Long.toString(row.key()),
+                        encodeValues(row.values()));
+            }
+            appendLine(content, COMMIT, Long.toString(checkpointTxId));
+        }
+        writeAtomically(content.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void parseRecord(
+            String line,
+            int lineIndex,
+            Set<VersionedTableMetadata> tables,
+            Map<Long, List<RecoveredChange>> changesByTransaction,
+            Map<Long, TerminalState> terminalStates,
+            List<Long> terminalOrder) {
+        String[] parts = line.split("\\t", -1);
+        require(parts.length >= 2, lineIndex, "record has too few fields");
+        require(VERSION.equals(parts[0]), lineIndex, "unsupported log version: " + parts[0]);
+        String type = parts[1];
+        switch (type) {
+        case CREATE_TABLE -> {
+            require(parts.length == 4, lineIndex, "CREATE_TABLE requires schema and table");
+            tables.add(new VersionedTableMetadata(decode(parts[2]), decode(parts[3])));
+        }
+        case INSERT, UPDATE -> {
+            require(parts.length == 7, lineIndex, type + " requires tx, schema, table, key, values");
+            long txId = parseLong(parts[2], lineIndex, "transaction id");
+            VersionedTableMetadata metadata = new VersionedTableMetadata(decode(parts[3]), decode(parts[4]));
+            tables.add(metadata);
+            changesByTransaction.computeIfAbsent(txId, ignored -> new ArrayList<>())
+                    .add(new RecoveredChange(type, metadata, parseLong(parts[5], lineIndex, "row key"), decodeValues(parts[6])));
+        }
+        case DELETE -> {
+            require(parts.length == 6, lineIndex, "DELETE requires tx, schema, table, key");
+            long txId = parseLong(parts[2], lineIndex, "transaction id");
+            VersionedTableMetadata metadata = new VersionedTableMetadata(decode(parts[3]), decode(parts[4]));
+            tables.add(metadata);
+            changesByTransaction.computeIfAbsent(txId, ignored -> new ArrayList<>())
+                    .add(new RecoveredChange(type, metadata, parseLong(parts[5], lineIndex, "row key"), List.of()));
+        }
+        case COMMIT -> {
+            require(parts.length == 3, lineIndex, "COMMIT requires tx");
+            recordTerminalState(parseLong(parts[2], lineIndex, "transaction id"), TerminalState.COMMITTED, terminalStates, terminalOrder);
+        }
+        case ABORT -> {
+            require(parts.length == 3, lineIndex, "ABORT requires tx");
+            recordTerminalState(parseLong(parts[2], lineIndex, "transaction id"), TerminalState.ABORTED, terminalStates, terminalOrder);
+        }
+        default -> throw corrupt(lineIndex, "unknown record type: " + type);
+        }
+    }
+
+    private static void recordTerminalState(
+            long txId,
+            TerminalState state,
+            Map<Long, TerminalState> terminalStates,
+            List<Long> terminalOrder) {
+        if (!terminalStates.containsKey(txId)) {
+            terminalStates.put(txId, state);
+            terminalOrder.add(txId);
+        }
+    }
+
+    private synchronized void append(String type, String... fields) {
+        StringBuilder line = new StringBuilder();
+        appendLine(line, type, fields);
         byte[] bytes = line.toString().getBytes(StandardCharsets.UTF_8);
         try (FileChannel channel = FileChannel.open(logFile,
                 StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
@@ -200,6 +259,38 @@ final class DelosMvccStorageLog {
         } catch (IOException e) {
             throw new UncheckedIOException("Could not append delos_mvcc storage log record: " + type, e);
         }
+    }
+
+    private void writeAtomically(byte[] bytes) {
+        Path temp = logFile.resolveSibling(logFile.getFileName() + ".checkpoint.tmp");
+        try (FileChannel channel = FileChannel.open(temp,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            while (buffer.hasRemaining()) {
+                channel.write(buffer);
+            }
+            channel.force(true);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not write delos_mvcc checkpoint log: " + temp, e);
+        }
+        try {
+            Files.move(temp, logFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException atomicMoveFailure) {
+            try {
+                Files.move(temp, logFile, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException moveFailure) {
+                moveFailure.addSuppressed(atomicMoveFailure);
+                throw new UncheckedIOException("Could not replace delos_mvcc storage log with checkpoint: " + logFile, moveFailure);
+            }
+        }
+    }
+
+    private static void appendLine(StringBuilder content, String type, String... fields) {
+        content.append(VERSION).append('\t').append(type);
+        for (String field : fields) {
+            content.append('\t').append(field);
+        }
+        content.append('\n');
     }
 
     private static long requireLongKey(Object key) {
@@ -315,5 +406,17 @@ final class DelosMvccStorageLog {
         boolean isDelete() {
             return DELETE.equals(operation);
         }
+    }
+
+    record CheckpointRow(VersionedTableMetadata metadata, long key, List<Object> values) {
+        CheckpointRow {
+            metadata = Objects.requireNonNull(metadata, "metadata");
+            values = List.copyOf(Objects.requireNonNull(values, "values"));
+        }
+    }
+
+    private enum TerminalState {
+        COMMITTED,
+        ABORTED
     }
 }

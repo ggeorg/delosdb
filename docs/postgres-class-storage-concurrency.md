@@ -323,3 +323,20 @@ The proof covers update cleanup, committed-delete cleanup, aborted-insert
 cleanup, logical row removal, dead-version estimates, and index-candidate
 pruning. This is still a manual provider-local cleanup pass, not a background
 vacuum daemon and not Derby heap page compaction.
+
+### Phase 11 checkpoint: recovery hardening and compact checkpoint image
+
+`delos_mvcc` now hardens its provider-local recovery log. The implementation is
+still deliberately separate from Derby WAL, but it follows the PostgreSQL-guided
+recovery rule that a durable commit boundary decides which changes are replayed.
+Recovery now treats repeated commit records idempotently, ignores an incomplete
+final record as a torn log tail, and keeps aborted or incomplete transactions out
+of the recovered image.
+
+The provider also has a conservative checkpoint operation. It refuses to compact
+while provider-local transactions are active, because old snapshots may still
+need older physical versions. When safe, it rewrites the append-only log into a
+compact committed image containing table metadata and currently visible rows.
+This is a prototype checkpoint/compaction step, not Derby log integration, but it
+creates the next foundation for crash-safety work before indexes and optimizer
+costing are made durable.

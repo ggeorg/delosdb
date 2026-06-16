@@ -85,6 +85,10 @@ public final class DelosMvccTransactionCoordinator implements VersionedTransacti
         return table.cleanup(transactionManager);
     }
 
+    boolean hasActiveTransactions() {
+        return transactionManager.activeTransactionCount() > 0;
+    }
+
 
     private void appendCommitIfEnabled(long transactionId) {
         if (!loggingSuppressed.getAsBoolean()) {

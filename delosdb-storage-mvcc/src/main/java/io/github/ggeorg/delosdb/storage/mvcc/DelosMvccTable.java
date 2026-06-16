@@ -150,6 +150,20 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
         return result;
     }
 
+    List<DelosMvccStorageLog.CheckpointRow> checkpointRows(TxView view) {
+        List<DelosMvccStorageLog.CheckpointRow> rows = new ArrayList<>();
+        try (VersionedScan<K, V> scan = openScan(view)) {
+            while (scan.next()) {
+                io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow<K, V> row = scan.row();
+                rows.add(new DelosMvccStorageLog.CheckpointRow(
+                        metadata,
+                        requireCheckpointLongKey(row.key()),
+                        requireCheckpointValues(row.value())));
+            }
+        }
+        return List.copyOf(rows);
+    }
+
     private synchronized void recordIndexCandidates(K key, V value) {
         for (DelosMvccIndex<K, V> index : indexes.values()) {
             index.recordCandidate(key, value);
@@ -158,6 +172,20 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
 
     private boolean shouldLog() {
         return storageLog.isEnabled() && !loggingSuppressed.getAsBoolean();
+    }
+
+    private static long requireCheckpointLongKey(Object key) {
+        if (key instanceof Long longKey) {
+            return longKey;
+        }
+        throw new UnsupportedOperationException("delos_mvcc checkpoint currently supports Long row keys only");
+    }
+
+    private static List<Object> requireCheckpointValues(Object value) {
+        if (value instanceof List<?> values) {
+            return List.copyOf(values);
+        }
+        throw new UnsupportedOperationException("delos_mvcc checkpoint currently supports List<Object> row values only");
     }
 
     private static String normalizeIndexName(String indexName) {
