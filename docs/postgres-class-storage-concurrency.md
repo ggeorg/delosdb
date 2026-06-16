@@ -273,3 +273,28 @@ as a versioned-storage provider name, but it fails with a clear
 exists. This prevents DelosDB from accidentally creating a Derby heap table
 whose metadata claims MVCC storage.
 
+
+### Versioned-storage execution bridge checkpoint
+
+DelosDB now has an engine-side `VersionedStorageExecutionBridge` that can drive a
+registered `VersionedStorageProvider` for table-only operations without wiring
+SQL execution. The bridge proves the next boundary in the path to executable
+MVCC storage:
+
+```text
+VersionedStorageProviderResolver
+  -> VersionedStorageExecutionBridge
+  -> VersionedTable create/open
+  -> insert/read/update/delete/scan/stats
+```
+
+The focused proof uses the experimental `delos_mvcc` provider and verifies
+snapshot-stable scans across insert, committed update, and aborted delete. This
+is still intentionally below Derby SQL/JDBC: it does not modify heap storage,
+create catalog-backed MVCC tables, add WAL records, or integrate indexes.
+
+Focused proof task:
+
+```bash
+./gradlew versionedStorageExecutionBridgeSmoke
+```

@@ -1656,6 +1656,41 @@ tasks.register('versionedStorageProviderRegistrySmoke', JavaExec) {
     mainClass = 'delosdb.smoke.VersionedStorageProviderRegistrySmoke'
 }
 
+
+
+def versionedStorageExecutionBridgeSmokeClassesDir = layout.buildDirectory.dir('classes/versioned-storage-execution-bridge-smoke')
+def versionedStorageExecutionBridgeSmokeClasspath = {
+    files(
+            moduleClassDir(moduleNames.engine),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.osgi),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            project(':delosdb-storage-mvcc').layout.buildDirectory.dir('classes/main'),
+            extensionRuntimeJars())
+}
+
+tasks.register('compileVersionedStorageExecutionBridgeSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:compileDelosDbStorageMvcc'
+    group = 'verification'
+    description = 'Compiles the experimental VersionedStorageProvider execution bridge smoke test.'
+    source = files('dev/versioned-storage-execution-bridge-smoke/src/main/java')
+    destinationDirectory = versionedStorageExecutionBridgeSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = versionedStorageExecutionBridgeSmokeClasspath()
+}
+
+tasks.register('versionedStorageExecutionBridgeSmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageExecutionBridgeSmoke'
+    mustRunAfter 'versionedStorageProviderRegistrySmoke'
+    group = 'verification'
+    description = 'Verifies the engine-side VersionedStorageProvider execution bridge can create, write, read, and scan delos_mvcc tables without Derby SQL wiring.'
+    classpath = files(versionedStorageExecutionBridgeSmokeClassesDir, versionedStorageExecutionBridgeSmokeClasspath())
+    mainClass = 'delosdb.smoke.VersionedStorageExecutionBridgeSmoke'
+}
+
 tasks.register('mvccCoreModelTest') {
     group = 'verification'
     description = 'Runs the experimental DelosDB MVCC core model tests.'
@@ -1677,6 +1712,6 @@ tasks.register('mvccStorageModelTest') {
 
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
-    description = 'Runs MVCC storage model tests plus the VersionedStorageProvider registry smoke test.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke'
+    description = 'Runs MVCC storage model tests plus VersionedStorageProvider registry, execution bridge, and SQL metadata guard smokes.'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageExecutionBridgeSmoke', 'versionedStorageSqlMetadataSmoke'
 }
