@@ -5,7 +5,7 @@ import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderResolver;
 import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
 import io.github.ggeorg.delosdb.engine.extension.storage.StorageProviderResolver;
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.KnownVersionedStorageProviders;
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.VersionedStorageProviderRegistry;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -51,8 +51,8 @@ public final class SqlExtensionProviderValidation {
             StorageProviderResolver.builtIns().requireEnabled(normalizedName);
             return;
         } catch (ExtensionResolutionException e) {
-            if (KnownVersionedStorageProviders.isKnownVersionedProvider(normalizedName)) {
-                throw versionedStorageProviderNotExecutable(normalizedName);
+            if (isDiscoveredVersionedStorageProvider(normalizedName)) {
+                return;
             }
             throw unsupportedProvider("CREATE TABLE", normalizedName);
         }
@@ -65,17 +65,17 @@ public final class SqlExtensionProviderValidation {
         return providerName.toLowerCase(Locale.ROOT);
     }
 
+    private static boolean isDiscoveredVersionedStorageProvider(String providerName) {
+        return VersionedStorageProviderRegistry.discovered()
+                .resolver()
+                .findEnabled(providerName)
+                .isPresent();
+    }
+
     private static StandardException unsupportedProvider(String statementName, String providerName) {
         return StandardException.newException(
                 SQLState.NOT_IMPLEMENTED,
                 statementName + " USING " + providerName);
     }
 
-    private static StandardException versionedStorageProviderNotExecutable(String providerName) {
-        return StandardException.newException(
-                SQLState.NOT_IMPLEMENTED,
-                "CREATE TABLE USING " + providerName
-                        + " is registry-visible as a VersionedStorageProvider"
-                        + " but SQL execution is not implemented yet");
-    }
 }

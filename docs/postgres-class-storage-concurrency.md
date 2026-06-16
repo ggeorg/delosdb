@@ -239,62 +239,20 @@ This keeps the migration story safe: existing Derby-compatible heap tables still
 open through the existing heap path, while future `delos_mvcc` tables can use the
 new versioned-storage boundary explicitly.
 
-### VersionedStorageProvider registry checkpoint
+### SQL metadata guard
 
-The experimental `delos_mvcc` provider can now be registered and resolved through
-an engine-side versioned-storage provider registry. This is still deliberately
-short of SQL execution. The checkpoint proves the extension boundary can describe
-an opt-in MVCC provider without adding MVCC logic to Derby heap storage:
-
-```text
-ExtensionType.VERSIONED_STORAGE
-  -> VersionedStorageProviderRegistry
-  -> VersionedStorageProviderResolver
-  -> delos_mvcc descriptor and capabilities
-```
-
-Focused proof task:
-
-```bash
-./gradlew versionedStorageProviderRegistrySmoke
-```
-
-The next safe step after this checkpoint is SQL metadata handling for
-`CREATE TABLE ... USING delos_mvcc`, initially rejected or metadata-only until the
-executor bridge is intentionally added.
-
-### Experimental MVCC SQL metadata guard
-
-The experimental `delosdb-storage-mvcc` module is now visible through the
-`VersionedStorageProvider` registry as `delos_mvcc`. SQL recognition remains
-intentionally conservative: `CREATE TABLE ... USING delos_mvcc` is recognized
-as a versioned-storage provider name, but it fails with a clear
-"SQL execution is not implemented yet" diagnostic until the executor bridge
-exists. This prevents DelosDB from accidentally creating a Derby heap table
-whose metadata claims MVCC storage.
+`CREATE TABLE ... USING delos_mvcc` is intentionally a guarded SQL surface at this stage. The name is recognized through the versioned-storage provider family, but the statement must fail cleanly until the executor can route table creation, inserts, and table scans into the MVCC provider. This prevents a dangerous fallback where a Derby heap table is created while metadata suggests MVCC semantics.
 
 
-### Versioned-storage execution bridge checkpoint
+### Phase 4 checkpoint: first SQL table-scan proof
 
-DelosDB now has an engine-side `VersionedStorageExecutionBridge` that can drive a
-registered `VersionedStorageProvider` for table-only operations without wiring
-SQL execution. The bridge proves the next boundary in the path to executable
-MVCC storage:
+`CREATE TABLE ... USING delos_mvcc` has moved from a metadata guard to the first
+real SQL/JDBC table-scan proof. The supported path is intentionally small:
+create a simple `delos_mvcc` table, insert committed rows, and read them back via
+`SELECT *` or `COUNT(*)`. This proves the engine can route a user-visible SQL
+surface into the versioned-storage provider without reinterpreting existing Derby
+heap tables.
 
-```text
-VersionedStorageProviderResolver
-  -> VersionedStorageExecutionBridge
-  -> VersionedTable create/open
-  -> insert/read/update/delete/scan/stats
-```
-
-The focused proof uses the experimental `delos_mvcc` provider and verifies
-snapshot-stable scans across insert, committed update, and aborted delete. This
-is still intentionally below Derby SQL/JDBC: it does not modify heap storage,
-create catalog-backed MVCC tables, add WAL records, or integrate indexes.
-
-Focused proof task:
-
-```bash
-./gradlew versionedStorageExecutionBridgeSmoke
-```
+The boundary remains strict: no index integration, no WAL/recovery replay, no
+optimizer path work, and no Derby transaction lifecycle mapping yet. Those remain
+separate phases.

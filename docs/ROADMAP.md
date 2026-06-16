@@ -241,49 +241,21 @@ Focused check:
 ```bash
 ./gradlew :delosdb-storage-mvcc:runVersionedStorageProviderSpiTest
 ```
+- Phase 3 guard: `CREATE TABLE ... USING delos_mvcc` is recognized only as an experimental versioned-storage provider and is rejected with a clean diagnostic until table-scan execution exists.
 
-### MVCC registry checkpoint
 
-The experimental MVCC module is now visible at the provider-registry boundary as
-`ExtensionType.VERSIONED_STORAGE`. The `delos_mvcc` provider remains opt-in and
-non-executable from SQL, but DelosDB can describe and resolve it as a versioned
-storage provider.
+### MVCC SQL table-scan execution checkpoint
 
-Focused check:
+The experimental `delos_mvcc` path now has a first vertical SQL/JDBC proof:
 
-```bash
-./gradlew versionedStorageProviderRegistrySmoke
+```sql
+CREATE TABLE t (id INT, name VARCHAR(40)) USING delos_mvcc;
+INSERT INTO t VALUES (1, 'alpha');
+SELECT * FROM t;
 ```
 
-This completes the provider-boundary step before SQL metadata work. The next
-milestone is to parse/record or deliberately reject `CREATE TABLE ... USING
-delos_mvcc` with a clean diagnostic, without touching Derby-compatible heap
-storage.
-
-### Experimental MVCC SQL metadata guard
-
-The experimental `delosdb-storage-mvcc` module is now visible through the
-`VersionedStorageProvider` registry as `delos_mvcc`. SQL recognition remains
-intentionally conservative: `CREATE TABLE ... USING delos_mvcc` is recognized
-as a versioned-storage provider name, but it fails with a clear
-"SQL execution is not implemented yet" diagnostic until the executor bridge
-exists. This prevents DelosDB from accidentally creating a Derby heap table
-whose metadata claims MVCC storage.
-
-
-### MVCC execution bridge checkpoint
-
-The next step is an engine-side execution bridge for versioned storage providers.
-This still does not wire Derby SQL or create `delos_mvcc` catalog tables. It adds
-a narrow place where future Derby result sets can call an opt-in
-`VersionedStorageProvider` for table-only operations: create/open, insert, read,
-update, delete, scan, and stats.
-
-Focused check:
-
-```bash
-./gradlew versionedStorageExecutionBridgeSmoke
-```
-
-Boundaries remain explicit: no Derby heap mutation, no WAL/recovery integration,
-no index integration, and no executable `CREATE TABLE ... USING delos_mvcc` yet.
+This is deliberately narrow and in-memory. It routes only a small supported SQL
+subset through the `VersionedStorageProvider` table-scan path and leaves Derby
+heap storage, indexes, WAL/recovery, optimizer costing, and existing database
+compatibility untouched. Derby transaction commit/rollback is not mapped to MVCC
+yet; that is the next phase.

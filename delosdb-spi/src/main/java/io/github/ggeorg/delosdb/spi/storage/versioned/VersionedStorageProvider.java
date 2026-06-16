@@ -16,6 +16,12 @@ public interface VersionedStorageProvider {
     VersionedStorageCapabilities capabilities();
 
     /**
+     * Provider-local transaction coordinator used by prototype SQL bridges and
+     * provider tests. This is not yet wired to Derby transaction commit/rollback.
+     */
+    VersionedTransactionCoordinator transactionCoordinator();
+
+    /**
      * Returns a stable snapshot of tables currently owned by this provider.
      *
      * <p>The list is provider-local metadata only. It does not imply that SQL

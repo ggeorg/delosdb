@@ -74,6 +74,7 @@ module org.apache.derby.engine
     requires java.logging;
     requires java.management;
     requires java.sql;
+    requires java.sql.rowset;
     requires java.xml;
     
     requires org.apache.derby.commons;

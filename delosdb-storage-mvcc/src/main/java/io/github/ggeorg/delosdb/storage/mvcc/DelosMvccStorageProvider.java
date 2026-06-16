@@ -11,6 +11,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageCapabiliti
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
 
 /**
  * Experimental in-memory MVCC storage provider.
@@ -23,6 +24,7 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
     public static final String PROVIDER_NAME = "delos_mvcc";
 
     private final Map<VersionedTableMetadata, DelosMvccTable<?, ?>> tables = new LinkedHashMap<>();
+    private final DelosMvccTransactionCoordinator transactionCoordinator = new DelosMvccTransactionCoordinator();
     private final VersionedStorageCapabilities capabilities = new VersionedStorageCapabilities(Set.of(
             VersionedStorageCapabilities.SNAPSHOT_VISIBILITY,
             VersionedStorageCapabilities.TABLE_SCAN,
@@ -37,6 +39,11 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
     @Override
     public VersionedStorageCapabilities capabilities() {
         return capabilities;
+    }
+
+    @Override
+    public VersionedTransactionCoordinator transactionCoordinator() {
+        return transactionCoordinator;
     }
 
     @Override

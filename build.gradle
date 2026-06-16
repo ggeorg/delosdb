@@ -1668,8 +1668,49 @@ tasks.register('versionedStorageProviderRegistrySmoke', JavaExec) {
     mainClass = 'delosdb.smoke.VersionedStorageProviderRegistrySmoke'
 }
 
+
+def versionedStorageSqlMetadataSmokeClassesDir = layout.buildDirectory.dir('classes/versioned-storage-sql-metadata-smoke')
+def versionedStorageSqlMetadataSmokeClasspath = {
+    files(
+            versionedStorageSqlMetadataSmokeClassesDir,
+            moduleClassDir(moduleNames.engine),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.osgi),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            extensionRuntimeJars())
+}
+
+tasks.register('compileVersionedStorageSqlMetadataSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the SQL table-scan smoke for experimental versioned storage.'
+    source = files('dev/versioned-storage-sql-metadata-smoke/src/main/java', smokeUtilsSourceDir)
+    destinationDirectory = versionedStorageSqlMetadataSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+}
+
+tasks.register('versionedStorageSqlMetadataSmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
+    mustRunAfter 'versionedStorageProviderRegistrySmoke'
+    group = 'verification'
+    description = 'Verifies CREATE TABLE/INSERT/SELECT table scan for experimental delos_mvcc storage.'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+    mainClass = 'delosdb.smoke.VersionedStorageSqlMetadataSmoke'
+    args layout.buildDirectory.dir('versioned-storage-sql-metadata-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('versioned-storage-sql-metadata-smoke').get().asFile
+    doFirst {
+        delete file('build/versioned-storage-sql-metadata-smoke')
+        workingDir.mkdirs()
+    }
+}
+
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
-    description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery/registry visibility smoke.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke'
+    description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan smokes.'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke'
 }

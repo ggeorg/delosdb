@@ -61,7 +61,7 @@ public final class VersionedStorageProviderSpiTest {
         DelosMvccTxContext writer = transactions.begin();
         table.insert(1, "alpha", writer);
         table.insert(2, "beta", writer);
-        transactions.commit(writer);
+        transactions.commitMvcc(writer);
 
         DelosMvccTxContext reader = transactions.begin();
         DelosMvccTxView view = transactions.view(reader);
@@ -100,14 +100,14 @@ public final class VersionedStorageProviderSpiTest {
 
         DelosMvccTxContext inserter = transactions.begin();
         table.insert(1, "v1", inserter);
-        transactions.commit(inserter);
+        transactions.commitMvcc(inserter);
 
         DelosMvccTxContext oldReader = transactions.begin();
         DelosMvccTxView oldView = transactions.view(oldReader);
 
         DelosMvccTxContext updater = transactions.begin();
         table.update(1, "v2", updater);
-        transactions.commit(updater);
+        transactions.commitMvcc(updater);
 
         assertEquals(Optional.of("v1"), table.read(1, oldView));
 
@@ -127,7 +127,7 @@ public final class VersionedStorageProviderSpiTest {
 
         DelosMvccTxContext inserter = transactions.begin();
         table.insert(1, "still-visible", inserter);
-        transactions.commit(inserter);
+        transactions.commitMvcc(inserter);
 
         DelosMvccTxContext deleter = transactions.begin();
         table.delete(1, deleter);
