@@ -9,6 +9,7 @@ public record VersionedStorageCapabilities(Set<String> values) {
     public static final String TABLE_SCAN = "table-scan";
     public static final String MANUAL_CLEANUP = "manual-cleanup";
     public static final String IN_MEMORY_PROTOTYPE = "in-memory-prototype";
+    public static final String APPEND_ONLY_RECOVERY_LOG = "append-only-recovery-log";
 
     public VersionedStorageCapabilities {
         if (values == null || values.isEmpty()) {

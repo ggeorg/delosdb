@@ -1,6 +1,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
 
 import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
@@ -10,11 +11,24 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordi
  * module.
  *
  * <p>The DelosDB engine maps JDBC commit/rollback to this coordinator for the
- * experimental SQL table-scan path. The coordinator still remains provider
- * local: it does not depend on Derby heap pages, locks, or log records.</p>
+ * experimental SQL table-scan path. The coordinator remains provider-local and
+ * can optionally emit provider-owned recovery-log commit/abort records.</p>
  */
 public final class DelosMvccTransactionCoordinator implements VersionedTransactionCoordinator {
     private final MvccTransactionManager transactionManager = new MvccTransactionManager();
+    private static final BooleanSupplier NEVER_SUPPRESS_LOGGING = () -> false;
+
+    private final DelosMvccStorageLog storageLog;
+    private final BooleanSupplier loggingSuppressed;
+
+    public DelosMvccTransactionCoordinator() {
+        this(DelosMvccStorageLog.disabled(), NEVER_SUPPRESS_LOGGING);
+    }
+
+    DelosMvccTransactionCoordinator(DelosMvccStorageLog storageLog, BooleanSupplier loggingSuppressed) {
+        this.storageLog = Objects.requireNonNull(storageLog, "storageLog");
+        this.loggingSuppressed = Objects.requireNonNull(loggingSuppressed, "loggingSuppressed");
+    }
 
     @Override
     public DelosMvccTxContext begin() {
@@ -23,21 +37,30 @@ public final class DelosMvccTransactionCoordinator implements VersionedTransacti
     }
 
     public MvccCommitSequence commitMvcc(DelosMvccTxContext context) {
-        return transactionManager.commit(requireContext(context).transaction());
+        DelosMvccTxContext mvccContext = requireContext(context);
+        MvccCommitSequence sequence = transactionManager.commit(mvccContext.transaction());
+        appendCommitIfEnabled(mvccContext.transactionId());
+        return sequence;
     }
 
     @Override
     public void commit(TxContext context) {
-        transactionManager.commit(requireContext(context).transaction());
+        DelosMvccTxContext mvccContext = requireContext(context);
+        transactionManager.commit(mvccContext.transaction());
+        appendCommitIfEnabled(mvccContext.transactionId());
     }
 
     public void abort(DelosMvccTxContext context) {
-        transactionManager.abort(requireContext(context).transaction());
+        DelosMvccTxContext mvccContext = requireContext(context);
+        transactionManager.abort(mvccContext.transaction());
+        appendAbortIfEnabled(mvccContext.transactionId());
     }
 
     @Override
     public void abort(TxContext context) {
-        transactionManager.abort(requireContext(context).transaction());
+        DelosMvccTxContext mvccContext = requireContext(context);
+        transactionManager.abort(mvccContext.transaction());
+        appendAbortIfEnabled(mvccContext.transactionId());
     }
 
     public DelosMvccTxView view(DelosMvccTxContext context) {
@@ -47,6 +70,19 @@ public final class DelosMvccTransactionCoordinator implements VersionedTransacti
     public MvccCleanupResult cleanup(DelosMvccTable<?, ?> table) {
         Objects.requireNonNull(table, "table");
         return table.cleanup(transactionManager);
+    }
+
+
+    private void appendCommitIfEnabled(long transactionId) {
+        if (!loggingSuppressed.getAsBoolean()) {
+            storageLog.appendCommit(transactionId);
+        }
+    }
+
+    private void appendAbortIfEnabled(long transactionId) {
+        if (!loggingSuppressed.getAsBoolean()) {
+            storageLog.appendAbort(transactionId);
+        }
     }
 
     MvccTransactionManager transactionManager() {

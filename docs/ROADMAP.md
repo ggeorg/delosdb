@@ -257,5 +257,27 @@ SELECT * FROM t;
 This is deliberately narrow and in-memory. It routes only a small supported SQL
 subset through the `VersionedStorageProvider` table-scan path and leaves Derby
 heap storage, indexes, WAL/recovery, optimizer costing, and existing database
-compatibility untouched. Derby transaction commit/rollback is not mapped to MVCC
-yet; that is the next phase.
+compatibility untouched. JDBC commit/rollback is now mapped to the provider-local MVCC transaction lifecycle.
+The next phase is provider-local recovery logging, still separate from Derby WAL.
+
+
+### MVCC provider-local recovery-log checkpoint
+
+The experimental `delos_mvcc` provider now has a Phase 6 append-only recovery
+log for the narrow SQL row shape used by the table-scan proof. This is
+provider-local durability scaffolding, not Derby WAL integration. It proves that
+committed MVCC changes can be replayed after reopening the provider while
+aborted or incomplete transactions are ignored. Existing Derby heap storage and
+existing database compatibility paths remain untouched.
+
+Focused check:
+
+```bash
+./gradlew mvccRecoveryLogTest
+```
+
+Aggregate MVCC check:
+
+```bash
+./gradlew mvccStorageModelTest
+```

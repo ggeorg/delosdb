@@ -256,3 +256,15 @@ heap tables.
 The boundary remains strict: no index integration, no WAL/recovery replay, no
 optimizer path work, and no Derby transaction lifecycle mapping yet. Those remain
 separate phases.
+
+
+### Phase 6: provider-local MVCC recovery log
+
+`delosdb-storage-mvcc` now includes a narrow append-only recovery log owned by
+the experimental provider. The log records table creation, row insert/update/delete
+operations, and transaction commit/abort boundaries. Reopening the provider
+replays only committed transactions and ignores aborted or incomplete transactions.
+
+This is intentionally not Derby WAL. It is a stepping stone that lets the MVCC
+provider prove recovery semantics before DelosDB decides how versioned-storage
+records should participate in the full database recovery subsystem.
