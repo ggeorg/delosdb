@@ -157,8 +157,10 @@ public final class VersionedStorageSqlBridge {
         }
 
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
+        long rowKey = table.nextRowKey();
         try {
-            table.table().insert(table.nextRowKey(), values, statementTx.context());
+            table.reserveUniqueKeys(values, rowKey, statementTx.context());
+            table.table().insert(rowKey, values, statementTx.context());
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.updateCount(1L);
         } catch (RuntimeException | SQLException e) {
@@ -202,8 +204,8 @@ public final class VersionedStorageSqlBridge {
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
         try {
             long visibleRows = table.table().stats(statementTx.context().currentView()).visibleRowCount();
-            CachedRowSet rowSet = newRowSet(List.of(new ColumnDefinition("1", Types.INTEGER, "INTEGER")));
-            append(rowSet, List.of(Math.toIntExact(visibleRows)), List.of(new ColumnDefinition("1", Types.INTEGER, "INTEGER")));
+            CachedRowSet rowSet = newRowSet(List.of(new ColumnDefinition("1", Types.INTEGER, "INTEGER", false, false)));
+            append(rowSet, List.of(Math.toIntExact(visibleRows)), List.of(new ColumnDefinition("1", Types.INTEGER, "INTEGER", false, false)));
             rowSet.beforeFirst();
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
@@ -293,7 +295,9 @@ public final class VersionedStorageSqlBridge {
         if (statementTx.autoCommit()) {
             try {
                 statementTx.coordinator().commit(statementTx.context());
+                completeUniqueReservations(statementTx.context().transactionId(), true);
             } catch (RuntimeException e) {
+                completeUniqueReservations(statementTx.context().transactionId(), false);
                 throw sqlException("X0MV1", "Could not commit delos_mvcc statement transaction: " + e.getMessage());
             }
         }
@@ -321,10 +325,15 @@ public final class VersionedStorageSqlBridge {
         try {
             if (commit) {
                 session.coordinator().commit(session.context());
+                completeUniqueReservations(session.context().transactionId(), true);
             } else {
                 session.coordinator().abort(session.context());
+                completeUniqueReservations(session.context().transactionId(), false);
             }
         } catch (RuntimeException e) {
+            if (!commit) {
+                completeUniqueReservations(session.context().transactionId(), false);
+            }
             throw sqlException("X0MV1", "Could not " + (commit ? "commit" : "rollback")
                     + " delos_mvcc transaction: " + e.getMessage());
         }
@@ -333,8 +342,18 @@ public final class VersionedStorageSqlBridge {
     private static void abort(StatementTransaction statementTx) throws SQLException {
         try {
             statementTx.coordinator().abort(statementTx.context());
+            completeUniqueReservations(statementTx.context().transactionId(), false);
         } catch (RuntimeException e) {
+            completeUniqueReservations(statementTx.context().transactionId(), false);
             throw sqlException("X0MV1", "Could not abort delos_mvcc statement transaction: " + e.getMessage());
+        }
+    }
+
+    private static void completeUniqueReservations(long transactionId, boolean commit) {
+        synchronized (LOCK) {
+            for (TableDefinition table : TABLES.values()) {
+                table.completeUniqueReservations(transactionId, commit);
+            }
         }
     }
 
@@ -361,7 +380,7 @@ public final class VersionedStorageSqlBridge {
         for (int i = 0; i < rawValues.size(); i++) {
             values.add(columns.get(i).parseValue(rawValues.get(i).trim()));
         }
-        return List.copyOf(values);
+        return java.util.Collections.unmodifiableList(new ArrayList<>(values));
     }
 
     private static List<String> splitCommaSeparated(String text) throws SQLException {
@@ -417,6 +436,8 @@ public final class VersionedStorageSqlBridge {
     private static final class TableDefinition {
         private final VersionedTableMetadata metadata;
         private final List<ColumnDefinition> columns;
+        private final List<UniqueConstraint> uniqueConstraints;
+        private final Map<UniqueKey, UniqueReservation> uniqueReservations = new HashMap<>();
         private final VersionedTable<Long, List<Object>> table;
         private final VersionedTransactionCoordinator coordinator;
         private long nextKey = 1L;
@@ -425,9 +446,10 @@ public final class VersionedStorageSqlBridge {
                 VersionedTableMetadata metadata,
                 List<ColumnDefinition> columns,
                 VersionedTable<Long, List<Object>> table,
-                VersionedTransactionCoordinator coordinator) {
+                VersionedTransactionCoordinator coordinator) throws SQLException {
             this.metadata = Objects.requireNonNull(metadata, "metadata");
             this.columns = List.copyOf(columns);
+            this.uniqueConstraints = uniqueConstraintsFrom(columns);
             this.table = Objects.requireNonNull(table, "table");
             this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
         }
@@ -451,6 +473,109 @@ public final class VersionedStorageSqlBridge {
         private synchronized long nextRowKey() {
             return nextKey++;
         }
+
+        private synchronized void reserveUniqueKeys(List<Object> values, long rowKey, TxContext transaction) throws SQLException {
+            if (uniqueConstraints.isEmpty()) {
+                return;
+            }
+            long transactionId = transaction.transactionId();
+            List<UniqueKey> reserved = new ArrayList<>();
+            try {
+                for (UniqueConstraint constraint : uniqueConstraints) {
+                    Object value = values.get(constraint.columnIndex());
+                    if (value == null) {
+                        if (constraint.primaryKey()) {
+                            throw sqlException("23502", "Primary key column " + columns.get(constraint.columnIndex()).name()
+                                    + " cannot be NULL for delos_mvcc table " + metadata.qualifiedName());
+                        }
+                        continue;
+                    }
+
+                    UniqueKey key = new UniqueKey(constraint.name(), value);
+                    UniqueReservation existing = uniqueReservations.get(key);
+                    if (existing != null) {
+                        throw duplicateKeyException(constraint, value, existing);
+                    }
+                    uniqueReservations.put(key, new UniqueReservation(transactionId, rowKey, UniqueReservationStatus.ACTIVE));
+                    reserved.add(key);
+                }
+            } catch (SQLException | RuntimeException e) {
+                for (UniqueKey key : reserved) {
+                    UniqueReservation reservation = uniqueReservations.get(key);
+                    if (reservation != null && reservation.transactionId() == transactionId && reservation.rowKey() == rowKey
+                            && reservation.status() == UniqueReservationStatus.ACTIVE) {
+                        uniqueReservations.remove(key);
+                    }
+                }
+                throw e;
+            }
+        }
+
+        private synchronized void completeUniqueReservations(long transactionId, boolean commit) {
+            if (uniqueReservations.isEmpty()) {
+                return;
+            }
+            if (commit) {
+                for (Map.Entry<UniqueKey, UniqueReservation> entry : new ArrayList<>(uniqueReservations.entrySet())) {
+                    UniqueReservation reservation = entry.getValue();
+                    if (reservation.transactionId() == transactionId && reservation.status() == UniqueReservationStatus.ACTIVE) {
+                        entry.setValue(new UniqueReservation(transactionId, reservation.rowKey(), UniqueReservationStatus.COMMITTED));
+                    }
+                }
+                return;
+            }
+            uniqueReservations.entrySet().removeIf(entry -> {
+                UniqueReservation reservation = entry.getValue();
+                return reservation.transactionId() == transactionId && reservation.status() == UniqueReservationStatus.ACTIVE;
+            });
+        }
+
+        private static SQLException duplicateKeyException(
+                UniqueConstraint constraint,
+                Object value,
+                UniqueReservation existing) {
+            String state = existing.status() == UniqueReservationStatus.ACTIVE ? "40XL1" : "23505";
+            String visibility = existing.status() == UniqueReservationStatus.ACTIVE
+                    ? "reserved by an active delos_mvcc transaction"
+                    : "already committed";
+            return sqlException(state, "Duplicate " + constraint.kind() + " value " + value
+                    + " for delos_mvcc constraint " + constraint.name() + " (" + visibility + ")");
+        }
+
+        private static List<UniqueConstraint> uniqueConstraintsFrom(List<ColumnDefinition> columns) throws SQLException {
+            List<UniqueConstraint> constraints = new ArrayList<>();
+            boolean sawPrimaryKey = false;
+            for (int i = 0; i < columns.size(); i++) {
+                ColumnDefinition column = columns.get(i);
+                if (column.primaryKey()) {
+                    if (sawPrimaryKey) {
+                        throw sqlException("42X14", "delos_mvcc Phase 7 supports only one PRIMARY KEY column");
+                    }
+                    sawPrimaryKey = true;
+                    constraints.add(new UniqueConstraint("PK_" + column.name(), i, true));
+                } else if (column.unique()) {
+                    constraints.add(new UniqueConstraint("UQ_" + column.name(), i, false));
+                }
+            }
+            return List.copyOf(constraints);
+        }
+    }
+
+    private record UniqueConstraint(String name, int columnIndex, boolean primaryKey) {
+        private String kind() {
+            return primaryKey ? "primary-key" : "unique";
+        }
+    }
+
+    private record UniqueKey(String constraintName, Object value) {
+    }
+
+    private enum UniqueReservationStatus {
+        ACTIVE,
+        COMMITTED
+    }
+
+    private record UniqueReservation(long transactionId, long rowKey, UniqueReservationStatus status) {
     }
 
     private record TableIdentity(String schemaName, String tableName) {
@@ -467,17 +592,31 @@ public final class VersionedStorageSqlBridge {
         }
     }
 
-    private record ColumnDefinition(String name, int jdbcType, String typeName) {
+    private record ColumnDefinition(String name, int jdbcType, String typeName, boolean primaryKey, boolean unique) {
         static ColumnDefinition parse(String name, String typeText) throws SQLException {
-            String normalizedType = typeText.trim().toUpperCase(Locale.ROOT);
+            String trimmedType = typeText.trim();
+            String normalizedType = trimmedType.toUpperCase(Locale.ROOT);
+            boolean primaryKey = false;
+            boolean unique = false;
+
+            if (normalizedType.endsWith(" PRIMARY KEY")) {
+                primaryKey = true;
+                unique = true;
+                normalizedType = normalizedType.substring(0, normalizedType.length() - " PRIMARY KEY".length()).trim();
+            } else if (normalizedType.endsWith(" UNIQUE")) {
+                unique = true;
+                normalizedType = normalizedType.substring(0, normalizedType.length() - " UNIQUE".length()).trim();
+            }
+
+            String normalizedName = name.toUpperCase(Locale.ROOT);
             if (normalizedType.equals("INT") || normalizedType.equals("INTEGER")) {
-                return new ColumnDefinition(name.toUpperCase(Locale.ROOT), Types.INTEGER, "INTEGER");
+                return new ColumnDefinition(normalizedName, Types.INTEGER, "INTEGER", primaryKey, unique);
             }
             if (normalizedType.matches("VARCHAR\\s*\\(\\s*[0-9]+\\s*\\)")) {
-                return new ColumnDefinition(name.toUpperCase(Locale.ROOT), Types.VARCHAR, normalizedType.replaceAll("\\s+", ""));
+                return new ColumnDefinition(normalizedName, Types.VARCHAR, normalizedType.replaceAll("\\s+", ""), primaryKey, unique);
             }
             if (normalizedType.matches("CHAR\\s*\\(\\s*[0-9]+\\s*\\)")) {
-                return new ColumnDefinition(name.toUpperCase(Locale.ROOT), Types.CHAR, normalizedType.replaceAll("\\s+", ""));
+                return new ColumnDefinition(normalizedName, Types.CHAR, normalizedType.replaceAll("\\s+", ""), primaryKey, unique);
             }
             throw sqlException("0A000", "Unsupported delos_mvcc column type: " + typeText.trim());
         }

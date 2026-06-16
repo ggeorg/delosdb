@@ -281,3 +281,19 @@ Aggregate MVCC check:
 ```bash
 ./gradlew mvccStorageModelTest
 ```
+
+### MVCC unique-key checkpoint
+
+The experimental `delos_mvcc` SQL path now has the first Phase 7 uniqueness
+proof for column-level `PRIMARY KEY` and `UNIQUE` constraints on the narrow
+in-memory table-scan bridge. This is still not a B-tree index implementation and
+not optimizer integration. It pins the user-visible conflict contract first:
+committed duplicate keys fail, active transaction reservations block concurrent
+duplicates, rollback releases reservations, and commit keeps reservations
+enforced.
+
+Focused check:
+
+```bash
+./gradlew versionedStorageUniqueKeySmoke
+```

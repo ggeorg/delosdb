@@ -268,3 +268,15 @@ replays only committed transactions and ignores aborted or incomplete transactio
 This is intentionally not Derby WAL. It is a stepping stone that lets the MVCC
 provider prove recovery semantics before DelosDB decides how versioned-storage
 records should participate in the full database recovery subsystem.
+
+### Phase 7 checkpoint: primary-key / unique conflict proof
+
+`delos_mvcc` now proves the first uniqueness semantics above the table-scan
+storage path. Column-level `PRIMARY KEY` and `UNIQUE` declarations are recognized
+by the experimental SQL bridge. Inserts reserve unique values in the owning
+MVCC transaction; committed reservations reject duplicates, active reservations
+block concurrent duplicates, and rollback releases the reservation.
+
+This is intentionally not the final index design. It does not add a B-tree,
+secondary-index storage, optimizer path selection, or Derby heap changes. It is
+a behavior checkpoint before real index structures are attached to MVCC rows.

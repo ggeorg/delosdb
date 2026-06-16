@@ -1721,8 +1721,23 @@ tasks.register('versionedStorageTransactionLifecycleSmoke') {
     dependsOn 'versionedStorageSqlMetadataSmoke'
 }
 
+tasks.register('versionedStorageUniqueKeySmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
+    mustRunAfter 'versionedStorageSqlMetadataSmoke'
+    group = 'verification'
+    description = 'Verifies Phase 7 primary-key/unique conflict behavior for experimental delos_mvcc storage.'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+    mainClass = 'delosdb.smoke.VersionedStorageUniqueKeySmoke'
+    args layout.buildDirectory.dir('versioned-storage-unique-key-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('versioned-storage-unique-key-smoke').get().asFile
+    doFirst {
+        delete file('build/versioned-storage-unique-key-smoke')
+        workingDir.mkdirs()
+    }
+}
+
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
     description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke'
 }
