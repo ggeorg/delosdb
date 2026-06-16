@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;
+
 /**
  * In-memory logical table used to prove MVCC semantics before any Derby heap,
  * B-tree, or WAL integration. Keys are logical row ids, values are immutable row
@@ -71,6 +73,24 @@ public final class MvccTable<K, V> {
         return total;
     }
 
+    public synchronized int deadVersionEstimate(MvccCommitSequence oldestVisibleThrough, MvccTransactionCatalog catalog) {
+        int total = 0;
+        for (MvccVersionChain<V> chain : rows.values()) {
+            total += chain.deadVersionEstimate(oldestVisibleThrough, catalog);
+        }
+        return total;
+    }
+
+    public synchronized boolean mayHaveVisibleIndexedValue(
+            K key,
+            Object indexKey,
+            VersionedIndexKeyExtractor<V> extractor,
+            MvccCommitSequence oldestVisibleThrough,
+            MvccTransactionCatalog catalog) {
+        MvccVersionChain<V> chain = rows.get(key);
+        return chain != null && chain.mayHaveVisibleIndexedValue(indexKey, extractor, oldestVisibleThrough, catalog);
+    }
+
     public synchronized MvccCleanupResult cleanup(MvccTransactionManager transactionManager) {
         MvccCommitSequence oldestVisibleThrough = transactionManager.oldestActiveVisibleThrough();
         MvccCleanupResult result = new MvccCleanupResult(0);
@@ -80,6 +100,7 @@ public final class MvccTable<K, V> {
             result = result.plus(entry.getValue().cleanup(oldestVisibleThrough, transactionManager));
             if (entry.getValue().isEmpty()) {
                 iterator.remove();
+                result = result.plus(new MvccCleanupResult(0, 0, 1));
             }
         }
         return result;

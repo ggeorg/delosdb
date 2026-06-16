@@ -309,3 +309,17 @@ SQL bridge uses the current JDBC isolation level to choose between:
 The storage proof also verifies that a refreshed statement view keeps the same
 transaction identity, so own writes remain visible, while rows written by another
 active transaction remain invisible.
+
+### Phase 10 checkpoint: MVCC cleanup / vacuum
+
+`delos_mvcc` now has a provider-local cleanup pass that follows the PostgreSQL
+visibility rule for dead tuple removal: a physical version may be removed only
+when no active snapshot can still see it. The same rule is applied to
+provider-owned index candidates. Index entries are pruned only after the
+version chain no longer contains a visible-or-snapshot-protected value for that
+index key.
+
+The proof covers update cleanup, committed-delete cleanup, aborted-insert
+cleanup, logical row removal, dead-version estimates, and index-candidate
+pruning. This is still a manual provider-local cleanup pass, not a background
+vacuum daemon and not Derby heap page compaction.

@@ -332,3 +332,16 @@ Focused checks:
 ./gradlew mvccSnapshotIsolationTest
 ./gradlew versionedStorageSnapshotIsolationSmoke
 ```
+
+### MVCC cleanup / vacuum checkpoint
+
+The experimental `delos_mvcc` storage path now has a Phase 10 cleanup proof.
+Cleanup removes dead physical versions only when the provider-local transaction
+manager reports that no active snapshot can still see them. Provider-owned index
+candidates are pruned under the same rule, so old indexed values remain
+available to old snapshots and disappear only after the protecting snapshot is
+closed.
+
+This remains manual provider-local cleanup. It is not a background vacuum
+process, Derby heap compaction, or optimizer statistics integration yet.
+

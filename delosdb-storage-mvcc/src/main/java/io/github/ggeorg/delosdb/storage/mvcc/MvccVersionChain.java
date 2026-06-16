@@ -3,7 +3,10 @@ package io.github.ggeorg.delosdb.storage.mvcc;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;
 
 /**
  * Newest-first version chain for one logical row. The chain is intentionally
@@ -54,6 +57,31 @@ public final class MvccVersionChain<V> {
             }
         }
         return new MvccCleanupResult(removed);
+    }
+
+    public synchronized int deadVersionEstimate(MvccCommitSequence oldestVisibleThrough, MvccTransactionCatalog catalog) {
+        int estimate = 0;
+        for (MvccVersion<V> version : newestFirst) {
+            if (MvccVisibility.isSafeToPrune(version, oldestVisibleThrough, catalog)) {
+                estimate++;
+            }
+        }
+        return estimate;
+    }
+
+    public synchronized boolean mayHaveVisibleIndexedValue(
+            Object indexKey,
+            VersionedIndexKeyExtractor<V> extractor,
+            MvccCommitSequence oldestVisibleThrough,
+            MvccTransactionCatalog catalog) {
+        Objects.requireNonNull(extractor, "extractor");
+        for (MvccVersion<V> version : newestFirst) {
+            if (!MvccVisibility.isSafeToPrune(version, oldestVisibleThrough, catalog)
+                    && Objects.equals(indexKey, extractor.extract(version.value()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public synchronized boolean isEmpty() {

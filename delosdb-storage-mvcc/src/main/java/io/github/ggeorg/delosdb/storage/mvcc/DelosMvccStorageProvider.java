@@ -88,6 +88,14 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
         return table;
     }
 
+    public synchronized MvccCleanupResult cleanup() {
+        MvccCleanupResult result = new MvccCleanupResult(0);
+        for (DelosMvccTable<?, ?> table : tables.values()) {
+            result = result.plus(transactionCoordinator.cleanup(table));
+        }
+        return result;
+    }
+
     @Override
     public synchronized <K, V> VersionedTable<K, V> openTable(VersionedTableMetadata metadata) {
         Objects.requireNonNull(metadata, "metadata");

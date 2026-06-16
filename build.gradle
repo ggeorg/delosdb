@@ -1632,7 +1632,7 @@ tasks.register('mvccTableScanModelTest') {
 tasks.register('mvccStorageModelTest') {
     group = 'verification'
     description = 'Runs all experimental DelosDB MVCC storage model tests.'
-    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest'
 }
 
 tasks.register('mvccRecoveryLogTest') {
@@ -1643,8 +1643,14 @@ tasks.register('mvccRecoveryLogTest') {
 
 tasks.register('mvccSnapshotIsolationTest') {
     group = 'verification'
-    description = 'Runs Phase 9 delos_mvcc snapshot-isolation tests.'
+    description = 'Runs Phase 9 delos_mvcc snapshot semantics tests.'
     dependsOn ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest'
+}
+
+tasks.register('mvccCleanupVacuumTest') {
+    group = 'verification'
+    description = 'Runs Phase 10 delos_mvcc cleanup/vacuum tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest'
 }
 
 
@@ -1757,6 +1763,8 @@ tasks.register('versionedStorageProviderOwnedIndexSmoke', JavaExec) {
         workingDir.mkdirs()
     }
 }
+
+
 
 tasks.register('versionedStorageSnapshotIsolationSmoke', JavaExec) {
     dependsOn 'compileVersionedStorageSqlMetadataSmoke'

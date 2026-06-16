@@ -6,6 +6,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Iterator;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -78,6 +79,30 @@ public final class DelosMvccIndex<K, V> implements VersionedIndex<K, V> {
             }
         }
         return new DelosMvccScan<>(MvccScan.fromVisibleRows(visibleRows));
+    }
+
+
+    synchronized MvccCleanupResult cleanupCandidates(
+            MvccCommitSequence oldestVisibleThrough,
+            MvccTransactionCatalog catalog) {
+        int removed = 0;
+        Iterator<Map.Entry<Object, LinkedHashSet<K>>> buckets = candidatesByKey.entrySet().iterator();
+        while (buckets.hasNext()) {
+            Map.Entry<Object, LinkedHashSet<K>> bucket = buckets.next();
+            Object indexKey = bucket.getKey();
+            Iterator<K> keys = bucket.getValue().iterator();
+            while (keys.hasNext()) {
+                K rowKey = keys.next();
+                if (!table.mayHaveVisibleIndexedValue(rowKey, indexKey, extractor, oldestVisibleThrough, catalog)) {
+                    keys.remove();
+                    removed++;
+                }
+            }
+            if (bucket.getValue().isEmpty()) {
+                buckets.remove();
+            }
+        }
+        return new MvccCleanupResult(0, removed, 0);
     }
 
     public synchronized int indexedKeyCount() {

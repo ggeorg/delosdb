@@ -135,11 +135,19 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     public VersionedTableStats stats(TxView view) {
         DelosMvccTxView mvccView = requireMvccView(view);
         long visibleRows = table.visibleRowCount(mvccView.snapshot(), mvccView.catalog());
-        return new VersionedTableStats(table.logicalRowCount(), visibleRows, table.physicalVersionCount(), 0L);
+        long deadVersions = table.deadVersionEstimate(
+                new MvccCommitSequence(mvccView.oldestVisibleTransaction()),
+                mvccView.catalog());
+        return new VersionedTableStats(table.logicalRowCount(), visibleRows, table.physicalVersionCount(), deadVersions);
     }
 
     public MvccCleanupResult cleanup(MvccTransactionManager transactionManager) {
-        return table.cleanup(transactionManager);
+        MvccCommitSequence oldestVisibleThrough = transactionManager.oldestActiveVisibleThrough();
+        MvccCleanupResult result = table.cleanup(transactionManager);
+        for (DelosMvccIndex<K, V> index : indexes.values()) {
+            result = result.plus(index.cleanupCandidates(oldestVisibleThrough, transactionManager));
+        }
+        return result;
     }
 
     private synchronized void recordIndexCandidates(K key, V value) {
