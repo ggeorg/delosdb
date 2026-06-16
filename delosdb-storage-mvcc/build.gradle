@@ -126,6 +126,7 @@ tasks.register('delosDbStorageMvccJar', Jar) {
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from mainClassDir
+    from('src/main/resources')
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }

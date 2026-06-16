@@ -10,9 +10,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/**
- * Internal resolver for opt-in versioned storage providers.
- */
+/** Internal resolver for opt-in versioned storage providers. */
 @InternalApi
 public final class VersionedStorageProviderResolver {
     private final ProviderResolver<VersionedStorageProvider> providers;

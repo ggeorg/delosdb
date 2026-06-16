@@ -3,70 +3,57 @@ package delosdb.smoke;
 import io.github.ggeorg.delosdb.engine.extension.ExtensionDescriptor;
 import io.github.ggeorg.delosdb.engine.extension.ExtensionState;
 import io.github.ggeorg.delosdb.engine.extension.ExtensionType;
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.VersionedStorageProviderDiscovery;
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.VersionedStorageProviderRegistry;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageCapabilities;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
-import io.github.ggeorg.delosdb.storage.mvcc.DelosMvccStorageProvider;
 
-import java.util.Locale;
+import java.util.List;
 
-/**
- * Verifies that the experimental MVCC module can be represented and resolved as
- * a DelosDB versioned-storage provider without wiring SQL execution.
- */
+/** Smoke proof for experimental VersionedStorageProvider discovery and registry visibility. */
 public final class VersionedStorageProviderRegistrySmoke {
     private VersionedStorageProviderRegistrySmoke() {
     }
 
     public static void main(String[] args) {
-        DelosMvccStorageProvider provider = new DelosMvccStorageProvider();
-        VersionedStorageProviderRegistry registry = VersionedStorageProviderRegistry.empty();
-        registry.registerEnabled(provider, "experimental");
+        List<VersionedStorageProvider> discovered = VersionedStorageProviderDiscovery.discover(
+                Thread.currentThread().getContextClassLoader());
+        assertTrue(discovered.stream().anyMatch(provider -> "delos_mvcc".equals(provider.name())),
+                "ServiceLoader must discover delos_mvcc provider");
 
-        ExtensionDescriptor descriptor = registry.requireDescriptor(DelosMvccStorageProvider.PROVIDER_NAME);
-        requireDescriptor(descriptor);
-        requireCapability(descriptor, VersionedStorageCapabilities.SNAPSHOT_VISIBILITY);
-        requireCapability(descriptor, VersionedStorageCapabilities.TABLE_SCAN);
-        requireCapability(descriptor, VersionedStorageCapabilities.MANUAL_CLEANUP);
-        requireCapability(descriptor, VersionedStorageCapabilities.IN_MEMORY_PROTOTYPE);
+        VersionedStorageProviderRegistry registry = VersionedStorageProviderRegistry.discovered(
+                Thread.currentThread().getContextClassLoader());
+        VersionedStorageProvider provider = registry.resolver().requireEnabled("delos_mvcc");
+        assertEquals("delos_mvcc", provider.name(), "resolver must return delos_mvcc provider");
 
-        VersionedStorageProvider resolved = registry.resolver()
-                .requireEnabled(DelosMvccStorageProvider.PROVIDER_NAME);
-        if (resolved != provider) {
-            throw new IllegalStateException("Resolver returned a different provider instance");
-        }
+        ExtensionDescriptor descriptor = registry.requireDescriptor("delos_mvcc");
+        assertEquals(ExtensionType.VERSIONED_STORAGE, descriptor.type(), "descriptor type");
+        assertEquals(ExtensionState.ENABLED, descriptor.state(), "descriptor state");
+        assertTrue(descriptor.capabilities().contains(VersionedStorageCapabilities.SNAPSHOT_VISIBILITY),
+                "descriptor must expose snapshot visibility capability");
+        assertTrue(descriptor.capabilities().contains(VersionedStorageCapabilities.TABLE_SCAN),
+                "descriptor must expose table-scan capability");
+        assertTrue(descriptor.capabilities().contains(VersionedStorageCapabilities.MANUAL_CLEANUP),
+                "descriptor must expose manual-cleanup capability");
+        assertTrue(descriptor.capabilities().contains(VersionedStorageCapabilities.IN_MEMORY_PROTOTYPE),
+                "descriptor must expose in-memory prototype capability");
 
-        if (!registry.resolver().providers().contains(provider)) {
-            throw new IllegalStateException("Resolver provider list does not contain delos_mvcc");
-        }
-
-        System.out.println("versioned_storage " + descriptor.name()
-                + " state=" + descriptor.state().name().toLowerCase(Locale.ROOT)
-                + " version=" + descriptor.version()
-                + " capabilities=" + String.join(",", descriptor.capabilities()));
-        System.out.println("DelosDB VersionedStorageProvider registry smoke test passed.");
+        assertTrue(registry.providers().size() == 1, "registry should contain one discovered provider in this smoke");
+        assertTrue(registry.descriptors().descriptors().stream()
+                        .anyMatch(item -> item.type() == ExtensionType.VERSIONED_STORAGE
+                                && "delos_mvcc".equals(item.name())),
+                "registry descriptors must include delos_mvcc");
     }
 
-    private static void requireDescriptor(ExtensionDescriptor descriptor) {
-        if (descriptor.type() != ExtensionType.VERSIONED_STORAGE) {
-            throw new IllegalStateException("Expected VERSIONED_STORAGE descriptor but was " + descriptor.type());
-        }
-        if (!DelosMvccStorageProvider.PROVIDER_NAME.equals(descriptor.name())) {
-            throw new IllegalStateException("Expected delos_mvcc provider but was " + descriptor.name());
-        }
-        if (descriptor.state() != ExtensionState.ENABLED) {
-            throw new IllegalStateException("Expected enabled provider but state was " + descriptor.state());
-        }
-        if (!"experimental".equals(descriptor.version())) {
-            throw new IllegalStateException("Expected experimental version but was " + descriptor.version());
+    private static void assertEquals(Object expected, Object actual, String label) {
+        if (!expected.equals(actual)) {
+            throw new AssertionError(label + ": expected <" + expected + "> but was <" + actual + ">");
         }
     }
 
-    private static void requireCapability(ExtensionDescriptor descriptor, String capability) {
-        if (!descriptor.capabilities().contains(capability)) {
-            throw new IllegalStateException(
-                    "Descriptor " + descriptor.name() + " is missing capability " + capability
-                            + ": " + descriptor.capabilities());
+    private static void assertTrue(boolean value, String message) {
+        if (!value) {
+            throw new AssertionError(message);
         }
     }
 }

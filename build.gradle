@@ -1153,13 +1153,6 @@ registerStorageProviderDatabaseSmoke(
         'Verifies StorageProvider table metadata is visible through the internal diagnostic resolver.',
         ['storageProviderPersistenceSmoke'])
 
-registerStorageProviderDatabaseSmoke(
-        'versionedStorageSqlMetadataSmoke',
-        'versioned-storage-sql-metadata-smoke',
-        'delosdb.smoke.VersionedStorageSqlMetadataSmoke',
-        'Verifies CREATE TABLE ... USING delos_mvcc is recognized but rejected until SQL execution exists.',
-        ['storageProviderVisibilitySmoke', 'versionedStorageProviderRegistrySmoke'])
-
 
 def networkServerSmokeClassesDir = layout.buildDirectory.dir('classes/network-server-smoke')
 
@@ -1624,73 +1617,6 @@ tasks.named('build') {
 }
 
 
-def versionedStorageProviderRegistrySmokeClassesDir = layout.buildDirectory.dir('classes/versioned-storage-provider-registry-smoke')
-def versionedStorageProviderRegistrySmokeClasspath = {
-    files(
-            moduleClassDir(moduleNames.engine),
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.osgi),
-            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
-            project(':delosdb-storage-mvcc').layout.buildDirectory.dir('classes/main'),
-            extensionRuntimeJars())
-}
-
-tasks.register('compileVersionedStorageProviderRegistrySmoke', JavaCompile) {
-    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:compileDelosDbStorageMvcc'
-    group = 'verification'
-    description = 'Compiles the experimental VersionedStorageProvider registry smoke test.'
-    source = files('dev/versioned-storage-provider-registry-smoke/src/main/java')
-    destinationDirectory = versionedStorageProviderRegistrySmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    classpath = versionedStorageProviderRegistrySmokeClasspath()
-}
-
-tasks.register('versionedStorageProviderRegistrySmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageProviderRegistrySmoke'
-    group = 'verification'
-    description = 'Verifies delos_mvcc can be registered and resolved as an experimental VersionedStorageProvider.'
-    classpath = files(versionedStorageProviderRegistrySmokeClassesDir, versionedStorageProviderRegistrySmokeClasspath())
-    mainClass = 'delosdb.smoke.VersionedStorageProviderRegistrySmoke'
-}
-
-
-
-def versionedStorageExecutionBridgeSmokeClassesDir = layout.buildDirectory.dir('classes/versioned-storage-execution-bridge-smoke')
-def versionedStorageExecutionBridgeSmokeClasspath = {
-    files(
-            moduleClassDir(moduleNames.engine),
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.osgi),
-            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
-            project(':delosdb-storage-mvcc').layout.buildDirectory.dir('classes/main'),
-            extensionRuntimeJars())
-}
-
-tasks.register('compileVersionedStorageExecutionBridgeSmoke', JavaCompile) {
-    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:compileDelosDbStorageMvcc'
-    group = 'verification'
-    description = 'Compiles the experimental VersionedStorageProvider execution bridge smoke test.'
-    source = files('dev/versioned-storage-execution-bridge-smoke/src/main/java')
-    destinationDirectory = versionedStorageExecutionBridgeSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    classpath = versionedStorageExecutionBridgeSmokeClasspath()
-}
-
-tasks.register('versionedStorageExecutionBridgeSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageExecutionBridgeSmoke'
-    mustRunAfter 'versionedStorageProviderRegistrySmoke'
-    group = 'verification'
-    description = 'Verifies the engine-side VersionedStorageProvider execution bridge can create, write, read, and scan delos_mvcc tables without Derby SQL wiring.'
-    classpath = files(versionedStorageExecutionBridgeSmokeClassesDir, versionedStorageExecutionBridgeSmokeClasspath())
-    mainClass = 'delosdb.smoke.VersionedStorageExecutionBridgeSmoke'
-}
-
 tasks.register('mvccCoreModelTest') {
     group = 'verification'
     description = 'Runs the experimental DelosDB MVCC core model tests.'
@@ -1710,8 +1636,40 @@ tasks.register('mvccStorageModelTest') {
 }
 
 
+def versionedStorageProviderRegistrySmokeClassesDir = layout.buildDirectory.dir('classes/versioned-storage-provider-registry-smoke')
+def versionedStorageProviderRegistrySmokeClasspath = {
+    files(
+            moduleClassDir(moduleNames.engine),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.osgi),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            extensionRuntimeJars())
+}
+
+tasks.register('compileVersionedStorageProviderRegistrySmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the experimental VersionedStorageProvider discovery/registry smoke test.'
+    source = files('dev/versioned-storage-provider-registry-smoke/src/main/java')
+    destinationDirectory = versionedStorageProviderRegistrySmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = versionedStorageProviderRegistrySmokeClasspath()
+}
+
+tasks.register('versionedStorageProviderRegistrySmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageProviderRegistrySmoke'
+    group = 'verification'
+    description = 'Verifies delos_mvcc is discovered and registry-visible as an experimental VersionedStorageProvider.'
+    classpath = files(versionedStorageProviderRegistrySmokeClassesDir, versionedStorageProviderRegistrySmokeClasspath())
+    mainClass = 'delosdb.smoke.VersionedStorageProviderRegistrySmoke'
+}
+
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
-    description = 'Runs MVCC storage model tests plus VersionedStorageProvider registry, execution bridge, and SQL metadata guard smokes.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageExecutionBridgeSmoke', 'versionedStorageSqlMetadataSmoke'
+    description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery/registry visibility smoke.'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke'
 }

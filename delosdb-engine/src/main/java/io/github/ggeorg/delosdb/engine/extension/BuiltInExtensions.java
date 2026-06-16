@@ -136,9 +136,10 @@ public final class BuiltInExtensions {
         );
     }
 
+
     public static ExtensionDescriptor versionedStorageProviderDescriptor(VersionedStorageProvider provider) {
         Objects.requireNonNull(provider, "provider");
-        return versionedStorageProviderDescriptor(provider, "manual", false);
+        return versionedStorageProviderDescriptor(provider, "discovered", false);
     }
 
     public static ExtensionDescriptor versionedStorageProviderDescriptor(
@@ -260,6 +261,7 @@ public final class BuiltInExtensions {
         return List.copyOf(names);
     }
 
+
     private static List<String> versionedStorageCapabilityNames(
             VersionedStorageCapabilities capabilities,
             boolean defaultProvider) {
@@ -268,9 +270,7 @@ public final class BuiltInExtensions {
         if (defaultProvider) {
             names.add("default-versioned-storage-provider");
         }
-        for (String capability : capabilities.values()) {
-            names.add(capability);
-        }
+        names.addAll(capabilities.values());
         return List.copyOf(names);
     }
 
