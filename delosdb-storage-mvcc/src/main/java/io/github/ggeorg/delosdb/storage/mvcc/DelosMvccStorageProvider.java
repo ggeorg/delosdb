@@ -92,6 +92,7 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
             capabilityValues.add(VersionedStorageCapabilities.APPEND_ONLY_RECOVERY_LOG);
         }
         if (pageBackedStorageDirectory != null) {
+            capabilityValues.add(VersionedStorageCapabilities.APPEND_ONLY_RECOVERY_LOG);
             capabilityValues.add("page-backed-table-store");
         }
         this.capabilities = new VersionedStorageCapabilities(capabilityValues);
@@ -198,7 +199,8 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
             return null;
         }
         try {
-            return PageBackedMvccTable.open(pageBackedStorageDirectory.resolve(pageFileName(metadata)));
+            Path pageFile = pageBackedStorageDirectory.resolve(pageFileName(metadata));
+            return PageBackedMvccTable.open(pageFile, pageMutationLogFile(pageFile));
         } catch (IOException e) {
             throw new UncheckedIOException("Could not open page-backed delos_mvcc table "
                     + metadata.qualifiedName(), e);
@@ -209,6 +211,10 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
         String name = (metadata.schemaName() + "_" + metadata.tableName()).toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9_]+", "_");
         return name + ".dmvcc";
+    }
+
+    private static Path pageMutationLogFile(Path pageFile) {
+        return pageFile.resolveSibling(pageFile.getFileName() + ".log");
     }
 
     private synchronized void completeDurableTransaction(

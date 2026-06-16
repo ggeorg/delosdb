@@ -79,20 +79,20 @@ public final class MvccPageMutationLog {
     }
 
     /**
-     * Replaces the log with a compact committed image. The image is represented
-     * as one synthetic committed transaction so normal recovery logic can replay
-     * it without a separate checkpoint record format.
+     * Replaces the log with a compact committed image. Each image record is
+     * represented as a synthetic committed transaction so normal recovery logic
+     * can replay it without a separate checkpoint record format.
      */
     public synchronized void rewriteCheckpoint(List<MvccVersionRecord> committedImage) {
         Objects.requireNonNull(committedImage, "committedImage");
         StringBuilder content = new StringBuilder();
         long syntheticTransactionId = 1L;
-        long syntheticCommitSequence = 1L;
         for (MvccVersionRecord record : committedImage) {
+            Objects.requireNonNull(record, "committedImage record");
+            long commitSequence = checkpointCommitSequence(record);
             appendLine(content, RECORD_VERSION, Long.toString(syntheticTransactionId), encodeRecord(record));
-        }
-        if (!committedImage.isEmpty()) {
-            appendLine(content, RECORD_COMMIT, Long.toString(syntheticTransactionId), Long.toString(syntheticCommitSequence));
+            appendLine(content, RECORD_COMMIT, Long.toString(syntheticTransactionId), Long.toString(commitSequence));
+            syntheticTransactionId++;
         }
         writeAtomically(content.toString().getBytes(StandardCharsets.UTF_8));
     }
@@ -199,7 +199,7 @@ public final class MvccPageMutationLog {
         byte[] bytes = line.toString().getBytes(StandardCharsets.UTF_8);
         try (FileChannel channel = FileChannel.open(path,
                 StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-            channel.write(ByteBuffer.wrap(bytes));
+            writeFully(channel, ByteBuffer.wrap(bytes));
             channel.force(true);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not append MVCC page mutation log record to: " + path, e);
@@ -220,8 +220,9 @@ public final class MvccPageMutationLog {
                 ? path.resolveSibling(path.getFileName() + ".tmp")
                 : parent.resolve(path.getFileName() + ".tmp");
         try {
-            Files.write(temp, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-            try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.WRITE)) {
+            try (FileChannel channel = FileChannel.open(temp,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                writeFully(channel, ByteBuffer.wrap(bytes));
                 channel.force(true);
             }
             Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -233,6 +234,20 @@ public final class MvccPageMutationLog {
                 throw new UncheckedIOException("Could not rewrite MVCC page mutation checkpoint log: " + path, atomicFailure);
             }
         }
+    }
+
+    private static void writeFully(FileChannel channel, ByteBuffer buffer) throws IOException {
+        while (buffer.hasRemaining()) {
+            channel.write(buffer);
+        }
+    }
+
+    private static long checkpointCommitSequence(MvccVersionRecord record) {
+        MvccCommitSequence commitSequence = record.header().commitSequence();
+        if (commitSequence.equals(MvccCommitSequence.NONE)) {
+            return 1L;
+        }
+        return commitSequence.value();
     }
 
     private static String encodeRecord(MvccVersionRecord record) {

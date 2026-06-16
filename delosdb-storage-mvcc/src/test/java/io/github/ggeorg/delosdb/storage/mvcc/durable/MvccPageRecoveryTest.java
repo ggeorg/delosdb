@@ -44,6 +44,48 @@ final class MvccPageRecoveryTest {
     }
 
     @Test
+    void committedPageMutationIsRecoveredBeforeTableDirectoryBuilds() throws Exception {
+        Path tableFile = tempDir.resolve("table.dmvcc");
+        Path logFile = tempDir.resolve("table.dmvcc.log");
+        MvccPageMutationLog log = MvccPageMutationLog.open(logFile);
+        log.appendVersion(1L, version("account:1", "alpha", 1L, 1L, 0L, 1L, 0L, 0));
+        log.appendCommit(1L, 1L);
+
+        try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile, logFile)) {
+            assertEquals("alpha", table.read("account:1", new MvccCommitSequence(1L)).orElseThrow());
+            assertEquals(1, table.physicalVersionCount("account:1"));
+        }
+    }
+
+    @Test
+    void loggedCommittedTableWriteIsIdempotentOnReopen() throws Exception {
+        Path tableFile = tempDir.resolve("table.dmvcc");
+        Path logFile = tempDir.resolve("table.dmvcc.log");
+
+        try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile, logFile)) {
+            table.insertCommitted("account:1", "alpha", 1L, 1L);
+        }
+
+        try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile, logFile)) {
+            assertEquals("alpha", table.read("account:1", new MvccCommitSequence(1L)).orElseThrow());
+            assertEquals(1, table.physicalVersionCount("account:1"));
+        }
+    }
+
+    @Test
+    void versionWithoutCommitIsIgnoredWhenLoggedTableOpens() throws Exception {
+        Path tableFile = tempDir.resolve("table.dmvcc");
+        Path logFile = tempDir.resolve("table.dmvcc.log");
+        MvccPageMutationLog log = MvccPageMutationLog.open(logFile);
+        log.appendVersion(1L, version("account:1", "alpha", 1L, 1L, 0L, 1L, 0L, 0));
+
+        try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile, logFile)) {
+            assertFalse(table.read("account:1", new MvccCommitSequence(100L)).isPresent());
+            assertEquals(0, table.physicalVersionCount());
+        }
+    }
+
+    @Test
     void versionWithoutCommitIsIgnoredAfterCrash() throws Exception {
         Path tableFile = tempDir.resolve("table.dmvcc");
         MvccPageMutationLog log = MvccPageMutationLog.open(tempDir.resolve("table.dmvcc.log"));
@@ -198,6 +240,18 @@ final class MvccPageRecoveryTest {
         }
     }
 
+    @Test
+    void checkpointRewritePreservesExistingCommitSequence() {
+        MvccPageMutationLog log = MvccPageMutationLog.open(tempDir.resolve("table.dmvcc.log"));
+        MvccVersionRecord committed = committedVersion("account:1", "alpha", 1L, 1L, 0L, 7L, 0L, 42L, 0);
+
+        log.rewriteCheckpoint(List.of(committed));
+
+        List<MvccVersionRecord> recovered = log.recoverCommittedRecords();
+        assertEquals(1, recovered.size());
+        assertEquals(new MvccCommitSequence(42L), recovered.get(0).header().commitSequence());
+    }
+
     private static MvccVersionRecord version(
             String key,
             String value,
@@ -207,6 +261,34 @@ final class MvccPageRecoveryTest {
             long createdByTx,
             long deletedByTx,
             int flags) {
+        return versionWithCommitSequence(key, value, rowId, versionId, previousVersionId, createdByTx, deletedByTx,
+                MvccCommitSequence.NONE, flags);
+    }
+
+    private static MvccVersionRecord committedVersion(
+            String key,
+            String value,
+            long rowId,
+            long versionId,
+            long previousVersionId,
+            long createdByTx,
+            long deletedByTx,
+            long commitSequence,
+            int flags) {
+        return versionWithCommitSequence(key, value, rowId, versionId, previousVersionId, createdByTx, deletedByTx,
+                new MvccCommitSequence(commitSequence), flags);
+    }
+
+    private static MvccVersionRecord versionWithCommitSequence(
+            String key,
+            String value,
+            long rowId,
+            long versionId,
+            long previousVersionId,
+            long createdByTx,
+            long deletedByTx,
+            MvccCommitSequence commitSequence,
+            int flags) {
         byte[] payload = MvccRowPayloadCodec.encode(new MvccRowPayload(key, value.getBytes(StandardCharsets.UTF_8)));
         return new MvccVersionRecord(
                 new MvccTupleHeader(
@@ -215,7 +297,7 @@ final class MvccPageRecoveryTest {
                         previousVersionId == 0L ? MvccVersionId.NONE : new MvccVersionId(previousVersionId),
                         new MvccTransactionId(createdByTx),
                         new MvccTransactionId(deletedByTx),
-                        MvccCommitSequence.NONE,
+                        commitSequence,
                         flags),
                 payload);
     }
