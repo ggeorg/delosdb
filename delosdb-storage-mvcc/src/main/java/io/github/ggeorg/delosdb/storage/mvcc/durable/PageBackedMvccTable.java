@@ -177,7 +177,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
                 ? appendCommittedRecord(transactionId, commitSequence, record)
                 : store.append(record);
         directory.addNewCommitted(key, rowId, new MvccRowDirectory.StoredVersion(locator, record, payload));
-        return MvccIndexTuple.active(rowId, versionId);
+        return MvccIndexTuple.active(rowId, versionId, locator);
     }
 
     private MvccVersionLocator appendCommittedRecord(
