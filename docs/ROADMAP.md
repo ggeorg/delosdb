@@ -365,3 +365,18 @@ Focused checks:
 ./gradlew mvccRecoveryHardeningTest
 ./gradlew mvccRecoveryLogTest
 ```
+
+### MVCC write-conflict checkpoint
+
+The experimental `delos_mvcc` path now has a Phase 12 write-conflict proof.
+Readers continue to see a stable committed version while another transaction
+holds an uncommitted update. A second writer against the same row receives a
+transaction-conflict SQLState, rollback releases the conflict, and a committed
+writer prevents stale snapshots from overwriting the old row version.
+
+Focused checks:
+
+```bash
+./gradlew mvccWriteConflictTest
+./gradlew versionedStorageWriteConflictSmoke
+```

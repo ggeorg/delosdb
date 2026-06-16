@@ -340,3 +340,19 @@ compact committed image containing table metadata and currently visible rows.
 This is a prototype checkpoint/compaction step, not Derby log integration, but it
 creates the next foundation for crash-safety work before indexes and optimizer
 costing are made durable.
+
+### Phase 12 checkpoint: write/write conflict behavior
+
+`delos_mvcc` now exposes write-conflict behavior through the versioned-storage
+SPI and the experimental JDBC bridge. The provider follows the PostgreSQL-guided
+rule that readers do not block writers, but competing writers cannot both modify
+the same visible row version. An active writer/delete reserves the version by
+marking its delete boundary; a second writer that tries to update the same row
+gets a provider-neutral `VersionedWriteConflictException`, which the SQL bridge
+maps to SQLState `40XL1`.
+
+Rollback releases the conflict because the delete boundary belongs to an aborted
+transaction. Commit makes the new version authoritative for fresh snapshots,
+while stale snapshots may still read the old version but may not overwrite it.
+This remains provider-local MVCC behavior; it is not Derby lock-manager
+integration and not blocking wait-queue support yet.

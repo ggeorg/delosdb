@@ -11,6 +11,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictException;
 
 import javax.sql.rowset.CachedRowSet;
 import javax.sql.rowset.RowSetMetaDataImpl;
@@ -120,9 +121,10 @@ public final class VersionedStorageSqlBridge {
             Object transactionOwner,
             boolean autoCommit,
             int transactionIsolation) throws SQLException {
-        String normalizedSql = stripTerminator(sql);
+        try {
+            String normalizedSql = stripTerminator(sql);
 
-        Matcher create = CREATE_TABLE.matcher(normalizedSql);
+            Matcher create = CREATE_TABLE.matcher(normalizedSql);
         if (create.matches()) {
             return createTable(create.group(1), create.group(2));
         }
@@ -198,7 +200,10 @@ public final class VersionedStorageSqlBridge {
             return null;
         }
 
-        return null;
+            return null;
+        } catch (VersionedWriteConflictException e) {
+            throw sqlException("40XL1", "delos_mvcc write conflict: " + e.getMessage());
+        }
     }
 
     private static VersionedStorageSqlResult createTable(String tableName, String columnList) throws SQLException {

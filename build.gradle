@@ -1632,7 +1632,7 @@ tasks.register('mvccTableScanModelTest') {
 tasks.register('mvccStorageModelTest') {
     group = 'verification'
     description = 'Runs all experimental DelosDB MVCC storage model tests.'
-    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest', ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest', ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest', ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest'
 }
 
 tasks.register('mvccRecoveryLogTest') {
@@ -1645,6 +1645,12 @@ tasks.register('mvccRecoveryHardeningTest') {
     group = 'verification'
     description = 'Runs Phase 11 delos_mvcc recovery hardening tests.'
     dependsOn ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest'
+}
+
+tasks.register('mvccWriteConflictTest') {
+    group = 'verification'
+    description = 'Runs Phase 12 delos_mvcc write-conflict tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest'
 }
 
 tasks.register('mvccSnapshotIsolationTest') {
@@ -1787,8 +1793,23 @@ tasks.register('versionedStorageSnapshotIsolationSmoke', JavaExec) {
     }
 }
 
+tasks.register('versionedStorageWriteConflictSmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
+    mustRunAfter 'versionedStorageSnapshotIsolationSmoke'
+    group = 'verification'
+    description = 'Verifies Phase 12 write/write conflict behavior for experimental delos_mvcc storage.'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+    mainClass = 'delosdb.smoke.VersionedStorageWriteConflictSmoke'
+    args layout.buildDirectory.dir('versioned-storage-write-conflict-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('versioned-storage-write-conflict-smoke').get().asFile
+    doFirst {
+        delete file('build/versioned-storage-write-conflict-smoke')
+        workingDir.mkdirs()
+    }
+}
+
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
     description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke', 'versionedStorageWriteConflictSmoke'
 }
