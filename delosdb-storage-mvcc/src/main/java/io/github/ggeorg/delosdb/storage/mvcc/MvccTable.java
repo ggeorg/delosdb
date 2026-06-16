@@ -59,6 +59,18 @@ public final class MvccTable<K, V> {
         return chain == null ? 0 : chain.versionCount();
     }
 
+    public synchronized int logicalRowCount() {
+        return rows.size();
+    }
+
+    public synchronized int physicalVersionCount() {
+        int total = 0;
+        for (MvccVersionChain<V> chain : rows.values()) {
+            total += chain.versionCount();
+        }
+        return total;
+    }
+
     public synchronized MvccCleanupResult cleanup(MvccTransactionManager transactionManager) {
         MvccCommitSequence oldestVisibleThrough = transactionManager.oldestActiveVisibleThrough();
         MvccCleanupResult result = new MvccCleanupResult(0);

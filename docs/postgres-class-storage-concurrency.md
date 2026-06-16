@@ -209,3 +209,32 @@ The proof covers stable snapshot scans, update/delete visibility, aborted rows,
 cleanup interaction, and scan cursor contracts. This is the next step toward an
 opt-in `delos_mvcc` storage family without risking existing Derby database
 compatibility.
+
+### VersionedStorageProvider SPI skeleton
+
+The MVCC storage module now implements the first narrow DelosDB
+`VersionedStorageProvider` SPI boundary. This is not yet SQL execution. It is a
+provider contract that proves the MVCC model can sit outside `delosdb-engine` and
+be opened through a storage-provider shape:
+
+```text
+VersionedStorageProvider
+  -> VersionedTable
+      -> VersionedScan
+      -> TxContext / TxView
+```
+
+The experimental provider is named `delos_mvcc`. It supports snapshot visibility,
+table scans, manual cleanup, and an in-memory prototype capability. The provider
+boundary is intentionally small so MVCC does not become a collection of unrelated
+provider families before the storage model is stable.
+
+Proof task:
+
+```bash
+./gradlew :delosdb-storage-mvcc:runVersionedStorageProviderSpiTest
+```
+
+This keeps the migration story safe: existing Derby-compatible heap tables still
+open through the existing heap path, while future `delos_mvcc` tables can use the
+new versioned-storage boundary explicitly.

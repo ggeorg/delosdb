@@ -1632,5 +1632,5 @@ tasks.register('mvccTableScanModelTest') {
 tasks.register('mvccStorageModelTest') {
     group = 'verification'
     description = 'Runs all experimental DelosDB MVCC storage model tests.'
-    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest'
 }

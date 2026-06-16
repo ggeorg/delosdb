@@ -226,3 +226,18 @@ The MVCC storage module now has both a core visibility model and a table-scan
 model. The table-scan model proves snapshot-stable enumeration of visible rows
 before any SQL, Derby heap, B-tree, WAL, or recovery integration. This keeps
 future `delos_mvcc` work opt-in and separate from Derby-compatible storage.
+
+### MVCC SPI checkpoint
+
+The experimental MVCC work now has a small `VersionedStorageProvider` SPI
+skeleton in `delosdb-spi`, implemented by `delosdb-storage-mvcc`. This is still
+not SQL wiring and does not affect existing Derby databases. It proves the first
+extension boundary for an opt-in `delos_mvcc` storage family: provider metadata,
+capabilities, table creation/opening, snapshot reads, table scans, and basic
+statistics through the SPI.
+
+Focused check:
+
+```bash
+./gradlew :delosdb-storage-mvcc:runVersionedStorageProviderSpiTest
+```

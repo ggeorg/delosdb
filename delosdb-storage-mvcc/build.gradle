@@ -12,10 +12,13 @@ def sourceRoot = file('src/main/java')
 def testSourceRoot = file('src/test/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 def testClassDir = layout.buildDirectory.dir('classes/test')
+def spiClassDir = project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
 
 tasks.register('compileDelosDbStorageMvcc', JavaCompile) {
+    dependsOn ':delosdb-spi:compileDelosDbSpi'
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = mainClassDir
+    classpath = rootProject.files(spiClassDir)
     rootProject.ext.delosdbConfigureJavaCompile(delegate)
 }
 
@@ -29,7 +32,7 @@ tasks.register('compileDelosDbStorageMvccTests', JavaCompile) {
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
-    classpath = rootProject.files(mainClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = rootProject.files(mainClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
 }
 
 tasks.register('runMvccCoreModelTest', Test) {
@@ -39,7 +42,7 @@ tasks.register('runMvccCoreModelTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
     include '**/MvccCoreModelTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccCoreModelTest'))
@@ -65,7 +68,7 @@ tasks.register('runMvccTableScanModelTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
     include '**/MvccTableScanModelTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccTableScanModelTest'))
@@ -74,6 +77,32 @@ tasks.register('runMvccTableScanModelTest', Test) {
         junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccTableScanModelTest'))
         html.required.set(true)
         html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccTableScanModelTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+
+tasks.register('runVersionedStorageProviderSpiTest', Test) {
+    group = 'verification'
+    description = 'Runs the experimental DelosDB MVCC VersionedStorageProvider SPI tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/VersionedStorageProviderSpiTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runVersionedStorageProviderSpiTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runVersionedStorageProviderSpiTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runVersionedStorageProviderSpiTest'))
     }
 
     testLogging {
@@ -106,5 +135,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest'
 }
