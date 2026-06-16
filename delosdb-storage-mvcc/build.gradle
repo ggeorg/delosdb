@@ -404,6 +404,33 @@ tasks.register('runMvccVersionRecordCodecTest', Test) {
     }
 }
 
+
+
+tasks.register('runPageBackedMvccTableTest', Test) {
+    group = 'verification'
+    description = 'Runs Phase A3 experimental DelosDB MVCC page-backed table tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/PageBackedMvccTableTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runPageBackedMvccTableTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runPageBackedMvccTableTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runPageBackedMvccTableTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
 tasks.register('classes') {
     dependsOn 'compileDelosDbStorageMvcc'
 }
@@ -428,5 +455,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest'
 }
