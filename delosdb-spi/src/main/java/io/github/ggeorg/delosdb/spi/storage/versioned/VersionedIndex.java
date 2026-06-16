@@ -11,5 +11,12 @@ package io.github.ggeorg.delosdb.spi.storage.versioned;
 public interface VersionedIndex<K, V> {
     VersionedIndexMetadata metadata();
 
+    /**
+     * Returns lightweight statistics for a lookup key under the supplied
+     * snapshot. Implementations must count visible matches only after
+     * consulting the authoritative table/version chain.
+     */
+    VersionedIndexStats stats(Object indexKey, TxView view);
+
     VersionedScan<K, V> lookup(Object indexKey, TxView view);
 }

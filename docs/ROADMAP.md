@@ -380,3 +380,22 @@ Focused checks:
 ./gradlew mvccWriteConflictTest
 ./gradlew versionedStorageWriteConflictSmoke
 ```
+
+### MVCC optimizer/path checkpoint
+
+The experimental `delos_mvcc` path now has a Phase 13 access-path proof. Simple
+`SELECT ... WHERE column = literal` predicates no longer require an index. The
+bridge can fall back to a provider-owned MVCC table scan, and when a
+provider-owned index exists it records an MVCC index-scan path with table and
+index statistics.
+
+This is still not Derby optimizer integration. It is the statistics and runtime
+path-observability checkpoint before wiring MVCC paths into Derby's normal cost
+model.
+
+Focused checks:
+
+```bash
+./gradlew mvccIndexStatsTest
+./gradlew versionedStorageOptimizerPathSmoke
+```

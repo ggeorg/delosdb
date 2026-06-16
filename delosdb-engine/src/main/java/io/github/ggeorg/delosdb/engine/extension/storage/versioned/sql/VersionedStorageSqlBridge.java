@@ -5,11 +5,13 @@ import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexStats;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableStats;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictException;
 
@@ -81,6 +83,7 @@ public final class VersionedStorageSqlBridge {
     private static final Map<VersionedTableMetadata, TableDefinition> TABLES = new HashMap<>();
     private static final Map<Object, SessionTransaction> SESSION_TRANSACTIONS = new IdentityHashMap<>();
     private static VersionedStorageProvider cachedProvider;
+    private static volatile VersionedStorageAccessPath lastAccessPath;
 
     private VersionedStorageSqlBridge() {
     }
@@ -94,6 +97,16 @@ public final class VersionedStorageSqlBridge {
     public static VersionedStorageSqlResult tryExecute(String sql) throws SQLException {
         return tryExecute(sql, VersionedStorageSqlBridge.class, true);
     }
+
+    /**
+     * Returns the last provider-owned MVCC access path selected by this bridge.
+     * This is a Phase 13 diagnostic hook for smoke tests and future runtime
+     * statistics; it is not a stable public SQL API.
+     */
+    public static Optional<VersionedStorageAccessPath> lastAccessPath() {
+        return Optional.ofNullable(lastAccessPath);
+    }
+
 
     /**
      * Attempts to execute a supported experimental MVCC SQL statement using
@@ -279,27 +292,129 @@ public final class VersionedStorageSqlBridge {
             boolean autoCommit,
             int transactionIsolation) throws SQLException {
         int columnIndex = table.columnIndex(columnName);
-        Object indexKey = table.columns().get(columnIndex).parseValue(rawValue.trim());
+        Object predicateValue = table.columns().get(columnIndex).parseValue(rawValue.trim());
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
-            VersionedIndex<Long, List<Object>> index = table.indexForColumn(columnIndex);
+            VersionedTableStats tableStats = table.table().stats(statementTx.context().currentView());
+            long tableScanCost = estimateTableScanCost(tableStats);
+            Optional<IndexDefinition> indexDefinition = table.indexDefinitionForColumn(columnIndex);
+            AccessPathSelection selection = chooseAccessPath(
+                    table,
+                    columnIndex,
+                    predicateValue,
+                    statementTx,
+                    tableStats,
+                    tableScanCost,
+                    indexDefinition);
+
             CachedRowSet rowSet = newRowSet(table.columns());
-            List<List<Object>> rows = new ArrayList<>();
-            try (VersionedScan<Long, List<Object>> scan = index.lookup(indexKey, statementTx.context().currentView())) {
-                while (scan.next()) {
-                    rows.add(scan.row().value());
-                }
-            }
+            List<List<Object>> rows = selection.rows();
             for (int i = rows.size() - 1; i >= 0; i--) {
                 append(rowSet, rows.get(i), table.columns());
             }
             rowSet.beforeFirst();
+            lastAccessPath = selection.accessPath();
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
         } catch (RuntimeException | SQLException e) {
             failStatementTransaction(transactionOwner, statementTx);
             throw e;
         }
+    }
+
+    private static AccessPathSelection chooseAccessPath(
+            TableDefinition table,
+            int columnIndex,
+            Object predicateValue,
+            StatementTransaction statementTx,
+            VersionedTableStats tableStats,
+            long tableScanCost,
+            Optional<IndexDefinition> indexDefinition) throws SQLException {
+        if (indexDefinition.isPresent()) {
+            IndexDefinition index = indexDefinition.get();
+            VersionedIndexStats indexStats = index.index().stats(predicateValue, statementTx.context().currentView());
+            long indexLookupCost = indexStats.estimatedLookupCost();
+            if (indexLookupCost <= tableScanCost) {
+                List<List<Object>> rows = valuesFrom(index.index().lookup(predicateValue, statementTx.context().currentView()));
+                VersionedStorageAccessPath accessPath = new VersionedStorageAccessPath(
+                        table.metadata().qualifiedName(),
+                        "select-where",
+                        VersionedStorageAccessPath.INDEX_SCAN,
+                        table.columns().get(columnIndex).name(),
+                        index.metadata().indexName(),
+                        tableStats.visibleRowCount(),
+                        tableStats.physicalVersionCount(),
+                        tableStats.deadVersionEstimate(),
+                        indexStats.candidateCount(),
+                        indexStats.visibleMatchCount(),
+                        tableScanCost,
+                        indexLookupCost);
+                return new AccessPathSelection(rows, accessPath);
+            }
+
+            List<List<Object>> rows = scanWhere(table, columnIndex, predicateValue, statementTx);
+            VersionedStorageAccessPath accessPath = new VersionedStorageAccessPath(
+                    table.metadata().qualifiedName(),
+                    "select-where",
+                    VersionedStorageAccessPath.TABLE_SCAN,
+                    table.columns().get(columnIndex).name(),
+                    index.metadata().indexName(),
+                    tableStats.visibleRowCount(),
+                    tableStats.physicalVersionCount(),
+                    tableStats.deadVersionEstimate(),
+                    indexStats.candidateCount(),
+                    indexStats.visibleMatchCount(),
+                    tableScanCost,
+                    indexLookupCost);
+            return new AccessPathSelection(rows, accessPath);
+        }
+
+        List<List<Object>> rows = scanWhere(table, columnIndex, predicateValue, statementTx);
+        VersionedStorageAccessPath accessPath = new VersionedStorageAccessPath(
+                table.metadata().qualifiedName(),
+                "select-where",
+                VersionedStorageAccessPath.TABLE_SCAN,
+                table.columns().get(columnIndex).name(),
+                "",
+                tableStats.visibleRowCount(),
+                tableStats.physicalVersionCount(),
+                tableStats.deadVersionEstimate(),
+                0L,
+                rows.size(),
+                tableScanCost,
+                0L);
+        return new AccessPathSelection(rows, accessPath);
+    }
+
+    private static List<List<Object>> valuesFrom(VersionedScan<Long, List<Object>> scan) {
+        List<List<Object>> rows = new ArrayList<>();
+        try (scan) {
+            while (scan.next()) {
+                rows.add(scan.row().value());
+            }
+        }
+        return rows;
+    }
+
+    private static List<List<Object>> scanWhere(
+            TableDefinition table,
+            int columnIndex,
+            Object predicateValue,
+            StatementTransaction statementTx) {
+        List<List<Object>> rows = new ArrayList<>();
+        try (VersionedScan<Long, List<Object>> scan = table.table().openScan(statementTx.context().currentView())) {
+            while (scan.next()) {
+                List<Object> row = scan.row().value();
+                if (Objects.equals(predicateValue, row.get(columnIndex))) {
+                    rows.add(row);
+                }
+            }
+        }
+        return rows;
+    }
+
+    private static long estimateTableScanCost(VersionedTableStats tableStats) {
+        return Math.max(1L, tableStats.visibleRowCount() + tableStats.deadVersionEstimate());
     }
 
     private static VersionedStorageSqlResult updateWhereEquals(
@@ -374,6 +489,20 @@ public final class VersionedStorageSqlBridge {
             for (int i = rows.size() - 1; i >= 0; i--) {
                 append(rowSet, rows.get(i), table.columns());
             }
+            VersionedTableStats tableStats = table.table().stats(statementTx.context().currentView());
+            lastAccessPath = new VersionedStorageAccessPath(
+                    table.metadata().qualifiedName(),
+                    "select-all",
+                    VersionedStorageAccessPath.TABLE_SCAN,
+                    "",
+                    "",
+                    tableStats.visibleRowCount(),
+                    tableStats.physicalVersionCount(),
+                    tableStats.deadVersionEstimate(),
+                    0L,
+                    rows.size(),
+                    estimateTableScanCost(tableStats),
+                    0L);
             rowSet.beforeFirst();
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
@@ -390,9 +519,23 @@ public final class VersionedStorageSqlBridge {
             int transactionIsolation) throws SQLException {
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
-            long visibleRows = table.table().stats(statementTx.context().currentView()).visibleRowCount();
+            VersionedTableStats tableStats = table.table().stats(statementTx.context().currentView());
+            long visibleRows = tableStats.visibleRowCount();
             CachedRowSet rowSet = newRowSet(List.of(new ColumnDefinition("1", Types.INTEGER, "INTEGER", false, false)));
             append(rowSet, List.of(Math.toIntExact(visibleRows)), List.of(new ColumnDefinition("1", Types.INTEGER, "INTEGER", false, false)));
+            lastAccessPath = new VersionedStorageAccessPath(
+                    table.metadata().qualifiedName(),
+                    "select-count",
+                    VersionedStorageAccessPath.TABLE_SCAN,
+                    "",
+                    "",
+                    tableStats.visibleRowCount(),
+                    tableStats.physicalVersionCount(),
+                    tableStats.deadVersionEstimate(),
+                    0L,
+                    visibleRows,
+                    estimateTableScanCost(tableStats),
+                    0L);
             rowSet.beforeFirst();
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
@@ -617,6 +760,15 @@ public final class VersionedStorageSqlBridge {
         return new SQLException(message, sqlState);
     }
 
+    private record AccessPathSelection(
+            List<List<Object>> rows,
+            VersionedStorageAccessPath accessPath) {
+        private AccessPathSelection {
+            rows = List.copyOf(rows);
+            accessPath = Objects.requireNonNull(accessPath, "accessPath");
+        }
+    }
+
     private record SessionTransaction(
             VersionedTransactionCoordinator coordinator,
             TxContext context,
@@ -710,6 +862,10 @@ public final class VersionedStorageSqlBridge {
                         + columns.get(columnIndex).name() + " before indexed lookup");
             }
             return definition.index();
+        }
+
+        private synchronized Optional<IndexDefinition> indexDefinitionForColumn(int columnIndex) {
+            return Optional.ofNullable(indexesByColumnIndex.get(columnIndex));
         }
 
         private List<VersionedRow<Long, List<Object>>> indexedRows(

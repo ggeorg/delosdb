@@ -356,3 +356,18 @@ transaction. Commit makes the new version authoritative for fresh snapshots,
 while stale snapshots may still read the old version but may not overwrite it.
 This remains provider-local MVCC behavior; it is not Derby lock-manager
 integration and not blocking wait-queue support yet.
+
+### Phase 13 checkpoint: MVCC table-scan vs index-scan path observability
+
+`delos_mvcc` now exposes the first optimizer-facing statistics for provider-owned
+MVCC access paths. The SQL bridge chooses between a provider-owned table scan and
+a provider-owned index scan for simple equality predicates. Index statistics
+report both raw candidate counts and visible matches after rechecking the MVCC
+version chain. This preserves the PostgreSQL-guided rule that index entries are
+candidate TIDs/row identifiers, while table/version visibility remains the final
+authority.
+
+The recorded path includes visible row count, physical version count,
+dead-version estimate, index candidate count, visible index match count, and
+rough table-scan vs index-lookup cost estimates. This is intentionally a bridge
+checkpoint, not full Derby optimizer path enumeration yet.

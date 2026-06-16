@@ -15,6 +15,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.TxView;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexStats;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
 
 /**
@@ -61,6 +62,25 @@ public final class DelosMvccIndex<K, V> implements VersionedIndex<K, V> {
                 recordCandidate(row.key(), row.value());
             }
         }
+    }
+
+
+    @Override
+    public synchronized VersionedIndexStats stats(Object indexKey, TxView view) {
+        DelosMvccTxView mvccView = requireMvccView(view);
+        Set<K> candidateKeys = candidatesByKey.get(indexKey);
+        long candidateCount = candidateKeys == null ? 0L : candidateKeys.size();
+        long visibleMatches = 0L;
+        if (candidateKeys != null) {
+            for (K rowKey : candidateKeys) {
+                Optional<V> visibleValue = table.read(rowKey, mvccView.snapshot(), mvccView.catalog());
+                if (visibleValue.isPresent() && Objects.equals(indexKey, extractor.extract(visibleValue.get()))) {
+                    visibleMatches++;
+                }
+            }
+        }
+        long estimatedLookupCost = Math.max(1L, candidateCount + 1L);
+        return new VersionedIndexStats(candidatesByKey.size(), candidateCount, visibleMatches, estimatedLookupCost);
     }
 
     @Override
