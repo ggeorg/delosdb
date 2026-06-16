@@ -43,18 +43,28 @@ public final class PageBackedMvccTable implements AutoCloseable {
 
     public synchronized void insertCommitted(String key, String value, long transactionId, long commitSequence)
             throws IOException {
+        insertCommitted(key, stringBytes(value), transactionId, commitSequence);
+    }
+
+    public synchronized void insertCommitted(String key, byte[] value, long transactionId, long commitSequence)
+            throws IOException {
         requireCommittedSequence(commitSequence);
-        if (read(key, new MvccCommitSequence(commitSequence)).isPresent()) {
+        if (readPayload(key, new MvccCommitSequence(commitSequence)).isPresent()) {
             throw new IllegalStateException("row already visible at commit sequence " + commitSequence + ": " + key);
         }
         appendVersion(key, value, directory.nextRowId(), MvccVersionId.NONE, transactionId, 0L, commitSequence, 0);
     }
 
     public synchronized void insertUncommitted(String key, String value, long transactionId) throws IOException {
-        appendVersion(key, value, directory.nextRowId(), MvccVersionId.NONE, transactionId, 0L, 0L, 0);
+        appendVersion(key, stringBytes(value), directory.nextRowId(), MvccVersionId.NONE, transactionId, 0L, 0L, 0);
     }
 
     public synchronized void updateCommitted(String key, String value, long transactionId, long commitSequence)
+            throws IOException {
+        updateCommitted(key, stringBytes(value), transactionId, commitSequence);
+    }
+
+    public synchronized void updateCommitted(String key, byte[] value, long transactionId, long commitSequence)
             throws IOException {
         requireCommittedSequence(commitSequence);
         MvccRowId rowId = directory.rowIdForKey(key)
@@ -70,13 +80,20 @@ public final class PageBackedMvccTable implements AutoCloseable {
                 .orElseThrow(() -> new IllegalStateException("cannot delete missing row: " + key));
         MvccVersionId previous = directory.newestVersionIdForKey(key)
                 .orElseThrow(() -> new IllegalStateException("cannot delete row without versions: " + key));
-        appendVersion(key, "", rowId, previous, transactionId, transactionId, commitSequence,
+        appendVersion(key, new byte[0], rowId, previous, transactionId, transactionId, commitSequence,
                 MvccVersionRecordFlags.TOMBSTONE);
     }
 
     public synchronized Optional<String> read(String key, MvccCommitSequence snapshotSequence) {
-        return directory.read(key, Objects.requireNonNull(snapshotSequence, "snapshotSequence"))
-                .map(MvccRowPayload::valueAsUtf8);
+        return readPayload(key, snapshotSequence).map(MvccRowPayload::valueAsUtf8);
+    }
+
+    public synchronized Optional<MvccRowPayload> readPayload(String key, MvccCommitSequence snapshotSequence) {
+        return directory.read(key, Objects.requireNonNull(snapshotSequence, "snapshotSequence"));
+    }
+
+    public synchronized java.util.List<MvccRowPayload> visibleRows(MvccCommitSequence snapshotSequence) {
+        return directory.visiblePayloads(Objects.requireNonNull(snapshotSequence, "snapshotSequence"));
     }
 
     public synchronized int physicalVersionCount(String key) {
@@ -102,7 +119,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
 
     private void appendVersion(
             String key,
-            String value,
+            byte[] value,
             MvccRowId rowId,
             MvccVersionId previousVersionId,
             long transactionId,
@@ -110,7 +127,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
             long commitSequence,
             int flags) throws IOException {
         MvccVersionId versionId = directory.nextVersionId();
-        MvccRowPayload payload = MvccRowPayload.ofString(key, value);
+        MvccRowPayload payload = new MvccRowPayload(key, value);
         MvccVersionRecord record = new MvccVersionRecord(
                 new MvccTupleHeader(
                         rowId,
@@ -123,6 +140,11 @@ public final class PageBackedMvccTable implements AutoCloseable {
                 MvccRowPayloadCodec.encode(payload));
         MvccVersionLocator locator = store.append(record);
         directory.addNewCommitted(key, rowId, new MvccRowDirectory.StoredVersion(locator, record, payload));
+    }
+
+    private static byte[] stringBytes(String value) {
+        Objects.requireNonNull(value, "value");
+        return value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
     private static void requireCommittedSequence(long commitSequence) {

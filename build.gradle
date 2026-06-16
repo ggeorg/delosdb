@@ -1895,10 +1895,24 @@ tasks.register('versionedStorageOrderByPathSmoke', JavaExec) {
 }
 
 
+tasks.register('versionedStorageDurableSqlSmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
+    mustRunAfter 'versionedStorageOrderByPathSmoke'
+    group = 'verification'
+    description = 'Verifies Phase A4 page-backed durable delos_mvcc SQL insert/update/delete survives provider reopen.'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+    mainClass = 'delosdb.smoke.VersionedStorageDurableSqlSmoke'
+    args layout.buildDirectory.dir('versioned-storage-durable-sql-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('versioned-storage-durable-sql-smoke').get().asFile
+    doFirst {
+        delete file('build/versioned-storage-durable-sql-smoke')
+        workingDir.mkdirs()
+    }
+}
 
 
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
     description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke', 'versionedStorageWriteConflictSmoke', 'versionedStorageOptimizerPathSmoke', 'versionedStorageIndexRangeSmoke', 'versionedStorageOrderByPathSmoke'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke', 'versionedStorageWriteConflictSmoke', 'versionedStorageOptimizerPathSmoke', 'versionedStorageIndexRangeSmoke', 'versionedStorageOrderByPathSmoke', 'versionedStorageDurableSqlSmoke'
 }

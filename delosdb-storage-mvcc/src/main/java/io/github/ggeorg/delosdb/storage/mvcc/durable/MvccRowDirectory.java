@@ -58,6 +58,15 @@ public final class MvccRowDirectory {
         return row == null ? 0 : row.versionCount();
     }
 
+    public synchronized List<MvccRowPayload> visiblePayloads(MvccCommitSequence snapshotSequence) {
+        Objects.requireNonNull(snapshotSequence, "snapshotSequence");
+        List<MvccRowPayload> payloads = new ArrayList<>();
+        for (RowState row : rowsByKey.values()) {
+            row.visiblePayload(snapshotSequence).ifPresent(payloads::add);
+        }
+        return List.copyOf(payloads);
+    }
+
     public synchronized int physicalVersionCount() {
         int total = 0;
         for (RowState row : rowsByKey.values()) {

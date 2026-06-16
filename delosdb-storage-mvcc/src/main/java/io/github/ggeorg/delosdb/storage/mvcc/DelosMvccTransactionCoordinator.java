@@ -17,17 +17,35 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordi
 public final class DelosMvccTransactionCoordinator implements VersionedTransactionCoordinator {
     private final MvccTransactionManager transactionManager = new MvccTransactionManager();
     private static final BooleanSupplier NEVER_SUPPRESS_LOGGING = () -> false;
+    private static final TransactionCompletionListener NOOP_LISTENER = new TransactionCompletionListener() {
+        @Override
+        public void committed(long transactionId, MvccCommitSequence commitSequence) {
+        }
+
+        @Override
+        public void aborted(long transactionId) {
+        }
+    };
 
     private final DelosMvccStorageLog storageLog;
     private final BooleanSupplier loggingSuppressed;
+    private final TransactionCompletionListener completionListener;
 
     public DelosMvccTransactionCoordinator() {
         this(DelosMvccStorageLog.disabled(), NEVER_SUPPRESS_LOGGING);
     }
 
     DelosMvccTransactionCoordinator(DelosMvccStorageLog storageLog, BooleanSupplier loggingSuppressed) {
+        this(storageLog, loggingSuppressed, NOOP_LISTENER);
+    }
+
+    DelosMvccTransactionCoordinator(
+            DelosMvccStorageLog storageLog,
+            BooleanSupplier loggingSuppressed,
+            TransactionCompletionListener completionListener) {
         this.storageLog = Objects.requireNonNull(storageLog, "storageLog");
         this.loggingSuppressed = Objects.requireNonNull(loggingSuppressed, "loggingSuppressed");
+        this.completionListener = Objects.requireNonNull(completionListener, "completionListener");
     }
 
     @Override
@@ -40,20 +58,23 @@ public final class DelosMvccTransactionCoordinator implements VersionedTransacti
         DelosMvccTxContext mvccContext = requireContext(context);
         MvccCommitSequence sequence = transactionManager.commit(mvccContext.transaction());
         appendCommitIfEnabled(mvccContext.transactionId());
+        completionListener.committed(mvccContext.transactionId(), sequence);
         return sequence;
     }
 
     @Override
     public void commit(TxContext context) {
         DelosMvccTxContext mvccContext = requireContext(context);
-        transactionManager.commit(mvccContext.transaction());
+        MvccCommitSequence sequence = transactionManager.commit(mvccContext.transaction());
         appendCommitIfEnabled(mvccContext.transactionId());
+        completionListener.committed(mvccContext.transactionId(), sequence);
     }
 
     public void abort(DelosMvccTxContext context) {
         DelosMvccTxContext mvccContext = requireContext(context);
         transactionManager.abort(mvccContext.transaction());
         appendAbortIfEnabled(mvccContext.transactionId());
+        completionListener.aborted(mvccContext.transactionId());
     }
 
     @Override
@@ -61,6 +82,7 @@ public final class DelosMvccTransactionCoordinator implements VersionedTransacti
         DelosMvccTxContext mvccContext = requireContext(context);
         transactionManager.abort(mvccContext.transaction());
         appendAbortIfEnabled(mvccContext.transactionId());
+        completionListener.aborted(mvccContext.transactionId());
     }
 
     public DelosMvccTxView view(DelosMvccTxContext context) {
@@ -89,6 +111,12 @@ public final class DelosMvccTransactionCoordinator implements VersionedTransacti
         return transactionManager.activeTransactionCount() > 0;
     }
 
+
+    interface TransactionCompletionListener {
+        void committed(long transactionId, MvccCommitSequence commitSequence);
+
+        void aborted(long transactionId);
+    }
 
     private void appendCommitIfEnabled(long transactionId) {
         if (!loggingSuppressed.getAsBoolean()) {
