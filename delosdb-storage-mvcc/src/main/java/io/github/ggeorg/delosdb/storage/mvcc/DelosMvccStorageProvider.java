@@ -1,6 +1,8 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -35,6 +37,11 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
     @Override
     public VersionedStorageCapabilities capabilities() {
         return capabilities;
+    }
+
+    @Override
+    public synchronized List<VersionedTableMetadata> listTables() {
+        return List.copyOf(new ArrayList<>(tables.keySet()));
     }
 
     @Override
