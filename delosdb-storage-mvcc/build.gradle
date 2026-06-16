@@ -299,6 +299,32 @@ tasks.register('runDelosMvccIndexStatsTest', Test) {
     }
 }
 
+
+tasks.register('runDelosMvccOrderedIndexRangeTest', Test) {
+    group = 'verification'
+    description = 'Runs Phase 14 experimental DelosDB MVCC ordered-index range tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/DelosMvccOrderedIndexRangeTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccOrderedIndexRangeTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccOrderedIndexRangeTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccOrderedIndexRangeTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
 tasks.register('classes') {
     dependsOn 'compileDelosDbStorageMvcc'
 }
@@ -323,5 +349,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest'
 }

@@ -11,6 +11,7 @@ public record VersionedStorageCapabilities(Set<String> values) {
     public static final String IN_MEMORY_PROTOTYPE = "in-memory-prototype";
     public static final String APPEND_ONLY_RECOVERY_LOG = "append-only-recovery-log";
     public static final String PROVIDER_OWNED_INDEXES = "provider-owned-indexes";
+    public static final String ORDERED_PROVIDER_OWNED_INDEXES = "ordered-provider-owned-indexes";
 
     public VersionedStorageCapabilities {
         if (values == null || values.isEmpty()) {

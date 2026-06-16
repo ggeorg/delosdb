@@ -48,6 +48,8 @@ import java.util.regex.Pattern;
  * SELECT COUNT(*) FROM name
  * CREATE INDEX idx_name ON name(column_name)
  * SELECT * FROM name WHERE column_name = 'literal'
+ * SELECT * FROM name WHERE column_name >= 'literal'
+ * SELECT * FROM name WHERE column_name BETWEEN 'a' AND 'z'
  * UPDATE name SET column_name = 'new' WHERE indexed_column = 'old'
  * DELETE FROM name WHERE indexed_column = 'old'
  * </pre>
@@ -74,6 +76,10 @@ public final class VersionedStorageSqlBridge {
             "(?is)^select\\s+count\\s*\\(\\s*\\*\\s*\\)\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)$");
     private static final Pattern SELECT_WHERE_EQUALS = Pattern.compile(
             "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)$");
+    private static final Pattern SELECT_WHERE_RANGE = Pattern.compile(
+            "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(>=|<=|>|<)\\s*(.+?)$");
+    private static final Pattern SELECT_WHERE_BETWEEN = Pattern.compile(
+            "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s+between\\s+(.+?)\\s+and\\s+(.+?)$");
     private static final Pattern UPDATE_WHERE_EQUALS = Pattern.compile(
             "(?is)^update\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+set\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)$");
     private static final Pattern DELETE_WHERE_EQUALS = Pattern.compile(
@@ -186,6 +192,40 @@ public final class VersionedStorageSqlBridge {
             return null;
         }
 
+        Matcher selectBetween = SELECT_WHERE_BETWEEN.matcher(normalizedSql);
+        if (selectBetween.matches()) {
+            Optional<TableDefinition> table = findTable(selectBetween.group(1));
+            if (table.isPresent()) {
+                return selectWhereRange(
+                        table.get(),
+                        selectBetween.group(2),
+                        "between",
+                        selectBetween.group(3),
+                        selectBetween.group(4),
+                        transactionOwner,
+                        autoCommit,
+                        transactionIsolation);
+            }
+            return null;
+        }
+
+        Matcher selectRange = SELECT_WHERE_RANGE.matcher(normalizedSql);
+        if (selectRange.matches()) {
+            Optional<TableDefinition> table = findTable(selectRange.group(1));
+            if (table.isPresent()) {
+                return selectWhereRange(
+                        table.get(),
+                        selectRange.group(2),
+                        selectRange.group(3),
+                        selectRange.group(4),
+                        null,
+                        transactionOwner,
+                        autoCommit,
+                        transactionIsolation);
+            }
+            return null;
+        }
+
         Matcher selectWhere = SELECT_WHERE_EQUALS.matcher(normalizedSql);
         if (selectWhere.matches()) {
             Optional<TableDefinition> table = findTable(selectWhere.group(1));
@@ -282,6 +322,120 @@ public final class VersionedStorageSqlBridge {
             failStatementTransaction(VersionedStorageSqlBridge.class, statementTx);
             throw e;
         }
+    }
+
+    private static VersionedStorageSqlResult selectWhereRange(
+            TableDefinition table,
+            String columnName,
+            String operator,
+            String rawLeftValue,
+            String rawRightValue,
+            Object transactionOwner,
+            boolean autoCommit,
+            int transactionIsolation) throws SQLException {
+        int columnIndex = table.columnIndex(columnName);
+        PredicateRange range = PredicateRange.parse(table.columns().get(columnIndex), operator, rawLeftValue, rawRightValue);
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
+        try {
+            VersionedTableStats tableStats = table.table().stats(statementTx.context().currentView());
+            long tableScanCost = estimateTableScanCost(tableStats);
+            Optional<IndexDefinition> indexDefinition = table.indexDefinitionForColumn(columnIndex);
+            AccessPathSelection selection = chooseRangeAccessPath(
+                    table,
+                    columnIndex,
+                    range,
+                    statementTx,
+                    tableStats,
+                    tableScanCost,
+                    indexDefinition);
+
+            CachedRowSet rowSet = newRowSet(table.columns());
+            List<List<Object>> rows = selection.rows();
+            for (int i = rows.size() - 1; i >= 0; i--) {
+                append(rowSet, rows.get(i), table.columns());
+            }
+            rowSet.beforeFirst();
+            lastAccessPath = selection.accessPath();
+            finishStatementTransaction(statementTx);
+            return VersionedStorageSqlResult.rows(rowSet);
+        } catch (RuntimeException | SQLException e) {
+            failStatementTransaction(transactionOwner, statementTx);
+            throw e;
+        }
+    }
+
+    private static AccessPathSelection chooseRangeAccessPath(
+            TableDefinition table,
+            int columnIndex,
+            PredicateRange range,
+            StatementTransaction statementTx,
+            VersionedTableStats tableStats,
+            long tableScanCost,
+            Optional<IndexDefinition> indexDefinition) throws SQLException {
+        if (indexDefinition.isPresent()) {
+            IndexDefinition index = indexDefinition.get();
+            VersionedIndexStats indexStats = index.index().statsRange(
+                    range.lowerBound(),
+                    range.lowerInclusive(),
+                    range.upperBound(),
+                    range.upperInclusive(),
+                    statementTx.context().currentView());
+            long indexLookupCost = indexStats.estimatedLookupCost();
+            if (indexLookupCost <= tableScanCost) {
+                List<List<Object>> rows = valuesFrom(index.index().lookupRange(
+                        range.lowerBound(),
+                        range.lowerInclusive(),
+                        range.upperBound(),
+                        range.upperInclusive(),
+                        statementTx.context().currentView()));
+                VersionedStorageAccessPath accessPath = new VersionedStorageAccessPath(
+                        table.metadata().qualifiedName(),
+                        "select-range",
+                        VersionedStorageAccessPath.INDEX_SCAN,
+                        table.columns().get(columnIndex).name(),
+                        index.metadata().indexName(),
+                        tableStats.visibleRowCount(),
+                        tableStats.physicalVersionCount(),
+                        tableStats.deadVersionEstimate(),
+                        indexStats.candidateCount(),
+                        indexStats.visibleMatchCount(),
+                        tableScanCost,
+                        indexLookupCost);
+                return new AccessPathSelection(rows, accessPath);
+            }
+
+            List<List<Object>> rows = scanWhereRange(table, columnIndex, range, statementTx);
+            VersionedStorageAccessPath accessPath = new VersionedStorageAccessPath(
+                    table.metadata().qualifiedName(),
+                    "select-range",
+                    VersionedStorageAccessPath.TABLE_SCAN,
+                    table.columns().get(columnIndex).name(),
+                    index.metadata().indexName(),
+                    tableStats.visibleRowCount(),
+                    tableStats.physicalVersionCount(),
+                    tableStats.deadVersionEstimate(),
+                    indexStats.candidateCount(),
+                    indexStats.visibleMatchCount(),
+                    tableScanCost,
+                    indexLookupCost);
+            return new AccessPathSelection(rows, accessPath);
+        }
+
+        List<List<Object>> rows = scanWhereRange(table, columnIndex, range, statementTx);
+        VersionedStorageAccessPath accessPath = new VersionedStorageAccessPath(
+                table.metadata().qualifiedName(),
+                "select-range",
+                VersionedStorageAccessPath.TABLE_SCAN,
+                table.columns().get(columnIndex).name(),
+                "",
+                tableStats.visibleRowCount(),
+                tableStats.physicalVersionCount(),
+                tableStats.deadVersionEstimate(),
+                0L,
+                rows.size(),
+                tableScanCost,
+                0L);
+        return new AccessPathSelection(rows, accessPath);
     }
 
     private static VersionedStorageSqlResult selectWhereEquals(
@@ -411,6 +565,45 @@ public final class VersionedStorageSqlBridge {
             }
         }
         return rows;
+    }
+
+    private static List<List<Object>> scanWhereRange(
+            TableDefinition table,
+            int columnIndex,
+            PredicateRange range,
+            StatementTransaction statementTx) {
+        List<List<Object>> rows = new ArrayList<>();
+        try (VersionedScan<Long, List<Object>> scan = table.table().openScan(statementTx.context().currentView())) {
+            while (scan.next()) {
+                List<Object> row = scan.row().value();
+                if (range.matches(row.get(columnIndex))) {
+                    rows.add(row);
+                }
+            }
+        }
+        return rows;
+    }
+
+    private static int comparePredicateValues(Object left, Object right) {
+        if (left == right) {
+            return 0;
+        }
+        if (left == null) {
+            return -1;
+        }
+        if (right == null) {
+            return 1;
+        }
+        if (left instanceof Comparable<?> comparable && left.getClass().isInstance(right)) {
+            @SuppressWarnings({"rawtypes", "unchecked"})
+            int result = ((Comparable) comparable).compareTo(right);
+            return result;
+        }
+        int classCompare = left.getClass().getName().compareTo(right.getClass().getName());
+        if (classCompare != 0) {
+            return classCompare;
+        }
+        return String.valueOf(left).compareTo(String.valueOf(right));
     }
 
     private static long estimateTableScanCost(VersionedTableStats tableStats) {
@@ -758,6 +951,53 @@ public final class VersionedStorageSqlBridge {
 
     private static SQLException sqlException(String sqlState, String message) {
         return new SQLException(message, sqlState);
+    }
+
+    private record PredicateRange(
+            Object lowerBound,
+            boolean lowerInclusive,
+            Object upperBound,
+            boolean upperInclusive) {
+        private static PredicateRange parse(
+                ColumnDefinition column,
+                String operator,
+                String rawLeftValue,
+                String rawRightValue) throws SQLException {
+            String normalized = operator.trim().toUpperCase(Locale.ROOT);
+            if ("BETWEEN".equals(normalized)) {
+                Object lower = column.parseValue(rawLeftValue.trim());
+                Object upper = column.parseValue(Objects.requireNonNull(rawRightValue, "rawRightValue").trim());
+                return new PredicateRange(lower, true, upper, true);
+            }
+
+            Object value = column.parseValue(rawLeftValue.trim());
+            return switch (normalized) {
+                case ">" -> new PredicateRange(value, false, null, true);
+                case ">=" -> new PredicateRange(value, true, null, true);
+                case "<" -> new PredicateRange(null, true, value, false);
+                case "<=" -> new PredicateRange(null, true, value, true);
+                default -> throw sqlException("42X01", "Unsupported delos_mvcc range predicate operator: " + operator);
+            };
+        }
+
+        private boolean matches(Object value) {
+            if (value == null) {
+                return false;
+            }
+            if (lowerBound != null) {
+                int lowerCompare = comparePredicateValues(value, lowerBound);
+                if (lowerCompare < 0 || (lowerCompare == 0 && !lowerInclusive)) {
+                    return false;
+                }
+            }
+            if (upperBound != null) {
+                int upperCompare = comparePredicateValues(value, upperBound);
+                if (upperCompare > 0 || (upperCompare == 0 && !upperInclusive)) {
+                    return false;
+                }
+            }
+            return true;
+        }
     }
 
     private record AccessPathSelection(

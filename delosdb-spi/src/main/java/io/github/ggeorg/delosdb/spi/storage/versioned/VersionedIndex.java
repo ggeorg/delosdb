@@ -19,4 +19,28 @@ public interface VersionedIndex<K, V> {
     VersionedIndexStats stats(Object indexKey, TxView view);
 
     VersionedScan<K, V> lookup(Object indexKey, TxView view);
+
+    /**
+     * Returns lightweight statistics for an ordered range lookup. Implementations
+     * must count candidates first, then visible matches after consulting the
+     * authoritative table/version chain. A {@code null} bound means unbounded.
+     */
+    VersionedIndexStats statsRange(
+            Object lowerBound,
+            boolean lowerInclusive,
+            Object upperBound,
+            boolean upperInclusive,
+            TxView view);
+
+    /**
+     * Looks up rows whose indexed value is inside the requested ordered range.
+     * Implementations must recheck MVCC visibility and the visible indexed value
+     * before returning rows. A {@code null} bound means unbounded.
+     */
+    VersionedScan<K, V> lookupRange(
+            Object lowerBound,
+            boolean lowerInclusive,
+            Object upperBound,
+            boolean upperInclusive,
+            TxView view);
 }

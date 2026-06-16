@@ -1632,7 +1632,7 @@ tasks.register('mvccTableScanModelTest') {
 tasks.register('mvccStorageModelTest') {
     group = 'verification'
     description = 'Runs all experimental DelosDB MVCC storage model tests.'
-    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest', ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest', ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest', ':delosdb-storage-mvcc:runDelosMvccIndexStatsTest'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest', ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest', ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest', ':delosdb-storage-mvcc:runDelosMvccIndexStatsTest', ':delosdb-storage-mvcc:runDelosMvccOrderedIndexRangeTest'
 }
 
 tasks.register('mvccRecoveryLogTest') {
@@ -1658,6 +1658,12 @@ tasks.register('mvccIndexStatsTest') {
     group = 'verification'
     description = 'Runs Phase 13 delos_mvcc index statistics tests.'
     dependsOn ':delosdb-storage-mvcc:runDelosMvccIndexStatsTest'
+}
+
+tasks.register('mvccOrderedIndexRangeTest') {
+    group = 'verification'
+    description = 'Runs Phase 14 delos_mvcc ordered provider-owned index range tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccOrderedIndexRangeTest'
 }
 
 tasks.register('mvccSnapshotIsolationTest') {
@@ -1831,8 +1837,23 @@ tasks.register('versionedStorageOptimizerPathSmoke', JavaExec) {
     }
 }
 
+tasks.register('versionedStorageIndexRangeSmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
+    mustRunAfter 'versionedStorageOptimizerPathSmoke'
+    group = 'verification'
+    description = 'Verifies Phase 14 ordered provider-owned MVCC index range scans.'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+    mainClass = 'delosdb.smoke.VersionedStorageIndexRangeSmoke'
+    args layout.buildDirectory.dir('versioned-storage-index-range-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('versioned-storage-index-range-smoke').get().asFile
+    doFirst {
+        delete file('build/versioned-storage-index-range-smoke')
+        workingDir.mkdirs()
+    }
+}
+
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
     description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke', 'versionedStorageWriteConflictSmoke', 'versionedStorageOptimizerPathSmoke'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke', 'versionedStorageWriteConflictSmoke', 'versionedStorageOptimizerPathSmoke', 'versionedStorageIndexRangeSmoke'
 }
