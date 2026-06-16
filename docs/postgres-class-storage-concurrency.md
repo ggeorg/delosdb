@@ -292,3 +292,20 @@ The SQL proof is intentionally narrow: `CREATE INDEX ... ON mvcc_table(column)`,
 `SELECT * ... WHERE column = literal`, plus indexed `UPDATE` and `DELETE` through
 the experimental bridge. The index is not Derby B-tree integration, does not add
 optimizer costing, and does not reinterpret Derby heap pages.
+
+### Phase 9 checkpoint: PostgreSQL-style snapshot semantics
+
+`delos_mvcc` now separates transaction-stable snapshots from statement-fresh
+snapshots. This follows the PostgreSQL design point that `READ COMMITTED` uses a
+new snapshot for each statement, while `REPEATABLE READ` holds a stable snapshot
+for the transaction.
+
+The provider exposes this through a transaction-context refresh primitive. The
+SQL bridge uses the current JDBC isolation level to choose between:
+
+- statement-fresh snapshots for `READ COMMITTED` / `READ UNCOMMITTED`; and
+- transaction-stable snapshots for `REPEATABLE READ` / `SERIALIZABLE`.
+
+The storage proof also verifies that a refreshed statement view keeps the same
+transaction identity, so own writes remain visible, while rows written by another
+active transaction remain invisible.

@@ -15,6 +15,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordi
 import javax.sql.rowset.CachedRowSet;
 import javax.sql.rowset.RowSetMetaDataImpl;
 import javax.sql.rowset.RowSetProvider;
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
@@ -103,6 +104,22 @@ public final class VersionedStorageSqlBridge {
             String sql,
             Object transactionOwner,
             boolean autoCommit) throws SQLException {
+        return tryExecute(sql, transactionOwner, autoCommit, Connection.TRANSACTION_READ_COMMITTED);
+    }
+
+    /**
+     * Attempts to execute a supported experimental MVCC SQL statement using the
+     * current JDBC isolation level.
+     *
+     * <p>READ COMMITTED and READ UNCOMMITTED capture a fresh provider snapshot
+     * per statement. REPEATABLE READ and SERIALIZABLE keep the provider
+     * transaction snapshot stable until JDBC commit/rollback.</p>
+     */
+    public static VersionedStorageSqlResult tryExecute(
+            String sql,
+            Object transactionOwner,
+            boolean autoCommit,
+            int transactionIsolation) throws SQLException {
         String normalizedSql = stripTerminator(sql);
 
         Matcher create = CREATE_TABLE.matcher(normalizedSql);
@@ -114,7 +131,7 @@ public final class VersionedStorageSqlBridge {
         if (insert.matches()) {
             Optional<TableDefinition> table = findTable(insert.group(1));
             if (table.isPresent()) {
-                return insertValues(table.get(), insert.group(2), transactionOwner, autoCommit);
+                return insertValues(table.get(), insert.group(2), transactionOwner, autoCommit, transactionIsolation);
             }
             return null;
         }
@@ -139,7 +156,8 @@ public final class VersionedStorageSqlBridge {
                         updateWhere.group(4),
                         updateWhere.group(5),
                         transactionOwner,
-                        autoCommit);
+                        autoCommit,
+                        transactionIsolation);
             }
             return null;
         }
@@ -148,7 +166,7 @@ public final class VersionedStorageSqlBridge {
         if (deleteWhere.matches()) {
             Optional<TableDefinition> table = findTable(deleteWhere.group(1));
             if (table.isPresent()) {
-                return deleteWhereEquals(table.get(), deleteWhere.group(2), deleteWhere.group(3), transactionOwner, autoCommit);
+                return deleteWhereEquals(table.get(), deleteWhere.group(2), deleteWhere.group(3), transactionOwner, autoCommit, transactionIsolation);
             }
             return null;
         }
@@ -157,7 +175,7 @@ public final class VersionedStorageSqlBridge {
         if (selectWhere.matches()) {
             Optional<TableDefinition> table = findTable(selectWhere.group(1));
             if (table.isPresent()) {
-                return selectWhereEquals(table.get(), selectWhere.group(2), selectWhere.group(3), transactionOwner, autoCommit);
+                return selectWhereEquals(table.get(), selectWhere.group(2), selectWhere.group(3), transactionOwner, autoCommit, transactionIsolation);
             }
             return null;
         }
@@ -166,7 +184,7 @@ public final class VersionedStorageSqlBridge {
         if (selectAll.matches()) {
             Optional<TableDefinition> table = findTable(selectAll.group(1));
             if (table.isPresent()) {
-                return selectAll(table.get(), transactionOwner, autoCommit);
+                return selectAll(table.get(), transactionOwner, autoCommit, transactionIsolation);
             }
             return null;
         }
@@ -175,7 +193,7 @@ public final class VersionedStorageSqlBridge {
         if (selectCount.matches()) {
             Optional<TableDefinition> table = findTable(selectCount.group(1));
             if (table.isPresent()) {
-                return selectCount(table.get(), transactionOwner, autoCommit);
+                return selectCount(table.get(), transactionOwner, autoCommit, transactionIsolation);
             }
             return null;
         }
@@ -207,13 +225,14 @@ public final class VersionedStorageSqlBridge {
             TableDefinition table,
             String valueList,
             Object transactionOwner,
-            boolean autoCommit) throws SQLException {
+            boolean autoCommit,
+            int transactionIsolation) throws SQLException {
         List<Object> values = parseValues(valueList, table.columns());
         if (values.size() != table.columns().size()) {
             throw sqlException("42802", "INSERT value count does not match delos_mvcc table column count");
         }
 
-        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         long rowKey = table.nextRowKey();
         try {
             table.reserveUniqueKeys(values, rowKey, statementTx.context());
@@ -231,7 +250,7 @@ public final class VersionedStorageSqlBridge {
             String indexName,
             String columnName) throws SQLException {
         int columnIndex = table.columnIndex(columnName);
-        StatementTransaction statementTx = beginStatementTransaction(table, VersionedStorageSqlBridge.class, true);
+        StatementTransaction statementTx = beginStatementTransaction(table, VersionedStorageSqlBridge.class, true, Connection.TRANSACTION_READ_COMMITTED);
         try {
             VersionedIndexMetadata indexMetadata = new VersionedIndexMetadata(
                     table.metadata(),
@@ -252,10 +271,11 @@ public final class VersionedStorageSqlBridge {
             String columnName,
             String rawValue,
             Object transactionOwner,
-            boolean autoCommit) throws SQLException {
+            boolean autoCommit,
+            int transactionIsolation) throws SQLException {
         int columnIndex = table.columnIndex(columnName);
         Object indexKey = table.columns().get(columnIndex).parseValue(rawValue.trim());
-        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
             VersionedIndex<Long, List<Object>> index = table.indexForColumn(columnIndex);
             CachedRowSet rowSet = newRowSet(table.columns());
@@ -284,12 +304,13 @@ public final class VersionedStorageSqlBridge {
             String whereColumnName,
             String rawWhereValue,
             Object transactionOwner,
-            boolean autoCommit) throws SQLException {
+            boolean autoCommit,
+            int transactionIsolation) throws SQLException {
         int setColumnIndex = table.columnIndex(setColumnName);
         int whereColumnIndex = table.columnIndex(whereColumnName);
         Object newValue = table.columns().get(setColumnIndex).parseValue(rawSetValue.trim());
         Object whereValue = table.columns().get(whereColumnIndex).parseValue(rawWhereValue.trim());
-        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
             List<VersionedRow<Long, List<Object>>> rows = table.indexedRows(whereColumnIndex, whereValue, statementTx.context());
             for (VersionedRow<Long, List<Object>> row : rows) {
@@ -310,10 +331,11 @@ public final class VersionedStorageSqlBridge {
             String whereColumnName,
             String rawWhereValue,
             Object transactionOwner,
-            boolean autoCommit) throws SQLException {
+            boolean autoCommit,
+            int transactionIsolation) throws SQLException {
         int whereColumnIndex = table.columnIndex(whereColumnName);
         Object whereValue = table.columns().get(whereColumnIndex).parseValue(rawWhereValue.trim());
-        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
             List<VersionedRow<Long, List<Object>>> rows = table.indexedRows(whereColumnIndex, whereValue, statementTx.context());
             for (VersionedRow<Long, List<Object>> row : rows) {
@@ -330,8 +352,9 @@ public final class VersionedStorageSqlBridge {
     private static VersionedStorageSqlResult selectAll(
             TableDefinition table,
             Object transactionOwner,
-            boolean autoCommit) throws SQLException {
-        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
+            boolean autoCommit,
+            int transactionIsolation) throws SQLException {
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
             CachedRowSet rowSet = newRowSet(table.columns());
             List<List<Object>> rows = new ArrayList<>();
@@ -358,8 +381,9 @@ public final class VersionedStorageSqlBridge {
     private static VersionedStorageSqlResult selectCount(
             TableDefinition table,
             Object transactionOwner,
-            boolean autoCommit) throws SQLException {
-        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit);
+            boolean autoCommit,
+            int transactionIsolation) throws SQLException {
+        StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
             long visibleRows = table.table().stats(statementTx.context().currentView()).visibleRowCount();
             CachedRowSet rowSet = newRowSet(List.of(new ColumnDefinition("1", Types.INTEGER, "INTEGER", false, false)));
@@ -432,20 +456,28 @@ public final class VersionedStorageSqlBridge {
     private static StatementTransaction beginStatementTransaction(
             TableDefinition table,
             Object transactionOwner,
-            boolean autoCommit) throws SQLException {
+            boolean autoCommit,
+            int transactionIsolation) throws SQLException {
         if (autoCommit || transactionOwner == null) {
             return new StatementTransaction(table.coordinator(), table.coordinator().begin(), true);
         }
 
+        SnapshotSemantics semantics = SnapshotSemantics.fromJdbcIsolation(transactionIsolation);
         synchronized (LOCK) {
             SessionTransaction session = SESSION_TRANSACTIONS.get(transactionOwner);
             if (session == null) {
-                session = new SessionTransaction(table.coordinator(), table.coordinator().begin());
+                session = new SessionTransaction(table.coordinator(), table.coordinator().begin(), semantics);
                 SESSION_TRANSACTIONS.put(transactionOwner, session);
             } else if (session.coordinator() != table.coordinator()) {
                 throw sqlException("0A000", "A delos_mvcc SQL transaction cannot span multiple provider coordinators");
+            } else if (session.snapshotSemantics() != semantics) {
+                throw sqlException("25001", "Cannot change delos_mvcc snapshot semantics inside an active transaction");
             }
-            return new StatementTransaction(session.coordinator(), session.context(), false);
+
+            TxContext statementContext = session.snapshotSemantics().freshSnapshotPerStatement()
+                    ? session.coordinator().refresh(session.context())
+                    : session.context();
+            return new StatementTransaction(session.coordinator(), statementContext, false);
         }
     }
 
@@ -582,7 +614,25 @@ public final class VersionedStorageSqlBridge {
 
     private record SessionTransaction(
             VersionedTransactionCoordinator coordinator,
-            TxContext context) {
+            TxContext context,
+            SnapshotSemantics snapshotSemantics) {
+    }
+
+    private enum SnapshotSemantics {
+        FRESH_STATEMENT,
+        STABLE_TRANSACTION;
+
+        private boolean freshSnapshotPerStatement() {
+            return this == FRESH_STATEMENT;
+        }
+
+        private static SnapshotSemantics fromJdbcIsolation(int transactionIsolation) throws SQLException {
+            return switch (transactionIsolation) {
+                case Connection.TRANSACTION_READ_UNCOMMITTED, Connection.TRANSACTION_READ_COMMITTED -> FRESH_STATEMENT;
+                case Connection.TRANSACTION_REPEATABLE_READ, Connection.TRANSACTION_SERIALIZABLE -> STABLE_TRANSACTION;
+                default -> throw sqlException("X0MV3", "Unsupported delos_mvcc transaction isolation level: " + transactionIsolation);
+            };
+        }
     }
 
     private record StatementTransaction(

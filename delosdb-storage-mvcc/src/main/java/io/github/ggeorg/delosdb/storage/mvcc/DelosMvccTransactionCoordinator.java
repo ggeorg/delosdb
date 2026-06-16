@@ -67,6 +67,19 @@ public final class DelosMvccTransactionCoordinator implements VersionedTransacti
         return requireContext(context).mvccView();
     }
 
+    /**
+     * Captures a fresh statement view for the same MVCC transaction.
+     *
+     * <p>This is the provider-side primitive needed by READ COMMITTED: the
+     * transaction id remains stable, so own writes remain visible, but the
+     * visible commit high-water mark advances for the next statement.</p>
+     */
+    @Override
+    public DelosMvccTxContext refresh(TxContext context) {
+        DelosMvccTxContext mvccContext = requireContext(context);
+        return contextFor(mvccContext.transaction());
+    }
+
     public MvccCleanupResult cleanup(DelosMvccTable<?, ?> table) {
         Objects.requireNonNull(table, "table");
         return table.cleanup(transactionManager);

@@ -666,7 +666,11 @@ public class EmbedStatement extends ConnectionChild
 
 		try {
 			VersionedStorageSqlResult versionedStorageResult =
-					VersionedStorageSqlBridge.tryExecute(sql, getEmbedConnection(), getEmbedConnection().getAutoCommit());
+					VersionedStorageSqlBridge.tryExecute(
+								sql,
+								getEmbedConnection(),
+								getEmbedConnection().getAutoCommit(),
+								getEmbedConnection().getTransactionIsolation());
 			if (versionedStorageResult != null) {
 				if (versionedStorageResult.returnsRows()) {
 					if (executeUpdate) {

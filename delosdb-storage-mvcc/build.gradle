@@ -168,6 +168,32 @@ tasks.register('runDelosMvccProviderOwnedIndexTest', Test) {
     }
 }
 
+
+tasks.register('runDelosMvccSnapshotIsolationTest', Test) {
+    group = 'verification'
+    description = 'Runs Phase 9 experimental DelosDB MVCC snapshot-isolation tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/DelosMvccSnapshotIsolationTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccSnapshotIsolationTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccSnapshotIsolationTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccSnapshotIsolationTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
 tasks.register('classes') {
     dependsOn 'compileDelosDbStorageMvcc'
 }
@@ -192,5 +218,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest'
 }

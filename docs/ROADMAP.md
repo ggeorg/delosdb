@@ -309,3 +309,26 @@ lookup path with `CREATE INDEX ... ON ...`, `SELECT ... WHERE`, and narrow index
 This is still not Derby B-tree integration and not optimizer costing. It is the
 storage-engine checkpoint before deeper snapshot isolation, cleanup/vacuum, and
 real path-cost work.
+
+### MVCC snapshot-semantics checkpoint
+
+The experimental `delos_mvcc` path now has a Phase 9 snapshot-semantics proof.
+Following the PostgreSQL design rule, visibility is no longer treated as one
+fixed behavior for all JDBC transactions:
+
+- `READ COMMITTED` and `READ UNCOMMITTED` capture a fresh provider snapshot per
+  statement.
+- `REPEATABLE READ` and `SERIALIZABLE` keep the same provider snapshot until
+  JDBC commit/rollback.
+- Own writes remain visible after statement-snapshot refresh.
+- Another active writer remains invisible even after refresh.
+
+This is still provider-local MVCC behavior. It does not change Derby heap
+storage, Derby locks, Derby WAL, or optimizer costing.
+
+Focused checks:
+
+```bash
+./gradlew mvccSnapshotIsolationTest
+./gradlew versionedStorageSnapshotIsolationSmoke
+```
