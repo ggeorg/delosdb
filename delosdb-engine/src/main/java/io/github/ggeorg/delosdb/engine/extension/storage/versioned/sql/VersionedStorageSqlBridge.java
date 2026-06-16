@@ -45,6 +45,7 @@ import java.util.regex.Pattern;
  * CREATE TABLE name (id INT, value VARCHAR(40)) USING delos_mvcc
  * INSERT INTO name VALUES (1, 'alpha')
  * SELECT * FROM name
+ * SELECT * FROM name ORDER BY indexed_column [ASC|DESC]
  * SELECT COUNT(*) FROM name
  * CREATE INDEX idx_name ON name(column_name)
  * SELECT * FROM name WHERE column_name = 'literal'
@@ -71,7 +72,7 @@ public final class VersionedStorageSqlBridge {
     private static final Pattern CREATE_INDEX = Pattern.compile(
             "(?is)^create\\s+index\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s+on\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\)$");
     private static final Pattern SELECT_ALL = Pattern.compile(
-            "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)(?:\\s+order\\s+by\\s+[a-zA-Z_][a-zA-Z0-9_]*)?$");
+            "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)(?:\\s+order\\s+by\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s+(asc|desc))?)?$");
     private static final Pattern SELECT_COUNT = Pattern.compile(
             "(?is)^select\\s+count\\s*\\(\\s*\\*\\s*\\)\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)$");
     private static final Pattern SELECT_WHERE_EQUALS = Pattern.compile(
@@ -239,7 +240,7 @@ public final class VersionedStorageSqlBridge {
         if (selectAll.matches()) {
             Optional<TableDefinition> table = findTable(selectAll.group(1));
             if (table.isPresent()) {
-                return selectAll(table.get(), transactionOwner, autoCommit, transactionIsolation);
+                return selectAll(table.get(), selectAll.group(2), selectAll.group(3), transactionOwner, autoCommit, transactionIsolation);
             }
             return null;
         }
@@ -664,44 +665,118 @@ public final class VersionedStorageSqlBridge {
 
     private static VersionedStorageSqlResult selectAll(
             TableDefinition table,
+            String orderColumnName,
+            String orderDirection,
             Object transactionOwner,
             boolean autoCommit,
             int transactionIsolation) throws SQLException {
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
-            CachedRowSet rowSet = newRowSet(table.columns());
-            List<List<Object>> rows = new ArrayList<>();
-            try (VersionedScan<Long, List<Object>> scan = table.table().openScan(statementTx.context().currentView())) {
-                while (scan.next()) {
-                    VersionedRow<Long, List<Object>> row = scan.row();
-                    rows.add(row.value());
-                }
+            VersionedTableStats tableStats = table.table().stats(statementTx.context().currentView());
+            long tableScanCost = estimateTableScanCost(tableStats);
+            AccessPathSelection selection;
+            if (orderColumnName == null) {
+                List<List<Object>> rows = scanAllRows(table, statementTx);
+                selection = new AccessPathSelection(rows, new VersionedStorageAccessPath(
+                        table.metadata().qualifiedName(),
+                        "select-all",
+                        VersionedStorageAccessPath.TABLE_SCAN,
+                        "",
+                        "",
+                        tableStats.visibleRowCount(),
+                        tableStats.physicalVersionCount(),
+                        tableStats.deadVersionEstimate(),
+                        0L,
+                        rows.size(),
+                        tableScanCost,
+                        0L));
+            } else {
+                selection = selectAllOrdered(table, orderColumnName, orderDirection, statementTx, tableStats, tableScanCost);
             }
+
+            CachedRowSet rowSet = newRowSet(table.columns());
+            List<List<Object>> rows = selection.rows();
             // CachedRowSet inserts each new row before the current cursor row.
-            // Insert in reverse so callers observe provider scan order.
+            // Insert in reverse so callers observe provider/index order.
             for (int i = rows.size() - 1; i >= 0; i--) {
                 append(rowSet, rows.get(i), table.columns());
             }
-            VersionedTableStats tableStats = table.table().stats(statementTx.context().currentView());
-            lastAccessPath = new VersionedStorageAccessPath(
-                    table.metadata().qualifiedName(),
-                    "select-all",
-                    VersionedStorageAccessPath.TABLE_SCAN,
-                    "",
-                    "",
-                    tableStats.visibleRowCount(),
-                    tableStats.physicalVersionCount(),
-                    tableStats.deadVersionEstimate(),
-                    0L,
-                    rows.size(),
-                    estimateTableScanCost(tableStats),
-                    0L);
+            lastAccessPath = selection.accessPath();
             rowSet.beforeFirst();
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
         } catch (RuntimeException | SQLException e) {
             failStatementTransaction(transactionOwner, statementTx);
             throw e;
+        }
+    }
+
+    private static AccessPathSelection selectAllOrdered(
+            TableDefinition table,
+            String orderColumnName,
+            String orderDirection,
+            StatementTransaction statementTx,
+            VersionedTableStats tableStats,
+            long tableScanCost) throws SQLException {
+        int orderColumnIndex = table.columnIndex(orderColumnName);
+        boolean descending = orderDirection != null && "DESC".equalsIgnoreCase(orderDirection.trim());
+        Optional<IndexDefinition> indexDefinition = table.indexDefinitionForColumn(orderColumnIndex);
+        if (indexDefinition.isPresent()) {
+            IndexDefinition index = indexDefinition.get();
+            VersionedIndexStats indexStats = index.index().statsRange(null, true, null, true, statementTx.context().currentView());
+            List<List<Object>> rows = valuesFrom(index.index().lookupRange(null, true, null, true, statementTx.context().currentView()));
+            if (descending) {
+                java.util.Collections.reverse(rows);
+            }
+            return new AccessPathSelection(rows, new VersionedStorageAccessPath(
+                    table.metadata().qualifiedName(),
+                    descending ? "select-order-desc" : "select-order",
+                    VersionedStorageAccessPath.INDEX_SCAN,
+                    table.columns().get(orderColumnIndex).name(),
+                    index.metadata().indexName(),
+                    tableStats.visibleRowCount(),
+                    tableStats.physicalVersionCount(),
+                    tableStats.deadVersionEstimate(),
+                    indexStats.candidateCount(),
+                    indexStats.visibleMatchCount(),
+                    tableScanCost,
+                    indexStats.estimatedLookupCost()));
+        }
+
+        List<List<Object>> rows = scanAllRows(table, statementTx);
+        sortRows(rows, orderColumnIndex, descending);
+        return new AccessPathSelection(rows, new VersionedStorageAccessPath(
+                table.metadata().qualifiedName(),
+                descending ? "select-order-desc" : "select-order",
+                VersionedStorageAccessPath.TABLE_SCAN,
+                table.columns().get(orderColumnIndex).name(),
+                "",
+                tableStats.visibleRowCount(),
+                tableStats.physicalVersionCount(),
+                tableStats.deadVersionEstimate(),
+                0L,
+                rows.size(),
+                tableScanCost,
+                0L));
+    }
+
+    private static List<List<Object>> scanAllRows(
+            TableDefinition table,
+            StatementTransaction statementTx) {
+        List<List<Object>> rows = new ArrayList<>();
+        try (VersionedScan<Long, List<Object>> scan = table.table().openScan(statementTx.context().currentView())) {
+            while (scan.next()) {
+                VersionedRow<Long, List<Object>> row = scan.row();
+                rows.add(row.value());
+            }
+        }
+        return rows;
+    }
+
+    private static void sortRows(List<List<Object>> rows, int columnIndex, boolean descending) {
+        rows.sort((left, right) -> comparePredicateValues(left.get(columnIndex), right.get(columnIndex)));
+        if (descending) {
+            java.util.Collections.reverse(rows);
         }
     }
 

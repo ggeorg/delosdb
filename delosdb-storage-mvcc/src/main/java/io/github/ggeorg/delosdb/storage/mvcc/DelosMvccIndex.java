@@ -116,9 +116,12 @@ public final class DelosMvccIndex<K, V> implements VersionedIndex<K, V> {
             candidateCount += bucket.getValue().size();
             for (K rowKey : bucket.getValue()) {
                 Optional<V> visibleValue = table.read(rowKey, mvccView.snapshot(), mvccView.catalog());
-                if (visibleValue.isPresent()
-                        && indexKeyInRange(extractor.extract(visibleValue.get()), lowerBound, lowerInclusive, upperBound, upperInclusive)) {
-                    visibleMatches++;
+                if (visibleValue.isPresent()) {
+                    Object visibleIndexKey = extractor.extract(visibleValue.get());
+                    if (Objects.equals(bucket.getKey(), visibleIndexKey)
+                            && indexKeyInRange(visibleIndexKey, lowerBound, lowerInclusive, upperBound, upperInclusive)) {
+                        visibleMatches++;
+                    }
                 }
             }
         }
@@ -138,9 +141,12 @@ public final class DelosMvccIndex<K, V> implements VersionedIndex<K, V> {
         for (Map.Entry<Object, LinkedHashSet<K>> bucket : rangeEntries(lowerBound, lowerInclusive, upperBound, upperInclusive)) {
             for (K rowKey : bucket.getValue()) {
                 Optional<V> visibleValue = table.read(rowKey, mvccView.snapshot(), mvccView.catalog());
-                if (visibleValue.isPresent()
-                        && indexKeyInRange(extractor.extract(visibleValue.get()), lowerBound, lowerInclusive, upperBound, upperInclusive)) {
-                    visibleRows.add(new MvccRow<>(rowKey, visibleValue.get()));
+                if (visibleValue.isPresent()) {
+                    Object visibleIndexKey = extractor.extract(visibleValue.get());
+                    if (Objects.equals(bucket.getKey(), visibleIndexKey)
+                            && indexKeyInRange(visibleIndexKey, lowerBound, lowerInclusive, upperBound, upperInclusive)) {
+                        visibleRows.add(new MvccRow<>(rowKey, visibleValue.get()));
+                    }
                 }
             }
         }

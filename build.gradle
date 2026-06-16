@@ -1666,6 +1666,12 @@ tasks.register('mvccOrderedIndexRangeTest') {
     dependsOn ':delosdb-storage-mvcc:runDelosMvccOrderedIndexRangeTest'
 }
 
+tasks.register('mvccOrderedIndexOrderByTest') {
+    group = 'verification'
+    description = 'Runs Phase 15 delos_mvcc ordered provider-owned index ORDER BY tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccOrderedIndexOrderByTest'
+}
+
 tasks.register('mvccSnapshotIsolationTest') {
     group = 'verification'
     description = 'Runs Phase 9 delos_mvcc snapshot semantics tests.'
@@ -1852,8 +1858,24 @@ tasks.register('versionedStorageIndexRangeSmoke', JavaExec) {
     }
 }
 
+
+tasks.register('versionedStorageOrderByPathSmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
+    mustRunAfter 'versionedStorageIndexRangeSmoke'
+    group = 'verification'
+    description = 'Verifies Phase 15 MVCC ORDER BY path uses ordered provider-owned index when available.'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+    mainClass = 'delosdb.smoke.VersionedStorageOrderByPathSmoke'
+    args layout.buildDirectory.dir('versioned-storage-order-by-path-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('versioned-storage-order-by-path-smoke').get().asFile
+    doFirst {
+        delete file('build/versioned-storage-order-by-path-smoke')
+        workingDir.mkdirs()
+    }
+}
+
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
     description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke', 'versionedStorageWriteConflictSmoke', 'versionedStorageOptimizerPathSmoke', 'versionedStorageIndexRangeSmoke'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke', 'versionedStorageWriteConflictSmoke', 'versionedStorageOptimizerPathSmoke', 'versionedStorageIndexRangeSmoke', 'versionedStorageOrderByPathSmoke'
 }

@@ -399,3 +399,22 @@ Focused checks:
 ./gradlew mvccIndexStatsTest
 ./gradlew versionedStorageOptimizerPathSmoke
 ```
+
+### MVCC ordered-index ORDER BY checkpoint
+
+The experimental `delos_mvcc` path now has a Phase 15 ordered-index `ORDER BY`
+proof. `SELECT * FROM mvcc_table ORDER BY indexed_column` can use the
+provider-owned ordered MVCC index when one exists. Without an index, the bridge
+falls back to a table scan plus a small in-bridge sort.
+
+The index path still treats index entries as candidates. Full ordered scans now
+recheck that the visible row version still belongs to the candidate index bucket,
+which prevents stale update/delete candidates from appearing twice or in the
+wrong order.
+
+Focused checks:
+
+```bash
+./gradlew mvccOrderedIndexOrderByTest
+./gradlew versionedStorageOrderByPathSmoke
+```

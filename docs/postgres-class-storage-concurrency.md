@@ -371,3 +371,21 @@ The recorded path includes visible row count, physical version count,
 dead-version estimate, index candidate count, visible index match count, and
 rough table-scan vs index-lookup cost estimates. This is intentionally a bridge
 checkpoint, not full Derby optimizer path enumeration yet.
+
+### Phase 15 checkpoint: ordered-index ORDER BY path
+
+`delos_mvcc` now uses provider-owned ordered indexes for narrow `ORDER BY`
+queries. This follows the PostgreSQL planner lesson that a B-tree-like ordered
+access path can satisfy ordering without a separate sort, but only when the
+index path remains visibility-safe.
+
+The implementation keeps the PostgreSQL-guided MVCC rule intact: ordered index
+entries are still only candidates. A full ordered index scan rechecks the current
+visible row version and verifies that the row's current indexed value still
+belongs to the candidate bucket. This prevents stale candidates left by updates
+or deletes from producing duplicate rows when the range is unbounded, as in
+`ORDER BY indexed_column`.
+
+This is still provider-owned index behavior. It does not integrate Derby's
+B-tree implementation, does not add full Derby optimizer enumeration, and does
+not change Derby-compatible heap storage.
