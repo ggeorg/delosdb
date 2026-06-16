@@ -18,8 +18,12 @@ tasks.register('compileDelosDbStorageMvcc', JavaCompile) {
     dependsOn ':delosdb-spi:compileDelosDbSpi'
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = mainClassDir
-    classpath = rootProject.files(spiClassDir)
     rootProject.ext.delosdbConfigureJavaCompile(delegate)
+    // delosdbConfigureJavaCompile centralizes Java 21 settings and intentionally
+    // clears the default classpath. Restore the SPI classes afterwards because
+    // this experimental storage module is not a JPMS module yet; it consumes
+    // delosdb-spi as normal compile classpath.
+    classpath = rootProject.files(spiClassDir)
 }
 
 tasks.register('compileDelosDbStorageMvccTests', JavaCompile) {
