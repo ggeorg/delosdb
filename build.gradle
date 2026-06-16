@@ -1632,13 +1632,19 @@ tasks.register('mvccTableScanModelTest') {
 tasks.register('mvccStorageModelTest') {
     group = 'verification'
     description = 'Runs all experimental DelosDB MVCC storage model tests.'
-    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest'
 }
 
 tasks.register('mvccRecoveryLogTest') {
     group = 'verification'
     description = 'Runs the experimental delos_mvcc provider recovery-log tests.'
     dependsOn ':delosdb-storage-mvcc:runMvccRecoveryLogTest'
+}
+
+tasks.register('mvccSnapshotIsolationTest') {
+    group = 'verification'
+    description = 'Runs Phase 9 delos_mvcc snapshot-isolation tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest'
 }
 
 
@@ -1752,8 +1758,23 @@ tasks.register('versionedStorageProviderOwnedIndexSmoke', JavaExec) {
     }
 }
 
+tasks.register('versionedStorageSnapshotIsolationSmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
+    mustRunAfter 'versionedStorageProviderOwnedIndexSmoke'
+    group = 'verification'
+    description = 'Verifies Phase 9 READ COMMITTED and REPEATABLE READ snapshot behavior for experimental delos_mvcc storage.'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+    mainClass = 'delosdb.smoke.VersionedStorageSnapshotIsolationSmoke'
+    args layout.buildDirectory.dir('versioned-storage-snapshot-isolation-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('versioned-storage-snapshot-isolation-smoke').get().asFile
+    doFirst {
+        delete file('build/versioned-storage-snapshot-isolation-smoke')
+        workingDir.mkdirs()
+    }
+}
+
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
     description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke'
 }
