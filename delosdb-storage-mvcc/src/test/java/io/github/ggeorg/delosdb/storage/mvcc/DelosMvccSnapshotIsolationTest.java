@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
 
@@ -17,14 +18,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * <p>The PostgreSQL-guided rule is: READ COMMITTED uses a fresh snapshot per
  * statement, while REPEATABLE READ keeps the transaction snapshot stable. The
  * provider exposes the primitive needed by the SQL bridge through
- * {@link DelosMvccTransactionCoordinator#refresh(io.github.ggeorg.delosdb.spi.storage.versioned.TxContext)}.</p>
+ * {@link VersionedTransactionCoordinator#refresh(TxContext)}.</p>
  */
 public final class DelosMvccSnapshotIsolationTest {
     @Test
     public void testRefreshCapturesFreshReadCommittedStatementSnapshot() {
         DelosMvccStorageProvider provider = new DelosMvccStorageProvider();
         VersionedTable<Long, List<Object>> table = provider.createTable(new VersionedTableMetadata("app", "snapshots"));
-        DelosMvccTransactionCoordinator coordinator = provider.transactionCoordinator();
+        VersionedTransactionCoordinator coordinator = provider.transactionCoordinator();
 
         TxContext seed = coordinator.begin();
         table.insert(1L, List.of(1, "alpha"), seed);
@@ -50,7 +51,7 @@ public final class DelosMvccSnapshotIsolationTest {
     public void testRefreshedSnapshotKeepsOwnWritesVisible() {
         DelosMvccStorageProvider provider = new DelosMvccStorageProvider();
         VersionedTable<Long, List<Object>> table = provider.createTable(new VersionedTableMetadata("app", "own_writes"));
-        DelosMvccTransactionCoordinator coordinator = provider.transactionCoordinator();
+        VersionedTransactionCoordinator coordinator = provider.transactionCoordinator();
 
         TxContext writerReader = coordinator.begin();
         table.insert(1L, List.of(1, "draft"), writerReader);
@@ -69,7 +70,7 @@ public final class DelosMvccSnapshotIsolationTest {
     public void testRefreshedSnapshotStillHidesActiveWriter() {
         DelosMvccStorageProvider provider = new DelosMvccStorageProvider();
         VersionedTable<Long, List<Object>> table = provider.createTable(new VersionedTableMetadata("app", "active_writer"));
-        DelosMvccTransactionCoordinator coordinator = provider.transactionCoordinator();
+        VersionedTransactionCoordinator coordinator = provider.transactionCoordinator();
 
         TxContext seed = coordinator.begin();
         table.insert(1L, List.of(1, "alpha"), seed);
