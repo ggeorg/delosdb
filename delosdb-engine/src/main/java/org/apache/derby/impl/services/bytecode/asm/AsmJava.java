@@ -24,8 +24,11 @@ package org.apache.derby.impl.services.bytecode.asm;
 import java.lang.reflect.Modifier;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.apache.derby.iapi.services.classfile.VMOpcode;
 import org.apache.derby.iapi.services.compiler.ClassBuilder;
 import org.apache.derby.iapi.services.compiler.JavaFactory;
@@ -62,7 +65,8 @@ public final class AsmJava implements JavaFactory {
         private final String fullName;
         private final String internalName;
         private final String superClass;
-        private final ClassWriter classWriter;
+        private final DelosAsmClassWriter classWriter;
+        private final Map<String, String> knownSuperClasses = new HashMap<>();
         private final List<AsmMethodBuilder> methods = new ArrayList<>();
         private boolean hasConstructor;
         private byte[] classBytes;
@@ -75,7 +79,8 @@ public final class AsmJava implements JavaFactory {
             this.fullName = safePackageName + className;
             this.internalName = internalName(this.fullName);
             this.superClass = superClass == null ? "java.lang.Object" : superClass;
-            this.classWriter = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+            knownSuperClasses.put(internalName, internalName(this.superClass));
+            this.classWriter = new DelosAsmClassWriter(knownSuperClasses);
             classWriter.visit(Opcodes.V21, modifiers, internalName, null, internalName(this.superClass), null);
         }
 
@@ -148,8 +153,81 @@ public final class AsmJava implements JavaFactory {
             return method;
         }
 
-        private MethodVisitor visitMethod(int modifiers, String returnType, String methodName, String[] parms) {
-            return classWriter.visitMethod(modifiers, methodName, methodDescriptor(returnType, parms), null, null);
+        private MethodVisitor visitMethod(int modifiers, String returnType, String methodName, String[] parms,
+                List<String> thrownExceptions) {
+            String[] exceptions = thrownExceptions.isEmpty() ? null
+                    : thrownExceptions.stream().map(AsmJava::internalName).toArray(String[]::new);
+            return classWriter.visitMethod(modifiers, methodName, methodDescriptor(returnType, parms), null, exceptions);
+        }
+    }
+
+    private static final class DelosAsmClassWriter extends ClassWriter {
+        private final Map<String, String> knownSuperClasses;
+
+        private DelosAsmClassWriter(Map<String, String> knownSuperClasses) {
+            super(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+            this.knownSuperClasses = knownSuperClasses;
+        }
+
+        @Override
+        protected String getCommonSuperClass(String type1, String type2) {
+            if (type1.equals(type2)) {
+                return type1;
+            }
+            if (isAssignableFrom(type1, type2)) {
+                return type1;
+            }
+            if (isAssignableFrom(type2, type1)) {
+                return type2;
+            }
+            String reflective = reflectiveCommonSuperClass(type1, type2);
+            return reflective == null ? "java/lang/Object" : reflective;
+        }
+
+        private boolean isAssignableFrom(String possibleSuperType, String possibleSubType) {
+            String current = possibleSubType;
+            while (current != null) {
+                if (possibleSuperType.equals(current)) {
+                    return true;
+                }
+                current = knownSuperClasses.get(current);
+            }
+            return false;
+        }
+
+        private String reflectiveCommonSuperClass(String type1, String type2) {
+            try {
+                Class<?> class1 = load(type1);
+                Class<?> class2 = load(type2);
+                if (class1.isAssignableFrom(class2)) {
+                    return type1;
+                }
+                if (class2.isAssignableFrom(class1)) {
+                    return type2;
+                }
+                if (class1.isInterface() || class2.isInterface()) {
+                    return "java/lang/Object";
+                }
+                do {
+                    class1 = class1.getSuperclass();
+                } while (class1 != null && !class1.isAssignableFrom(class2));
+                return class1 == null ? "java/lang/Object" : internalName(class1.getName());
+            } catch (ClassNotFoundException | LinkageError e) {
+                return null;
+            }
+        }
+
+        private Class<?> load(String internalName) throws ClassNotFoundException {
+            String className = internalName.replace('/', '.');
+            ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+            if (contextLoader != null) {
+                try {
+                    return Class.forName(className, false, contextLoader);
+                } catch (ClassNotFoundException ignored) {
+                    // Fall back to the engine loader below.
+                }
+            }
+            return Class.forName(className, false, AsmJava.class.getClassLoader());
         }
     }
 
@@ -163,38 +241,52 @@ public final class AsmJava implements JavaFactory {
     private static final class ConditionalState {
         private final Label elseLabel = new Label();
         private final Label endLabel = new Label();
+        private final List<String> entryStack;
+        private List<String> thenStack;
+        private boolean hasElse;
+
+        private ConditionalState(List<String> entryStack) {
+            this.entryStack = new ArrayList<>(entryStack);
+        }
     }
 
     private static final class AsmMethodBuilder implements MethodBuilder {
         private final AsmClassBuilder owner;
+        private final int modifiers;
         private final String name;
         private final String returnType;
         private final String[] parameterTypes;
         private final boolean isStatic;
-        private final MethodVisitor mv;
+        private MethodVisitor mv;
+        private final List<String> thrownExceptions = new ArrayList<>();
         private final List<String> stackTypes = new ArrayList<>();
         private final Deque<String> pendingNewTypes = new ArrayDeque<>();
         private final Deque<ConditionalState> conditionals = new ArrayDeque<>();
+        private int nextLocalSlot;
+        private boolean codeStarted;
         private boolean complete;
 
         private AsmMethodBuilder(AsmClassBuilder owner, int modifiers, String returnType, String name,
                 String[] parameterTypes) {
             this.owner = owner;
+            this.modifiers = modifiers;
             this.name = name;
             this.returnType = returnType == null ? "void" : returnType;
             this.parameterTypes = parameterTypes == null ? new String[0] : parameterTypes.clone();
             this.isStatic = Modifier.isStatic(modifiers);
-            this.mv = owner.visitMethod(modifiers, this.returnType, name, this.parameterTypes);
-            this.mv.visitCode();
+            this.nextLocalSlot = this.isStatic ? 0 : 1;
+            for (String parameterType : this.parameterTypes) {
+                this.nextLocalSlot += localSlotWidth(parameterType);
+            }
         }
 
         @Override
         public void addThrownException(String exceptionClass) {
-            // Checked-exception metadata is not needed for JVM execution. Derby's
-            // compiler records it for source-equivalent method signatures; the
-            // experimental ASM backend can safely omit it while we are proving the
-            // execution path. A later parity phase can preserve the Exceptions
-            // attribute if diagnostics require it.
+            if (codeStarted) {
+                throw new IllegalStateException("Thrown exceptions must be declared before bytecode is emitted for "
+                        + name);
+            }
+            thrownExceptions.add(exceptionClass);
         }
 
         @Override
@@ -205,10 +297,19 @@ public final class AsmJava implements JavaFactory {
         @Override
         public void complete() {
             if (!complete) {
-                mv.visitMaxs(0, 0);
-                mv.visitEnd();
+                methodVisitor().visitMaxs(0, 0);
+                methodVisitor().visitEnd();
                 complete = true;
             }
+        }
+
+        private MethodVisitor methodVisitor() {
+            if (mv == null) {
+                mv = owner.visitMethod(modifiers, returnType, name, parameterTypes, thrownExceptions);
+                mv.visitCode();
+            }
+            codeStarted = true;
+            return mv;
         }
 
         private boolean isComplete() {
@@ -222,7 +323,7 @@ public final class AsmJava implements JavaFactory {
                 slot += localSlotWidth(parameterTypes[i]);
             }
             String parameterType = parameterTypes[id];
-            mv.visitVarInsn(loadOpcode(parameterType), slot);
+            methodVisitor().visitVarInsn(loadOpcode(parameterType), slot);
             pushType(parameterType);
         }
 
@@ -234,7 +335,7 @@ public final class AsmJava implements JavaFactory {
 
         @Override
         public void push(boolean value) {
-            mv.visitInsn(value ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+            methodVisitor().visitInsn(value ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
             pushType("boolean");
         }
 
@@ -247,20 +348,20 @@ public final class AsmJava implements JavaFactory {
         @Override
         public void push(int value) {
             switch (value) {
-                case -1 -> mv.visitInsn(Opcodes.ICONST_M1);
-                case 0 -> mv.visitInsn(Opcodes.ICONST_0);
-                case 1 -> mv.visitInsn(Opcodes.ICONST_1);
-                case 2 -> mv.visitInsn(Opcodes.ICONST_2);
-                case 3 -> mv.visitInsn(Opcodes.ICONST_3);
-                case 4 -> mv.visitInsn(Opcodes.ICONST_4);
-                case 5 -> mv.visitInsn(Opcodes.ICONST_5);
+                case -1 -> methodVisitor().visitInsn(Opcodes.ICONST_M1);
+                case 0 -> methodVisitor().visitInsn(Opcodes.ICONST_0);
+                case 1 -> methodVisitor().visitInsn(Opcodes.ICONST_1);
+                case 2 -> methodVisitor().visitInsn(Opcodes.ICONST_2);
+                case 3 -> methodVisitor().visitInsn(Opcodes.ICONST_3);
+                case 4 -> methodVisitor().visitInsn(Opcodes.ICONST_4);
+                case 5 -> methodVisitor().visitInsn(Opcodes.ICONST_5);
                 default -> {
                     if (value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE) {
-                        mv.visitIntInsn(Opcodes.BIPUSH, value);
+                        methodVisitor().visitIntInsn(Opcodes.BIPUSH, value);
                     } else if (value >= Short.MIN_VALUE && value <= Short.MAX_VALUE) {
-                        mv.visitIntInsn(Opcodes.SIPUSH, value);
+                        methodVisitor().visitIntInsn(Opcodes.SIPUSH, value);
                     } else {
-                        mv.visitLdcInsn(value);
+                        methodVisitor().visitLdcInsn(value);
                     }
                 }
             }
@@ -270,11 +371,11 @@ public final class AsmJava implements JavaFactory {
         @Override
         public void push(long value) {
             if (value == 0L) {
-                mv.visitInsn(Opcodes.LCONST_0);
+                methodVisitor().visitInsn(Opcodes.LCONST_0);
             } else if (value == 1L) {
-                mv.visitInsn(Opcodes.LCONST_1);
+                methodVisitor().visitInsn(Opcodes.LCONST_1);
             } else {
-                mv.visitLdcInsn(value);
+                methodVisitor().visitLdcInsn(value);
             }
             pushType("long");
         }
@@ -282,13 +383,13 @@ public final class AsmJava implements JavaFactory {
         @Override
         public void push(float value) {
             if (value == 0.0f) {
-                mv.visitInsn(Opcodes.FCONST_0);
+                methodVisitor().visitInsn(Opcodes.FCONST_0);
             } else if (value == 1.0f) {
-                mv.visitInsn(Opcodes.FCONST_1);
+                methodVisitor().visitInsn(Opcodes.FCONST_1);
             } else if (value == 2.0f) {
-                mv.visitInsn(Opcodes.FCONST_2);
+                methodVisitor().visitInsn(Opcodes.FCONST_2);
             } else {
-                mv.visitLdcInsn(value);
+                methodVisitor().visitLdcInsn(value);
             }
             pushType("float");
         }
@@ -296,11 +397,11 @@ public final class AsmJava implements JavaFactory {
         @Override
         public void push(double value) {
             if (value == 0.0d) {
-                mv.visitInsn(Opcodes.DCONST_0);
+                methodVisitor().visitInsn(Opcodes.DCONST_0);
             } else if (value == 1.0d) {
-                mv.visitInsn(Opcodes.DCONST_1);
+                methodVisitor().visitInsn(Opcodes.DCONST_1);
             } else {
-                mv.visitLdcInsn(value);
+                methodVisitor().visitLdcInsn(value);
             }
             pushType("double");
         }
@@ -308,67 +409,70 @@ public final class AsmJava implements JavaFactory {
         @Override
         public void push(String value) {
             if (value == null) {
-                mv.visitInsn(Opcodes.ACONST_NULL);
+                methodVisitor().visitInsn(Opcodes.ACONST_NULL);
             } else {
-                mv.visitLdcInsn(value);
+                methodVisitor().visitLdcInsn(value);
             }
             pushType("java.lang.String");
         }
 
         @Override
         public void pushNull(String className) {
-            mv.visitInsn(Opcodes.ACONST_NULL);
+            methodVisitor().visitInsn(Opcodes.ACONST_NULL);
             pushType(className);
         }
 
         @Override
         public void getField(LocalField field) {
             AsmLocalField asmField = asmField(field);
-            mv.visitVarInsn(Opcodes.ALOAD, 0);
-            mv.visitFieldInsn(Opcodes.GETFIELD, asmField.ownerInternalName(), asmField.name(), asmField.descriptor());
+            methodVisitor().visitVarInsn(Opcodes.ALOAD, 0);
+            methodVisitor().visitFieldInsn(Opcodes.GETFIELD, asmField.ownerInternalName(), asmField.name(), asmField.descriptor());
             pushType(asmField.type());
         }
 
         @Override
         public void getField(String declaringClass, String fieldName, String fieldType) {
             popType();
-            mv.visitFieldInsn(Opcodes.GETFIELD, internalName(declaringClass), fieldName, descriptor(fieldType));
+            methodVisitor().visitFieldInsn(Opcodes.GETFIELD, internalName(declaringClass), fieldName, descriptor(fieldType));
             pushType(fieldType);
         }
 
         @Override
         public void getStaticField(String declaringClass, String fieldName, String fieldType) {
-            mv.visitFieldInsn(Opcodes.GETSTATIC, internalName(declaringClass), fieldName, descriptor(fieldType));
+            methodVisitor().visitFieldInsn(Opcodes.GETSTATIC, internalName(declaringClass), fieldName, descriptor(fieldType));
             pushType(fieldType);
         }
 
         @Override
         public void setField(LocalField field) {
             AsmLocalField asmField = asmField(field);
-            popType();
-            mv.visitVarInsn(Opcodes.ALOAD, 0);
-            mv.visitInsn(Opcodes.SWAP);
-            mv.visitFieldInsn(Opcodes.PUTFIELD, asmField.ownerInternalName(), asmField.name(), asmField.descriptor());
+            String valueType = popType();
+            int temp = storeTemporary(valueType);
+            methodVisitor().visitVarInsn(Opcodes.ALOAD, 0);
+            loadTemporary(valueType, temp);
+            methodVisitor().visitFieldInsn(Opcodes.PUTFIELD, asmField.ownerInternalName(), asmField.name(), asmField.descriptor());
         }
 
         @Override
         public void putField(LocalField field) {
             AsmLocalField asmField = asmField(field);
             String valueType = popType();
-            mv.visitInsn(Opcodes.DUP);
-            mv.visitVarInsn(Opcodes.ALOAD, 0);
-            mv.visitInsn(Opcodes.SWAP);
-            mv.visitFieldInsn(Opcodes.PUTFIELD, asmField.ownerInternalName(), asmField.name(), asmField.descriptor());
+            int temp = storeTemporary(valueType);
+            methodVisitor().visitVarInsn(Opcodes.ALOAD, 0);
+            loadTemporary(valueType, temp);
+            methodVisitor().visitFieldInsn(Opcodes.PUTFIELD, asmField.ownerInternalName(), asmField.name(), asmField.descriptor());
+            loadTemporary(valueType, temp);
             pushType(valueType);
         }
 
         @Override
         public void putField(String fieldName, String fieldType) {
             String valueType = popType();
-            mv.visitInsn(Opcodes.DUP);
-            mv.visitVarInsn(Opcodes.ALOAD, 0);
-            mv.visitInsn(Opcodes.SWAP);
-            mv.visitFieldInsn(Opcodes.PUTFIELD, owner.internalName, fieldName, descriptor(fieldType));
+            int temp = storeTemporary(valueType);
+            methodVisitor().visitVarInsn(Opcodes.ALOAD, 0);
+            loadTemporary(valueType, temp);
+            methodVisitor().visitFieldInsn(Opcodes.PUTFIELD, owner.internalName, fieldName, descriptor(fieldType));
+            loadTemporary(valueType, temp);
             pushType(valueType);
         }
 
@@ -376,15 +480,17 @@ public final class AsmJava implements JavaFactory {
         public void putField(String declaringClass, String fieldName, String fieldType) {
             String valueType = popType();
             popType();
-            mv.visitInsn(Opcodes.DUP_X1);
-            mv.visitFieldInsn(Opcodes.PUTFIELD, internalName(declaringClass), fieldName, descriptor(fieldType));
+            int temp = storeTemporary(valueType);
+            loadTemporary(valueType, temp);
+            methodVisitor().visitFieldInsn(Opcodes.PUTFIELD, internalName(declaringClass), fieldName, descriptor(fieldType));
+            loadTemporary(valueType, temp);
             pushType(valueType);
         }
 
         @Override
         public void pushNewStart(String className) {
-            mv.visitTypeInsn(Opcodes.NEW, internalName(className));
-            mv.visitInsn(Opcodes.DUP);
+            methodVisitor().visitTypeInsn(Opcodes.NEW, internalName(className));
+            methodVisitor().visitInsn(Opcodes.DUP);
             pendingNewTypes.push(className);
         }
 
@@ -392,7 +498,7 @@ public final class AsmJava implements JavaFactory {
         public void pushNewComplete(int numArgs) {
             String className = pendingNewTypes.pop();
             String[] argumentTypes = popArgumentTypes(numArgs);
-            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, internalName(className), "<init>",
+            methodVisitor().visitMethodInsn(Opcodes.INVOKESPECIAL, internalName(className), "<init>",
                     methodDescriptor("void", argumentTypes), false);
             pushType(className);
         }
@@ -402,16 +508,16 @@ public final class AsmJava implements JavaFactory {
             push(size);
             popType();
             if (isPrimitive(className)) {
-                mv.visitIntInsn(Opcodes.NEWARRAY, newArrayType(className));
+                methodVisitor().visitIntInsn(Opcodes.NEWARRAY, newArrayType(className));
             } else {
-                mv.visitTypeInsn(Opcodes.ANEWARRAY, internalName(className));
+                methodVisitor().visitTypeInsn(Opcodes.ANEWARRAY, internalName(className));
             }
             pushType(className + "[]");
         }
 
         @Override
         public void pushThis() {
-            mv.visitVarInsn(Opcodes.ALOAD, 0);
+            methodVisitor().visitVarInsn(Opcodes.ALOAD, 0);
             pushType(owner.fullName);
         }
 
@@ -424,12 +530,12 @@ public final class AsmJava implements JavaFactory {
         public void cast(String className) {
             String current = popType();
             if (!isPrimitive(className)) {
-                mv.visitTypeInsn(Opcodes.CHECKCAST, internalName(className));
+                methodVisitor().visitTypeInsn(Opcodes.CHECKCAST, internalName(className));
                 pushType(className);
                 return;
             }
             if (!current.equals(className)) {
-                castPrimitive(current, className);
+                castPrimitive(methodVisitor(), current, className);
             }
             pushType(className);
         }
@@ -437,14 +543,14 @@ public final class AsmJava implements JavaFactory {
         @Override
         public void isInstanceOf(String className) {
             popType();
-            mv.visitTypeInsn(Opcodes.INSTANCEOF, internalName(className));
+            methodVisitor().visitTypeInsn(Opcodes.INSTANCEOF, internalName(className));
             pushType("boolean");
         }
 
         @Override
         public void pop() {
             String type = popType();
-            mv.visitInsn(localSlotWidth(type) == 2 ? Opcodes.POP2 : Opcodes.POP);
+            methodVisitor().visitInsn(localSlotWidth(type) == 2 ? Opcodes.POP2 : Opcodes.POP);
         }
 
         @Override
@@ -459,36 +565,47 @@ public final class AsmJava implements JavaFactory {
             if (!"void".equals(returnType)) {
                 popType();
             }
-            mv.visitInsn(returnOpcode(returnType));
+            methodVisitor().visitInsn(returnOpcode(returnType));
         }
 
         @Override
         public void conditionalIfNull() {
             popType();
-            ConditionalState conditional = new ConditionalState();
+            ConditionalState conditional = new ConditionalState(stackTypes);
             conditionals.push(conditional);
-            mv.visitJumpInsn(Opcodes.IFNONNULL, conditional.elseLabel);
+            methodVisitor().visitJumpInsn(Opcodes.IFNONNULL, conditional.elseLabel);
         }
 
         @Override
         public void conditionalIf() {
             popType();
-            ConditionalState conditional = new ConditionalState();
+            ConditionalState conditional = new ConditionalState(stackTypes);
             conditionals.push(conditional);
-            mv.visitJumpInsn(Opcodes.IFEQ, conditional.elseLabel);
+            methodVisitor().visitJumpInsn(Opcodes.IFEQ, conditional.elseLabel);
         }
 
         @Override
         public void startElseCode() {
             ConditionalState conditional = conditionals.peek();
-            mv.visitJumpInsn(Opcodes.GOTO, conditional.endLabel);
-            mv.visitLabel(conditional.elseLabel);
+            conditional.thenStack = new ArrayList<>(stackTypes);
+            conditional.hasElse = true;
+            methodVisitor().visitJumpInsn(Opcodes.GOTO, conditional.endLabel);
+            methodVisitor().visitLabel(conditional.elseLabel);
+            stackTypes.clear();
+            stackTypes.addAll(conditional.entryStack);
         }
 
         @Override
         public void completeConditional() {
             ConditionalState conditional = conditionals.pop();
-            mv.visitLabel(conditional.endLabel);
+            List<String> endStack = new ArrayList<>(stackTypes);
+            methodVisitor().visitLabel(conditional.hasElse ? conditional.endLabel : conditional.elseLabel);
+            stackTypes.clear();
+            if (conditional.hasElse) {
+                stackTypes.addAll(mergeStacks(conditional.thenStack, endStack));
+            } else {
+                stackTypes.addAll(mergeStacks(conditional.entryStack, endStack));
+            }
         }
 
         @Override
@@ -508,7 +625,7 @@ public final class AsmJava implements JavaFactory {
                 case VMOpcode.INVOKEINTERFACE -> Opcodes.INVOKEINTERFACE;
                 default -> throw new IllegalArgumentException("Unsupported invocation opcode: " + type);
             };
-            mv.visitMethodInsn(opcode, internalName(ownerType), methodName, methodDescriptor(returnType, argumentTypes),
+            methodVisitor().visitMethodInsn(opcode, internalName(ownerType), methodName, methodDescriptor(returnType, argumentTypes),
                     opcode == Opcodes.INVOKEINTERFACE);
             if (!"void".equals(returnType)) {
                 pushType(returnType);
@@ -531,8 +648,8 @@ public final class AsmJava implements JavaFactory {
 
         @Override
         public void callSuper() {
-            mv.visitVarInsn(Opcodes.ALOAD, 0);
-            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, internalName(owner.superClass), "<init>", "()V", false);
+            methodVisitor().visitVarInsn(Opcodes.ALOAD, 0);
+            methodVisitor().visitMethodInsn(Opcodes.INVOKESPECIAL, internalName(owner.superClass), "<init>", "()V", false);
         }
 
         @Override
@@ -541,7 +658,7 @@ public final class AsmJava implements JavaFactory {
             String elementType = elementType(arrayType);
             push(element);
             popType();
-            mv.visitInsn(arrayLoadOpcode(elementType));
+            methodVisitor().visitInsn(arrayLoadOpcode(elementType));
             pushType(elementType);
         }
 
@@ -549,9 +666,11 @@ public final class AsmJava implements JavaFactory {
         public void setArrayElement(int element) {
             String valueType = popType();
             String arrayType = popType();
+            int temp = storeTemporary(valueType);
             push(element);
-            mv.visitInsn(Opcodes.SWAP);
-            mv.visitInsn(arrayStoreOpcode(valueType));
+            popType();
+            loadTemporary(valueType, temp);
+            methodVisitor().visitInsn(arrayStoreOpcode(valueType));
             if (!elementType(arrayType).equals(valueType) && !isIntLike(elementType(arrayType), valueType)) {
                 throw new IllegalStateException("Array element type mismatch: " + arrayType + " value=" + valueType);
             }
@@ -561,7 +680,10 @@ public final class AsmJava implements JavaFactory {
         public void swap() {
             String valueB = popType();
             String valueA = popType();
-            mv.visitInsn(Opcodes.SWAP);
+            int tempB = storeTemporary(valueB);
+            int tempA = storeTemporary(valueA);
+            loadTemporary(valueB, tempB);
+            loadTemporary(valueA, tempA);
             pushType(valueB);
             pushType(valueA);
         }
@@ -569,7 +691,7 @@ public final class AsmJava implements JavaFactory {
         @Override
         public void dup() {
             String top = peekType();
-            mv.visitInsn(localSlotWidth(top) == 2 ? Opcodes.DUP2 : Opcodes.DUP);
+            methodVisitor().visitInsn(localSlotWidth(top) == 2 ? Opcodes.DUP2 : Opcodes.DUP);
             pushType(top);
         }
 
@@ -607,6 +729,40 @@ public final class AsmJava implements JavaFactory {
         private void replaceTopType(String type) {
             popType();
             pushType(type);
+        }
+
+        private int storeTemporary(String type) {
+            int slot = nextLocalSlot;
+            nextLocalSlot += localSlotWidth(type);
+            methodVisitor().visitVarInsn(storeOpcode(type), slot);
+            return slot;
+        }
+
+        private void loadTemporary(String type, int slot) {
+            methodVisitor().visitVarInsn(loadOpcode(type), slot);
+        }
+
+        private List<String> mergeStacks(List<String> left, List<String> right) {
+            if (left.size() != right.size()) {
+                throw new IllegalStateException("Conditional stack depth mismatch in " + name + ": then="
+                        + left + " else=" + right);
+            }
+            List<String> merged = new ArrayList<>(left.size());
+            for (int i = 0; i < left.size(); i++) {
+                String leftType = left.get(i);
+                String rightType = right.get(i);
+                if (leftType.equals(rightType)) {
+                    merged.add(leftType);
+                } else if (isIntLike(leftType, rightType)) {
+                    merged.add("int");
+                } else if (!isPrimitive(leftType) && !isPrimitive(rightType)) {
+                    merged.add("java.lang.Object");
+                } else {
+                    throw new IllegalStateException("Conditional stack type mismatch in " + name + ": then="
+                            + leftType + " else=" + rightType);
+                }
+            }
+            return merged;
         }
 
         private UnsupportedOperationException unsupported(String operation) {
@@ -670,6 +826,16 @@ public final class AsmJava implements JavaFactory {
         };
     }
 
+    private static int storeOpcode(String type) {
+        return switch (type) {
+            case "boolean", "byte", "char", "short", "int" -> Opcodes.ISTORE;
+            case "long" -> Opcodes.LSTORE;
+            case "float" -> Opcodes.FSTORE;
+            case "double" -> Opcodes.DSTORE;
+            default -> Opcodes.ASTORE;
+        };
+    }
+
     private static int returnOpcode(String type) {
         return switch (type) {
             case "void" -> Opcodes.RETURN;
@@ -703,9 +869,74 @@ public final class AsmJava implements JavaFactory {
         };
     }
 
-    private static void castPrimitive(String from, String to) {
-        throw new UnsupportedOperationException("Experimental ASM backend does not implement primitive cast "
-                + from + " -> " + to + " yet");
+    private static void castPrimitive(MethodVisitor mv, String from, String to) {
+        if (isIntLike(from)) {
+            castFromIntLike(mv, to);
+            return;
+        }
+        switch (from) {
+            case "long" -> castFromLong(mv, to);
+            case "float" -> castFromFloat(mv, to);
+            case "double" -> castFromDouble(mv, to);
+            default -> throw new UnsupportedOperationException("Experimental ASM backend does not implement primitive cast "
+                    + from + " -> " + to);
+        }
+    }
+
+    private static void castFromIntLike(MethodVisitor mv, String to) {
+        switch (to) {
+            case "boolean", "int" -> {
+            }
+            case "byte" -> mv.visitInsn(Opcodes.I2B);
+            case "char" -> mv.visitInsn(Opcodes.I2C);
+            case "short" -> mv.visitInsn(Opcodes.I2S);
+            case "long" -> mv.visitInsn(Opcodes.I2L);
+            case "float" -> mv.visitInsn(Opcodes.I2F);
+            case "double" -> mv.visitInsn(Opcodes.I2D);
+            default -> throw new UnsupportedOperationException("Unsupported primitive cast int -> " + to);
+        }
+    }
+
+    private static void castFromLong(MethodVisitor mv, String to) {
+        switch (to) {
+            case "long" -> {
+            }
+            case "boolean", "byte", "char", "short", "int" -> {
+                mv.visitInsn(Opcodes.L2I);
+                castFromIntLike(mv, to);
+            }
+            case "float" -> mv.visitInsn(Opcodes.L2F);
+            case "double" -> mv.visitInsn(Opcodes.L2D);
+            default -> throw new UnsupportedOperationException("Unsupported primitive cast long -> " + to);
+        }
+    }
+
+    private static void castFromFloat(MethodVisitor mv, String to) {
+        switch (to) {
+            case "float" -> {
+            }
+            case "boolean", "byte", "char", "short", "int" -> {
+                mv.visitInsn(Opcodes.F2I);
+                castFromIntLike(mv, to);
+            }
+            case "long" -> mv.visitInsn(Opcodes.F2L);
+            case "double" -> mv.visitInsn(Opcodes.F2D);
+            default -> throw new UnsupportedOperationException("Unsupported primitive cast float -> " + to);
+        }
+    }
+
+    private static void castFromDouble(MethodVisitor mv, String to) {
+        switch (to) {
+            case "double" -> {
+            }
+            case "boolean", "byte", "char", "short", "int" -> {
+                mv.visitInsn(Opcodes.D2I);
+                castFromIntLike(mv, to);
+            }
+            case "long" -> mv.visitInsn(Opcodes.D2L);
+            case "float" -> mv.visitInsn(Opcodes.D2F);
+            default -> throw new UnsupportedOperationException("Unsupported primitive cast double -> " + to);
+        }
     }
 
     private static int newArrayType(String type) {

@@ -2297,3 +2297,40 @@ tasks.register('asmExperimentalSqlCompilerSmoke', JavaExec) {
         workingDir.mkdirs()
     }
 }
+
+
+def asmEngineBackendHardeningSmokeSourceDir = file('dev/asm-engine-backend-hardening-smoke/src/main/java')
+def asmEngineBackendHardeningSmokeClassesDir = layout.buildDirectory.dir('classes/asm-engine-backend-hardening-smoke')
+
+tasks.register('compileAsmEngineBackendHardeningSmoke', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the ASM engine-backend hardening smoke proof.'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
+    source = files(asmEngineBackendHardeningSmokeSourceDir)
+    destinationDirectory = asmEngineBackendHardeningSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(
+            asmEngineBackendHardeningSmokeSourceDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+}
+
+tasks.register('asmEngineBackendHardeningSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Hardens AsmJava across branch stack merge, custom frame resolution, primitive casts, category-2 values, arrays, swap, and exception metadata.'
+    dependsOn 'compileAsmEngineBackendHardeningSmoke'
+    classpath = files(
+            asmEngineBackendHardeningSmokeClassesDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.AsmEngineBackendHardeningSmoke'
+}
