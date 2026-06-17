@@ -194,7 +194,7 @@ public final class MvccIndexStore implements AutoCloseable {
                         + ", got " + page.pageType() + " at page " + pageNumber);
             }
             for (int slot = 0; slot < page.slotCount(); slot++) {
-                MvccIndexTupleCodec.DecodedIndexTuple decoded = MvccIndexTupleCodec.decode(page.readRecord(slot));
+                MvccIndexTupleCodec.DecodedIndexTuple decoded = MvccIndexTupleCodec.decodeWithKey(page.readRecord(slot));
                 candidates.add(new Candidate(decoded.indexKey(), decoded.tuple()));
             }
         }

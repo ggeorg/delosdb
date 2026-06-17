@@ -44,7 +44,45 @@ final class MvccIndexTupleCodec {
         return encode(keyedTuple, key);
     }
 
-    static DecodedIndexTuple decode(byte[] encoded) {
+    static MvccIndexTuple decode(byte[] encoded) {
+        Objects.requireNonNull(encoded, "encoded");
+        ByteBuffer buffer = ByteBuffer.wrap(encoded);
+        if (buffer.remaining() < minimumRecordLength()) {
+            throw new IllegalArgumentException("durable MVCC index tuple is too short: " + encoded.length);
+        }
+        int magic = buffer.getInt();
+        if (magic != MAGIC) {
+            throw new IllegalArgumentException("bad durable MVCC index tuple magic: 0x"
+                    + Integer.toHexString(magic));
+        }
+        short version = buffer.getShort();
+        if (version != VERSION) {
+            throw new IllegalArgumentException("unsupported durable MVCC index tuple version: " + version);
+        }
+
+        String indexName = readUtf8(buffer, "index name");
+        short keyType = buffer.getShort();
+        byte[] keyBytes = readBytes(buffer, "index key", Long.BYTES + Long.BYTES + Long.BYTES
+                + Integer.BYTES + Integer.BYTES);
+        // Validate that the typed key can be decoded. The public decode API keeps
+        // the historical A6 contract and returns only the tuple; callers that need
+        // the typed logical key use decodeWithKey(...).
+        decodeKey(keyType, keyBytes);
+
+        MvccIndexTuple tuple = new MvccIndexTuple(
+                indexName,
+                keyBytes,
+                new MvccRowId(buffer.getLong()),
+                new MvccVersionId(buffer.getLong()),
+                new MvccVersionLocator(new MvccPageId(buffer.getLong()), buffer.getInt()),
+                buffer.getInt());
+        if (buffer.hasRemaining()) {
+            throw new IllegalArgumentException("durable MVCC index tuple has trailing bytes: " + buffer.remaining());
+        }
+        return tuple;
+    }
+
+    static DecodedIndexTuple decodeWithKey(byte[] encoded) {
         Objects.requireNonNull(encoded, "encoded");
         ByteBuffer buffer = ByteBuffer.wrap(encoded);
         if (buffer.remaining() < minimumRecordLength()) {
