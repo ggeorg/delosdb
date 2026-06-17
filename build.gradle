@@ -2049,3 +2049,39 @@ tasks.register('asmMethodBuilderParityTest', JavaExec) {
     )
     mainClass = 'org.apache.derbyBuild.asm.AsmMethodBuilderParity'
 }
+
+
+def asmGeneratedSqlSmokeSourceDir = file('dev/asm-generated-sql-smoke/src/main/java')
+def asmGeneratedSqlSmokeClassesDir = layout.buildDirectory.dir('classes/asm-generated-sql-smoke')
+
+tasks.register('compileAsmGeneratedSqlSmoke', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the inactive ASM generated SQL-shape smoke proof.'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
+    source = files(asmGeneratedSqlSmokeSourceDir)
+    destinationDirectory = asmGeneratedSqlSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+}
+
+tasks.register('asmGeneratedSqlSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Proves ASM can emit a Derby GeneratedByteCode activation-shaped class with SQL expression entrypoints.'
+    dependsOn 'compileAsmGeneratedSqlSmoke'
+    classpath = files(
+            asmGeneratedSqlSmokeClassesDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.AsmGeneratedSqlSmoke'
+}
