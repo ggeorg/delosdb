@@ -21,7 +21,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordFlags;
  */
 public final class PageBackedMvccTable implements AutoCloseable {
     private final PageBackedMvccTableStore store;
-    private final MvccRowDirectory directory;
+    private MvccRowDirectory directory;
     private final MvccPageMutationLog mutationLog;
 
     private PageBackedMvccTable(
@@ -141,6 +141,33 @@ public final class PageBackedMvccTable implements AutoCloseable {
         }
         Object visibleIndexKey = indexKeyExtractor.apply(visiblePayload.get());
         return Objects.equals(expectedIndexKey, visibleIndexKey) ? visiblePayload : Optional.empty();
+    }
+
+    public synchronized boolean hasVersion(MvccRowId rowId, MvccVersionId versionId) {
+        return directory.containsVersion(rowId, versionId);
+    }
+
+    public synchronized MvccVacuumResult vacuum(MvccVacuumPlan plan) throws IOException {
+        Objects.requireNonNull(plan, "plan");
+        MvccRowDirectory.VacuumSelection selection = directory.selectVacuum(plan.oldestVisibleThrough());
+        if (selection.removedVersions() == 0) {
+            return new MvccVacuumResult(
+                    0,
+                    0,
+                    0,
+                    directory.physicalVersionCount(),
+                    directory.logicalRowCount());
+        }
+        if (mutationLog != null) {
+            mutationLog.rewriteCheckpoint(selection.retainedRecords());
+        }
+        directory = MvccRowDirectory.fromStoredRecords(store.rewrite(selection.retainedRecords()));
+        return new MvccVacuumResult(
+                selection.removedVersions(),
+                0,
+                selection.removedLogicalRows(),
+                directory.physicalVersionCount(),
+                directory.logicalRowCount());
     }
 
     public synchronized int physicalVersionCount(String key) {

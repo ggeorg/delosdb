@@ -69,6 +69,39 @@ public final class MvccRowDirectory {
         return Optional.empty();
     }
 
+    public synchronized boolean containsVersion(MvccRowId rowId, MvccVersionId versionId) {
+        Objects.requireNonNull(rowId, "rowId");
+        Objects.requireNonNull(versionId, "versionId");
+        for (RowState row : rowsByKey.values()) {
+            if (row.rowId().equals(rowId) && row.containsVersion(versionId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public synchronized VacuumSelection selectVacuum(MvccCommitSequence oldestVisibleThrough) {
+        Objects.requireNonNull(oldestVisibleThrough, "oldestVisibleThrough");
+        List<StoredVersion> retained = new ArrayList<>();
+        int removedVersions = 0;
+        int removedLogicalRows = 0;
+        for (RowState row : rowsByKey.values()) {
+            List<StoredVersion> rowRetained = row.retainedForVacuum(oldestVisibleThrough);
+            retained.addAll(rowRetained);
+            removedVersions += row.versionCount() - rowRetained.size();
+            if (row.versionCount() > 0 && rowRetained.isEmpty()) {
+                removedLogicalRows++;
+            }
+        }
+        retained.sort(Comparator.comparingLong(
+                version -> version.record().header().versionId().value()));
+        List<MvccVersionRecord> retainedRecords = new ArrayList<>();
+        for (StoredVersion version : retained) {
+            retainedRecords.add(version.record());
+        }
+        return new VacuumSelection(retainedRecords, removedVersions, removedLogicalRows);
+    }
+
     public synchronized int physicalVersionCount(String key) {
         RowState row = rowsByKey.get(MvccRowPayload.requireKey(key));
         return row == null ? 0 : row.versionCount();
@@ -125,6 +158,18 @@ public final class MvccRowDirectory {
     private void advanceIds(MvccVersionRecord record) {
         nextRowId = Math.max(nextRowId, record.header().rowId().value() + 1L);
         nextVersionId = Math.max(nextVersionId, record.header().versionId().value() + 1L);
+    }
+
+    public record VacuumSelection(
+            List<MvccVersionRecord> retainedRecords,
+            int removedVersions,
+            int removedLogicalRows) {
+        public VacuumSelection {
+            retainedRecords = List.copyOf(Objects.requireNonNull(retainedRecords, "retainedRecords"));
+            if (removedVersions < 0 || removedLogicalRows < 0) {
+                throw new IllegalArgumentException("vacuum counts must not be negative");
+            }
+        }
     }
 
     public record StoredVersion(MvccVersionLocator locator, MvccVersionRecord record, MvccRowPayload payload) {
@@ -188,6 +233,38 @@ public final class MvccRowDirectory {
                 }
             }
             return Optional.empty();
+        }
+
+        private boolean containsVersion(MvccVersionId versionId) {
+            for (StoredVersion version : newestFirst) {
+                if (version.record().header().versionId().equals(versionId)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private List<StoredVersion> retainedForVacuum(MvccCommitSequence oldestVisibleThrough) {
+            List<StoredVersion> retained = new ArrayList<>();
+            StoredVersion newestVisibleAtHorizon = null;
+            for (StoredVersion version : newestFirst) {
+                MvccCommitSequence commitSequence = version.record().header().commitSequence();
+                if (commitSequence.equals(MvccCommitSequence.NONE)
+                        || !commitSequence.isAtOrBefore(oldestVisibleThrough)) {
+                    retained.add(version);
+                    continue;
+                }
+                if (newestVisibleAtHorizon == null) {
+                    newestVisibleAtHorizon = version;
+                }
+            }
+            if (newestVisibleAtHorizon != null
+                    && !newestVisibleAtHorizon.record().header().isTombstone()) {
+                retained.add(newestVisibleAtHorizon);
+            }
+            retained.sort(Comparator.comparingLong(
+                    (StoredVersion version) -> version.record().header().versionId().value()).reversed());
+            return retained;
         }
 
         private int versionCount() {

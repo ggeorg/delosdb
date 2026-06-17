@@ -1,7 +1,9 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -16,7 +18,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageId;
 public final class PageBackedMvccTableStore implements AutoCloseable {
     private static final int SLOT_OVERHEAD_BYTES = 12;
 
-    private final MvccPageFile pageFile;
+    private MvccPageFile pageFile;
 
     private PageBackedMvccTableStore(MvccPageFile pageFile) {
         this.pageFile = Objects.requireNonNull(pageFile, "pageFile");
@@ -53,6 +55,24 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             }
         }
         return records;
+    }
+
+
+    public synchronized List<StoredVersionRecord> rewrite(List<MvccVersionRecord> records) throws IOException {
+        Objects.requireNonNull(records, "records");
+        Path path = pageFile.path();
+        Path rewritePath = path.resolveSibling(path.getFileName() + ".rewrite");
+        Files.deleteIfExists(rewritePath);
+        try (PageBackedMvccTableStore rewrite = PageBackedMvccTableStore.open(rewritePath)) {
+            for (MvccVersionRecord record : records) {
+                rewrite.append(record);
+            }
+        }
+
+        pageFile.close();
+        Files.move(rewritePath, path, StandardCopyOption.REPLACE_EXISTING);
+        pageFile = MvccPageFile.open(path);
+        return loadAll();
     }
 
     public synchronized long pageCount() throws IOException {

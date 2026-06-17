@@ -432,31 +432,6 @@ tasks.register('runPageBackedMvccTableTest', Test) {
 }
 
 
-tasks.register('runMvccPageRecoveryTest', Test) {
-    group = 'verification'
-    description = 'Runs Phase A5 experimental DelosDB MVCC page-aware recovery tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
-    include '**/MvccPageRecoveryTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccPageRecoveryTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccPageRecoveryTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccPageRecoveryTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat 'full'
-        showStandardStreams = true
-    }
-}
-
 
 tasks.register('runMvccDurableIndexCandidateTest', Test) {
     group = 'verification'
@@ -474,6 +449,57 @@ tasks.register('runMvccDurableIndexCandidateTest', Test) {
         junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccDurableIndexCandidateTest'))
         html.required.set(true)
         html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccDurableIndexCandidateTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+
+tasks.register('runMvccDurableVacuumTest', Test) {
+    group = 'verification'
+    description = 'Runs Phase A7 experimental DelosDB MVCC durable vacuum tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/MvccDurableVacuumTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccDurableVacuumTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccDurableVacuumTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccDurableVacuumTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+tasks.register('runMvccPageRecoveryTest', Test) {
+    group = 'verification'
+    description = 'Runs Phase A5 experimental DelosDB MVCC page-aware recovery tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/MvccPageRecoveryTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccPageRecoveryTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccPageRecoveryTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccPageRecoveryTest'))
     }
 
     testLogging {
@@ -507,5 +533,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccDurableIndexCandidateTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccDurableIndexCandidateTest', 'runMvccDurableVacuumTest'
 }
