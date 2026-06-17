@@ -2114,3 +2114,33 @@ tasks.register('asmFrameComputationSmoke', JavaExec) {
     )
     mainClass = 'org.apache.derbyBuild.asm.AsmFrameComputationSmoke'
 }
+
+
+def asmLargeMethodSmokeSourceDir = file('dev/asm-large-method-smoke/src/main/java')
+def asmLargeMethodSmokeClassesDir = layout.buildDirectory.dir('classes/asm-large-method-smoke')
+
+tasks.register('compileAsmLargeMethodSmoke', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the inactive ASM large generated method splitting smoke proof.'
+    source = files(asmLargeMethodSmokeSourceDir)
+    destinationDirectory = asmLargeMethodSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = configurations.delosdbAsm
+}
+
+tasks.register('asmLargeMethodSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Proves ASM-generated SQL-sized expressions still need method splitting below the JVM 64KB Code limit.'
+    dependsOn 'compileAsmLargeMethodSmoke'
+    classpath = files(
+            asmLargeMethodSmokeClassesDir,
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.AsmLargeMethodSmoke'
+}
+
