@@ -88,6 +88,9 @@ module org.apache.derby.engine
     //
     requires static java.naming;
 
+    // Experimental ASM backend is compiled into the engine but remains inactive until explicitly selected.
+    requires static org.objectweb.asm;
+
     requires static org.osgi.framework;
 
     // DelosDB SPI is required at runtime for internal built-in provider adapters.

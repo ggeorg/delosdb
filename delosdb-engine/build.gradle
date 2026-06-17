@@ -62,7 +62,8 @@ tasks.register('compileDerbyEngine', JavaCompile) {
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             osgiModuleClassDir,
             commonsModuleClassDir,
-            spiModuleClassDir
+            spiModuleClassDir,
+            rootProject.configurations.delosdbAsm
     ])
 }
 

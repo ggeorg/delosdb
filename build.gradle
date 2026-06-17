@@ -2144,3 +2144,40 @@ tasks.register('asmLargeMethodSmoke', JavaExec) {
     mainClass = 'org.apache.derbyBuild.asm.AsmLargeMethodSmoke'
 }
 
+
+
+def asmEngineBackendSmokeSourceDir = file('dev/asm-engine-backend-smoke/src/main/java')
+def asmEngineBackendSmokeClassesDir = layout.buildDirectory.dir('classes/asm-engine-backend-smoke')
+
+tasks.register('compileAsmEngineBackendSmoke', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the inactive ASM engine-backend smoke proof.'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
+    source = files(asmEngineBackendSmokeSourceDir)
+    destinationDirectory = asmEngineBackendSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(
+            asmEngineBackendSmokeSourceDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+}
+
+tasks.register('asmEngineBackendSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Proves the inactive engine-module ASM backend can generate Java 21 bytecode while BCJava remains the default backend.'
+    dependsOn 'compileAsmEngineBackendSmoke'
+    classpath = files(
+            asmEngineBackendSmokeClassesDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.AsmEngineBackendSmoke'
+}
