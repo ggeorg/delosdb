@@ -111,6 +111,18 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return directory.read(key, Objects.requireNonNull(snapshotSequence, "snapshotSequence"));
     }
 
+    public synchronized Optional<MvccRowId> rowIdForKey(String key) {
+        return directory.rowIdForKey(key);
+    }
+
+    public synchronized Optional<MvccVersionId> newestVersionIdForKey(String key) {
+        return directory.newestVersionIdForKey(key);
+    }
+
+    public synchronized Optional<MvccVersionLocator> newestVersionLocatorForKey(String key) {
+        return directory.newestVersionLocatorForKey(key);
+    }
+
     public synchronized java.util.List<MvccRowPayload> visibleRows(MvccCommitSequence snapshotSequence) {
         return directory.visiblePayloads(Objects.requireNonNull(snapshotSequence, "snapshotSequence"));
     }
