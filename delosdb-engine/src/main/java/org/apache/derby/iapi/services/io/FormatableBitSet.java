@@ -645,28 +645,7 @@ public final class FormatableBitSet implements Formatable, Cloneable
 	 * @return the zero-based index of the first set bit in the argument byte
 	 */
 	private static byte firstSet(byte v) {
-		if ((v & 0x80) != 0) {
-			return 0;
-		}
-		if ((v & 0x40) != 0) {
-			return 1;
-		}
-		if ((v & 0x20) != 0) {
-			return 2;
-		}
-		if ((v & 0x10) != 0) {
-			return 3;
-		}
-		if ((v & 0x8) != 0) {
-			return 4;
-		}
-		if ((v & 0x4) != 0) {
-			return 5;
-		}
-		if ((v & 0x2) != 0) {
-			return 6;
-		}
-		return 7;
+		return (byte) Integer.numberOfLeadingZeros((v & 0xff) << 24);
 	}
 
 	/**
