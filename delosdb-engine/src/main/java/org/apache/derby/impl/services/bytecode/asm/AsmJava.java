@@ -432,8 +432,9 @@ public final class AsmJava implements JavaFactory {
 
         @Override
         public void getField(String declaringClass, String fieldName, String fieldType) {
-            popType();
-            methodVisitor().visitFieldInsn(Opcodes.GETFIELD, internalName(declaringClass), fieldName, descriptor(fieldType));
+            String receiverType = popType();
+            String ownerType = fieldOwnerType(declaringClass, receiverType, fieldName);
+            methodVisitor().visitFieldInsn(Opcodes.GETFIELD, internalName(ownerType), fieldName, descriptor(fieldType));
             pushType(fieldType);
         }
 
@@ -479,10 +480,11 @@ public final class AsmJava implements JavaFactory {
         @Override
         public void putField(String declaringClass, String fieldName, String fieldType) {
             String valueType = popType();
-            popType();
+            String receiverType = popType();
+            String ownerType = fieldOwnerType(declaringClass, receiverType, fieldName);
             int temp = storeTemporary(valueType);
             loadTemporary(valueType, temp);
-            methodVisitor().visitFieldInsn(Opcodes.PUTFIELD, internalName(declaringClass), fieldName, descriptor(fieldType));
+            methodVisitor().visitFieldInsn(Opcodes.PUTFIELD, internalName(ownerType), fieldName, descriptor(fieldType));
             loadTemporary(valueType, temp);
             pushType(valueType);
         }
@@ -740,6 +742,18 @@ public final class AsmJava implements JavaFactory {
 
         private void loadTemporary(String type, int slot) {
             methodVisitor().visitVarInsn(loadOpcode(type), slot);
+        }
+
+
+        private String fieldOwnerType(String declaringClass, String receiverType, String fieldName) {
+            if (declaringClass != null) {
+                return declaringClass;
+            }
+            if (receiverType == null) {
+                throw new IllegalStateException("Field " + fieldName
+                        + " was generated without a declaring class and without a receiver type in " + name);
+            }
+            return receiverType;
         }
 
         private List<String> mergeStacks(List<String> left, List<String> right) {

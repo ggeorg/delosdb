@@ -68,6 +68,7 @@ public final class AsmEngineBackendHardeningSmoke {
         LocalField longField = classBuilder.addField("long", "longValue", Modifier.PRIVATE);
         LocalField doubleField = classBuilder.addField("double", "doubleValue", Modifier.PRIVATE);
         LocalField longArrayField = classBuilder.addField("long[]", "longValues", Modifier.PRIVATE);
+        classBuilder.addField("java.lang.String", "receiverResolvedValue", Modifier.PRIVATE);
 
         MethodBuilder constructor = classBuilder.newConstructorBuilder(Modifier.PUBLIC);
         constructor.addThrownException("java.lang.Exception");
@@ -83,6 +84,7 @@ public final class AsmEngineBackendHardeningSmoke {
         buildDoublePutFieldRoundTrip(classBuilder, doubleField);
         buildLongArrayStoreRoundTrip(classBuilder, longArrayField);
         buildReferenceArrayOfArraysRoundTrip(classBuilder);
+        buildReceiverResolvedFieldRoundTrip(classBuilder);
         buildCategoryTwoSwap(classBuilder);
         buildGeneratedHierarchyMerge(classBuilder);
 
@@ -107,6 +109,7 @@ public final class AsmEngineBackendHardeningSmoke {
                 .invoke(instance, 3.25d));
         assertEquals(Long.valueOf(9876543210L), generated.getMethod("longArrayStoreRoundTrip", long.class)
                 .invoke(instance, 9876543210L));
+        assertEquals("receiver", generated.getMethod("receiverResolvedFieldRoundTrip").invoke(instance));
         Object stringArrays = generated.getMethod("referenceArrayOfArraysRoundTrip").invoke(null);
         if (!(stringArrays instanceof String[][] arrays) || arrays.length != 1 || arrays[0].length != 1) {
             throw new AssertionError("referenceArrayOfArraysRoundTrip did not return String[1][1]");
@@ -121,7 +124,7 @@ public final class AsmEngineBackendHardeningSmoke {
 
         System.out.println("ASM engine backend hardening smoke passed: " + GENERATED_FULL_NAME
                 + " classfileMajor=" + Opcodes.V21
-                + " checks=branch-merge,null-merge,primitive-casts,category2-fields,category2-arrays,reference-array-arrays,swap,generated-hierarchy-frames,exceptions");
+                + " checks=branch-merge,null-merge,primitive-casts,category2-fields,category2-arrays,reference-array-arrays,receiver-owned-fields,swap,generated-hierarchy-frames,exceptions");
     }
 
     private static ClassBuilder buildGeneratedBase(JavaFactory javaFactory) {
@@ -225,6 +228,20 @@ public final class AsmEngineBackendHardeningSmoke {
         method.dup();
         method.pushNewArray("java.lang.String", 1);
         method.setArrayElement(0);
+        method.methodReturn();
+        method.complete();
+    }
+
+
+    private static void buildReceiverResolvedFieldRoundTrip(ClassBuilder classBuilder) {
+        MethodBuilder method = classBuilder.newMethodBuilder(Modifier.PUBLIC,
+                "java.lang.String", "receiverResolvedFieldRoundTrip", new String[0]);
+        method.pushThis();
+        method.push("receiver");
+        method.putField((String) null, "receiverResolvedValue", "java.lang.String");
+        method.pop();
+        method.pushThis();
+        method.getField((String) null, "receiverResolvedValue", "java.lang.String");
         method.methodReturn();
         method.complete();
     }
