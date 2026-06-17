@@ -2085,3 +2085,32 @@ tasks.register('asmGeneratedSqlSmoke', JavaExec) {
     )
     mainClass = 'org.apache.derbyBuild.asm.AsmGeneratedSqlSmoke'
 }
+
+
+def asmFrameComputationSmokeSourceDir = file('dev/asm-frame-computation-smoke/src/main/java')
+def asmFrameComputationSmokeClassesDir = layout.buildDirectory.dir('classes/asm-frame-computation-smoke')
+
+tasks.register('compileAsmFrameComputationSmoke', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the inactive ASM frame-computation and class-loader smoke proof.'
+    source = files(asmFrameComputationSmokeSourceDir)
+    destinationDirectory = asmFrameComputationSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = configurations.delosdbAsm
+}
+
+tasks.register('asmFrameComputationSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Proves ASM COMPUTE_FRAMES can use a DelosDB-style hierarchy resolver across generated class-loader boundaries.'
+    dependsOn 'compileAsmFrameComputationSmoke'
+    classpath = files(
+            asmFrameComputationSmokeClassesDir,
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.AsmFrameComputationSmoke'
+}
