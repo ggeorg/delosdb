@@ -2181,3 +2181,77 @@ tasks.register('asmEngineBackendSmoke', JavaExec) {
     )
     mainClass = 'org.apache.derbyBuild.asm.AsmEngineBackendSmoke'
 }
+
+
+def asmExperimentalBackendSelectorSmokeSourceDir = file('dev/asm-experimental-backend-selector-smoke/src/main/java')
+def asmExperimentalBackendSelectorSmokeClassesDir = layout.buildDirectory.dir('classes/asm-experimental-backend-selector-smoke')
+
+tasks.register('compileAsmExperimentalBackendSelectorSmoke', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the experimental ASM/BCJava backend-selector smoke proof.'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
+    source = files(asmExperimentalBackendSelectorSmokeSourceDir)
+    destinationDirectory = asmExperimentalBackendSelectorSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(
+            asmExperimentalBackendSelectorSmokeSourceDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+}
+
+tasks.register('asmExperimentalBackendSelectorSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Proves an explicit property can select the inactive ASM backend while BCJava remains the production default.'
+    dependsOn 'compileAsmExperimentalBackendSelectorSmoke'
+    classpath = files(
+            asmExperimentalBackendSelectorSmokeClassesDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.AsmExperimentalBackendSelectorSmoke'
+}
+
+
+def asmEngineSelectorIntegrationSmokeSourceDir = file('dev/asm-engine-selector-integration-smoke/src/main/java')
+def asmEngineSelectorIntegrationSmokeClassesDir = layout.buildDirectory.dir('classes/asm-engine-selector-integration-smoke')
+
+tasks.register('compileAsmEngineSelectorIntegrationSmoke', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the experimental engine-module bytecode backend selector integration smoke.'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
+    source = files(asmEngineSelectorIntegrationSmokeSourceDir)
+    destinationDirectory = asmEngineSelectorIntegrationSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(
+            asmEngineSelectorIntegrationSmokeSourceDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+}
+
+tasks.register('asmEngineSelectorIntegrationSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Proves the engine-module experimental bytecode backend selector can choose ASM while BCJava remains the production default.'
+    dependsOn 'compileAsmEngineSelectorIntegrationSmoke'
+    classpath = files(
+            asmEngineSelectorIntegrationSmokeClassesDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.AsmEngineSelectorIntegrationSmoke'
+}
