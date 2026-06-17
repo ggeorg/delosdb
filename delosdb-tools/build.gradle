@@ -99,7 +99,8 @@ tasks.register('compileDerbyTools', JavaCompile) {
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             commonsModuleClassDir,
             engineModuleClassDir,
-            clientModuleClassDir
+            clientModuleClassDir,
+            rootProject.configurations.delosdbAsm
     ])
 }
 

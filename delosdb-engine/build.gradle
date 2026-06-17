@@ -77,7 +77,8 @@ tasks.register('compileClassSizeCatalog', JavaCompile) {
             commonsModuleClassDir,
             moduleClassDir,
             osgiModuleClassDir,
-            spiModuleClassDir
+            spiModuleClassDir,
+            rootProject.configurations.delosdbAsm
     ])
 }
 

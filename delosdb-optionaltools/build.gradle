@@ -28,7 +28,8 @@ tasks.register('compileDerbyOptionalTools', JavaCompile) {
             commonsModuleClassDir,
             engineModuleClassDir,
             toolsModuleClassDir,
-            externalModulePath
+            externalModulePath,
+            rootProject.configurations.delosdbAsm
     ])
 }
 

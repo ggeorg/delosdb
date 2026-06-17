@@ -75,7 +75,8 @@ def thirdPartyTestModules = rootProject.files(
         'tools/java/json_simple-1.1.jar',
         'tools/java/lucene-analyzers-common.jar',
         'tools/java/lucene-core.jar',
-        'tools/java/lucene-queryparser.jar'
+        'tools/java/lucene-queryparser.jar',
+        rootProject.configurations.delosdbAsm
 )
 
 // Execute the inherited Derby JUnit suite against the assembled runtime jars,

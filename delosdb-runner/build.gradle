@@ -21,7 +21,8 @@ tasks.register('compileDerbyRunner', JavaCompile) {
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             commonsModuleClassDir,
             toolsModuleClassDir,
-            serverModuleClassDir
+            serverModuleClassDir,
+            rootProject.configurations.delosdbAsm
     ])
 }
 

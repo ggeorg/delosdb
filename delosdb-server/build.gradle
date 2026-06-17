@@ -29,7 +29,8 @@ tasks.register('compileDerbyServer', JavaCompile) {
             commonsModuleClassDir,
             engineModuleClassDir,
             toolsModuleClassDir,
-            externalModulePath
+            externalModulePath,
+            rootProject.configurations.delosdbAsm
     ])
 }
 
