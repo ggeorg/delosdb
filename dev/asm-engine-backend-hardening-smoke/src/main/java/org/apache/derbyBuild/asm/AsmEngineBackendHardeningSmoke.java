@@ -69,6 +69,8 @@ public final class AsmEngineBackendHardeningSmoke {
         LocalField doubleField = classBuilder.addField("double", "doubleValue", Modifier.PRIVATE);
         LocalField longArrayField = classBuilder.addField("long[]", "longValues", Modifier.PRIVATE);
         classBuilder.addField("java.lang.String", "receiverResolvedValue", Modifier.PRIVATE);
+        LocalField postConstructedFinalField = classBuilder.addField("java.lang.String", "postConstructedFinalValue",
+                Modifier.PRIVATE | Modifier.FINAL);
 
         MethodBuilder constructor = classBuilder.newConstructorBuilder(Modifier.PUBLIC);
         constructor.addThrownException("java.lang.Exception");
@@ -85,6 +87,8 @@ public final class AsmEngineBackendHardeningSmoke {
         buildLongArrayStoreRoundTrip(classBuilder, longArrayField);
         buildReferenceArrayOfArraysRoundTrip(classBuilder);
         buildReceiverResolvedFieldRoundTrip(classBuilder);
+        buildPostConstructorFinalFieldWrite(classBuilder, postConstructedFinalField);
+        buildStatementLimitProbe(classBuilder);
         buildCategoryTwoSwap(classBuilder);
         buildGeneratedHierarchyMerge(classBuilder);
 
@@ -110,6 +114,11 @@ public final class AsmEngineBackendHardeningSmoke {
         assertEquals(Long.valueOf(9876543210L), generated.getMethod("longArrayStoreRoundTrip", long.class)
                 .invoke(instance, 9876543210L));
         assertEquals("receiver", generated.getMethod("receiverResolvedFieldRoundTrip").invoke(instance));
+        generated.getMethod("postConstructor").invoke(instance);
+        assertEquals("post-constructed", generated.getMethod("postConstructedFinalValue").invoke(instance));
+        if (Modifier.isFinal(generated.getDeclaredField("postConstructedFinalValue").getModifiers())) {
+            throw new AssertionError("ASM emitted a non-static postConstructor field as final");
+        }
         Object stringArrays = generated.getMethod("referenceArrayOfArraysRoundTrip").invoke(null);
         if (!(stringArrays instanceof String[][] arrays) || arrays.length != 1 || arrays[0].length != 1) {
             throw new AssertionError("referenceArrayOfArraysRoundTrip did not return String[1][1]");
@@ -124,7 +133,7 @@ public final class AsmEngineBackendHardeningSmoke {
 
         System.out.println("ASM engine backend hardening smoke passed: " + GENERATED_FULL_NAME
                 + " classfileMajor=" + Opcodes.V21
-                + " checks=branch-merge,null-merge,primitive-casts,category2-fields,category2-arrays,reference-array-arrays,receiver-owned-fields,swap,generated-hierarchy-frames,exceptions");
+                + " checks=branch-merge,null-merge,primitive-casts,category2-fields,category2-arrays,reference-array-arrays,receiver-owned-fields,postconstructor-fields,statement-limit,swap,generated-hierarchy-frames,exceptions");
     }
 
     private static ClassBuilder buildGeneratedBase(JavaFactory javaFactory) {
@@ -242,6 +251,34 @@ public final class AsmEngineBackendHardeningSmoke {
         method.pop();
         method.pushThis();
         method.getField((String) null, "receiverResolvedValue", "java.lang.String");
+        method.methodReturn();
+        method.complete();
+    }
+
+    private static void buildPostConstructorFinalFieldWrite(ClassBuilder classBuilder, LocalField postConstructedFinalField) {
+        MethodBuilder postConstructor = classBuilder.newMethodBuilder(Modifier.PUBLIC, "void", "postConstructor");
+        postConstructor.push("post-constructed");
+        postConstructor.setField(postConstructedFinalField);
+        postConstructor.methodReturn();
+        postConstructor.complete();
+
+        MethodBuilder reader = classBuilder.newMethodBuilder(Modifier.PUBLIC, "java.lang.String", "postConstructedFinalValue");
+        reader.getField(postConstructedFinalField);
+        reader.methodReturn();
+        reader.complete();
+    }
+
+    private static void buildStatementLimitProbe(ClassBuilder classBuilder) {
+        MethodBuilder method = classBuilder.newMethodBuilder(Modifier.PUBLIC | Modifier.STATIC,
+                "void", "statementLimitProbe", new String[0]);
+        for (int i = 0; i < 2049; i++) {
+            if (method.statementNumHitLimit(1)) {
+                throw new AssertionError("ASM statement limit tripped too early at statement " + i);
+            }
+        }
+        if (!method.statementNumHitLimit(1)) {
+            throw new AssertionError("ASM statement limit did not trip after Derby's 2K constructor threshold");
+        }
         method.methodReturn();
         method.complete();
     }

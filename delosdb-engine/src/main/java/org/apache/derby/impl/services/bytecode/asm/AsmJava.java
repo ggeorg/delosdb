@@ -87,7 +87,8 @@ public final class AsmJava implements JavaFactory {
         @Override
         public LocalField addField(String type, String name, int modifiers) {
             AsmLocalField field = new AsmLocalField(internalName, type, name, descriptor(type));
-            classWriter.visitField(modifiers, name, field.descriptor(), null, null).visitEnd();
+            int asmFieldModifiers = fieldModifiers(modifiers);
+            classWriter.visitField(asmFieldModifiers, name, field.descriptor(), null, null).visitEnd();
             return field;
         }
 
@@ -151,6 +152,19 @@ public final class AsmJava implements JavaFactory {
             AsmMethodBuilder method = new AsmMethodBuilder(this, modifiers, null, "<init>", parms);
             methods.add(method);
             return method;
+        }
+
+        private static int fieldModifiers(int modifiers) {
+            if (Modifier.isStatic(modifiers)) {
+                return modifiers;
+            }
+            // Derby generated activations initialize many instance fields from
+            // postConstructor(), not from <init>. On modern classfile versions,
+            // writing a non-static final field outside <init> throws
+            // IllegalAccessError. BCJava emits old classfiles where that pattern
+            // was tolerated, but ASM emits Java 21 classfiles, so non-static
+            // generated fields must be mutable.
+            return modifiers & ~Modifier.FINAL;
         }
 
         private MethodVisitor visitMethod(int modifiers, String returnType, String methodName, String[] parms,
@@ -264,6 +278,7 @@ public final class AsmJava implements JavaFactory {
         private final Deque<ConditionalState> conditionals = new ArrayDeque<>();
         private int nextLocalSlot;
         private boolean codeStarted;
+        private int statementNum;
         private boolean complete;
 
         private AsmMethodBuilder(AsmClassBuilder owner, int modifiers, String returnType, String name,
@@ -699,6 +714,10 @@ public final class AsmJava implements JavaFactory {
 
         @Override
         public boolean statementNumHitLimit(int noStatementsAdded) {
+            if (statementNum > 2048) {
+                return true;
+            }
+            statementNum += noStatementsAdded;
             return false;
         }
 
