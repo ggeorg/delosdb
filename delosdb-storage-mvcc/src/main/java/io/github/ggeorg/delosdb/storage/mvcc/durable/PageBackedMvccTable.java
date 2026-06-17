@@ -8,6 +8,7 @@ import java.util.function.Function;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccWriteConflictException;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccTupleHeader;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
@@ -68,8 +69,8 @@ public final class PageBackedMvccTable implements AutoCloseable {
     public synchronized MvccIndexTuple insertCommitted(String key, byte[] value, long transactionId, long commitSequence)
             throws IOException {
         requireCommittedSequence(commitSequence);
-        if (readPayload(key, new MvccCommitSequence(commitSequence)).isPresent()) {
-            throw new IllegalStateException("row already visible at commit sequence " + commitSequence + ": " + key);
+        if (directory.rowIdForKey(key).isPresent()) {
+            throw new MvccWriteConflictException("logical row already exists in durable page store: " + key);
         }
         return appendVersion(key, value, directory.nextRowId(), MvccVersionId.NONE, transactionId, 0L, commitSequence, 0);
     }
@@ -93,12 +94,59 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return appendVersion(key, value, rowId, previous, transactionId, 0L, commitSequence, 0);
     }
 
+    /**
+     * Appends an update only if the caller still owns the current newest row
+     * version observed by its write snapshot. This is the durable-table
+     * compare-and-append primitive used by the A8 concurrency proof: two same-row
+     * writers racing from the same predecessor cannot both succeed.
+     */
+    public synchronized MvccIndexTuple updateCommittedIfCurrentVersion(
+            String key,
+            String value,
+            MvccVersionId expectedCurrentVersionId,
+            long transactionId,
+            long commitSequence) throws IOException {
+        return updateCommittedIfCurrentVersion(
+                key, stringBytes(value), expectedCurrentVersionId, transactionId, commitSequence);
+    }
+
+    /**
+     * Binary-payload overload for durable SQL row codecs.
+     */
+    public synchronized MvccIndexTuple updateCommittedIfCurrentVersion(
+            String key,
+            byte[] value,
+            MvccVersionId expectedCurrentVersionId,
+            long transactionId,
+            long commitSequence) throws IOException {
+        requireCommittedSequence(commitSequence);
+        MvccRowId rowId = rowIdForExistingKey(key, "update");
+        MvccVersionId previous = requireExpectedCurrentVersion(key, expectedCurrentVersionId, "update");
+        return appendVersion(key, value, rowId, previous, transactionId, 0L, commitSequence, 0);
+    }
+
     public synchronized MvccIndexTuple deleteCommitted(String key, long transactionId, long commitSequence) throws IOException {
         requireCommittedSequence(commitSequence);
         MvccRowId rowId = directory.rowIdForKey(key)
                 .orElseThrow(() -> new IllegalStateException("cannot delete missing row: " + key));
         MvccVersionId previous = directory.newestVersionIdForKey(key)
                 .orElseThrow(() -> new IllegalStateException("cannot delete row without versions: " + key));
+        return appendVersion(key, new byte[0], rowId, previous, transactionId, transactionId, commitSequence,
+                MvccVersionRecordFlags.TOMBSTONE);
+    }
+
+    /**
+     * Appends a tombstone only if the row still has the predecessor observed by
+     * the deleting writer.
+     */
+    public synchronized MvccIndexTuple deleteCommittedIfCurrentVersion(
+            String key,
+            MvccVersionId expectedCurrentVersionId,
+            long transactionId,
+            long commitSequence) throws IOException {
+        requireCommittedSequence(commitSequence);
+        MvccRowId rowId = rowIdForExistingKey(key, "delete");
+        MvccVersionId previous = requireExpectedCurrentVersion(key, expectedCurrentVersionId, "delete");
         return appendVersion(key, new byte[0], rowId, previous, transactionId, transactionId, commitSequence,
                 MvccVersionRecordFlags.TOMBSTONE);
     }
@@ -189,6 +237,26 @@ public final class PageBackedMvccTable implements AutoCloseable {
     @Override
     public synchronized void close() throws IOException {
         store.close();
+    }
+
+    private MvccRowId rowIdForExistingKey(String key, String operation) {
+        return directory.rowIdForKey(key)
+                .orElseThrow(() -> new MvccWriteConflictException("cannot " + operation + " missing row: " + key));
+    }
+
+    private MvccVersionId requireExpectedCurrentVersion(
+            String key,
+            MvccVersionId expectedCurrentVersionId,
+            String operation) {
+        Objects.requireNonNull(expectedCurrentVersionId, "expectedCurrentVersionId");
+        MvccVersionId current = directory.newestVersionIdForKey(key)
+                .orElseThrow(() -> new MvccWriteConflictException(
+                        "cannot " + operation + " row without versions: " + key));
+        if (!current.equals(expectedCurrentVersionId)) {
+            throw new MvccWriteConflictException("cannot " + operation + " row " + key
+                    + " from stale version " + expectedCurrentVersionId + "; current version is " + current);
+        }
+        return current;
     }
 
     private MvccIndexTuple appendVersion(
