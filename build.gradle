@@ -1978,3 +1978,74 @@ tasks.register('mvccVersionedStorageProviderTest') {
     description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
     dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke', 'versionedStorageWriteConflictSmoke', 'versionedStorageOptimizerPathSmoke', 'versionedStorageIndexRangeSmoke', 'versionedStorageOrderByPathSmoke', 'versionedStorageDurableSqlSmoke'
 }
+
+def asmMethodBuilderSmokeSourceDir = file('dev/asm-methodbuilder-smoke/src/main/java')
+def asmMethodBuilderSmokeClassesDir = layout.buildDirectory.dir('classes/asm-methodbuilder-smoke')
+
+tasks.register('compileAsmMethodBuilderSmoke', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the inactive ASM MethodBuilder adapter smoke proof.'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
+    source = files(asmMethodBuilderSmokeSourceDir)
+    destinationDirectory = asmMethodBuilderSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+}
+
+tasks.register('asmMethodBuilderSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Proves an inactive ASM adapter can implement a small JavaFactory/ClassBuilder/MethodBuilder subset.'
+    dependsOn 'compileAsmMethodBuilderSmoke'
+    classpath = files(
+            asmMethodBuilderSmokeClassesDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.AsmMethodBuilderSmoke'
+}
+
+
+def asmMethodBuilderParitySourceDir = file('dev/asm-methodbuilder-parity/src/main/java')
+def asmMethodBuilderParityClassesDir = layout.buildDirectory.dir('classes/asm-methodbuilder-parity')
+
+tasks.register('compileAsmMethodBuilderParity', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the inactive ASM MethodBuilder parity proof against Derby BCJava.'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
+    source = files(asmMethodBuilderParitySourceDir)
+    destinationDirectory = asmMethodBuilderParityClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+}
+
+tasks.register('asmMethodBuilderParityTest', JavaExec) {
+    group = 'verification'
+    description = 'Compares selected BCJava MethodBuilder behavior with an inactive ASM MethodBuilder implementation.'
+    dependsOn 'compileAsmMethodBuilderParity'
+    classpath = files(
+            asmMethodBuilderParityClassesDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.AsmMethodBuilderParity'
+}
