@@ -1,6 +1,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -36,12 +37,27 @@ public final class MvccDurableIndexStore implements AutoCloseable {
         delegate.appendCandidate(tuple);
     }
 
+    /**
+     * Historical A6 API name kept for tests and earlier proof code.
+     */
+    public void append(MvccIndexTuple tuple) throws IOException {
+        delegate.appendCandidate(tuple);
+    }
+
     public List<MvccIndexTuple> lookupCandidates(Object indexKey) throws IOException {
         return delegate.lookupCandidates(indexKey);
     }
 
     public List<MvccIndexTuple> lookupCandidates(String indexName, Object indexKey) throws IOException {
         return delegate.lookupCandidates(indexName, indexKey);
+    }
+
+    /**
+     * Historical A6 API name kept for tests and earlier proof code.
+     */
+    public List<MvccIndexTuple> lookup(String indexName, byte[] indexKey) throws IOException {
+        Objects.requireNonNull(indexKey, "indexKey");
+        return delegate.lookupCandidates(indexName, new String(indexKey, StandardCharsets.UTF_8));
     }
 
     public List<MvccIndexTuple> lookupRangeCandidates(Object fromInclusive, Object toInclusive)
@@ -75,6 +91,13 @@ public final class MvccDurableIndexStore implements AutoCloseable {
 
     public long pageCount() throws IOException {
         return delegate.pageCount();
+    }
+
+    /**
+     * Historical A6 API name kept for tests and earlier proof code.
+     */
+    public List<MvccIndexTuple> loadAll() throws IOException {
+        return delegate.lookupRangeCandidates(null, true, null, true);
     }
 
     public PruneResult pruneCandidates(BiPredicate<Object, MvccIndexTuple> keepPredicate) throws IOException {
