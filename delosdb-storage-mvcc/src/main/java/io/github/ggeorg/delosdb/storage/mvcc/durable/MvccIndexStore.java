@@ -1,12 +1,10 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -17,11 +15,12 @@ import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageFile;
 import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageId;
 
 /**
- * Durable MVCC index-candidate store used by the A7 vacuum proof.
+ * Durable MVCC index-candidate store.
  *
- * <p>The store deliberately keeps the index as a candidate structure: it never
- * decides visibility. A lookup returns row/version candidates and the
- * page-backed heap/version directory remains the source of truth.</p>
+ * <p>The index is deliberately not the visibility authority. It stores and
+ * returns candidates only; the page-backed row/version directory decides whether
+ * a candidate is visible for a snapshot and whether the visible payload still
+ * has the requested index key.</p>
  */
 public final class MvccIndexStore implements AutoCloseable {
     private static final int INDEX_PAGE_TYPE = 2;
@@ -38,23 +37,25 @@ public final class MvccIndexStore implements AutoCloseable {
 
     public static MvccIndexStore open(Path path) throws IOException {
         Objects.requireNonNull(path, "path");
-        return new MvccIndexStore(path, MvccPageFile.open(path));
+        MvccIndexStore store = new MvccIndexStore(path, MvccPageFile.open(path));
+        store.readCandidates(); // validate existing durable bytes eagerly
+        return store;
     }
 
     public synchronized void appendCandidate(Object indexKey, MvccIndexTuple tuple) throws IOException {
-        Objects.requireNonNull(tuple, "tuple");
+        Objects.requireNonNull(indexKey, "indexKey");
         appendTuple(keyedTuple(defaultIndexName(tuple), indexKey, tuple), indexKey);
     }
 
     public synchronized void appendCandidate(String indexName, Object indexKey, MvccIndexTuple tuple)
             throws IOException {
-        Objects.requireNonNull(tuple, "tuple");
+        Objects.requireNonNull(indexName, "indexName");
+        Objects.requireNonNull(indexKey, "indexKey");
         appendTuple(keyedTuple(indexName, indexKey, tuple), indexKey);
     }
 
     public synchronized void appendCandidate(MvccIndexTuple tuple) throws IOException {
-        Objects.requireNonNull(tuple, "tuple");
-        appendTuple(tuple, tupleKey(tuple));
+        appendTuple(Objects.requireNonNull(tuple, "tuple"), tuple.indexKeyAsUtf8());
     }
 
     public synchronized List<MvccIndexTuple> lookupCandidates(Object indexKey) throws IOException {
@@ -84,14 +85,26 @@ public final class MvccIndexStore implements AutoCloseable {
 
     public synchronized List<MvccIndexTuple> lookupRangeCandidates(Object fromInclusive, Object toInclusive)
             throws IOException {
-        List<MvccIndexTuple> matches = new ArrayList<>();
+        return lookupRangeCandidates(fromInclusive, true, toInclusive, true);
+    }
+
+    public synchronized List<MvccIndexTuple> lookupRangeCandidates(
+            Object fromKey,
+            boolean fromInclusive,
+            Object toKey,
+            boolean toInclusive) throws IOException {
+        List<Candidate> matches = new ArrayList<>();
         for (Candidate candidate : readCandidates()) {
-            Object key = candidate.indexKey();
-            if (inRange(key, fromInclusive, toInclusive)) {
-                matches.add(candidate.tuple());
+            if (inRange(candidate.indexKey(), fromKey, fromInclusive, toKey, toInclusive)) {
+                matches.add(candidate);
             }
         }
-        return List.copyOf(matches);
+        matches.sort((left, right) -> compareKeys(left.indexKey(), right.indexKey()));
+        List<MvccIndexTuple> tuples = new ArrayList<>(matches.size());
+        for (Candidate candidate : matches) {
+            tuples.add(candidate.tuple());
+        }
+        return List.copyOf(tuples);
     }
 
     public synchronized int candidateCount() throws IOException {
@@ -109,16 +122,15 @@ public final class MvccIndexStore implements AutoCloseable {
     public synchronized int indexedKeyCount() throws IOException {
         List<Object> distinct = new ArrayList<>();
         for (Candidate candidate : readCandidates()) {
-            Object key = candidate.indexKey();
             boolean seen = false;
             for (Object existing : distinct) {
-                if (sameKey(existing, key)) {
+                if (sameKey(existing, candidate.indexKey())) {
                     seen = true;
                     break;
                 }
             }
             if (!seen) {
-                distinct.add(key);
+                distinct.add(candidate.indexKey());
             }
         }
         return distinct.size();
@@ -138,7 +150,6 @@ public final class MvccIndexStore implements AutoCloseable {
                 retained.add(candidate);
             }
         }
-
         rewrite(retained);
         return new PruneResult(before.size() - retained.size(), retained.size());
     }
@@ -149,7 +160,7 @@ public final class MvccIndexStore implements AutoCloseable {
     }
 
     private void appendTuple(MvccIndexTuple tuple, Object indexKey) throws IOException {
-        byte[] encoded = encode(indexKey, tuple);
+        byte[] encoded = MvccIndexTupleCodec.encode(indexKey, tuple);
         appendEncoded(encoded);
         pageFile.force();
     }
@@ -183,7 +194,8 @@ public final class MvccIndexStore implements AutoCloseable {
                         + ", got " + page.pageType() + " at page " + pageNumber);
             }
             for (int slot = 0; slot < page.slotCount(); slot++) {
-                candidates.add(decode(page.readRecord(slot)));
+                MvccIndexTupleCodec.DecodedIndexTuple decoded = MvccIndexTupleCodec.decode(page.readRecord(slot));
+                candidates.add(new Candidate(decoded.indexKey(), decoded.tuple()));
             }
         }
         return candidates;
@@ -194,12 +206,13 @@ public final class MvccIndexStore implements AutoCloseable {
         Files.deleteIfExists(path);
         pageFile = MvccPageFile.open(path);
         for (Candidate candidate : retained) {
-            appendEncoded(encode(candidate.indexKey(), candidate.tuple()));
+            appendEncoded(MvccIndexTupleCodec.encode(candidate.indexKey(), candidate.tuple()));
         }
         pageFile.force();
     }
 
     private static MvccIndexTuple keyedTuple(String indexName, Object indexKey, MvccIndexTuple tuple) {
+        Objects.requireNonNull(tuple, "tuple");
         return MvccIndexTuple.active(
                 indexName,
                 keyBytes(indexKey),
@@ -209,105 +222,74 @@ public final class MvccIndexStore implements AutoCloseable {
     }
 
     private static String defaultIndexName(MvccIndexTuple tuple) {
-        String existing = tuple.indexName();
-        return existing == null || existing.isBlank() ? DEFAULT_INDEX_NAME : existing;
-    }
-
-    private static Object tupleKey(MvccIndexTuple tuple) {
-        return tuple.indexKeyAsUtf8();
-    }
-
-    private static byte[] encode(Object indexKey, MvccIndexTuple tuple) {
-        try {
-            Method encodeTuple = MvccIndexTupleCodec.class.getDeclaredMethod("encode", MvccIndexTuple.class);
-            encodeTuple.setAccessible(true);
-            return (byte[]) encodeTuple.invoke(null, tuple);
-        } catch (NoSuchMethodException missingTupleOnlyCodec) {
-            try {
-                Method encodeKeyAndTuple = MvccIndexTupleCodec.class.getDeclaredMethod(
-                        "encode", Object.class, MvccIndexTuple.class);
-                encodeKeyAndTuple.setAccessible(true);
-                return (byte[]) encodeKeyAndTuple.invoke(null, indexKey, tuple);
-            } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException failure) {
-                throw codecFailure("encode", failure);
-            }
-        } catch (IllegalAccessException | InvocationTargetException failure) {
-            throw codecFailure("encode", failure);
-        }
-    }
-
-    private static Candidate decode(byte[] encoded) {
-        try {
-            Method decode = MvccIndexTupleCodec.class.getDeclaredMethod("decode", byte[].class);
-            decode.setAccessible(true);
-            Object decoded = decode.invoke(null, encoded);
-            if (decoded instanceof MvccIndexTuple tuple) {
-                return new Candidate(tupleKey(tuple), tuple);
-            }
-
-            Method indexKey = decoded.getClass().getDeclaredMethod("indexKey");
-            Method tuple = decoded.getClass().getDeclaredMethod("tuple");
-            indexKey.setAccessible(true);
-            tuple.setAccessible(true);
-            return new Candidate(indexKey.invoke(decoded), (MvccIndexTuple) tuple.invoke(decoded));
-        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException failure) {
-            throw codecFailure("decode", failure);
-        }
-    }
-
-    private static IllegalStateException codecFailure(String operation, Exception failure) {
-        Throwable cause = failure instanceof InvocationTargetException invocation && invocation.getCause() != null
-                ? invocation.getCause()
-                : failure;
-        return new IllegalStateException("failed to " + operation + " durable MVCC index tuple", cause);
+        Objects.requireNonNull(tuple, "tuple");
+        return tuple.indexName().isBlank() ? DEFAULT_INDEX_NAME : tuple.indexName();
     }
 
     private static byte[] keyBytes(Object indexKey) {
-        Objects.requireNonNull(indexKey, "indexKey");
-        if (indexKey instanceof byte[] bytes) {
-            return bytes.clone();
+        if (indexKey instanceof String value) {
+            return value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
-        return String.valueOf(indexKey).getBytes(StandardCharsets.UTF_8);
+        if (indexKey instanceof Integer value) {
+            return java.nio.ByteBuffer.allocate(Integer.BYTES).putInt(value).array();
+        }
+        if (indexKey instanceof Long value) {
+            return java.nio.ByteBuffer.allocate(Long.BYTES).putLong(value).array();
+        }
+        if (indexKey instanceof byte[] value) {
+            return value.clone();
+        }
+        throw new IllegalArgumentException("unsupported durable MVCC index key type: "
+                + Objects.requireNonNull(indexKey, "indexKey").getClass().getName());
     }
 
     private static boolean sameKey(Object left, Object right) {
         if (left instanceof byte[] leftBytes && right instanceof byte[] rightBytes) {
-            return java.util.Arrays.equals(leftBytes, rightBytes);
+            return Arrays.equals(leftBytes, rightBytes);
         }
-        return Objects.equals(normalizeKey(left), normalizeKey(right));
+        return Objects.equals(left, right);
     }
 
-    private static Object normalizeKey(Object value) {
-        if (value instanceof byte[] bytes) {
-            return new String(bytes, StandardCharsets.UTF_8);
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static int compareKeys(Object left, Object right) {
+        if (left == null && right == null) {
+            return 0;
         }
-        return value;
+        if (left == null) {
+            return -1;
+        }
+        if (right == null) {
+            return 1;
+        }
+        if (left instanceof Comparable comparable && left.getClass().isInstance(right)) {
+            return comparable.compareTo(right);
+        }
+        return String.valueOf(left).compareTo(String.valueOf(right));
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static boolean inRange(Object key, Object fromInclusive, Object toInclusive) {
-        Object normalizedKey = normalizeKey(key);
-        Object normalizedFrom = normalizeKey(fromInclusive);
-        Object normalizedTo = normalizeKey(toInclusive);
-        if (!(normalizedKey instanceof Comparable comparable)) {
-            return Objects.equals(normalizedKey, normalizedFrom) || Objects.equals(normalizedKey, normalizedTo);
+    private static boolean inRange(
+            Object key,
+            Object fromKey,
+            boolean fromInclusive,
+            Object toKey,
+            boolean toInclusive) {
+        if (fromKey != null) {
+            int lower = compareKeys(key, fromKey);
+            if (lower < 0 || (lower == 0 && !fromInclusive)) {
+                return false;
+            }
         }
-        return (normalizedFrom == null || comparable.compareTo(normalizedFrom) >= 0)
-                && (normalizedTo == null || comparable.compareTo(normalizedTo) <= 0);
+        if (toKey != null) {
+            int upper = compareKeys(key, toKey);
+            if (upper > 0 || (upper == 0 && !toInclusive)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String normalizeIndexName(String indexName) {
         return Objects.requireNonNull(indexName, "indexName").toUpperCase(Locale.ROOT);
-    }
-
-    private static int maxPayloadBytes() {
-        return MvccPage.PAGE_SIZE - 28 - SLOT_OVERHEAD_BYTES;
-    }
-
-    private record Candidate(Object indexKey, MvccIndexTuple tuple) {
-        private Candidate {
-            tuple = Objects.requireNonNull(tuple, "tuple");
-        }
     }
 
     public record PruneResult(int removedCandidates, int remainingCandidates) {
@@ -315,6 +297,16 @@ public final class MvccIndexStore implements AutoCloseable {
             if (removedCandidates < 0 || remainingCandidates < 0) {
                 throw new IllegalArgumentException("prune counts must not be negative");
             }
+        }
+    }
+
+    private static int maxPayloadBytes() {
+        return MvccPage.empty(new MvccPageId(0L), INDEX_PAGE_TYPE).freeBytes() - SLOT_OVERHEAD_BYTES;
+    }
+
+    private record Candidate(Object indexKey, MvccIndexTuple tuple) {
+        private Candidate {
+            tuple = Objects.requireNonNull(tuple, "tuple");
         }
     }
 }
