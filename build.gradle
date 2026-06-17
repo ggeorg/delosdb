@@ -2255,3 +2255,45 @@ tasks.register('asmEngineSelectorIntegrationSmoke', JavaExec) {
     )
     mainClass = 'org.apache.derbyBuild.asm.AsmEngineSelectorIntegrationSmoke'
 }
+
+
+def asmExperimentalSqlCompilerSmokeSourceDir = file('dev/asm-experimental-sql-compiler-smoke/src/main/java')
+def asmExperimentalSqlCompilerSmokeClassesDir = layout.buildDirectory.dir('classes/asm-experimental-sql-compiler-smoke')
+
+tasks.register('compileAsmExperimentalSqlCompilerSmoke', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the experimental ASM SQL compiler boot-path smoke.'
+    dependsOn 'jars'
+    source = files(asmExperimentalSqlCompilerSmokeSourceDir, smokeUtilsSourceDir)
+    destinationDirectory = asmExperimentalSqlCompilerSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(
+            asmExperimentalSqlCompilerSmokeSourceDir,
+            smokeUtilsSourceDir,
+            runtimeJars(),
+            configurations.delosdbAsm
+    )
+}
+
+tasks.register('asmExperimentalSqlCompilerSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Boots the real SQL compiler through the experimental selector with delosdb.bytecode.backend=asm and executes VALUES 1.'
+    dependsOn 'compileAsmExperimentalSqlCompilerSmoke'
+    classpath = files(
+            asmExperimentalSqlCompilerSmokeClassesDir,
+            runtimeJars(),
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.AsmExperimentalSqlCompilerSmoke'
+    args layout.buildDirectory.dir('asm-experimental-sql-compiler-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('asm-experimental-sql-compiler-smoke').get().asFile
+    doFirst {
+        delete file('build/asm-experimental-sql-compiler-smoke')
+        workingDir.mkdirs()
+    }
+}

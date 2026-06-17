@@ -44,12 +44,15 @@ public final class ExperimentalBytecodeJavaFactory implements JavaFactory, Modul
     public static final String BACKEND_BCJAVA = "bcjava";
     public static final String BACKEND_ASM = "asm";
 
+    private static volatile String lastBootedBackendName;
+
     private JavaFactory delegate;
     private String selectedBackendName;
 
     @Override
     public void boot(boolean create, Properties properties) throws StandardException {
         selectedBackendName = selectBackendName(properties);
+        lastBootedBackendName = selectedBackendName;
         delegate = createDelegate(selectedBackendName);
         if (delegate instanceof ModuleControl moduleControl) {
             moduleControl.boot(create, properties);
@@ -73,6 +76,14 @@ public final class ExperimentalBytecodeJavaFactory implements JavaFactory, Modul
 
     public String selectedBackendName() {
         return selectedBackendName == null ? BACKEND_BCJAVA : selectedBackendName;
+    }
+
+    public static String lastBootedBackendName() {
+        return lastBootedBackendName;
+    }
+
+    public static void resetLastBootedBackendName() {
+        lastBootedBackendName = null;
     }
 
     public static String selectBackendName(Properties properties) {

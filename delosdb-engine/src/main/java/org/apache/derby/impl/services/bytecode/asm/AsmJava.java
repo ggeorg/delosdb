@@ -53,10 +53,11 @@ public final class AsmJava implements JavaFactory {
     @Override
     public ClassBuilder newClassBuilder(ClassFactory cf, String packageName, int modifiers, String className,
             String superClass) {
-        return new AsmClassBuilder(packageName, modifiers, className, superClass);
+        return new AsmClassBuilder(cf, packageName, modifiers, className, superClass);
     }
 
     private static final class AsmClassBuilder implements ClassBuilder {
+        private final ClassFactory classFactory;
         private final String className;
         private final String fullName;
         private final String internalName;
@@ -66,7 +67,9 @@ public final class AsmJava implements JavaFactory {
         private boolean hasConstructor;
         private byte[] classBytes;
 
-        private AsmClassBuilder(String packageName, int modifiers, String className, String superClass) {
+        private AsmClassBuilder(ClassFactory classFactory, String packageName, int modifiers, String className,
+                String superClass) {
+            this.classFactory = classFactory;
             String safePackageName = packageName == null ? "" : packageName;
             this.className = className;
             this.fullName = safePackageName + className;
@@ -85,8 +88,10 @@ public final class AsmJava implements JavaFactory {
 
         @Override
         public GeneratedClass getGeneratedClass() throws StandardException {
-            throw new UnsupportedOperationException(
-                    "Experimental ASM backend is not wired into Derby ClassFactory yet");
+            if (classFactory == null) {
+                throw new IllegalStateException("Experimental ASM backend cannot load generated class without a ClassFactory");
+            }
+            return classFactory.loadGeneratedClass(fullName, getClassBytecode());
         }
 
         @Override
@@ -185,7 +190,11 @@ public final class AsmJava implements JavaFactory {
 
         @Override
         public void addThrownException(String exceptionClass) {
-            throw unsupported("addThrownException");
+            // Checked-exception metadata is not needed for JVM execution. Derby's
+            // compiler records it for source-equivalent method signatures; the
+            // experimental ASM backend can safely omit it while we are proving the
+            // execution path. A later parity phase can preserve the Exceptions
+            // attribute if diagnostics require it.
         }
 
         @Override
