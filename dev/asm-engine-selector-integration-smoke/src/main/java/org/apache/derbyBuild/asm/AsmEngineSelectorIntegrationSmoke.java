@@ -24,6 +24,8 @@ package org.apache.derbyBuild.asm;
 import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Properties;
 import org.apache.derby.iapi.services.classfile.VMOpcode;
 import org.apache.derby.iapi.services.compiler.ClassBuilder;
@@ -59,17 +61,30 @@ public final class AsmEngineSelectorIntegrationSmoke {
 
     private static void assertProductionDefaultStillBcJava() throws Exception {
         Properties properties = new Properties();
-        try (InputStream stream = AsmEngineSelectorIntegrationSmoke.class.getClassLoader()
-                .getResourceAsStream("org/apache/derby/modules.properties")) {
-            if (stream == null) {
-                throw new AssertionError("Could not load org/apache/derby/modules.properties");
-            }
+        try (InputStream stream = openModulesProperties()) {
             properties.load(stream);
         }
         String backend = properties.getProperty("derby.module.javaCompiler");
         if (!DEFAULT_BACKEND.equals(backend)) {
             throw new AssertionError("Production bytecode backend changed: " + backend);
         }
+    }
+
+    private static InputStream openModulesProperties() throws Exception {
+        InputStream classpathStream = AsmEngineSelectorIntegrationSmoke.class.getClassLoader()
+                .getResourceAsStream("org/apache/derby/modules.properties");
+        if (classpathStream != null) {
+            return classpathStream;
+        }
+
+        Path sourceTreePath = Path.of("delosdb-engine", "src", "main", "java", "org", "apache", "derby",
+                "modules.properties");
+        if (Files.isRegularFile(sourceTreePath)) {
+            return Files.newInputStream(sourceTreePath);
+        }
+
+        throw new AssertionError("Could not load org/apache/derby/modules.properties from classpath or "
+                + sourceTreePath.toAbsolutePath());
     }
 
     private static void assertDefaultSelectionNameIsBcJava() {
