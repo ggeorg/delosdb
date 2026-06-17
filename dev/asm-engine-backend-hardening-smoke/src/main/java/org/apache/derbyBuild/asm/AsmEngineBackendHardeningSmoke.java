@@ -82,6 +82,7 @@ public final class AsmEngineBackendHardeningSmoke {
         buildLongFieldRoundTrip(classBuilder, longField);
         buildDoublePutFieldRoundTrip(classBuilder, doubleField);
         buildLongArrayStoreRoundTrip(classBuilder, longArrayField);
+        buildReferenceArrayOfArraysRoundTrip(classBuilder);
         buildCategoryTwoSwap(classBuilder);
         buildGeneratedHierarchyMerge(classBuilder);
 
@@ -106,6 +107,10 @@ public final class AsmEngineBackendHardeningSmoke {
                 .invoke(instance, 3.25d));
         assertEquals(Long.valueOf(9876543210L), generated.getMethod("longArrayStoreRoundTrip", long.class)
                 .invoke(instance, 9876543210L));
+        Object stringArrays = generated.getMethod("referenceArrayOfArraysRoundTrip").invoke(null);
+        if (!(stringArrays instanceof String[][] arrays) || arrays.length != 1 || arrays[0].length != 1) {
+            throw new AssertionError("referenceArrayOfArraysRoundTrip did not return String[1][1]");
+        }
         assertEquals(Long.valueOf(44L), generated.getMethod("categoryTwoSwap", long.class, long.class)
                 .invoke(null, 11L, 44L));
         Object trueBase = generated.getMethod("generatedHierarchyMerge", boolean.class).invoke(instance, true);
@@ -116,7 +121,7 @@ public final class AsmEngineBackendHardeningSmoke {
 
         System.out.println("ASM engine backend hardening smoke passed: " + GENERATED_FULL_NAME
                 + " classfileMajor=" + Opcodes.V21
-                + " checks=branch-merge,null-merge,primitive-casts,category2-fields,category2-arrays,swap,generated-hierarchy-frames,exceptions");
+                + " checks=branch-merge,null-merge,primitive-casts,category2-fields,category2-arrays,reference-array-arrays,swap,generated-hierarchy-frames,exceptions");
     }
 
     private static ClassBuilder buildGeneratedBase(JavaFactory javaFactory) {
@@ -209,6 +214,17 @@ public final class AsmEngineBackendHardeningSmoke {
         method.setArrayElement(0);
         method.getField(longArrayField);
         method.getArrayElement(0);
+        method.methodReturn();
+        method.complete();
+    }
+
+    private static void buildReferenceArrayOfArraysRoundTrip(ClassBuilder classBuilder) {
+        MethodBuilder method = classBuilder.newMethodBuilder(Modifier.PUBLIC | Modifier.STATIC,
+                "java.lang.String[][]", "referenceArrayOfArraysRoundTrip", new String[0]);
+        method.pushNewArray("java.lang.String[]", 1);
+        method.dup();
+        method.pushNewArray("java.lang.String", 1);
+        method.setArrayElement(0);
         method.methodReturn();
         method.complete();
     }

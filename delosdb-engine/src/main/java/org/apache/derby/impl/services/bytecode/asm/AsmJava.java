@@ -813,6 +813,9 @@ public final class AsmJava implements JavaFactory {
     }
 
     private static String internalName(String className) {
+        if (className.endsWith("[]") || className.startsWith("[")) {
+            return descriptor(className);
+        }
         return className.replace('.', '/');
     }
 
