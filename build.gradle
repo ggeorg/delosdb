@@ -123,9 +123,17 @@ ext.buildNumberProvider = buildNumber
 ext.derbyCompatibilityVersion = derbyCompatibilityVersion
 
 ext.junitPlatformConsoleVersion = '1.11.4'
+ext.asmVersion = '9.9'
 
 configurations {
     delosdbJunit5Console {
+        canBeConsumed = false
+        canBeResolved = true
+        attributes {
+            attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling, Bundling.EXTERNAL))
+        }
+    }
+    delosdbAsm {
         canBeConsumed = false
         canBeResolved = true
         attributes {
@@ -137,6 +145,8 @@ configurations {
 dependencies {
     // Test-only dependency for new DelosDB tests. Inherited Derby tests remain JUnit 3.
     delosdbJunit5Console "org.junit.platform:junit-platform-console-standalone:${junitPlatformConsoleVersion}"
+    // Build/proof-only dependency for the experimental ASM bytecode backend campaign.
+    delosdbAsm "org.ow2.asm:asm:${asmVersion}"
 }
 
 ext.delosdbLegalFiles = files(
@@ -1466,6 +1476,31 @@ tasks.register('verifyDeprecatedAnnotations') {
             throw new GradleException('Javadoc @deprecated entries without @Deprecated annotations:\n' + missingAnnotations.join('\n'))
         }
     }
+}
+
+def asmClassfileProofSourceDir = file('dev/asm-classfile-proof/src/main/java')
+def asmClassfileProofClassesDir = layout.buildDirectory.dir('classes/asm-classfile-proof')
+
+tasks.register('compileAsmClassfileProof', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the isolated ASM classfile generation proof.'
+    source = files(asmClassfileProofSourceDir)
+    destinationDirectory = asmClassfileProofClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = configurations.delosdbAsm
+}
+
+tasks.register('asmClassfileProof', JavaExec) {
+    group = 'verification'
+    description = 'Proves ASM can emit, load, invoke, and inspect a Java 21 classfile without touching Derby bytecode generation.'
+    dependsOn 'compileAsmClassfileProof'
+    classpath = files(asmClassfileProofClassesDir, configurations.delosdbAsm)
+    mainClass = 'org.apache.derbyBuild.AsmClassfileProof'
 }
 
 tasks.register('generatedBytecodeClassfileHeaderProbe', JavaExec) {
