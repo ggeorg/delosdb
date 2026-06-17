@@ -2282,7 +2282,7 @@ tasks.register('compileAsmExperimentalSqlCompilerSmoke', JavaCompile) {
 
 tasks.register('asmExperimentalSqlCompilerSmoke', JavaExec) {
     group = 'verification'
-    description = 'Boots the real SQL compiler through the experimental selector with delosdb.bytecode.backend=asm and executes VALUES 1.'
+    description = 'Boots the real SQL compiler through the experimental selector with delosdb.bytecode.backend=asm and executes a broader SQL matrix.'
     dependsOn 'compileAsmExperimentalSqlCompilerSmoke'
     classpath = files(
             asmExperimentalSqlCompilerSmokeClassesDir,
