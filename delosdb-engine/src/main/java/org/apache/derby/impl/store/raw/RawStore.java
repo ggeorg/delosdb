@@ -79,7 +79,7 @@ import java.net.URISyntaxException;
 import java.net.URL;
 
 import java.security.SecureRandom;
-import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
+import org.apache.derby.iapi.services.context.StoreExecutionContext;
 import org.apache.derby.iapi.services.property.DatabaseVersionIds;
 
 import org.apache.derby.iapi.store.replication.master.MasterFactory;
@@ -832,14 +832,13 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
                 // Create the backup jar directory
                 createBackupDirectory(backupJarDir);
 
-                LanguageConnectionContext lcc = 
-                    (LanguageConnectionContext)getContextOrNull(
-                        LanguageConnectionContext.CONTEXT_ID);
+                StoreExecutionContext storeContext = 
+                    (StoreExecutionContext)getContextOrNull(
+                        StoreExecutionContext.CONTEXT_ID);
         
                 // DERBY-5357 UUIDs introduced in jar file names in 10.9
                 boolean uuidSupported =
-                    lcc.getDataDictionary().
-                    checkVersion(DatabaseVersionIds.DERBY_10_9, null);
+                    storeContext.databaseVersionAtLeast(DatabaseVersionIds.DERBY_10_9);
 
                 if (uuidSupported) {
                     // no subdirectories

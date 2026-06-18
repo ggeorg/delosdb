@@ -27,8 +27,7 @@ import org.apache.derby.iapi.services.io.FormatIdUtil;
 import org.apache.derby.iapi.services.io.StoredFormatIds;
 
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
-import org.apache.derby.iapi.sql.conn.StatementContext;
+import org.apache.derby.iapi.services.context.StoreExecutionContext;
 import org.apache.derby.iapi.store.access.TransactionInfo;
 import org.apache.derby.iapi.store.raw.GlobalTransactionId;
 import org.apache.derby.iapi.store.raw.xact.TransactionId;
@@ -80,7 +79,7 @@ public class TransactionTableEntry implements Formatable, TransactionInfo, Clone
 	private boolean isClone;		            // am I a clone made for the 
                                                 // TransactionVTI?
 
-	private transient LanguageConnectionContext lcc;
+	private transient StoreExecutionContext storeContext;
 
 
 	/* package */
@@ -465,8 +464,8 @@ public class TransactionTableEntry implements Formatable, TransactionInfo, Clone
 		if (SanityManager.DEBUG)
 			SanityManager.ASSERT(isClone, "Should only call method on a clone");
 
-		getlcc();
-        return (lcc == null) ? null : lcc.getSessionUserId();
+		getStoreContext();
+        return (storeContext == null) ? null : storeContext.getSessionUserId();
 	}
 
 	public String getTransactionTypeString()
@@ -495,14 +494,8 @@ public class TransactionTableEntry implements Formatable, TransactionInfo, Clone
 		if (SanityManager.DEBUG)
 			SanityManager.ASSERT(isClone, "Should only call method on a clone");
 
-		getlcc();
-		if (lcc != null)
-		{
-			StatementContext sc = lcc.getStatementContext();
-			if (sc != null)
-				return sc.getStatementText() ;
-		}
-		return null;
+		getStoreContext();
+		return (storeContext == null) ? null : storeContext.getStatementText();
 
 	}
 
@@ -518,18 +511,18 @@ public class TransactionTableEntry implements Formatable, TransactionInfo, Clone
 
 	}		
 
-	private void getlcc()
+	private void getStoreContext()
 	{
 		if (SanityManager.DEBUG)
 			SanityManager.ASSERT(isClone, "Should only call method on a clone");
 
-		if (lcc == null && myxact != null && myxact.xc != null)
+		if (storeContext == null && myxact != null && myxact.xc != null)
 		{
 			XactContext xc = myxact.xc;
 
-			lcc = (LanguageConnectionContext)
+			storeContext = (StoreExecutionContext)
 				xc.getContextManager().getContext(
-                    LanguageConnectionContext.CONTEXT_ID);
+                    StoreExecutionContext.CONTEXT_ID);
 		}
 	}
 

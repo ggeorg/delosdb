@@ -28,6 +28,7 @@ import org.apache.derby.iapi.db.Database;
 import org.apache.derby.iapi.db.TriggerExecutionContext;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.context.Context;
+import org.apache.derby.iapi.services.context.StoreExecutionContext;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.LanguageFactory;
@@ -60,7 +61,7 @@ import org.apache.derby.impl.sql.execute.DeferredConstraintsMemory;
  * @see LanguageConnectionFactory
  * @see org.apache.derby.iapi.sql.LanguageFactory
  */
-public interface LanguageConnectionContext extends Context {
+public interface LanguageConnectionContext extends Context, StoreExecutionContext {
 
 	/**
 	 * this is the ID we expect these contexts
@@ -392,6 +393,25 @@ public interface LanguageConnectionContext extends Context {
 
 	 */
 	public DataDictionary getDataDictionary();
+
+	/**
+	 * Store-facing compatibility hook used by the inherited Derby store.
+	 * The store consumes this neutral method through StoreExecutionContext instead
+	 * of importing DataDictionary or LanguageConnectionContext directly.
+	 */
+	@Override
+	public default boolean databaseVersionAtLeast(int majorVersionId) throws StandardException {
+		return getDataDictionary().checkVersion(majorVersionId, null);
+	}
+
+	/**
+	 * Store-facing statement text hook used by transaction-table diagnostics.
+	 */
+	@Override
+	public default String getStatementText() {
+		StatementContext sc = getStatementContext();
+		return (sc == null) ? null : sc.getStatementText();
+	}
 
 	/**
 		Get the data value factory to use with this language connection

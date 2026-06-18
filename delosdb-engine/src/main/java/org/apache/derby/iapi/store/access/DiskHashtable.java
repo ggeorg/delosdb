@@ -37,7 +37,7 @@ import org.apache.derby.iapi.services.context.ContextService;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
-import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
+import org.apache.derby.iapi.services.context.StoreExecutionContext;
 
 /**
  * This class is used by BackingStoreHashtable when the BackingStoreHashtable 
@@ -93,11 +93,11 @@ public class DiskHashtable
         this.key_column_numbers         = key_column_numbers;
         this.remove_duplicates          = remove_duplicates;
         this.keepAfterCommit            = keepAfterCommit;
-        LanguageConnectionContext lcc   = (LanguageConnectionContext)
+        StoreExecutionContext storeContext = (StoreExecutionContext)
             getContextOrNull(
-                LanguageConnectionContext.CONTEXT_ID);
+                StoreExecutionContext.CONTEXT_ID);
 
-        keepStatistics = (lcc != null) && lcc.getRunTimeStatisticsMode();
+        keepStatistics = (storeContext != null) && storeContext.getRunTimeStatisticsMode();
 
         // Create template row used for creating the conglomerate and 
         // fetching rows.

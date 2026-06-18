@@ -2983,3 +2983,67 @@ tasks.register('legacyDerbyStoreDataDictionaryDecouplingProof') {
     description = 'Runs the DS3 proof that legacy Derby store no longer depends on DataDictionary constants and property conglomerate behavior still works.'
     dependsOn 'verifyLegacyDerbyStoreBoundary', 'legacyDerbyStorePropertyConglomerateSmoke'
 }
+
+// -----------------------------------------------------------------------------
+// DS4 — Remove legacy Derby store -> SQL connection/context dependency
+// -----------------------------------------------------------------------------
+// Store code now consumes the neutral StoreExecutionContext interface instead of
+// importing LanguageConnectionContext or StatementContext directly. The targeted
+// smoke exercises the three historical call sites: DiskHashtable runtime stats,
+// transaction-table diagnostics, and RawStore backup jar-version checks.
+
+tasks.register('verifyLegacyDerbyStoreNoSqlConnectionImports') {
+    group = 'verification'
+    description = 'Verifies inherited Derby store sources no longer import SQL connection or statement context interfaces.'
+    doLast {
+        def storeSources = []
+        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store'))
+        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store'))
+        delosdbDs1RequireNoImports(
+                'legacy Derby store',
+                storeSources,
+                [
+                        'org.apache.derby.iapi.sql.conn.LanguageConnectionContext',
+                        'org.apache.derby.iapi.sql.conn.StatementContext'
+                ])
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreNoSqlConnectionImports'
+}
+
+def legacyDerbyStoreContextSmokeClassesDir = layout.buildDirectory.dir('classes/legacy-derby-store-context-smoke')
+
+tasks.register('compileLegacyDerbyStoreSqlContextSmoke', JavaCompile) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Compiles the DS4 legacy Derby store SQL context smoke test.'
+    source = files('dev/legacy-derby-store-context-smoke/src/main/java', smokeUtilsSourceDir)
+    destinationDirectory = legacyDerbyStoreContextSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = runtimeJars()
+}
+
+tasks.register('legacyDerbyStoreSqlContextSmoke', JavaExec) {
+    dependsOn 'compileLegacyDerbyStoreSqlContextSmoke'
+    group = 'verification'
+    description = 'Verifies legacy Derby store session/statement behavior after SQL context decoupling.'
+    classpath = files(legacyDerbyStoreContextSmokeClassesDir, runtimeJars())
+    mainClass = 'delosdb.smoke.LegacyDerbyStoreSqlContextSmoke'
+    args layout.buildDirectory.dir('legacy-derby-store-context-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('legacy-derby-store-context-smoke').get().asFile
+    doFirst {
+        delete file('build/legacy-derby-store-context-smoke')
+        workingDir.mkdirs()
+    }
+}
+
+tasks.register('legacyDerbyStoreSqlContextDecouplingProof') {
+    group = 'verification'
+    description = 'Runs the DS4 proof that legacy Derby store no longer imports SQL connection/statement contexts and behavior still works.'
+    dependsOn 'verifyLegacyDerbyStoreBoundary', 'legacyDerbyStoreSqlContextSmoke'
+}
