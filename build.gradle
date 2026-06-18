@@ -1996,6 +1996,13 @@ tasks.register('mvccStatementSnapshotVisibilityProof') {
     dependsOn ':delosdb-storage-mvcc:runMvccStatementSnapshotVisibilityTest'
 }
 
+
+tasks.register('mvccSqlStatementBoundarySmoke') {
+    group = 'verification'
+    description = 'Runs A48 MVCC SQL statement-boundary smoke proof.'
+    dependsOn 'mvccStatementSnapshotVisibilityProof', 'versionedStorageSqlStatementBoundarySmoke'
+}
+
 tasks.register('mvccStorageModelTest') {
     group = 'verification'
     description = 'Runs all experimental DelosDB MVCC storage model tests.'
@@ -2401,6 +2408,22 @@ tasks.register('versionedStorageDurableSqlSmoke', JavaExec) {
     workingDir = layout.buildDirectory.dir('versioned-storage-durable-sql-smoke').get().asFile
     doFirst {
         delete file('build/versioned-storage-durable-sql-smoke')
+        workingDir.mkdirs()
+    }
+}
+
+
+tasks.register('versionedStorageSqlStatementBoundarySmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
+    mustRunAfter 'versionedStorageDurableSqlSmoke'
+    group = 'verification'
+    description = 'Verifies A48 SQL bridge statement/command boundary wiring for delos_mvcc READ COMMITTED transactions.'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+    mainClass = 'delosdb.smoke.VersionedStorageSqlStatementBoundarySmoke'
+    args layout.buildDirectory.dir('versioned-storage-sql-statement-boundary-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('versioned-storage-sql-statement-boundary-smoke').get().asFile
+    doFirst {
+        delete file('build/versioned-storage-sql-statement-boundary-smoke')
         workingDir.mkdirs()
     }
 }

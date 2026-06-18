@@ -33,6 +33,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -98,6 +99,7 @@ public final class VersionedStorageSqlBridge {
     private static VersionedStorageProvider cachedProvider;
     private static Path pageBackedStorageDirectory;
     private static volatile VersionedStorageAccessPath lastAccessPath;
+    private static volatile long lastStatementCommandSequence = TxContext.UNKNOWN_STATEMENT_COMMAND_SEQUENCE;
 
     private VersionedStorageSqlBridge() {
     }
@@ -119,6 +121,19 @@ public final class VersionedStorageSqlBridge {
      */
     public static Optional<VersionedStorageAccessPath> lastAccessPath() {
         return Optional.ofNullable(lastAccessPath);
+    }
+
+    /**
+     * Returns the provider-local command sequence used by the last handled
+     * statement when the provider exposes one. This is an A48 diagnostic hook
+     * for proving SQL statement-boundary wiring; it is not a stable public SQL
+     * API.
+     */
+    public static OptionalLong lastStatementCommandSequence() {
+        long sequence = lastStatementCommandSequence;
+        return sequence == TxContext.UNKNOWN_STATEMENT_COMMAND_SEQUENCE
+                ? OptionalLong.empty()
+                : OptionalLong.of(sequence);
     }
 
     /**
@@ -962,7 +977,9 @@ public final class VersionedStorageSqlBridge {
             boolean autoCommit,
             int transactionIsolation) throws SQLException {
         if (autoCommit || transactionOwner == null) {
-            return new StatementTransaction(table.coordinator(), table.coordinator().begin(), true);
+            TxContext context = table.coordinator().begin();
+            lastStatementCommandSequence = context.statementCommandSequence();
+            return new StatementTransaction(table.coordinator(), context, true);
         }
 
         SnapshotSemantics semantics = SnapshotSemantics.fromJdbcIsolation(transactionIsolation);
@@ -980,6 +997,7 @@ public final class VersionedStorageSqlBridge {
             TxContext statementContext = session.snapshotSemantics().freshSnapshotPerStatement()
                     ? session.coordinator().refresh(session.context())
                     : session.context();
+            lastStatementCommandSequence = statementContext.statementCommandSequence();
             return new StatementTransaction(session.coordinator(), statementContext, false);
         }
     }

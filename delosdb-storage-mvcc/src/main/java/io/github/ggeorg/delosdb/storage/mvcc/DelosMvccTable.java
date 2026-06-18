@@ -124,7 +124,7 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     @Override
     public void insert(K key, V value, TxContext transaction) {
         DelosMvccTxContext context = requireMvccContext(transaction);
-        table.insert(key, value, context.transaction());
+        table.insert(key, value, context.transaction(), context.commandSequence());
         recordIndexCandidates(key, value);
         recordDurableChange(context.transactionId(), DurableChange.insert(key, value));
         if (shouldLog()) {
@@ -135,7 +135,7 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     @Override
     public void update(K key, V value, TxContext transaction) {
         DelosMvccTxContext context = requireMvccContext(transaction);
-        table.update(key, value, context.transaction(), context.snapshot(), context.catalog());
+        table.update(key, value, context.transaction(), context.snapshot(), context.catalog(), context.commandSequence());
         recordIndexCandidates(key, value);
         recordDurableChange(context.transactionId(), DurableChange.update(key, value));
         if (shouldLog()) {
@@ -146,7 +146,7 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     @Override
     public void delete(K key, TxContext transaction) {
         DelosMvccTxContext context = requireMvccContext(transaction);
-        table.delete(key, context.transaction(), context.snapshot(), context.catalog());
+        table.delete(key, context.transaction(), context.snapshot(), context.catalog(), context.commandSequence());
         recordDurableChange(context.transactionId(), DurableChange.delete(key));
         if (shouldLog()) {
             storageLog.appendDelete(metadata, context.transactionId(), key);

@@ -10,6 +10,7 @@ public final class DelosMvccTxContext implements TxContext {
     private final MvccTransaction transaction;
     private final MvccSnapshot snapshot;
     private final MvccTransactionCatalog catalog;
+    private final MvccCommandSequence commandSequence;
     private final DelosMvccTxView view;
 
     public DelosMvccTxContext(
@@ -17,9 +18,19 @@ public final class DelosMvccTxContext implements TxContext {
             MvccSnapshot snapshot,
             MvccTransactionCatalog catalog,
             MvccCommitSequence oldestVisibleThrough) {
+        this(transaction, snapshot, catalog, oldestVisibleThrough, MvccCommandSequence.FIRST);
+    }
+
+    public DelosMvccTxContext(
+            MvccTransaction transaction,
+            MvccSnapshot snapshot,
+            MvccTransactionCatalog catalog,
+            MvccCommitSequence oldestVisibleThrough,
+            MvccCommandSequence commandSequence) {
         this.transaction = Objects.requireNonNull(transaction, "transaction");
         this.snapshot = Objects.requireNonNull(snapshot, "snapshot");
         this.catalog = Objects.requireNonNull(catalog, "catalog");
+        this.commandSequence = Objects.requireNonNull(commandSequence, "commandSequence");
         this.view = new DelosMvccTxView(snapshot, catalog, oldestVisibleThrough);
     }
 
@@ -35,6 +46,10 @@ public final class DelosMvccTxContext implements TxContext {
         return catalog;
     }
 
+    public MvccCommandSequence commandSequence() {
+        return commandSequence;
+    }
+
     @Override
     public long transactionId() {
         return transaction.id().value();
@@ -43,6 +58,11 @@ public final class DelosMvccTxContext implements TxContext {
     @Override
     public TxView currentView() {
         return view;
+    }
+
+    @Override
+    public long statementCommandSequence() {
+        return commandSequence.value();
     }
 
     public DelosMvccTxView mvccView() {

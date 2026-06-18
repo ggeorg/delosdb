@@ -99,7 +99,13 @@ public final class DelosMvccTransactionCoordinator implements VersionedTransacti
     @Override
     public DelosMvccTxContext refresh(TxContext context) {
         DelosMvccTxContext mvccContext = requireContext(context);
-        return contextFor(mvccContext.transaction());
+        MvccStatementSnapshot statement = transactionManager.beginStatement(mvccContext.transaction());
+        return new DelosMvccTxContext(
+                statement.transaction(),
+                statement.snapshot(),
+                transactionManager,
+                transactionManager.oldestActiveVisibleThrough(),
+                statement.commandSequence());
     }
 
     public MvccCleanupResult cleanup(DelosMvccTable<?, ?> table) {
