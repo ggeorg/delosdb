@@ -2021,6 +2021,147 @@ tasks.register('mvccCleanupVacuumTest') {
 }
 
 
+tasks.register('mvccStorageAudit') {
+    group = 'verification'
+    description = 'Runs MVCC-1 storage-lane audit before default-store integration.'
+    dependsOn ':delosdb-storage-mvcc:compileDelosDbStorageMvcc', ':delosdb-storage-mvcc:compileDelosDbStorageMvccTests'
+    doLast {
+        def requiredFiles = [
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccTransactionId.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccCommitSequence.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccSnapshot.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccVersion.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccVisibility.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageMutationLog.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageRecoveryRunner.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccIndex.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccCleanupResult.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStoreAdapter.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java'
+        ]
+        requiredFiles.each { path ->
+            if (!file(path).isFile()) {
+                throw new GradleException("Required MVCC storage-lane file is missing: ${path}")
+            }
+        }
+
+        def mainSources = fileTree('delosdb-storage-mvcc/src/main/java') {
+            include '**/*.java'
+        }.files
+        def leakedTestApi = []
+        mainSources.each { source ->
+            def sourceText = source.text
+            if (sourceText.contains('org.junit') || sourceText.contains('Assertions.') || sourceText.contains('@Test')) {
+                leakedTestApi << project.relativePath(source)
+            }
+            sourceText.eachLine { line ->
+                if (line.startsWith('package ') && line.contains('.experimental.')) {
+                    leakedTestApi << "${project.relativePath(source)} uses experimental package name"
+                }
+            }
+        }
+        if (!leakedTestApi.isEmpty()) {
+            throw new GradleException('MVCC main sources leaked test/experimental API: ' + leakedTestApi)
+        }
+
+        def duplicateKeyCodecs = mainSources.findAll { source ->
+            def name = source.name.toLowerCase(Locale.ROOT)
+            name.contains('index') && name.contains('codec') && name.endsWith('.java')
+        }
+        if (duplicateKeyCodecs.size() > 1) {
+            throw new GradleException('Multiple MVCC index key codecs found: ' + duplicateKeyCodecs.collect { project.relativePath(it) })
+        }
+    }
+}
+
+tasks.register('verifyMvccDefaultSwitchReadinessConfiguration') {
+    group = 'verification'
+    description = 'Verifies MVCC is ready for default-switch discussion but remains opt-in.'
+    doLast {
+        def requiredTasks = [
+                'mvccStorageAudit',
+                'mvccSnapshotVisibilityTest',
+                'mvccPageMutationLogContractTest',
+                'mvccRecoveryBootProof',
+                'mvccDurableIndexVisibilityTest',
+                'mvccDurableIndexRecoveryTest',
+                'mvccVacuumSafetyTest',
+                'mvccVacuumRecoveryTest',
+                'mvccConcurrencyStressTest',
+                'mvccWriteConflictTest',
+                'mvccStoreAdapterSmoke',
+                'mvccSqlOptInSmoke',
+                'mvccSqlRecoverySmoke',
+                'mvccSqlIndexVisibilitySmoke'
+        ]
+        requiredTasks.each { taskName ->
+            if (tasks.findByName(taskName) == null) {
+                throw new GradleException("Required MVCC readiness task is missing: ${taskName}")
+            }
+        }
+
+        def adapter = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStoreAdapter.java').text
+        if (!adapter.contains('public static final String STORAGE_PROVIDER_PROPERTY = "delosdb.storage.provider"')) {
+            throw new GradleException('MVCC opt-in property constant is missing from DelosMvccStoreAdapter')
+        }
+        if (!adapter.contains('public static final String PROVIDER_MVCC = "mvcc"')) {
+            throw new GradleException('MVCC provider opt-in value is missing from DelosMvccStoreAdapter')
+        }
+        if (!adapter.contains('requires explicit')) {
+            throw new GradleException('DelosMvccStoreAdapter must continue to reject non-opt-in opens')
+        }
+
+        def sqlSession = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java').text
+        if (!sqlSession.contains('DelosMvccStoreAdapter.open(properties)')) {
+            throw new GradleException('MVCC SQL smoke must enter through the explicit opt-in store adapter')
+        }
+
+        def defaultConfigHits = []
+        fileTree('.') {
+            include '**/*.properties'
+            include '**/*.conf'
+            include '**/*.gradle'
+            exclude 'build/**'
+            exclude '**/build/**'
+            exclude '.gradle/**'
+            exclude '.git/**'
+        }.files.each { candidate ->
+            def relative = project.relativePath(candidate)
+            if (relative == 'build.gradle') {
+                return
+            }
+            def candidateText = candidate.text
+            if (candidateText.contains('delosdb.storage.provider=mvcc')) {
+                defaultConfigHits << relative
+            }
+        }
+        if (!defaultConfigHits.isEmpty()) {
+            throw new GradleException('MVCC must remain opt-in; default config enables mvcc in: ' + defaultConfigHits)
+        }
+    }
+}
+
+tasks.register('mvccDefaultSwitchReadiness') {
+    group = 'verification'
+    description = 'Runs the complete MVCC proof ladder before considering a default storage switch.'
+    dependsOn 'verifyMvccDefaultSwitchReadinessConfiguration',
+            'mvccStorageAudit',
+            'mvccSnapshotVisibilityTest',
+            'mvccPageMutationLogContractTest',
+            'mvccRecoveryBootProof',
+            'mvccDurableIndexVisibilityTest',
+            'mvccDurableIndexRecoveryTest',
+            'mvccVacuumSafetyTest',
+            'mvccVacuumRecoveryTest',
+            'mvccConcurrencyStressTest',
+            'mvccWriteConflictTest',
+            'mvccStoreAdapterSmoke',
+            'mvccSqlOptInSmoke',
+            'mvccSqlRecoverySmoke',
+            'mvccSqlIndexVisibilitySmoke'
+}
+
+
 def versionedStorageProviderRegistrySmokeClassesDir = layout.buildDirectory.dir('classes/versioned-storage-provider-registry-smoke')
 def versionedStorageProviderRegistrySmokeClasspath = {
     files(
