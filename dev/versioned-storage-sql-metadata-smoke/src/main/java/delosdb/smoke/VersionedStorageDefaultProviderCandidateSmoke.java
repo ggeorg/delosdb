@@ -1,5 +1,6 @@
 package delosdb.smoke;
 
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageAccessPath;
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 
 import java.nio.file.Path;
@@ -19,6 +20,7 @@ import java.sql.Statement;
 public final class VersionedStorageDefaultProviderCandidateSmoke {
     private static final String DEFAULT_PROVIDER_PROPERTY = "delosdb.storage.defaultProvider";
     private static final String MVCC_PROVIDER = "delos_mvcc";
+    private static final String INDEX_NAME = "DEFAULT_CANDIDATE_MVCC_ID_IDX";
 
     private VersionedStorageDefaultProviderCandidateSmoke() {
     }
@@ -65,7 +67,7 @@ public final class VersionedStorageDefaultProviderCandidateSmoke {
             statement.executeUpdate("create table default_candidate_mvcc(id int primary key, name varchar(40))");
             statement.executeUpdate("insert into default_candidate_mvcc values (1, 'alpha')");
             assertRow(statement, 1, "alpha", "plain CREATE TABLE enters MVCC candidate path");
-            statement.executeUpdate("create index default_candidate_mvcc_id_idx on default_candidate_mvcc(id)");
+            statement.executeUpdate("create index " + INDEX_NAME + " on default_candidate_mvcc(id)");
             statement.executeUpdate("update default_candidate_mvcc set name = 'beta' where id = 1");
             assertRow(statement, 1, "beta", "MVCC candidate update is visible before provider reopen");
         }
@@ -73,8 +75,7 @@ public final class VersionedStorageDefaultProviderCandidateSmoke {
         VersionedStorageSqlBridge.reopenPageBackedStorage();
         try (Connection connection = SmokeUtils.connect(databasePath, false);
              Statement statement = connection.createStatement()) {
-            assertRow(statement, 1, "beta", "MVCC candidate update survives provider reopen");
-            statement.executeUpdate("create index default_candidate_mvcc_id_idx_after_reopen on default_candidate_mvcc(id)");
+            assertIndexedRow(statement, 1, "beta", "MVCC candidate update survives provider reopen through recovered index");
             statement.executeUpdate("delete from default_candidate_mvcc where id = 1");
             assertCount(statement, 0, "MVCC candidate delete hides row before provider reopen");
         }
@@ -97,6 +98,22 @@ public final class VersionedStorageDefaultProviderCandidateSmoke {
                 throw new AssertionError(message + ": unexpected extra row");
             }
         }
+    }
+
+    private static void assertIndexedRow(Statement statement, int expectedId, String expectedName, String message)
+            throws Exception {
+        assertRow(statement, expectedId, expectedName, message);
+        assertLastPathUsesRecoveredIndex(message);
+    }
+
+    private static void assertLastPathUsesRecoveredIndex(String message) {
+        VersionedStorageAccessPath accessPath = VersionedStorageSqlBridge.lastAccessPath()
+                .orElseThrow(() -> new AssertionError(message + ": no MVCC access path recorded"));
+        SmokeUtils.assertEquals(VersionedStorageAccessPath.INDEX_SCAN,
+                accessPath.selectedAccessMethod(),
+                message + " access method");
+        SmokeUtils.assertEquals(INDEX_NAME, accessPath.selectedIndex(), message + " selected index");
+        SmokeUtils.assertEquals("ID", accessPath.predicateColumn(), message + " predicate column");
     }
 
     private static void assertCount(Statement statement, int expected, String message) throws Exception {
