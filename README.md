@@ -23,7 +23,7 @@ Closed major lane:
 
 - MVCC semantic-correctness sprint A44--A52 is green.
 - `delos_mvcc` is guarded and opt-in/property-gated.
-- The normal Derby heap path remains the default.
+- The normal legacy Derby-compatible heap path remains the default.
 - The global default store has not been flipped.
 
 Finished provider seams:
@@ -50,7 +50,7 @@ Current storage rule:
 
 ```text
 No property:
-  CREATE TABLE ...        -> normal Derby-compatible heap path
+  CREATE TABLE ...        -> normal legacy Derby-compatible heap path
 
 -Ddelosdb.storage.defaultProvider=delos_mvcc:
   bare CREATE TABLE ...   -> guarded delos_mvcc candidate path

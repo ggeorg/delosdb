@@ -257,6 +257,7 @@ public final class BuiltInExtensions {
         }
         if (capabilities.derbyHeapCompatible()) {
             names.add("derby-heap-compatible");
+            names.add("legacy-derby-store");
         }
         return List.copyOf(names);
     }

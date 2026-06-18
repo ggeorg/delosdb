@@ -5,17 +5,18 @@ import io.github.ggeorg.delosdb.spi.storage.StorageCapabilities;
 import io.github.ggeorg.delosdb.spi.storage.StorageProvider;
 
 /**
- * Built-in storage provider describing Derby's current heap table storage.
+ * Built-in storage provider describing the inherited Derby-compatible heap/raw/access/WAL store.
  *
  * <p>This adapter is metadata-only in StorageProvider v0. It does not replace or
- * bypass Derby raw store. It gives DelosDB a stable provider identity for the
- * existing default table-storage behavior.</p>
+ * bypass the inherited Derby raw/access store. It gives DelosDB a stable
+ * provider identity for the existing default table-storage behavior before the
+ * legacy store is physically extracted into its own module.</p>
  */
 @InternalApi
-final class BuiltInHeapStorageProvider implements StorageProvider {
-    static final BuiltInHeapStorageProvider INSTANCE = new BuiltInHeapStorageProvider();
+final class LegacyDerbyHeapStorageProvider implements StorageProvider {
+    static final LegacyDerbyHeapStorageProvider INSTANCE = new LegacyDerbyHeapStorageProvider();
 
-    private BuiltInHeapStorageProvider() {
+    private LegacyDerbyHeapStorageProvider() {
     }
 
     @Override

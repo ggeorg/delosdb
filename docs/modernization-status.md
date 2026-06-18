@@ -78,7 +78,7 @@ Current rule:
 
 ```text
 No property:
-  CREATE TABLE ...        -> normal Derby-compatible heap path
+  CREATE TABLE ...        -> normal legacy Derby-compatible heap path
 
 -Ddelosdb.storage.defaultProvider=delos_mvcc:
   bare CREATE TABLE ...   -> guarded delos_mvcc candidate path

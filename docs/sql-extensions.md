@@ -49,7 +49,7 @@ CREATE TABLE table_name (
 ) USING heap;
 ```
 
-`heap` is the built-in Derby-compatible storage provider.
+`heap` is the built-in legacy Derby-compatible storage provider: the inherited Derby heap/raw/access/WAL store. The public provider name remains `heap`; the implementation identity is now explicit for the Derby store surgery lane.
 
 Experimental MVCC form:
 

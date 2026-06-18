@@ -59,6 +59,15 @@ CREATE INDEX i ON t(id) USING memory;
 physical SQL index until a real Derby executor/storage bridge exists for that
 provider.
 
+
+## Legacy heap provider identity
+
+The public storage provider name `heap` remains unchanged. Internally it denotes
+the inherited Derby-compatible heap/raw/access/WAL store, not a new DelosDB-native
+storage implementation. This distinction is important during the Derby store
+surgery: the legacy store may be modularized later, but its disk format, package
+identity, boot wiring, and default behavior remain compatible.
+
 ## MVCC compatibility rule
 
 The A44--A52 semantic-correctness sprint is green for the guarded MVCC candidate
@@ -75,7 +84,7 @@ captured visibility snapshot;
 SQL compatibility candidate matrix.
 ```
 
-This does not make `delos_mvcc` the default store. Derby heap compatibility
+This does not make `delos_mvcc` the default store. legacy Derby heap compatibility
 remains the safe default until a later explicit promotion decision and broader
 compatibility/recovery/performance gates.
 

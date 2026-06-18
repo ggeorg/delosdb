@@ -18,7 +18,7 @@ import java.util.List;
  * Verifies the initial StorageProvider v0 metadata seam.
  *
  * <p>This smoke intentionally does not exercise CREATE TABLE syntax or physical
- * storage changes. It proves the built-in Derby-compatible heap provider is
+ * storage changes. It proves the built-in legacy Derby-compatible heap provider is
  * registered as DelosDB storage-provider metadata and is resolvable through the
  * same internal extension descriptor shape used by IndexProvider.</p>
  */
@@ -41,7 +41,8 @@ public final class StorageProviderMetadataSmoke {
                 "default-storage-provider",
                 "row-store",
                 "transactional",
-                "derby-heap-compatible"));
+                "derby-heap-compatible",
+                "legacy-derby-store"));
 
         StorageProviderResolver resolver = StorageProviderResolver.builtIns(registry);
         StorageProvider defaultProvider = resolver.requireDefault();
