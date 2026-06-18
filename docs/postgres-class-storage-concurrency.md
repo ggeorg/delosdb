@@ -1,16 +1,24 @@
 # PostgreSQL-class storage and concurrency direction
 
-This note defines the next DelosDB source-check campaign after the inherited
-Derby code-quality cleanup. It is not a new provider family and it is not an
-MVCC implementation. It is the source trail for moving DelosDB toward a serious
-storage/concurrency architecture while preserving Derby compatibility.
+> Historical status: this is a source-trail document for the early
+> storage/concurrency campaign. It is not the active MVCC roadmap. The active
+> MVCC mission and four-engine synthesis live in `docs/MVCC-MISSION.md`.
+> Some early language below describes MVCC as future-only; keep that as campaign
+> history, not current direction.
+
+
+This note originally defined the DelosDB source-check campaign after the inherited
+Derby code-quality cleanup. It is retained to show the source trail that led to
+the isolated `delosdb-storage-mvcc` module and the guarded `delos_mvcc` candidate
+path. It is not the current planning document.
 
 ## Six pillars
 
 ### 1. MVCC is the long-term concurrency direction
 
-Current DelosDB inherits Derby's lock-based concurrency model. MVCC is not a
-switch that can be added at the SQL surface. It affects row format,
+At the time of this source-trail campaign, DelosDB inherited Derby's lock-based
+concurrency model. The later `delosdb-storage-mvcc` lane now exists, but the
+lesson remains: MVCC is not a switch that can be added at the SQL surface. It affects row format,
 transaction identity, visibility checks, indexes, undo/redo, checkpointing,
 recovery, and cleanup of old versions.
 
@@ -109,8 +117,9 @@ need a crash-safe cleanup model tied to the oldest active transaction, index
 entries that may point at dead versions, and scans that may still need older
 versions.
 
-Current DelosDB has no MVCC row versions yet, so the first proof is a
-visibility/cleanup boundary test against the inherited lock-based store. It pins
+At the time of this source-trail campaign, DelosDB had no MVCC row versions yet,
+so the first proof was a visibility/cleanup boundary test against the inherited
+lock-based store. It pins
 down what future MVCC visibility and vacuum must preserve: rolled-back indexed
 updates must not leave the new key searchable, committed indexed updates must
 move the visible key, rolled-back deletes must preserve the visible key, and

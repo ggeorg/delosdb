@@ -38,7 +38,7 @@ build/reports/benchmarks/embedded-baseline.md
 
 ## What it measures
 
-The embedded baseline currently measures:
+The embedded baseline currently measures Derby-compatible embedded behavior:
 
 - database connection creation;
 - schema and index creation;
@@ -46,6 +46,20 @@ The embedded baseline currently measures:
 - primary-key lookups;
 - indexed count queries;
 - full-table count.
+
+## What it does not measure yet
+
+The current benchmark baseline is not an MVCC research harness. It does not yet
+measure:
+
+- `delos_mvcc` statement visibility;
+- long-snapshot pressure;
+- vacuum/history-prune behavior;
+- durable transaction outcome recovery;
+- version-aware index behavior;
+- row-lock or semi-consistent read behavior.
+
+Those should wait until the corresponding correctness gates exist.
 
 ## Rules for using the numbers
 
@@ -58,4 +72,5 @@ Use the numbers only as a local before/after signal:
 - do not present the output as a formal benchmark result.
 
 A later benchmark phase may add JMH or another repeatable harness, but that is
-not part of the current cleanup/provider-hardening work.
+future work. It should not be built in parallel with the A44--A52 MVCC
+correctness ladder.

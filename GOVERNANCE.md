@@ -6,25 +6,37 @@ DelosDB is currently a maintainer-led fork.
 
 1. Derby-compatible behavior before novelty.
 2. Working proofs before new architecture.
-3. Source citations before book claims.
-4. Finished seams before new provider families.
-5. Benchmarks before performance claims.
-6. Clear attribution to Apache Derby.
+3. One behavior boundary per milestone.
+4. Source citations before book claims.
+5. Finished lanes before new provider families.
+6. Benchmarks before performance claims.
+7. Clear attribution to Apache Derby.
 
 ## Current project rule
 
-No new provider family should be opened until the current finished seams remain green and the next planned seam has a concrete proof target.
+The active lane is MVCC semantic correctness. Do not open a new provider family,
+new research-platform subsystem, or global default-store flip while A44--A52 are
+incomplete.
 
-Finished seams today:
+Closed/finished areas:
 
-- `CostModelProvider` v2: heap and B-tree through Derby's native store-cost seam.
-- `IndexProvider` v2: B-tree SQL-backed provider plus memory provider-owned runtime proof.
+- ASM generated-bytecode backend is the production path.
+- `CostModelProvider` v2 is routed through Derby's native store-cost seam.
+- `IndexProvider` v2 has B-tree SQL-backed and memory provider-owned proofs.
 
-Frozen shallow seams today:
+Guarded active area:
 
-- `StorageProvider`: heap-only.
-- `FunctionProvider`: built-in DelosDB function only.
-- `TypeProvider`: metadata-only.
+- `delos_mvcc` versioned storage remains explicit or property-gated.
+- Heap remains the default storage path.
+- MVCC promotion depends on the proof ladder in `docs/MVCC-MISSION.md`.
+
+## Research-facing rule
+
+Research/university friendliness is allowed only when it supports the current
+engine proof. Proof-level traces, readable assertions, and inspectable internal
+objects are acceptable. Separate labs, profiles, schedulers, fault-injection
+frameworks, artifact packaging, and new SQL explain surfaces wait until the MVCC
+correctness ladder is closed.
 
 ## Release rule
 
@@ -38,4 +50,6 @@ No release should be cut unless these gates are green:
 ./dev/benchmark-baseline.sh
 ```
 
-Release notes must describe DelosDB changes, not inherited Apache Derby release-state files.
+No release should present `delos_mvcc` as the default storage path until the MVCC
+semantic, durability, vacuum, compatibility, and crash/recovery gates have been
+explicitly promoted.

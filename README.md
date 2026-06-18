@@ -1,43 +1,100 @@
 # DelosDB
 
-DelosDB is a Java-native modular database platform built from the Apache Derby
-codebase. It preserves Derby's strongest properties — embeddable SQL, JDBC
-compatibility, small operational footprint, and pure-Java deployment — while
-opening selected engine seams for DelosDB extension work.
+DelosDB is a Java 21, Gradle-only, Derby-compatible database kernel built from
+the Apache Derby codebase. It preserves Derby's embeddable SQL/JDBC surface while
+modernizing selected internals through small executable proofs.
 
-DelosDB is not a finished external-plugin product yet. The current project state
-is a Java 21 Gradle-only modernization baseline with two finished provider seam
-proofs and several deliberately frozen shallow surfaces.
+DelosDB is not a finished external-plugin product yet. The current mission is to
+keep Derby compatibility boring while turning the engine into a modular,
+inspectable platform for storage, indexing, optimizer, recovery, and MVCC work.
 
 ## Current status
 
 The supported developer path is Gradle-only. The inherited Ant workflow is not
 part of the supported DelosDB workflow.
 
-Finished seams:
+Closed major lane:
 
-- `CostModelProvider` v2: heap and B-tree providers through Derby's native
-  `StoreCostController` seam.
-- `IndexProvider` v2: B-tree SQL-backed provider plus memory provider-owned
-  runtime proof.
+- ASM is the production generated-bytecode backend.
+- The old Derby bytecode backend and old classfile writer are quarantined.
+- Permanent bytecode proof: `generatedBytecodeAsmJvm21Proof`.
+
+Active major lane:
+
+- MVCC / versioned storage.
+- `delos_mvcc` is guarded and opt-in.
+- The normal Derby heap path remains the default.
+- The global default store has not been flipped.
+
+Finished provider seams:
+
+- `CostModelProvider` v2 through Derby's native `StoreCostController` seam.
+- `IndexProvider` v2 through B-tree SQL-backed and memory provider-owned proofs.
+- Unified extension registry visibility through system routines.
 
 Frozen shallow seams:
 
-- `StorageProvider`: heap-only.
 - `FunctionProvider`: built-in DelosDB function only.
 - `TypeProvider`: metadata-only.
+- New provider families are not opened while MVCC correctness is the active lane.
+
+## MVCC mission
+
+The active MVCC plan is documented in:
+
+```text
+docs/MVCC-MISSION.md
+```
+
+Current storage rule:
+
+```text
+No property:
+  CREATE TABLE ...        -> normal Derby-compatible heap path
+
+-Ddelosdb.storage.defaultProvider=delos_mvcc:
+  bare CREATE TABLE ...   -> guarded delos_mvcc candidate path
+
+CREATE TABLE ... USING delos_mvcc:
+  explicit experimental MVCC path
+```
+
+Near-term MVCC direction:
+
+```text
+A43 kernel review closeout
+A44 missing-history / prune safety
+A45 command sequence model
+A46 statement snapshot visibility
+A47 SQL statement-boundary smoke
+A48 captured visibility-state snapshot
+A49-A52 durable outcome, recovery, vacuum watermark, compatibility matrix
+```
+
+Research/university friendliness is a constraint on engine proofs, not a second
+product roadmap. Small proof-level traces and readable assertions are acceptable;
+new labs, profiles, artifact systems, and SQL explain surfaces wait until the
+MVCC correctness ladder is closed.
 
 ## Build requirements
 
 - JDK 21 or newer
 - Gradle Wrapper from this repository
 
-## Main verification gate
+## Main verification gates
 
 ```bash
 ./gradlew build
 ./gradlew derbyRuntimeSmoke
 ./gradlew :delosdb-tests:runDerbyLangSuite
+```
+
+MVCC-focused gates:
+
+```bash
+./gradlew mvccDefaultProviderCandidateMatrix
+./gradlew mvccTransactionLockOrderProof
+./gradlew mvccKernelReviewCloseoutProof
 ```
 
 Broader checks:
@@ -89,28 +146,28 @@ If a previous Derby suite run was interrupted, start with:
 | `:delosdb-runner` | inherited command launcher | `derbyrun.jar` |
 | `:delosdb-optionaltools` | optional tool integrations | `derbyoptionaltools.jar` |
 | `:delosdb-server` | network server | `derbynet.jar` |
+| `:delosdb-storage-mvcc` | opt-in MVCC/versioned-storage kernel and proofs | development module |
 | `:delosdb-storeless` | compiler/optimizer boot without storage | development module |
 | `:delosdb-tests` | inherited Derby test suite activation | test module |
 | `:delosdb-pptesting` | package-private inherited tests | test module |
 | `:delosdb-buildtools` | build-time generators/scanners | build tooling |
 | `:delosdb-locales` | generated locale verification | verification module |
 
-
 ## Repository layout
-
-The root is intentionally small. Product modules, verification helpers, and documentation each have one home.
 
 | Path | Purpose | Status |
 |---|---|---|
-| `delosdb-*` | Gradle subprojects for runtime, tools, tests, build tools, demos, and compatibility modules | supported |
+| `delosdb-*` | Gradle subprojects for runtime, storage experiments, tools, tests, build tools, demos, and compatibility modules | supported |
 | `dev/` | focused smoke/proof programs and local audit/benchmark scripts | supported |
-| `docs/` | maintained documentation and the source-checked internals book | supported |
+| `docs/` | maintained project documentation and book sources | supported |
 | `bin/` | launchers included in the binary distribution | supported |
 | `tools/java/` | checked-in build/test jars required by the Gradle build | supported legacy dependency bucket |
 | `tools/*` other than `tools/java/` | inherited Ant/release/Javadoc helpers | removed by cleanup |
 | `maven2/`, `plugins/`, `release/`, `java/` | inherited Derby release/IDE/empty layout | removed by cleanup |
 
-Workspace metadata such as `.git/`, `.gradle/`, and `.idea/` may appear in local ZIP snapshots. They are not project cleanup targets and must not be deleted by cleanup scripts.
+Workspace metadata such as `.git/`, `.gradle/`, and `.idea/` may appear in local
+ZIP snapshots. They are not project cleanup targets and must not be deleted by
+cleanup scripts.
 
 ## Runtime artifacts
 
@@ -144,17 +201,6 @@ build/distributions/delosdb-0.1.0-dev-bin.zip
 build/distributions/delosdb-0.1.0-dev-bin.tar.gz
 ```
 
-## Local Maven publication
-
-```bash
-./gradlew publishToMavenLocal
-./gradlew verifyMavenPublications
-./gradlew verifyMavenLocalConsumer
-```
-
-This is a Maven Local verification baseline only. Maven Central publication is a
-separate future release-hardening task.
-
 ## Relationship to Apache Derby
 
 This project is based on Apache Derby 10.17.1.0 source code. Apache Derby was
@@ -180,8 +226,9 @@ Root-level Markdown is limited to project-facing essentials:
 
 Maintained technical docs live under `docs/`:
 
+- `docs/MVCC-MISSION.md` — active MVCC mission and proof ladder.
 - `docs/BUILDING.md` — build, test, distribution, and Maven Local workflow.
-- `docs/ROADMAP.md` — current product direction and frozen/finished seams.
+- `docs/ROADMAP.md` — current product direction and near/future milestones.
 - `docs/modernization-status.md` — current green state and cleanup priority.
 - `docs/DERBY-COMPATIBILITY.md` — Derby compatibility policy.
 - `docs/sql-extensions.md` — supported DelosDB SQL extension surface.

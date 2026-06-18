@@ -1,34 +1,46 @@
 # DelosDB Roadmap
 
-DelosDB is a Java-native, Derby-compatible database platform for building and
-researching database capabilities against a real SQL engine.
+DelosDB is a Java 21, Derby-compatible database kernel. The project keeps the
+SQL/JDBC surface familiar while replacing risky inherited internals through
+small executable proofs.
 
 North star:
 
 ```text
-A Java developer can implement a new database capability — an index type,
-storage model, function, type, or cost model — and run it against a real SQL
-engine, while DelosDB opens and improves the inherited Derby engine where the
-existing seams are too narrow.
+A Java developer can build and test serious database internals — storage,
+indexing, optimizer costing, recovery, and MVCC — against a real SQL engine,
+without losing Derby compatibility by accident.
 ```
 
 ## Current rule
 
-Finish existing seams before opening new ones.
+Finish the active lane before opening new ones.
 
-Do not start `RewriteRuleProvider`, `ExternalTableProvider`,
-`SecurityPolicyProvider`, or new `TypeProvider` semantics while the existing
-provider surfaces still need hardening.
+The active lane is MVCC semantic correctness. Do not start new provider families,
+new research-platform subsystems, or new SQL surfaces while the MVCC proof ladder
+is still incomplete.
 
 Workspace metadata is not a cleanup target. Local workspace ZIP snapshots may
-contain `.git/`, `.gradle/`, and `.idea/`. Reviewers must ignore those
-directories. Cleanup scripts must never delete them.
+contain `.git/`, `.gradle`, and `.idea`. Cleanup scripts must never delete those
+paths.
 
-## Finished seams
+## Closed major lane: ASM bytecode
+
+ASM is now the production generated-bytecode backend. The old Derby bytecode
+backend and old classfile writer are quarantined. The permanent proof is:
+
+```bash
+./gradlew generatedBytecodeAsmJvm21Proof
+```
+
+Do not reopen ASM work unless a concrete build/test failure points back to
+bytecode generation.
+
+## Finished provider seams
 
 ### CostModelProvider v2
 
-Status: finished seam, green locally.
+Status: finished seam.
 
 Active native path:
 
@@ -46,16 +58,12 @@ factory id 0 -> heap CostModelProvider
 factory id 1 -> btree CostModelProvider
 ```
 
-The old `FromBaseTable` / `IndexProviderCostBridge` path is legacy
-optimizer-side diagnostic history only. Native provider-cost consumption belongs
-to the store-cost adapter.
-
-Known boundary: `CostModelEstimate.startupCost()` is captured and validated, but
-Derby's `StoreCostResult` can propagate only total cost and estimated row count.
+Known boundary: Derby's `StoreCostResult` can propagate only total cost and
+estimated row count. Richer path/cost vectors are future optimizer work.
 
 ### IndexProvider v2
 
-Status: finished abstraction proof, green locally.
+Status: finished abstraction proof.
 
 Proven implementations:
 
@@ -64,375 +72,136 @@ index btree  -> Derby-compatible SQL-backed index provider
 index memory -> provider-owned runtime operations proof
 ```
 
-`btree` remains the only SQL-creatable index provider. `memory` is visible in the
-registry and has its own runtime proof, but `CREATE INDEX ... USING memory` is
-intentionally rejected until a real Derby executor/storage bridge exists.
+`btree` remains the only normal SQL-creatable index provider. `memory` is visible
+in the registry and has its own runtime proof, but `CREATE INDEX ... USING
+memory` is intentionally rejected until a real Derby executor/storage bridge
+exists for non-B-tree physical indexes.
 
-## Shallow seams deliberately frozen
+## Frozen shallow seams
 
-- `StorageProvider`: heap-only provider surface; no second storage engine yet.
-- `FunctionProvider`: built-in DelosDB function surface; no external function
-  loading yet.
-- `TypeProvider`: metadata-only Derby type visibility; no parser, binder, type
-  system, or storage-format changes yet.
+These remain deliberately shallow while MVCC is the active lane:
 
-## Current green gates
+- `FunctionProvider`: built-in DelosDB function surface only.
+- `TypeProvider`: metadata-only Derby type visibility.
+- new provider families: not opened.
 
-```bash
-./gradlew derbyRuntimeSmoke
-./gradlew :delosdb-tests:runDerbyLangSuite
-```
+## Active lane: MVCC / versioned storage
 
-Broader checks:
+The MVCC path has moved beyond source mapping. It now has an isolated storage
+module, a provider SPI, page-backed durability proofs, provider-owned index
+proofs, SQL opt-in smoke tests, and a guarded default-provider candidate path.
 
-```bash
-./gradlew fullVerification
-./dev/modernization-audit.sh --verify
-./dev/benchmark-baseline.sh
-```
-
-## Current product seams
-
-Implemented and green locally:
-
-- Derby-compatible SQL/JDBC baseline through Gradle.
-- `CostModelProvider` v2 through heap and B-tree cost providers.
-- `IndexProvider` v2 through B-tree and memory providers.
-- `StorageProvider` heap-only surface with provider-level capabilities.
-- `FunctionProvider` built-in DelosDB function surface.
-- `TypeProvider` metadata-only SQL visibility.
-- Unified extension registry through `SYSCS_UTIL.DELOSDB_EXTENSIONS()`.
-- Type metadata visibility through `SYSCS_UTIL.DELOSDB_TYPES()`.
-- DelosDB system-routine test baseline through `DelosDbTestBaselines`.
-
-## Book verification rule
-
-No new book chapter should be added until existing cited chapters stay
-source-checked. Current status: Chapters 1--11 are source-checked for the claims
-they currently make.
-
-Future chapter edits must preserve each chapter's verification-status paragraph
-and update its evidence map when source claims change.
-
-## Next milestone options
-
-Choose one focused track at a time:
-
-1. keep root/docs structure clean: no stale inherited web/release artifacts, no duplicate build/status docs;
-2. reduce inherited `RESOLVE` comments in reviewed batches;
-3. reduce `instanceof`-then-cast patterns where ownership is clear;
-4. only then decide whether `StorageProvider`, `FunctionProvider`, or
-   `TypeProvider` deserves a real v2 implementation.
-
-
-## PostgreSQL-class storage/concurrency direction
-
-After the inherited Derby cleanup pass, the next long-term database architecture
-work is source-proof driven, not provider-family driven:
+Current rule:
 
 ```text
-1. MVCC is the long-term concurrency direction.
-2. WAL/recovery is a core subsystem.
-3. Optimizer work needs real cost/path infrastructure.
-4. Indexing needs careful concurrency/latching design.
-5. Vacuum/version cleanup belongs to MVCC design.
-6. Runtime/executor code must stay evolvable.
+No property:
+  CREATE TABLE ...        -> normal Derby-compatible heap path
+
+-Ddelosdb.storage.defaultProvider=delos_mvcc:
+  bare CREATE TABLE ...   -> guarded delos_mvcc candidate path
+
+CREATE TABLE ... USING delos_mvcc:
+  explicit experimental MVCC path
 ```
 
-Current checkpoint document:
+The global default store is not flipped.
+
+Important current gates:
+
+```bash
+./gradlew mvccDefaultProviderCandidateMatrix
+./gradlew mvccTransactionLockOrderProof
+./gradlew mvccKernelReviewCloseoutProof
+```
+
+Active plan:
 
 ```text
-docs/postgres-class-storage-concurrency.md
+A43 — kernel review closeout proof
+A44 — missing-history / prune-safety proof
+A45 — command sequence model
+A46 — statement snapshot visibility
+A47 — SQL statement-boundary smoke
+A48 — captured visibility-state snapshot
+A49 — durable transaction outcome log
+A50 — unresolved outcome recovery proof
+A51 — vacuum watermark integration
+A52 — MVCC SQL compatibility candidate matrix
 ```
 
-Current focused proof gate:
-
-```bash
-./gradlew :delosdb-tests:runPostgresClassArchitectureProofTests
-```
-
-This does not make DelosDB MVCC yet. It defines the source boundaries that must
-be understood before MVCC, version cleanup, or PostgreSQL-class optimizer/index
-ideas become implementation work.
-
-## Explicitly out of scope for now
-
-- distributed SQL;
-- HA / replication;
-- PostgreSQL wire protocol;
-- MySQL compatibility;
-- external plugin marketplace;
-- new provider families;
-- production custom storage engine; experimental storage kernels remain opt-in and isolated;
-- full JSON/type-system work;
-- vector database behavior.
-
-
-## PostgreSQL-class optimizer path observability
-
-The first optimizer-path step is observability, not enumeration rewrite.
-`optimizerPathObservabilitySmoke` records the selected Derby runtime scan shape
-next to the DelosDB `CostModelProvider` v2 store-cost probe so future path
-infrastructure can be grounded in current behavior.
-
-## PostgreSQL-class index concurrency proof
-
-The first index-concurrency step is proof coverage, not latch redesign.
-`runBTreeIndexConcurrencyArchitectureProofTest` pins down the SQL-visible
-unique-index conflict and rollback contract while leaving B-tree page latches,
-split logic, scan repositioning, and delete/compact behavior unchanged.
-
-## PostgreSQL-class version cleanup proof
-
-The first version-cleanup step is not MVCC implementation. It is a SQL-visible
-proof of the current Derby/DelosDB cleanup contract around indexed updates and
-deletes. `runVersionCleanupArchitectureProofTest` pins down the behavior a
-future MVCC visibility and vacuum subsystem must preserve: rolled-back updates
-and deletes do not leave searchable index garbage, committed updates move the
-visible key, and committed deletes remove the visible row from heap and index
-access paths.
-
-## Experimental MVCC storage module
-
-The first MVCC implementation step is deliberately isolated in a new Gradle
-module:
+The detailed mission and four-engine comparison live in:
 
 ```text
-delosdb-storage-mvcc
+docs/MVCC-MISSION.md
 ```
 
-This module is not wired into Derby heap, B-tree, WAL, recovery, SQL execution,
-or existing database open paths. It contains an in-memory MVCC core model for
-transaction ids, commit sequences, snapshots, version chains, visibility, and
-cleanup. That keeps existing Derby-compatible databases on the normal heap path
-while DelosDB develops a future versioned-storage implementation safely.
+## Research-friendly constraint
 
-Focused proof task:
+DelosDB should be friendly to database-systems research and university teaching,
+but that must not become a second product before the engine is correct.
 
-```bash
-./gradlew :delosdb-storage-mvcc:runMvccCoreModelTest
+Allowed now:
+
+```text
+small proof-level traces;
+readable assertion messages;
+inspectable internal value objects;
+proof output that explains a decision already being tested.
 ```
 
-Root alias:
+Parked until after A44--A52:
 
-```bash
-./gradlew mvccCoreModelTest
+```text
+new SQL EXPLAIN surfaces;
+teaching profiles;
+research property families;
+deterministic scheduler;
+fault-injection framework;
+labs/ directory;
+artifact packaging;
+benchmark harness.
 ```
 
+## Near future
 
-## Experimental MVCC storage module progress
+1. Close the MVCC semantic correctness ladder.
+2. Keep Derby heap as default.
+3. Keep `delos_mvcc` guarded by explicit syntax or the
+   `delosdb.storage.defaultProvider=delos_mvcc` property.
+4. Add only documentation/test-level observability that helps the current proof.
+5. Remove or mark stale docs that still describe MVCC as a future-only idea.
 
-The MVCC storage module now has both a core visibility model and a table-scan
-model. The table-scan model proves snapshot-stable enumeration of visible rows
-before any SQL, Derby heap, B-tree, WAL, or recovery integration. This keeps
-future `delos_mvcc` work opt-in and separate from Derby-compatible storage.
+## Future direction
 
-### MVCC SPI checkpoint
+After the MVCC candidate proves semantic correctness, recovery safety, vacuum
+watermarks, and SQL compatibility, DelosDB can consider deeper lanes:
 
-The experimental MVCC work now has a small `VersionedStorageProvider` SPI
-skeleton in `delosdb-spi`, implemented by `delosdb-storage-mvcc`. This is still
-not SQL wiring and does not affect existing Derby databases. It proves the first
-extension boundary for an opt-in `delos_mvcc` storage family: provider metadata,
-capabilities, table creation/opening, snapshot reads, table scans, and basic
-statistics through the SPI.
-
-Focused check:
-
-```bash
-./gradlew :delosdb-storage-mvcc:runVersionedStorageProviderSpiTest
-```
-- Phase 3 guard: `CREATE TABLE ... USING delos_mvcc` is recognized only as an experimental versioned-storage provider and is rejected with a clean diagnostic until table-scan execution exists.
-
-
-### MVCC SQL table-scan execution checkpoint
-
-The experimental `delos_mvcc` path now has a first vertical SQL/JDBC proof:
-
-```sql
-CREATE TABLE t (id INT, name VARCHAR(40)) USING delos_mvcc;
-INSERT INTO t VALUES (1, 'alpha');
-SELECT * FROM t;
+```text
+row locks / SELECT FOR UPDATE;
+semi-consistent reads for UPDATE/DELETE conflict checks;
+wait/retry/abort conflict decisions;
+serializable isolation;
+version-aware indexes;
+tombstone/side-index experiments;
+adaptive version storage;
+optimizer path vocabulary;
+benchmark/research artifact support;
+formal teaching labs.
 ```
 
-This is deliberately narrow and in-memory. It routes only a small supported SQL
-subset through the `VersionedStorageProvider` table-scan path and leaves Derby
-heap storage, indexes, WAL/recovery, optimizer costing, and existing database
-compatibility untouched. JDBC commit/rollback is now mapped to the provider-local MVCC transaction lifecycle.
-The next phase is provider-local recovery logging, still separate from Derby WAL.
+These are future lanes, not near-term gates.
 
+## Documentation cleanup
 
-### MVCC provider-local recovery-log checkpoint
+Active MVCC planning belongs in `docs/MVCC-MISSION.md`.
 
-The experimental `delos_mvcc` provider now has a Phase 6 append-only recovery
-log for the narrow SQL row shape used by the table-scan proof. This is
-provider-local durability scaffolding, not Derby WAL integration. It proves that
-committed MVCC changes can be replayed after reopening the provider while
-aborted or incomplete transactions are ignored. Existing Derby heap storage and
-existing database compatibility paths remain untouched.
+`docs/postgres-class-storage-concurrency.md` is retained as historical source
+trail for the early PostgreSQL-class storage/concurrency campaign.
 
-Focused check:
+`docs/postgresql-deep-gap-map.md` is stale and should be removed; it belongs to
+the pre-MVCC source-mapping phase and contains obsolete guidance.
 
-```bash
-./gradlew mvccRecoveryLogTest
-```
+## Book rule
 
-Aggregate MVCC check:
-
-```bash
-./gradlew mvccStorageModelTest
-```
-
-### MVCC unique-key checkpoint
-
-The experimental `delos_mvcc` SQL path now has the first Phase 7 uniqueness
-proof for column-level `PRIMARY KEY` and `UNIQUE` constraints on the narrow
-in-memory table-scan bridge. This is still not a B-tree index implementation and
-not optimizer integration. It pins the user-visible conflict contract first:
-committed duplicate keys fail, active transaction reservations block concurrent
-duplicates, rollback releases reservations, and commit keeps reservations
-enforced.
-
-Focused check:
-
-```bash
-./gradlew versionedStorageUniqueKeySmoke
-```
-
-### MVCC provider-owned index checkpoint
-
-The experimental `delos_mvcc` path now includes a Phase 8 provider-owned index
-model. Index entries point to MVCC row keys, and lookup rechecks snapshot-visible
-row versions before returning data. The SQL bridge supports the first indexed
-lookup path with `CREATE INDEX ... ON ...`, `SELECT ... WHERE`, and narrow indexed
-`UPDATE`/`DELETE` proofs.
-
-This is still not Derby B-tree integration and not optimizer costing. It is the
-storage-engine checkpoint before deeper snapshot isolation, cleanup/vacuum, and
-real path-cost work.
-
-### MVCC snapshot-semantics checkpoint
-
-The experimental `delos_mvcc` path now has a Phase 9 snapshot-semantics proof.
-Following the PostgreSQL design rule, visibility is no longer treated as one
-fixed behavior for all JDBC transactions:
-
-- `READ COMMITTED` and `READ UNCOMMITTED` capture a fresh provider snapshot per
-  statement.
-- `REPEATABLE READ` and `SERIALIZABLE` keep the same provider snapshot until
-  JDBC commit/rollback.
-- Own writes remain visible after statement-snapshot refresh.
-- Another active writer remains invisible even after refresh.
-
-This is still provider-local MVCC behavior. It does not change Derby heap
-storage, Derby locks, Derby WAL, or optimizer costing.
-
-Focused checks:
-
-```bash
-./gradlew mvccSnapshotIsolationTest
-./gradlew versionedStorageSnapshotIsolationSmoke
-```
-
-### MVCC cleanup / vacuum checkpoint
-
-The experimental `delos_mvcc` storage path now has a Phase 10 cleanup proof.
-Cleanup removes dead physical versions only when the provider-local transaction
-manager reports that no active snapshot can still see them. Provider-owned index
-candidates are pruned under the same rule, so old indexed values remain
-available to old snapshots and disappear only after the protecting snapshot is
-closed.
-
-This remains manual provider-local cleanup. It is not a background vacuum
-process, Derby heap compaction, or optimizer statistics integration yet.
-
-
-### MVCC recovery hardening checkpoint
-
-The experimental `delos_mvcc` provider now has a Phase 11 recovery-hardening
-checkpoint. The provider-local log is still not Derby WAL, but it now behaves
-more like a durable WAL prefix for the prototype:
-
-- repeated terminal records are idempotent during recovery;
-- an incomplete final log record is ignored as a torn tail;
-- committed insert/update/delete state survives provider reopen;
-- aborted and incomplete transactions remain invisible; and
-- a conservative provider checkpoint can rewrite the log to a compact committed
-  image when no provider-local transactions are active.
-
-Focused checks:
-
-```bash
-./gradlew mvccRecoveryHardeningTest
-./gradlew mvccRecoveryLogTest
-```
-
-### MVCC write-conflict checkpoint
-
-The experimental `delos_mvcc` path now has a Phase 12 write-conflict proof.
-Readers continue to see a stable committed version while another transaction
-holds an uncommitted update. A second writer against the same row receives a
-transaction-conflict SQLState, rollback releases the conflict, and a committed
-writer prevents stale snapshots from overwriting the old row version.
-
-Focused checks:
-
-```bash
-./gradlew mvccWriteConflictTest
-./gradlew versionedStorageWriteConflictSmoke
-```
-
-### MVCC optimizer/path checkpoint
-
-The experimental `delos_mvcc` path now has a Phase 13 access-path proof. Simple
-`SELECT ... WHERE column = literal` predicates no longer require an index. The
-bridge can fall back to a provider-owned MVCC table scan, and when a
-provider-owned index exists it records an MVCC index-scan path with table and
-index statistics.
-
-This is still not Derby optimizer integration. It is the statistics and runtime
-path-observability checkpoint before wiring MVCC paths into Derby's normal cost
-model.
-
-Focused checks:
-
-```bash
-./gradlew mvccIndexStatsTest
-./gradlew versionedStorageOptimizerPathSmoke
-```
-
-### MVCC ordered-index ORDER BY checkpoint
-
-The experimental `delos_mvcc` path now has a Phase 15 ordered-index `ORDER BY`
-proof. `SELECT * FROM mvcc_table ORDER BY indexed_column` can use the
-provider-owned ordered MVCC index when one exists. Without an index, the bridge
-falls back to a table scan plus a small in-bridge sort.
-
-The index path still treats index entries as candidates. Full ordered scans now
-recheck that the visible row version still belongs to the candidate index bucket,
-which prevents stale update/delete candidates from appearing twice or in the
-wrong order.
-
-Focused checks:
-
-```bash
-./gradlew mvccOrderedIndexOrderByTest
-./gradlew versionedStorageOrderByPathSmoke
-```
-
-### MVCC ordered-index LIMIT checkpoint
-
-The experimental `delos_mvcc` path now has a Phase 16 bounded ordered-index
-proof. `SELECT * FROM mvcc_table ORDER BY indexed_column LIMIT n` can use a
-provider-owned ordered MVCC index when one exists. Without an index, the bridge
-falls back to a table scan, sort, and limit.
-
-The bounded index scan still rechecks MVCC visibility and current indexed value
-before returning rows. Stale candidates left by updates or deletes are skipped
-and do not count toward the requested limit.
-
-Focused checks:
-
-```bash
-./gradlew mvccOrderedIndexLimitTest
-./gradlew versionedStorageOrderByLimitSmoke
-```
+Do not update the book as part of MVCC roadmap cleanup. Book changes require a
+separate pass with source trails and chapter verification status updates.
