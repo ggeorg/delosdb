@@ -35,6 +35,7 @@ public final class MvccPageMutationLog {
     private static final String RECORD_VERSION = "VERSION";
     private static final String RECORD_COMMIT = "COMMIT";
     private static final String RECORD_ABORT = "ABORT";
+    private static final String RECORD_FSYNC = "FSYNC";
 
     private final Path path;
 
@@ -79,20 +80,35 @@ public final class MvccPageMutationLog {
     }
 
     /**
-     * Replaces the log with a compact committed image. Each image record is
-     * represented as a synthetic committed transaction so normal recovery logic
-     * can replay it without a separate checkpoint record format.
+     * Records an explicit durable-boundary marker in the page mutation log.
+     *
+     * <p>The append operation itself is forced to stable storage by
+     * {@link #appendLine(String, String...)}, so this marker is a readable
+     * contract boundary for recovery tests and later checkpoint logic. Recovery
+     * accepts the marker but never turns it into a row version.</p>
+     */
+    public void appendFsyncBoundary(long boundaryId) {
+        if (boundaryId <= 0L) {
+            throw new IllegalArgumentException("fsync boundary id must be positive: " + boundaryId);
+        }
+        appendLine(RECORD_FSYNC, Long.toString(boundaryId));
+    }
+
+    /**
+     * Replaces the log with a compact committed image. The image is represented
+     * as one synthetic committed transaction so normal recovery logic can replay
+     * it without a separate checkpoint record format.
      */
     public synchronized void rewriteCheckpoint(List<MvccVersionRecord> committedImage) {
         Objects.requireNonNull(committedImage, "committedImage");
         StringBuilder content = new StringBuilder();
         long syntheticTransactionId = 1L;
+        long syntheticCommitSequence = 1L;
         for (MvccVersionRecord record : committedImage) {
-            Objects.requireNonNull(record, "committedImage record");
-            long commitSequence = checkpointCommitSequence(record);
             appendLine(content, RECORD_VERSION, Long.toString(syntheticTransactionId), encodeRecord(record));
-            appendLine(content, RECORD_COMMIT, Long.toString(syntheticTransactionId), Long.toString(commitSequence));
-            syntheticTransactionId++;
+        }
+        if (!committedImage.isEmpty()) {
+            appendLine(content, RECORD_COMMIT, Long.toString(syntheticTransactionId), Long.toString(syntheticCommitSequence));
         }
         writeAtomically(content.toString().getBytes(StandardCharsets.UTF_8));
     }
@@ -175,6 +191,11 @@ public final class MvccPageMutationLog {
             long transactionId = parseLong(parts[2], lineIndex, "transaction id");
             recordTerminalState(transactionId, TerminalState.aborted(), terminalStates, terminalOrder);
         }
+        case RECORD_FSYNC -> {
+            require(parts.length == 3, lineIndex, "FSYNC requires boundary id");
+            long boundaryId = parseLong(parts[2], lineIndex, "fsync boundary id");
+            require(boundaryId > 0L, lineIndex, "fsync boundary id must be positive");
+        }
         default -> throw corrupt(lineIndex, "unknown page mutation log record type: " + parts[1]);
         }
     }
@@ -199,7 +220,7 @@ public final class MvccPageMutationLog {
         byte[] bytes = line.toString().getBytes(StandardCharsets.UTF_8);
         try (FileChannel channel = FileChannel.open(path,
                 StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-            writeFully(channel, ByteBuffer.wrap(bytes));
+            channel.write(ByteBuffer.wrap(bytes));
             channel.force(true);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not append MVCC page mutation log record to: " + path, e);
@@ -220,9 +241,8 @@ public final class MvccPageMutationLog {
                 ? path.resolveSibling(path.getFileName() + ".tmp")
                 : parent.resolve(path.getFileName() + ".tmp");
         try {
-            try (FileChannel channel = FileChannel.open(temp,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
-                writeFully(channel, ByteBuffer.wrap(bytes));
+            Files.write(temp, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.WRITE)) {
                 channel.force(true);
             }
             Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -234,20 +254,6 @@ public final class MvccPageMutationLog {
                 throw new UncheckedIOException("Could not rewrite MVCC page mutation checkpoint log: " + path, atomicFailure);
             }
         }
-    }
-
-    private static void writeFully(FileChannel channel, ByteBuffer buffer) throws IOException {
-        while (buffer.hasRemaining()) {
-            channel.write(buffer);
-        }
-    }
-
-    private static long checkpointCommitSequence(MvccVersionRecord record) {
-        MvccCommitSequence commitSequence = record.header().commitSequence();
-        if (commitSequence.equals(MvccCommitSequence.NONE)) {
-            return 1L;
-        }
-        return commitSequence.value();
     }
 
     private static String encodeRecord(MvccVersionRecord record) {
