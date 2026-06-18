@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * A52 closeout smoke for the guarded delos_mvcc SQL compatibility candidate path.
@@ -58,7 +60,7 @@ public final class VersionedStorageSqlCompatibilityCandidateSmoke {
 
             assertCount(statement, 4, "seeded candidate rows");
             assertRowById(statement, 2, "beta", "seeded row is visible by primary-key lookup");
-            assertRows(statement,
+            assertRowsUnordered(statement,
                     "select * from " + TABLE_NAME + " where name between 'beta' and 'gamma'",
                     new Object[][]{{2, "beta"}, {4, "delta"}, {3, "gamma"}});
             assertLastPath(NAME_INDEX, "NAME", "indexed range path after seed");
@@ -130,7 +132,7 @@ public final class VersionedStorageSqlCompatibilityCandidateSmoke {
         assertNoRowById(statement, 4, phase + " id=4 deleted row");
         assertRowById(statement, 5, "omega", phase + " id=5 inserted row");
 
-        assertRows(statement,
+        assertRowsUnordered(statement,
                 "select * from " + TABLE_NAME + " where name between 'bravo' and 'omega'",
                 new Object[][]{{2, "bravo"}, {3, "gamma"}, {5, "omega"}});
         assertLastPath(NAME_INDEX, "NAME", phase + " range index path");
@@ -188,6 +190,34 @@ public final class VersionedStorageSqlCompatibilityCandidateSmoke {
             if (rs.next()) {
                 throw new AssertionError("Unexpected extra row id=" + rs.getInt(1) + " from " + sql);
             }
+        }
+    }
+
+
+    private static void assertRowsUnordered(Statement statement, String sql, Object[][] expectedRows) throws Exception {
+        Map<Integer, String> actualRows = new LinkedHashMap<>();
+        try (ResultSet rs = statement.executeQuery(sql)) {
+            while (rs.next()) {
+                int id = rs.getInt(1);
+                String previous = actualRows.put(id, rs.getString(2));
+                if (previous != null) {
+                    throw new AssertionError("Duplicate row id=" + id + " from " + sql);
+                }
+            }
+        }
+
+        SmokeUtils.assertEquals(String.valueOf(expectedRows.length),
+                String.valueOf(actualRows.size()),
+                "row count from " + sql);
+        for (Object[] expected : expectedRows) {
+            int expectedId = (Integer) expected[0];
+            String expectedName = (String) expected[1];
+            String actualName = actualRows.get(expectedId);
+            if (actualName == null) {
+                throw new AssertionError("Expected row id=" + expectedId + " from " + sql
+                        + " but actual ids were " + actualRows.keySet());
+            }
+            SmokeUtils.assertEquals(expectedName, actualName, "delos_mvcc name for id=" + expectedId + " from " + sql);
         }
     }
 
