@@ -2465,3 +2465,130 @@ tasks.register('mvccDerbySqlBridgeReadiness') {
             'versionedStorageDurableSqlSmoke'
 }
 
+tasks.register('verifyMvccDefaultStoreCandidatePreflightConfiguration') {
+    group = 'verification'
+    description = 'Verifies MVCC is ready for default-store discussion while Derby heap remains the active default.'
+    doLast {
+        def requiredTasks = [
+                'asmSwitchComplete',
+                'mvccDerbySqlBridgeReadiness',
+                'mvccDefaultSwitchReadiness',
+                'mvccSqlRecoverySmoke',
+                'mvccSqlIndexVisibilitySmoke',
+                'versionedStorageDurableSqlSmoke',
+                'versionedStorageProviderOwnedIndexSmoke',
+                'versionedStorageSnapshotIsolationSmoke',
+                'versionedStorageWriteConflictSmoke',
+                'generatedBytecodeAsmJvm21Proof',
+                'smokeFromJars'
+        ]
+        def missingTasks = requiredTasks.findAll { tasks.findByName(it) == null }
+        if (!missingTasks.isEmpty()) {
+            throw new GradleException('Missing MVCC default-store candidate preflight tasks: ' + missingTasks)
+        }
+
+        def builtInExtensions = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/BuiltInExtensions.java').text
+        if (!builtInExtensions.contains('public static final String HEAP_STORAGE_PROVIDER = "heap"')) {
+            throw new GradleException('BuiltInExtensions must retain the heap provider name before a default-store switch')
+        }
+        if (!builtInExtensions.contains('public static final String DEFAULT_STORAGE_PROVIDER = HEAP_STORAGE_PROVIDER')) {
+            throw new GradleException('Default storage provider must remain heap during default-store candidate preflight')
+        }
+
+        def builtInStorageProviders = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/BuiltInStorageProviders.java').text
+        if (!builtInStorageProviders.contains('public static StorageProvider defaultProvider()')) {
+            throw new GradleException('BuiltInStorageProviders.defaultProvider() is missing')
+        }
+        if (!builtInStorageProviders.contains('return heap();')) {
+            throw new GradleException('BuiltInStorageProviders.defaultProvider() must still return heap() before the default switch')
+        }
+        if (!builtInStorageProviders.contains('return List.of(heap());')) {
+            throw new GradleException('Built-in storage provider registry must still expose only heap before default-store switch')
+        }
+        if (builtInStorageProviders.contains('delos_mvcc') || builtInStorageProviders.contains('DelosMvcc')) {
+            throw new GradleException('delos_mvcc must not be wired as a built-in default storage provider in this preflight step')
+        }
+
+        def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java').text
+        if (!sqlBridge.contains('private static final String PROVIDER_NAME = "delos_mvcc"')) {
+            throw new GradleException('VersionedStorageSqlBridge must stay pinned to the delos_mvcc provider')
+        }
+        if (!sqlBridge.contains('USING delos_mvcc') || !sqlBridge.contains('delos_mvcc$')) {
+            throw new GradleException('VersionedStorageSqlBridge CREATE TABLE support must remain explicitly USING delos_mvcc')
+        }
+        if (!sqlBridge.contains('return null;')) {
+            throw new GradleException('VersionedStorageSqlBridge must keep falling through to normal Derby for unsupported/non-MVCC SQL')
+        }
+        if (!sqlBridge.contains('configurePageBackedStorage(Path storageDirectory)')) {
+            throw new GradleException('Durable page-backed MVCC bridge hook is missing')
+        }
+        if (!sqlBridge.contains('reopenPageBackedStorage()')) {
+            throw new GradleException('Durable MVCC bridge reopen hook is missing')
+        }
+
+        def embedStatement = file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedStatement.java').text
+        if (!embedStatement.contains('VersionedStorageSqlBridge.tryExecute(')) {
+            throw new GradleException('EmbedStatement must retain the guarded VersionedStorageSqlBridge hook')
+        }
+
+        def embedConnection = file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedConnection.java').text
+        if (!embedConnection.contains('VersionedStorageSqlBridge.commit(this);')) {
+            throw new GradleException('EmbedConnection commit must continue completing provider-local MVCC transactions')
+        }
+        if (!embedConnection.contains('VersionedStorageSqlBridge.rollback(this);')) {
+            throw new GradleException('EmbedConnection rollback/close must continue aborting provider-local MVCC transactions')
+        }
+
+        def adapter = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStoreAdapter.java').text
+        if (!adapter.contains('STORAGE_PROVIDER_PROPERTY = "delosdb.storage.provider"')) {
+            throw new GradleException('MVCC store adapter must retain explicit provider property')
+        }
+        if (!adapter.contains('PROVIDER_MVCC = "mvcc"')) {
+            throw new GradleException('MVCC store adapter must retain the explicit mvcc provider value')
+        }
+        if (!adapter.contains('requires explicit')) {
+            throw new GradleException('MVCC store adapter must still reject non-explicit opt-in opens')
+        }
+
+        def serviceFile = file('delosdb-storage-mvcc/src/main/resources/META-INF/services/io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider')
+        if (!serviceFile.exists() || !serviceFile.text.contains('io.github.ggeorg.delosdb.storage.mvcc.DelosMvccStorageProvider')) {
+            throw new GradleException('delos_mvcc VersionedStorageProvider ServiceLoader entry is missing')
+        }
+
+        def defaultConfigHits = []
+        fileTree('.') {
+            include '**/*.properties'
+            include '**/*.conf'
+            include '**/*.gradle'
+            exclude 'build/**'
+            exclude '**/build/**'
+            exclude '.gradle/**'
+            exclude '.git/**'
+        }.files.each { candidate ->
+            def relative = project.relativePath(candidate)
+            if (relative == 'build.gradle') {
+                return
+            }
+            def candidateText = candidate.text
+            if (candidateText.contains('delosdb.storage.provider=mvcc')) {
+                defaultConfigHits << relative
+            }
+        }
+        if (!defaultConfigHits.isEmpty()) {
+            throw new GradleException('MVCC must remain opt-in before the default-store switch; default config enables mvcc in: ' + defaultConfigHits)
+        }
+    }
+}
+
+tasks.register('mvccDefaultStoreCandidatePreflight') {
+    group = 'verification'
+    description = 'Runs the full ASM + MVCC + Derby/JDBC bridge gates before any default-store switch overlay.'
+    dependsOn 'verifyMvccDefaultStoreCandidatePreflightConfiguration',
+            'asmSwitchComplete',
+            'mvccDerbySqlBridgeReadiness',
+            ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-tests:runDerbyLangSuite',
+            'smokeFromJars',
+            'generatedBytecodeAsmJvm21Proof'
+}
+
