@@ -1928,7 +1928,7 @@ tasks.register('mvccVacuumRecoveryTest') {
 
 tasks.register('mvccConcurrencyStressTest') {
     group = 'verification'
-    description = 'Runs Phase A8 delos_mvcc durable concurrency stress tests.'
+    description = 'Runs MVCC-9 deterministic concurrent readers/writers stress proof.'
     dependsOn ':delosdb-storage-mvcc:runMvccConcurrencyStressTest'
 }
 
