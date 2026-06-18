@@ -2637,3 +2637,288 @@ tasks.register('mvccSqlBridgeHistoryPrunedProof') {
     dependsOn 'mvccSqlCompatibilityCandidate', 'versionedStorageSqlHistoryPrunedSmoke'
 }
 
+
+// -----------------------------------------------------------------------------
+// DS1 — Legacy Derby store boundary proof
+// -----------------------------------------------------------------------------
+// These tasks are intentionally analysis-only. They do not move files and they do
+// not change runtime behavior. They make the inherited Derby store boundary
+// explicit before any later modularization surgery.
+
+def delosdbDs1JavaFiles = { String relativePath ->
+    def root = file(relativePath)
+    if (!root.exists()) {
+        return [] as List<File>
+    }
+    return fileTree(root) { include '**/*.java' }.files.sort { it.path }
+}
+
+def delosdbDs1RelPath = { File source ->
+    return rootDir.toPath().relativize(source.toPath()).toString().replace(File.separatorChar, '/' as char)
+}
+
+def delosdbDs1IsUnder = { File source, File root ->
+    if (!root.exists()) {
+        return false
+    }
+    return source.toPath().normalize().startsWith(root.toPath().normalize())
+}
+
+def delosdbDs1ImportMatches = { Collection<File> sources, Collection<String> prefixes ->
+    def matches = []
+    sources.each { source ->
+        int lineNumber = 0
+        source.eachLine { line ->
+            lineNumber++
+            def matcher = line =~ /^\s*import\s+([^;]+);\s*$/
+            if (matcher.matches()) {
+                def importedType = matcher[0][1].trim()
+                if (prefixes.any { importedType.startsWith(it) }) {
+                    matches << [file: delosdbDs1RelPath(source), line: lineNumber, importedType: importedType]
+                }
+            }
+        }
+    }
+    return matches
+}
+
+def delosdbDs1RequireNoImports = { String label, Collection<File> sources, Collection<String> forbiddenPrefixes ->
+    def matches = delosdbDs1ImportMatches(sources, forbiddenPrefixes)
+    if (!matches.isEmpty()) {
+        def detail = matches.collect { "${it.file}:${it.line}: import ${it.importedType};" }.join('\n')
+        throw new GradleException("${label} has forbidden imports:\n${detail}")
+    }
+}
+
+def delosdbDs1PackageName = { File source ->
+    def packageName = null
+    source.eachLine { line ->
+        if (packageName == null) {
+            def matcher = line =~ /^\s*package\s+([^;]+);\s*$/
+            if (matcher.matches()) {
+                packageName = matcher[0][1].trim()
+            }
+        }
+    }
+    return packageName
+}
+
+def delosdbDs1MainSourceRoots = {
+    def roots = [file('delosdb-engine/src/main/java')]
+    subprojects.each { p ->
+        def sourceRoot = new File(p.projectDir, 'src/main/java')
+        if (sourceRoot.exists()) {
+            roots << sourceRoot
+        }
+    }
+    return roots.findAll { it.exists() }.unique { it.canonicalPath }
+}
+
+def delosdbDs1AllMainJavaFiles = {
+    def files = []
+    delosdbDs1MainSourceRoots().each { root ->
+        files.addAll(fileTree(root) { include '**/*.java' }.files)
+    }
+    return files.unique { it.canonicalPath }.sort { it.path }
+}
+
+def delosdbDs1StoreApiRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
+def delosdbDs1StoreImplRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+
+tasks.register('verifyMvccNoDerbyStoreImports') {
+    group = 'verification'
+    description = 'Verifies DelosDB-native MVCC sources do not compile-time import inherited Derby store APIs or internals.'
+    doLast {
+        def mvccSources = delosdbDs1JavaFiles('delosdb-storage-mvcc/src/main/java')
+        delosdbDs1RequireNoImports(
+                'delosdb-storage-mvcc',
+                mvccSources,
+                ['org.apache.derby.iapi.store.', 'org.apache.derby.impl.store.'])
+    }
+}
+
+tasks.register('verifyDerbyStoreNoMvccImports') {
+    group = 'verification'
+    description = 'Verifies inherited Derby store sources do not compile-time import DelosDB-native MVCC internals.'
+    doLast {
+        def storeSources = []
+        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store'))
+        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store'))
+        delosdbDs1RequireNoImports(
+                'legacy Derby store',
+                storeSources,
+                ['io.github.ggeorg.delosdb.storage.mvcc.'])
+    }
+}
+
+tasks.register('verifyNewProviderCodeNoDerbyImplStoreImports') {
+    group = 'verification'
+    description = 'Verifies DelosDB provider/SPI code does not import Derby raw/access store implementation internals.'
+    doLast {
+        def providerSources = []
+        providerSources.addAll(delosdbDs1JavaFiles('delosdb-spi/src/main/java'))
+        providerSources.addAll(delosdbDs1JavaFiles('delosdb-storage-mvcc/src/main/java'))
+        providerSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/io/github'))
+        delosdbDs1RequireNoImports(
+                'DelosDB provider/SPI code',
+                providerSources,
+                ['org.apache.derby.impl.store.raw.', 'org.apache.derby.impl.store.access.'])
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreInventory') {
+    group = 'verification'
+    description = 'Verifies the inherited Derby store package inventory is present before modularization.'
+    doLast {
+        def apiFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
+        def implFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+        if (apiFiles.isEmpty()) {
+            throw new GradleException('Legacy Derby store API inventory is empty: org.apache.derby.iapi.store.*')
+        }
+        if (implFiles.isEmpty()) {
+            throw new GradleException('Legacy Derby store implementation inventory is empty: org.apache.derby.impl.store.*')
+        }
+        logger.lifecycle("Legacy Derby store inventory: ${apiFiles.size()} iapi.store files, ${implFiles.size()} impl.store files")
+    }
+}
+
+tasks.register('verifyNoSplitStorePackages') {
+    group = 'verification'
+    description = 'Verifies inherited Derby store packages are not split across runtime main-source modules.'
+    doLast {
+        def ownersByPackage = [:].withDefault { [] as Set<String> }
+        def buildToolsSourceRoot = file('delosdb-buildtools/src/main/java').canonicalPath
+        delosdbDs1MainSourceRoots().findAll { sourceRoot -> sourceRoot.canonicalPath != buildToolsSourceRoot }.each { sourceRoot ->
+            def owner = rootDir.toPath().relativize(sourceRoot.toPath()).toString().replace(File.separatorChar, '/' as char)
+            fileTree(sourceRoot) { include '**/*.java' }.files.each { source ->
+                def packageName = delosdbDs1PackageName(source)
+                if (packageName != null
+                        && (packageName == 'org.apache.derby.iapi.store'
+                        || packageName.startsWith('org.apache.derby.iapi.store.')
+                        || packageName == 'org.apache.derby.impl.store'
+                        || packageName.startsWith('org.apache.derby.impl.store.'))) {
+                    ownersByPackage[packageName] << owner
+                }
+            }
+        }
+        def splitPackages = ownersByPackage.findAll { packageName, owners -> owners.size() > 1 }
+        if (!splitPackages.isEmpty()) {
+            def detail = splitPackages.collect { packageName, owners ->
+                "${packageName} -> ${owners.toList().sort().join(', ')}"
+            }.sort().join('\n')
+            throw new GradleException("Inherited Derby store packages are split across runtime source modules:\n${detail}")
+        }
+    }
+}
+
+tasks.register('legacyStoreDependencyReport') {
+    group = 'verification'
+    description = 'Writes a DS1 inventory report for inherited Derby store modularization surgery.'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-dependencies.txt'))
+    doLast {
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-dependencies.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+
+        def apiFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
+        def implFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+        def storeFiles = []
+        storeFiles.addAll(apiFiles)
+        storeFiles.addAll(implFiles)
+
+        def allMainJava = delosdbDs1AllMainJavaFiles()
+        def engineJava = delosdbDs1JavaFiles('delosdb-engine/src/main/java')
+        def nonStoreEngineJava = engineJava.findAll { source ->
+            !delosdbDs1IsUnder(source, delosdbDs1StoreApiRoot) && !delosdbDs1IsUnder(source, delosdbDs1StoreImplRoot)
+        }
+        def nonStoreEngineImports = delosdbDs1ImportMatches(
+                nonStoreEngineJava,
+                ['org.apache.derby.iapi.store.', 'org.apache.derby.impl.store.'])
+
+        def upwardLeakImports = delosdbDs1ImportMatches(
+                storeFiles,
+                ['org.apache.derby.iapi.sql.dictionary.',
+                 'org.apache.derby.iapi.sql.conn.',
+                 'org.apache.derby.impl.sql.execute.',
+                 'io.github.ggeorg.delosdb.storage.mvcc.'])
+
+        def providerImplStoreImports = delosdbDs1ImportMatches(
+                delosdbDs1JavaFiles('delosdb-spi/src/main/java')
+                        + delosdbDs1JavaFiles('delosdb-storage-mvcc/src/main/java')
+                        + delosdbDs1JavaFiles('delosdb-engine/src/main/java/io/github'),
+                ['org.apache.derby.impl.store.raw.', 'org.apache.derby.impl.store.access.'])
+
+        def moduleInfoLines = []
+        fileTree(rootDir) {
+            include '**/src/main/java/module-info.java'
+            include '**/module-info.java'
+            exclude '**/build/**'
+            exclude '**/.gradle/**'
+        }.files.unique { it.canonicalPath }.sort { it.path }.each { moduleInfo ->
+            int lineNumber = 0
+            moduleInfo.eachLine { line ->
+                lineNumber++
+                if (line.contains('org.apache.derby.iapi.store') || line.contains('org.apache.derby.impl.store')) {
+                    moduleInfoLines << "${delosdbDs1RelPath(moduleInfo)}:${lineNumber}: ${line.trim()}"
+                }
+            }
+        }
+
+        def bootLines = []
+        fileTree(rootDir) {
+            include '**/modules.properties'
+            exclude '**/build/**'
+            exclude '**/.gradle/**'
+        }.files.sort { it.path }.each { propertiesFile ->
+            int lineNumber = 0
+            propertiesFile.eachLine { line ->
+                lineNumber++
+                if (line.contains('org.apache.derby.iapi.store') || line.contains('org.apache.derby.impl.store')) {
+                    bootLines << "${delosdbDs1RelPath(propertiesFile)}:${lineNumber}: ${line.trim()}"
+                }
+            }
+        }
+
+        reportFile.text = """DelosDB DS1 legacy Derby store dependency report
+=================================================
+
+Store package inventory
+-----------------------
+org.apache.derby.iapi.store.* files: ${apiFiles.size()}
+org.apache.derby.impl.store.* files: ${implFiles.size()}
+
+Engine files importing inherited Derby store
+--------------------------------------------
+Count: ${nonStoreEngineImports.collect { it.file }.unique().size()} files, ${nonStoreEngineImports.size()} imports
+${nonStoreEngineImports.collect { "${it.file}:${it.line}: import ${it.importedType};" }.join('\n') ?: '(none)'}
+
+Upward dependency leaks from inherited Derby store
+-------------------------------------------------
+These are the known Phase 1 surgery targets, not DS1 failures.
+${upwardLeakImports.collect { "${it.file}:${it.line}: import ${it.importedType};" }.join('\n') ?: '(none)'}
+
+Provider/SPI imports of Derby raw/access implementation internals
+-----------------------------------------------------------------
+${providerImplStoreImports.collect { "${it.file}:${it.line}: import ${it.importedType};" }.join('\n') ?: '(none)'}
+
+module-info entries involving inherited Derby store packages
+-----------------------------------------------------------
+${moduleInfoLines.join('\n') ?: '(none)'}
+
+modules.properties entries involving inherited Derby store packages
+------------------------------------------------------------------
+${bootLines.join('\n') ?: '(none)'}
+"""
+        logger.lifecycle("Wrote ${delosdbDs1RelPath(reportFile)}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreBoundary') {
+    group = 'verification'
+    description = 'Runs DS1 boundary, inventory, no-split-package, and dependency-report checks before Derby store modularization.'
+    dependsOn 'verifyMvccNoDerbyStoreImports',
+            'verifyDerbyStoreNoMvccImports',
+            'verifyNewProviderCodeNoDerbyImplStoreImports',
+            'verifyLegacyDerbyStoreInventory',
+            'verifyNoSplitStorePackages',
+            'legacyStoreDependencyReport'
+}
