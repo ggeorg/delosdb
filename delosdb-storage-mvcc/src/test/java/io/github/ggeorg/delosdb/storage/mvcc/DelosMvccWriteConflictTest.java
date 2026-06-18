@@ -1,5 +1,6 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
@@ -10,20 +11,24 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordi
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictException;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Phase 12 write-conflict proofs for the experimental MVCC provider.
+ * MVCC-10 write-conflict proof for the experimental MVCC provider.
  *
  * <p>The PostgreSQL-guided rule is: readers observe a consistent version and do
  * not block writers, but two writers cannot safely modify the same visible row
  * version at the same time. Rollback releases the write conflict; commit makes
- * the newer version authoritative for fresh snapshots.</p>
+ * the winning version authoritative for fresh snapshots and recovery.</p>
  */
 public final class DelosMvccWriteConflictTest {
+    @TempDir
+    private Path storageDirectory;
+
     @Test
     public void testReaderDoesNotBlockActiveWriterAndFreshSnapshotSeesCommit() {
         Fixture fixture = seed("reader_writer");
@@ -99,6 +104,52 @@ public final class DelosMvccWriteConflictTest {
                 "stale writer must not overwrite a row version already deleted by a committed writer");
 
         fixture.coordinator().abort(staleWriter);
+    }
+
+
+
+    @Test
+    public void testFirstCommitWinsSecondWriterConflictsAndRecoveryPreservesWinner() {
+        VersionedTableMetadata metadata = new VersionedTableMetadata("app", "first_commit_wins_recovery");
+        Path storage = storageDirectory.resolve("first_commit_wins");
+        DelosMvccStorageProvider provider = DelosMvccStorageProvider.open(storage);
+        VersionedTable<Long, List<Object>> table = provider.createTable(metadata);
+        VersionedTransactionCoordinator coordinator = provider.transactionCoordinator();
+
+        TxContext seed = coordinator.begin();
+        table.insert(1L, List.of(1, "alpha"), seed);
+        coordinator.commit(seed);
+
+        TxContext stableReader = coordinator.begin();
+        assertEquals(Optional.of(List.of(1, "alpha")), table.read(1L, stableReader.currentView()));
+
+        TxContext winner = coordinator.begin();
+        table.update(1L, List.of(1, "winner"), winner);
+
+        TxContext loser = coordinator.begin();
+        assertThrows(VersionedWriteConflictException.class,
+                () -> table.update(1L, List.of(1, "loser"), loser),
+                "a second writer must not overwrite the row version already claimed by the first writer");
+        coordinator.abort(loser);
+
+        coordinator.commit(winner);
+
+        assertEquals(Optional.of(List.of(1, "alpha")), table.read(1L, stableReader.currentView()),
+                "the reader snapshot remains stable while the winning writer commits");
+        coordinator.abort(stableReader);
+
+        TxContext freshReader = coordinator.begin();
+        assertEquals(Optional.of(List.of(1, "winner")), table.read(1L, freshReader.currentView()),
+                "fresh snapshots see only the committed winning version");
+        coordinator.abort(freshReader);
+
+        DelosMvccStorageProvider recovered = DelosMvccStorageProvider.open(storage);
+        VersionedTable<Long, List<Object>> recoveredTable = recovered.openTable(metadata);
+        VersionedTransactionCoordinator recoveredCoordinator = recovered.transactionCoordinator();
+        TxContext recoveredReader = recoveredCoordinator.begin();
+        assertEquals(Optional.of(List.of(1, "winner")), recoveredTable.read(1L, recoveredReader.currentView()),
+                "recovery preserves the winning committed version and not the rejected writer");
+        recoveredCoordinator.abort(recoveredReader);
     }
 
     @Test

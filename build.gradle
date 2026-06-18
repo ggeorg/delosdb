@@ -1952,7 +1952,7 @@ tasks.register('mvccRecoveryHardeningTest') {
 
 tasks.register('mvccWriteConflictTest') {
     group = 'verification'
-    description = 'Runs Phase 12 delos_mvcc write-conflict tests.'
+    description = 'Runs MVCC-10 delos_mvcc write-conflict proof.'
     dependsOn ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest'
 }
 

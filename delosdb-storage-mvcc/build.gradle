@@ -275,7 +275,7 @@ tasks.register('runDelosMvccRecoveryHardeningTest', Test) {
 
 tasks.register('runDelosMvccWriteConflictTest', Test) {
     group = 'verification'
-    description = 'Runs Phase 12 experimental DelosDB MVCC write-conflict tests.'
+    description = 'Runs MVCC-10 experimental DelosDB MVCC write-conflict proof.'
     dependsOn 'compileDelosDbStorageMvccTests'
 
     useJUnitPlatform()
