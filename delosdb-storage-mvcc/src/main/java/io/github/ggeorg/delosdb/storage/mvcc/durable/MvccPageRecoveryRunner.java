@@ -1,6 +1,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -16,6 +17,18 @@ public final class MvccPageRecoveryRunner {
     public MvccPageRecoveryRunner(MvccPageMutationLog log, PageBackedMvccTableStore store) {
         this.log = Objects.requireNonNull(log, "log");
         this.store = Objects.requireNonNull(store, "store");
+    }
+
+    /**
+     * Opens the durable log and page store the same way a boot path will, then
+     * applies committed mutations into the store.
+     */
+    public static RecoveryResult recover(Path logPath, Path tablePath) throws IOException {
+        Objects.requireNonNull(logPath, "logPath");
+        Objects.requireNonNull(tablePath, "tablePath");
+        try (PageBackedMvccTableStore store = PageBackedMvccTableStore.open(tablePath)) {
+            return new MvccPageRecoveryRunner(MvccPageMutationLog.open(logPath), store).recover();
+        }
     }
 
     public RecoveryResult recover() throws IOException {
