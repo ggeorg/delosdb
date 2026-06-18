@@ -366,8 +366,7 @@ public final class VersionedStorageSqlBridge {
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.updateCount(1L);
         } catch (RuntimeException | SQLException e) {
-            failStatementTransaction(transactionOwner, statementTx);
-            throw e;
+            throw failStatementTransactionAndTranslate(transactionOwner, statementTx, e);
         }
     }
 
@@ -387,8 +386,7 @@ public final class VersionedStorageSqlBridge {
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.updateCount(0L);
         } catch (RuntimeException | SQLException e) {
-            failStatementTransaction(VersionedStorageSqlBridge.class, statementTx);
-            throw e;
+            throw failStatementTransactionAndTranslate(VersionedStorageSqlBridge.class, statementTx, e);
         }
     }
 
@@ -427,8 +425,7 @@ public final class VersionedStorageSqlBridge {
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
         } catch (RuntimeException | SQLException e) {
-            failStatementTransaction(transactionOwner, statementTx);
-            throw e;
+            throw failStatementTransactionAndTranslate(transactionOwner, statementTx, e);
         }
     }
 
@@ -539,8 +536,7 @@ public final class VersionedStorageSqlBridge {
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
         } catch (RuntimeException | SQLException e) {
-            failStatementTransaction(transactionOwner, statementTx);
-            throw e;
+            throw failStatementTransactionAndTranslate(transactionOwner, statementTx, e);
         }
     }
 
@@ -702,8 +698,7 @@ public final class VersionedStorageSqlBridge {
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.updateCount(rows.size());
         } catch (RuntimeException | SQLException e) {
-            failStatementTransaction(transactionOwner, statementTx);
-            throw e;
+            throw failStatementTransactionAndTranslate(transactionOwner, statementTx, e);
         }
     }
 
@@ -725,8 +720,7 @@ public final class VersionedStorageSqlBridge {
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.updateCount(rows.size());
         } catch (RuntimeException | SQLException e) {
-            failStatementTransaction(transactionOwner, statementTx);
-            throw e;
+            throw failStatementTransactionAndTranslate(transactionOwner, statementTx, e);
         }
     }
 
@@ -773,8 +767,7 @@ public final class VersionedStorageSqlBridge {
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
         } catch (RuntimeException | SQLException e) {
-            failStatementTransaction(transactionOwner, statementTx);
-            throw e;
+            throw failStatementTransactionAndTranslate(transactionOwner, statementTx, e);
         }
     }
 
@@ -875,8 +868,7 @@ public final class VersionedStorageSqlBridge {
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
         } catch (RuntimeException | SQLException e) {
-            failStatementTransaction(transactionOwner, statementTx);
-            throw e;
+            throw failStatementTransactionAndTranslate(transactionOwner, statementTx, e);
         }
     }
 
@@ -1009,7 +1001,7 @@ public final class VersionedStorageSqlBridge {
                 completeUniqueReservations(statementTx.context().transactionId(), true);
             } catch (RuntimeException e) {
                 completeUniqueReservations(statementTx.context().transactionId(), false);
-                throw sqlException("X0MV1", "Could not commit delos_mvcc statement transaction: " + e.getMessage());
+                throw sqlException("X0MV1", "Could not commit delos_mvcc statement transaction: " + e.getMessage(), e);
             }
         }
     }
@@ -1020,6 +1012,55 @@ public final class VersionedStorageSqlBridge {
             return;
         }
         completeSessionTransaction(transactionOwner, false);
+    }
+
+    private static SQLException failStatementTransactionAndTranslate(
+            Object transactionOwner,
+            StatementTransaction statementTx,
+            Exception failure) throws SQLException {
+        SQLException translated = translateStatementFailure(failure);
+        try {
+            failStatementTransaction(transactionOwner, statementTx);
+        } catch (SQLException cleanupFailure) {
+            if (translated == null) {
+                failure.addSuppressed(cleanupFailure);
+            } else {
+                translated.addSuppressed(cleanupFailure);
+            }
+        }
+        if (translated != null) {
+            return translated;
+        }
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+        return sqlException("X0MV1", "delos_mvcc statement failed: " + failure.getMessage(), failure);
+    }
+
+    private static SQLException translateStatementFailure(Exception failure) {
+        if (failure instanceof SQLException sqlFailure) {
+            return sqlFailure;
+        }
+        Throwable historyPruned = findHistoryPrunedFailure(failure);
+        if (historyPruned != null) {
+            return sqlException(
+                    "X0MV6",
+                    "delos_mvcc history needed by this statement was pruned: " + historyPruned.getMessage(),
+                    historyPruned);
+        }
+        return null;
+    }
+
+    private static Throwable findHistoryPrunedFailure(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            if ("io.github.ggeorg.delosdb.storage.mvcc.MvccHistoryPrunedException".equals(
+                    current.getClass().getName())) {
+                return current;
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     private static void completeSessionTransaction(Object transactionOwner, boolean commit) throws SQLException {
@@ -1046,7 +1087,7 @@ public final class VersionedStorageSqlBridge {
                 completeUniqueReservations(session.context().transactionId(), false);
             }
             throw sqlException("X0MV1", "Could not " + (commit ? "commit" : "rollback")
-                    + " delos_mvcc transaction: " + e.getMessage());
+                    + " delos_mvcc transaction: " + e.getMessage(), e);
         }
     }
 
@@ -1056,7 +1097,7 @@ public final class VersionedStorageSqlBridge {
             completeUniqueReservations(statementTx.context().transactionId(), false);
         } catch (RuntimeException e) {
             completeUniqueReservations(statementTx.context().transactionId(), false);
-            throw sqlException("X0MV1", "Could not abort delos_mvcc statement transaction: " + e.getMessage());
+            throw sqlException("X0MV1", "Could not abort delos_mvcc statement transaction: " + e.getMessage(), e);
         }
     }
 
@@ -1131,6 +1172,10 @@ public final class VersionedStorageSqlBridge {
 
     private static SQLException sqlException(String sqlState, String message) {
         return new SQLException(message, sqlState);
+    }
+
+    private static SQLException sqlException(String sqlState, String message, Throwable cause) {
+        return new SQLException(message, sqlState, cause);
     }
 
     private record PredicateRange(
