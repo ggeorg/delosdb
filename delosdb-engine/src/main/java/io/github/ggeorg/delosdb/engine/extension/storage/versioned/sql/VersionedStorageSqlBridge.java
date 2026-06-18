@@ -46,6 +46,8 @@ import java.util.regex.Pattern;
  *
  * <pre>
  * CREATE TABLE name (id INT, value VARCHAR(40)) USING delos_mvcc
+ * CREATE TABLE name (id INT, value VARCHAR(40))
+ *     -- only when -Ddelosdb.storage.defaultProvider=delos_mvcc is set
  * INSERT INTO name VALUES (1, 'alpha')
  * SELECT * FROM name
  * SELECT * FROM name ORDER BY indexed_column [ASC|DESC]
@@ -66,10 +68,11 @@ import java.util.regex.Pattern;
 @InternalApi
 public final class VersionedStorageSqlBridge {
     private static final String PROVIDER_NAME = "delos_mvcc";
+    private static final String DEFAULT_STORAGE_PROVIDER_PROPERTY = "delosdb.storage.defaultProvider";
     private static final String DEFAULT_SCHEMA = "APP";
 
     private static final Pattern CREATE_TABLE = Pattern.compile(
-            "(?is)^create\\s+table\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s*\\((.*)\\)\\s+using\\s+delos_mvcc$");
+            "(?is)^create\\s+table\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s*\\((.*)\\)(?:\\s+using\\s+([a-zA-Z_][a-zA-Z0-9_]*))?$");
     private static final Pattern INSERT_VALUES = Pattern.compile(
             "(?is)^insert\\s+into\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+values\\s*\\((.*)\\)$");
     private static final Pattern CREATE_INDEX = Pattern.compile(
@@ -176,7 +179,10 @@ public final class VersionedStorageSqlBridge {
 
             Matcher create = CREATE_TABLE.matcher(normalizedSql);
         if (create.matches()) {
-            return createTable(create.group(1), create.group(2));
+            if (shouldHandleCreateTable(create.group(3))) {
+                return createTable(create.group(1), create.group(2));
+            }
+            return null;
         }
 
         Matcher insert = INSERT_VALUES.matcher(normalizedSql);
@@ -288,6 +294,22 @@ public final class VersionedStorageSqlBridge {
         } catch (VersionedWriteConflictException e) {
             throw sqlException("40XL1", "delos_mvcc write conflict: " + e.getMessage());
         }
+    }
+
+    private static boolean shouldHandleCreateTable(String explicitProviderName) throws SQLException {
+        if (explicitProviderName != null) {
+            return PROVIDER_NAME.equalsIgnoreCase(explicitProviderName.trim());
+        }
+
+        String defaultProvider = System.getProperty(DEFAULT_STORAGE_PROVIDER_PROPERTY);
+        if (defaultProvider == null || defaultProvider.isBlank()) {
+            return false;
+        }
+        if (PROVIDER_NAME.equalsIgnoreCase(defaultProvider.trim())) {
+            return true;
+        }
+        throw sqlException("X0MV5", "Unsupported " + DEFAULT_STORAGE_PROVIDER_PROPERTY
+                + " value for CREATE TABLE default-provider candidate path: " + defaultProvider);
     }
 
     private static VersionedStorageSqlResult createTable(String tableName, String columnList) throws SQLException {
