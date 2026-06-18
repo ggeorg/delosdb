@@ -57,7 +57,8 @@ Do not add new ASM proof tasks unless a concrete bytecode failure requires one.
 
 ## MVCC gates
 
-The MVCC storage path is active but guarded. Heap remains the default store.
+The MVCC storage path is active but guarded. Heap remains the default store. The
+A44--A52 semantic-correctness sprint is green.
 
 Current high-value MVCC gates:
 
@@ -65,6 +66,15 @@ Current high-value MVCC gates:
 ./gradlew mvccDefaultProviderCandidateMatrix
 ./gradlew mvccTransactionLockOrderProof
 ./gradlew mvccKernelReviewCloseoutProof
+./gradlew mvccHistoryPrunedSafetyProof
+./gradlew mvccVacuumWatermarkProof
+./gradlew mvccCommandSequenceProof
+./gradlew mvccStatementSnapshotVisibilityProof
+./gradlew mvccSqlStatementBoundarySmoke
+./gradlew mvccTransactionOutcomeLogProof
+./gradlew mvccUnresolvedOutcomeRecoveryProof
+./gradlew mvccCapturedVisibilitySnapshotProof
+./gradlew mvccSqlCompatibilityCandidate
 ```
 
 Aggregate MVCC storage check:
@@ -86,8 +96,8 @@ that bare SQL can route through `delos_mvcc` only when explicitly enabled with:
 -Ddelosdb.storage.defaultProvider=delos_mvcc
 ```
 
-The next MVCC work is documented in `docs/MVCC-MISSION.md` and should proceed in
-small proof gates, not broad preflight tasks.
+Post-A52 work is documented in `docs/MVCC-MISSION.md` and should proceed only
+after the next lane is selected deliberately.
 
 ## Other focused modernization gates
 

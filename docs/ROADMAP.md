@@ -14,11 +14,11 @@ without losing Derby compatibility by accident.
 
 ## Current rule
 
-Finish the active lane before opening new ones.
+The A44--A52 MVCC semantic-correctness sprint is closed. Choose the next lane
+explicitly before starting new work.
 
-The active lane is MVCC semantic correctness. Do not start new provider families,
-new research-platform subsystems, or new SQL surfaces while the MVCC proof ladder
-is still incomplete.
+Do not start new provider families, research-platform subsystems, new SQL
+surfaces, or a global default-store flip as a side effect of MVCC cleanup.
 
 Workspace metadata is not a cleanup target. Local workspace ZIP snapshots may
 contain `.git/`, `.gradle`, and `.idea`. Cleanup scripts must never delete those
@@ -85,11 +85,12 @@ These remain deliberately shallow while MVCC is the active lane:
 - `TypeProvider`: metadata-only Derby type visibility.
 - new provider families: not opened.
 
-## Active lane: MVCC / versioned storage
+## Closed lane: MVCC semantic correctness sprint
 
-The MVCC path has moved beyond source mapping. It now has an isolated storage
-module, a provider SPI, page-backed durability proofs, provider-owned index
-proofs, SQL opt-in smoke tests, and a guarded default-provider candidate path.
+The MVCC path has moved beyond source mapping and simple provider smokes. It now
+has an isolated storage module, provider SPI, page-backed durability proofs,
+provider-owned index proofs, SQL opt-in smokes, a guarded default-provider
+candidate path, and the A44--A52 correctness gates.
 
 Current rule:
 
@@ -112,20 +113,28 @@ Important current gates:
 ./gradlew mvccDefaultProviderCandidateMatrix
 ./gradlew mvccTransactionLockOrderProof
 ./gradlew mvccKernelReviewCloseoutProof
+./gradlew mvccHistoryPrunedSafetyProof
+./gradlew mvccVacuumWatermarkProof
+./gradlew mvccCommandSequenceProof
+./gradlew mvccStatementSnapshotVisibilityProof
+./gradlew mvccSqlStatementBoundarySmoke
+./gradlew mvccTransactionOutcomeLogProof
+./gradlew mvccUnresolvedOutcomeRecoveryProof
+./gradlew mvccCapturedVisibilitySnapshotProof
+./gradlew mvccSqlCompatibilityCandidate
 ```
 
-Active plan:
+Closed A44--A52 plan:
 
 ```text
-A43 — kernel review closeout proof
-A44 — missing-history / prune-safety proof
-A45 — command sequence model
-A46 — statement snapshot visibility
-A47 — SQL statement-boundary smoke
-A48 — captured visibility-state snapshot
+A44 — missing-history / prune-safety
+A45 — vacuum watermark integration
+A46 — command sequence model
+A47 — statement snapshot visibility
+A48 — SQL statement-boundary smoke
 A49 — durable transaction outcome log
-A50 — unresolved outcome recovery proof
-A51 — vacuum watermark integration
+A50 — unresolved outcome recovery
+A51 — captured visibility-state snapshot
 A52 — MVCC SQL compatibility candidate matrix
 ```
 
@@ -149,7 +158,7 @@ inspectable internal value objects;
 proof output that explains a decision already being tested.
 ```
 
-Parked until after A44--A52:
+Still parked until a separate post-A52 decision:
 
 ```text
 new SQL EXPLAIN surfaces;
@@ -162,19 +171,21 @@ artifact packaging;
 benchmark harness.
 ```
 
-## Near future
+## Post-A52 decision point
 
-1. Close the MVCC semantic correctness ladder.
-2. Keep Derby heap as default.
-3. Keep `delos_mvcc` guarded by explicit syntax or the
-   `delosdb.storage.defaultProvider=delos_mvcc` property.
-4. Add only documentation/test-level observability that helps the current proof.
-5. Remove or mark stale docs that still describe MVCC as a future-only idea.
+A44--A52 are green. The next work should be selected deliberately from one lane:
+
+1. row locks / `SELECT FOR UPDATE`;
+2. version-aware indexes;
+3. additional property-gated default-provider expansion;
+4. performance / benchmark sanity for the guarded MVCC candidate.
+
+Until that choice is made, keep Derby heap as default and keep `delos_mvcc`
+guarded by explicit syntax or `delosdb.storage.defaultProvider=delos_mvcc`.
 
 ## Future direction
 
-After the MVCC candidate proves semantic correctness, recovery safety, vacuum
-watermarks, and SQL compatibility, DelosDB can consider deeper lanes:
+After the next lane is selected and proven, DelosDB can consider deeper lanes:
 
 ```text
 row locks / SELECT FOR UPDATE;

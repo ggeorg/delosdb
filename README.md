@@ -19,10 +19,10 @@ Closed major lane:
 - The old Derby bytecode backend and old classfile writer are quarantined.
 - Permanent bytecode proof: `generatedBytecodeAsmJvm21Proof`.
 
-Active major lane:
+Closed major lane:
 
-- MVCC / versioned storage.
-- `delos_mvcc` is guarded and opt-in.
+- MVCC semantic-correctness sprint A44--A52 is green.
+- `delos_mvcc` is guarded and opt-in/property-gated.
 - The normal Derby heap path remains the default.
 - The global default store has not been flipped.
 
@@ -59,22 +59,24 @@ CREATE TABLE ... USING delos_mvcc:
   explicit experimental MVCC path
 ```
 
-Near-term MVCC direction:
+Completed MVCC correctness sprint:
 
 ```text
-A43 kernel review closeout
 A44 missing-history / prune safety
-A45 command sequence model
-A46 statement snapshot visibility
-A47 SQL statement-boundary smoke
-A48 captured visibility-state snapshot
-A49-A52 durable outcome, recovery, vacuum watermark, compatibility matrix
+A45 vacuum watermark integration
+A46 command sequence model
+A47 statement snapshot visibility
+A48 SQL statement-boundary smoke
+A49 durable transaction outcome log
+A50 unresolved outcome recovery
+A51 captured visibility-state snapshot
+A52 MVCC SQL compatibility candidate matrix
 ```
 
 Research/university friendliness is a constraint on engine proofs, not a second
 product roadmap. Small proof-level traces and readable assertions are acceptable;
-new labs, profiles, artifact systems, and SQL explain surfaces wait until the
-MVCC correctness ladder is closed.
+new labs, profiles, artifact systems, and SQL explain surfaces still require a
+separate post-A52 decision.
 
 ## Build requirements
 
@@ -93,8 +95,16 @@ MVCC-focused gates:
 
 ```bash
 ./gradlew mvccDefaultProviderCandidateMatrix
-./gradlew mvccTransactionLockOrderProof
 ./gradlew mvccKernelReviewCloseoutProof
+./gradlew mvccHistoryPrunedSafetyProof
+./gradlew mvccVacuumWatermarkProof
+./gradlew mvccCommandSequenceProof
+./gradlew mvccStatementSnapshotVisibilityProof
+./gradlew mvccSqlStatementBoundarySmoke
+./gradlew mvccTransactionOutcomeLogProof
+./gradlew mvccUnresolvedOutcomeRecoveryProof
+./gradlew mvccCapturedVisibilitySnapshotProof
+./gradlew mvccSqlCompatibilityCandidate
 ```
 
 Broader checks:
@@ -226,7 +236,7 @@ Root-level Markdown is limited to project-facing essentials:
 
 Maintained technical docs live under `docs/`:
 
-- `docs/MVCC-MISSION.md` — active MVCC mission and proof ladder.
+- `docs/MVCC-MISSION.md` — active MVCC mission, A44--A52 closeout, and post-A52 decision point.
 - `docs/BUILDING.md` — build, test, distribution, and Maven Local workflow.
 - `docs/ROADMAP.md` — current product direction and near/future milestones.
 - `docs/modernization-status.md` — current green state and cleanup priority.

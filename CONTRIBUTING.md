@@ -1,8 +1,8 @@
 # Contributing to DelosDB
 
-DelosDB is in a proof-driven modernization phase. The current active lane is
-MVCC semantic correctness under a guarded candidate path. Finish the current
-behavior boundary before opening a new one.
+DelosDB is in a proof-driven modernization phase. The A44--A52 MVCC semantic
+correctness sprint is closed; choose the next post-A52 lane deliberately before
+opening new work.
 
 ## Supported local workflow
 
@@ -30,11 +30,20 @@ MVCC changes must move in small executable proofs. Current high-value gates:
 
 ```bash
 ./gradlew mvccDefaultProviderCandidateMatrix
-./gradlew mvccTransactionLockOrderProof
 ./gradlew mvccKernelReviewCloseoutProof
+./gradlew mvccHistoryPrunedSafetyProof
+./gradlew mvccVacuumWatermarkProof
+./gradlew mvccCommandSequenceProof
+./gradlew mvccStatementSnapshotVisibilityProof
+./gradlew mvccSqlStatementBoundarySmoke
+./gradlew mvccTransactionOutcomeLogProof
+./gradlew mvccUnresolvedOutcomeRecoveryProof
+./gradlew mvccCapturedVisibilitySnapshotProof
+./gradlew mvccSqlCompatibilityCandidate
 ```
 
-The active mission and next proof ladder are in `docs/MVCC-MISSION.md`.
+The post-A52 mission state and next-lane decision point are in
+`docs/MVCC-MISSION.md`.
 
 ## Contribution rules
 
@@ -42,9 +51,9 @@ The active mission and next proof ladder are in `docs/MVCC-MISSION.md`.
 - Add or update a smoke/proof when behavior changes.
 - Preserve Derby-compatible heap behavior by default.
 - Do not flip the global default store to `delos_mvcc`.
-- Do not start a new provider family while MVCC correctness is the active lane.
-- Do not add a research platform subsystem during A44--A52; only proof-level
-  observability is allowed.
+- Do not start a new provider family before the post-A52 lane is selected.
+- Do not add a research platform subsystem without a separate post-A52 decision;
+  proof-level observability remains allowed.
 - Update documentation after the code proof or planning decision is real.
 - Do not add stale checkpoint documents; update the existing roadmap/status docs
   or delete obsolete docs through an explicit cleanup script.

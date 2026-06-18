@@ -14,9 +14,9 @@ DelosDB is currently a maintainer-led fork.
 
 ## Current project rule
 
-The active lane is MVCC semantic correctness. Do not open a new provider family,
-new research-platform subsystem, or global default-store flip while A44--A52 are
-incomplete.
+The A44--A52 MVCC semantic-correctness sprint is closed. Do not open a new
+provider family, research-platform subsystem, or global default-store flip before
+the post-A52 next lane is selected deliberately.
 
 Closed/finished areas:
 
@@ -28,15 +28,16 @@ Guarded active area:
 
 - `delos_mvcc` versioned storage remains explicit or property-gated.
 - Heap remains the default storage path.
-- MVCC promotion depends on the proof ladder in `docs/MVCC-MISSION.md`.
+- MVCC promotion remains blocked on an explicit post-A52 decision; the A44--A52
+  proof ladder is green but heap remains the default.
 
 ## Research-facing rule
 
 Research/university friendliness is allowed only when it supports the current
-engine proof. Proof-level traces, readable assertions, and inspectable internal
-objects are acceptable. Separate labs, profiles, schedulers, fault-injection
-frameworks, artifact packaging, and new SQL explain surfaces wait until the MVCC
-correctness ladder is closed.
+engine proof or selected lane. Proof-level traces, readable assertions, and
+inspectable internal objects are acceptable. Separate labs, profiles, schedulers,
+fault-injection frameworks, artifact packaging, and new SQL explain surfaces wait
+for a separate post-A52 decision.
 
 ## Release rule
 

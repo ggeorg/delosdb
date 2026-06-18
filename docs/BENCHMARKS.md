@@ -72,5 +72,12 @@ Use the numbers only as a local before/after signal:
 - do not present the output as a formal benchmark result.
 
 A later benchmark phase may add JMH or another repeatable harness, but that is
-future work. It should not be built in parallel with the A44--A52 MVCC
-correctness ladder.
+future work. After A52 it may be selected as its own lane; it should not be mixed
+with a default-store flip or research-platform buildout.
+
+## MVCC post-A52 note
+
+The A44--A52 MVCC correctness sprint is green, but DelosDB still does not make
+performance claims for `delos_mvcc`. A small MVCC benchmark/regression lane may
+be selected after A52, but it should be chosen explicitly and should not be mixed
+with a default-store flip or research-platform work.

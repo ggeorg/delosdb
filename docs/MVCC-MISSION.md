@@ -1,12 +1,11 @@
-# DelosDB MVCC Mission and Near-Term Plan
+# DelosDB MVCC Mission and Post-A52 State
 
 DelosDB modernizes Derby by keeping the familiar SQL/JDBC surface while opening
 engine seams for storage, indexing, recovery, optimizer costing, and generated
-execution. The active storage mission is MVCC, but the MVCC path remains guarded,
-opt-in, and proof-driven.
+execution. The MVCC path is guarded, opt-in, and proof-driven.
 
-This document is not a book chapter. It is the project-facing mission note for
-the next MVCC correctness milestones.
+This document is not a book chapter. It is the project-facing mission/status note
+for DelosDB MVCC after the A44--A52 correctness sprint.
 
 ## Mission boundary
 
@@ -20,17 +19,7 @@ for every behavior boundary.
 
 DelosDB is not trying to become PostgreSQL, H2, InnoDB, or MariaDB. Those engines
 are reference systems for design pressure. DelosDB keeps Derby compatibility and
-promotes the new storage path through explicit proof gates:
-
-```text
-opt-in provider proof
-  -> SQL bridge proof
-  -> property-gated default-provider candidate
-  -> semantic correctness ladder
-  -> durability/vacuum correctness ladder
-  -> compatibility matrix
-  -> possible default-store promotion much later
-```
+promotes new storage behavior only through explicit proof gates.
 
 ## Current storage rule
 
@@ -45,9 +34,8 @@ CREATE TABLE ... USING delos_mvcc:
   explicit experimental MVCC path
 ```
 
-The global default store is not flipped. Heap remains the default until MVCC has
-green proofs for statement visibility, history safety, durable transaction
-outcomes, vacuum watermarks, SQL compatibility, and crash/recovery behavior.
+The global default store is not flipped. Heap remains the default. `delos_mvcc`
+is a guarded candidate path, not the production default.
 
 ## Four-engine MVCC synthesis
 
@@ -63,12 +51,13 @@ The current DelosMVCC design has been compared against four mature systems:
 The transferable decisions are:
 
 1. keep resident version chains for the near term;
-2. add missing-history/pruned-history safety before deeper feature work;
-3. add command/statement visibility before row locks;
-4. delay captured transaction-state optimization until the correct visibility
-   model exists;
-5. keep row locks, semi-consistent reads, serializable isolation, version-aware
-   indexes, and HTAP-style research features as future lanes.
+2. distinguish missing/pruned history from legitimate row absence;
+3. make same-transaction visibility command/statement-aware;
+4. use durable transaction outcomes before strict recovery exposes versions;
+5. capture visibility state after the correct semantics exist;
+6. keep row locks, semi-consistent reads, serializable isolation, version-aware
+   indexes, HTAP-style research features, and production default-store promotion
+   as future lanes.
 
 ## Completed storage/MVCC lane
 
@@ -80,150 +69,74 @@ the permanent bytecode proof remains:
 ```
 
 The MVCC lane has advanced from isolated storage proofs to a guarded SQL
-candidate path. Important current gates include:
+candidate path with semantic correctness gates. Important gates now include:
 
 ```bash
 ./gradlew mvccDefaultProviderCandidateMatrix
 ./gradlew mvccTransactionLockOrderProof
 ./gradlew mvccKernelReviewCloseoutProof
+./gradlew mvccHistoryPrunedSafetyProof
+./gradlew mvccVacuumWatermarkProof
+./gradlew mvccCommandSequenceProof
+./gradlew mvccStatementSnapshotVisibilityProof
+./gradlew mvccSqlStatementBoundarySmoke
+./gradlew mvccTransactionOutcomeLogProof
+./gradlew mvccUnresolvedOutcomeRecoveryProof
+./gradlew mvccCapturedVisibilitySnapshotProof
+./gradlew mvccSqlCompatibilityCandidate
 ```
 
-`mvccKernelReviewCloseoutProof` is a closeout proof for already-claimed kernel
-behavior. It is not a new feature lane.
+## Closed A44--A52 correctness sprint
 
-## Near-term MVCC proof ladder
+The A44--A52 sprint is closed and green. It was the required semantic-correctness
+lane before any further default-provider expansion.
 
-### A43 — kernel review closeout proof
+| Gate | Status | Behavior boundary closed |
+|---|---|---|
+| A44 — missing-history / prune-safety | green | A read can distinguish legitimate invisibility from history needed by a snapshot being pruned. |
+| A45 — vacuum watermark integration | green | Long-lived snapshots pin history and prevent unsafe vacuum pruning. |
+| A46 — command sequence model | green | Versions carry create/delete command ordering; read-between-update and read-before-delete cases are proven. |
+| A47 — statement snapshot visibility | green | Same-transaction statement snapshots see earlier commands, not later commands. |
+| A48 — SQL statement-boundary smoke | green | SQL bridge advances MVCC statement command boundaries without flipping heap default. |
+| A49 — durable transaction outcome log | green | Strict outcome-log path records committed/aborted/unresolved transaction outcomes. |
+| A50 — unresolved outcome recovery | green | Strict recovery does not expose orphaned versions when transaction outcome is missing. |
+| A51 — captured visibility-state snapshot | green | Visibility inputs can be captured without changing the semantics proven earlier. |
+| A52 — MVCC SQL compatibility candidate matrix | green | Guarded MVCC SQL candidate supports core create/insert/update/delete/select/index/recovery behavior. |
 
-Status: present in the current codebase.
+## What A52 does and does not mean
 
-Purpose: lock down low-level MVCC kernel behavior that code review traced as
-correct but fragile:
+A52 means `delos_mvcc` is no longer only a toy provider smoke path. It has passed
+a coherent candidate matrix that includes history safety, vacuum watermarking,
+command/statement visibility, outcome logging, strict unresolved recovery,
+captured visibility, and guarded SQL behavior.
+
+A52 does **not** mean:
 
 ```text
-stale snapshot writer loses;
-failed stale update does not append a ghost version;
-aborted replacement remains invisible;
-later writer can reuse the original version after an aborted delete marker;
-committed delete after aborted delete can vacuum cleanly.
+MVCC is production-ready;
+MVCC is the global default;
+row locks / SELECT FOR UPDATE exist;
+semi-consistent UPDATE/DELETE reads exist;
+serializable isolation is complete;
+version-aware indexes are complete;
+performance claims can be made.
 ```
 
-Gate:
+## Current post-A52 decision point
 
-```bash
-./gradlew mvccKernelReviewCloseoutProof
-```
+The next technical lane should be selected explicitly. Do not start more than one
+of these at the same time:
 
-### A44 — missing-history / prune-safety proof
+1. **Row locks / SELECT FOR UPDATE** — add locking-read semantics and the first
+   row-lock metadata model.
+2. **Version-aware indexes** — reduce base-table visibility checks and prepare
+   for more serious index-only/range behavior.
+3. **Default-provider expansion** — broaden property-gated bare-SQL coverage, but
+   still do not flip the global default.
+4. **Performance / benchmark sanity** — add a small repeatable regression signal
+   for MVCC candidate behavior without making marketing claims.
 
-Purpose: make a wrong vacuum/prune decision fail loudly instead of silently
-returning “row not found.”
-
-Required behavior:
-
-```text
-insert after snapshot        -> empty, not error
-delete before snapshot       -> empty, not error
-aborted creator              -> empty, not error
-safe vacuum for new snapshot -> no error
-needed history pruned        -> typed missing-history/pruned-history failure
-```
-
-This is the InnoDB/MariaDB lesson adapted to DelosDB's resident-chain model.
-
-### A45 — command sequence model
-
-Purpose: add the small primitive needed for statement visibility.
-
-Expected model:
-
-```text
-MvccCommandSequence
-
-MvccVersion:
-  createdBy transaction
-  createdAt command sequence
-  deletedBy transaction, optional
-  deletedAt command sequence, optional
-```
-
-The proof must include a read-only command between writes, not only write/write
-ordering:
-
-```text
-T1 command 1: INSERT id=1 value='a'
-T1 command 2: read snapshot S2 sees 'a'
-T1 command 3: UPDATE id=1 value='b'
-S2 evaluated again still sees 'a'
-T1 command 4: new statement snapshot sees 'b'
-```
-
-And the delete variant:
-
-```text
-T1 command 1: INSERT id=1
-T1 command 2: read snapshot S2 sees id=1
-T1 command 3: DELETE id=1
-S2 still sees id=1
-T1 command 4: new statement snapshot no longer sees id=1
-```
-
-### A46 — statement snapshot visibility
-
-Purpose: make `MvccSnapshot` distinguish transaction ownership from the owner's
-statement/command visibility boundary.
-
-Expected snapshot shape:
-
-```text
-owner
-visibleThroughCommit
-activeAtCapture
-ownerVisibleThroughCommand
-```
-
-### A47 — SQL statement-boundary smoke
-
-Purpose: make the SQL bridge advance command sequence at statement boundaries
-without changing Derby heap behavior or flipping the global default store.
-
-### A48 — captured visibility-state snapshot
-
-Purpose: stop using repeated live catalog lookup as the only visibility
-mechanism after the visibility model is semantically correct.
-
-This waits until after A44--A47 because it is a scaling/robustness improvement
-for a snapshot model that those earlier milestones define. Building it first
-would optimize the wrong shape.
-
-### A49 — durable transaction outcome log
-
-Purpose: record whether a creating/deleting transaction committed, aborted, or
-remained unresolved across recovery.
-
-Initial policy should be strict: unresolved outcome must fail loudly or stay
-invisible until DelosDB has enough recovery machinery to make a safer automatic
-choice.
-
-### A50 — unresolved outcome recovery proof
-
-Purpose: crash recovery must not expose orphaned versions.
-
-### A51 — vacuum watermark integration
-
-Purpose: vacuum must use active snapshot watermarks, not only local chain checks.
-
-### A52 — MVCC SQL compatibility candidate matrix
-
-Purpose: start proving real SQL behavior under the guarded MVCC candidate path.
-
-Still use:
-
-```text
--Ddelosdb.storage.defaultProvider=delos_mvcc
-```
-
-No global default flip.
+The safest next discussion is a lane choice, not another preflight gate.
 
 ## Research-friendly constraint
 
@@ -231,7 +144,7 @@ DelosDB should be friendly to database-systems research and university teaching,
 but research friendliness is a constraint on engine work, not a second product
 roadmap.
 
-Allowed during A44--A52:
+Allowed now:
 
 ```text
 small test-level visibility traces;
@@ -240,7 +153,7 @@ inspectable internal value objects;
 proof output that explains a decision already being tested.
 ```
 
-Not allowed during A44--A52 unless a separate decision is made:
+Still parked until a separate decision is made:
 
 ```text
 new SQL EXPLAIN surfaces;
@@ -250,20 +163,20 @@ deterministic scheduler;
 fault-injection framework;
 labs/ directory;
 artifact packaging;
-benchmark harness.
+benchmark harness beyond small regression sanity.
 ```
 
-A research-facing feature is allowed now only when it is attached to the current
+A research-facing feature is allowed only when it is attached to the current
 engine proof and makes that proof easier to inspect or reproduce. If it requires
 a new subsystem, it waits.
 
 ## Documentation cleanup decision
 
-`docs/MVCC-MISSION.md` is the active MVCC planning document.
+`docs/MVCC-MISSION.md` is the active MVCC planning/status document.
 
 `docs/postgres-class-storage-concurrency.md` is retained as historical source
-trail because it records how the early storage/concurrency campaign reached the
-MVCC module.
+trail because it records how the early PostgreSQL-class storage/concurrency
+campaign reached the MVCC module.
 
 `docs/postgresql-deep-gap-map.md` is stale and should be removed. It belongs to
 the pre-MVCC source-mapping phase and contains obsolete guidance such as “Do not
@@ -271,8 +184,7 @@ implement MVCC yet.”
 
 ## Future lanes
 
-After A44--A52 are green, DelosDB can revisit larger research-platform features
-and deeper storage work:
+After the next lane is selected, DelosDB can continue with one focused sequence:
 
 ```text
 row locks / SELECT FOR UPDATE;
@@ -286,4 +198,4 @@ reproducible benchmark harness;
 formal teaching labs and artifact packaging.
 ```
 
-Those are future lanes, not near-term gates.
+Those are future lanes, not active concurrent work.

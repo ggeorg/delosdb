@@ -61,7 +61,8 @@ CREATE TABLE table_name (
 ```
 
 `delos_mvcc` is the guarded versioned-storage provider. It is not the default
-store.
+store. The A44--A52 correctness sprint is green for the guarded candidate path,
+but heap remains the default storage path.
 
 The engine-level default-provider candidate property can route bare `CREATE
 TABLE` statements through `delos_mvcc` only when explicitly enabled:
@@ -130,5 +131,7 @@ The current surface deliberately does not include:
 ./gradlew extensionRegistrySqlVisibilitySmoke
 ./gradlew typeProviderSqlVisibilitySmoke
 ./gradlew mvccDefaultProviderCandidateMatrix
+./gradlew mvccSqlStatementBoundarySmoke
+./gradlew mvccSqlCompatibilityCandidate
 ./gradlew :delosdb-tests:runDerbyLangSuite
 ```

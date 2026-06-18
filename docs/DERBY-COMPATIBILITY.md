@@ -61,20 +61,23 @@ provider.
 
 ## MVCC compatibility rule
 
-`delos_mvcc` is not allowed to become the default store until these classes of
-proofs are green:
+The A44--A52 semantic-correctness sprint is green for the guarded MVCC candidate
+path:
 
 ```text
 history-pruned / missing-history safety;
+vacuum watermark integration;
 command/statement visibility;
 SQL statement-boundary integration;
-durable transaction outcome recovery;
-vacuum watermark integration;
-SQL compatibility candidate matrix;
-crash/recovery matrix.
+durable transaction outcome logging;
+unresolved outcome recovery;
+captured visibility snapshot;
+SQL compatibility candidate matrix.
 ```
 
-Until then, Derby heap compatibility is the safe default.
+This does not make `delos_mvcc` the default store. Derby heap compatibility
+remains the safe default until a later explicit promotion decision and broader
+compatibility/recovery/performance gates.
 
 ## Research-facing behavior
 

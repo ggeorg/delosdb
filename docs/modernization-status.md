@@ -4,8 +4,8 @@ Last updated: 2026-06-18
 
 DelosDB is a Gradle-only Java 21 modernization fork of Apache Derby with a
 Derby-compatible SQL/JDBC baseline and a controlled DelosDB extension surface.
-The current priority is MVCC semantic correctness under a guarded candidate path,
-not broad expansion.
+The A44--A52 MVCC semantic-correctness sprint is closed. The current priority is
+to choose the next post-A52 lane deliberately, not to start broad expansion.
 
 Workspace metadata such as `.git/`, `.gradle/`, and `.idea/` is valid local
 state and may appear in developer ZIP snapshots. Cleanup scripts must not delete
@@ -67,12 +67,12 @@ memory -> provider-owned runtime proof
 `CREATE INDEX ... USING memory` remains intentionally rejected until DelosDB
 builds a real Derby executor/storage bridge for non-B-tree physical indexes.
 
-## Active lane: MVCC / versioned storage
+## Closed lane: MVCC semantic correctness
 
 The MVCC path is no longer just a future design sketch. It has an isolated
 storage module, provider SPI proofs, page-backed durability proofs,
-provider-owned index proofs, SQL opt-in smokes, and a guarded default-provider
-candidate path.
+provider-owned index proofs, SQL opt-in smokes, a guarded default-provider
+candidate path, and the A44--A52 semantic-correctness sprint.
 
 Current rule:
 
@@ -93,19 +93,32 @@ Current high-value gates:
 ./gradlew mvccDefaultProviderCandidateMatrix
 ./gradlew mvccTransactionLockOrderProof
 ./gradlew mvccKernelReviewCloseoutProof
+./gradlew mvccHistoryPrunedSafetyProof
+./gradlew mvccVacuumWatermarkProof
+./gradlew mvccCommandSequenceProof
+./gradlew mvccStatementSnapshotVisibilityProof
+./gradlew mvccSqlStatementBoundarySmoke
+./gradlew mvccTransactionOutcomeLogProof
+./gradlew mvccUnresolvedOutcomeRecoveryProof
+./gradlew mvccCapturedVisibilitySnapshotProof
+./gradlew mvccSqlCompatibilityCandidate
 ```
 
-Next lane:
+Closed A44--A52 lane:
 
 ```text
 A44 missing-history / prune safety
-A45 command sequence model
-A46 statement snapshot visibility
-A47 SQL statement-boundary smoke
-A48 captured visibility-state snapshot
+A45 vacuum watermark integration
+A46 command sequence model
+A47 statement snapshot visibility
+A48 SQL statement-boundary smoke
+A49 durable transaction outcome log
+A50 unresolved outcome recovery
+A51 captured visibility-state snapshot
+A52 MVCC SQL compatibility candidate matrix
 ```
 
-See `docs/MVCC-MISSION.md` for the active mission and four-engine comparison.
+See `docs/MVCC-MISSION.md` for the post-A52 mission state and four-engine comparison.
 
 ## Frozen shallow seams
 
@@ -113,7 +126,7 @@ See `docs/MVCC-MISSION.md` for the active mission and four-engine comparison.
   loading yet.
 - `TypeProvider`: metadata-only type visibility; no parser, binder, or storage
   changes yet.
-- New provider families are not opened while MVCC correctness is the active lane.
+- New provider families are not opened until the post-A52 next lane is selected.
 
 ## Current product state
 
@@ -128,7 +141,8 @@ Green/current product areas:
 - TypeProvider metadata and SQL visibility;
 - unified extension registry through `DELOSDB_EXTENSIONS()`;
 - type metadata visibility through `DELOSDB_TYPES()`;
-- MVCC guarded candidate path through `mvccDefaultProviderCandidateMatrix`.
+- MVCC guarded candidate path through `mvccDefaultProviderCandidateMatrix`;
+- MVCC A44--A52 semantic-correctness sprint through `mvccSqlCompatibilityCandidate`.
 
 ## Research-friendly constraint
 
@@ -139,7 +153,7 @@ current engine proof.
 
 Do not add a separate labs directory, teaching profile system, deterministic
 scheduler, fault-injection framework, benchmark harness, artifact pipeline, or
-new SQL explain surface during A44--A52.
+new SQL explain surface without a separate post-A52 decision.
 
 ## Current documentation state
 
@@ -167,4 +181,4 @@ Before adding features:
 3. keep generated LaTeX/PDF build outputs out of source control;
 4. never delete local `.git/`, `.gradle/`, or `.idea/`;
 5. avoid opening a new provider family;
-6. keep the active work on the next MVCC proof boundary.
+6. choose the next post-A52 MVCC/storage lane explicitly before coding.
