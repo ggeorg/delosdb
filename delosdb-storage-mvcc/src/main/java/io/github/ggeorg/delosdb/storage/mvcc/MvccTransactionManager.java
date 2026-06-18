@@ -136,6 +136,24 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
         return retainedSnapshotWatermarks.size();
     }
 
+    /**
+     * Captures immutable transaction outcome metadata for visibility checks.
+     * The resulting catalog can be reused for row-version decisions without
+     * re-consulting this live transaction manager.
+     */
+    public synchronized MvccCapturedVisibility captureVisibility(MvccSnapshot snapshot) {
+        if (snapshot == null) {
+            throw new IllegalArgumentException("snapshot must not be null");
+        }
+        Map<MvccTransactionId, MvccCapturedVisibility.CapturedTransaction> captured = new LinkedHashMap<>();
+        for (Map.Entry<MvccTransactionId, TransactionState> entry : transactions.entrySet()) {
+            captured.put(entry.getKey(), new MvccCapturedVisibility.CapturedTransaction(
+                    entry.getValue().status,
+                    entry.getValue().commitSequence));
+        }
+        return new MvccCapturedVisibility(snapshot, captured);
+    }
+
     @Override
     public synchronized MvccTransactionStatus statusOf(MvccTransactionId transactionId) {
         if (transactionId == null || transactionId.isNone()) {

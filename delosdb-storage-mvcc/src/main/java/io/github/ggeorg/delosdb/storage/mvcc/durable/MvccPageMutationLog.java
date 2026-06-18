@@ -162,6 +162,70 @@ public final class MvccPageMutationLog {
         return List.copyOf(committed);
     }
 
+    /**
+     * Replays raw version mutations through the strict A49/A50 transaction outcome log.
+     *
+     * <p>This is deliberately separate from {@link #recoverCommittedRecords()},
+     * which keeps the legacy page-mutation-log behavior. The strict path treats
+     * the transaction outcome log as authoritative: committed creators
+     * materialize records, aborted creators are suppressed, and unknown creators
+     * fail loudly.</p>
+     */
+    public synchronized List<MvccVersionRecord> recoverRecordsThroughOutcomeLog(
+            MvccTransactionOutcomeLog outcomeLog) {
+        Objects.requireNonNull(outcomeLog, "outcomeLog");
+        if (!Files.exists(path)) {
+            return List.of();
+        }
+        String content;
+        try {
+            content = Files.readString(path, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read MVCC page mutation log: " + path, e);
+        }
+        if (content.isEmpty()) {
+            return List.of();
+        }
+
+        boolean hasCompleteFinalLine = content.endsWith("\n") || content.endsWith("\r");
+        String[] lines = content.split("\\R", -1);
+        int lastLineIndex = lines.length - 1;
+        if (hasCompleteFinalLine && lastLineIndex >= 0 && lines[lastLineIndex].isEmpty()) {
+            lastLineIndex--;
+        }
+        if (!hasCompleteFinalLine) {
+            lastLineIndex--;
+        }
+
+        List<MvccVersionRecord> recovered = new ArrayList<>();
+        for (int index = 0; index <= lastLineIndex; index++) {
+            String line = lines[index].trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            String[] parts = line.split("\\t", -1);
+            require(parts.length >= 2, index, "record has too few fields");
+            require(LOG_VERSION.equals(parts[0]), index, "unsupported page mutation log version: " + parts[0]);
+            switch (parts[1]) {
+            case RECORD_VERSION -> {
+                require(parts.length == 4, index, "VERSION requires transaction id and record bytes");
+                long loggedTransactionId = parseLong(parts[2], index, "transaction id");
+                requireTransactionId(loggedTransactionId);
+                MvccVersionRecord record = decodeRecord(parts[3], index);
+                require(record.header().createdByTx().value() == loggedTransactionId, index,
+                        "VERSION transaction id must match record creator transaction id");
+                outcomeLog.committedRecordOrEmpty(record).ifPresent(recovered::add);
+            }
+            case RECORD_COMMIT, RECORD_ABORT, RECORD_FSYNC -> {
+                // Accepted for backward-compatible logs, but ignored here: the
+                // strict path is governed only by MvccTransactionOutcomeLog.
+            }
+            default -> throw corrupt(index, "unknown page mutation log record type: " + parts[1]);
+            }
+        }
+        return List.copyOf(recovered);
+    }
+
     private void parseLine(
             String line,
             int lineIndex,

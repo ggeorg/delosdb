@@ -31,6 +31,20 @@ public final class MvccPageRecoveryRunner {
         }
     }
 
+    /**
+     * Opens the durable logs and page store, then applies mutations through the
+     * strict transaction-outcome path introduced after A49.
+     */
+    public static RecoveryResult recoverStrict(Path logPath, Path outcomeLogPath, Path tablePath) throws IOException {
+        Objects.requireNonNull(logPath, "logPath");
+        Objects.requireNonNull(outcomeLogPath, "outcomeLogPath");
+        Objects.requireNonNull(tablePath, "tablePath");
+        try (PageBackedMvccTableStore store = PageBackedMvccTableStore.open(tablePath)) {
+            return new MvccPageRecoveryRunner(MvccPageMutationLog.open(logPath), store)
+                    .recoverStrict(MvccTransactionOutcomeLog.open(outcomeLogPath));
+        }
+    }
+
     public RecoveryResult recover() throws IOException {
         Set<MvccVersionId> existingVersionIds = new HashSet<>();
         for (PageBackedMvccTableStore.StoredVersionRecord stored : store.loadAll()) {
@@ -39,7 +53,30 @@ public final class MvccPageRecoveryRunner {
 
         int applied = 0;
         int skipped = 0;
-        for (MvccVersionRecord record : log.recoverCommittedRecords()) {
+        return applyRecords(log.recoverCommittedRecords(), existingVersionIds, applied, skipped);
+    }
+
+    /**
+     * Applies raw page mutations only when the separate transaction outcome log
+     * proves their creating transaction reached a durable terminal outcome.
+     */
+    public RecoveryResult recoverStrict(MvccTransactionOutcomeLog outcomeLog) throws IOException {
+        Objects.requireNonNull(outcomeLog, "outcomeLog");
+        Set<MvccVersionId> existingVersionIds = new HashSet<>();
+        for (PageBackedMvccTableStore.StoredVersionRecord stored : store.loadAll()) {
+            existingVersionIds.add(stored.record().header().versionId());
+        }
+        return applyRecords(log.recoverRecordsThroughOutcomeLog(outcomeLog), existingVersionIds, 0, 0);
+    }
+
+    private RecoveryResult applyRecords(
+            Iterable<MvccVersionRecord> records,
+            Set<MvccVersionId> existingVersionIds,
+            int initialApplied,
+            int initialSkipped) throws IOException {
+        int applied = initialApplied;
+        int skipped = initialSkipped;
+        for (MvccVersionRecord record : records) {
             if (existingVersionIds.add(record.header().versionId())) {
                 store.append(record);
                 applied++;

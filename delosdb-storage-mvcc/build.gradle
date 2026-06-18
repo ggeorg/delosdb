@@ -377,6 +377,58 @@ tasks.register('runMvccTransactionOutcomeLogTest', Test) {
 }
 
 
+tasks.register('runMvccUnresolvedOutcomeRecoveryTest', Test) {
+    group = 'verification'
+    description = 'Runs A50 MVCC unresolved transaction outcome recovery tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/MvccUnresolvedOutcomeRecoveryTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccUnresolvedOutcomeRecoveryTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccUnresolvedOutcomeRecoveryTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccUnresolvedOutcomeRecoveryTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+
+
+tasks.register('runMvccCapturedVisibilitySnapshotTest', Test) {
+    group = 'verification'
+    description = 'Runs A51 MVCC captured visibility-state snapshot tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/MvccCapturedVisibilitySnapshotTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccCapturedVisibilitySnapshotTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccCapturedVisibilitySnapshotTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccCapturedVisibilitySnapshotTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
 tasks.register('runDelosMvccCleanupVacuumTest', Test) {
     group = 'verification'
     description = 'Runs Phase 10 experimental DelosDB MVCC cleanup/vacuum tests.'
