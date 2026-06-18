@@ -33,6 +33,7 @@ For inherited Derby cleanup planning, generate the guarded hotspot reports:
 ./gradlew inheritedCodeQualityAudit
 ./gradlew legacyDerbyHarnessAudit
 ./gradlew generatedBytecodeAsmJvm21Proof
+./gradlew asmSwitchComplete
 ./gradlew generatedMethodDispatchAudit
 ./gradlew deprecatedApiCleanupAudit
 ./gradlew xmlHardeningAudit
@@ -48,11 +49,12 @@ the tree for reference, but the active Gradle language-suite path runs the JUnit
 `generatedBytecodeAsmJvm21Proof` is the permanent generated-bytecode proof
 after the ASM switch. It verifies that the production module points directly at
 `AsmJava` and that generated activation bytecode is emitted as Java 21 classfiles.
-The old `ClassHolder`/classfile-50 proof and temporary ASM campaign proofs have
+The old classfile-50 proof and temporary ASM campaign proofs have
 been retired with the legacy bytecode backend.
 
-`asmRuntimeDependencyCleanup` is the final ASM cleanup gate. It verifies that ASM
-is a normal engine module/runtime dependency and that only the permanent
+`asmSwitchComplete` is the final ASM closeout gate. It verifies that ASM is
+the direct production compiler, ASM is a normal engine module/runtime
+dependency, no temporary backend override tasks remain, and only the permanent
 bytecode proof remains active.
 
 `generatedMethodDispatchAudit` records the generated-method dispatch path after

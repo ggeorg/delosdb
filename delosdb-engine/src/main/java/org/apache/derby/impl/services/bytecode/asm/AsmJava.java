@@ -47,14 +47,14 @@ import org.objectweb.asm.Opcodes;
  * ASM-backed production implementation of Derby's JavaFactory contract.
  * <p>
  * This class is registered directly in {@code modules.properties} and replaces
- * the legacy Derby BCJava writer for generated SQL activations. Unsupported
+ * the legacy Derby generated-bytecode writer for SQL activations. Unsupported
  * MethodBuilder operations fail fast rather than silently generating wrong
  * bytecode.
  */
 public final class AsmJava implements JavaFactory {
     /**
      * ASM emits Java 21 bytecode with frames and generally larger instruction
-     * sequences than the old BCJava writer. Derby's historical 2K statement
+     * sequences than the old generated-bytecode writer. Derby's historical 2K statement
      * heuristic is too loose for large generated constructors such as long
      * IN-list constant initialization. Split much earlier while preserving the
      * MethodBuilder contract: callers only see that the current builder is
@@ -170,8 +170,9 @@ public final class AsmJava implements JavaFactory {
             // Derby generated activations initialize many instance fields from
             // postConstructor(), not from <init>. On modern classfile versions,
             // writing a non-static final field outside <init> throws
-            // IllegalAccessError. BCJava emits old classfiles where that pattern
-            // was tolerated, but ASM emits Java 21 classfiles, so non-static
+            // IllegalAccessError. The old generated-bytecode path emitted earlier
+            // classfile versions where that pattern was tolerated, but ASM emits
+            // Java 21 classfiles, so non-static
             // generated fields must be mutable.
             return modifiers & ~Modifier.FINAL;
         }

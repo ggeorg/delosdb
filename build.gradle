@@ -1530,124 +1530,191 @@ tasks.register('generatedBytecodeAsmJvm21Proof', JavaExec) {
 }
 
 
-tasks.register('verifyAsmOnlyBytecodeBackendConfiguration') {
+tasks.register('verifyAsmSwitchComplete') {
     group = 'verification'
-    description = 'Verifies the legacy BCJava backend and selector fallback have been removed after the ASM compatibility window.'
+    description = 'Audits that the ASM switch is complete and no legacy bytecode backend scaffolding remains active.'
 
     def modulesPropertiesFile = file('delosdb-engine/src/main/java/org/apache/derby/modules.properties')
+    def moduleInfoFile = file('delosdb-engine/src/main/java/module-info.java')
+    def rootBuildFile = file('build.gradle')
     def testsBuildFile = file('delosdb-tests/build.gradle')
-    def staleBackendFiles = [
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCJava.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCClass.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCMethod.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/CodeChunk.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/Conditional.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/OpcodeDebug.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCExpr.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCLocalField.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCMethodCaller.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCMethodDescriptor.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/GClass.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/Type.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/VMTypeIdCacheable.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/d_BCValidate.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/ExperimentalBytecodeJavaFactory.java',
-            'dev/asm-methodbuilder-parity',
-            'dev/asm-experimental-backend-selector-smoke',
-            'dev/asm-engine-selector-integration-smoke'
+    def buildtoolsBuildFile = file('delosdb-buildtools/build.gradle')
+    def bytecodeDir = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode')
+    def asmBackendFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/asm/AsmJava.java')
+    def classfileDir = file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile')
+    def permanentProofDir = file('dev/generated-bytecode-asm-jvm21-proof')
+    def retiredCleanupScripts = [
+            'scripts/cleanup-asm-a21-old-bc' + 'java-backend.sh',
+            'scripts/cleanup-asm-a22-old-classfile-writer.sh',
+            'scripts/cleanup-asm-a23-runtime-dependency-cleanup.sh'
     ].collect { file(it) }
 
-    inputs.files(modulesPropertiesFile, testsBuildFile)
-    inputs.files(staleBackendFiles.findAll { it.exists() })
+    inputs.files(modulesPropertiesFile, moduleInfoFile, rootBuildFile, testsBuildFile, buildtoolsBuildFile)
+    inputs.dir(bytecodeDir)
+    inputs.dir(classfileDir)
+    inputs.dir(permanentProofDir)
+    inputs.files(retiredCleanupScripts.findAll { it.exists() })
 
     doLast {
         def compilerLines = modulesPropertiesFile.readLines('UTF-8')
                 .collect { it.trim() }
                 .findAll { it.startsWith('derby.module.javaCompiler=') }
-        if (compilerLines != ['derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.asm.AsmJava']) {
-            throw new GradleException('ASM-only backend requires modules.properties to point directly at AsmJava; found: '
+        def expectedCompilerLine = 'derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.asm.AsmJava'
+        if (compilerLines != [expectedCompilerLine]) {
+            throw new GradleException('ASM switch requires modules.properties to point directly at AsmJava; found: '
                     + compilerLines)
         }
 
-        def remaining = staleBackendFiles.findAll { it.exists() }
-        if (!remaining.isEmpty()) {
-            throw new GradleException('Legacy BCJava backend/fallback files still exist. Run scripts/cleanup-asm-a21-old-bcjava-backend.sh first: '
-                    + remaining.collect { it.path }.join(', '))
+        def moduleInfoText = moduleInfoFile.getText('UTF-8')
+        if (!moduleInfoText.contains('requires org.objectweb.asm;')) {
+            throw new GradleException('ASM must be a normal engine module dependency: expected requires org.objectweb.asm;')
+        }
+        if (moduleInfoText.contains('requires static org.objectweb' + '.asm;')) {
+            throw new GradleException('ASM is still declared as optional/static in module-info.java')
+        }
+
+        def topLevelBytecodeFiles = bytecodeDir.listFiles()
+                .findAll { it.isFile() && it.name.endsWith('.java') }
+                .collect { it.name }
+                .sort()
+        if (topLevelBytecodeFiles != ['package-info.java']) {
+            throw new GradleException('Legacy top-level bytecode implementation files remain: ' + topLevelBytecodeFiles)
+        }
+        if (!asmBackendFile.isFile()) {
+            throw new GradleException('Permanent ASM backend file is missing: ' + asmBackendFile.path)
+        }
+
+        def classfileJavaFiles = classfileDir.listFiles()
+                .findAll { it.isFile() && it.name.endsWith('.java') }
+                .collect { it.name }
+                .sort()
+        if (classfileJavaFiles != ['VMOpcode.java']) {
+            throw new GradleException('Old classfile writer files remain; only VMOpcode.java should stay: '
+                    + classfileJavaFiles)
+        }
+
+        def devDir = file('dev')
+        def retiredAsmCampaignDirs = devDir.listFiles()
+                .findAll { it.isDirectory() && it.name.startsWith('asm-') }
+                .collect { it.path }
+                .sort()
+        if (!retiredAsmCampaignDirs.isEmpty()) {
+            throw new GradleException('Temporary ASM campaign directories remain: '
+                    + retiredAsmCampaignDirs.join(', '))
+        }
+        if (!file('dev/generated-bytecode-asm-jvm21-proof/src/main/java/org/apache/derbyBuild/asm/GeneratedBytecodeAsmJvm21Proof.java').isFile()) {
+            throw new GradleException('Permanent generated-bytecode ASM JVM21 proof source is missing')
+        }
+
+        def buildTexts = [rootBuildFile, testsBuildFile, buildtoolsBuildFile]
+                .collectEntries { [(it.path): it.getText('UTF-8')] }
+        def retiredTaskNames = [
+                'asm' + 'CompatibilityWindow',
+                'verify' + 'AsmCompatibilityWindowConfiguration',
+                'asm' + 'OnlyBytecodeBackend',
+                'verify' + 'AsmOnlyBytecodeBackendConfiguration',
+                'asm' + 'ClassfileWriterQuarantine',
+                'verify' + 'OldClassfileWriterQuarantined',
+                'asm' + 'RuntimeDependencyCleanup',
+                'verify' + 'AsmRuntimeDependencyCleanup',
+                'runDerbyLangSuiteWith' + 'AsmBackend',
+                'runDerbyLangSuiteWith' + 'BcJavaBackend',
+                'generated' + 'BytecodeJvm21Proof',
+                'compile' + 'GeneratedBytecodeJvm21Proof'
+        ]
+        def remainingTasks = []
+        buildTexts.each { path, text ->
+            retiredTaskNames.each { taskName ->
+                if (text.contains("tasks.register('${taskName}'")) {
+                    remainingTasks << "${path}:${taskName}"
+                }
+            }
+        }
+        if (!remainingTasks.isEmpty()) {
+            throw new GradleException('Retired ASM switch milestone tasks remain: ' + remainingTasks.join(', '))
         }
 
         def testsBuildText = testsBuildFile.getText('UTF-8')
-        if (testsBuildText.contains('runDerbyLangSuiteWith' + 'BcJavaBackend')
-                || testsBuildText.contains('delosdb.bytecode.backend')) {
-            throw new GradleException('BCJava fallback test task/property is still present in delosdb-tests/build.gradle')
+        if (testsBuildText.contains('delosdb.bytecode' + '.backend')
+                || testsBuildText.contains('derby.module' + '.JavaCompiler')
+                || testsBuildText.contains('runDerbyLangSuiteWith' + 'AsmBackend')
+                || testsBuildText.contains('runDerbyLangSuiteWith' + 'BcJavaBackend')) {
+            throw new GradleException('Temporary bytecode backend override wiring remains in delosdb-tests/build.gradle')
+        }
+
+        def retiredScriptsStillPresent = retiredCleanupScripts.findAll { it.exists() }
+        if (!retiredScriptsStillPresent.isEmpty()) {
+            throw new GradleException('Retired ASM cleanup scripts remain. Run scripts/cleanup-asm-a24-closeout.sh first: '
+                    + retiredScriptsStillPresent.collect { it.path }.join(', '))
+        }
+
+        def forbiddenTokens = [
+                'BC' + 'Java',
+                'BC' + 'Class',
+                'BC' + 'Method',
+                'Code' + 'Chunk',
+                'Opcode' + 'Debug',
+                'Experimental' + 'BytecodeJavaFactory',
+                'Class' + 'Holder',
+                'Class' + 'Member',
+                'Class' + 'FormatOutput',
+                'Class' + 'Input',
+                'Class' + 'Investigator',
+                'Class' + 'Enumeration',
+                'CONSTANT' + '_Double_info',
+                'CONSTANT' + '_Float_info',
+                'CONSTANT' + '_Index_info',
+                'CONSTANT' + '_Integer_info',
+                'CONSTANT' + '_Long_info',
+                'CONSTANT' + '_Utf8_info',
+                'delosdb.bytecode' + '.backend',
+                'requires static org.objectweb' + '.asm'
+        ]
+        def scanRoots = [
+                file('delosdb-engine/src/main/java'),
+                file('delosdb-commons/src/main/java'),
+                file('delosdb-buildtools/src/main/java'),
+                file('delosdb-tests/src/test/java')
+        ]
+        def scanFiles = []
+        scanRoots.each { root ->
+            if (root.exists()) {
+                root.eachFileRecurse { candidate ->
+                    if (candidate.isFile()
+                            && (candidate.name.endsWith('.java') || candidate.name.endsWith('.properties'))) {
+                        scanFiles << candidate
+                    }
+                }
+            }
+        }
+        scanFiles.addAll([rootBuildFile, testsBuildFile, buildtoolsBuildFile])
+
+        def findings = []
+        scanFiles.each { candidate ->
+            def text = candidate.getText('UTF-8')
+            forbiddenTokens.each { token ->
+                if (text.contains(token)) {
+                    findings << "${project.relativePath(candidate)} contains ${token}"
+                }
+            }
+        }
+        if (!findings.isEmpty()) {
+            throw new GradleException('Stale bytecode/classfile writer references remain:\n' + findings.join('\n'))
         }
     }
 }
 
-tasks.register('asmOnlyBytecodeBackend') {
+tasks.register('asmSwitchComplete') {
     group = 'verification'
-    description = 'Runs the ASM-only backend gate after removing the legacy BCJava fallback/backend.'
-    dependsOn 'verifyAsmOnlyBytecodeBackendConfiguration'
-    dependsOn ':delosdb-engine:compileDerbyEngine'
-    dependsOn ':delosdb-tests:runDerbyLangSuite'
-    dependsOn ':delosdb-tests:runDerbyLangSuiteWithAsmBackend'
-    dependsOn 'smokeFromJars'
-    dependsOn 'generatedBytecodeAsmJvm21Proof'
-}
-
-
-
-
-tasks.register('verifyOldClassfileWriterQuarantined') {
-    group = 'verification'
-    description = 'Verifies the old Derby classfile writer and its classfile-version probes are gone after the ASM switch.'
-
-    def staleClassfileWriterPaths = [
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/AttributeEntry.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/Attributes.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassEnumeration.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassFormatOutput.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassHolder.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassInput.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassInvestigator.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassMember.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Double_info.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Float_info.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Index_info.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Integer_info.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Long_info.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Utf8_info.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ConstantPoolEntry.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/MemberTable.java',
-            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/VMDescriptor.java',
-            'delosdb-buildtools/src/main/java/org/apache/derbyBuild/GeneratedBytecodeVersionProbe.java',
-            'delosdb-buildtools/src/main/java/org/apache/derby/iapi/services/classfile/GeneratedBytecodeVersionExperimentProbe.java',
-            'dev/generated-bytecode-jvm21-proof.sh'
-    ].collect { file(it) }
-
-    def buildFiles = files(file('build.gradle'), file('delosdb-buildtools/build.gradle'))
-    inputs.files(buildFiles)
-    inputs.files(staleClassfileWriterPaths.findAll { it.exists() })
-
-    doLast {
-        def remaining = staleClassfileWriterPaths.findAll { it.exists() }
-        if (!remaining.isEmpty()) {
-            throw new GradleException('Old Derby classfile writer/proof paths still exist. Run scripts/cleanup-asm-a22-old-classfile-writer.sh first: '
-                    + remaining.collect { it.path }.join(', '))
-        }
-
-    }
-}
-
-tasks.register('asmClassfileWriterQuarantine') {
-    group = 'verification'
-    description = 'Runs the ASM-only gate after quarantining the old Derby classfile writer.'
-    dependsOn 'verifyOldClassfileWriterQuarantined'
+    description = 'Final closeout gate for the ASM bytecode switch.'
+    dependsOn 'verifyAsmSwitchComplete'
     dependsOn ':delosdb-engine:compileDerbyEngine'
     dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
-    dependsOn 'generatedBytecodeAsmJvm21Proof'
-    dependsOn 'smokeFromJars'
     dependsOn ':delosdb-tests:runDerbyLangSuite'
+    dependsOn 'smokeFromJars'
+    dependsOn 'generatedBytecodeAsmJvm21Proof'
 }
+
 
 
 tasks.register('generatedMethodDispatchAudit', Exec) {
@@ -2090,81 +2157,4 @@ tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
     description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
     dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke', 'versionedStorageWriteConflictSmoke', 'versionedStorageOptimizerPathSmoke', 'versionedStorageIndexRangeSmoke', 'versionedStorageOrderByPathSmoke', 'versionedStorageDurableSqlSmoke'
-}
-
-
-tasks.register('verifyAsmRuntimeDependencyCleanup') {
-    group = 'verification'
-    description = 'Verifies the ASM switch has been collapsed to the permanent runtime dependency and proof gate.'
-
-    def moduleInfoFile = file('delosdb-engine/src/main/java/module-info.java')
-    def buildFile = file('build.gradle')
-    def retiredAsmCampaignPaths = [
-            'dev/asm-classfile-proof',
-            'dev/asm-methodbuilder-smoke',
-            'dev/asm-generated-sql-smoke',
-            'dev/asm-frame-computation-smoke',
-            'dev/asm-large-method-smoke',
-            'dev/asm-engine-backend-smoke',
-            'dev/asm-experimental-sql-compiler-smoke',
-            'dev/asm-engine-backend-hardening-smoke'
-    ].collect { file(it) }
-
-    inputs.files(moduleInfoFile, buildFile)
-    inputs.files(retiredAsmCampaignPaths.findAll { it.exists() })
-
-    doLast {
-        def moduleInfoText = moduleInfoFile.getText('UTF-8')
-        if (!moduleInfoText.contains('requires org.objectweb.asm;')) {
-            throw new GradleException('ASM must be a normal engine module dependency: expected requires org.objectweb.asm;')
-        }
-        if (moduleInfoText.contains('requires static org.objectweb.asm;')) {
-            throw new GradleException('ASM is still declared as optional/static in module-info.java')
-        }
-
-        def buildText = buildFile.getText('UTF-8')
-        def staleTaskNames = [
-                'asmClassfileProof',
-                'compileAsmClassfileProof',
-                'asmMethodBuilderSmoke',
-                'compileAsmMethodBuilderSmoke',
-                'asmGeneratedSqlSmoke',
-                'compileAsmGeneratedSqlSmoke',
-                'asmFrameComputationSmoke',
-                'compileAsmFrameComputationSmoke',
-                'asmLargeMethodSmoke',
-                'compileAsmLargeMethodSmoke',
-                'asmEngineBackendSmoke',
-                'compileAsmEngineBackendSmoke',
-                'asmExperimentalSqlCompilerSmoke',
-                'compileAsmExperimentalSqlCompilerSmoke',
-                'asmEngineBackendHardeningSmoke',
-                'compileAsmEngineBackendHardeningSmoke'
-        ]
-        def remainingTasks = staleTaskNames.findAll { buildText.contains("tasks.register('${it}'") }
-        if (!remainingTasks.isEmpty()) {
-            throw new GradleException('Temporary ASM campaign proof tasks still exist: ' + remainingTasks.join(', '))
-        }
-        if (!buildText.contains('configurations.delosdbAsm') || !buildText.contains('Runtime dependency for the permanent ASM generated-bytecode backend')) {
-            throw new GradleException('ASM runtime dependency wiring is missing from build.gradle')
-        }
-
-        def remainingPaths = retiredAsmCampaignPaths.findAll { it.exists() }
-        if (!remainingPaths.isEmpty()) {
-            throw new GradleException('Temporary ASM campaign directories still exist. Run scripts/cleanup-asm-a23-runtime-dependency-cleanup.sh first: '
-                    + remainingPaths.collect { it.path }.join(', '))
-        }
-    }
-}
-
-tasks.register('asmRuntimeDependencyCleanup') {
-    group = 'verification'
-    description = 'Runs the final ASM runtime-dependency cleanup gate after removing temporary ASM campaign proofs.'
-    dependsOn 'verifyAsmRuntimeDependencyCleanup'
-    dependsOn 'asmOnlyBytecodeBackend'
-    dependsOn 'asmClassfileWriterQuarantine'
-    dependsOn 'generatedBytecodeAsmJvm21Proof'
-    dependsOn 'smokeFromJars'
-    dependsOn 'sysinfoFromJars'
-    dependsOn ':delosdb-tests:runDerbyLangSuite'
 }
