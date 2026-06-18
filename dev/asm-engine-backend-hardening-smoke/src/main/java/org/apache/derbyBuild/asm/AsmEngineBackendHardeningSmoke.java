@@ -271,13 +271,13 @@ public final class AsmEngineBackendHardeningSmoke {
     private static void buildStatementLimitProbe(ClassBuilder classBuilder) {
         MethodBuilder method = classBuilder.newMethodBuilder(Modifier.PUBLIC | Modifier.STATIC,
                 "void", "statementLimitProbe", new String[0]);
-        for (int i = 0; i < 2049; i++) {
+        for (int i = 0; i < 128; i++) {
             if (method.statementNumHitLimit(1)) {
                 throw new AssertionError("ASM statement limit tripped too early at statement " + i);
             }
         }
         if (!method.statementNumHitLimit(1)) {
-            throw new AssertionError("ASM statement limit did not trip after Derby's 2K constructor threshold");
+            throw new AssertionError("ASM statement limit did not trip at the conservative ASM constructor threshold");
         }
         method.methodReturn();
         method.complete();

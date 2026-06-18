@@ -53,6 +53,16 @@ import org.objectweb.asm.Opcodes;
  * silently generating wrong bytecode.
  */
 public final class AsmJava implements JavaFactory {
+    /**
+     * ASM emits Java 21 bytecode with frames and generally larger instruction
+     * sequences than the old BCJava writer. Derby's historical 2K statement
+     * heuristic is too loose for large generated constructors such as long
+     * IN-list constant initialization. Split much earlier while preserving the
+     * MethodBuilder contract: callers only see that the current builder is
+     * nearing its safe size.
+     */
+    private static final int ASM_STATEMENT_SPLIT_LIMIT = 128;
+
     @Override
     public ClassBuilder newClassBuilder(ClassFactory cf, String packageName, int modifiers, String className,
             String superClass) {
@@ -714,7 +724,7 @@ public final class AsmJava implements JavaFactory {
 
         @Override
         public boolean statementNumHitLimit(int noStatementsAdded) {
-            if (statementNum > 2048) {
+            if (statementNum >= ASM_STATEMENT_SPLIT_LIMIT) {
                 return true;
             }
             statementNum += noStatementsAdded;
