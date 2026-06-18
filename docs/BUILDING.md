@@ -32,8 +32,7 @@ For inherited Derby cleanup planning, generate the guarded hotspot reports:
 ```bash
 ./gradlew inheritedCodeQualityAudit
 ./gradlew legacyDerbyHarnessAudit
-./gradlew generatedBytecodeJvm21Proof
-./gradlew generatedBytecodeVersionExperimentProbe
+./gradlew generatedBytecodeAsmJvm21Proof
 ./gradlew generatedMethodDispatchAudit
 ./gradlew deprecatedApiCleanupAudit
 ./gradlew xmlHardeningAudit
@@ -46,17 +45,11 @@ the tree for reference, but the active Gradle language-suite path runs the JUnit
 `_Suite` class directly and excludes obsolete VM adapter classes plus the old
 `RunSuite` launcher from test-module compilation.
 
-`generatedBytecodeJvm21Proof` records the inherited Derby generated-class path
-after the JVM 21 bytecode modernization step. It checks the current `ClassHolder`
-classfile header, writes `build/reports/generated-bytecode-jvm21/generated-bytecode-jvm21-proof.md`,
-and keeps the rule explicit: DelosDB currently targets classfile 50.0 and must
-not move to classfile 51+ until StackMapTable generation is proven for generated
-activation classes.
-
-`generatedBytecodeVersionExperimentProbe` remains the guarded experiment for
-legacy classfile targets. It defines and invokes tiny Derby-written classfiles
-at candidate versions 45, 49, and 50 so the project keeps evidence for the
-production 50.0 target and for any future version work.
+`generatedBytecodeAsmJvm21Proof` is the permanent generated-bytecode proof
+after the ASM switch. It verifies that the production module points directly at
+`AsmJava` and that generated activation bytecode is emitted as Java 21 classfiles.
+The old `ClassHolder`/classfile-50 proof has been retired with the legacy
+classfile writer.
 
 `generatedMethodDispatchAudit` records the generated-method dispatch path after
 the small `ReflectGeneratedClass` cleanup. The hot `e0..e9` generated activation

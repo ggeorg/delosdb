@@ -370,7 +370,7 @@ Core gates:
 Modernization-specific proof gates:
 
 ```bash
-./gradlew generatedBytecodeJvm21Proof generatedBytecodeVersionExperimentProbe
+./gradlew generatedBytecodeAsmJvm21Proof
 ./gradlew sortMemoryPolicyProbe sortMemoryObservabilityAudit
 ./gradlew costModelProviderStoreCostSmoke indexProviderCostInfluenceSmoke
 ./gradlew :delosdb-tests:runInheritedAlgorithmClosureProofTests

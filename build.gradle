@@ -1510,28 +1510,6 @@ tasks.register('asmClassfileProof', JavaExec) {
     mainClass = 'org.apache.derbyBuild.AsmClassfileProof'
 }
 
-tasks.register('generatedBytecodeClassfileHeaderProbe', JavaExec) {
-    group = 'verification'
-    description = 'Emits and checks the classfile header produced by the inherited Derby bytecode writer.'
-    dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
-    classpath = files(
-            project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools'),
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine)
-    )
-    mainClass = 'org.apache.derbyBuild.GeneratedBytecodeVersionProbe'
-}
-
-
-tasks.register('generatedBytecodeJvm21Proof', Exec) {
-    group = 'verification'
-    description = 'Writes a JVM 21 generated-bytecode proof report for the DelosDB generated classfile target.'
-    dependsOn 'generatedBytecodeClassfileHeaderProbe'
-    commandLine 'bash', 'dev/generated-bytecode-jvm21-proof.sh', '--verify'
-}
-
-
-
 def generatedBytecodeAsmJvm21ProofSourceDir = file('dev/generated-bytecode-asm-jvm21-proof/src/main/java')
 def generatedBytecodeAsmJvm21ProofClassesDir = layout.buildDirectory.dir('classes/generated-bytecode-asm-jvm21-proof')
 
@@ -1640,16 +1618,57 @@ tasks.register('asmOnlyBytecodeBackend') {
 
 
 
-tasks.register('generatedBytecodeVersionExperimentProbe', JavaExec) {
+
+tasks.register('verifyOldClassfileWriterQuarantined') {
     group = 'verification'
-    description = 'Experimentally defines and invokes Derby-written classfiles at legacy candidate versions 45, 49, and 50.'
+    description = 'Verifies the old Derby classfile writer and its classfile-version probes are gone after the ASM switch.'
+
+    def staleClassfileWriterPaths = [
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/AttributeEntry.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/Attributes.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassEnumeration.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassFormatOutput.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassHolder.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassInput.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassInvestigator.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ClassMember.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Double_info.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Float_info.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Index_info.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Integer_info.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Long_info.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/CONSTANT_Utf8_info.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/ConstantPoolEntry.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/MemberTable.java',
+            'delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile/VMDescriptor.java',
+            'delosdb-buildtools/src/main/java/org/apache/derbyBuild/GeneratedBytecodeVersionProbe.java',
+            'delosdb-buildtools/src/main/java/org/apache/derby/iapi/services/classfile/GeneratedBytecodeVersionExperimentProbe.java',
+            'dev/generated-bytecode-jvm21-proof.sh'
+    ].collect { file(it) }
+
+    def buildFiles = files(file('build.gradle'), file('delosdb-buildtools/build.gradle'))
+    inputs.files(buildFiles)
+    inputs.files(staleClassfileWriterPaths.findAll { it.exists() })
+
+    doLast {
+        def remaining = staleClassfileWriterPaths.findAll { it.exists() }
+        if (!remaining.isEmpty()) {
+            throw new GradleException('Old Derby classfile writer/proof paths still exist. Run scripts/cleanup-asm-a22-old-classfile-writer.sh first: '
+                    + remaining.collect { it.path }.join(', '))
+        }
+
+    }
+}
+
+tasks.register('asmClassfileWriterQuarantine') {
+    group = 'verification'
+    description = 'Runs the ASM-only gate after quarantining the old Derby classfile writer.'
+    dependsOn 'verifyOldClassfileWriterQuarantined'
+    dependsOn ':delosdb-engine:compileDerbyEngine'
     dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
-    classpath = files(
-            project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools'),
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine)
-    )
-    mainClass = 'org.apache.derby.iapi.services.classfile.GeneratedBytecodeVersionExperimentProbe'
+    dependsOn 'generatedBytecodeAsmJvm21Proof'
+    dependsOn 'smokeFromJars'
+    dependsOn ':delosdb-tests:runDerbyLangSuite'
 }
 
 
