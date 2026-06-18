@@ -2461,6 +2461,22 @@ tasks.register('versionedStorageDefaultProviderCandidateMatrixSmoke', JavaExec) 
 }
 
 
+tasks.register('versionedStorageSqlCompatibilityCandidateSmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
+    mustRunAfter 'versionedStorageDefaultProviderCandidateMatrixSmoke', 'versionedStorageSqlStatementBoundarySmoke'
+    group = 'verification'
+    description = 'Verifies A52 delos_mvcc SQL compatibility candidate matrix remains property-gated and recoverable.'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+    mainClass = 'delosdb.smoke.VersionedStorageSqlCompatibilityCandidateSmoke'
+    args layout.buildDirectory.dir('versioned-storage-sql-compatibility-candidate-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('versioned-storage-sql-compatibility-candidate-smoke').get().asFile
+    doFirst {
+        delete file('build/versioned-storage-sql-compatibility-candidate-smoke')
+        workingDir.mkdirs()
+    }
+}
+
+
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
     description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
@@ -2589,5 +2605,12 @@ tasks.register('mvccDefaultProviderCandidateMatrix') {
     group = 'verification'
     description = 'Runs the guarded default-provider candidate recovery/index/update/delete matrix without flipping the global default store.'
     dependsOn 'mvccDefaultProviderCandidateSmoke', 'versionedStorageDefaultProviderCandidateMatrixSmoke'
+}
+
+
+tasks.register('mvccSqlCompatibilityCandidate') {
+    group = 'verification'
+    description = 'Runs A52 MVCC SQL compatibility candidate matrix while keeping delos_mvcc property-gated.'
+    dependsOn 'mvccCapturedVisibilitySnapshotProof', 'mvccSqlStatementBoundarySmoke', 'mvccDefaultProviderCandidateMatrix', 'versionedStorageSqlCompatibilityCandidateSmoke'
 }
 
