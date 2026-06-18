@@ -19,10 +19,18 @@ public final class MvccTable<K, V> {
     private final Map<K, List<MvccPrunedVersionMarker>> prunedHistoryByKey = new LinkedHashMap<>();
 
     public synchronized void insert(K key, V value, MvccTransaction transaction) {
+        insert(key, value, transaction, MvccCommandSequence.FIRST);
+    }
+
+    public synchronized void insert(
+            K key,
+            V value,
+            MvccTransaction transaction,
+            MvccCommandSequence commandSequence) {
         if (rows.containsKey(key)) {
             throw new MvccWriteConflictException("logical row already exists: " + key);
         }
-        rows.put(key, new MvccVersionChain<>(value, transaction));
+        rows.put(key, new MvccVersionChain<>(value, transaction, commandSequence));
     }
 
     public synchronized Optional<V> read(K key, MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
@@ -57,11 +65,30 @@ public final class MvccTable<K, V> {
     }
 
     public synchronized void update(K key, V value, MvccTransaction transaction, MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
-        chainForExistingKey(key).update(value, transaction, snapshot, catalog);
+        update(key, value, transaction, snapshot, catalog, MvccCommandSequence.FIRST);
+    }
+
+    public synchronized void update(
+            K key,
+            V value,
+            MvccTransaction transaction,
+            MvccSnapshot snapshot,
+            MvccTransactionCatalog catalog,
+            MvccCommandSequence commandSequence) {
+        chainForExistingKey(key).update(value, transaction, snapshot, catalog, commandSequence);
     }
 
     public synchronized void delete(K key, MvccTransaction transaction, MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
-        chainForExistingKey(key).delete(transaction, snapshot, catalog);
+        delete(key, transaction, snapshot, catalog, MvccCommandSequence.FIRST);
+    }
+
+    public synchronized void delete(
+            K key,
+            MvccTransaction transaction,
+            MvccSnapshot snapshot,
+            MvccTransactionCatalog catalog,
+            MvccCommandSequence commandSequence) {
+        chainForExistingKey(key).delete(transaction, snapshot, catalog, commandSequence);
     }
 
     public synchronized int physicalVersionCount(K key) {

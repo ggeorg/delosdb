@@ -18,7 +18,14 @@ public final class MvccVersionChain<V> {
     private final List<MvccPrunedVersionMarker> prunedHistory = new ArrayList<>();
 
     public MvccVersionChain(V initialValue, MvccTransaction creatingTransaction) {
-        newestFirst.add(new MvccVersion<>(initialValue, creatingTransaction.id()));
+        this(initialValue, creatingTransaction, MvccCommandSequence.FIRST);
+    }
+
+    public MvccVersionChain(
+            V initialValue,
+            MvccTransaction creatingTransaction,
+            MvccCommandSequence createdAtCommand) {
+        newestFirst.add(new MvccVersion<>(initialValue, creatingTransaction.id(), createdAtCommand));
     }
 
     public synchronized Optional<V> visibleValue(MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
@@ -32,18 +39,35 @@ public final class MvccVersionChain<V> {
     }
 
     public synchronized void update(V newValue, MvccTransaction transaction, MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
+        update(newValue, transaction, snapshot, catalog, MvccCommandSequence.FIRST);
+    }
+
+    public synchronized void update(
+            V newValue,
+            MvccTransaction transaction,
+            MvccSnapshot snapshot,
+            MvccTransactionCatalog catalog,
+            MvccCommandSequence commandSequence) {
         MvccVersion<V> current = visibleVersion(snapshot, catalog)
                 .orElseThrow(() -> new MvccWriteConflictException("cannot update a row that is not visible to " + transaction.id()));
         // markDeletedBy() is deliberately check-before-mutate. If it throws, the
         // old version remains unchanged and no replacement version is appended.
-        current.markDeletedBy(transaction.id(), catalog);
-        newestFirst.add(0, new MvccVersion<>(newValue, transaction.id()));
+        current.markDeletedBy(transaction.id(), catalog, commandSequence);
+        newestFirst.add(0, new MvccVersion<>(newValue, transaction.id(), commandSequence));
     }
 
     public synchronized void delete(MvccTransaction transaction, MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
+        delete(transaction, snapshot, catalog, MvccCommandSequence.FIRST);
+    }
+
+    public synchronized void delete(
+            MvccTransaction transaction,
+            MvccSnapshot snapshot,
+            MvccTransactionCatalog catalog,
+            MvccCommandSequence commandSequence) {
         MvccVersion<V> current = visibleVersion(snapshot, catalog)
                 .orElseThrow(() -> new MvccWriteConflictException("cannot delete a row that is not visible to " + transaction.id()));
-        current.markDeletedBy(transaction.id(), catalog);
+        current.markDeletedBy(transaction.id(), catalog, commandSequence);
     }
 
     public synchronized int versionCount() {

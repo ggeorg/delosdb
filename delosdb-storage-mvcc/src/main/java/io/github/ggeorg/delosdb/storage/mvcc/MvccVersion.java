@@ -7,15 +7,23 @@ import java.util.Optional;
 public final class MvccVersion<V> {
     private final V value;
     private final MvccTransactionId createdBy;
+    private final MvccCommandSequence createdAtCommand;
     private MvccTransactionId deletedBy;
+    private MvccCommandSequence deletedAtCommand;
 
     public MvccVersion(V value, MvccTransactionId createdBy) {
+        this(value, createdBy, MvccCommandSequence.FIRST);
+    }
+
+    public MvccVersion(V value, MvccTransactionId createdBy, MvccCommandSequence createdAtCommand) {
         if (createdBy == null || createdBy.isNone()) {
             throw new IllegalArgumentException("createdBy must be a real transaction id");
         }
         this.value = Objects.requireNonNull(value, "value");
         this.createdBy = createdBy;
+        this.createdAtCommand = Objects.requireNonNull(createdAtCommand, "createdAtCommand");
         this.deletedBy = MvccTransactionId.NONE;
+        this.deletedAtCommand = MvccCommandSequence.FIRST;
     }
 
     public V value() {
@@ -26,11 +34,26 @@ public final class MvccVersion<V> {
         return createdBy;
     }
 
+    public MvccCommandSequence createdAtCommand() {
+        return createdAtCommand;
+    }
+
     public Optional<MvccTransactionId> deletedBy() {
         return deletedBy.isNone() ? Optional.empty() : Optional.of(deletedBy);
     }
 
+    public Optional<MvccCommandSequence> deletedAtCommand() {
+        return deletedBy.isNone() ? Optional.empty() : Optional.of(deletedAtCommand);
+    }
+
     public void markDeletedBy(MvccTransactionId deletingTransaction, MvccTransactionCatalog catalog) {
+        markDeletedBy(deletingTransaction, catalog, MvccCommandSequence.FIRST);
+    }
+
+    public void markDeletedBy(
+            MvccTransactionId deletingTransaction,
+            MvccTransactionCatalog catalog,
+            MvccCommandSequence deletedAtCommand) {
         if (deletingTransaction == null || deletingTransaction.isNone()) {
             throw new IllegalArgumentException("deleting transaction must be a real transaction id");
         }
@@ -38,12 +61,14 @@ public final class MvccVersion<V> {
         // relies on this method being check-before-mutate so an update cannot
         // mark the old version deleted unless it is also allowed to append the
         // replacement version.
+        Objects.requireNonNull(deletedAtCommand, "deletedAtCommand");
         if (!deletedBy.isNone()
                 && !deletedBy.equals(deletingTransaction)
                 && catalog.statusOf(deletedBy) != MvccTransactionStatus.ABORTED) {
             throw new MvccWriteConflictException("version is already deleted by " + deletedBy);
         }
         deletedBy = deletingTransaction;
+        this.deletedAtCommand = deletedAtCommand;
     }
 
     boolean wasCreatedByAbortedTransaction(MvccTransactionCatalog catalog) {
@@ -69,7 +94,6 @@ public final class MvccVersion<V> {
         if (deletedBy.isNone() || catalog.statusOf(deletedBy) != MvccTransactionStatus.COMMITTED) {
             return null;
         }
-        return new MvccPrunedVersionMarker(createdBy, deletedBy);
+        return new MvccPrunedVersionMarker(createdBy, createdAtCommand, deletedBy, deletedAtCommand);
     }
 }
-

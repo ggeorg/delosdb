@@ -33,8 +33,14 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
     }
 
     public synchronized MvccSnapshot snapshot(MvccTransaction transaction) {
+        return snapshot(transaction, MvccCommandSequence.LATEST_VISIBLE);
+    }
+
+    public synchronized MvccSnapshot snapshot(
+            MvccTransaction transaction,
+            MvccCommandSequence visibleThroughCommand) {
         requireActive(transaction);
-        return captureSnapshot(transaction);
+        return captureSnapshot(transaction, visibleThroughCommand);
     }
 
     /**
@@ -44,8 +50,14 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
      * by A45 to prevent unsafe pruning instead of merely detecting it later.
      */
     public synchronized MvccSnapshotLease openSnapshot(MvccTransaction transaction) {
+        return openSnapshot(transaction, MvccCommandSequence.LATEST_VISIBLE);
+    }
+
+    public synchronized MvccSnapshotLease openSnapshot(
+            MvccTransaction transaction,
+            MvccCommandSequence visibleThroughCommand) {
         requireActive(transaction);
-        MvccSnapshot snapshot = captureSnapshot(transaction);
+        MvccSnapshot snapshot = captureSnapshot(transaction, visibleThroughCommand);
         long leaseId = nextSnapshotLeaseId++;
         retainedSnapshotWatermarks.put(leaseId, snapshot.visibleThrough());
         return new MvccSnapshotLease(snapshot, () -> closeSnapshotLease(leaseId));
@@ -129,7 +141,9 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
         return Optional.of(state.commitSequence);
     }
 
-    private MvccSnapshot captureSnapshot(MvccTransaction transaction) {
+    private MvccSnapshot captureSnapshot(
+            MvccTransaction transaction,
+            MvccCommandSequence visibleThroughCommand) {
         Set<MvccTransactionId> active = new LinkedHashSet<>();
         for (Map.Entry<MvccTransactionId, TransactionState> entry : transactions.entrySet()) {
             if (entry.getValue().status == MvccTransactionStatus.ACTIVE) {
@@ -137,7 +151,11 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
             }
         }
         active.remove(transaction.id());
-        return new MvccSnapshot(transaction.id(), new MvccCommitSequence(currentCommitSequence), active);
+        return new MvccSnapshot(
+                transaction.id(),
+                new MvccCommitSequence(currentCommitSequence),
+                active,
+                visibleThroughCommand);
     }
 
     private MvccCommitSequence oldestActiveTransactionSnapshotSequence() {
