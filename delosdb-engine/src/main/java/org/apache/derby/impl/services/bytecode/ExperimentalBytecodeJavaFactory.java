@@ -32,14 +32,12 @@ import org.apache.derby.impl.services.bytecode.asm.AsmJava;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * Experimental bytecode-backend selector for the ASM modernization campaign.
+ * Temporary bytecode-backend selector for the ASM compatibility window.
  * <p>
- * Default bytecode-backend selector for the ASM modernization campaign.
- * <p>
- * The selector defaults to ASM, while retaining BCJava as a temporary fallback
- * through {@code -Ddelosdb.bytecode.backend=bcjava}. Keeping the stable selector
- * as the module entry lets the switch be validated and rolled back without
- * changing {@code modules.properties} again during the compatibility window.
+ * Production now points directly at {@code org.apache.derby.impl.services.bytecode.asm.AsmJava}.
+ * This selector is retained only as an explicit fallback path so tests and
+ * emergency runs can still select BCJava with {@code -Ddelosdb.bytecode.backend=bcjava}
+ * while the old backend remains in the tree.
  */
 public final class ExperimentalBytecodeJavaFactory implements JavaFactory, ModuleControl {
     public static final String BACKEND_PROPERTY = "delosdb.bytecode.backend";

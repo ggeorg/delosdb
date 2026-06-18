@@ -46,28 +46,29 @@ import org.objectweb.asm.Opcodes;
 /**
  * Backend selector smoke for the ASM bytecode backend campaign.
  * <p>
- * This proof verifies the production module entry is the stable selector, ASM is
- * the default backend, BCJava remains available as an explicit compatibility
- * fallback, and invalid backend values fail fast.
+ * This proof verifies production points directly at AsmJava, while the temporary
+ * selector still defaults to ASM, keeps BCJava available as an explicit
+ * compatibility fallback, and fails fast for invalid backend values.
  */
 public final class AsmExperimentalBackendSelectorSmoke {
     private static final String BACKEND_PROPERTY = "delosdb.bytecode.backend";
     private static final String DEFAULT_JAVA_COMPILER =
-            "org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory";
+            "org.apache.derby.impl.services.bytecode.asm.AsmJava";
     private static final String GENERATED_PACKAGE = "org.apache.derbyBuild.asm.generated.selector.";
 
     private AsmExperimentalBackendSelectorSmoke() {
     }
 
     public static void main(String[] args) throws Exception {
-        assertProductionBackendUsesSelector();
+        assertProductionBackendUsesAsmJava();
         assertDefaultSelectionUsesAsmJava();
         assertExplicitBcJavaSelectionUsesBcJava();
         assertExplicitAsmSelectionUsesAsmJava();
         assertInvalidSelectionFailsFast();
 
         System.out.println("ASM experimental backend selector smoke passed: property="
-                + BACKEND_PROPERTY + " defaultCompiler=" + DEFAULT_JAVA_COMPILER);
+                + BACKEND_PROPERTY + " productionCompiler=" + DEFAULT_JAVA_COMPILER
+                + " selectorFallback=org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory");
     }
 
     private static void assertDefaultSelectionUsesAsmJava() throws Exception {
@@ -187,7 +188,7 @@ public final class AsmExperimentalBackendSelectorSmoke {
         return new GeneratedProbe(selected.name(), generated, classBytes);
     }
 
-    private static void assertProductionBackendUsesSelector() throws Exception {
+    private static void assertProductionBackendUsesAsmJava() throws Exception {
         Path modules = Path.of("delosdb-engine", "src", "main", "java", "org", "apache", "derby",
                 "modules.properties");
         if (!Files.exists(modules)) {

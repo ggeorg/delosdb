@@ -2282,7 +2282,7 @@ tasks.register('compileAsmEngineSelectorIntegrationSmoke', JavaCompile) {
 
 tasks.register('asmEngineSelectorIntegrationSmoke', JavaExec) {
     group = 'verification'
-    description = 'Proves the production bytecode selector defaults to ASM and still validates explicit ASM selection.'
+    description = 'Proves production points directly at AsmJava while the temporary selector fallback still validates explicit ASM selection.'
     dependsOn 'compileAsmEngineSelectorIntegrationSmoke'
     classpath = files(
             asmEngineSelectorIntegrationSmokeClassesDir,
@@ -2319,7 +2319,7 @@ tasks.register('compileAsmExperimentalSqlCompilerSmoke', JavaCompile) {
 
 tasks.register('asmExperimentalSqlCompilerSmoke', JavaExec) {
     group = 'verification'
-    description = 'Boots the real SQL compiler through the experimental selector with delosdb.bytecode.backend=asm and executes a broader SQL matrix.'
+    description = 'Boots the real SQL compiler through the temporary selector fallback with delosdb.bytecode.backend=asm and executes a broader SQL matrix.'
     dependsOn 'compileAsmExperimentalSqlCompilerSmoke'
     classpath = files(
             asmExperimentalSqlCompilerSmokeClassesDir,

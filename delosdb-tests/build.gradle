@@ -197,7 +197,7 @@ tasks.register('runDerbyLangSuite', Test) {
 
 tasks.register('runDerbyLangSuiteWithAsmBackend', Test) {
     group = 'verification'
-    description = 'Runs the original Derby lang JUnit suite with the ASM bytecode backend selected explicitly.'
+    description = 'Runs the original Derby lang JUnit suite with the direct ASM bytecode backend selected explicitly.'
     dependsOn 'compileDerbyTestsModule', ':jars'
 
     modularity.inferModulePath = false
@@ -206,9 +206,8 @@ tasks.register('runDerbyLangSuiteWithAsmBackend', Test) {
     useJUnit()
     include 'org/apache/derbyTesting/functionTests/tests/lang/_Suite.class'
 
-    systemProperty 'derby.module.javaCompiler', 'org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory'
-    systemProperty 'derby.module.JavaCompiler', 'org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory'
-    systemProperty 'delosdb.bytecode.backend', 'asm'
+    systemProperty 'derby.module.javaCompiler', 'org.apache.derby.impl.services.bytecode.asm.AsmJava'
+    systemProperty 'derby.module.JavaCompiler', 'org.apache.derby.impl.services.bytecode.asm.AsmJava'
 
     workingDir = layout.buildDirectory.dir('test-work/runDerbyLangSuiteWithAsmBackend').get().asFile
     maxHeapSize = '1536m'
@@ -236,7 +235,7 @@ tasks.register('runDerbyLangSuiteWithAsmBackend', Test) {
 
 tasks.register('runDerbyLangSuiteWithBcJavaBackend', Test) {
     group = 'verification'
-    description = 'Runs the original Derby lang JUnit suite with the temporary BCJava bytecode fallback selected explicitly.'
+    description = 'Runs the original Derby lang JUnit suite through the temporary BCJava fallback selector.'
     dependsOn 'compileDerbyTestsModule', ':jars'
 
     modularity.inferModulePath = false

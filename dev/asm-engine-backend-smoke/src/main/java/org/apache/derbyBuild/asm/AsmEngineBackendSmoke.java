@@ -39,17 +39,17 @@ import org.objectweb.asm.Opcodes;
 /**
  * Smoke test for the engine ASM backend class compiled into the engine module.
  * The test proves the class can generate bytecode through Derby's real compiler
- * interfaces while modules.properties now points at the stable selector.
+ * interfaces while modules.properties points directly at AsmJava.
  */
 public final class AsmEngineBackendSmoke {
     private static final String DEFAULT_JAVA_COMPILER =
-            "org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory";
+            "org.apache.derby.impl.services.bytecode.asm.AsmJava";
 
     private AsmEngineBackendSmoke() {
     }
 
     public static void main(String[] args) throws Exception {
-        assertProductionCompilerUsesSelector();
+        assertProductionCompilerUsesAsmJava();
 
         JavaFactory javaFactory = new AsmJava();
         ClassBuilder classBuilder = javaFactory.newClassBuilder(
@@ -116,7 +116,7 @@ public final class AsmEngineBackendSmoke {
                 + " classfileMajor=" + Opcodes.V21);
     }
 
-    private static void assertProductionCompilerUsesSelector() throws Exception {
+    private static void assertProductionCompilerUsesAsmJava() throws Exception {
         Path modules = Path.of("delosdb-engine", "src", "main", "java", "org", "apache", "derby", "modules.properties");
         if (!Files.exists(modules)) {
             throw new AssertionError("Cannot find modules.properties at " + modules.toAbsolutePath());

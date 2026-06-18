@@ -36,30 +36,31 @@ import org.apache.derby.iapi.util.ByteArray;
 import org.objectweb.asm.ClassReader;
 
 /**
- * Integration smoke for the engine-module bytecode backend selector. It proves
- * the production module entry now goes through the stable selector, that the
- * selector defaults to ASM, and that invalid backend values still fail fast.
+ * Integration smoke for the temporary bytecode backend selector. It proves the
+ * production module entry points directly at AsmJava, while the selector remains
+ * available as an explicit compatibility fallback and still fails fast for bad values.
  */
 public final class AsmEngineSelectorIntegrationSmoke {
     private static final String GENERATED_CLASS =
             "org.apache.derbyBuild.asm.generated.engine.AsmEngineSelectorIntegrationSmokeGenerated";
     private static final String DEFAULT_JAVA_COMPILER =
-            "org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory";
+            "org.apache.derby.impl.services.bytecode.asm.AsmJava";
 
     private AsmEngineSelectorIntegrationSmoke() {
     }
 
     public static void main(String[] args) throws Exception {
-        assertProductionDefaultUsesSelector();
+        assertProductionDefaultUsesAsmJava();
         assertDefaultSelectionNameIsAsm();
         assertInvalidSelectionFailsFast();
         assertExplicitAsmSelectorGeneratesJava21Class();
-        System.out.println("ASM engine selector integration smoke passed: selector="
-                + ExperimentalBytecodeJavaFactory.class.getName()
-                + " asmClassfileMajor=65 productionDefault=" + DEFAULT_JAVA_COMPILER);
+        System.out.println("ASM engine selector integration smoke passed: productionDefault="
+                + DEFAULT_JAVA_COMPILER
+                + " selectorFallback=" + ExperimentalBytecodeJavaFactory.class.getName()
+                + " asmClassfileMajor=65");
     }
 
-    private static void assertProductionDefaultUsesSelector() throws Exception {
+    private static void assertProductionDefaultUsesAsmJava() throws Exception {
         Properties properties = new Properties();
         try (InputStream stream = openModulesProperties()) {
             properties.load(stream);
