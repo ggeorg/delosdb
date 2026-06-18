@@ -3047,3 +3047,63 @@ tasks.register('legacyDerbyStoreSqlContextDecouplingProof') {
     description = 'Runs the DS4 proof that legacy Derby store no longer imports SQL connection/statement contexts and behavior still works.'
     dependsOn 'verifyLegacyDerbyStoreBoundary', 'legacyDerbyStoreSqlContextSmoke'
 }
+
+// -----------------------------------------------------------------------------
+// DS5 — Remove legacy Derby store -> SQL execution dependency
+// -----------------------------------------------------------------------------
+// Store code no longer imports SQL execution implementation classes directly.
+// The targeted smoke exercises the historical behavior paths from SQL: deferred
+// constraint memory and store sort ordering/debug-row plumbing.
+
+tasks.register('verifyLegacyDerbyStoreNoSqlExecutionImports') {
+    group = 'verification'
+    description = 'Verifies inherited Derby store sources no longer import SQL execution implementation classes.'
+    doLast {
+        def storeSources = []
+        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store'))
+        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store'))
+        delosdbDs1RequireNoImports(
+                'legacy Derby store',
+                storeSources,
+                ['org.apache.derby.impl.sql.execute.'])
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreNoSqlExecutionImports'
+}
+
+def legacyDerbyStoreExecutionSmokeClassesDir = layout.buildDirectory.dir('classes/legacy-derby-store-execution-smoke')
+
+tasks.register('compileLegacyDerbyStoreSqlExecutionSmoke', JavaCompile) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Compiles the DS5 legacy Derby store SQL execution smoke test.'
+    source = files('dev/legacy-derby-store-execution-smoke/src/main/java', smokeUtilsSourceDir)
+    destinationDirectory = legacyDerbyStoreExecutionSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = runtimeJars()
+}
+
+tasks.register('legacyDerbyStoreSqlExecutionSmoke', JavaExec) {
+    dependsOn 'compileLegacyDerbyStoreSqlExecutionSmoke'
+    group = 'verification'
+    description = 'Verifies deferred-constraint and sort behavior after removing SQL execution imports from the legacy store.'
+    classpath = files(legacyDerbyStoreExecutionSmokeClassesDir, runtimeJars())
+    mainClass = 'delosdb.smoke.LegacyDerbyStoreSqlExecutionSmoke'
+    args layout.buildDirectory.dir('legacy-derby-store-execution-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('legacy-derby-store-execution-smoke').get().asFile
+    doFirst {
+        delete file('build/legacy-derby-store-execution-smoke')
+        workingDir.mkdirs()
+    }
+}
+
+tasks.register('legacyDerbyStoreSqlExecutionDecouplingProof') {
+    group = 'verification'
+    description = 'Runs the DS5 proof that legacy Derby store no longer imports SQL execution classes and behavior still works.'
+    dependsOn 'verifyLegacyDerbyStoreBoundary', 'legacyDerbyStoreSqlExecutionSmoke'
+}

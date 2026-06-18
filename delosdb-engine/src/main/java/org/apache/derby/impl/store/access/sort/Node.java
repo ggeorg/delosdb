@@ -23,7 +23,7 @@ package org.apache.derby.impl.store.access.sort;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.impl.sql.execute.RowUtil; 
+import org.apache.derby.iapi.store.access.RowUtil;
 
 /**
 	A node in a balanced binary tree.  This class is effectively a

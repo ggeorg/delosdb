@@ -52,7 +52,6 @@ import org.apache.derby.impl.store.access.conglomerate.GenericConglomerateContro
 import org.apache.derby.impl.store.access.conglomerate.RowPosition;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
-import org.apache.derby.impl.sql.execute.DeferredConstraintsMemory;
 
 /**
 
