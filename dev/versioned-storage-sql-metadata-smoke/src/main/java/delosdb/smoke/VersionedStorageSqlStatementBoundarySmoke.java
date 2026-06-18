@@ -45,6 +45,7 @@ public final class VersionedStorageSqlStatementBoundarySmoke {
             connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
 
             statement.executeUpdate("create table " + TABLE_NAME + "(id int primary key, name varchar(20)) using delos_mvcc");
+            statement.executeUpdate("create index " + TABLE_NAME + "_id_idx on " + TABLE_NAME + "(id)");
 
             statement.executeUpdate("insert into " + TABLE_NAME + " values (1, 'alpha')");
             assertLastCommand(1L, "statement 1 insert command");
