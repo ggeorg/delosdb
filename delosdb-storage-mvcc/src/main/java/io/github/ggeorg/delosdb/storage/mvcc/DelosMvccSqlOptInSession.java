@@ -11,10 +11,12 @@ import java.util.regex.Pattern;
 
 import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
 
 /**
@@ -23,19 +25,25 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordi
  * <p>This is not Derby SQL execution and it is deliberately not wired to the
  * default heap/store path. MVCC-12 uses it to prove the provider can execute a
  * tiny create/insert/select/update/delete lifecycle through the same opt-in
- * adapter and transaction coordinator that a future Derby SQL bridge will use.</p>
+ * adapter and transaction coordinator that a future Derby SQL bridge will use.
+ * MVCC-14 adds a primary-key/index lookup shape so index candidates are also
+ * forced through MVCC visibility checks before SQL integration gets wider.</p>
  */
 public final class DelosMvccSqlOptInSession {
     private static final String DEFAULT_SCHEMA = "APP";
 
     private static final Pattern CREATE_TABLE = Pattern.compile(
             "(?i)^CREATE\\s+TABLE\\s+([A-Z][A-Z0-9_]*)\\s*\\(\\s*ID\\s+INT\\s*,\\s*NAME\\s+VARCHAR\\s*\\(\\s*20\\s*\\)\\s*\\)$");
+    private static final Pattern CREATE_TABLE_WITH_PRIMARY_KEY = Pattern.compile(
+            "(?i)^CREATE\\s+TABLE\\s+([A-Z][A-Z0-9_]*)\\s*\\(\\s*ID\\s+INT\\s+PRIMARY\\s+KEY\\s*,\\s*NAME\\s+VARCHAR\\s*\\(\\s*20\\s*\\)\\s*\\)$");
     private static final Pattern INSERT_VALUES = Pattern.compile(
             "(?i)^INSERT\\s+INTO\\s+([A-Z][A-Z0-9_]*)\\s+VALUES\\s*\\(\\s*(-?\\d+)\\s*,\\s*'([^']*)'\\s*\\)$");
     private static final Pattern SELECT_ALL = Pattern.compile(
             "(?i)^SELECT\\s+ID\\s*,\\s*NAME\\s+FROM\\s+([A-Z][A-Z0-9_]*)$");
     private static final Pattern SELECT_NAME_BY_ID = Pattern.compile(
             "(?i)^SELECT\\s+NAME\\s+FROM\\s+([A-Z][A-Z0-9_]*)\\s+WHERE\\s+ID\\s*=\\s*(-?\\d+)$");
+    private static final Pattern SELECT_STAR_BY_ID = Pattern.compile(
+            "(?i)^SELECT\\s+\\*\\s+FROM\\s+([A-Z][A-Z0-9_]*)\\s+WHERE\\s+ID\\s*=\\s*(-?\\d+)$");
     private static final Pattern UPDATE_NAME_BY_ID = Pattern.compile(
             "(?i)^UPDATE\\s+([A-Z][A-Z0-9_]*)\\s+SET\\s+NAME\\s*=\\s*'([^']*)'\\s+WHERE\\s+ID\\s*=\\s*(-?\\d+)$");
     private static final Pattern DELETE_BY_ID = Pattern.compile(
@@ -47,6 +55,7 @@ public final class DelosMvccSqlOptInSession {
     private final VersionedTransactionCoordinator transactions;
     private VersionedTableMetadata tableMetadata;
     private VersionedTable<Long, List<Object>> table;
+    private VersionedIndex<Long, List<Object>> primaryKeyIndex;
 
     private DelosMvccSqlOptInSession(VersionedStorageProvider provider) {
         this.provider = Objects.requireNonNull(provider, "provider");
@@ -63,9 +72,14 @@ public final class DelosMvccSqlOptInSession {
         String statement = normalizeStatement(sql);
         Matcher matcher;
 
+        matcher = CREATE_TABLE_WITH_PRIMARY_KEY.matcher(statement);
+        if (matcher.matches()) {
+            return createTable(matcher.group(1), true);
+        }
+
         matcher = CREATE_TABLE.matcher(statement);
         if (matcher.matches()) {
-            return createTable(matcher.group(1));
+            return createTable(matcher.group(1), false);
         }
 
         matcher = INSERT_VALUES.matcher(statement);
@@ -86,6 +100,11 @@ public final class DelosMvccSqlOptInSession {
         matcher = SELECT_NAME_BY_ID.matcher(statement);
         if (matcher.matches()) {
             return selectNameById(matcher.group(1), Long.parseLong(matcher.group(2)));
+        }
+
+        matcher = SELECT_STAR_BY_ID.matcher(statement);
+        if (matcher.matches()) {
+            return selectByPrimaryKeyIndex(matcher.group(1), Long.parseLong(matcher.group(2)));
         }
 
         matcher = DELETE_BY_ID.matcher(statement);
@@ -114,13 +133,26 @@ public final class DelosMvccSqlOptInSession {
         return provider;
     }
 
-    private SqlResult createTable(String tableName) {
+    private SqlResult createTable(String tableName, boolean primaryKey) {
         if (table != null) {
             throw new IllegalStateException("MVCC opt-in SQL smoke already has a table: "
                     + tableMetadata.qualifiedName());
         }
         tableMetadata = metadata(tableName);
         table = provider.createTable(tableMetadata);
+        if (primaryKey) {
+            TxContext build = transactions.begin();
+            try {
+                primaryKeyIndex = table.createIndex(
+                        new VersionedIndexMetadata(tableMetadata, "PK_" + tableMetadata.tableName(), "ID", true),
+                        row -> row.get(0),
+                        build.currentView());
+                transactions.commit(build);
+            } catch (RuntimeException failure) {
+                transactions.abort(build);
+                throw failure;
+            }
+        }
         return SqlResult.updateCount(0);
     }
 
@@ -189,6 +221,25 @@ public final class DelosMvccSqlOptInSession {
                 return SqlResult.rows(List.of());
             }
             return SqlResult.rows(List.of(List.of(row.get().get(1))));
+        } finally {
+            transactions.abort(reader);
+        }
+    }
+
+    private SqlResult selectByPrimaryKeyIndex(String tableName, long id) {
+        requireTable(tableName);
+        if (primaryKeyIndex == null) {
+            throw new IllegalStateException("MVCC opt-in SQL smoke table has no primary-key index: "
+                    + tableMetadata.qualifiedName());
+        }
+        TxContext reader = transactions.begin();
+        try (VersionedScan<Long, List<Object>> scan = primaryKeyIndex.lookup(Math.toIntExact(id), reader.currentView())) {
+            List<List<Object>> rows = new ArrayList<>();
+            while (scan.next()) {
+                VersionedRow<Long, List<Object>> row = scan.row();
+                rows.add(List.copyOf(row.value()));
+            }
+            return SqlResult.rows(rows);
         } finally {
             transactions.abort(reader);
         }
