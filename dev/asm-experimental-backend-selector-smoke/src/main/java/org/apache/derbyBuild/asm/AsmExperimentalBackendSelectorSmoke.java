@@ -44,41 +44,42 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
 
 /**
- * Experimental selector smoke for the ASM bytecode backend campaign.
+ * Backend selector smoke for the ASM bytecode backend campaign.
  * <p>
- * This proof intentionally does not change {@code modules.properties}. It proves
- * only that a DelosDB-local property can select the inactive ASM backend in a
- * controlled harness, while the production module entry remains {@code BCJava}.
+ * This proof verifies the production module entry is the stable selector, ASM is
+ * the default backend, BCJava remains available as an explicit compatibility
+ * fallback, and invalid backend values fail fast.
  */
 public final class AsmExperimentalBackendSelectorSmoke {
     private static final String BACKEND_PROPERTY = "delosdb.bytecode.backend";
-    private static final String DEFAULT_BACKEND_CLASS = "org.apache.derby.impl.services.bytecode.BCJava";
+    private static final String DEFAULT_JAVA_COMPILER =
+            "org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory";
     private static final String GENERATED_PACKAGE = "org.apache.derbyBuild.asm.generated.selector.";
 
     private AsmExperimentalBackendSelectorSmoke() {
     }
 
     public static void main(String[] args) throws Exception {
-        assertProductionBackendStillDefault();
-        assertDefaultSelectionUsesBcJava();
+        assertProductionBackendUsesSelector();
+        assertDefaultSelectionUsesAsmJava();
         assertExplicitBcJavaSelectionUsesBcJava();
         assertExplicitAsmSelectionUsesAsmJava();
         assertInvalidSelectionFailsFast();
 
         System.out.println("ASM experimental backend selector smoke passed: property="
-                + BACKEND_PROPERTY + " defaultBackend=" + DEFAULT_BACKEND_CLASS);
+                + BACKEND_PROPERTY + " defaultCompiler=" + DEFAULT_JAVA_COMPILER);
     }
 
-    private static void assertDefaultSelectionUsesBcJava() throws Exception {
+    private static void assertDefaultSelectionUsesAsmJava() throws Exception {
         System.clearProperty(BACKEND_PROPERTY);
         SelectedBackend selected = selectBackendFromProperty();
-        if (!(selected.javaFactory() instanceof BCJava)) {
-            throw new AssertionError("Default selection should use BCJava but was "
+        if (!(selected.javaFactory() instanceof AsmJava)) {
+            throw new AssertionError("Default selection should use AsmJava but was "
                     + selected.javaFactory().getClass().getName());
         }
-        GeneratedProbe probe = generateAndLoad(selected, "DefaultBcJavaSelected", "bcjava-default");
-        probe.assertClassfileMajor(50);
-        probe.assertMarker("bcjava-default");
+        GeneratedProbe probe = generateAndLoad(selected, "DefaultAsmSelected", "asm-default");
+        probe.assertClassfileMajor(Opcodes.V21);
+        probe.assertMarker("asm-default");
         probe.assertChoose(10, 20);
         probe.assertBoxed(7);
     }
@@ -127,13 +128,13 @@ public final class AsmExperimentalBackendSelectorSmoke {
     }
 
     private static SelectedBackend selectBackendFromProperty() throws Exception {
-        String requested = System.getProperty(BACKEND_PROPERTY, "bcjava").trim();
+        String requested = System.getProperty(BACKEND_PROPERTY, "asm").trim();
         if (requested.isEmpty() || "default".equalsIgnoreCase(requested)
-                || "bcjava".equalsIgnoreCase(requested)) {
-            return new SelectedBackend("bcjava", bootlessBcJava());
-        }
-        if ("asm".equalsIgnoreCase(requested)) {
+                || "asm".equalsIgnoreCase(requested)) {
             return new SelectedBackend("asm", new AsmJava());
+        }
+        if ("bcjava".equalsIgnoreCase(requested)) {
+            return new SelectedBackend("bcjava", bootlessBcJava());
         }
         throw new IllegalArgumentException("Unsupported experimental bytecode backend '" + requested
                 + "'. Supported values are: bcjava, asm");
@@ -186,7 +187,7 @@ public final class AsmExperimentalBackendSelectorSmoke {
         return new GeneratedProbe(selected.name(), generated, classBytes);
     }
 
-    private static void assertProductionBackendStillDefault() throws Exception {
+    private static void assertProductionBackendUsesSelector() throws Exception {
         Path modules = Path.of("delosdb-engine", "src", "main", "java", "org", "apache", "derby",
                 "modules.properties");
         if (!Files.exists(modules)) {
@@ -197,8 +198,8 @@ public final class AsmExperimentalBackendSelectorSmoke {
             properties.load(reader);
         }
         String backend = properties.getProperty("derby.module.javaCompiler");
-        if (!DEFAULT_BACKEND_CLASS.equals(backend)) {
-            throw new AssertionError("Expected production backend to remain " + DEFAULT_BACKEND_CLASS
+        if (!DEFAULT_JAVA_COMPILER.equals(backend)) {
+            throw new AssertionError("Expected production bytecode compiler to use " + DEFAULT_JAVA_COMPILER
                     + " but was " + backend);
         }
     }

@@ -28,10 +28,9 @@ import java.sql.Statement;
 import org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory;
 
 /**
- * Boots the real embedded SQL compiler with the experimental JavaFactory
- * selector and explicitly selects the ASM backend. BCJava remains the default
- * in modules.properties; this smoke uses only JVM properties inside this test
- * process.
+ * Boots the real embedded SQL compiler with the bytecode JavaFactory selector
+ * and explicitly selects the ASM backend. This smoke remains useful after the
+ * default flip because it verifies the explicit ASM selector path directly.
  */
 public final class AsmExperimentalSqlCompilerSmoke {
     private static final String MODULE_PROPERTY = "derby.module.javaCompiler";

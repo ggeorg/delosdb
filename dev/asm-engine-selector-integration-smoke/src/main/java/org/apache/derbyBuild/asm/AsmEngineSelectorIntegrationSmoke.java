@@ -36,37 +36,38 @@ import org.apache.derby.iapi.util.ByteArray;
 import org.objectweb.asm.ClassReader;
 
 /**
- * Integration smoke for the engine-module experimental bytecode backend
- * selector. This does not flip the production backend. It proves the selector
- * can be selected explicitly and can delegate to the engine-resident ASM
- * JavaFactory.
+ * Integration smoke for the engine-module bytecode backend selector. It proves
+ * the production module entry now goes through the stable selector, that the
+ * selector defaults to ASM, and that invalid backend values still fail fast.
  */
 public final class AsmEngineSelectorIntegrationSmoke {
     private static final String GENERATED_CLASS =
             "org.apache.derbyBuild.asm.generated.engine.AsmEngineSelectorIntegrationSmokeGenerated";
-    private static final String DEFAULT_BACKEND = "org.apache.derby.impl.services.bytecode.BCJava";
+    private static final String DEFAULT_JAVA_COMPILER =
+            "org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory";
 
     private AsmEngineSelectorIntegrationSmoke() {
     }
 
     public static void main(String[] args) throws Exception {
-        assertProductionDefaultStillBcJava();
-        assertDefaultSelectionNameIsBcJava();
+        assertProductionDefaultUsesSelector();
+        assertDefaultSelectionNameIsAsm();
         assertInvalidSelectionFailsFast();
         assertExplicitAsmSelectorGeneratesJava21Class();
         System.out.println("ASM engine selector integration smoke passed: selector="
                 + ExperimentalBytecodeJavaFactory.class.getName()
-                + " asmClassfileMajor=65 productionDefault=" + DEFAULT_BACKEND);
+                + " asmClassfileMajor=65 productionDefault=" + DEFAULT_JAVA_COMPILER);
     }
 
-    private static void assertProductionDefaultStillBcJava() throws Exception {
+    private static void assertProductionDefaultUsesSelector() throws Exception {
         Properties properties = new Properties();
         try (InputStream stream = openModulesProperties()) {
             properties.load(stream);
         }
         String backend = properties.getProperty("derby.module.javaCompiler");
-        if (!DEFAULT_BACKEND.equals(backend)) {
-            throw new AssertionError("Production bytecode backend changed: " + backend);
+        if (!DEFAULT_JAVA_COMPILER.equals(backend)) {
+            throw new AssertionError("Production bytecode compiler should use " + DEFAULT_JAVA_COMPILER
+                    + " but was " + backend);
         }
     }
 
@@ -87,11 +88,11 @@ public final class AsmEngineSelectorIntegrationSmoke {
                 + sourceTreePath.toAbsolutePath());
     }
 
-    private static void assertDefaultSelectionNameIsBcJava() {
+    private static void assertDefaultSelectionNameIsAsm() {
         Properties properties = new Properties();
         String selected = ExperimentalBytecodeJavaFactory.selectBackendName(properties);
-        if (!ExperimentalBytecodeJavaFactory.BACKEND_BCJAVA.equals(selected)) {
-            throw new AssertionError("Default selector should choose BCJava but chose " + selected);
+        if (!ExperimentalBytecodeJavaFactory.BACKEND_ASM.equals(selected)) {
+            throw new AssertionError("Default selector should choose ASM but chose " + selected);
         }
     }
 

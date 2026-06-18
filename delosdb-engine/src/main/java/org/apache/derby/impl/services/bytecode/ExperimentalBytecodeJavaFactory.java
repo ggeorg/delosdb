@@ -34,15 +34,18 @@ import org.apache.derby.shared.common.error.StandardException;
 /**
  * Experimental bytecode-backend selector for the ASM modernization campaign.
  * <p>
- * This module is intentionally not the default {@code derby.module.javaCompiler}
- * entry. It exists so a developer can explicitly point the Derby module system at
- * one stable selector class and then choose the real implementation with
- * {@code -Ddelosdb.bytecode.backend=bcjava|asm}. The default remains BCJava.
+ * Default bytecode-backend selector for the ASM modernization campaign.
+ * <p>
+ * The selector defaults to ASM, while retaining BCJava as a temporary fallback
+ * through {@code -Ddelosdb.bytecode.backend=bcjava}. Keeping the stable selector
+ * as the module entry lets the switch be validated and rolled back without
+ * changing {@code modules.properties} again during the compatibility window.
  */
 public final class ExperimentalBytecodeJavaFactory implements JavaFactory, ModuleControl {
     public static final String BACKEND_PROPERTY = "delosdb.bytecode.backend";
     public static final String BACKEND_BCJAVA = "bcjava";
     public static final String BACKEND_ASM = "asm";
+    private static final String DEFAULT_BACKEND = BACKEND_ASM;
 
     private static volatile String lastBootedBackendName;
 
@@ -75,7 +78,7 @@ public final class ExperimentalBytecodeJavaFactory implements JavaFactory, Modul
     }
 
     public String selectedBackendName() {
-        return selectedBackendName == null ? BACKEND_BCJAVA : selectedBackendName;
+        return selectedBackendName == null ? DEFAULT_BACKEND : selectedBackendName;
     }
 
     public static String lastBootedBackendName() {
@@ -92,14 +95,15 @@ public final class ExperimentalBytecodeJavaFactory implements JavaFactory, Modul
             requested = properties.getProperty(BACKEND_PROPERTY);
         }
         if (requested == null || requested.isBlank()) {
-            requested = PropertyUtil.getSystemProperty(BACKEND_PROPERTY, BACKEND_BCJAVA);
+            requested = PropertyUtil.getSystemProperty(BACKEND_PROPERTY, DEFAULT_BACKEND);
         }
         String normalized = requested.trim().toLowerCase(Locale.ROOT);
         return switch (normalized) {
-            case "", BACKEND_BCJAVA -> BACKEND_BCJAVA;
+            case "", "default" -> DEFAULT_BACKEND;
             case BACKEND_ASM -> BACKEND_ASM;
+            case BACKEND_BCJAVA -> BACKEND_BCJAVA;
             default -> throw new IllegalArgumentException("Unsupported experimental bytecode backend '" + requested
-                    + "'. Expected '" + BACKEND_BCJAVA + "' or '" + BACKEND_ASM + "'.");
+                    + "'. Expected '" + BACKEND_ASM + "' or '" + BACKEND_BCJAVA + "'.");
         };
     }
 

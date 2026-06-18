@@ -37,18 +37,19 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
 
 /**
- * Smoke test for the first inactive ASM backend class compiled into the engine
- * module. The test proves the class can generate bytecode through Derby's real
- * compiler interfaces while modules.properties still points at BCJava.
+ * Smoke test for the engine ASM backend class compiled into the engine module.
+ * The test proves the class can generate bytecode through Derby's real compiler
+ * interfaces while modules.properties now points at the stable selector.
  */
 public final class AsmEngineBackendSmoke {
-    private static final String DEFAULT_BACKEND = "org.apache.derby.impl.services.bytecode.BCJava";
+    private static final String DEFAULT_JAVA_COMPILER =
+            "org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory";
 
     private AsmEngineBackendSmoke() {
     }
 
     public static void main(String[] args) throws Exception {
-        assertProductionBackendStillDefault();
+        assertProductionCompilerUsesSelector();
 
         JavaFactory javaFactory = new AsmJava();
         ClassBuilder classBuilder = javaFactory.newClassBuilder(
@@ -111,11 +112,11 @@ public final class AsmEngineBackendSmoke {
         }
 
         System.out.println("ASM engine backend smoke passed: " + classBuilder.getFullName()
-                + " defaultBackend=" + DEFAULT_BACKEND
+                + " defaultCompiler=" + DEFAULT_JAVA_COMPILER
                 + " classfileMajor=" + Opcodes.V21);
     }
 
-    private static void assertProductionBackendStillDefault() throws Exception {
+    private static void assertProductionCompilerUsesSelector() throws Exception {
         Path modules = Path.of("delosdb-engine", "src", "main", "java", "org", "apache", "derby", "modules.properties");
         if (!Files.exists(modules)) {
             throw new AssertionError("Cannot find modules.properties at " + modules.toAbsolutePath());
@@ -125,8 +126,9 @@ public final class AsmEngineBackendSmoke {
             properties.load(reader);
         }
         String backend = properties.getProperty("derby.module.javaCompiler");
-        if (!DEFAULT_BACKEND.equals(backend)) {
-            throw new AssertionError("Expected production backend to remain " + DEFAULT_BACKEND + " but was " + backend);
+        if (!DEFAULT_JAVA_COMPILER.equals(backend)) {
+            throw new AssertionError("Expected production compiler to use " + DEFAULT_JAVA_COMPILER
+                    + " but was " + backend);
         }
     }
 

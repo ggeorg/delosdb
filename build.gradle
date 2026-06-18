@@ -2171,7 +2171,7 @@ tasks.register('compileAsmEngineBackendSmoke', JavaCompile) {
 
 tasks.register('asmEngineBackendSmoke', JavaExec) {
     group = 'verification'
-    description = 'Proves the inactive engine-module ASM backend can generate Java 21 bytecode while BCJava remains the default backend.'
+    description = 'Proves the engine-module ASM backend can generate Java 21 bytecode while the production compiler uses the selector.'
     dependsOn 'compileAsmEngineBackendSmoke'
     classpath = files(
             asmEngineBackendSmokeClassesDir,
@@ -2208,7 +2208,7 @@ tasks.register('compileAsmExperimentalBackendSelectorSmoke', JavaCompile) {
 
 tasks.register('asmExperimentalBackendSelectorSmoke', JavaExec) {
     group = 'verification'
-    description = 'Proves an explicit property can select the inactive ASM backend while BCJava remains the production default.'
+    description = 'Proves the selector defaults to ASM and can still select the temporary BCJava fallback explicitly.'
     dependsOn 'compileAsmExperimentalBackendSelectorSmoke'
     classpath = files(
             asmExperimentalBackendSelectorSmokeClassesDir,
@@ -2245,7 +2245,7 @@ tasks.register('compileAsmEngineSelectorIntegrationSmoke', JavaCompile) {
 
 tasks.register('asmEngineSelectorIntegrationSmoke', JavaExec) {
     group = 'verification'
-    description = 'Proves the engine-module experimental bytecode backend selector can choose ASM while BCJava remains the production default.'
+    description = 'Proves the production bytecode selector defaults to ASM and still validates explicit ASM selection.'
     dependsOn 'compileAsmEngineSelectorIntegrationSmoke'
     classpath = files(
             asmEngineSelectorIntegrationSmokeClassesDir,

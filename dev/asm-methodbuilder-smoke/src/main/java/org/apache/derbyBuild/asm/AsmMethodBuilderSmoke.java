@@ -40,8 +40,8 @@ import org.objectweb.asm.Opcodes;
 
 /**
  * Isolated ASM proof for Derby's existing JavaFactory/ClassBuilder/MethodBuilder
- * contracts. This is not wired into the engine; BCJava remains the production
- * bytecode generator.
+ * contracts. This direct smoke stays useful after the default flip because it
+ * verifies the low-level ASM adapter outside the Derby module boot path.
  */
 public final class AsmMethodBuilderSmoke {
     private AsmMethodBuilderSmoke() {

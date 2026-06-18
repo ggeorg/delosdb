@@ -157,7 +157,7 @@ tasks.register('compileDerbyTestsModule', JavaCompile) {
 }
 tasks.register('runDerbyLangSuite', Test) {
     group = 'verification'
-    description = 'Runs the original Derby lang JUnit suite through Gradle.'
+    description = 'Runs the original Derby lang JUnit suite through Gradle using the default bytecode backend.'
     dependsOn 'compileDerbyTestsModule', ':jars'
 
     // Derby's inherited JUnit tests are classpath-era tests. Compile the test
@@ -197,7 +197,7 @@ tasks.register('runDerbyLangSuite', Test) {
 
 tasks.register('runDerbyLangSuiteWithAsmBackend', Test) {
     group = 'verification'
-    description = 'Runs the original Derby lang JUnit suite with the experimental ASM bytecode backend selected explicitly.'
+    description = 'Runs the original Derby lang JUnit suite with the ASM bytecode backend selected explicitly.'
     dependsOn 'compileDerbyTestsModule', ':jars'
 
     modularity.inferModulePath = false
@@ -218,6 +218,45 @@ tasks.register('runDerbyLangSuiteWithAsmBackend', Test) {
         junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDerbyLangSuiteWithAsmBackend'))
         html.required.set(true)
         html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDerbyLangSuiteWithAsmBackend'))
+    }
+
+    doFirst {
+        delete workingDir
+        workingDir.mkdirs()
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+
+
+tasks.register('runDerbyLangSuiteWithBcJavaBackend', Test) {
+    group = 'verification'
+    description = 'Runs the original Derby lang JUnit suite with the temporary BCJava bytecode fallback selected explicitly.'
+    dependsOn 'compileDerbyTestsModule', ':jars'
+
+    modularity.inferModulePath = false
+    testClassesDirs = files(derbyTestsClassDir)
+    classpath = testRuntimeClasspath()
+    useJUnit()
+    include 'org/apache/derbyTesting/functionTests/tests/lang/_Suite.class'
+
+    systemProperty 'derby.module.javaCompiler', 'org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory'
+    systemProperty 'derby.module.JavaCompiler', 'org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory'
+    systemProperty 'delosdb.bytecode.backend', 'bcjava'
+
+    workingDir = layout.buildDirectory.dir('test-work/runDerbyLangSuiteWithBcJavaBackend').get().asFile
+    maxHeapSize = '1536m'
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDerbyLangSuiteWithBcJavaBackend'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDerbyLangSuiteWithBcJavaBackend'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDerbyLangSuiteWithBcJavaBackend'))
     }
 
     doFirst {
