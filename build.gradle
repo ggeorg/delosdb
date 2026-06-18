@@ -1524,6 +1524,43 @@ tasks.register('generatedBytecodeJvm21Proof', Exec) {
 }
 
 
+
+def generatedBytecodeAsmJvm21ProofSourceDir = file('dev/generated-bytecode-asm-jvm21-proof/src/main/java')
+def generatedBytecodeAsmJvm21ProofClassesDir = layout.buildDirectory.dir('classes/generated-bytecode-asm-jvm21-proof')
+
+tasks.register('compileGeneratedBytecodeAsmJvm21Proof', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the permanent ASM default generated-bytecode JVM 21 proof.'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
+    source = files(generatedBytecodeAsmJvm21ProofSourceDir)
+    destinationDirectory = generatedBytecodeAsmJvm21ProofClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(
+            generatedBytecodeAsmJvm21ProofSourceDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+}
+
+tasks.register('generatedBytecodeAsmJvm21Proof', JavaExec) {
+    group = 'verification'
+    description = 'Proves the default generated-bytecode path uses ASM and emits Java 21 classfiles.'
+    dependsOn 'compileGeneratedBytecodeAsmJvm21Proof'
+    classpath = files(
+            generatedBytecodeAsmJvm21ProofClassesDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.GeneratedBytecodeAsmJvm21Proof'
+}
+
 tasks.register('generatedBytecodeVersionExperimentProbe', JavaExec) {
     group = 'verification'
     description = 'Experimentally defines and invokes Derby-written classfiles at legacy candidate versions 45, 49, and 50.'
