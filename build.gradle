@@ -1531,6 +1531,10 @@ def generatedBytecodeAsmJvm21ProofClassesDir = layout.buildDirectory.dir('classe
 tasks.register('compileGeneratedBytecodeAsmJvm21Proof', JavaCompile) {
     group = 'verification'
     description = 'Compiles the permanent ASM default generated-bytecode JVM 21 proof.'
+    // The proof compiles against the fully assembled module output directories,
+    // not just javac class directories. Make every task that writes into those
+    // module directories explicit so Gradle 8.14 does not see an implicit read.
+    dependsOn 'processDerbyResources', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
     dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
     source = files(generatedBytecodeAsmJvm21ProofSourceDir)
     destinationDirectory = generatedBytecodeAsmJvm21ProofClassesDir
@@ -1551,6 +1555,7 @@ tasks.register('compileGeneratedBytecodeAsmJvm21Proof', JavaCompile) {
 tasks.register('generatedBytecodeAsmJvm21Proof', JavaExec) {
     group = 'verification'
     description = 'Proves the default generated-bytecode path uses ASM and emits Java 21 classfiles.'
+    dependsOn 'processDerbyResources', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
     dependsOn 'compileGeneratedBytecodeAsmJvm21Proof'
     classpath = files(
             generatedBytecodeAsmJvm21ProofClassesDir,
@@ -1559,6 +1564,51 @@ tasks.register('generatedBytecodeAsmJvm21Proof', JavaExec) {
             configurations.delosdbAsm
     )
     mainClass = 'org.apache.derbyBuild.asm.GeneratedBytecodeAsmJvm21Proof'
+}
+
+
+tasks.register('verifyAsmCompatibilityWindowConfiguration') {
+    group = 'verification'
+    description = 'Verifies ASM is the production bytecode compiler while the temporary BCJava fallback selector remains explicit-only.'
+
+    def modulesPropertiesFile = file('delosdb-engine/src/main/java/org/apache/derby/modules.properties')
+    def selectorFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/ExperimentalBytecodeJavaFactory.java')
+
+    inputs.files(modulesPropertiesFile, selectorFile)
+
+    doLast {
+        def compilerLines = modulesPropertiesFile.readLines('UTF-8')
+                .collect { it.trim() }
+                .findAll { it.startsWith('derby.module.javaCompiler=') }
+        if (compilerLines != ['derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.asm.AsmJava']) {
+            throw new GradleException('ASM compatibility window requires modules.properties to point directly at AsmJava; found: '
+                    + compilerLines)
+        }
+
+        def selectorText = selectorFile.getText('UTF-8')
+        def requiredSelectorSnippets = [
+                'private static final String DEFAULT_BACKEND = BACKEND_ASM;',
+                'case BACKEND_ASM -> new AsmJava();',
+                'case BACKEND_BCJAVA -> new BCJava();'
+        ]
+        def missingSnippets = requiredSelectorSnippets.findAll { !selectorText.contains(it) }
+        if (!missingSnippets.isEmpty()) {
+            throw new GradleException('ASM compatibility window selector is missing required fallback/default snippets: '
+                    + missingSnippets.join(', '))
+        }
+    }
+}
+
+tasks.register('asmCompatibilityWindow') {
+    group = 'verification'
+    description = 'Runs the ASM-default compatibility window: production ASM, explicit ASM suite, and explicit BCJava fallback suite.'
+    dependsOn 'verifyAsmCompatibilityWindowConfiguration'
+    dependsOn ':delosdb-engine:compileDerbyEngine'
+    dependsOn ':delosdb-tests:runDerbyLangSuite'
+    dependsOn ':delosdb-tests:runDerbyLangSuiteWithAsmBackend'
+    dependsOn ':delosdb-tests:runDerbyLangSuiteWithBcJavaBackend'
+    dependsOn 'smokeFromJars'
+    dependsOn 'generatedBytecodeAsmJvm21Proof'
 }
 
 tasks.register('generatedBytecodeVersionExperimentProbe', JavaExec) {
