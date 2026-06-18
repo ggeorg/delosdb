@@ -12,7 +12,13 @@ def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDi
 
 
 tasks.register('compileDerbyBuildTools', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons',
+    // The build-tools compiler reads the assembled module output directories, not
+    // just javac class directories. Gradle 8.14 also tracks resources copied into
+    // those same module output directories by the root processDerbyResources task,
+    // so keep the dependency explicit instead of relying on task ordering through
+    // aggregate verification tasks.
+    dependsOn ':processDerbyResources',
+            ':delosdb-commons:compileDerbyCommons',
             ':delosdb-engine:compileDerbyEngine'
     source = files(
             'src/main/java/org/apache/derbyBuild/splitmessages.java',

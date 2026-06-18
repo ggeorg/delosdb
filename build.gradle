@@ -360,6 +360,13 @@ tasks.register('generateOdbcMetadata') {
 
         runBuildTool('org.apache.derbyBuild.ODBCMetadataGenerator', [
                 moduleClassDir(moduleNames.commons),
+                // ODBCMetadataGenerator loads both its fragments and Derby's
+                // JDBC metadata with Class#getResourceAsStream(). Put the
+                // source resource roots on the classpath as a stable fallback;
+                // relying only on copied module output can be stale when this
+                // task is reached through verification lifecycle tasks.
+                file('delosdb-buildtools/src/main/java'),
+                file('delosdb-engine/src/main/java'),
                 moduleClassDir(moduleNames.engine)
         ]) {
             workingDir = generatedMetadataDir
