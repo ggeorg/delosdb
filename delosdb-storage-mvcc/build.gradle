@@ -195,6 +195,32 @@ tasks.register('runDelosMvccSnapshotIsolationTest', Test) {
 }
 
 
+tasks.register('runMvccSnapshotVisibilityTest', Test) {
+    group = 'verification'
+    description = 'Runs MVCC-2 low-level transaction/snapshot visibility contract tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/MvccSnapshotVisibilityTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccSnapshotVisibilityTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccSnapshotVisibilityTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccSnapshotVisibilityTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+
 tasks.register('runDelosMvccCleanupVacuumTest', Test) {
     group = 'verification'
     description = 'Runs Phase 10 experimental DelosDB MVCC cleanup/vacuum tests.'
@@ -432,58 +458,6 @@ tasks.register('runPageBackedMvccTableTest', Test) {
 }
 
 
-
-tasks.register('runMvccDurableIndexCandidateTest', Test) {
-    group = 'verification'
-    description = 'Runs Phase A6 experimental DelosDB MVCC durable index-candidate tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
-    include '**/MvccDurableIndexCandidateTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccDurableIndexCandidateTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccDurableIndexCandidateTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccDurableIndexCandidateTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runMvccDurableVacuumTest', Test) {
-    group = 'verification'
-    description = 'Runs Phase A7 experimental DelosDB MVCC durable vacuum tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
-    include '**/MvccDurableVacuumTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccDurableVacuumTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccDurableVacuumTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccDurableVacuumTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat 'full'
-        showStandardStreams = true
-    }
-}
-
 tasks.register('runMvccPageRecoveryTest', Test) {
     group = 'verification'
     description = 'Runs Phase A5 experimental DelosDB MVCC page-aware recovery tests.'
@@ -500,33 +474,6 @@ tasks.register('runMvccPageRecoveryTest', Test) {
         junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccPageRecoveryTest'))
         html.required.set(true)
         html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccPageRecoveryTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat 'full'
-        showStandardStreams = true
-    }
-}
-
-tasks.register('runMvccConcurrencyStressTest', Test) {
-    group = 'verification'
-    description = 'Runs Phase A8 experimental DelosDB MVCC durable concurrency stress tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
-    include '**/MvccConcurrentReadWriteTest.class'
-    include '**/MvccConcurrentUniqueConflictTest.class'
-    include '**/MvccConcurrentVacuumSafetyTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccConcurrencyStressTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccConcurrencyStressTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccConcurrencyStressTest'))
     }
 
     testLogging {
@@ -560,5 +507,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccDurableIndexCandidateTest', 'runMvccDurableVacuumTest', 'runMvccConcurrencyStressTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest'
 }

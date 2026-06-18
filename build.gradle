@@ -1940,6 +1940,13 @@ tasks.register('mvccSnapshotIsolationTest') {
     dependsOn ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest'
 }
 
+
+tasks.register('mvccSnapshotVisibilityTest') {
+    group = 'verification'
+    description = 'Runs MVCC-2 low-level transaction/snapshot visibility contract tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccSnapshotVisibilityTest'
+}
+
 tasks.register('mvccCleanupVacuumTest') {
     group = 'verification'
     description = 'Runs Phase 10 delos_mvcc cleanup/vacuum tests.'
