@@ -2384,6 +2384,22 @@ tasks.register('versionedStorageDefaultProviderCandidateSmoke', JavaExec) {
 }
 
 
+tasks.register('versionedStorageDefaultProviderCandidateMatrixSmoke', JavaExec) {
+    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
+    mustRunAfter 'versionedStorageDefaultProviderCandidateSmoke'
+    group = 'verification'
+    description = 'Verifies guarded bare-SQL delos_mvcc default-provider candidate recovery, index lookup, update, and delete visibility.'
+    classpath = versionedStorageSqlMetadataSmokeClasspath()
+    mainClass = 'delosdb.smoke.VersionedStorageDefaultProviderCandidateMatrixSmoke'
+    args layout.buildDirectory.dir('versioned-storage-default-provider-candidate-matrix-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('versioned-storage-default-provider-candidate-matrix-smoke').get().asFile
+    doFirst {
+        delete file('build/versioned-storage-default-provider-candidate-matrix-smoke')
+        workingDir.mkdirs()
+    }
+}
+
+
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
     description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
@@ -2485,5 +2501,11 @@ tasks.register('mvccDefaultProviderCandidateSmoke') {
     group = 'verification'
     description = 'Runs the explicit default-provider candidate proof for routing plain CREATE TABLE to delos_mvcc.'
     dependsOn 'mvccDerbySqlBridgeReadiness', 'versionedStorageDefaultProviderCandidateSmoke'
+}
+
+tasks.register('mvccDefaultProviderCandidateMatrix') {
+    group = 'verification'
+    description = 'Runs the guarded default-provider candidate recovery/index/update/delete matrix without flipping the global default store.'
+    dependsOn 'mvccDefaultProviderCandidateSmoke', 'versionedStorageDefaultProviderCandidateMatrixSmoke'
 }
 

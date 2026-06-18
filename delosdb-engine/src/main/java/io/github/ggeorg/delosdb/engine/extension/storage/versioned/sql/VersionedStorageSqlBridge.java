@@ -940,12 +940,7 @@ public final class VersionedStorageSqlBridge {
         }
         Map<VersionedTableMetadata, TableDefinition> reopened = new HashMap<>();
         for (TableDefinition existing : TABLES.values()) {
-            VersionedTable<Long, List<Object>> table = provider.createTable(existing.metadata());
-            reopened.put(existing.metadata(), new TableDefinition(
-                    existing.metadata(),
-                    existing.columns(),
-                    table,
-                    provider.transactionCoordinator()));
+            reopened.put(existing.metadata(), existing.reopenWithProvider(provider));
         }
         TABLES.clear();
         TABLES.putAll(reopened);
@@ -1273,6 +1268,27 @@ public final class VersionedStorageSqlBridge {
 
         private synchronized Optional<IndexDefinition> indexDefinitionForColumn(int columnIndex) {
             return Optional.ofNullable(indexesByColumnIndex.get(columnIndex));
+        }
+
+        private TableDefinition reopenWithProvider(VersionedStorageProvider provider) throws SQLException {
+            VersionedTransactionCoordinator reopenedCoordinator = provider.transactionCoordinator();
+            VersionedTable<Long, List<Object>> reopenedTable = provider.createTable(metadata);
+            TableDefinition reopened = new TableDefinition(metadata, columns, reopenedTable, reopenedCoordinator);
+            for (IndexDefinition existingIndex : indexesByName.values()) {
+                TxContext build = reopenedCoordinator.begin();
+                try {
+                    reopened.createIndex(existingIndex.metadata(), existingIndex.columnIndex(), build);
+                    reopenedCoordinator.commit(build);
+                } catch (RuntimeException | SQLException e) {
+                    try {
+                        reopenedCoordinator.abort(build);
+                    } catch (RuntimeException abortFailure) {
+                        e.addSuppressed(abortFailure);
+                    }
+                    throw e;
+                }
+            }
+            return reopened;
         }
 
         private List<VersionedRow<Long, List<Object>>> indexedRows(
