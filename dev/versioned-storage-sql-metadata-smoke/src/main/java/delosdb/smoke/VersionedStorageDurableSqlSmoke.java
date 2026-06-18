@@ -1,5 +1,6 @@
 package delosdb.smoke;
 
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageAccessPath;
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 
 import java.nio.file.Path;
@@ -13,6 +14,8 @@ import java.sql.Statement;
  * versions. Derby heap storage remains untouched; this is still not Derby WAL.
  */
 public final class VersionedStorageDurableSqlSmoke {
+    private static final String INDEX_NAME = "DURABLE_MVCC_ID_IDX";
+
     private VersionedStorageDurableSqlSmoke() {
     }
 
@@ -37,7 +40,7 @@ public final class VersionedStorageDurableSqlSmoke {
         try (Connection connection = SmokeUtils.connect(databasePath, false);
              Statement statement = connection.createStatement()) {
             assertTableRow(statement, 1, "alpha", "committed delos_mvcc insert survives provider reopen");
-            statement.executeUpdate("create index durable_mvcc_id_idx on durable_mvcc(id)");
+            statement.executeUpdate("create index " + INDEX_NAME + " on durable_mvcc(id)");
             statement.executeUpdate("update durable_mvcc set name = 'beta' where id = 1");
             assertTableRow(statement, 1, "beta", "committed delos_mvcc update is visible before provider reopen");
         }
@@ -45,8 +48,7 @@ public final class VersionedStorageDurableSqlSmoke {
         VersionedStorageSqlBridge.reopenPageBackedStorage();
         try (Connection connection = SmokeUtils.connect(databasePath, false);
              Statement statement = connection.createStatement()) {
-            assertTableRow(statement, 1, "beta", "committed delos_mvcc update survives provider reopen");
-            statement.executeUpdate("create index durable_mvcc_id_idx_after_reopen on durable_mvcc(id)");
+            assertIndexedTableRow(statement, 1, "beta", "committed delos_mvcc update survives provider reopen through recovered index");
             statement.executeUpdate("delete from durable_mvcc where id = 1");
             assertCount(statement, 0, "committed delos_mvcc delete is visible before provider reopen");
         }
@@ -74,6 +76,31 @@ public final class VersionedStorageDurableSqlSmoke {
                 throw new AssertionError(message + ": unexpected extra row");
             }
         }
+    }
+
+    private static void assertIndexedTableRow(Statement statement, int expectedId, String expectedName, String message)
+            throws Exception {
+        try (ResultSet rs = statement.executeQuery("select * from durable_mvcc where id = " + expectedId)) {
+            if (!rs.next()) {
+                throw new AssertionError(message + ": no row returned");
+            }
+            SmokeUtils.assertEquals(String.valueOf(expectedId), String.valueOf(rs.getInt(1)), message + " id");
+            SmokeUtils.assertEquals(expectedName, rs.getString(2), message + " name");
+            if (rs.next()) {
+                throw new AssertionError(message + ": unexpected extra row");
+            }
+        }
+        assertLastPathUsesRecoveredIndex(message);
+    }
+
+    private static void assertLastPathUsesRecoveredIndex(String message) {
+        VersionedStorageAccessPath accessPath = VersionedStorageSqlBridge.lastAccessPath()
+                .orElseThrow(() -> new AssertionError(message + ": no MVCC access path recorded"));
+        SmokeUtils.assertEquals(VersionedStorageAccessPath.INDEX_SCAN,
+                accessPath.selectedAccessMethod(),
+                message + " access method");
+        SmokeUtils.assertEquals(INDEX_NAME, accessPath.selectedIndex(), message + " selected index");
+        SmokeUtils.assertEquals("ID", accessPath.predicateColumn(), message + " predicate column");
     }
 
     private static void assertCount(Statement statement, int expected, String message) throws Exception {

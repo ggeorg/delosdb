@@ -541,7 +541,7 @@ public final class VersionedStorageSqlBridge {
             IndexDefinition index = indexDefinition.get();
             VersionedIndexStats indexStats = index.index().stats(predicateValue, statementTx.context().currentView());
             long indexLookupCost = indexStats.estimatedLookupCost();
-            if (indexLookupCost <= tableScanCost) {
+            if (table.isUniqueLookupColumn(columnIndex) || indexLookupCost <= tableScanCost) {
                 List<List<Object>> rows = valuesFrom(index.index().lookup(predicateValue, statementTx.context().currentView()));
                 VersionedStorageAccessPath accessPath = new VersionedStorageAccessPath(
                         table.metadata().qualifiedName(),
@@ -1268,6 +1268,11 @@ public final class VersionedStorageSqlBridge {
 
         private synchronized Optional<IndexDefinition> indexDefinitionForColumn(int columnIndex) {
             return Optional.ofNullable(indexesByColumnIndex.get(columnIndex));
+        }
+
+        private boolean isUniqueLookupColumn(int columnIndex) {
+            ColumnDefinition column = columns.get(columnIndex);
+            return column.primaryKey() || column.unique();
         }
 
         private TableDefinition reopenWithProvider(VersionedStorageProvider provider) throws SQLException {
