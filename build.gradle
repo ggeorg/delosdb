@@ -2564,6 +2564,13 @@ tasks.register('mvccDefaultProviderCandidateSmoke') {
     dependsOn 'mvccDerbySqlBridgeReadiness', 'versionedStorageDefaultProviderCandidateSmoke'
 }
 
+tasks.register('mvccTransactionOutcomeLogProof') {
+    group = 'verification'
+    description = 'Runs A49 durable transaction outcome-log proof for strict MVCC recovery paths.'
+    dependsOn ':delosdb-storage-mvcc:runMvccTransactionOutcomeLogTest'
+}
+
+
 tasks.register('mvccDefaultProviderCandidateMatrix') {
     group = 'verification'
     description = 'Runs the guarded default-provider candidate recovery/index/update/delete matrix without flipping the global default store.'
