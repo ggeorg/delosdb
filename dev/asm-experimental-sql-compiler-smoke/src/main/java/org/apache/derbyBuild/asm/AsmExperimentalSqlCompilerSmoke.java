@@ -25,17 +25,17 @@ import delosdb.smoke.SmokeUtils;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory;
+import org.apache.derby.impl.services.bytecode.asm.AsmJava;
 
 /**
- * Boots the real embedded SQL compiler with the bytecode JavaFactory selector
- * and explicitly selects the ASM backend. This smoke remains useful after the
- * default flip because it verifies the explicit ASM selector path directly.
+ * Boots the real embedded SQL compiler with the direct ASM JavaFactory.
+ * This smoke verifies representative SQL activation generation after the
+ * legacy BCJava selector fallback has been removed.
  */
 public final class AsmExperimentalSqlCompilerSmoke {
     private static final String MODULE_PROPERTY = "derby.module.javaCompiler";
     private static final String MODULE_PROPERTY_COMPAT = "derby.module.JavaCompiler";
-    private static final String SELECTOR_CLASS = ExperimentalBytecodeJavaFactory.class.getName();
+    private static final String ASM_CLASS = AsmJava.class.getName();
 
     private AsmExperimentalSqlCompilerSmoke() {
     }
@@ -47,15 +47,10 @@ public final class AsmExperimentalSqlCompilerSmoke {
 
         String previousModule = System.getProperty(MODULE_PROPERTY);
         String previousCompatModule = System.getProperty(MODULE_PROPERTY_COMPAT);
-        String previousBackend = System.getProperty(ExperimentalBytecodeJavaFactory.BACKEND_PROPERTY);
-
         String databasePath = args[0];
         try {
-            ExperimentalBytecodeJavaFactory.resetLastBootedBackendName();
-            System.setProperty(MODULE_PROPERTY, SELECTOR_CLASS);
-            System.setProperty(MODULE_PROPERTY_COMPAT, SELECTOR_CLASS);
-            System.setProperty(ExperimentalBytecodeJavaFactory.BACKEND_PROPERTY,
-                    ExperimentalBytecodeJavaFactory.BACKEND_ASM);
+            System.setProperty(MODULE_PROPERTY, ASM_CLASS);
+            System.setProperty(MODULE_PROPERTY_COMPAT, ASM_CLASS);
 
             SmokeUtils.loadEmbeddedDriver();
             try (Connection connection = SmokeUtils.connect(databasePath, true);
@@ -88,22 +83,16 @@ public final class AsmExperimentalSqlCompilerSmoke {
                         "ASM predicate select compile/execute");
             }
 
-            String selected = ExperimentalBytecodeJavaFactory.lastBootedBackendName();
-            if (!ExperimentalBytecodeJavaFactory.BACKEND_ASM.equals(selected)) {
-                throw new AssertionError("Expected real SQL compiler boot path to select ASM backend but saw: "
-                        + selected);
-            }
         } finally {
             try {
                 SmokeUtils.shutdown(databasePath);
             } finally {
                 restoreProperty(MODULE_PROPERTY, previousModule);
                 restoreProperty(MODULE_PROPERTY_COMPAT, previousCompatModule);
-                restoreProperty(ExperimentalBytecodeJavaFactory.BACKEND_PROPERTY, previousBackend);
             }
         }
 
-        System.out.println("ASM experimental SQL compiler smoke passed: backend=asm matrix="
+        System.out.println("ASM SQL compiler smoke passed: backend=" + ASM_CLASS + " matrix="
                 + "values,int-casts,double-casts,string,case,null,coalesce,table,predicate");
     }
 

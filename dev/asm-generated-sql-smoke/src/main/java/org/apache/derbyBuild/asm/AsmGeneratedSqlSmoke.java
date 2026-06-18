@@ -40,9 +40,9 @@ import org.objectweb.asm.Type;
 
 /**
  * ASM-3 proof: generate an activation-shaped class with Derby's generated-code
- * contract, but keep the active Derby {@code BCJava} backend untouched.
+ * contract.
  *
- * <p>This is deliberately not wired into {@code modules.properties}. It proves
+ * <p>This proof predates the production switch but still verifies
  * that ASM can produce Java 21 bytecode for the same generated activation shape
  * Derby expects: {@link GeneratedByteCode}, a generated-class handle, and the
  * expression entrypoints {@code e0()} through {@code e9()}.</p>

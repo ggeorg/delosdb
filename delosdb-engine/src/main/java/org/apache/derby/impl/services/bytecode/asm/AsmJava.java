@@ -44,13 +44,12 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
 /**
- * Experimental ASM-backed implementation of Derby's JavaFactory contract.
+ * ASM-backed production implementation of Derby's JavaFactory contract.
  * <p>
- * This class is intentionally not registered in {@code modules.properties} yet.
- * It exists so the ASM campaign can start moving the already-proven adapter shape
- * from {@code dev/} into the engine module without changing the active Derby
- * bytecode backend. Unsupported MethodBuilder operations fail fast rather than
- * silently generating wrong bytecode.
+ * This class is registered directly in {@code modules.properties} and replaces
+ * the legacy Derby BCJava writer for generated SQL activations. Unsupported
+ * MethodBuilder operations fail fast rather than silently generating wrong
+ * bytecode.
  */
 public final class AsmJava implements JavaFactory {
     /**

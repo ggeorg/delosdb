@@ -233,44 +233,6 @@ tasks.register('runDerbyLangSuiteWithAsmBackend', Test) {
 
 
 
-tasks.register('runDerbyLangSuiteWithBcJavaBackend', Test) {
-    group = 'verification'
-    description = 'Runs the original Derby lang JUnit suite through the temporary BCJava fallback selector.'
-    dependsOn 'compileDerbyTestsModule', ':jars'
-
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/lang/_Suite.class'
-
-    systemProperty 'derby.module.javaCompiler', 'org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory'
-    systemProperty 'derby.module.JavaCompiler', 'org.apache.derby.impl.services.bytecode.ExperimentalBytecodeJavaFactory'
-    systemProperty 'delosdb.bytecode.backend', 'bcjava'
-
-    workingDir = layout.buildDirectory.dir('test-work/runDerbyLangSuiteWithBcJavaBackend').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDerbyLangSuiteWithBcJavaBackend'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDerbyLangSuiteWithBcJavaBackend'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDerbyLangSuiteWithBcJavaBackend'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat 'full'
-        showStandardStreams = true
-    }
-}
-
-
 tasks.register('runWalRecoveryArchitectureProofTest', Test) {
     group = 'verification'
     description = 'Runs focused WAL/restart recovery proof tests for the PostgreSQL-class storage/concurrency campaign.'

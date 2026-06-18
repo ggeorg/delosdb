@@ -1574,49 +1574,71 @@ tasks.register('generatedBytecodeAsmJvm21Proof', JavaExec) {
 }
 
 
-tasks.register('verifyAsmCompatibilityWindowConfiguration') {
+tasks.register('verifyAsmOnlyBytecodeBackendConfiguration') {
     group = 'verification'
-    description = 'Verifies ASM is the production bytecode compiler while the temporary BCJava fallback selector remains explicit-only.'
+    description = 'Verifies the legacy BCJava backend and selector fallback have been removed after the ASM compatibility window.'
 
     def modulesPropertiesFile = file('delosdb-engine/src/main/java/org/apache/derby/modules.properties')
-    def selectorFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/ExperimentalBytecodeJavaFactory.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def staleBackendFiles = [
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCJava.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCClass.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCMethod.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/CodeChunk.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/Conditional.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/OpcodeDebug.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCExpr.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCLocalField.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCMethodCaller.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/BCMethodDescriptor.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/GClass.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/Type.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/VMTypeIdCacheable.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/d_BCValidate.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/ExperimentalBytecodeJavaFactory.java',
+            'dev/asm-methodbuilder-parity',
+            'dev/asm-experimental-backend-selector-smoke',
+            'dev/asm-engine-selector-integration-smoke'
+    ].collect { file(it) }
 
-    inputs.files(modulesPropertiesFile, selectorFile)
+    inputs.files(modulesPropertiesFile, testsBuildFile)
+    inputs.files(staleBackendFiles.findAll { it.exists() })
 
     doLast {
         def compilerLines = modulesPropertiesFile.readLines('UTF-8')
                 .collect { it.trim() }
                 .findAll { it.startsWith('derby.module.javaCompiler=') }
         if (compilerLines != ['derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.asm.AsmJava']) {
-            throw new GradleException('ASM compatibility window requires modules.properties to point directly at AsmJava; found: '
+            throw new GradleException('ASM-only backend requires modules.properties to point directly at AsmJava; found: '
                     + compilerLines)
         }
 
-        def selectorText = selectorFile.getText('UTF-8')
-        def requiredSelectorSnippets = [
-                'private static final String DEFAULT_BACKEND = BACKEND_ASM;',
-                'case BACKEND_ASM -> new AsmJava();',
-                'case BACKEND_BCJAVA -> new BCJava();'
-        ]
-        def missingSnippets = requiredSelectorSnippets.findAll { !selectorText.contains(it) }
-        if (!missingSnippets.isEmpty()) {
-            throw new GradleException('ASM compatibility window selector is missing required fallback/default snippets: '
-                    + missingSnippets.join(', '))
+        def remaining = staleBackendFiles.findAll { it.exists() }
+        if (!remaining.isEmpty()) {
+            throw new GradleException('Legacy BCJava backend/fallback files still exist. Run scripts/cleanup-asm-a21-old-bcjava-backend.sh first: '
+                    + remaining.collect { it.path }.join(', '))
+        }
+
+        def testsBuildText = testsBuildFile.getText('UTF-8')
+        if (testsBuildText.contains('runDerbyLangSuiteWith' + 'BcJavaBackend')
+                || testsBuildText.contains('delosdb.bytecode.backend')) {
+            throw new GradleException('BCJava fallback test task/property is still present in delosdb-tests/build.gradle')
         }
     }
 }
 
-tasks.register('asmCompatibilityWindow') {
+tasks.register('asmOnlyBytecodeBackend') {
     group = 'verification'
-    description = 'Runs the ASM-default compatibility window: production ASM, explicit ASM suite, and explicit BCJava fallback suite.'
-    dependsOn 'verifyAsmCompatibilityWindowConfiguration'
+    description = 'Runs the ASM-only backend gate after removing the legacy BCJava fallback/backend.'
+    dependsOn 'verifyAsmOnlyBytecodeBackendConfiguration'
     dependsOn ':delosdb-engine:compileDerbyEngine'
     dependsOn ':delosdb-tests:runDerbyLangSuite'
     dependsOn ':delosdb-tests:runDerbyLangSuiteWithAsmBackend'
-    dependsOn ':delosdb-tests:runDerbyLangSuiteWithBcJavaBackend'
     dependsOn 'smokeFromJars'
     dependsOn 'generatedBytecodeAsmJvm21Proof'
 }
+
+
 
 tasks.register('generatedBytecodeVersionExperimentProbe', JavaExec) {
     group = 'verification'
@@ -2078,7 +2100,7 @@ def asmMethodBuilderSmokeClassesDir = layout.buildDirectory.dir('classes/asm-met
 
 tasks.register('compileAsmMethodBuilderSmoke', JavaCompile) {
     group = 'verification'
-    description = 'Compiles the inactive ASM MethodBuilder adapter smoke proof.'
+    description = 'Compiles the ASM MethodBuilder adapter smoke proof.'
     dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
     source = files(asmMethodBuilderSmokeSourceDir)
     destinationDirectory = asmMethodBuilderSmokeClassesDir
@@ -2097,7 +2119,7 @@ tasks.register('compileAsmMethodBuilderSmoke', JavaCompile) {
 
 tasks.register('asmMethodBuilderSmoke', JavaExec) {
     group = 'verification'
-    description = 'Proves an inactive ASM adapter can implement a small JavaFactory/ClassBuilder/MethodBuilder subset.'
+    description = 'Proves the ASM adapter implements a small JavaFactory/ClassBuilder/MethodBuilder subset.'
     dependsOn 'compileAsmMethodBuilderSmoke'
     classpath = files(
             asmMethodBuilderSmokeClassesDir,
@@ -2109,48 +2131,13 @@ tasks.register('asmMethodBuilderSmoke', JavaExec) {
 }
 
 
-def asmMethodBuilderParitySourceDir = file('dev/asm-methodbuilder-parity/src/main/java')
-def asmMethodBuilderParityClassesDir = layout.buildDirectory.dir('classes/asm-methodbuilder-parity')
-
-tasks.register('compileAsmMethodBuilderParity', JavaCompile) {
-    group = 'verification'
-    description = 'Compiles the inactive ASM MethodBuilder parity proof against Derby BCJava.'
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
-    source = files(asmMethodBuilderParitySourceDir)
-    destinationDirectory = asmMethodBuilderParityClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = files(
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-}
-
-tasks.register('asmMethodBuilderParityTest', JavaExec) {
-    group = 'verification'
-    description = 'Compares selected BCJava MethodBuilder behavior with an inactive ASM MethodBuilder implementation.'
-    dependsOn 'compileAsmMethodBuilderParity'
-    classpath = files(
-            asmMethodBuilderParityClassesDir,
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-    mainClass = 'org.apache.derbyBuild.asm.AsmMethodBuilderParity'
-}
-
 
 def asmGeneratedSqlSmokeSourceDir = file('dev/asm-generated-sql-smoke/src/main/java')
 def asmGeneratedSqlSmokeClassesDir = layout.buildDirectory.dir('classes/asm-generated-sql-smoke')
 
 tasks.register('compileAsmGeneratedSqlSmoke', JavaCompile) {
     group = 'verification'
-    description = 'Compiles the inactive ASM generated SQL-shape smoke proof.'
+    description = 'Compiles the ASM generated SQL-shape smoke proof.'
     dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
     source = files(asmGeneratedSqlSmokeSourceDir)
     destinationDirectory = asmGeneratedSqlSmokeClassesDir
@@ -2186,7 +2173,7 @@ def asmFrameComputationSmokeClassesDir = layout.buildDirectory.dir('classes/asm-
 
 tasks.register('compileAsmFrameComputationSmoke', JavaCompile) {
     group = 'verification'
-    description = 'Compiles the inactive ASM frame-computation and class-loader smoke proof.'
+    description = 'Compiles the ASM frame-computation and class-loader smoke proof.'
     source = files(asmFrameComputationSmokeSourceDir)
     destinationDirectory = asmFrameComputationSmokeClassesDir
     sourceCompatibility = javaRelease.toString()
@@ -2215,7 +2202,7 @@ def asmLargeMethodSmokeClassesDir = layout.buildDirectory.dir('classes/asm-large
 
 tasks.register('compileAsmLargeMethodSmoke', JavaCompile) {
     group = 'verification'
-    description = 'Compiles the inactive ASM large generated method splitting smoke proof.'
+    description = 'Compiles the ASM large generated method splitting smoke proof.'
     source = files(asmLargeMethodSmokeSourceDir)
     destinationDirectory = asmLargeMethodSmokeClassesDir
     sourceCompatibility = javaRelease.toString()
@@ -2245,7 +2232,7 @@ def asmEngineBackendSmokeClassesDir = layout.buildDirectory.dir('classes/asm-eng
 
 tasks.register('compileAsmEngineBackendSmoke', JavaCompile) {
     group = 'verification'
-    description = 'Compiles the inactive ASM engine-backend smoke proof.'
+    description = 'Compiles the production ASM engine-backend smoke proof.'
     dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
     source = files(asmEngineBackendSmokeSourceDir)
     destinationDirectory = asmEngineBackendSmokeClassesDir
@@ -2265,7 +2252,7 @@ tasks.register('compileAsmEngineBackendSmoke', JavaCompile) {
 
 tasks.register('asmEngineBackendSmoke', JavaExec) {
     group = 'verification'
-    description = 'Proves the engine-module ASM backend can generate Java 21 bytecode while the production compiler uses the selector.'
+    description = 'Proves the engine-module ASM backend can generate Java 21 bytecode while production points directly at AsmJava.'
     dependsOn 'compileAsmEngineBackendSmoke'
     classpath = files(
             asmEngineBackendSmokeClassesDir,
@@ -2277,78 +2264,6 @@ tasks.register('asmEngineBackendSmoke', JavaExec) {
 }
 
 
-def asmExperimentalBackendSelectorSmokeSourceDir = file('dev/asm-experimental-backend-selector-smoke/src/main/java')
-def asmExperimentalBackendSelectorSmokeClassesDir = layout.buildDirectory.dir('classes/asm-experimental-backend-selector-smoke')
-
-tasks.register('compileAsmExperimentalBackendSelectorSmoke', JavaCompile) {
-    group = 'verification'
-    description = 'Compiles the experimental ASM/BCJava backend-selector smoke proof.'
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
-    source = files(asmExperimentalBackendSelectorSmokeSourceDir)
-    destinationDirectory = asmExperimentalBackendSelectorSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = files(
-            asmExperimentalBackendSelectorSmokeSourceDir,
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-}
-
-tasks.register('asmExperimentalBackendSelectorSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Proves the selector defaults to ASM and can still select the temporary BCJava fallback explicitly.'
-    dependsOn 'compileAsmExperimentalBackendSelectorSmoke'
-    classpath = files(
-            asmExperimentalBackendSelectorSmokeClassesDir,
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-    mainClass = 'org.apache.derbyBuild.asm.AsmExperimentalBackendSelectorSmoke'
-}
-
-
-def asmEngineSelectorIntegrationSmokeSourceDir = file('dev/asm-engine-selector-integration-smoke/src/main/java')
-def asmEngineSelectorIntegrationSmokeClassesDir = layout.buildDirectory.dir('classes/asm-engine-selector-integration-smoke')
-
-tasks.register('compileAsmEngineSelectorIntegrationSmoke', JavaCompile) {
-    group = 'verification'
-    description = 'Compiles the experimental engine-module bytecode backend selector integration smoke.'
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
-    source = files(asmEngineSelectorIntegrationSmokeSourceDir)
-    destinationDirectory = asmEngineSelectorIntegrationSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = files(
-            asmEngineSelectorIntegrationSmokeSourceDir,
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-}
-
-tasks.register('asmEngineSelectorIntegrationSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Proves production points directly at AsmJava while the temporary selector fallback still validates explicit ASM selection.'
-    dependsOn 'compileAsmEngineSelectorIntegrationSmoke'
-    classpath = files(
-            asmEngineSelectorIntegrationSmokeClassesDir,
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-    mainClass = 'org.apache.derbyBuild.asm.AsmEngineSelectorIntegrationSmoke'
-}
 
 
 def asmExperimentalSqlCompilerSmokeSourceDir = file('dev/asm-experimental-sql-compiler-smoke/src/main/java')
@@ -2356,7 +2271,7 @@ def asmExperimentalSqlCompilerSmokeClassesDir = layout.buildDirectory.dir('class
 
 tasks.register('compileAsmExperimentalSqlCompilerSmoke', JavaCompile) {
     group = 'verification'
-    description = 'Compiles the experimental ASM SQL compiler boot-path smoke.'
+    description = 'Compiles the ASM SQL compiler boot-path smoke.'
     dependsOn 'jars'
     source = files(asmExperimentalSqlCompilerSmokeSourceDir, smokeUtilsSourceDir)
     destinationDirectory = asmExperimentalSqlCompilerSmokeClassesDir
@@ -2376,7 +2291,7 @@ tasks.register('compileAsmExperimentalSqlCompilerSmoke', JavaCompile) {
 
 tasks.register('asmExperimentalSqlCompilerSmoke', JavaExec) {
     group = 'verification'
-    description = 'Boots the real SQL compiler through the temporary selector fallback with delosdb.bytecode.backend=asm and executes a broader SQL matrix.'
+    description = 'Boots the real SQL compiler through direct AsmJava and executes a broader SQL matrix.'
     dependsOn 'compileAsmExperimentalSqlCompilerSmoke'
     classpath = files(
             asmExperimentalSqlCompilerSmokeClassesDir,
