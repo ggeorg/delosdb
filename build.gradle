@@ -1913,6 +1913,13 @@ tasks.register('mvccDurableIndexRecoveryTest') {
     dependsOn ':delosdb-storage-mvcc:runMvccDurableIndexRecoveryTest'
 }
 
+
+tasks.register('mvccVacuumSafetyTest') {
+    group = 'verification'
+    description = 'Runs MVCC-7 vacuum safety-window proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccVacuumSafetyTest'
+}
+
 tasks.register('mvccConcurrencyStressTest') {
     group = 'verification'
     description = 'Runs Phase A8 delos_mvcc durable concurrency stress tests.'
@@ -1922,7 +1929,7 @@ tasks.register('mvccConcurrencyStressTest') {
 tasks.register('mvccStorageModelTest') {
     group = 'verification'
     description = 'Runs all experimental DelosDB MVCC storage model tests.'
-    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest', ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest', ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest', ':delosdb-storage-mvcc:runDelosMvccIndexStatsTest', ':delosdb-storage-mvcc:runDelosMvccOrderedIndexRangeTest', ':delosdb-storage-mvcc:runMvccPageFileTest', ':delosdb-storage-mvcc:runMvccVersionRecordCodecTest', ':delosdb-storage-mvcc:runPageBackedMvccTableTest', ':delosdb-storage-mvcc:runMvccPageRecoveryTest', ':delosdb-storage-mvcc:runMvccPageMutationLogContractTest', ':delosdb-storage-mvcc:runMvccRecoveryBootProof', ':delosdb-storage-mvcc:runMvccDurableIndexVisibilityTest', ':delosdb-storage-mvcc:runMvccDurableIndexRecoveryTest', ':delosdb-storage-mvcc:runMvccDurableIndexCandidateTest', ':delosdb-storage-mvcc:runMvccDurableVacuumTest', ':delosdb-storage-mvcc:runMvccConcurrencyStressTest'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest', ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest', ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest', ':delosdb-storage-mvcc:runDelosMvccIndexStatsTest', ':delosdb-storage-mvcc:runDelosMvccOrderedIndexRangeTest', ':delosdb-storage-mvcc:runMvccPageFileTest', ':delosdb-storage-mvcc:runMvccVersionRecordCodecTest', ':delosdb-storage-mvcc:runPageBackedMvccTableTest', ':delosdb-storage-mvcc:runMvccPageRecoveryTest', ':delosdb-storage-mvcc:runMvccPageMutationLogContractTest', ':delosdb-storage-mvcc:runMvccRecoveryBootProof', ':delosdb-storage-mvcc:runMvccDurableIndexVisibilityTest', ':delosdb-storage-mvcc:runMvccDurableIndexRecoveryTest', ':delosdb-storage-mvcc:runMvccVacuumSafetyTest', ':delosdb-storage-mvcc:runMvccDurableIndexCandidateTest', ':delosdb-storage-mvcc:runMvccDurableVacuumTest', ':delosdb-storage-mvcc:runMvccConcurrencyStressTest'
 }
 
 tasks.register('mvccRecoveryLogTest') {

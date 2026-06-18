@@ -587,6 +587,32 @@ tasks.register('runMvccDurableIndexRecoveryTest', Test) {
     }
 }
 
+
+tasks.register('runMvccVacuumSafetyTest', Test) {
+    group = 'verification'
+    description = 'Runs MVCC-7 vacuum safety-window tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/MvccVacuumSafetyTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccVacuumSafetyTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccVacuumSafetyTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccVacuumSafetyTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
 tasks.register('classes') {
     dependsOn 'compileDelosDbStorageMvcc'
 }
@@ -611,5 +637,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest'
 }
