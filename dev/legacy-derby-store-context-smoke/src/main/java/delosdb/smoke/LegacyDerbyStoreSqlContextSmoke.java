@@ -90,7 +90,7 @@ public final class LegacyDerbyStoreSqlContextSmoke {
         }
     }
 
-    private static void assertDiskRow(Object rowObject, String expected) throws SQLException {
+    private static void assertDiskRow(Object rowObject, String expected) throws SQLException, StandardException {
         if (!(rowObject instanceof DataValueDescriptor[] row)) {
             throw new SQLException("Expected DiskHashtable row but got " + rowObject);
         }
