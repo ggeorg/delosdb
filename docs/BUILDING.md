@@ -48,8 +48,12 @@ the tree for reference, but the active Gradle language-suite path runs the JUnit
 `generatedBytecodeAsmJvm21Proof` is the permanent generated-bytecode proof
 after the ASM switch. It verifies that the production module points directly at
 `AsmJava` and that generated activation bytecode is emitted as Java 21 classfiles.
-The old `ClassHolder`/classfile-50 proof has been retired with the legacy
-classfile writer.
+The old `ClassHolder`/classfile-50 proof and temporary ASM campaign proofs have
+been retired with the legacy bytecode backend.
+
+`asmRuntimeDependencyCleanup` is the final ASM cleanup gate. It verifies that ASM
+is a normal engine module/runtime dependency and that only the permanent
+bytecode proof remains active.
 
 `generatedMethodDispatchAudit` records the generated-method dispatch path after
 the small `ReflectGeneratedClass` cleanup. The hot `e0..e9` generated activation

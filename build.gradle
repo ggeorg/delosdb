@@ -145,7 +145,7 @@ configurations {
 dependencies {
     // Test-only dependency for new DelosDB tests. Inherited Derby tests remain JUnit 3.
     delosdbJunit5Console "org.junit.platform:junit-platform-console-standalone:${junitPlatformConsoleVersion}"
-    // Build/proof-only dependency for the experimental ASM bytecode backend campaign.
+    // Runtime dependency for the permanent ASM generated-bytecode backend.
     delosdbAsm "org.ow2.asm:asm:${asmVersion}"
 }
 
@@ -541,7 +541,10 @@ def moduleSplitInventory = [
 ]
 
 def runtimeJars = {
-    files(runtimeJarNames.collect { layout.buildDirectory.file("libs/${it}") })
+    // derby.jar now contains the permanent ASM bytecode backend. Keep ASM on
+    // the runtime classpath for jar-based smokes instead of relying on the
+    // old optional/static module edge.
+    files(runtimeJarNames.collect { layout.buildDirectory.file("libs/${it}") }, configurations.delosdbAsm)
 }
 
 def extensionRuntimeJars = {
@@ -1485,31 +1488,6 @@ tasks.register('verifyDeprecatedAnnotations') {
     }
 }
 
-def asmClassfileProofSourceDir = file('dev/asm-classfile-proof/src/main/java')
-def asmClassfileProofClassesDir = layout.buildDirectory.dir('classes/asm-classfile-proof')
-
-tasks.register('compileAsmClassfileProof', JavaCompile) {
-    group = 'verification'
-    description = 'Compiles the isolated ASM classfile generation proof.'
-    source = files(asmClassfileProofSourceDir)
-    destinationDirectory = asmClassfileProofClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = configurations.delosdbAsm
-}
-
-tasks.register('asmClassfileProof', JavaExec) {
-    group = 'verification'
-    description = 'Proves ASM can emit, load, invoke, and inspect a Java 21 classfile without touching Derby bytecode generation.'
-    dependsOn 'compileAsmClassfileProof'
-    classpath = files(asmClassfileProofClassesDir, configurations.delosdbAsm)
-    mainClass = 'org.apache.derbyBuild.AsmClassfileProof'
-}
-
 def generatedBytecodeAsmJvm21ProofSourceDir = file('dev/generated-bytecode-asm-jvm21-proof/src/main/java')
 def generatedBytecodeAsmJvm21ProofClassesDir = layout.buildDirectory.dir('classes/generated-bytecode-asm-jvm21-proof')
 
@@ -2114,251 +2092,79 @@ tasks.register('mvccVersionedStorageProviderTest') {
     dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke', 'versionedStorageWriteConflictSmoke', 'versionedStorageOptimizerPathSmoke', 'versionedStorageIndexRangeSmoke', 'versionedStorageOrderByPathSmoke', 'versionedStorageDurableSqlSmoke'
 }
 
-def asmMethodBuilderSmokeSourceDir = file('dev/asm-methodbuilder-smoke/src/main/java')
-def asmMethodBuilderSmokeClassesDir = layout.buildDirectory.dir('classes/asm-methodbuilder-smoke')
 
-tasks.register('compileAsmMethodBuilderSmoke', JavaCompile) {
+tasks.register('verifyAsmRuntimeDependencyCleanup') {
     group = 'verification'
-    description = 'Compiles the ASM MethodBuilder adapter smoke proof.'
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
-    source = files(asmMethodBuilderSmokeSourceDir)
-    destinationDirectory = asmMethodBuilderSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = files(
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-}
+    description = 'Verifies the ASM switch has been collapsed to the permanent runtime dependency and proof gate.'
 
-tasks.register('asmMethodBuilderSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Proves the ASM adapter implements a small JavaFactory/ClassBuilder/MethodBuilder subset.'
-    dependsOn 'compileAsmMethodBuilderSmoke'
-    classpath = files(
-            asmMethodBuilderSmokeClassesDir,
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-    mainClass = 'org.apache.derbyBuild.asm.AsmMethodBuilderSmoke'
-}
+    def moduleInfoFile = file('delosdb-engine/src/main/java/module-info.java')
+    def buildFile = file('build.gradle')
+    def retiredAsmCampaignPaths = [
+            'dev/asm-classfile-proof',
+            'dev/asm-methodbuilder-smoke',
+            'dev/asm-generated-sql-smoke',
+            'dev/asm-frame-computation-smoke',
+            'dev/asm-large-method-smoke',
+            'dev/asm-engine-backend-smoke',
+            'dev/asm-experimental-sql-compiler-smoke',
+            'dev/asm-engine-backend-hardening-smoke'
+    ].collect { file(it) }
 
+    inputs.files(moduleInfoFile, buildFile)
+    inputs.files(retiredAsmCampaignPaths.findAll { it.exists() })
 
+    doLast {
+        def moduleInfoText = moduleInfoFile.getText('UTF-8')
+        if (!moduleInfoText.contains('requires org.objectweb.asm;')) {
+            throw new GradleException('ASM must be a normal engine module dependency: expected requires org.objectweb.asm;')
+        }
+        if (moduleInfoText.contains('requires static org.objectweb.asm;')) {
+            throw new GradleException('ASM is still declared as optional/static in module-info.java')
+        }
 
-def asmGeneratedSqlSmokeSourceDir = file('dev/asm-generated-sql-smoke/src/main/java')
-def asmGeneratedSqlSmokeClassesDir = layout.buildDirectory.dir('classes/asm-generated-sql-smoke')
+        def buildText = buildFile.getText('UTF-8')
+        def staleTaskNames = [
+                'asmClassfileProof',
+                'compileAsmClassfileProof',
+                'asmMethodBuilderSmoke',
+                'compileAsmMethodBuilderSmoke',
+                'asmGeneratedSqlSmoke',
+                'compileAsmGeneratedSqlSmoke',
+                'asmFrameComputationSmoke',
+                'compileAsmFrameComputationSmoke',
+                'asmLargeMethodSmoke',
+                'compileAsmLargeMethodSmoke',
+                'asmEngineBackendSmoke',
+                'compileAsmEngineBackendSmoke',
+                'asmExperimentalSqlCompilerSmoke',
+                'compileAsmExperimentalSqlCompilerSmoke',
+                'asmEngineBackendHardeningSmoke',
+                'compileAsmEngineBackendHardeningSmoke'
+        ]
+        def remainingTasks = staleTaskNames.findAll { buildText.contains("tasks.register('${it}'") }
+        if (!remainingTasks.isEmpty()) {
+            throw new GradleException('Temporary ASM campaign proof tasks still exist: ' + remainingTasks.join(', '))
+        }
+        if (!buildText.contains('configurations.delosdbAsm') || !buildText.contains('Runtime dependency for the permanent ASM generated-bytecode backend')) {
+            throw new GradleException('ASM runtime dependency wiring is missing from build.gradle')
+        }
 
-tasks.register('compileAsmGeneratedSqlSmoke', JavaCompile) {
-    group = 'verification'
-    description = 'Compiles the ASM generated SQL-shape smoke proof.'
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
-    source = files(asmGeneratedSqlSmokeSourceDir)
-    destinationDirectory = asmGeneratedSqlSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = files(
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-}
-
-tasks.register('asmGeneratedSqlSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Proves ASM can emit a Derby GeneratedByteCode activation-shaped class with SQL expression entrypoints.'
-    dependsOn 'compileAsmGeneratedSqlSmoke'
-    classpath = files(
-            asmGeneratedSqlSmokeClassesDir,
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-    mainClass = 'org.apache.derbyBuild.asm.AsmGeneratedSqlSmoke'
-}
-
-
-def asmFrameComputationSmokeSourceDir = file('dev/asm-frame-computation-smoke/src/main/java')
-def asmFrameComputationSmokeClassesDir = layout.buildDirectory.dir('classes/asm-frame-computation-smoke')
-
-tasks.register('compileAsmFrameComputationSmoke', JavaCompile) {
-    group = 'verification'
-    description = 'Compiles the ASM frame-computation and class-loader smoke proof.'
-    source = files(asmFrameComputationSmokeSourceDir)
-    destinationDirectory = asmFrameComputationSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = configurations.delosdbAsm
-}
-
-tasks.register('asmFrameComputationSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Proves ASM COMPUTE_FRAMES can use a DelosDB-style hierarchy resolver across generated class-loader boundaries.'
-    dependsOn 'compileAsmFrameComputationSmoke'
-    classpath = files(
-            asmFrameComputationSmokeClassesDir,
-            configurations.delosdbAsm
-    )
-    mainClass = 'org.apache.derbyBuild.asm.AsmFrameComputationSmoke'
-}
-
-
-def asmLargeMethodSmokeSourceDir = file('dev/asm-large-method-smoke/src/main/java')
-def asmLargeMethodSmokeClassesDir = layout.buildDirectory.dir('classes/asm-large-method-smoke')
-
-tasks.register('compileAsmLargeMethodSmoke', JavaCompile) {
-    group = 'verification'
-    description = 'Compiles the ASM large generated method splitting smoke proof.'
-    source = files(asmLargeMethodSmokeSourceDir)
-    destinationDirectory = asmLargeMethodSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = configurations.delosdbAsm
-}
-
-tasks.register('asmLargeMethodSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Proves ASM-generated SQL-sized expressions still need method splitting below the JVM 64KB Code limit.'
-    dependsOn 'compileAsmLargeMethodSmoke'
-    classpath = files(
-            asmLargeMethodSmokeClassesDir,
-            configurations.delosdbAsm
-    )
-    mainClass = 'org.apache.derbyBuild.asm.AsmLargeMethodSmoke'
-}
-
-
-
-def asmEngineBackendSmokeSourceDir = file('dev/asm-engine-backend-smoke/src/main/java')
-def asmEngineBackendSmokeClassesDir = layout.buildDirectory.dir('classes/asm-engine-backend-smoke')
-
-tasks.register('compileAsmEngineBackendSmoke', JavaCompile) {
-    group = 'verification'
-    description = 'Compiles the production ASM engine-backend smoke proof.'
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
-    source = files(asmEngineBackendSmokeSourceDir)
-    destinationDirectory = asmEngineBackendSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = files(
-            asmEngineBackendSmokeSourceDir,
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-}
-
-tasks.register('asmEngineBackendSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Proves the engine-module ASM backend can generate Java 21 bytecode while production points directly at AsmJava.'
-    dependsOn 'compileAsmEngineBackendSmoke'
-    classpath = files(
-            asmEngineBackendSmokeClassesDir,
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-    mainClass = 'org.apache.derbyBuild.asm.AsmEngineBackendSmoke'
-}
-
-
-
-
-def asmExperimentalSqlCompilerSmokeSourceDir = file('dev/asm-experimental-sql-compiler-smoke/src/main/java')
-def asmExperimentalSqlCompilerSmokeClassesDir = layout.buildDirectory.dir('classes/asm-experimental-sql-compiler-smoke')
-
-tasks.register('compileAsmExperimentalSqlCompilerSmoke', JavaCompile) {
-    group = 'verification'
-    description = 'Compiles the ASM SQL compiler boot-path smoke.'
-    dependsOn 'jars'
-    source = files(asmExperimentalSqlCompilerSmokeSourceDir, smokeUtilsSourceDir)
-    destinationDirectory = asmExperimentalSqlCompilerSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = files(
-            asmExperimentalSqlCompilerSmokeSourceDir,
-            smokeUtilsSourceDir,
-            runtimeJars(),
-            configurations.delosdbAsm
-    )
-}
-
-tasks.register('asmExperimentalSqlCompilerSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Boots the real SQL compiler through direct AsmJava and executes a broader SQL matrix.'
-    dependsOn 'compileAsmExperimentalSqlCompilerSmoke'
-    classpath = files(
-            asmExperimentalSqlCompilerSmokeClassesDir,
-            runtimeJars(),
-            configurations.delosdbAsm
-    )
-    mainClass = 'org.apache.derbyBuild.asm.AsmExperimentalSqlCompilerSmoke'
-    args layout.buildDirectory.dir('asm-experimental-sql-compiler-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('asm-experimental-sql-compiler-smoke').get().asFile
-    doFirst {
-        delete file('build/asm-experimental-sql-compiler-smoke')
-        workingDir.mkdirs()
+        def remainingPaths = retiredAsmCampaignPaths.findAll { it.exists() }
+        if (!remainingPaths.isEmpty()) {
+            throw new GradleException('Temporary ASM campaign directories still exist. Run scripts/cleanup-asm-a23-runtime-dependency-cleanup.sh first: '
+                    + remainingPaths.collect { it.path }.join(', '))
+        }
     }
 }
 
-
-def asmEngineBackendHardeningSmokeSourceDir = file('dev/asm-engine-backend-hardening-smoke/src/main/java')
-def asmEngineBackendHardeningSmokeClassesDir = layout.buildDirectory.dir('classes/asm-engine-backend-hardening-smoke')
-
-tasks.register('compileAsmEngineBackendHardeningSmoke', JavaCompile) {
+tasks.register('asmRuntimeDependencyCleanup') {
     group = 'verification'
-    description = 'Compiles the ASM engine-backend hardening smoke proof.'
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
-    source = files(asmEngineBackendHardeningSmokeSourceDir)
-    destinationDirectory = asmEngineBackendHardeningSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = files(
-            asmEngineBackendHardeningSmokeSourceDir,
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-}
-
-tasks.register('asmEngineBackendHardeningSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Hardens AsmJava across branch stack merge, custom frame resolution, primitive casts, category-2 values, arrays, swap, and exception metadata.'
-    dependsOn 'compileAsmEngineBackendHardeningSmoke'
-    classpath = files(
-            asmEngineBackendHardeningSmokeClassesDir,
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.engine),
-            configurations.delosdbAsm
-    )
-    mainClass = 'org.apache.derbyBuild.asm.AsmEngineBackendHardeningSmoke'
+    description = 'Runs the final ASM runtime-dependency cleanup gate after removing temporary ASM campaign proofs.'
+    dependsOn 'verifyAsmRuntimeDependencyCleanup'
+    dependsOn 'asmOnlyBytecodeBackend'
+    dependsOn 'asmClassfileWriterQuarantine'
+    dependsOn 'generatedBytecodeAsmJvm21Proof'
+    dependsOn 'smokeFromJars'
+    dependsOn 'sysinfoFromJars'
+    dependsOn ':delosdb-tests:runDerbyLangSuite'
 }

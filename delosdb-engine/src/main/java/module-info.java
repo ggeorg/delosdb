@@ -88,8 +88,8 @@ module org.apache.derby.engine
     //
     requires static java.naming;
 
-    // Experimental ASM backend is compiled into the engine but remains inactive until explicitly selected.
-    requires static org.objectweb.asm;
+    // Permanent generated-bytecode backend dependency.
+    requires org.objectweb.asm;
 
     requires static org.osgi.framework;
 
