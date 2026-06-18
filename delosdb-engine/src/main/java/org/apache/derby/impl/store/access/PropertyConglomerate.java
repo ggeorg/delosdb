@@ -40,7 +40,7 @@ import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.services.io.Formatable;
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.iapi.sql.dictionary.DataDictionary;
+import org.apache.derby.iapi.services.property.DatabasePropertyKeys;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.access.AccessFactory;
 import org.apache.derby.iapi.store.access.AccessFactoryGlobals;
@@ -158,7 +158,7 @@ class PropertyConglomerate
 
 		PC_XenaVersion softwareVersion = new PC_XenaVersion();
 		if (create)
-			setProperty(tc,DataDictionary.PROPERTY_CONGLOMERATE_VERSION,
+			setProperty(tc,DatabasePropertyKeys.PROPERTY_CONGLOMERATE_VERSION,
 						 softwareVersion, true);
 		else
 			softwareVersion.upgradeIfNeeded(tc,this,serviceProperties);

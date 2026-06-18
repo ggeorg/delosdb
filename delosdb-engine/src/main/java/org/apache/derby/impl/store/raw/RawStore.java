@@ -80,7 +80,7 @@ import java.net.URL;
 
 import java.security.SecureRandom;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
-import org.apache.derby.iapi.sql.dictionary.DataDictionary;
+import org.apache.derby.iapi.services.property.DatabaseVersionIds;
 
 import org.apache.derby.iapi.store.replication.master.MasterFactory;
 import org.apache.derby.iapi.store.replication.slave.SlaveFactory;
@@ -839,7 +839,7 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
                 // DERBY-5357 UUIDs introduced in jar file names in 10.9
                 boolean uuidSupported =
                     lcc.getDataDictionary().
-                    checkVersion(DataDictionary.DD_VERSION_DERBY_10_9, null);
+                    checkVersion(DatabaseVersionIds.DERBY_10_9, null);
 
                 if (uuidSupported) {
                     // no subdirectories

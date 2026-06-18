@@ -2922,3 +2922,64 @@ tasks.register('verifyLegacyDerbyStoreBoundary') {
             'verifyNoSplitStorePackages',
             'legacyStoreDependencyReport'
 }
+
+// -----------------------------------------------------------------------------
+// DS3 — Remove legacy Derby store -> DataDictionary dependency
+// -----------------------------------------------------------------------------
+// The store modularization surgery requires inherited store code to stop depending
+// upward on the SQL catalog interface. These checks are behavior-preserving: the
+// SQL catalog still exposes the historical constants, but the store now consumes
+// neutral service/property constants.
+
+tasks.register('verifyLegacyDerbyStoreNoDataDictionaryImports') {
+    group = 'verification'
+    description = 'Verifies inherited Derby store sources no longer import the SQL DataDictionary interface.'
+    doLast {
+        def storeSources = []
+        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store'))
+        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store'))
+        delosdbDs1RequireNoImports(
+                'legacy Derby store',
+                storeSources,
+                ['org.apache.derby.iapi.sql.dictionary.DataDictionary'])
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreNoDataDictionaryImports'
+}
+
+def legacyDerbyStorePropertySmokeClassesDir = layout.buildDirectory.dir('classes/legacy-derby-store-property-smoke')
+
+tasks.register('compileLegacyDerbyStorePropertyConglomerateSmoke', JavaCompile) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Compiles the DS3 legacy Derby store property conglomerate smoke test.'
+    source = files('dev/legacy-derby-store-property-smoke/src/main/java', smokeUtilsSourceDir)
+    destinationDirectory = legacyDerbyStorePropertySmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = runtimeJars()
+}
+
+tasks.register('legacyDerbyStorePropertyConglomerateSmoke', JavaExec) {
+    dependsOn 'compileLegacyDerbyStorePropertyConglomerateSmoke'
+    group = 'verification'
+    description = 'Verifies legacy Derby store property conglomerate/version behavior after DataDictionary decoupling.'
+    classpath = files(legacyDerbyStorePropertySmokeClassesDir, runtimeJars())
+    mainClass = 'delosdb.smoke.LegacyDerbyStorePropertyConglomerateSmoke'
+    args layout.buildDirectory.dir('legacy-derby-store-property-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('legacy-derby-store-property-smoke').get().asFile
+    doFirst {
+        delete file('build/legacy-derby-store-property-smoke')
+        workingDir.mkdirs()
+    }
+}
+
+tasks.register('legacyDerbyStoreDataDictionaryDecouplingProof') {
+    group = 'verification'
+    description = 'Runs the DS3 proof that legacy Derby store no longer depends on DataDictionary constants and property conglomerate behavior still works.'
+    dependsOn 'verifyLegacyDerbyStoreBoundary', 'legacyDerbyStorePropertyConglomerateSmoke'
+}

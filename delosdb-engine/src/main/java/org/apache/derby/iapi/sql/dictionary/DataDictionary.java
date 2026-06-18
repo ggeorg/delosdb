@@ -30,6 +30,8 @@ import org.apache.derby.catalog.UUID;
 import org.apache.derby.iapi.db.Database;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.daemon.IndexStatisticsDaemon;
+import org.apache.derby.iapi.services.property.DatabasePropertyKeys;
+import org.apache.derby.iapi.services.property.DatabaseVersionIds;
 import org.apache.derby.iapi.services.uuid.UUIDFactory;
 import org.apache.derby.iapi.sql.compile.Visitable;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
@@ -118,7 +120,7 @@ public interface DataDictionary
 	public static final int DD_VERSION_DERBY_10_8		= 200;
 
 	/** Derby 10.9 System Catalog version */
-	public static final int DD_VERSION_DERBY_10_9		= 210;
+	public static final int DD_VERSION_DERBY_10_9		= DatabaseVersionIds.DERBY_10_9;
 
 	/** Derby 10.10 System Catalog version */
 	public static final int DD_VERSION_DERBY_10_10		= 220;
@@ -167,7 +169,7 @@ public interface DataDictionary
 	 * Stored as a database property. Set to an instance of DD_Version.
 	 */
 	public  static  final   String  SOFT_DATA_DICTIONARY_VERSION = "derby.softDataDictionaryVersion";
-    public  static  final   String  PROPERTY_CONGLOMERATE_VERSION = "PropertyConglomerateVersion";
+    public  static  final   String  PROPERTY_CONGLOMERATE_VERSION = DatabasePropertyKeys.PROPERTY_CONGLOMERATE_VERSION;
     
     /**
      * An immutable runtime type that describes the type VARCHAR(128) NOT NULL

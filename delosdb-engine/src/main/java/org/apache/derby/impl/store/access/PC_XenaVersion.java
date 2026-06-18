@@ -25,7 +25,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.services.io.Formatable;
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.iapi.sql.dictionary.DataDictionary;
+import org.apache.derby.iapi.services.property.DatabasePropertyKeys;
 import org.apache.derby.iapi.store.access.TransactionController;
 
 import java.io.IOException;
@@ -58,7 +58,7 @@ public class PC_XenaVersion implements Formatable
 		 throws StandardException
 	{
 		PC_XenaVersion dbVersion =
-			(PC_XenaVersion)pc.getProperty(tc,DataDictionary.PROPERTY_CONGLOMERATE_VERSION);
+			(PC_XenaVersion)pc.getProperty(tc,DatabasePropertyKeys.PROPERTY_CONGLOMERATE_VERSION);
 		if (isUpgradeNeeded(dbVersion))
 		{
 			throw StandardException.newException(SQLState.UPGRADE_UNSUPPORTED, dbVersion, this);
