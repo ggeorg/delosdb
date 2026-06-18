@@ -32,6 +32,8 @@ public final class MvccVersionChain<V> {
     public synchronized void update(V newValue, MvccTransaction transaction, MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
         MvccVersion<V> current = visibleVersion(snapshot, catalog)
                 .orElseThrow(() -> new MvccWriteConflictException("cannot update a row that is not visible to " + transaction.id()));
+        // markDeletedBy() is deliberately check-before-mutate. If it throws, the
+        // old version remains unchanged and no replacement version is appended.
         current.markDeletedBy(transaction.id(), catalog);
         newestFirst.add(0, new MvccVersion<>(newValue, transaction.id()));
     }

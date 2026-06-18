@@ -665,6 +665,32 @@ tasks.register('runMvccConcurrencyStressTest', Test) {
 }
 
 
+tasks.register('runMvccTransactionLockOrderTest', Test) {
+    group = 'verification'
+    description = 'Runs MVCC-18 transaction/catalog/table/index lock-order proof.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/MvccTransactionLockOrderTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccTransactionLockOrderTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccTransactionLockOrderTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccTransactionLockOrderTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+
 tasks.register('runMvccStoreAdapterSmoke', Test) {
     group = 'verification'
     description = 'Runs MVCC-11 opt-in store adapter smoke proof.'
@@ -790,5 +816,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke'
 }

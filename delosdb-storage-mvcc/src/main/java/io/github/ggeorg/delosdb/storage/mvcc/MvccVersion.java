@@ -34,6 +34,10 @@ public final class MvccVersion<V> {
         if (deletingTransaction == null || deletingTransaction.isNone()) {
             throw new IllegalArgumentException("deleting transaction must be a real transaction id");
         }
+        // Keep this conflict check before the assignment. MvccVersionChain.update()
+        // relies on this method being check-before-mutate so an update cannot
+        // mark the old version deleted unless it is also allowed to append the
+        // replacement version.
         if (!deletedBy.isNone()
                 && !deletedBy.equals(deletingTransaction)
                 && catalog.statusOf(deletedBy) != MvccTransactionStatus.ABORTED) {
