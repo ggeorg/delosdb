@@ -164,6 +164,36 @@ public final class VersionedStorageSqlBridge {
     }
 
     /**
+     * Test-only hook used by SQL bridge smokes to prove pruned-history
+     * translation. It deliberately drops the active-session watermark for the
+     * named experimental table and runs provider cleanup, leaving the stale
+     * session context in place so the next JDBC statement must fail through the
+     * normal bridge exception path. This must never be used by production SQL.
+     */
+    public static void forceUnsafeHistoryPruneForTesting(String tableName) throws SQLException {
+        Objects.requireNonNull(tableName, "tableName");
+        synchronized (LOCK) {
+            VersionedTableMetadata metadata = TableIdentity.parse(tableName).metadata();
+            TableDefinition table = TABLES.get(metadata);
+            if (table == null) {
+                throw sqlException("42X05", "delos_mvcc table does not exist for test cleanup: " + metadata.qualifiedName());
+            }
+            for (SessionTransaction session : SESSION_TRANSACTIONS.values()) {
+                if (session.coordinator() == table.coordinator()) {
+                    try {
+                        session.coordinator().abort(session.context());
+                    } catch (RuntimeException ignored) {
+                        // The stale session is intentionally left registered so the
+                        // following JDBC statement exercises cleanup-failure suppression.
+                    }
+                    completeUniqueReservations(session.context().transactionId(), false);
+                }
+            }
+            invokeProviderCleanupForTesting(table);
+        }
+    }
+
+    /**
      * Attempts to execute a supported experimental MVCC SQL statement using
      * the supplied transaction owner. The owner is normally the current
      * EmbedConnection; it lets explicit commit/rollback complete the provider
@@ -916,6 +946,21 @@ public final class VersionedStorageSqlBridge {
         }
     }
 
+    private static void invokeProviderCleanupForTesting(TableDefinition table) throws SQLException {
+        try {
+            Method cleanup = table.coordinator().getClass().getMethod("cleanup", table.table().getClass());
+            cleanup.invoke(table.coordinator(), table.table());
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw sqlException("X0MV4", "Could not invoke delos_mvcc provider cleanup for test: " + e.getMessage(), e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw sqlException("X0MV4", "Could not run delos_mvcc provider cleanup for test: " + cause.getMessage(), cause);
+        }
+    }
+
     private static VersionedStorageProvider discoverProvider() throws SQLException {
         return VersionedStorageProviderDiscovery.discover()
                 .stream()
@@ -1018,6 +1063,8 @@ public final class VersionedStorageSqlBridge {
             Object transactionOwner,
             StatementTransaction statementTx,
             Exception failure) throws SQLException {
+        // Call sites use `throw failStatementTransactionAndTranslate(...)` for declared
+        // SQL failures; untranslated runtime failures are thrown from this helper after cleanup.
         SQLException translated = translateStatementFailure(failure);
         try {
             failStatementTransaction(transactionOwner, statementTx);
