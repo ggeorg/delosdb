@@ -28,7 +28,8 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
         transactions.put(id, new TransactionState(
                 MvccTransactionStatus.ACTIVE,
                 MvccCommitSequence.NONE,
-                new MvccCommitSequence(currentCommitSequence)));
+                new MvccCommitSequence(currentCommitSequence),
+                1L));
         return new MvccTransaction(id);
     }
 
@@ -41,6 +42,21 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
             MvccCommandSequence visibleThroughCommand) {
         requireActive(transaction);
         return captureSnapshot(transaction, visibleThroughCommand);
+    }
+
+    /**
+     * Captures the next statement snapshot for the transaction. The returned
+     * command sequence is the write stamp for that statement; the snapshot uses
+     * the same boundary so it sees earlier own commands but not versions written
+     * by the current statement.
+     */
+    public synchronized MvccStatementSnapshot beginStatement(MvccTransaction transaction) {
+        TransactionState state = requireActive(transaction);
+        MvccCommandSequence commandSequence = MvccCommandSequence.of(state.nextCommandSequence++);
+        return new MvccStatementSnapshot(
+                transaction,
+                commandSequence,
+                captureSnapshot(transaction, commandSequence));
     }
 
     /**
@@ -192,14 +208,17 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
         private MvccTransactionStatus status;
         private MvccCommitSequence commitSequence;
         private final MvccCommitSequence snapshotSequence;
+        private long nextCommandSequence;
 
         private TransactionState(
                 MvccTransactionStatus status,
                 MvccCommitSequence commitSequence,
-                MvccCommitSequence snapshotSequence) {
+                MvccCommitSequence snapshotSequence,
+                long nextCommandSequence) {
             this.status = status;
             this.commitSequence = commitSequence;
             this.snapshotSequence = snapshotSequence;
+            this.nextCommandSequence = nextCommandSequence;
         }
     }
 }

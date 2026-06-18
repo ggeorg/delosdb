@@ -324,6 +324,32 @@ tasks.register('runMvccCommandSequenceTest', Test) {
 }
 
 
+tasks.register('runMvccStatementSnapshotVisibilityTest', Test) {
+    group = 'verification'
+    description = 'Runs A47 MVCC statement snapshot visibility tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/MvccStatementSnapshotVisibilityTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccStatementSnapshotVisibilityTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccStatementSnapshotVisibilityTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccStatementSnapshotVisibilityTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+
 tasks.register('runDelosMvccCleanupVacuumTest', Test) {
     group = 'verification'
     description = 'Runs Phase 10 experimental DelosDB MVCC cleanup/vacuum tests.'

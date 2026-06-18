@@ -33,6 +33,14 @@ public final class MvccTable<K, V> {
         rows.put(key, new MvccVersionChain<>(value, transaction, commandSequence));
     }
 
+    public synchronized void insert(K key, V value, MvccStatementSnapshot statement) {
+        insert(key, value, statement.transaction(), statement.commandSequence());
+    }
+
+    public synchronized Optional<V> read(K key, MvccStatementSnapshot statement, MvccTransactionCatalog catalog) {
+        return read(key, statement.snapshot(), catalog);
+    }
+
     public synchronized Optional<V> read(K key, MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
         requireSnapshotAndCatalog(snapshot, catalog);
         MvccVersionChain<V> chain = rows.get(key);
@@ -78,6 +86,14 @@ public final class MvccTable<K, V> {
         chainForExistingKey(key).update(value, transaction, snapshot, catalog, commandSequence);
     }
 
+    public synchronized void update(
+            K key,
+            V value,
+            MvccStatementSnapshot statement,
+            MvccTransactionCatalog catalog) {
+        update(key, value, statement.transaction(), statement.snapshot(), catalog, statement.commandSequence());
+    }
+
     public synchronized void delete(K key, MvccTransaction transaction, MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
         delete(key, transaction, snapshot, catalog, MvccCommandSequence.FIRST);
     }
@@ -89,6 +105,13 @@ public final class MvccTable<K, V> {
             MvccTransactionCatalog catalog,
             MvccCommandSequence commandSequence) {
         chainForExistingKey(key).delete(transaction, snapshot, catalog, commandSequence);
+    }
+
+    public synchronized void delete(
+            K key,
+            MvccStatementSnapshot statement,
+            MvccTransactionCatalog catalog) {
+        delete(key, statement.transaction(), statement.snapshot(), catalog, statement.commandSequence());
     }
 
     public synchronized int physicalVersionCount(K key) {
