@@ -164,7 +164,7 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     }
 
     public MvccCleanupResult cleanup(MvccTransactionManager transactionManager) {
-        MvccCommitSequence oldestVisibleThrough = transactionManager.oldestActiveVisibleThrough();
+        MvccCommitSequence oldestVisibleThrough = transactionManager.oldestRetainedVisibleThrough();
         MvccCleanupResult result = table.cleanup(transactionManager);
         for (DelosMvccIndex<K, V> index : indexes.values()) {
             result = result.plus(index.cleanupCandidates(oldestVisibleThrough, transactionManager));

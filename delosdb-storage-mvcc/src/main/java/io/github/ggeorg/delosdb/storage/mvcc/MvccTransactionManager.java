@@ -3,6 +3,7 @@ package io.github.ggeorg.delosdb.storage.mvcc;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.Optional;
 import java.util.Set;
 
@@ -18,7 +19,9 @@ import java.util.Set;
 public final class MvccTransactionManager implements MvccTransactionCatalog {
     private long nextTransactionId = 1L;
     private long currentCommitSequence = 0L;
+    private long nextSnapshotLeaseId = 1L;
     private final Map<MvccTransactionId, TransactionState> transactions = new HashMap<>();
+    private final Map<Long, MvccCommitSequence> retainedSnapshotWatermarks = new LinkedHashMap<>();
 
     public synchronized MvccTransaction begin() {
         MvccTransactionId id = new MvccTransactionId(nextTransactionId++);
@@ -31,14 +34,21 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
 
     public synchronized MvccSnapshot snapshot(MvccTransaction transaction) {
         requireActive(transaction);
-        Set<MvccTransactionId> active = new LinkedHashSet<>();
-        for (Map.Entry<MvccTransactionId, TransactionState> entry : transactions.entrySet()) {
-            if (entry.getValue().status == MvccTransactionStatus.ACTIVE) {
-                active.add(entry.getKey());
-            }
-        }
-        active.remove(transaction.id());
-        return new MvccSnapshot(transaction.id(), new MvccCommitSequence(currentCommitSequence), active);
+        return captureSnapshot(transaction);
+    }
+
+    /**
+     * Opens a retained snapshot. Cleanup/vacuum must keep history required by
+     * the returned view until the lease is closed, even if the owning
+     * transaction finishes first. This is the explicit snapshot watermark used
+     * by A45 to prevent unsafe pruning instead of merely detecting it later.
+     */
+    public synchronized MvccSnapshotLease openSnapshot(MvccTransaction transaction) {
+        requireActive(transaction);
+        MvccSnapshot snapshot = captureSnapshot(transaction);
+        long leaseId = nextSnapshotLeaseId++;
+        retainedSnapshotWatermarks.put(leaseId, snapshot.visibleThrough());
+        return new MvccSnapshotLease(snapshot, () -> closeSnapshotLease(leaseId));
     }
 
     public synchronized MvccCommitSequence commit(MvccTransaction transaction) {
@@ -74,15 +84,28 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
      * commit sequence as the safe high-water mark.
      */
     public synchronized MvccCommitSequence oldestActiveVisibleThrough() {
-        MvccCommitSequence oldest = null;
-        for (TransactionState state : transactions.values()) {
-            if (state.status == MvccTransactionStatus.ACTIVE) {
-                if (oldest == null || state.snapshotSequence.compareTo(oldest) < 0) {
-                    oldest = state.snapshotSequence;
-                }
+        MvccCommitSequence oldest = oldestActiveTransactionSnapshotSequence();
+        return oldest == null ? newestCommitSequence() : oldest;
+    }
+
+    /**
+     * Returns the oldest MVCC visibility high-water mark retained either by an
+     * active transaction or by an explicitly opened snapshot lease. Cleanup and
+     * vacuum must use this boundary so a long-lived snapshot cannot lose the
+     * history it still needs.
+     */
+    public synchronized MvccCommitSequence oldestRetainedVisibleThrough() {
+        MvccCommitSequence oldest = oldestActiveTransactionSnapshotSequence();
+        for (MvccCommitSequence retained : retainedSnapshotWatermarks.values()) {
+            if (oldest == null || retained.compareTo(oldest) < 0) {
+                oldest = retained;
             }
         }
         return oldest == null ? newestCommitSequence() : oldest;
+    }
+
+    public synchronized int retainedSnapshotCount() {
+        return retainedSnapshotWatermarks.size();
     }
 
     @Override
@@ -104,6 +127,33 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
             return Optional.empty();
         }
         return Optional.of(state.commitSequence);
+    }
+
+    private MvccSnapshot captureSnapshot(MvccTransaction transaction) {
+        Set<MvccTransactionId> active = new LinkedHashSet<>();
+        for (Map.Entry<MvccTransactionId, TransactionState> entry : transactions.entrySet()) {
+            if (entry.getValue().status == MvccTransactionStatus.ACTIVE) {
+                active.add(entry.getKey());
+            }
+        }
+        active.remove(transaction.id());
+        return new MvccSnapshot(transaction.id(), new MvccCommitSequence(currentCommitSequence), active);
+    }
+
+    private MvccCommitSequence oldestActiveTransactionSnapshotSequence() {
+        MvccCommitSequence oldest = null;
+        for (TransactionState state : transactions.values()) {
+            if (state.status == MvccTransactionStatus.ACTIVE) {
+                if (oldest == null || state.snapshotSequence.compareTo(oldest) < 0) {
+                    oldest = state.snapshotSequence;
+                }
+            }
+        }
+        return oldest;
+    }
+
+    private synchronized void closeSnapshotLease(long leaseId) {
+        retainedSnapshotWatermarks.remove(leaseId);
     }
 
     private TransactionState requireActive(MvccTransaction transaction) {

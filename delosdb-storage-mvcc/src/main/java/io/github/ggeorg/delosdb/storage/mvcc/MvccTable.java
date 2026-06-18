@@ -100,7 +100,7 @@ public final class MvccTable<K, V> {
     }
 
     public synchronized MvccCleanupResult cleanup(MvccTransactionManager transactionManager) {
-        MvccCommitSequence oldestVisibleThrough = transactionManager.oldestActiveVisibleThrough();
+        MvccCommitSequence oldestVisibleThrough = transactionManager.oldestRetainedVisibleThrough();
         MvccCleanupResult result = new MvccCleanupResult(0);
         Iterator<Map.Entry<K, MvccVersionChain<V>>> iterator = rows.entrySet().iterator();
         while (iterator.hasNext()) {
