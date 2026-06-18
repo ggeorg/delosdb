@@ -15,6 +15,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor
  */
 public final class MvccVersionChain<V> {
     private final List<MvccVersion<V>> newestFirst = new ArrayList<>();
+    private final List<MvccPrunedVersionMarker> prunedHistory = new ArrayList<>();
 
     public MvccVersionChain(V initialValue, MvccTransaction creatingTransaction) {
         newestFirst.add(new MvccVersion<>(initialValue, creatingTransaction.id()));
@@ -26,6 +27,7 @@ public final class MvccVersionChain<V> {
                 return Optional.ofNullable(version.value());
             }
         }
+        throwIfPrunedHistoryWouldHaveBeenVisible(snapshot, catalog);
         return Optional.empty();
     }
 
@@ -54,6 +56,10 @@ public final class MvccVersionChain<V> {
         while (iterator.hasNext()) {
             MvccVersion<V> version = iterator.next();
             if (MvccVisibility.isSafeToPrune(version, oldestVisibleThrough, catalog)) {
+                MvccPrunedVersionMarker marker = version.prunedVersionMarker(catalog);
+                if (marker != null) {
+                    prunedHistory.add(marker);
+                }
                 iterator.remove();
                 removed++;
             }
@@ -90,12 +96,26 @@ public final class MvccVersionChain<V> {
         return newestFirst.isEmpty();
     }
 
+    synchronized List<MvccPrunedVersionMarker> prunedHistoryMarkers() {
+        return List.copyOf(prunedHistory);
+    }
+
     private Optional<MvccVersion<V>> visibleVersion(MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
         for (MvccVersion<V> version : newestFirst) {
             if (MvccVisibility.isVisible(version, snapshot, catalog)) {
                 return Optional.of(version);
             }
         }
+        throwIfPrunedHistoryWouldHaveBeenVisible(snapshot, catalog);
         return Optional.empty();
+    }
+
+    private void throwIfPrunedHistoryWouldHaveBeenVisible(MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
+        for (MvccPrunedVersionMarker marker : prunedHistory) {
+            if (marker.wouldHaveBeenVisible(snapshot, catalog)) {
+                throw new MvccHistoryPrunedException("MVCC history needed by " + snapshot
+                        + " was already pruned (" + marker.describe() + ")");
+            }
+        }
     }
 }

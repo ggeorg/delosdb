@@ -16,6 +16,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor
  */
 public final class MvccTable<K, V> {
     private final Map<K, MvccVersionChain<V>> rows = new LinkedHashMap<>();
+    private final Map<K, List<MvccPrunedVersionMarker>> prunedHistoryByKey = new LinkedHashMap<>();
 
     public synchronized void insert(K key, V value, MvccTransaction transaction) {
         if (rows.containsKey(key)) {
@@ -25,11 +26,17 @@ public final class MvccTable<K, V> {
     }
 
     public synchronized Optional<V> read(K key, MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
+        requireSnapshotAndCatalog(snapshot, catalog);
         MvccVersionChain<V> chain = rows.get(key);
         if (chain == null) {
+            throwIfPrunedHistoryWouldHaveBeenVisible(key, snapshot, catalog);
             return Optional.empty();
         }
-        return chain.visibleValue(snapshot, catalog);
+        Optional<V> visible = chain.visibleValue(snapshot, catalog);
+        if (visible.isEmpty()) {
+            throwIfPrunedHistoryWouldHaveBeenVisible(key, snapshot, catalog);
+        }
+        return visible;
     }
 
     public synchronized MvccScan<K, V> openScan(MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
@@ -39,6 +46,7 @@ public final class MvccTable<K, V> {
             entry.getValue().visibleValue(snapshot, catalog)
                     .ifPresent(value -> visibleRows.add(new MvccRow<>(entry.getKey(), value)));
         }
+        throwIfAnyPrunedHistoryWouldHaveBeenVisible(snapshot, catalog);
         return MvccScan.fromVisibleRows(visibleRows);
     }
 
@@ -97,8 +105,10 @@ public final class MvccTable<K, V> {
         Iterator<Map.Entry<K, MvccVersionChain<V>>> iterator = rows.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<K, MvccVersionChain<V>> entry = iterator.next();
-            result = result.plus(entry.getValue().cleanup(oldestVisibleThrough, transactionManager));
-            if (entry.getValue().isEmpty()) {
+            MvccVersionChain<V> chain = entry.getValue();
+            result = result.plus(chain.cleanup(oldestVisibleThrough, transactionManager));
+            if (chain.isEmpty()) {
+                rememberPrunedHistory(entry.getKey(), chain.prunedHistoryMarkers());
                 iterator.remove();
                 result = result.plus(new MvccCleanupResult(0, 0, 1));
             }
@@ -121,5 +131,35 @@ public final class MvccTable<K, V> {
             throw new MvccWriteConflictException("logical row does not exist: " + key);
         }
         return chain;
+    }
+
+    private void rememberPrunedHistory(K key, List<MvccPrunedVersionMarker> markers) {
+        if (markers.isEmpty()) {
+            return;
+        }
+        prunedHistoryByKey.computeIfAbsent(key, ignored -> new ArrayList<>()).addAll(markers);
+    }
+
+    private void throwIfAnyPrunedHistoryWouldHaveBeenVisible(MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
+        for (Map.Entry<K, List<MvccPrunedVersionMarker>> entry : prunedHistoryByKey.entrySet()) {
+            throwIfPrunedHistoryWouldHaveBeenVisible(entry.getKey(), entry.getValue(), snapshot, catalog);
+        }
+    }
+
+    private void throwIfPrunedHistoryWouldHaveBeenVisible(K key, MvccSnapshot snapshot, MvccTransactionCatalog catalog) {
+        throwIfPrunedHistoryWouldHaveBeenVisible(key, prunedHistoryByKey.getOrDefault(key, List.of()), snapshot, catalog);
+    }
+
+    private void throwIfPrunedHistoryWouldHaveBeenVisible(
+            K key,
+            List<MvccPrunedVersionMarker> markers,
+            MvccSnapshot snapshot,
+            MvccTransactionCatalog catalog) {
+        for (MvccPrunedVersionMarker marker : markers) {
+            if (marker.wouldHaveBeenVisible(snapshot, catalog)) {
+                throw new MvccHistoryPrunedException("MVCC history for logical row " + key
+                        + " needed by " + snapshot + " was already pruned (" + marker.describe() + ")");
+            }
+        }
     }
 }

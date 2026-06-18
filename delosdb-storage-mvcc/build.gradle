@@ -246,6 +246,32 @@ tasks.register('runMvccKernelReviewCloseoutTest', Test) {
 }
 
 
+tasks.register('runMvccHistoryPrunedSafetyTest', Test) {
+    group = 'verification'
+    description = 'Runs A44 MVCC missing-history / prune-safety tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/MvccHistoryPrunedSafetyTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccHistoryPrunedSafetyTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccHistoryPrunedSafetyTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccHistoryPrunedSafetyTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+
 tasks.register('runDelosMvccCleanupVacuumTest', Test) {
     group = 'verification'
     description = 'Runs Phase 10 experimental DelosDB MVCC cleanup/vacuum tests.'

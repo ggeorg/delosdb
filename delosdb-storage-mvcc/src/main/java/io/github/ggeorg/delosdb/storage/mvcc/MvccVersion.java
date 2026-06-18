@@ -61,4 +61,15 @@ public final class MvccVersion<V> {
                 .map(sequence -> sequence.isAtOrBefore(highWaterMark))
                 .orElse(false);
     }
+
+    MvccPrunedVersionMarker prunedVersionMarker(MvccTransactionCatalog catalog) {
+        if (wasCreatedByAbortedTransaction(catalog)) {
+            return null;
+        }
+        if (deletedBy.isNone() || catalog.statusOf(deletedBy) != MvccTransactionStatus.COMMITTED) {
+            return null;
+        }
+        return new MvccPrunedVersionMarker(createdBy, deletedBy);
+    }
 }
+
