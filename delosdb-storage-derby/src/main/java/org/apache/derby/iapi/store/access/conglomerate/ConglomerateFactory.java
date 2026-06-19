@@ -33,7 +33,7 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 /**
 
@@ -87,7 +87,7 @@ public interface ConglomerateFactory extends MethodFactory
     TransactionManager      xact_mgr,
     int                     segment,
     long                    input_containerid,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]       template,
 	ColumnOrdering[]		columnOrder,
     int[]                   collationIds,
     Properties              properties,

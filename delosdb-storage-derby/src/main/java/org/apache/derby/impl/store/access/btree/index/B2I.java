@@ -51,6 +51,8 @@ import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 
@@ -496,7 +498,7 @@ public class B2I extends BTree
     TransactionManager      xact_manager,
     int                     segmentId, 
     long                    input_conglomid, 
-    DataValueDescriptor[]	template, 
+    StoreDataValue[]	template, 
 	ColumnOrdering[]	    columnOrder,
     int[]                   collationIds,
     Properties              properties,
@@ -557,7 +559,7 @@ public class B2I extends BTree
                 "rowLocationColumn is not the last column in the index");
             SanityManager.ASSERT(
                 template[rowLocationColumn] instanceof 
-                    RowLocation);
+                    StoreRowLocation);
 
             // There must be at least one key column
 			if (rowLocationColumn < 1)

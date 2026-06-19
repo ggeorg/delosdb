@@ -80,7 +80,7 @@ class CardinalityCounter implements RowLocationRetRowSource
 	public DataValueDescriptor[] getNextRowFromRowSource() throws StandardException
 	{
 		DataValueDescriptor[] nextRow;
-		nextRow = rowSource.getNextRowFromRowSource();
+		nextRow = (DataValueDescriptor[]) rowSource.getNextRowFromRowSource();
 		if (nextRow != null)
 			keepCount(nextRow);
 		return nextRow;

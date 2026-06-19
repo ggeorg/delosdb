@@ -35,7 +35,7 @@ import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 
 import java.io.IOException; 
@@ -128,7 +128,7 @@ public final class ConglomerateUtil
      *
      **/
     public static int[] createFormatIds(
-    DataValueDescriptor[]    template)
+    StoreDataValue[]        template)
     {
 
         // get format id's from each column in template
@@ -344,7 +344,7 @@ public final class ConglomerateUtil
     Page                    page,
     int                     start_slot,
     boolean                 full_rh,
-    DataValueDescriptor[]   template)
+    StoreDataValue[]       template)
     {
         if (SanityManager.DEBUG)
         {

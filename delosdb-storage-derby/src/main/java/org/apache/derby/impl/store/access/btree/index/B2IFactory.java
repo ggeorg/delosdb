@@ -46,7 +46,7 @@ import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.impl.store.access.btree.BTree;
 import org.apache.derby.impl.store.access.btree.ControlRow;
@@ -168,7 +168,7 @@ public class B2IFactory implements ConglomerateFactory, ModuleControl
     TransactionManager      xact_mgr,
     int                     segment,
     long                    input_containerid,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]       template,
 	ColumnOrdering[]        columnOrder,
     int[]                   collationIds,
     Properties              properties,

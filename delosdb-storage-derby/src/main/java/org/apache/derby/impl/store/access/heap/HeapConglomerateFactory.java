@@ -50,6 +50,7 @@ import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.services.uuid.UUIDFactory;
 
@@ -167,7 +168,7 @@ public class HeapConglomerateFactory implements ConglomerateFactory, ModuleContr
     TransactionManager      xact_mgr,
     int                     segment,
     long                    input_containerid,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]       template,
 	ColumnOrdering[]        columnOrder,
     int[]                   collationIds,
     Properties              properties,

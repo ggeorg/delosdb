@@ -1528,7 +1528,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             
 			// get the next row and its valid columns from the rowSource
 			DataValueDescriptor[] row;
-            while ((row = rowSource.getNextRowFromRowSource()) != null)
+            while ((row = (DataValueDescriptor[]) rowSource.getNextRowFromRowSource()) != null)
             {
                 num_rows_loaded++;
 

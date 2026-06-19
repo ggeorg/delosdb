@@ -44,6 +44,7 @@ import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
 import org.apache.derby.impl.store.access.conglomerate.GenericConglomerate;
@@ -430,7 +431,7 @@ public abstract class BTree extends GenericConglomerate
     Transaction             rawtran,
     int                     segmentId,
     long                    input_containerid,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]       template,
     Properties              properties,
     int                     conglom_format_id,
 	int                     tmpFlag

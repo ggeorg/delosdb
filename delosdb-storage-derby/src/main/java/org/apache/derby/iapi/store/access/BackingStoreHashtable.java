@@ -372,7 +372,7 @@ public class BackingStoreHashtable
 	private DataValueDescriptor[] getNextRowFromRowSource()
 		throws StandardException
 	{
-		DataValueDescriptor[] row = row_source.getNextRowFromRowSource();
+		DataValueDescriptor[] row = (DataValueDescriptor[]) row_source.getNextRowFromRowSource();
 
 		if (skipNullKeyColumns)
 		{
@@ -393,7 +393,7 @@ public class BackingStoreHashtable
 					return row;
 				}
 				// 1 or more null key columns
-				row = row_source.getNextRowFromRowSource();
+				row = (DataValueDescriptor[]) row_source.getNextRowFromRowSource();
 			}
 		}
 		return row;

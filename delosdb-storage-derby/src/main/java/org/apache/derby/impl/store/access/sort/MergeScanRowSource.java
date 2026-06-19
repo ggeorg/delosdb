@@ -31,8 +31,7 @@ import org.apache.derby.iapi.store.access.conglomerate.ScanControllerRowSource;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.access.SortObserver;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import java.util.List;
@@ -80,10 +79,10 @@ public class MergeScanRowSource extends MergeScan implements ScanControllerRowSo
     /* Public Methods of RowSource class: */
 
 
-    public DataValueDescriptor[] getNextRowFromRowSource() 
+    public StoreDataValue[] getNextRowFromRowSource() 
         throws StandardException
     {
-		DataValueDescriptor[] row = (DataValueDescriptor[]) sortBuffer.removeFirst();
+		StoreDataValue[] row = sortBuffer.removeFirst();
 
 		if (row != null)
 		{

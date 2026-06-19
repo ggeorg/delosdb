@@ -64,6 +64,7 @@ import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 
 import org.apache.derby.iapi.services.cache.ClassSize;
@@ -237,7 +238,7 @@ public class Heap
     Transaction             rawtran,
     int                     segmentId,
     long                    input_containerid,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]       template,
     ColumnOrdering[]        columnOrder,
     int[]                   collationIds,
     Properties              properties,

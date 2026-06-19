@@ -23,7 +23,7 @@ package org.apache.derby.iapi.store.access;
 
 import org.apache.derby.shared.common.error.StandardException;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -70,7 +70,7 @@ public interface RowSource {
 
 		@exception StandardException Standard Derby Error Policy
 	 */
-	public DataValueDescriptor[] getNextRowFromRowSource() 
+	public StoreDataValue[] getNextRowFromRowSource() 
         throws StandardException;
 
 	/**

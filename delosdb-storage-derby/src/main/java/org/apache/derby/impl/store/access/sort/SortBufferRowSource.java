@@ -26,11 +26,12 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.access.SortObserver;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
+
 import org.apache.derby.iapi.store.access.conglomerate.ScanControllerRowSource;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -82,12 +83,12 @@ public class SortBufferRowSource extends Scan
     /* Public Methods of This class: */
     /* Public Methods of RowSource class: */
 
-    public DataValueDescriptor[] getNextRowFromRowSource()
+    public StoreDataValue[] getNextRowFromRowSource()
     {
 		if (sortBuffer == null)	// has been closed
 			return null;
 
-		DataValueDescriptor[] retval = (DataValueDescriptor[]) sortBuffer.removeFirst();
+		StoreDataValue[] retval = sortBuffer.removeFirst();
 
 		// Return the removed object to the free DataValueDescriptor[]
 		if (retval != null && writingToDisk)
@@ -190,7 +191,7 @@ public class SortBufferRowSource extends Scan
      *
      * @see org.apache.derby.iapi.store.access.ScanController#fetchWithoutQualify
      **/
-    public void fetchWithoutQualify(DataValueDescriptor[] result) 
+    public void fetchWithoutQualify(StoreDataValue[] result) 
         throws StandardException
     {
         throw StandardException.newException(
@@ -202,13 +203,13 @@ public class SortBufferRowSource extends Scan
      *
      * @see org.apache.derby.iapi.store.access.ScanController#fetch
      **/
-    public void fetch(DataValueDescriptor[] result) throws StandardException
+    public void fetch(StoreDataValue[] result) throws StandardException
 	{
         throw StandardException.newException(
                 SQLState.SORT_IMPROPER_SCAN_METHOD);
 	}
 
-    public final boolean fetchNext(DataValueDescriptor[] row) 
+    public final boolean fetchNext(StoreDataValue[] row) 
         throws StandardException
 	{
         throw StandardException.newException(
