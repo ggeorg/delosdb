@@ -4929,9 +4929,14 @@ tasks.register('verifyLegacyDerbyKernelB5DependencyDecision') {
         if (serviceIoImports.isEmpty()) {
             throw new GradleException('B5 expected relocated store to still depend on org.apache.derby.iapi.services.io before the serialization boundary is cut')
         }
-        if (!catalogImports.any { it.importedType == 'org.apache.derby.catalog.UUID' } ||
-                !uuidImports.any { it.importedType == 'org.apache.derby.iapi.services.uuid.UUIDFactory' }) {
-            throw new GradleException('B5 expected UUID/catalog boundary to remain an explicit blocker')
+        def kernelUuidFactory = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/uuid/UUIDFactory.java')
+        def b5eUuidBoundaryResolved = kernelUuidFactory.isFile() &&
+                catalogImports.every { it.importedType != 'org.apache.derby.catalog.UUID' } &&
+                uuidImports.any { it.importedType == 'org.apache.derby.iapi.services.uuid.UUIDFactory' }
+        def b5UuidBoundaryStillExplicit = catalogImports.any { it.importedType == 'org.apache.derby.catalog.UUID' } &&
+                uuidImports.any { it.importedType == 'org.apache.derby.iapi.services.uuid.UUIDFactory' }
+        if (!b5UuidBoundaryStillExplicit && !b5eUuidBoundaryResolved) {
+            throw new GradleException('B5 expected UUID/catalog boundary either to remain explicit or to be resolved by B5e UUIDFactory extraction')
         }
         if (file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/types').exists()) {
             throw new GradleException('B5 must not move all iapi.types into the kernel in this decision gate')
