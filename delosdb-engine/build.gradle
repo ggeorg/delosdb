@@ -9,6 +9,7 @@ group = rootProject.group
 
 def moduleName = 'org.apache.derby.engine'
 def sourceRoot = rootProject.file('delosdb-engine/src/main/java')
+def resourceRoot = rootProject.file('delosdb-engine/src/main/resources')
 def legacyDerbyStorageSourceRoot = rootProject.file('delosdb-storage-derby/src/main/java')
 def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
 def rootGeneratedSourceRoot = rootProject.layout.buildDirectory.dir("generated/sources/${moduleName}")
@@ -77,6 +78,15 @@ tasks.register('compileDerbyEngine', JavaCompile) {
     ])
 }
 
+
+tasks.register('copyEngineServiceDescriptors', Copy) {
+    dependsOn 'compileDerbyEngine'
+    from(resourceRoot) {
+        include 'META-INF/services/**'
+    }
+    into moduleClassDir
+}
+
 tasks.register('compileClassSizeCatalog', JavaCompile) {
     dependsOn 'compileDerbyEngine', ':delosdb-spi:compileDelosDbSpi', ':generateClassSizeCatalog'
     source = files(rootGeneratedSourceRoot.map {
@@ -94,7 +104,7 @@ tasks.register('compileClassSizeCatalog', JavaCompile) {
 }
 
 tasks.register('classes') {
-    dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog'
+    dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog', 'copyEngineServiceDescriptors'
 }
 
 
@@ -111,7 +121,7 @@ tasks.named('assemble') {
 def engineArchiveName = 'derby.jar'
 
 tasks.register('derbyJar', Jar) {
-    dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog', ':processDerbyResources', ':splitEngineMessages', ':generateOdbcMetadata'
+    dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog', 'copyEngineServiceDescriptors', ':processDerbyResources', ':splitEngineMessages', ':generateOdbcMetadata'
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE

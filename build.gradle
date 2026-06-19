@@ -4488,6 +4488,17 @@ tasks.register('verifyLegacyDerbyKernelMonitorExtraction') {
         if (!new File(delosdbB3bEngineImplMonitorRoot, 'EngineContextKernelSupport.java').isFile()) {
             throw new GradleException('B3b missing repackaged engine-side EngineContextKernelSupport')
         }
+        def engineServiceDescriptor = file('delosdb-engine/src/main/resources/META-INF/services/org.apache.derby.iapi.services.monitor.MonitorKernelSupport')
+        if (!engineServiceDescriptor.isFile()) {
+            throw new GradleException('B3b missing classpath ServiceLoader descriptor for MonitorKernelSupport')
+        }
+        if (!engineServiceDescriptor.text.contains('org.apache.derby.impl.services.monitor.EngineMonitorKernelSupport')) {
+            throw new GradleException('B3b MonitorKernelSupport service descriptor must name EngineMonitorKernelSupport')
+        }
+        def registryText = new File(delosdbB3bKernelMonitorRoot, 'MonitorKernelSupportRegistry.java').text
+        if (!registryText.contains('classPathFallbackSupport()')) {
+            throw new GradleException('B3b MonitorKernelSupportRegistry must support classpath-era Derby boot')
+        }
         def monitorText = new File(delosdbB3bKernelMonitorRoot, 'Monitor.java').text
         ['FileMonitor', 'SecurityUtil', 'PropertyUtil', 'InstanceGetter'].each { forbidden ->
             if (monitorText.contains(forbidden) && forbidden != 'FileMonitor') {

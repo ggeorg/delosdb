@@ -41,13 +41,44 @@ public final class MonitorKernelSupportRegistry
         synchronized (MonitorKernelSupportRegistry.class) {
             current = support;
             if (current == null) {
-                current = ServiceLoader.load(MonitorKernelSupport.class)
-                        .findFirst()
-                        .orElseThrow(() -> new IllegalStateException(
-                                "No engine MonitorKernelSupport provider is available"));
+                current = serviceLoaderSupport();
+                if (current == null) {
+                    current = classPathFallbackSupport();
+                }
+                if (current == null) {
+                    throw new IllegalStateException(
+                            "No engine MonitorKernelSupport provider is available");
+                }
                 support = current;
             }
             return current;
+        }
+    }
+
+    private static MonitorKernelSupport serviceLoaderSupport()
+    {
+        return ServiceLoader.load(MonitorKernelSupport.class)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Derby's inherited language suite executes the runtime jars on the classpath.
+     * In that shape, JPMS {@code provides} clauses are not service descriptors.
+     * Keep ServiceLoader as the module-path path, but fall back to the engine
+     * provider by name so classpath-era Derby boot still works.
+     */
+    private static MonitorKernelSupport classPathFallbackSupport()
+    {
+        try {
+            Class<?> providerClass = Class.forName(
+                    "org.apache.derby.impl.services.monitor.EngineMonitorKernelSupport",
+                    true,
+                    MonitorKernelSupportRegistry.class.getClassLoader());
+            Object provider = providerClass.getDeclaredConstructor().newInstance();
+            return (MonitorKernelSupport) provider;
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return null;
         }
     }
 
