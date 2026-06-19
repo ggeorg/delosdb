@@ -4683,6 +4683,12 @@ tasks.register('verifyLegacyDerbyKernelPropertyCacheLockExtraction') {
         if (!delosdbB4KernelBuild.text.contains('compileDelosDbEngineKernelClassSizeCatalog')) {
             throw new GradleException('B4 kernel build must compile generated ClassSizeCatalogImpl into the kernel module')
         }
+        if (!delosdbB4KernelBuild.text.contains('rootProject.ext.delosdbConfigureJavaCompile(delegate') ||
+                !delosdbB4KernelBuild.text.contains('commonsModuleClassDir,') ||
+                !delosdbB4KernelBuild.text.contains('moduleClassDir,') ||
+                !delosdbB4KernelBuild.text.contains('spiModuleClassDir')) {
+            throw new GradleException('B4 kernel ClassSizeCatalogImpl compile task must use the kernel JPMS module path')
+        }
         if (!delosdbB4EngineBuild.text.contains("dependsOn ':delosdb-engine-kernel:compileDelosDbEngineKernelClassSizeCatalog'")) {
             throw new GradleException('B4 engine build must delegate ClassSizeCatalogImpl compilation to the kernel module')
         }
