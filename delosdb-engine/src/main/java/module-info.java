@@ -133,6 +133,9 @@ module org.apache.derby.engine
     provides org.apache.derby.iapi.services.security.StoreSecuritySupport
         with org.apache.derby.impl.security.EngineStoreSecuritySupport;
 
+    provides org.apache.derby.iapi.store.types.StoreTypeSupport
+        with org.apache.derby.impl.store.types.EngineStoreTypeSupport;
+
     //
     // ALLOW RESOURCE LOOKUP VIA REFLECTION
     //

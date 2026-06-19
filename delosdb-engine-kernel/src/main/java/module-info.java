@@ -67,4 +67,5 @@ module io.github.ggeorg.delosdb.engine.kernel {
     uses org.apache.derby.iapi.services.monitor.MonitorKernelSupport;
     uses org.apache.derby.iapi.util.InterruptStatusKernelSupport;
     uses org.apache.derby.iapi.services.security.StoreSecuritySupport;
+    uses org.apache.derby.iapi.store.types.StoreTypeSupport;
 }
