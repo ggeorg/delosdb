@@ -4167,3 +4167,150 @@ tasks.register('verifyLegacyDerbyKernelLowRiskIoExtraction') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelLowRiskIoExtraction'
 }
+
+// -----------------------------------------------------------------------------
+// B3a — Engine-kernel context service extraction guard
+// -----------------------------------------------------------------------------
+
+def delosdbB3aKernelContextRoot = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/context')
+def delosdbB3aEngineContextRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/context')
+def delosdbB3aKernelModuleInfo = file('delosdb-engine-kernel/src/main/java/module-info.java')
+def delosdbB3aEngineModuleInfo = file('delosdb-engine/src/main/java/module-info.java')
+def delosdbB3aEngineMonitorFile = file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/monitor/Monitor.java')
+def delosdbB3aEngineSupportFile = file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/monitor/EngineContextKernelSupport.java')
+
+def delosdbB3aJavaSourcesUnder = { File root ->
+    return root.exists() ? fileTree(root) { include '**/*.java' }.files.sort { it.path } : []
+}
+
+def delosdbB3aImportsByClass = { File root ->
+    def imports = new TreeMap<String, Integer>()
+    delosdbB3aJavaSourcesUnder(root).each { source ->
+        source.eachLine { line ->
+            def trimmed = line.trim()
+            if (trimmed.startsWith('import ') && trimmed.endsWith(';')) {
+                def imported = trimmed.substring('import '.length(), trimmed.length() - 1)
+                imports[imported] = (imports[imported] ?: 0) + 1
+            }
+        }
+    }
+    return imports
+}
+
+tasks.register('legacyDerbyStoreKernelB3aContextReport') {
+    group = 'verification'
+    description = 'B3a: reports the context-service extraction and the support seam that avoids a kernel-to-engine cycle.'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b3a-context.txt'))
+    doLast {
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b3a-context.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        def imports = delosdbB3aImportsByClass(delosdbB3aKernelContextRoot)
+        def importLines = imports.collect { imported, count -> String.format('  %-90s %5d', imported, count) }.join('\n')
+        reportFile.text = """DelosDB B3a legacy Derby context extraction report
+====================================================
+
+Moved in B3a
+------------
+org.apache.derby.iapi.services.context
+
+Why B3a needs a support seam
+----------------------------
+The inherited context service is thread/session-global infrastructure used by
+both the engine and the legacy store. In the original Derby tree it called
+Monitor, PropertyUtil, and SecurityUtil directly. Moving it directly into the
+kernel would create a kernel-to-engine dependency cycle and would accidentally
+pull SQL-facing security/property/monitor implementation code into the kernel.
+
+B3a therefore moves the whole context package and adds a small kernel-owned
+ContextKernelSupport seam. The engine monitor installs EngineContextKernelSupport,
+which delegates back to the existing Monitor and PropertyUtil behavior at runtime.
+
+Deferred to B3b
+---------------
+org.apache.derby.iapi.services.monitor remains in delosdb-engine for the next
+separate monitor/boot-machine move.
+
+Deferred to B4
+--------------
+org.apache.derby.iapi.services.property remains in delosdb-engine for the
+separate property/cache/lock move.
+
+Kernel context imports by exact class
+-------------------------------------
+${importLines ?: '  <none>'}
+
+B3a rule applied
+----------------
+Move whole context package only. Do not move monitor or property machinery in
+this step. Avoid a kernel-to-engine cycle through the ContextKernelSupport seam.
+"""
+        logger.lifecycle('Wrote ' + reportFile)
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelContextExtraction') {
+    group = 'verification'
+    description = 'B3a: verifies org.apache.derby.iapi.services.context moved as a whole package into delosdb-engine-kernel.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB3aContextReport'
+    doLast {
+        def expectedFiles = [
+                'Context.java',
+                'ContextImpl.java',
+                'ContextKernelSupport.java',
+                'ContextKernelSupportRegistry.java',
+                'ContextManager.java',
+                'ContextService.java',
+                'StoreExecutionContext.java',
+                'SystemContext.java'
+        ]
+        def missing = expectedFiles.findAll { name -> !new File(delosdbB3aKernelContextRoot, name).isFile() }
+        if (!missing.isEmpty()) {
+            throw new GradleException('B3a missing kernel-owned context source file(s): ' + missing.join(', '))
+        }
+        def kernelFiles = delosdbB3aJavaSourcesUnder(delosdbB3aKernelContextRoot)
+        if (kernelFiles.size() != expectedFiles.size()) {
+            throw new GradleException('B3a expected exactly ' + expectedFiles.size() + ' context source files in delosdb-engine-kernel, found ' + kernelFiles.size())
+        }
+        if (delosdbB3aEngineContextRoot.exists() && !delosdbB3aJavaSourcesUnder(delosdbB3aEngineContextRoot).isEmpty()) {
+            throw new GradleException('B3a stale org.apache.derby.iapi.services.context source files remain under delosdb-engine. Run scripts/cleanup-legacy-derby-kernel-b3a.sh')
+        }
+        def forbiddenImports = [
+                'org.apache.derby.iapi.services.monitor.',
+                'org.apache.derby.iapi.services.property.',
+                'org.apache.derby.iapi.security.'
+        ]
+        def offenders = []
+        kernelFiles.each { source ->
+            source.eachLine { line ->
+                def trimmed = line.trim()
+                if (trimmed.startsWith('import ')) {
+                    forbiddenImports.each { forbidden ->
+                        if (trimmed.contains(forbidden)) {
+                            offenders << source.path + ': ' + trimmed
+                        }
+                    }
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('B3a kernel-owned context package must not import monitor/property/security directly:\n' + offenders.join('\n'))
+        }
+        if (!delosdbB3aKernelModuleInfo.text.contains('exports org.apache.derby.iapi.services.context')) {
+            throw new GradleException('B3a kernel module must export org.apache.derby.iapi.services.context')
+        }
+        if (delosdbB3aEngineModuleInfo.text.contains('exports org.apache.derby.iapi.services.context')) {
+            throw new GradleException('B3a engine module must no longer export org.apache.derby.iapi.services.context')
+        }
+        if (!delosdbB3aEngineSupportFile.isFile()) {
+            throw new GradleException('B3a missing engine-side EngineContextKernelSupport')
+        }
+        if (!delosdbB3aEngineMonitorFile.text.contains('ContextKernelSupportRegistry.install(new EngineContextKernelSupport())')) {
+            throw new GradleException('B3a Monitor must install EngineContextKernelSupport for the kernel-owned context package')
+        }
+        logger.lifecycle('Verified B3a context service extraction into delosdb-engine-kernel')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelContextExtraction'
+}

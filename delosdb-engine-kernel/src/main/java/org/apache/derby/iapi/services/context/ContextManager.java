@@ -30,11 +30,7 @@ import org.apache.derby.shared.common.error.ShutdownException;
 
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.error.ExceptionUtil;
-import org.apache.derby.iapi.services.monitor.Monitor;
-
 import org.apache.derby.shared.common.reference.Property;
-import org.apache.derby.iapi.services.property.PropertyUtil;
-
 import org.apache.derby.shared.common.error.ExceptionSeverity;
 import org.apache.derby.shared.common.i18n.LocaleFinder;
 import org.apache.derby.shared.common.info.JVMInfo;
@@ -482,7 +478,7 @@ cleanup:	for (int index = holder.size() - 1; index >= 0; index--) {
 	private Locale messageLocale;
 
 	public void setMessageLocale(String localeID) throws StandardException {
-		this.messageLocale = Monitor.getLocaleFromString(localeID);
+		this.messageLocale = ContextKernelSupportRegistry.get().getLocaleFromString(localeID);
 	}
 
 	public Locale getMessageLocale()
@@ -573,10 +569,15 @@ cleanup:	for (int index = holder.size() - 1; index >= 0; index--) {
 		errorStream = stream;
 		owningCsf = csf;
 
-		logSeverityLevel = PropertyUtil.getSystemInt(Property.LOG_SEVERITY_LEVEL,
-			SanityManager.DEBUG ? 0 : ExceptionSeverity.SESSION_SEVERITY);
-        extDiagSeverityLevel = PropertyUtil.getSystemInt(
+		logSeverityLevel = ContextKernelSupportRegistry.get().getSystemInt(
+                Property.LOG_SEVERITY_LEVEL,
+                0,
+                Integer.MAX_VALUE,
+                SanityManager.DEBUG ? 0 : ExceptionSeverity.SESSION_SEVERITY);
+        extDiagSeverityLevel = ContextKernelSupportRegistry.get().getSystemInt(
                 Property.EXT_DIAG_SEVERITY_LEVEL,
+                0,
+                Integer.MAX_VALUE,
                 ExceptionSeverity.SESSION_SEVERITY);
 	}
 

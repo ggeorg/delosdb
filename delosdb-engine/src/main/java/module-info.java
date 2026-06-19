@@ -181,9 +181,6 @@ module org.apache.derby.engine
     exports org.apache.derby.iapi.services.cache to
         org.apache.derby.tests;
 
-    exports org.apache.derby.iapi.services.context to
-        org.apache.derby.tests;
-
     exports org.apache.derby.iapi.services.crypto to
         org.apache.derby.optionaltools,
         org.apache.derby.tests;

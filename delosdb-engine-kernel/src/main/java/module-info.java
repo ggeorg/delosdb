@@ -10,4 +10,8 @@ module io.github.ggeorg.delosdb.engine.kernel {
     requires org.apache.derby.commons;
 
     exports org.apache.derby.io;
+    exports org.apache.derby.iapi.services.context to
+        org.apache.derby.engine,
+        org.apache.derby.optionaltools,
+        org.apache.derby.tests;
 }

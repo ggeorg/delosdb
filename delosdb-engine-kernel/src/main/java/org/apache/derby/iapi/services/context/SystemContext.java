@@ -23,8 +23,6 @@ package org.apache.derby.iapi.services.context;
 
 import org.apache.derby.shared.common.error.ShutdownException;
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.iapi.services.monitor.ModuleFactory;
-import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.shared.common.error.ExceptionSeverity;
 /**
 	A context that shuts the system down if it gets an StandardException
@@ -71,22 +69,13 @@ final class SystemContext extends ContextImpl
 			// try to print out that the shutdown is occurring.
 			// REVISIT: does this need to be a localizable message?
 			System.err.println("Shutting down due to severe error.");
-			Monitor.getStream().printlnWithHeader("Shutting down due to severe error." + t.getMessage());
+			ContextKernelSupportRegistry.get().getErrorStream().printlnWithHeader("Shutting down due to severe error." + t.getMessage());
 
 		} finally {
 			// we need this to happen even if we fail to print out a notice
-			getMonitor().shutdown();
+			ContextKernelSupportRegistry.get().shutdownSystem();
 		}
 
 	}
-
-    /**
-     * Must be private so that user code
-     * can't call this entry point.
-     */
-    private  static  ModuleFactory  getMonitor()
-    {
-        return Monitor.getMonitor();
-    }
 }
 

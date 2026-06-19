@@ -25,8 +25,6 @@ import java.util.HashSet;
 import java.util.Stack;
 
 import org.apache.derby.shared.common.error.ShutdownException;
-import org.apache.derby.iapi.security.SecurityUtil;
-import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.stream.HeaderPrintWriter;
 
@@ -177,7 +175,7 @@ public final class ContextService //OLD extends Hashtable
 	public ContextService() {
 
 		// find the error stream
-		errorStream = Monitor.getStream();		
+		errorStream = ContextKernelSupportRegistry.get().getErrorStream();		
 
 		ContextService.factory = this;
 
@@ -185,13 +183,24 @@ public final class ContextService //OLD extends Hashtable
 
 	}
 
+
+    /**
+     * SecurityManager support was removed from Derby/DelosDB. The former
+     * SecurityUtil.checkDerbyInternalsPrivilege() call is now a no-op; keeping
+     * the no-op here lets the context package move into the kernel without
+     * pulling SQL-facing security classes upward with it.
+     */
+    private static void checkDerbyInternalsPrivilege()
+    {
+    }
+
 	/**
 		So it can be given to us and taken away...
 	 */
 	public static void stop()
     {
         // Verify that we have permission to execute this method.
-        SecurityUtil.checkDerbyInternalsPrivilege();
+        checkDerbyInternalsPrivilege();
         
 		// For some unknown reason, the ContextManager and
 		// ContextService objects will not be garbage collected
@@ -209,7 +218,7 @@ public final class ContextService //OLD extends Hashtable
 	public static ContextService getFactory()
     {
         // Verify that we have permission to execute this method.
-        SecurityUtil.checkDerbyInternalsPrivilege();
+        checkDerbyInternalsPrivilege();
         
 		ContextService csf = factory;
 
@@ -227,7 +236,7 @@ public final class ContextService //OLD extends Hashtable
 	public static Context getContext(String contextId)
     {
         // Verify that we have permission to execute this method.
-        SecurityUtil.checkDerbyInternalsPrivilege();
+        checkDerbyInternalsPrivilege();
         
 		ContextManager cm = getFactory().getCurrentContextManager();
 
@@ -250,7 +259,7 @@ public final class ContextService //OLD extends Hashtable
 	public static Context getContextOrNull(String contextId)
     {
         // Verify that we have permission to execute this method.
-        SecurityUtil.checkDerbyInternalsPrivilege();
+        checkDerbyInternalsPrivilege();
         
 		ContextService csf = factory;
 
