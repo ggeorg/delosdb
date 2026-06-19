@@ -71,6 +71,7 @@ import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.GroupFetchScanController;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.RowLocationRetRowSource;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.access.RowSource;
 import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.ScanController;
@@ -3396,7 +3397,7 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
 	 * @see RowLocationRetRowSource#rowLocation
 	 * @exception StandardException on error
 	 */
-	public void rowLocation(RowLocation rl)
+	public void rowLocation(StoreRowLocation rl)
 		throws StandardException
 	{
 		/* Set up sorters, etc. if 1st row and there are indexes */
@@ -3415,7 +3416,7 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
 			}
 			for (int index = 0; index < maxIndex; index++)
 			{
-				insertIntoSorter(index, rl);
+				insertIntoSorter(index, (RowLocation) rl);
 			}
 		}
 	}
@@ -3802,7 +3803,7 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
 	}
 
     public void offendingRowLocation(
-            RowLocation rl, long containdId) throws StandardException {
+            StoreRowLocation rl, long containdId) throws StandardException {
         if (SanityManager.DEBUG) {
             SanityManager.NOTREACHED();
         }

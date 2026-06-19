@@ -26,7 +26,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.access.SortObserver;
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.access.conglomerate.ScanControllerRowSource;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 
@@ -116,14 +116,14 @@ public class SortBufferRowSource extends Scan
 		return false;
 	}
 
-	public void rowLocation(RowLocation rl)
+	public void rowLocation(StoreRowLocation rl)
 	{
 		if (SanityManager.DEBUG)
 			SanityManager.THROWASSERT("unexpected call to RowSource.rowLocation");
 	}
 
     public void offendingRowLocation(
-            RowLocation rl, long containdId) throws StandardException {
+            StoreRowLocation rl, long containdId) throws StandardException {
         if (SanityManager.DEBUG) {
             SanityManager.NOTREACHED();
         }

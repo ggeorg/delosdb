@@ -28,7 +28,7 @@ import org.apache.derby.iapi.store.access.SortCostController;
 import org.apache.derby.iapi.store.access.ColumnOrdering;
 import org.apache.derby.iapi.store.access.TransactionController;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 /**
 
@@ -56,7 +56,7 @@ public interface SortFactory extends MethodFactory
     TransactionController   tran,
     int                     segment,
     Properties              implParameters,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]         template,
     ColumnOrdering          columnOrdering[],
     SortObserver          	sortObserver,
     boolean                 alreadyInOrder,

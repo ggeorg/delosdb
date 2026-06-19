@@ -40,7 +40,7 @@ import org.apache.derby.iapi.store.access.SortCostController;
 import org.apache.derby.iapi.store.access.ColumnOrdering;
 import org.apache.derby.iapi.store.access.TransactionController;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.services.uuid.UUIDFactory;
 
@@ -165,7 +165,7 @@ public class ExternalSortFactory implements
     TransactionController   tran,
     int                     segment,
     Properties              implParameters,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]         template,
     ColumnOrdering          columnOrdering[],
     SortObserver          	sortObserver,
     boolean                 alreadyInOrder,
@@ -291,7 +291,7 @@ public class ExternalSortFactory implements
 	 * @exception  StandardException  Standard exception policy.
      **/
 	public double getSortCost(
-    DataValueDescriptor[]   template,
+    StoreDataValue[]         template,
     ColumnOrdering          columnOrdering[],
     boolean                 alreadyInOrder,
     long                    estimatedInputRows,

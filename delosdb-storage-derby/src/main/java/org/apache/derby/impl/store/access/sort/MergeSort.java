@@ -39,7 +39,6 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.StreamContainerHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
-import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.shared.common.sanity.SanityManager;
@@ -385,12 +384,12 @@ class MergeSort implements Sort
      * that the columns isn't {@code null}.
      * <p>
      * Intended to be called as part of a sanity check. All columns are
-     * orderable, since {@code DataValueDescriptor} extends {@code Orderable}.
+     * orderable, since store row values expose the engine-owned orderable implementation.
      *
      * @return {@code true} if the ordering is valid, {@code false} if not.
      */
     private boolean checkColumnOrdering(
-    DataValueDescriptor[]   template, 
+    StoreDataValue[]        template, 
     ColumnOrdering          columnOrdering[])
 	{
 		// Allocate an array to check that each column mentioned only once.
@@ -519,7 +518,7 @@ class MergeSort implements Sort
 	Go from the CLOSED to the INITIALIZED state.
 	**/
 	public void initialize(
-    DataValueDescriptor[]   template,
+    StoreDataValue[]        template,
     ColumnOrdering          columnOrdering[],
     SortObserver            sortObserver,
     boolean                 alreadyInOrder,

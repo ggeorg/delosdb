@@ -24,7 +24,7 @@ package org.apache.derby.iapi.store.access;
 import org.apache.derby.shared.common.error.StandardException;
 
 
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 /**
 
@@ -87,8 +87,8 @@ public interface RowLocationRetRowSource extends RowSource
 		row location, it needs to clone it (RowLocation is a ClonableObject).
 		@exception StandardException on error
 	 */
-	void rowLocation(RowLocation rl) throws StandardException;
+	void rowLocation(StoreRowLocation rl) throws StandardException;
 
     void offendingRowLocation(
-            RowLocation rl, long containdId) throws StandardException;
+            StoreRowLocation rl, long containdId) throws StandardException;
 }

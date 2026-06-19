@@ -41,6 +41,7 @@ import org.apache.derby.iapi.sql.execute.TargetResultSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.types.SQLLongint;
@@ -1279,11 +1280,11 @@ class TemporaryRowHolderResultSet implements CursorResultSet, NoPutResultSet, Cl
 		row location, it needs to clone it (RowLocation is a ClonableObject).
 		@exception StandardException on error
 	 */
-	public void rowLocation(RowLocation rl) throws StandardException
+	public void rowLocation(StoreRowLocation rl) throws StandardException
 	{ }
 
     public void offendingRowLocation(
-            RowLocation rl, long containdId) throws StandardException {
+            StoreRowLocation rl, long containdId) throws StandardException {
         if (SanityManager.DEBUG) {
             SanityManager.NOTREACHED();
         }

@@ -42,6 +42,7 @@ import org.apache.derby.iapi.sql.execute.TargetResultSet;
 import org.apache.derby.iapi.sql.execute.RowChanger;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.RowLocationRetRowSource;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.access.RowSource;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.LocatedRow;
@@ -290,16 +291,16 @@ extends BasicNoPutResultSetImpl
 	 * @see RowLocationRetRowSource#rowLocation
 	 * @exception StandardException on error
 	 */
-	public void rowLocation(RowLocation rl)
+	public void rowLocation(StoreRowLocation rl)
 		throws StandardException
 	{
-		targetResultSet.changedRow(clonedExecRow, rl);
+		targetResultSet.changedRow(clonedExecRow, (RowLocation) rl);
 	}
 
     public void offendingRowLocation(
-            RowLocation rl, long containdId) throws StandardException {
+            StoreRowLocation rl, long containdId) throws StandardException {
 
-        targetResultSet.offendingRowLocation(rl, containdId);
+        targetResultSet.offendingRowLocation((RowLocation) rl, containdId);
     }
 	// class implementation
 

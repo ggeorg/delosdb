@@ -25,7 +25,7 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.access.RowLocationRetRowSource;
 import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 /**
@@ -61,13 +61,13 @@ class CardinalityCounter implements RowLocationRetRowSource
     }
 
     public void offendingRowLocation(
-            RowLocation rl, long containdId) throws StandardException {
+            StoreRowLocation rl, long containdId) throws StandardException {
         rowSource.offendingRowLocation(rl, containdId);
     }
 
 
 	/** @see RowLocationRetRowSource#rowLocation */
-	public void rowLocation(RowLocation rl) throws StandardException
+	public void rowLocation(StoreRowLocation rl) throws StandardException
 	{ 
 		rowSource.rowLocation(rl);
 	}

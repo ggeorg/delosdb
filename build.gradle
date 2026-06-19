@@ -7427,3 +7427,191 @@ tasks.register('verifyLegacyDerbyKernelB5oSortQualifierBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5oSortQualifierBridge'
 }
+
+// ------------------------------------------------------------------------
+// B5p — Row-source callback and sort factory template bridge batch
+// ------------------------------------------------------------------------
+// B5o removed sort/qualifier row-value imports. B5p continues with a
+// compile-safe boundary slice: sort factory/cost APIs accept StoreDataValue[]
+// templates, MergeSort initialization follows that store-facing template shape,
+// and RowLocationRetRowSource callbacks accept StoreRowLocation while engine
+// callers cast back to RowLocation only at SQL execution boundaries.
+def delosdbB5pReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5p-row-source-sort-factory-bridge.txt')
+def delosdbB5pBaselineImportCount = 104
+
+def delosdbB5pSortCostController = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/SortCostController.java')
+def delosdbB5pSortFactory = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/conglomerate/SortFactory.java')
+def delosdbB5pExternalSortFactory = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/ExternalSortFactory.java')
+def delosdbB5pMergeSort = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/MergeSort.java')
+def delosdbB5pRowLocationRetRowSource = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowLocationRetRowSource.java')
+def delosdbB5pMergeScanRowSource = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/MergeScanRowSource.java')
+def delosdbB5pSortBufferRowSource = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/SortBufferRowSource.java')
+def delosdbB5pCardinalityCounter = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CardinalityCounter.java')
+def delosdbB5pAlterTableConstantAction = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/AlterTableConstantAction.java')
+def delosdbB5pNoPutResultSetImpl = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/NoPutResultSetImpl.java')
+def delosdbB5pTemporaryRowHolderResultSet = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/TemporaryRowHolderResultSet.java')
+
+def delosdbB5pTouchedFiles = [
+    delosdbB5pSortCostController,
+    delosdbB5pSortFactory,
+    delosdbB5pExternalSortFactory,
+    delosdbB5pMergeSort,
+    delosdbB5pRowLocationRetRowSource,
+    delosdbB5pMergeScanRowSource,
+    delosdbB5pSortBufferRowSource,
+    delosdbB5pCardinalityCounter,
+    delosdbB5pAlterTableConstantAction,
+    delosdbB5pNoPutResultSetImpl,
+    delosdbB5pTemporaryRowHolderResultSet
+]
+
+def delosdbB5pRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5pRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5pStoreTypeImportLines = { ->
+    def roots = [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ]
+    roots.collectMany { root ->
+        root.isDirectory() ? fileTree(root) { include '**/*.java' }.files : []
+    }.collectMany { source ->
+        source.readLines().findAll { line ->
+            line.trim().startsWith('import org.apache.derby.iapi.types.')
+        }.collect { line ->
+            delosdbB5pRelPath(source) + ': ' + line.trim()
+        }
+    }.sort()
+}
+def delosdbB5pRetiredImportsRemaining = { ->
+    [
+        [source: delosdbB5pSortCostController, retired: ['DataValueDescriptor']],
+        [source: delosdbB5pSortFactory, retired: ['DataValueDescriptor']],
+        [source: delosdbB5pExternalSortFactory, retired: ['DataValueDescriptor']],
+        [source: delosdbB5pMergeSort, retired: ['DataValueDescriptor']],
+        [source: delosdbB5pRowLocationRetRowSource, retired: ['RowLocation']],
+        [source: delosdbB5pMergeScanRowSource, retired: ['RowLocation']],
+        [source: delosdbB5pSortBufferRowSource, retired: ['RowLocation']]
+    ].collectMany { entry ->
+        def text = delosdbB5pRead(entry.source)
+        entry.retired.findAll { typeName ->
+            text.contains('import org.apache.derby.iapi.types.' + typeName + ';')
+        }.collect { typeName ->
+            delosdbB5pRelPath(entry.source) + ': import org.apache.derby.iapi.types.' + typeName + ';'
+        }
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5pRowSourceSortFactoryBridgeReport') {
+    group = 'verification'
+    description = 'B5p: reports row-source callback and sort factory StoreDataValue/StoreRowLocation bridge progress.'
+    dependsOn 'verifyLegacyDerbyKernelB5oSortQualifierBridge'
+    outputs.file(delosdbB5pReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5pStoreTypeImportLines()
+        def retiredImportsRemaining = delosdbB5pRetiredImportsRemaining()
+        def reportFile = delosdbB5pReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5p row-source callback and sort factory bridge batch
+================================================================
+
+Purpose
+-------
+Continue Phase B/B5 by retiring another compile-safe group of direct
+org.apache.derby.iapi.types imports from relocated Derby store code.
+
+Changed boundary shape
+----------------------
+  - SortCostController#getSortCost accepts StoreDataValue[] templates
+  - SortFactory#createSort accepts StoreDataValue[] templates
+  - ExternalSortFactory forwards StoreDataValue[] templates to MergeSort
+  - MergeSort initialization and sanity checks use StoreDataValue[] templates
+  - RowLocationRetRowSource callbacks accept StoreRowLocation
+  - SQL execution adapters cast StoreRowLocation back to RowLocation only outside the relocated store
+
+Touched files
+-------------
+${delosdbB5pTouchedFiles.collect { '  - ' + delosdbB5pRelPath(it) }.join('\n')}
+
+Retired direct imports still present
+------------------------------------
+${retiredImportsRemaining.isEmpty() ? '  none remain in B5p-retired files' : retiredImportsRemaining.collect { '  - ' + it }.join('\n')}
+
+Relocated-store direct org.apache.derby.iapi.types import count
+---------------------------------------------------------------
+  before B5p baseline: ${delosdbB5pBaselineImportCount}
+  after B5p:           ${remainingStoreTypeImports.size()}
+
+Remaining direct relocated-store iapi.types imports
+---------------------------------------------------
+${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+Boundary decision
+-----------------
+B5p still avoids the large implementation-heavy DataValueDescriptor and
+RowLocation rewrite. It only moves factory/cost template arrays and row-source
+callback parameters to the existing SQL-neutral store-facing bridge.
+
+B6 readiness
+------------
+NOT YET. The relocated store still has direct org.apache.derby.iapi.types imports.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5pRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5pRowSourceSortFactoryBridge') {
+    group = 'verification'
+    description = 'B5p: verifies row-source callback and sort factory bridge progress.'
+    dependsOn 'legacyDerbyStoreKernelB5pRowSourceSortFactoryBridgeReport'
+    doLast {
+        delosdbB5pTouchedFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5p missing required source file: ' + delosdbB5pRelPath(source))
+            }
+        }
+
+        def retiredImportsRemaining = delosdbB5pRetiredImportsRemaining()
+        if (!retiredImportsRemaining.isEmpty()) {
+            throw new GradleException('B5p retired direct store type imports still remain: ' + retiredImportsRemaining.join('; '))
+        }
+
+        [delosdbB5pSortCostController, delosdbB5pSortFactory, delosdbB5pExternalSortFactory, delosdbB5pMergeSort].each { source ->
+            def text = delosdbB5pRead(source)
+            if (!text.contains('StoreDataValue[]')) {
+                throw new GradleException('B5p ' + delosdbB5pRelPath(source) + ' must use StoreDataValue[] for sort template rows')
+            }
+        }
+
+        [delosdbB5pRowLocationRetRowSource, delosdbB5pMergeScanRowSource, delosdbB5pSortBufferRowSource].each { source ->
+            def text = delosdbB5pRead(source)
+            if (!text.contains('StoreRowLocation')) {
+                throw new GradleException('B5p ' + delosdbB5pRelPath(source) + ' must use StoreRowLocation callbacks')
+            }
+        }
+
+        def noPutText = delosdbB5pRead(delosdbB5pNoPutResultSetImpl)
+        if (!noPutText.contains('StoreRowLocation') || !noPutText.contains('(RowLocation) rl')) {
+            throw new GradleException('B5p NoPutResultSetImpl must adapt StoreRowLocation back to RowLocation at the SQL execution boundary')
+        }
+
+        def alterText = delosdbB5pRead(delosdbB5pAlterTableConstantAction)
+        if (!alterText.contains('StoreRowLocation') || !alterText.contains('insertIntoSorter(index, (RowLocation) rl)')) {
+            throw new GradleException('B5p AlterTableConstantAction must adapt StoreRowLocation at the SQL execution boundary')
+        }
+
+        def remainingStoreTypeImports = delosdbB5pStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5pBaselineImportCount) {
+            throw new GradleException('B5p relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5pBaselineImportCount + ': ' + remainingStoreTypeImports.size())
+        }
+
+        def reportText = delosdbB5pRead(delosdbB5pReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5p report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5p row-source/sort-factory bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5pRowSourceSortFactoryBridge'
+}

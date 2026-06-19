@@ -33,7 +33,7 @@ import org.apache.derby.iapi.store.access.SortObserver;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import java.util.List;
 
@@ -118,14 +118,14 @@ public class MergeScanRowSource extends MergeScan implements ScanControllerRowSo
 	/**
 	 * @see RowLocationRetRowSource#rowLocation
 	 */
-	public void rowLocation(RowLocation rl)
+	public void rowLocation(StoreRowLocation rl)
 	{
 		if (SanityManager.DEBUG)
 			SanityManager.THROWASSERT("unexpected call to RowSource.rowLocation");
 	}
 
     public void offendingRowLocation(
-            RowLocation rl, long containdId) throws StandardException {
+            StoreRowLocation rl, long containdId) throws StandardException {
         if (SanityManager.DEBUG) {
             SanityManager.NOTREACHED();
         }
