@@ -14,6 +14,7 @@ def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleN
 def rootGeneratedSourceRoot = rootProject.layout.buildDirectory.dir("generated/sources/${moduleName}")
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def osgiModuleClassDir = rootProject.project(':delosdb-osgi-stub').layout.buildDirectory.dir('classes/modules/org.osgi.framework')
 def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
 def javaccClasspath = rootProject.files('tools/java/javacc.jar')
@@ -54,7 +55,7 @@ tasks.register('generateSqlParser', JavaExec) {
 }
 
 tasks.register('compileDerbyEngine', JavaCompile) {
-    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', ':delosdb-spi:compileDelosDbSpi', 'generateSqlParser'
+    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-kernel:compileDelosDbEngineKernel', ':delosdb-spi:compileDelosDbSpi', 'generateSqlParser'
     source = files(
             fileTree(sourceRoot) { include '**/*.java' },
             // DS8/DS9 physically move the legacy store API and implementation
@@ -70,6 +71,7 @@ tasks.register('compileDerbyEngine', JavaCompile) {
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             osgiModuleClassDir,
             commonsModuleClassDir,
+            kernelModuleClassDir,
             spiModuleClassDir,
             rootProject.configurations.delosdbAsm
     ])
@@ -84,6 +86,7 @@ tasks.register('compileClassSizeCatalog', JavaCompile) {
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             commonsModuleClassDir,
             moduleClassDir,
+            kernelModuleClassDir,
             osgiModuleClassDir,
             spiModuleClassDir,
             rootProject.configurations.delosdbAsm

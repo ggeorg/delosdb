@@ -11,6 +11,7 @@ def moduleName = 'org.apache.derby.optionaltools'
 def sourceRoot = project.file('src/main/java')
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def toolsModuleClassDir = rootProject.project(':delosdb-tools').layout.buildDirectory.dir('classes/modules/org.apache.derby.tools')
 def externalModulePath = rootProject.files(
@@ -21,11 +22,12 @@ def externalModulePath = rootProject.files(
 )
 
 tasks.register('compileDerbyOptionalTools', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine', ':delosdb-tools:compileDerbyTools'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-kernel:compileDelosDbEngineKernel', ':delosdb-engine:compileDerbyEngine', ':delosdb-tools:compileDerbyTools'
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = moduleClassDir
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             commonsModuleClassDir,
+            kernelModuleClassDir,
             engineModuleClassDir,
             toolsModuleClassDir,
             externalModulePath,

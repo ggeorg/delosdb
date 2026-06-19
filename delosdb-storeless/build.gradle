@@ -19,12 +19,14 @@ def storelessResourceDir = layout.buildDirectory.dir('resources/storeless')
 def storelessSmokeSourceRoot = rootProject.file('dev/storeless-prototype-smoke/src/main/java')
 def storelessSmokeClassDir = layout.buildDirectory.dir('classes/storeless-smoke')
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def osgiModuleClassDir = rootProject.project(':delosdb-osgi-stub').layout.buildDirectory.dir('classes/modules/org.osgi.framework')
 
 def storelessClasspath = {
     rootProject.files(
             commonsModuleClassDir,
+            kernelModuleClassDir,
             engineModuleClassDir,
             osgiModuleClassDir
     )
@@ -33,6 +35,7 @@ def storelessClasspath = {
 tasks.register('compileDerbyStoreless', JavaCompile) {
     dependsOn ':delosdb-osgi-stub:compileOsgiStubs',
             ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-engine-kernel:compileDelosDbEngineKernel',
             ':delosdb-engine:compileDerbyEngine',
             ':delosdb-engine:compileClassSizeCatalog',
             ':splitEngineMessages'

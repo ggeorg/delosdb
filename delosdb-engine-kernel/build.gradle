@@ -10,11 +10,13 @@ group = rootProject.group
 def moduleName = 'io.github.ggeorg.delosdb.engine.kernel'
 def sourceRoot = file('src/main/java')
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
+def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 
 tasks.register('compileDelosDbEngineKernel', JavaCompile) {
+    dependsOn ':delosdb-commons:compileDerbyCommons'
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = moduleClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate)
+    rootProject.ext.delosdbConfigureJavaCompile(delegate, [commonsModuleClassDir])
 }
 
 tasks.register('classes') {

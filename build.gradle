@@ -30,6 +30,7 @@ def derbyCompatibilityVersion = '10.17.1.0'
 def moduleNames = [
         osgi         : 'org.osgi.framework',
         commons      : 'org.apache.derby.commons',
+        engineKernel : 'io.github.ggeorg.delosdb.engine.kernel',
         engine       : 'org.apache.derby.engine',
         client       : 'org.apache.derby.client',
         tools        : 'org.apache.derby.tools',
@@ -41,6 +42,7 @@ def moduleNames = [
 def moduleProjects = [
         (moduleNames.osgi)         : ':delosdb-osgi-stub',
         (moduleNames.commons)      : ':delosdb-commons',
+        (moduleNames.engineKernel) : ':delosdb-engine-kernel',
         (moduleNames.engine)       : ':delosdb-engine',
         (moduleNames.client)       : ':delosdb-client',
         (moduleNames.tools)        : ':delosdb-tools',
@@ -51,6 +53,7 @@ def moduleProjects = [
 
 def moduleSourceRoots = [
         (moduleNames.commons)      : 'delosdb-commons/src/main/java',
+        (moduleNames.engineKernel) : 'delosdb-engine-kernel/src/main/java',
         (moduleNames.engine)       : 'delosdb-engine/src/main/java',
         (moduleNames.client)       : 'delosdb-client/src/main/java',
         (moduleNames.tools)        : 'delosdb-tools/src/main/java',
@@ -61,6 +64,7 @@ def moduleSourceRoots = [
 
 def runtimeCompileTasks = [
         ':delosdb-commons:compileDerbyCommons',
+        ':delosdb-engine-kernel:compileDelosDbEngineKernel',
         ':delosdb-engine:compileDerbyEngine',
         ':delosdb-client:compileDerbyClient',
         ':delosdb-tools:compileDerbyTools',
@@ -404,6 +408,7 @@ def moduleDirsForRuntime = files(
         project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
         moduleClassDir(moduleNames.osgi),
         moduleClassDir(moduleNames.commons),
+        moduleClassDir(moduleNames.engineKernel),
         moduleClassDir(moduleNames.engine),
         moduleClassDir(moduleNames.client),
         moduleClassDir(moduleNames.tools),
@@ -416,6 +421,7 @@ def runtimeJarNames = [
         'delosdb-spi.jar',
         'osgi-framework-stub.jar',
         'derbyshared.jar',
+        'delosdb-engine-kernel.jar',
         'derby.jar',
         'derbyclient.jar',
         'derbytools.jar',
@@ -556,6 +562,7 @@ def legalFiles = files(legalFileNames.collect { file(it) })
 
 
 def runtimeBuildTasks = [
+        ':delosdb-engine-kernel:compileDelosDbEngineKernel',
         ':delosdb-engine:compileClassSizeCatalog',
         'splitEngineMessages',
         'generateOdbcMetadata',
@@ -567,7 +574,7 @@ tasks.register('compileAll') {
 }
 
 tasks.register('jars') {
-    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine:derbyJar',
+    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-kernel:delosDbEngineKernelJar', ':delosdb-engine:derbyJar',
             ':delosdb-client:derbyClientJar', ':delosdb-tools:derbyToolsJar',
             ':delosdb-server:derbyNetJar', ':delosdb-optionaltools:derbyOptionalToolsJar',
             ':delosdb-runner:derbyRunJar', ':delosdb-osgi-stub:osgiFrameworkStubJar'
@@ -4080,4 +4087,83 @@ tasks.register('verifyLegacyDerbyEngineKernelScaffold') {
 
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyEngineKernelScaffold'
+}
+
+
+// -----------------------------------------------------------------------------
+// B2 — Engine-kernel low-risk IO package extraction guard
+// -----------------------------------------------------------------------------
+
+def delosdbB2KernelIoRoot = file('delosdb-engine-kernel/src/main/java/org/apache/derby/io')
+def delosdbB2EngineIoRoot = file('delosdb-engine/src/main/java/org/apache/derby/io')
+def delosdbB2KernelModuleInfo = file('delosdb-engine-kernel/src/main/java/module-info.java')
+def delosdbB2EngineModuleInfo = file('delosdb-engine/src/main/java/module-info.java')
+
+def delosdbB2JavaSourcesUnder = { File root ->
+    return root.exists() ? fileTree(root) { include '**/*.java' }.files.sort { it.path } : []
+}
+
+tasks.register('legacyDerbyStoreKernelB2DependencyReport') {
+    group = 'verification'
+    description = 'B2: reports the low-risk IO extraction and the exact blockers that keep UUID/services.io out of this move.'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b2-dependencies.txt'))
+    doLast {
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b2-dependencies.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B2 legacy Derby kernel extraction report
+=================================================
+
+Moved in B2
+-----------
+org.apache.derby.io
+
+Deferred B2 candidates
+----------------------
+org.apache.derby.iapi.services.uuid
+  NOT MOVED in B2 because UUIDFactory depends on org.apache.derby.catalog.UUID.
+  Moving that safely requires a later catalog/type decision, not a class-level move.
+
+org.apache.derby.iapi.services.io
+  NOT MOVED in B2 because the whole package imports context, loader, monitor,
+  property, iapi.types, and shared services. Moving it now would collapse B3/B4/B5
+  into one unreviewable cut.
+
+B2 rule applied
+---------------
+Move whole packages only. Do not create partial-package or class-level extractions.
+"""
+        logger.lifecycle('Wrote ' + reportFile)
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelLowRiskIoExtraction') {
+    group = 'verification'
+    description = 'B2: verifies org.apache.derby.io moved as a whole package into delosdb-engine-kernel.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB2DependencyReport'
+    doLast {
+        def kernelFiles = delosdbB2JavaSourcesUnder(delosdbB2KernelIoRoot)
+        if (kernelFiles.size() != 4) {
+            throw new GradleException('B2 expected exactly 4 org.apache.derby.io source files in delosdb-engine-kernel, found ' + kernelFiles.size())
+        }
+        def missing = ['StorageFactory.java', 'StorageFile.java', 'StorageRandomAccessFile.java', 'WritableStorageFactory.java'].findAll { name ->
+            !new File(delosdbB2KernelIoRoot, name).isFile()
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException('B2 missing moved org.apache.derby.io source file(s): ' + missing.join(', '))
+        }
+        if (delosdbB2EngineIoRoot.exists() && !delosdbB2JavaSourcesUnder(delosdbB2EngineIoRoot).isEmpty()) {
+            throw new GradleException('B2 stale org.apache.derby.io source files remain under delosdb-engine. Run scripts/cleanup-legacy-derby-kernel-b2.sh')
+        }
+        if (!delosdbB2KernelModuleInfo.text.contains('exports org.apache.derby.io;')) {
+            throw new GradleException('B2 kernel module must export org.apache.derby.io')
+        }
+        if (!delosdbB2EngineModuleInfo.text.contains('requires io.github.ggeorg.delosdb.engine.kernel;')) {
+            throw new GradleException('B2 engine module must require io.github.ggeorg.delosdb.engine.kernel')
+        }
+        logger.lifecycle('Verified B2 low-risk IO extraction into delosdb-engine-kernel')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelLowRiskIoExtraction'
 }

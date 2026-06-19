@@ -61,6 +61,7 @@ def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.d
 def derbyRuntimeModuleClassDirs = rootProject.files(
         rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons'),
         rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+        rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel'),
         rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine'),
         rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client'),
         rootProject.project(':delosdb-server').layout.buildDirectory.dir('classes/modules/org.apache.derby.server'),
@@ -87,6 +88,7 @@ def derbyRuntimeJars = rootProject.files(
         rootProject.layout.buildDirectory.file('libs/delosdb-spi.jar'),
         rootProject.layout.buildDirectory.file('libs/osgi-framework-stub.jar'),
         rootProject.layout.buildDirectory.file('libs/derbyshared.jar'),
+        rootProject.layout.buildDirectory.file('libs/delosdb-engine-kernel.jar'),
         rootProject.layout.buildDirectory.file('libs/derby.jar'),
         rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
         rootProject.layout.buildDirectory.file('libs/derbytools.jar'),
@@ -98,6 +100,7 @@ def derbyRuntimeJars = rootProject.files(
 def compilePrerequisites = [
         ':delosdb-commons:compileDerbyCommons',
         ':delosdb-spi:compileDelosDbSpi',
+        ':delosdb-engine-kernel:compileDelosDbEngineKernel',
         ':delosdb-engine:compileDerbyEngine',
         ':delosdb-engine:compileClassSizeCatalog',
         ':delosdb-client:compileDerbyClient',

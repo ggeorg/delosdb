@@ -7,4 +7,7 @@
  */
 module io.github.ggeorg.delosdb.engine.kernel {
     requires java.base;
+    requires org.apache.derby.commons;
+
+    exports org.apache.derby.io;
 }

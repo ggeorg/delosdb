@@ -78,6 +78,7 @@ module org.apache.derby.engine
     requires java.xml;
     
     requires org.apache.derby.commons;
+    requires io.github.ggeorg.delosdb.engine.kernel;
     requires io.github.ggeorg.delosdb.spi;
 
     //
@@ -283,10 +284,6 @@ module org.apache.derby.engine
         org.apache.derby.tests;
 
     exports org.apache.derby.impl.store.raw.log to
-        org.apache.derby.tests;
-
-    exports org.apache.derby.io to
-        org.apache.derby.optionaltools,
         org.apache.derby.tests;
 
     exports org.apache.derby.mbeans to
