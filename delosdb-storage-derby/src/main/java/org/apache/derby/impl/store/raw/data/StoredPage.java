@@ -61,6 +61,7 @@ import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.log.LogInstant;
 import org.apache.derby.iapi.store.raw.xact.RawTransaction;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.util.ByteArray;
 
@@ -4536,8 +4537,9 @@ public class StoredPage extends CachedPage
                     (DataValueDescriptor) row[q.getColumnId()];
 
             row_qualifies =
-                columnValue.compare(
+                StoreTypeUtil.compare(
                     q.getOperator(),
+                    columnValue,
                     q.getOrderable(),
                     q.getOrderedNulls(),
                     q.getUnknownRV());
@@ -4594,8 +4596,9 @@ public class StoredPage extends CachedPage
                 // do the compare between the column value and value in the
                 // qualifier.
                 row_qualifies = 
-                    columnValue.compare(
+                    StoreTypeUtil.compare(
                             q.getOperator(),
+                            columnValue,
                             q.getOrderable(),
                             q.getOrderedNulls(),
                             q.getUnknownRV());
@@ -5086,8 +5089,9 @@ public class StoredPage extends CachedPage
             // do the compare between the column value and value in the
             // qualifier.
             row_qualifies = 
-                ((DataValueDescriptor) row[col_id]).compare(
+                StoreTypeUtil.compare(
                         q.getOperator(),
+                        row[col_id],
                         q.getOrderable(),
                         q.getOrderedNulls(),
                         q.getUnknownRV());
@@ -5156,8 +5160,9 @@ public class StoredPage extends CachedPage
                 // do the compare between the column value and value in the
                 // qualifier.
                 row_qualifies = 
-                    ((DataValueDescriptor) row[col_id]).compare(
+                    StoreTypeUtil.compare(
                             q.getOperator(),
+                            row[col_id],
                             q.getOrderable(),
                             q.getOrderedNulls(),
                             q.getUnknownRV());

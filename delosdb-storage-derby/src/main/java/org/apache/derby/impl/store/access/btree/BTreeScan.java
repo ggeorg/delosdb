@@ -45,6 +45,7 @@ import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
@@ -747,8 +748,9 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
             DataValueDescriptor columnValue = row[q.getColumnId()];
 
             row_qualifies =
-                columnValue.compare(
+                StoreTypeUtil.compare(
                     q.getOperator(),
+                    columnValue,
                     q.getOrderable(),
                     q.getOrderedNulls(),
                     q.getUnknownRV());
@@ -787,8 +789,9 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
                 DataValueDescriptor columnValue = row[q.getColumnId()];
 
                 row_qualifies =
-                    columnValue.compare(
+                    StoreTypeUtil.compare(
                         q.getOperator(),
+                        columnValue,
                         q.getOrderable(),
                         q.getOrderedNulls(),
                         q.getUnknownRV());
