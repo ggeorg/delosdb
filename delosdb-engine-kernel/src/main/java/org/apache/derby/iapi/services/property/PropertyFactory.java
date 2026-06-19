@@ -21,19 +21,9 @@
 
 package org.apache.derby.iapi.services.property;
 
-import org.apache.derby.catalog.UUID;
-
-import org.apache.derby.iapi.services.context.ContextManager;
-import org.apache.derby.iapi.services.locks.LockFactory;
-
 import org.apache.derby.shared.common.error.StandardException;
 
-import org.apache.derby.iapi.store.access.TransactionController;
-import org.apache.derby.iapi.store.access.conglomerate.MethodFactory;
-
-import org.apache.derby.iapi.services.property.PropertySetCallback;
 import java.util.Properties;
-import java.io.File;
 import java.io.Serializable;
 import java.util.Map;
 
@@ -97,7 +87,7 @@ public interface PropertyFactory
 						  Map<?,?> set)
 		throws StandardException;
 
-	public Serializable doValidateApplyAndMap(TransactionController tc,
+	public Serializable doValidateApplyAndMap(Object tc,
 											 String key, Serializable value,
 											 Map<?,?> d, boolean dbOnlyProperty)
 		throws StandardException;

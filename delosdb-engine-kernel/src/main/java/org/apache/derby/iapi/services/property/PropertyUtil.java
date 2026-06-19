@@ -29,14 +29,13 @@ import org.apache.derby.shared.common.util.ArrayUtil;
 import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.iapi.services.monitor.ModuleFactory;
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.iapi.util.StringUtil;
-import org.apache.derby.iapi.util.IdUtil;
 
 import java.util.Properties;
 import java.io.Serializable;
 import java.util.Dictionary;
 import java.util.Map;
 import java.util.Enumeration;
+import java.util.Locale;
 
 /**
 	There are 5 property objects within a JBMS system.
@@ -587,9 +586,9 @@ public class PropertyUtil {
 
 		String vS = ((String) v).trim();
 
-		if ("TRUE".equals(StringUtil.SQLToUpperCase(vS)))
+		if ("TRUE".equals(sqlToUpperCase(vS)))
 			return true;
-        if ("FALSE".equals(StringUtil.SQLToUpperCase(vS)))
+        if ("FALSE".equals(sqlToUpperCase(vS)))
 			return false;
 
 		throw StandardException.newException(SQLState.PROPERTY_INVALID_VALUE, p,vS);
@@ -710,7 +709,7 @@ public class PropertyUtil {
     {
         if ( authenticationProvider ==  null ) { return false; }
 
-        return StringUtil.SQLToUpperCase( authenticationProvider ).startsWith( Property.AUTHENTICATION_PROVIDER_NATIVE );
+        return sqlToUpperCase( authenticationProvider ).startsWith( Property.AUTHENTICATION_PROVIDER_NATIVE );
     }
     
 	/**
@@ -729,7 +728,7 @@ public class PropertyUtil {
              Property.AUTHENTICATION_PROVIDER_PARAMETER
              );
 
-        return StringUtil.SQLToUpperCase( authenticationProvider ).endsWith
+        return sqlToUpperCase( authenticationProvider ).endsWith
             ( Property.AUTHENTICATION_PROVIDER_LOCAL_SUFFIX );
 	}
 
@@ -768,7 +767,7 @@ public class PropertyUtil {
 				String p = (String)e.nextElement();
 
 				if (p.startsWith(Property.USER_PROPERTY_PREFIX)) {
-					String userAsSpecified = StringUtil.normalizeSQLIdentifier(
+					String userAsSpecified = normalizeSQLIdentifier(
 						p.substring(Property.USER_PROPERTY_PREFIX.length()));
 
 					if (username.equals(userAsSpecified)) {
@@ -781,6 +780,24 @@ public class PropertyUtil {
 		return false;
 	}
     
+
+    private static String sqlToUpperCase(String value)
+    {
+        return value.toUpperCase(Locale.ENGLISH);
+    }
+
+    private static String normalizeSQLIdentifier(String id)
+    {
+        if (id.length() == 0) {
+            return id;
+        }
+        if (id.charAt(0) == '"' && id.length() >= 3 && id.charAt(id.length() - 1) == '"') {
+            return id.substring(1, id.length() - 1).replace("\"\"", "\"");
+        }
+        return sqlToUpperCase(id);
+    }
+
+
     /**
      * Must be private so that user code
      * can't call this entry point.

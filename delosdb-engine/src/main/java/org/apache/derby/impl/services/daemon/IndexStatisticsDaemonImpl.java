@@ -263,7 +263,8 @@ public class IndexStatisticsDaemonImpl
      *
      * @param td base table descriptor to update index statistics for
      */
-    public void schedule(TableDescriptor td) {
+    public void schedule(Object tdObject) {
+        TableDescriptor td = (TableDescriptor) tdObject;
         String schedulingReason = td.getIndexStatsUpdateReason();
         synchronized (queue) {
             if (acceptWork(td)) {
@@ -1004,11 +1005,14 @@ public class IndexStatisticsDaemonImpl
      *      'ALTER TABLE', may be {@code null})
      * @throws StandardException if updating the index statistics fails
      */
-    public void runExplicitly(LanguageConnectionContext lcc,
-                              TableDescriptor td,
-                              ConglomerateDescriptor[] cds,
+    public void runExplicitly(Object lccObject,
+                              Object tdObject,
+                              Object[] cdsObject,
                               String runContext)
             throws StandardException {
+        LanguageConnectionContext lcc = (LanguageConnectionContext) lccObject;
+        TableDescriptor td = (TableDescriptor) tdObject;
+        ConglomerateDescriptor[] cds = (ConglomerateDescriptor[]) cdsObject;
         updateIndexStatsMinion(lcc, td, cds, AS_EXPLICIT_TASK);
         trace(0, "explicit run completed" + (runContext != null
                                         ? " (" + runContext + "): "

@@ -22,9 +22,6 @@
 package org.apache.derby.iapi.services.daemon;
 
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
-import org.apache.derby.iapi.sql.dictionary.ConglomerateDescriptor;
-import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 
 /**
  * <p>
@@ -59,9 +56,9 @@ public interface IndexStatisticsDaemon {
      *      being run (i.e. ALTER TABLE)
      * @throws StandardException if something goes wrong
      */
-    public void runExplicitly(LanguageConnectionContext lcc,
-                              TableDescriptor td,
-                              ConglomerateDescriptor[] cds,
+    public void runExplicitly(Object lcc,
+                              Object td,
+                              Object[] cds,
                               String runContext)
             throws StandardException;
 
@@ -75,7 +72,7 @@ public interface IndexStatisticsDaemon {
      *
      * @param td base table
      */
-    public void schedule(TableDescriptor td);
+    public void schedule(Object td);
 
     /**
      * Stops the background daemon.

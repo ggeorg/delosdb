@@ -122,7 +122,8 @@ module org.apache.derby.commons
         org.apache.derby.tests;
 
     exports org.apache.derby.shared.common.util to
-        org.apache.derby.engine;
+        org.apache.derby.engine,
+        io.github.ggeorg.delosdb.engine.kernel;
 
     //
     // STANZAS FOR USE WHEN QUERY PLANS ARE GENERATED INTO

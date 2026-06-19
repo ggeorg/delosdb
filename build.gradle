@@ -240,7 +240,7 @@ tasks.register('generateClassSizeCatalog') {
     // ClassSizeCrawler scans the compiled engine output tree. Gradle 8.14
     // requires every task which writes into that tree to be ordered before
     // this scan, otherwise it reports an implicit dependency problem.
-    dependsOn 'compileDerbyBuildTools', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
+    dependsOn ':delosdb-engine:compileDerbyEngine', 'compileDerbyBuildTools', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
     def outputFile = generatedSourceDir(moduleNames.engine).map {
         it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
     }
@@ -251,6 +251,7 @@ tasks.register('generateClassSizeCatalog') {
         target.parentFile.mkdirs()
         runBuildTool('org.apache.derbyBuild.ClassSizeCrawler', [
                 moduleClassDir(moduleNames.commons),
+                moduleClassDir(moduleNames.engineKernel),
                 moduleClassDir(moduleNames.engine)
         ]) {
             systemProperty 'WS', projectDir.absolutePath
@@ -4514,4 +4515,181 @@ tasks.register('verifyLegacyDerbyKernelMonitorExtraction') {
 
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelMonitorExtraction'
+}
+
+// B4 — Engine-kernel property/cache/lock service extraction guard
+def delosdbB4KernelServiceRoots = [
+        property: file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/property'),
+        cache   : file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/cache'),
+        locks   : file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/locks'),
+        daemon  : file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/daemon')
+]
+def delosdbB4EngineServiceRoots = [
+        property: file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/property'),
+        cache   : file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/cache'),
+        locks   : file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/locks'),
+        daemon  : file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/daemon')
+]
+def delosdbB4KernelModuleInfo = file('delosdb-engine-kernel/src/main/java/module-info.java')
+def delosdbB4EngineModuleInfo = file('delosdb-engine/src/main/java/module-info.java')
+def delosdbB4CommonsModuleInfo = file('delosdb-commons/src/main/java/module-info.java')
+def delosdbB4KernelBuild = file('delosdb-engine-kernel/build.gradle')
+def delosdbB4EngineBuild = file('delosdb-engine/build.gradle')
+def delosdbB4TransactionManager = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/conglomerate/TransactionManager.java')
+
+def delosdbB4JavaSourcesUnder = { File root ->
+    root.exists() ? fileTree(root) { include '**/*.java' }.files.sort { it.path } : []
+}
+
+def delosdbB4ImportsByClass = { File root ->
+    def imports = [] as Set
+    delosdbB4JavaSourcesUnder(root).each { source ->
+        source.eachLine { line ->
+            def matcher = line =~ /^\s*import\s+(?:static\s+)?([^;]+);\s*$/
+            if (matcher.matches()) {
+                imports << matcher.group(1)
+            }
+        }
+    }
+    imports.sort()
+}
+
+tasks.register('legacyDerbyStoreKernelB4ServiceReport') {
+    group = 'verification'
+    description = 'B4: reports property/cache/lock service extraction into delosdb-engine-kernel.'
+    outputs.file layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b4-services.txt')
+    doLast {
+        def reportFile = outputs.files.singleFile
+        reportFile.parentFile.mkdirs()
+        def imports = [:]
+        delosdbB4KernelServiceRoots.each { name, root -> imports[name] = delosdbB4ImportsByClass(root) }
+        reportFile.text = """DelosDB B4 legacy Derby service extraction report
+===================================================
+
+Moved in B4
+-----------
+org.apache.derby.iapi.services.property
+org.apache.derby.iapi.services.cache
+org.apache.derby.iapi.services.locks
+
+Support interfaces moved with B4 because the moved packages expose them:
+org.apache.derby.iapi.services.daemon
+
+Why B4 needs small seams
+------------------------
+PropertyValidation historically cast its transaction controller to the inherited
+store TransactionManager. B4 keeps the kernel independent of store access packages
+by adding PropertyPostCommitWork in the property package and making the store
+TransactionManager implement that kernel-facing hook.
+
+CacheManager and LockFactory historically exposed iapi.util.Matchable in method
+signatures. B4 keeps iapi.util out of the kernel by erasing those two kernel API
+parameters to Object; engine implementations cast back internally where they still
+own the old util package.
+
+ClassSizeCatalogImpl
+--------------------
+The generated ClassSizeCatalogImpl stays in the cache package. Because the cache
+package is now kernel-owned, B4 compiles the generated class into
+io.github.ggeorg.delosdb.engine.kernel instead of org.apache.derby.engine.
+
+Kernel imports by exact moved family
+------------------------------------
+property:
+${imports.property.join('\n')}
+
+cache:
+${imports.cache.join('\n')}
+
+locks:
+${imports.locks.join('\n')}
+
+daemon:
+${imports.daemon.join('\n')}
+"""
+        logger.lifecycle("Wrote ${reportFile}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelPropertyCacheLockExtraction') {
+    group = 'verification'
+    description = 'B4: verifies property/cache/lock services moved into delosdb-engine-kernel without dragging SQL/store packages into the kernel.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB4ServiceReport'
+    doLast {
+        def expected = [
+                property: ['DatabasePropertyKeys.java', 'DatabaseVersionIds.java', 'PersistentSet.java', 'PropertyFactory.java', 'PropertyPostCommitWork.java', 'PropertySetCallback.java', 'PropertyUtil.java', 'PropertyValidation.java'],
+                cache   : ['CacheFactory.java', 'CacheManager.java', 'Cacheable.java', 'CacheableFactory.java', 'ClassSize.java', 'ClassSizeCatalog.java', 'SizedCacheable.java'],
+                locks   : ['C_LockFactory.java', 'CompatibilitySpace.java', 'Latch.java', 'Limit.java', 'LockFactory.java', 'LockOwner.java', 'Lockable.java', 'ShExLockable.java', 'ShExQual.java', 'VirtualLockTable.java'],
+                daemon  : ['DaemonFactory.java', 'DaemonService.java', 'IndexStatisticsDaemon.java', 'Serviceable.java']
+        ]
+        expected.each { family, files ->
+            def root = delosdbB4KernelServiceRoots[family]
+            def missing = files.findAll { name -> !new File(root, name).isFile() }
+            if (!missing.isEmpty()) {
+                throw new GradleException('B4 missing kernel-owned ' + family + ' source file(s): ' + missing.join(', '))
+            }
+            def staleRoot = delosdbB4EngineServiceRoots[family]
+            if (staleRoot.exists() && !delosdbB4JavaSourcesUnder(staleRoot).isEmpty()) {
+                throw new GradleException('B4 stale org.apache.derby.iapi.services.' + family + ' source files remain under delosdb-engine. Run scripts/cleanup-legacy-derby-kernel-b4.sh')
+            }
+        }
+
+        def forbiddenPrefixes = [
+                'org.apache.derby.iapi.sql.',
+                'org.apache.derby.impl.sql.',
+                'org.apache.derby.iapi.store.',
+                'org.apache.derby.iapi.services.loader.',
+                'org.apache.derby.iapi.util.'
+        ]
+        def offenders = []
+        delosdbB4KernelServiceRoots.each { family, root ->
+            delosdbB4ImportsByClass(root).each { imported ->
+                if (forbiddenPrefixes.any { imported.startsWith(it) }) {
+                    offenders << family + ': ' + imported
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('B4 moved kernel service packages must not import SQL/store/loader/util packages:\n' + offenders.join('\n'))
+        }
+
+        def kernelInfo = delosdbB4KernelModuleInfo.text
+        ['cache', 'daemon', 'locks', 'property'].each { family ->
+            def pkg = 'org.apache.derby.iapi.services.' + family
+            if (!kernelInfo.contains('exports ' + pkg)) {
+                throw new GradleException('B4 kernel module must export ' + pkg)
+            }
+        }
+        def engineInfo = delosdbB4EngineModuleInfo.text
+        ['cache', 'daemon', 'locks', 'property'].each { family ->
+            def pkg = 'org.apache.derby.iapi.services.' + family
+            if (engineInfo.contains('exports ' + pkg)) {
+                throw new GradleException('B4 engine module must no longer export ' + pkg)
+            }
+        }
+        if (!delosdbB4CommonsModuleInfo.text.contains('org.apache.derby.shared.common.util to') ||
+                !delosdbB4CommonsModuleInfo.text.contains('io.github.ggeorg.delosdb.engine.kernel')) {
+            throw new GradleException('B4 commons module must export shared.common.util to the engine kernel')
+        }
+        if (!delosdbB4TransactionManager.text.contains('extends TransactionController, PropertyPostCommitWork')) {
+            throw new GradleException('B4 store TransactionManager must implement PropertyPostCommitWork')
+        }
+
+        def generatedCatalog = file('build/generated/sources/org.apache.derby.engine/org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
+        if (!generatedCatalog.isFile()) {
+            throw new GradleException('B4 expected generated ClassSizeCatalogImpl source at ' + generatedCatalog)
+        }
+
+        if (!delosdbB4KernelBuild.text.contains('compileDelosDbEngineKernelClassSizeCatalog')) {
+            throw new GradleException('B4 kernel build must compile generated ClassSizeCatalogImpl into the kernel module')
+        }
+        if (!delosdbB4EngineBuild.text.contains("dependsOn ':delosdb-engine-kernel:compileDelosDbEngineKernelClassSizeCatalog'")) {
+            throw new GradleException('B4 engine build must delegate ClassSizeCatalogImpl compilation to the kernel module')
+        }
+        logger.lifecycle('Verified B4 property/cache/lock service extraction into delosdb-engine-kernel')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelPropertyCacheLockExtraction'
 }

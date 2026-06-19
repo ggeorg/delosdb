@@ -21,7 +21,6 @@
 
 package org.apache.derby.iapi.services.locks;
 
-import org.apache.derby.iapi.util.Matchable;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.property.PropertySetCallback;
 import java.util.Enumeration;
@@ -119,7 +118,7 @@ public interface LockFactory extends PropertySetCallback {
         @param key The key
 	*/
 	public void unlockGroup(CompatibilitySpace compatibilitySpace,
-							Object group, Matchable key);
+							Object group, Object key);
 
 	/**
 		Transfer a set of locks from one group to another.

@@ -23,6 +23,7 @@ package org.apache.derby.iapi.store.access.conglomerate;
 
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.services.daemon.Serviceable;
+import org.apache.derby.iapi.services.property.PropertyPostCommitWork;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.SortController;
 import org.apache.derby.iapi.store.access.TransactionController;
@@ -41,7 +42,7 @@ TransactionController.
 
 **/
 
-public interface TransactionManager extends TransactionController
+public interface TransactionManager extends TransactionController, PropertyPostCommitWork
 {
 
     /**

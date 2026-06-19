@@ -491,7 +491,8 @@ final class ConcurrentCache implements CacheManager {
      *
      * @param partialKey the partial (or exact) key to match
      */
-    public void clean(Matchable partialKey) throws StandardException {
+    public void clean(Object partialKeyObject) throws StandardException {
+        Matchable partialKey = (Matchable) partialKeyObject;
         cleanCache(partialKey);
     }
 
@@ -657,7 +658,8 @@ final class ConcurrentCache implements CacheManager {
      * @return <code>true</code> if all matching objects were removed,
      * <code>false</code> otherwise
      */
-    public boolean discard(Matchable partialKey) {
+    public boolean discard(Object partialKeyObject) {
+        Matchable partialKey = (Matchable) partialKeyObject;
         boolean allRemoved = true;
         for (CacheEntry entry : cache.values()) {
             entry.lock();

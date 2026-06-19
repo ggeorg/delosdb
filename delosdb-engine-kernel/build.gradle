@@ -49,3 +49,28 @@ tasks.named('assemble') {
 tasks.named('check') {
     dependsOn 'compileDelosDbEngineKernel'
 }
+
+
+def generatedClassSizeCatalogSource = rootProject.layout.buildDirectory.file('generated/sources/org.apache.derby.engine/org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
+
+tasks.register('compileDelosDbEngineKernelClassSizeCatalog', JavaCompile) {
+    dependsOn 'compileDelosDbEngineKernel', ':delosdb-engine:compileDerbyEngine', ':generateClassSizeCatalog'
+    source = files(generatedClassSizeCatalogSource)
+    destinationDirectory = moduleClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(moduleClassDir)
+    options.compilerArgs.add('-Xlint:deprecation')
+}
+
+tasks.named('classes') {
+    dependsOn 'compileDelosDbEngineKernelClassSizeCatalog'
+}
+
+tasks.named('delosDbEngineKernelJar') {
+    dependsOn 'compileDelosDbEngineKernelClassSizeCatalog'
+}

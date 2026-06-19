@@ -181,14 +181,8 @@ module org.apache.derby.engine
         org.apache.derby.tools,
         org.apache.derby.tests;
 
-    exports org.apache.derby.iapi.services.cache to
-        org.apache.derby.tests;
-
     exports org.apache.derby.iapi.services.crypto to
         org.apache.derby.optionaltools,
-        org.apache.derby.tests;
-
-    exports org.apache.derby.iapi.services.daemon to
         org.apache.derby.tests;
 
     exports org.apache.derby.iapi.services.diag to
@@ -196,13 +190,6 @@ module org.apache.derby.engine
 
     exports org.apache.derby.iapi.services.jmx to
         org.apache.derby.server;
-
-    exports org.apache.derby.iapi.services.locks to
-        org.apache.derby.tests;
-
-    exports org.apache.derby.iapi.services.property to
-        org.apache.derby.server,
-        org.apache.derby.tests;
 
     exports org.apache.derby.iapi.services.uuid to
         org.apache.derby.tests;

@@ -24,8 +24,6 @@ package org.apache.derby.iapi.services.cache;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.daemon.DaemonService;
 
-import org.apache.derby.iapi.util.Matchable;
-import org.apache.derby.iapi.util.Operator;
 
 import java.util.Collection;
 
@@ -205,7 +203,7 @@ public interface CacheManager {
         @param partialKey Key fragment to be matched
 		@exception StandardException Standard Derby error policy.
 	*/
-	public void clean(Matchable partialKey) throws StandardException;
+	public void clean(Object partialKey) throws StandardException;
 
 	/**
 		Age as many objects as possible out of the cache.
@@ -265,7 +263,7 @@ public interface CacheManager {
 		match the partial or exact key.  False if some objects that matches
 		were not gotten rid of because it was kept.
 	*/
-	public boolean discard(Matchable partialKey);
+	public boolean discard(Object partialKey);
 
 	/**
 	 * Return a Collection of the Cacheables currently in the

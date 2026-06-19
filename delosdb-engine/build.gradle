@@ -87,20 +87,8 @@ tasks.register('copyEngineServiceDescriptors', Copy) {
     into moduleClassDir
 }
 
-tasks.register('compileClassSizeCatalog', JavaCompile) {
-    dependsOn 'compileDerbyEngine', ':delosdb-spi:compileDelosDbSpi', ':generateClassSizeCatalog'
-    source = files(rootGeneratedSourceRoot.map {
-        it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
-    })
-    destinationDirectory = moduleClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate, [
-            commonsModuleClassDir,
-            moduleClassDir,
-            kernelModuleClassDir,
-            osgiModuleClassDir,
-            spiModuleClassDir,
-            rootProject.configurations.delosdbAsm
-    ])
+tasks.register('compileClassSizeCatalog') {
+    dependsOn ':delosdb-engine-kernel:compileDelosDbEngineKernelClassSizeCatalog'
 }
 
 tasks.register('classes') {

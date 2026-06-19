@@ -25,12 +25,8 @@ import org.apache.derby.shared.common.reference.Attribute;
 import org.apache.derby.shared.common.reference.Property;
 import org.apache.derby.shared.common.reference.SQLState;
 
-import org.apache.derby.iapi.services.property.PropertyUtil;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.daemon.Serviceable;
-import org.apache.derby.iapi.services.property.PropertySetCallback;
-import org.apache.derby.iapi.store.access.TransactionController;
-import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Map;
@@ -48,7 +44,7 @@ public class PropertyValidation implements PropertyFactory
 
 	}
 
-	public Serializable doValidateApplyAndMap(TransactionController tc,
+	public Serializable doValidateApplyAndMap(Object tc,
 											 String key, Serializable value,
 											 Map<?,?> d, boolean dbOnlyProperty)
 		 throws StandardException
@@ -80,7 +76,7 @@ public class PropertyValidation implements PropertyFactory
 
 					Serviceable s;
 					if ((s = psc.apply(key,value,d)) != null)
-						((TransactionManager) tc).addPostCommitWork(s);
+						((PropertyPostCommitWork) tc).addPostCommitWork(s);
 				}
 			}
 		}

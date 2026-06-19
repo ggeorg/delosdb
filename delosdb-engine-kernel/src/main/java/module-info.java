@@ -25,5 +25,23 @@ module io.github.ggeorg.delosdb.engine.kernel {
         org.apache.derby.optionaltools,
         org.apache.derby.tests;
 
+    exports org.apache.derby.iapi.services.cache to
+        org.apache.derby.engine,
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.daemon to
+        org.apache.derby.engine,
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.locks to
+        org.apache.derby.engine,
+        org.apache.derby.optionaltools,
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.property to
+        org.apache.derby.engine,
+        org.apache.derby.server,
+        org.apache.derby.tests;
+
     uses org.apache.derby.iapi.services.monitor.MonitorKernelSupport;
 }

@@ -215,7 +215,7 @@ abstract class AbstractPool implements LockFactory
 	}
 
 	public void unlockGroup(CompatibilitySpace compatibilitySpace, Object group,
-							Matchable key) {
+							Object keyObject) {
 
 		if (SanityManager.DEBUG) {
 			if (SanityManager.DEBUG_ON(Constants.LOCK_TRACE)) {
@@ -224,7 +224,7 @@ abstract class AbstractPool implements LockFactory
 			}
 		}
 
-		((LockSpace) compatibilitySpace).unlockGroup(lockTable, group, key);
+		((LockSpace) compatibilitySpace).unlockGroup(lockTable, group, (Matchable) keyObject);
 	}
 
 	/**
