@@ -21,6 +21,8 @@
 
 package org.apache.derby.iapi.types;
 
+import org.apache.derby.iapi.store.types.StoreDataValueFactory;
+
 
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -39,7 +41,7 @@ import java.text.RuleBasedCollator;
  * that the caller pass in an object of the same class that would
  * be returned by the call if null was passed for previous.
  */
-public interface DataValueFactory
+public interface DataValueFactory extends StoreDataValueFactory
 {
         /**
          * Get a SQL int with the given value.  A null argument means get

@@ -60,6 +60,8 @@ module io.github.ggeorg.delosdb.engine.kernel {
 
     exports org.apache.derby.iapi.services.security;
 
+    exports org.apache.derby.iapi.store.types;
+
     exports org.apache.derby.iapi.util;
 
     uses org.apache.derby.iapi.services.monitor.MonitorKernelSupport;

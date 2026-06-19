@@ -21,10 +21,12 @@
 
 package org.apache.derby.iapi.types;
 
+import org.apache.derby.iapi.store.types.StoreRefDataValue;
+
 import org.apache.derby.iapi.types.RowLocation;
 
 
-public interface RefDataValue extends DataValueDescriptor
+public interface RefDataValue extends DataValueDescriptor, StoreRefDataValue
 {
 
 	/**

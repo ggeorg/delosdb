@@ -21,6 +21,8 @@
 
 package org.apache.derby.iapi.types;
 
+import org.apache.derby.iapi.store.types.StoreOrderable;
+
 import org.apache.derby.shared.common.error.StandardException;
 
 /** 
@@ -40,7 +42,7 @@ import org.apache.derby.shared.common.error.StandardException;
 
 **/
 
-public interface Orderable
+public interface Orderable extends StoreOrderable
 {
 
 	/**	 Ordering operation constant representing '&lt;' **/

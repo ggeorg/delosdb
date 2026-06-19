@@ -21,6 +21,8 @@
 
 package org.apache.derby.iapi.types;
 
+import org.apache.derby.iapi.store.types.StoreStringDataValue;
+
 import java.sql.Clob;
 
 import org.apache.derby.shared.common.error.StandardException;
@@ -28,7 +30,7 @@ import org.apache.derby.shared.common.error.StandardException;
 import java.text.RuleBasedCollator;
 import org.apache.derby.iapi.jdbc.CharacterStreamDescriptor;
 
-public interface StringDataValue extends ConcatableDataValue
+public interface StringDataValue extends ConcatableDataValue, StoreStringDataValue
 {
 	// TRIM() types
 	public static final int BOTH		= 0;

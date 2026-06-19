@@ -21,6 +21,8 @@
 
 package org.apache.derby.iapi.types;
 
+import org.apache.derby.iapi.store.types.StoreLocatedRow;
+
 /**
  * <p>
  * Mutable holder for the column values and RowLocation of a conglomerate row.
@@ -28,7 +30,7 @@ package org.apache.derby.iapi.types;
  * are passed in and out.
  * </p>
  */
-public class LocatedRow
+public class LocatedRow implements StoreLocatedRow
 {
     ////////////////////////////////////////////////////////////////
     //

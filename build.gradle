@@ -5948,3 +5948,159 @@ tasks.register('verifyLegacyDerbyKernelB5gTypesDecision') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5gTypesDecision'
 }
+
+// B5h — Seed the SQL-neutral store-facing type boundary before B6
+//
+// B5g selected Option C: do not move the whole inherited Derby type system
+// into delosdb-engine-kernel. B5h creates the neutral kernel-owned type
+// boundary and adapts the engine-owned iapi.types contracts to it. This is a
+// preparatory bridge only; relocated store sources still import iapi.types until
+// the follow-up rewrite swaps them to the store-facing contracts.
+def delosdbB5hKernelTypeRoot = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types')
+def delosdbB5hEngineTypeRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/types')
+def delosdbB5hReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5h-type-bridge.txt')
+
+def delosdbB5hRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5hRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+
+def delosdbB5hKernelTypeSources = { ->
+    fileTree(delosdbB5hKernelTypeRoot) { include '**/*.java' }.files.findAll { it.isFile() }.sort { it.path }
+}
+
+def delosdbB5hForbiddenKernelTypeImports = { ->
+    def forbidden = [
+        'org.apache.derby.iapi.sql.',
+        'org.apache.derby.impl.sql.',
+        'org.apache.derby.iapi.sql.dictionary.',
+        'org.apache.derby.iapi.types.',
+        'org.apache.derby.catalog.',
+        'java.sql.'
+    ]
+    def result = new TreeMap<String, List<String>>()
+    delosdbB5hKernelTypeSources().each { source ->
+        def matches = source.readLines().findAll { line ->
+            def trimmed = line.trim()
+            trimmed.startsWith('import ') && forbidden.any { prefix -> trimmed.contains(prefix) }
+        }.collect { it.trim() }.sort()
+        if (!matches.isEmpty()) {
+            result[delosdbB5hRelPath(source)] = matches
+        }
+    }
+    result
+}
+
+def delosdbB5hEngineAdaptations = [
+    'DataValueDescriptor.java': 'StoreDataValue',
+    'Orderable.java': 'StoreOrderable',
+    'RowLocation.java': 'StoreRowLocation',
+    'DataValueFactory.java': 'StoreDataValueFactory',
+    'StringDataValue.java': 'StoreStringDataValue',
+    'RefDataValue.java': 'StoreRefDataValue',
+    'LocatedRow.java': 'StoreLocatedRow',
+    'DataType.java': 'StoreDataType'
+]
+
+tasks.register('legacyDerbyStoreKernelB5hTypeBridgeReport') {
+    group = 'verification'
+    description = 'B5h: reports the SQL-neutral store-facing type bridge before rewriting store imports.'
+    dependsOn 'verifyLegacyDerbyKernelB5gTypesDecision'
+    outputs.file(delosdbB5hReportFile)
+    doLast {
+        def bridgeFiles = delosdbB5hKernelTypeSources()
+        def forbiddenImports = delosdbB5hForbiddenKernelTypeImports()
+        def reportFile = delosdbB5hReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5h legacy Derby store type bridge
+================================================
+
+Purpose
+-------
+B5h starts the Option C implementation chosen by B5g. It introduces a
+SQL-neutral, kernel-owned package for store-facing value contracts:
+
+  org.apache.derby.iapi.store.types
+
+This avoids moving the whole org.apache.derby.iapi.types package into
+io.github.ggeorg.delosdb.engine.kernel.
+
+Kernel-owned store-facing type contracts
+----------------------------------------
+${bridgeFiles.isEmpty() ? '  none' : bridgeFiles.collect { '  - ' + delosdbB5hRelPath(it) }.join('\n')}
+
+Forbidden SQL/type/catalog imports in kernel store-type contracts
+-----------------------------------------------------------------
+${forbiddenImports.isEmpty() ? '  none' : forbiddenImports.collect { fileName, imports -> '  - ' + fileName + '\n' + imports.collect { '      ' + it }.join('\n') }.join('\n')}
+
+Engine-owned iapi.types contracts adapted to the bridge
+------------------------------------------------------
+${delosdbB5hEngineAdaptations.collect { fileName, marker -> String.format('  - %-28s -> %s', fileName, marker) }.join('\n')}
+
+Boundary rule
+-------------
+The kernel store-facing type contracts must stay SQL-neutral. They must not
+import SQL compiler/binder APIs, DataDictionary, Derby catalog APIs, java.sql,
+or org.apache.derby.iapi.types.
+
+B6 readiness
+------------
+NOT YET. The bridge exists, but relocated store source signatures still need to
+be rewritten from org.apache.derby.iapi.types.* to the store-facing contracts.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5hRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5hTypeBridge') {
+    group = 'verification'
+    description = 'B5h: verifies the SQL-neutral store-facing type bridge exists and engine types adapt to it.'
+    dependsOn 'legacyDerbyStoreKernelB5hTypeBridgeReport'
+    doLast {
+        def requiredBridgeTypes = [
+            'StoreDataValue.java',
+            'StoreOrderable.java',
+            'StoreRowLocation.java',
+            'StoreStringDataValue.java',
+            'StoreRefDataValue.java',
+            'StoreDataValueFactory.java',
+            'StoreLocatedRow.java',
+            'StoreDataType.java'
+        ]
+        requiredBridgeTypes.each { name ->
+            def source = new File(delosdbB5hKernelTypeRoot, name)
+            if (!source.isFile()) {
+                throw new GradleException('B5h missing kernel store-facing type contract: ' + delosdbB5hRelPath(source))
+            }
+        }
+
+        def kernelModuleInfo = delosdbB5hRead(file('delosdb-engine-kernel/src/main/java/module-info.java'))
+        if (!kernelModuleInfo.contains('exports org.apache.derby.iapi.store.types')) {
+            throw new GradleException('B5h kernel module-info must export org.apache.derby.iapi.store.types')
+        }
+
+        def forbiddenImports = delosdbB5hForbiddenKernelTypeImports()
+        if (!forbiddenImports.isEmpty()) {
+            throw new GradleException('B5h kernel store type contracts must not import SQL/catalog/iapi.types/java.sql APIs: ' + forbiddenImports.keySet().join(', '))
+        }
+
+        delosdbB5hEngineAdaptations.each { fileName, marker ->
+            def source = new File(delosdbB5hEngineTypeRoot, fileName)
+            def text = delosdbB5hRead(source)
+            if (!text.contains('org.apache.derby.iapi.store.types.' + marker)) {
+                throw new GradleException('B5h expected ' + fileName + ' to import ' + marker)
+            }
+            if (!text.contains(marker)) {
+                throw new GradleException('B5h expected ' + fileName + ' to adapt to ' + marker)
+            }
+        }
+
+        def reportText = delosdbB5hRead(delosdbB5hReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5h report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5h SQL-neutral store type bridge; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5hTypeBridge'
+}

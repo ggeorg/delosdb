@@ -21,6 +21,8 @@
 
 package org.apache.derby.iapi.types;
 
+import org.apache.derby.iapi.store.types.StoreDataValue;
+
 import org.apache.derby.iapi.services.io.ArrayInputStream;
 
 import org.apache.derby.shared.common.error.StandardException;
@@ -94,7 +96,7 @@ import java.util.Calendar;
  * 
  */
 
-public interface DataValueDescriptor extends Storable, Orderable
+public interface DataValueDescriptor extends Storable, Orderable, StoreDataValue
 {
 
     /**

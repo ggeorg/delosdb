@@ -21,6 +21,8 @@
 
 package org.apache.derby.iapi.types;
 
+import org.apache.derby.iapi.store.types.StoreDataType;
+
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.io.ArrayInputStream;
@@ -60,7 +62,7 @@ import java.util.Calendar;
  *
  */
 public abstract class DataType
-    implements DataValueDescriptor, Comparable
+    implements DataValueDescriptor, StoreDataType, Comparable
 {
 	/*
 	 * DataValueDescriptor Interface
