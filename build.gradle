@@ -4705,3 +4705,253 @@ tasks.register('verifyLegacyDerbyKernelPropertyCacheLockExtraction') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelPropertyCacheLockExtraction'
 }
+
+// B5 — Legacy Derby store remaining dependency decision gate
+//
+// B5 intentionally does not move packages. After B4, the remaining blockers are
+// not just iapi.types; they include the Derby format serialization package,
+// public catalog UUID surface, diagnostics, low-level utilities, and a few
+// engine/security seams. This gate makes that exact dependency shape executable
+// before the real independent storage-module cut.
+def delosdbB5StoreRoots = [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+]
+def delosdbB5EngineSourceRoot = file('delosdb-engine/src/main/java')
+def delosdbB5KernelSourceRoot = file('delosdb-engine-kernel/src/main/java')
+def delosdbB5ReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5-decision.txt')
+
+def delosdbB5RelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+
+def delosdbB5JavaSourcesUnder = { File root ->
+    if (!root.exists()) {
+        return []
+    }
+    fileTree(root) { include '**/*.java' }.files.sort { a, b -> a.path <=> b.path }
+}
+
+def delosdbB5ImportsFromSources = { Collection<File> sources ->
+    def imports = []
+    sources.each { source ->
+        source.eachLine { line ->
+            def matcher = line =~ /^\s*import\s+([^;]+);\s*$/
+            if (matcher.matches()) {
+                def importedType = matcher[0][1]
+                if (!importedType.startsWith('java.') && !importedType.startsWith('javax.')) {
+                    imports << [source: source, importedType: importedType]
+                }
+            }
+        }
+    }
+    imports
+}
+
+def delosdbB5SimpleImportCounts = { Collection<Map> imports ->
+    if (imports.isEmpty()) {
+        return '  (none)'
+    }
+    imports.groupBy { it.importedType }
+            .collect { importedType, rows -> [importedType: importedType, count: rows.size(), files: rows.collect { it.source }.unique().size()] }
+            .sort { a, b -> b.count <=> a.count ?: a.importedType <=> b.importedType }
+            .collect { String.format('  %-86s %4d imports / %3d files', it.importedType, it.count, it.files) }
+            .join('\n')
+}
+
+def delosdbB5GroupedImportSummary = { Collection<Map> imports ->
+    if (imports.isEmpty()) {
+        return '  (none)'
+    }
+    imports.groupBy { it.importedType }
+            .collect { importedType, rows -> [importedType: importedType, files: rows.collect { it.source }.unique().sort { a, b -> a.path <=> b.path }] }
+            .sort { a, b -> a.importedType <=> b.importedType }
+            .collect { item ->
+                def files = item.files.collect { '      - ' + delosdbB5RelPath(it) }.join('\n')
+                "  ${item.importedType}\n${files}"
+            }
+            .join('\n')
+}
+
+def delosdbB5PackageImports = { Collection<Map> imports, String prefix ->
+    imports.findAll { it.importedType.startsWith(prefix) }
+}
+
+def delosdbB5EngineOwnedImports = { Collection<Map> imports ->
+    imports.findAll { imported ->
+        if (!imported.importedType.startsWith('org.apache.derby.') && !imported.importedType.startsWith('io.github.ggeorg.delosdb.engine.')) {
+            return false
+        }
+        def packagePath = imported.importedType.substring(0, imported.importedType.lastIndexOf('.')).replace('.', '/')
+        def inEngine = new File(delosdbB5EngineSourceRoot, packagePath).exists()
+        def inKernel = new File(delosdbB5KernelSourceRoot, packagePath).exists()
+        return inEngine && !inKernel
+    }
+}
+
+def delosdbB5TypeMoveRiskImports = { ->
+    def typeRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/types')
+    delosdbB5ImportsFromSources(delosdbB5JavaSourcesUnder(typeRoot)).findAll { imported ->
+        imported.importedType.startsWith('org.apache.derby.iapi.sql.') ||
+                imported.importedType.startsWith('org.apache.derby.impl.sql.') ||
+                imported.importedType.startsWith('org.apache.derby.iapi.db.') ||
+                imported.importedType.startsWith('org.apache.derby.iapi.jdbc.') ||
+                imported.importedType.startsWith('org.apache.derby.iapi.services.loader.') ||
+                imported.importedType.startsWith('org.apache.derby.iapi.xml.') ||
+                imported.importedType.startsWith('org.apache.derby.catalog.') ||
+                imported.importedType.startsWith('org.apache.derby.impl.jdbc.')
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5DependencyDecisionReport') {
+    group = 'verification'
+    description = 'B5: reports remaining exact blockers after B4 and records the iapi.types dependency decision.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelDependencyReport'
+    outputs.file(delosdbB5ReportFile)
+    doLast {
+        def storeSources = delosdbB5StoreRoots.collectMany { delosdbB5JavaSourcesUnder(it) }
+        def imports = delosdbB5ImportsFromSources(storeSources)
+        def engineOwned = delosdbB5EngineOwnedImports(imports)
+        def serviceIoImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.services.io.')
+        def typeImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.types.')
+        def utilImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.util.')
+        def diagImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.services.diag.')
+        def catalogImports = delosdbB5PackageImports(imports, 'org.apache.derby.catalog.')
+        def uuidImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.services.uuid.')
+        def securityImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.security.')
+        def cryptoImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.services.crypto.')
+        def typeMoveRiskImports = delosdbB5TypeMoveRiskImports()
+        def reportFile = delosdbB5ReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5 legacy Derby store remaining dependency decision
+================================================================
+
+Purpose
+-------
+B5 resolves the post-B4 dependency decision before the B6 independent
+legacy-store compilation cut. It does not move files. It prevents a reckless
+all-iapi.types move from silently dragging SQL, catalog, loader, XML, or JDBC
+machinery into delosdb-engine-kernel.
+
+Relocated store source tree scanned
+-----------------------------------
+${delosdbB5StoreRoots.collect { '  - ' + delosdbB5RelPath(it) }.join('\n')}
+
+Relocated store source files: ${storeSources.size()}
+
+Remaining engine-owned imports after B4
+---------------------------------------
+${delosdbB5SimpleImportCounts(engineOwned)}
+
+Exact org.apache.derby.iapi.services.io imports
+-----------------------------------------------
+${delosdbB5SimpleImportCounts(serviceIoImports)}
+
+Exact org.apache.derby.iapi.types imports
+-----------------------------------------
+${delosdbB5SimpleImportCounts(typeImports)}
+
+Exact org.apache.derby.iapi.util imports
+----------------------------------------
+${delosdbB5SimpleImportCounts(utilImports)}
+
+Exact org.apache.derby.iapi.services.diag imports
+-------------------------------------------------
+${delosdbB5SimpleImportCounts(diagImports)}
+
+Exact UUID/catalog imports
+--------------------------
+${delosdbB5SimpleImportCounts(catalogImports + uuidImports)}
+
+Exact security/crypto imports
+-----------------------------
+${delosdbB5SimpleImportCounts(securityImports + cryptoImports)}
+
+Why not move all org.apache.derby.iapi.types in B5?
+---------------------------------------------------
+The store directly needs a small-looking set of type APIs, but that set closes
+over most of org.apache.derby.iapi.types. The package itself still imports SQL,
+loader, catalog, XML, JDBC, and database-facing classes. Moving all of it into
+the kernel would make the kernel a disguised engine module.
+
+Risk imports found inside org.apache.derby.iapi.types
+-----------------------------------------------------
+${delosdbB5SimpleImportCounts(typeMoveRiskImports)}
+
+B5 decision
+-----------
+Option B is rejected for now:
+  Do not move all org.apache.derby.iapi.types blindly.
+
+Option A is not small enough yet:
+  The direct store type set pulls a large transitive type closure.
+
+Chosen direction before B6:
+  Use a follow-up dependency split for the serialization/type boundary instead
+  of a one-shot all-types move. The next executable cut must address these
+  exact blockers in this order:
+    1. org.apache.derby.iapi.services.io format/serialization support
+    2. org.apache.derby.iapi.util and diagnostics used by store code
+    3. UUID/catalog boundary without JPMS split packages
+    4. store-facing type core or a neutral store-facing type contract
+
+B6 readiness
+------------
+NOT YET. B6 must not start until the above blockers are removed or intentionally
+adapted so delosdb-storage-derby can compile without depending on
+org.apache.derby.engine.
+
+Detailed remaining engine-owned import locations
+------------------------------------------------
+${delosdbB5GroupedImportSummary(engineOwned)}
+"""
+        logger.lifecycle('Wrote ' + delosdbB5RelPath(reportFile))
+        logger.lifecycle('B5 decision: do not move all iapi.types blindly; B6 readiness is NOT YET')
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5DependencyDecision') {
+    group = 'verification'
+    description = 'B5: verifies the remaining-dependency decision before attempting independent legacy-store compilation.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5DependencyDecisionReport'
+    doLast {
+        def storeSources = delosdbB5StoreRoots.collectMany { delosdbB5JavaSourcesUnder(it) }
+        def imports = delosdbB5ImportsFromSources(storeSources)
+        def typeImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.types.')
+        def serviceIoImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.services.io.')
+        def catalogImports = delosdbB5PackageImports(imports, 'org.apache.derby.catalog.')
+        def uuidImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.services.uuid.')
+        ['org.apache.derby.iapi.types.DataValueDescriptor',
+         'org.apache.derby.iapi.types.RowLocation',
+         'org.apache.derby.iapi.types.DataValueFactory'].each { requiredImport ->
+            if (!typeImports.any { it.importedType == requiredImport }) {
+                throw new GradleException('B5 expected relocated store to still expose exact type dependency: ' + requiredImport)
+            }
+        }
+        if (serviceIoImports.isEmpty()) {
+            throw new GradleException('B5 expected relocated store to still depend on org.apache.derby.iapi.services.io before the serialization boundary is cut')
+        }
+        if (!catalogImports.any { it.importedType == 'org.apache.derby.catalog.UUID' } ||
+                !uuidImports.any { it.importedType == 'org.apache.derby.iapi.services.uuid.UUIDFactory' }) {
+            throw new GradleException('B5 expected UUID/catalog boundary to remain an explicit blocker')
+        }
+        if (file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/types').exists()) {
+            throw new GradleException('B5 must not move all iapi.types into the kernel in this decision gate')
+        }
+        def typeMoveRiskImports = delosdbB5TypeMoveRiskImports()
+        ['org.apache.derby.iapi.sql.conn.LanguageConnectionContext',
+         'org.apache.derby.iapi.sql.dictionary.DataDictionary',
+         'org.apache.derby.iapi.services.loader.ClassFactory'].each { riskyImport ->
+            if (!typeMoveRiskImports.any { it.importedType == riskyImport }) {
+                throw new GradleException('B5 expected iapi.types move-risk import not found: ' + riskyImport)
+            }
+        }
+        def reportFile = delosdbB5ReportFile.get().asFile
+        if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
+            throw new GradleException('B5 report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5 remaining dependency decision; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5DependencyDecision'
+}
