@@ -3107,3 +3107,96 @@ tasks.register('legacyDerbyStoreSqlExecutionDecouplingProof') {
     description = 'Runs the DS5 proof that legacy Derby store no longer imports SQL execution classes and behavior still works.'
     dependsOn 'verifyLegacyDerbyStoreBoundary', 'legacyDerbyStoreSqlExecutionSmoke'
 }
+
+// -----------------------------------------------------------------------------
+// DS6 — Legacy Derby store extraction preflight closeout
+// -----------------------------------------------------------------------------
+// This is a closeout gate only. It adds no file movement, no module extraction,
+// no provider rewiring, and no behavior change. The goal is to make Phase 1
+// auditable before the physical delosdb-storage-derby extraction begins.
+
+tasks.register('legacyDerbyStorePhase1CloseoutReport') {
+    group = 'verification'
+    description = 'Writes the DS6 closeout report for Phase 1 of legacy Derby store modularization surgery.'
+    dependsOn 'legacyStoreDependencyReport',
+            'verifyLegacyDerbyStoreBoundary',
+            'legacyDerbyStoreDataDictionaryDecouplingProof',
+            'legacyDerbyStoreSqlContextDecouplingProof',
+            'legacyDerbyStoreSqlExecutionDecouplingProof'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-phase1-closeout.txt'))
+    doLast {
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-phase1-closeout.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+
+        def apiFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
+        def implFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+        def storeFiles = []
+        storeFiles.addAll(apiFiles)
+        storeFiles.addAll(implFiles)
+
+        def upwardLeakImports = delosdbDs1ImportMatches(
+                storeFiles,
+                ['org.apache.derby.iapi.sql.dictionary.',
+                 'org.apache.derby.iapi.sql.conn.',
+                 'org.apache.derby.impl.sql.execute.',
+                 'io.github.ggeorg.delosdb.storage.mvcc.'])
+
+        def nonStoreEngineImports = delosdbDs1ImportMatches(
+                delosdbDs1JavaFiles('delosdb-engine/src/main/java').findAll { source ->
+                    !delosdbDs1IsUnder(source, delosdbDs1StoreApiRoot) && !delosdbDs1IsUnder(source, delosdbDs1StoreImplRoot)
+                },
+                ['org.apache.derby.iapi.store.', 'org.apache.derby.impl.store.'])
+
+        reportFile.text = """DelosDB DS6 legacy Derby store Phase 1 closeout
+===================================================
+
+Status
+------
+Phase 1 is extractable when this task and its dependencies are green.
+No store packages have moved yet.
+No new storage module has been created yet.
+No default-storage behavior changed.
+
+Inventory
+---------
+org.apache.derby.iapi.store.* files: ${apiFiles.size()}
+org.apache.derby.impl.store.* files: ${implFiles.size()}
+non-store engine files importing inherited Derby store: ${nonStoreEngineImports.collect { it.file }.unique().size()}
+
+Closed Phase 1 blockers
+-----------------------
+- legacy Derby store -> DataDictionary dependency removed
+- legacy Derby store -> LanguageConnectionContext/StatementContext dependency removed
+- legacy Derby store -> impl.sql.execute dependency removed
+- DelosDB-native MVCC -> Derby store imports forbidden
+- legacy Derby store -> MVCC imports forbidden
+- split inherited-store packages forbidden
+
+Remaining store upward leaks after DS6
+--------------------------------------
+${upwardLeakImports.collect { "${it.file}:${it.line}: import ${it.importedType};" }.join('\n') ?: '(none)'}
+
+Phase 2 entry condition
+-----------------------
+If this report says no remaining upward leaks and the closeout gate is green,
+Phase 2 may create delosdb-storage-derby and move whole store packages.
+"""
+        logger.lifecycle("Wrote ${delosdbDs1RelPath(reportFile)}")
+    }
+}
+
+tasks.register('legacyDerbyStorePhase1Closeout') {
+    group = 'verification'
+    description = 'Runs the DS6 done gate for Phase 1 before physical Derby store extraction starts.'
+    dependsOn 'verifyLegacyDerbyStoreBoundary',
+            'legacyStoreDependencyReport',
+            'legacyDerbyStoreDataDictionaryDecouplingProof',
+            'legacyDerbyStoreSqlContextDecouplingProof',
+            'legacyDerbyStoreSqlExecutionDecouplingProof',
+            'mvccSqlCompatibilityCandidate',
+            'mvccSqlBridgeHistoryPrunedProof',
+            ':delosdb-storage-mvcc:check',
+            ':delosdb-engine:derbyJar',
+            ':delosdb-tests:runDerbyLangSuite',
+            'legacyDerbyStorePhase1CloseoutReport'
+}
