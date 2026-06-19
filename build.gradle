@@ -3271,3 +3271,145 @@ tasks.register('verifyLegacyDerbyStorageModuleScaffold') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyStorageModuleScaffold'
 }
+
+// -----------------------------------------------------------------------------
+// DS10 — Runtime packaging proof after legacy Derby store source extraction
+// -----------------------------------------------------------------------------
+// DS8/DS9 moved legacy Derby store source ownership under delosdb-storage-derby.
+// DS10 proves the compatibility runtime remains unchanged: derby.jar still
+// carries the inherited store classes needed by existing jar-based users, while
+// delosdb-storage-derby.jar is not required on the runtime classpath yet.
+
+ext.legacyDerbyStoreRuntimeRequiredEntries = [
+        'org/apache/derby/iapi/store/access/TransactionController.class',
+        'org/apache/derby/iapi/store/raw/Transaction.class',
+        'org/apache/derby/impl/store/access/heap/Heap.class',
+        'org/apache/derby/impl/store/access/btree/index/B2I.class',
+        'org/apache/derby/impl/store/raw/data/StoredPage.class',
+        'org/apache/derby/impl/store/raw/log/LogToFile.class',
+        'org/apache/derby/modules.properties'
+]
+
+def delosdbDs10JarEntries = { File jarFile ->
+    def entries = [] as Set<String>
+    new java.util.zip.ZipFile(jarFile).withCloseable { zip ->
+        zip.entries().each { entry -> entries.add(entry.name) }
+    }
+    entries
+}
+
+tasks.register('verifyLegacyDerbyStoreRuntimePackaging') {
+    group = 'verification'
+    description = 'Verifies derby.jar still contains the relocated legacy Derby store runtime classes after DS8/DS9.'
+    dependsOn ':delosdb-engine:derbyJar', ':delosdb-storage-derby:legacyDerbyStorageJar', 'verifyLegacyDerbyStoreBoundary'
+    doLast {
+        def derbyJar = layout.buildDirectory.file('libs/derby.jar').get().asFile
+        if (!derbyJar.isFile()) {
+            throw new GradleException("Missing ${derbyJar}; run :delosdb-engine:derbyJar")
+        }
+
+        def derbyEntries = delosdbDs10JarEntries(derbyJar)
+        def missing = legacyDerbyStoreRuntimeRequiredEntries.findAll { !derbyEntries.contains(it) }
+        if (!missing.isEmpty()) {
+            throw new GradleException("derby.jar is missing legacy Derby store runtime entries after DS9:\n" + missing.join('\n'))
+        }
+
+        def storageJar = layout.buildDirectory.file('libs/delosdb-storage-derby.jar').get().asFile
+        if (storageJar.isFile()) {
+            def storageEntries = delosdbDs10JarEntries(storageJar)
+            def duplicatedRuntimeStoreEntries = storageEntries.findAll { entry ->
+                entry.startsWith('org/apache/derby/iapi/store/') || entry.startsWith('org/apache/derby/impl/store/')
+            }
+            if (!duplicatedRuntimeStoreEntries.isEmpty()) {
+                throw new GradleException('DS10 keeps compatibility packaging in derby.jar; delosdb-storage-derby.jar must not also carry runtime store packages yet. Duplicates include:\n'
+                        + duplicatedRuntimeStoreEntries.take(20).join('\n'))
+            }
+        }
+
+        logger.lifecycle('Verified DS10 compatibility packaging: derby.jar carries legacy Derby store runtime classes; no separate storage jar is required yet')
+    }
+}
+
+def legacyDerbyStoreRuntimePackagingSmokeClassesDir = layout.buildDirectory.dir('classes/legacy-derby-store-runtime-packaging-smoke')
+
+tasks.register('compileLegacyDerbyStoreRuntimePackagingSmoke', JavaCompile) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Compiles the DS10 jar-runtime heap boot smoke test.'
+    source = files('dev/legacy-derby-store-runtime-packaging-smoke/src/main/java', smokeUtilsSourceDir)
+    destinationDirectory = legacyDerbyStoreRuntimePackagingSmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = runtimeJars()
+}
+
+tasks.register('legacyDerbyStoreRuntimePackagingSmoke', JavaExec) {
+    dependsOn 'compileLegacyDerbyStoreRuntimePackagingSmoke', 'verifyLegacyDerbyStoreRuntimePackaging'
+    group = 'verification'
+    description = 'Boots the heap provider from the assembled compatibility jars without delosdb-storage-derby.jar on the classpath.'
+    classpath = files(legacyDerbyStoreRuntimePackagingSmokeClassesDir, runtimeJars())
+    mainClass = 'delosdb.smoke.LegacyDerbyStoreRuntimePackagingSmoke'
+    args layout.buildDirectory.dir('legacy-derby-store-runtime-packaging-smoke/db').get().asFile.absolutePath
+    workingDir = layout.buildDirectory.dir('legacy-derby-store-runtime-packaging-smoke').get().asFile
+    doFirst {
+        delete file('build/legacy-derby-store-runtime-packaging-smoke')
+        workingDir.mkdirs()
+    }
+}
+
+tasks.register('legacyDerbyStoreRuntimePackagingReport') {
+    group = 'verification'
+    description = 'Writes the DS10 runtime packaging decision report for the extracted legacy Derby store sources.'
+    dependsOn 'verifyLegacyDerbyStoreRuntimePackaging'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-runtime-packaging-ds10.txt'))
+    doLast {
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-runtime-packaging-ds10.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB DS10 legacy Derby store runtime packaging proof
+=========================================================
+
+Status
+------
+DS8/DS9 moved legacy Derby store source ownership under delosdb-storage-derby.
+DS10 keeps runtime compatibility packaging unchanged.
+
+Compatibility decision
+----------------------
+derby.jar still includes the inherited Derby store runtime classes.
+Existing jar-based users do not need to manually add delosdb-storage-derby.jar yet.
+The delosdb-storage-derby source module is the source-ownership home for the store,
+but the compatibility runtime remains derby.jar-first until a later explicit packaging decision.
+
+Required derby.jar entries checked
+----------------------------------
+${legacyDerbyStoreRuntimeRequiredEntries.join('\n')}
+
+Smoke coverage
+--------------
+legacyDerbyStoreRuntimePackagingSmoke runs on runtimeJars() only, without delosdb-storage-derby.jar,
+creates a default heap table, creates an index, reopens the database, reads ordered rows, updates a row,
+and shuts down cleanly.
+
+Out of scope
+------------
+No default-storage flip.
+No disk-format change.
+No Derby package rename.
+No separate runtime jar requirement yet.
+"""
+        logger.lifecycle("Wrote ${delosdbDs1RelPath(reportFile)}")
+    }
+}
+
+tasks.register('legacyDerbyStoreRuntimePackagingProof') {
+    group = 'verification'
+    description = 'Runs the DS10 done gate for runtime packaging after Derby store source extraction.'
+    dependsOn 'verifyLegacyDerbyStoreRuntimePackaging',
+            'legacyDerbyStoreRuntimePackagingSmoke',
+            'legacyDerbyStoreRuntimePackagingReport',
+            'mvccSqlCompatibilityCandidate',
+            'mvccSqlBridgeHistoryPrunedProof',
+            ':delosdb-tests:runDerbyLangSuite'
+}
