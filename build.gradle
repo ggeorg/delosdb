@@ -4049,3 +4049,35 @@ A0 scope guard:
         logger.lifecycle('Wrote ' + delosdbA0RelPath(reportFile))
     }
 }
+
+// -----------------------------------------------------------------------------
+// B1 — Engine kernel scaffold truth guard
+// -----------------------------------------------------------------------------
+
+tasks.register('verifyLegacyDerbyEngineKernelScaffold') {
+    group = 'verification'
+    description = 'B1: verifies the delosdb-engine-kernel Gradle/JPMS scaffold exists and compiles before package movement.'
+    dependsOn ':delosdb-engine-kernel:classes'
+    doLast {
+        def settingsFile = file('settings.gradle')
+        def buildFile = file('delosdb-engine-kernel/build.gradle')
+        def moduleInfo = file('delosdb-engine-kernel/src/main/java/module-info.java')
+        if (!settingsFile.text.contains("include 'delosdb-engine-kernel'")) {
+            throw new GradleException('B1 kernel scaffold missing settings.gradle include for delosdb-engine-kernel')
+        }
+        if (!buildFile.isFile()) {
+            throw new GradleException('B1 kernel scaffold missing delosdb-engine-kernel/build.gradle')
+        }
+        if (!moduleInfo.isFile()) {
+            throw new GradleException('B1 kernel scaffold missing delosdb-engine-kernel/src/main/java/module-info.java')
+        }
+        if (!moduleInfo.text.contains('module io.github.ggeorg.delosdb.engine.kernel')) {
+            throw new GradleException('B1 kernel scaffold module-info.java must declare io.github.ggeorg.delosdb.engine.kernel')
+        }
+        logger.lifecycle('Verified B1 delosdb-engine-kernel scaffold')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyEngineKernelScaffold'
+}
