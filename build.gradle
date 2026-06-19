@@ -5766,3 +5766,185 @@ tasks.register('verifyLegacyDerbyKernelB5fSecuritySplit') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5fSecuritySplit'
 }
+
+// B5g — Decide the store-facing iapi.types boundary before B6
+//
+// After B5a-B5f the remaining independent-compilation blocker is not a
+// service package. It is the inherited Derby type system boundary. The legacy
+// store needs DataValueDescriptor/RowLocation/DataValueFactory and a few
+// concrete helper values, but the full org.apache.derby.iapi.types package is
+// not kernel-safe because it reaches back into SQL, dictionary, activation,
+// catalog type descriptors, XML, JDBC and implementation classes. B5g records
+// the decision gate so B6 cannot silently depend on engine-owned types.
+def delosdbB5gEngineSourceRoot = file('delosdb-engine/src/main/java')
+def delosdbB5gStoreSourceRoot = file('delosdb-storage-derby/src/main/java')
+def delosdbB5gReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5g-types-decision.txt')
+
+def delosdbB5gRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5gRead = { File f -> f.isFile() ? f.text : '' }
+
+def delosdbB5gStoreJavaSources = { ->
+    fileTree(delosdbB5gStoreSourceRoot) {
+        include 'org/apache/derby/iapi/store/**/*.java'
+        include 'org/apache/derby/impl/store/**/*.java'
+    }.files.findAll { it.isFile() }
+}
+
+def delosdbB5gFilesImporting = { String importedPrefix ->
+    delosdbB5gStoreJavaSources().findAll { source ->
+        source.readLines().any { line ->
+            def trimmed = line.trim()
+            trimmed.startsWith('import ') && trimmed.contains(importedPrefix)
+        }
+    }.sort { it.path }
+}
+
+def delosdbB5gTypeImportCounts = { ->
+    def counts = new TreeMap<String, Integer>()
+    delosdbB5gStoreJavaSources().each { source ->
+        source.readLines().each { line ->
+            def trimmed = line.trim()
+            if (trimmed.startsWith('import org.apache.derby.iapi.types.') && trimmed.endsWith(';')) {
+                def imported = trimmed.substring('import org.apache.derby.iapi.types.'.length(), trimmed.length() - 1)
+                counts[imported] = (counts[imported] ?: 0) + 1
+            }
+        }
+    }
+    counts
+}
+
+def delosdbB5gDirectTypeFiles = { ->
+    delosdbB5gTypeImportCounts().keySet().collect { name ->
+        new File(delosdbB5gEngineSourceRoot, 'org/apache/derby/iapi/types/' + name + '.java')
+    }.findAll { it.isFile() }.sort { it.path }
+}
+
+def delosdbB5gRiskyTypeImports = { ->
+    def riskyPrefixes = [
+        'org.apache.derby.iapi.sql.',
+        'org.apache.derby.impl.sql.',
+        'org.apache.derby.iapi.db.',
+        'org.apache.derby.iapi.jdbc.',
+        'org.apache.derby.catalog.',
+        'org.apache.derby.iapi.xml.'
+    ]
+    def result = new TreeMap<String, List<String>>()
+    delosdbB5gDirectTypeFiles().each { source ->
+        def risky = source.readLines().findAll { line ->
+            def trimmed = line.trim()
+            trimmed.startsWith('import ') && riskyPrefixes.any { prefix -> trimmed.contains(prefix) }
+        }.collect { it.trim() }.sort()
+        if (!risky.isEmpty()) {
+            result[delosdbB5gRelPath(source)] = risky
+        }
+    }
+    result
+}
+
+tasks.register('legacyDerbyStoreKernelB5gTypesDecisionReport') {
+    group = 'verification'
+    description = 'B5g: reports the remaining store-facing iapi.types boundary decision before B6.'
+    dependsOn 'verifyLegacyDerbyKernelB5fSecuritySplit'
+    outputs.file(delosdbB5gReportFile)
+    doLast {
+        def typeCounts = delosdbB5gTypeImportCounts()
+        def typeImportFiles = delosdbB5gFilesImporting('org.apache.derby.iapi.types.')
+        def securityImports = delosdbB5gFilesImporting('org.apache.derby.iapi.security.')
+        def uuidImports = delosdbB5gFilesImporting('org.apache.derby.catalog.UUID')
+        def riskyTypeImports = delosdbB5gRiskyTypeImports()
+        def reportFile = delosdbB5gReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5g legacy Derby store iapi.types boundary decision
+================================================================
+
+Purpose
+-------
+B5g is the final pre-B6 decision gate for inherited Derby type dependencies.
+After B5a-B5f, the relocated Derby store should no longer depend directly on
+SQL-owned security APIs or catalog UUID classes. The remaining blocker is the
+store-facing slice of org.apache.derby.iapi.types.
+
+Current remaining direct store imports of org.apache.derby.iapi.types.*
+---------------------------------------------------------------------
+${typeCounts.isEmpty() ? '  none' : typeCounts.collect { k, v -> String.format('  - %-24s %d', k, v) }.join('\n')}
+
+Relocated store files still importing org.apache.derby.iapi.types.*
+------------------------------------------------------------------
+${typeImportFiles.isEmpty() ? '  none' : typeImportFiles.collect { '  - ' + delosdbB5gRelPath(it) }.join('\n')}
+
+Post-B5f sanity checks
+----------------------
+Direct relocated store imports of org.apache.derby.iapi.security.*:
+${securityImports.isEmpty() ? '  none' : securityImports.collect { '  - ' + delosdbB5gRelPath(it) }.join('\n')}
+
+Direct relocated store imports of org.apache.derby.catalog.UUID:
+${uuidImports.isEmpty() ? '  none' : uuidImports.collect { '  - ' + delosdbB5gRelPath(it) }.join('\n')}
+
+Why not move all org.apache.derby.iapi.types blindly?
+----------------------------------------------------
+The direct store imports look small, but their type-system closure is not a
+pure store/kernel dependency. It reaches into SQL, dictionary, activation,
+JDBC, catalog type descriptors, XML, and Derby implementation classes.
+
+Risky imports found in directly store-imported type classes
+----------------------------------------------------------
+${riskyTypeImports.isEmpty() ? '  none' : riskyTypeImports.collect { fileName, imports -> '  - ' + fileName + '\n' + imports.collect { '      ' + it }.join('\n') }.join('\n')}
+
+Decision
+--------
+Selected option: Option C.
+Introduce a smaller neutral store-facing type boundary instead of moving the
+whole org.apache.derby.iapi.types package into delosdb-engine-kernel.
+
+B6 readiness
+------------
+NOT YET. B6 must not start until the store-facing type boundary is resolved.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5gRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5gTypesDecision') {
+    group = 'verification'
+    description = 'B5g: verifies that the remaining iapi.types blocker is classified before B6.'
+    dependsOn 'legacyDerbyStoreKernelB5gTypesDecisionReport'
+    doLast {
+        def securityImports = delosdbB5gFilesImporting('org.apache.derby.iapi.security.')
+        if (!securityImports.isEmpty()) {
+            throw new GradleException('B5g expected B5f to remove direct store imports of iapi.security: ' + securityImports.collect { delosdbB5gRelPath(it) }.join(', '))
+        }
+        def uuidImports = delosdbB5gFilesImporting('org.apache.derby.catalog.UUID')
+        if (!uuidImports.isEmpty()) {
+            throw new GradleException('B5g expected B5e to remove direct store imports of catalog.UUID: ' + uuidImports.collect { delosdbB5gRelPath(it) }.join(', '))
+        }
+        def typeCounts = delosdbB5gTypeImportCounts()
+        if (typeCounts.isEmpty()) {
+            throw new GradleException('B5g expected iapi.types to remain the explicit pre-B6 blocker')
+        }
+        ['DataValueDescriptor', 'RowLocation', 'DataValueFactory'].each { required ->
+            if (!typeCounts.containsKey(required)) {
+                throw new GradleException('B5g expected relocated store to still import ' + required + ' as part of the type boundary inventory')
+            }
+        }
+        def riskyTypeImports = delosdbB5gRiskyTypeImports()
+        if (riskyTypeImports.isEmpty()) {
+            throw new GradleException('B5g expected the direct type closure to expose risky SQL/catalog/JDBC dependencies')
+        }
+        def reportFile = delosdbB5gReportFile.get().asFile
+        def reportText = delosdbB5gRead(reportFile)
+        if (!reportText.contains('Selected option: Option C')) {
+            throw new GradleException('B5g report must explicitly select Option C')
+        }
+        if (!reportText.contains('Do not move all org.apache.derby.iapi.types blindly') && !reportText.contains('Why not move all org.apache.derby.iapi.types blindly?')) {
+            throw new GradleException('B5g report must explicitly reject moving all iapi.types blindly')
+        }
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5g report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5g iapi.types boundary decision; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5gTypesDecision'
+}
