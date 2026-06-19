@@ -33,7 +33,7 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -197,10 +197,10 @@ public class B2IForwardScan extends BTreeForwardScan
     int                             isolation_level,
     boolean                         open_for_locking,
     FormatableBitSet                         scanColumnList,
-    DataValueDescriptor[]	        startKeyValue,
+    StoreDataValue[]	        startKeyValue,
     int                             startSearchOperator,
     Qualifier                       qualifier[][],
-    DataValueDescriptor[]	        stopKeyValue,
+    StoreDataValue[]	        stopKeyValue,
     int                             stopSearchOperator,
     B2I                             conglomerate,
     B2IUndo                         undo,

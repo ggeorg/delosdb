@@ -246,8 +246,8 @@ public class ConsistencyChecker
 										0);		// not used with null stop posn.
 
 					/* Also, get the row location template for index rows */
-					rl = scan.newRowLocationTemplate();
-					scanRL = scan.newRowLocationTemplate();
+					rl = (RowLocation) scan.newRowLocationTemplate();
+					scanRL = (RowLocation) scan.newRowLocationTemplate();
 
 					for (baseRowCount = 0; scan.next(); baseRowCount++)
 						;	/* Empty statement */

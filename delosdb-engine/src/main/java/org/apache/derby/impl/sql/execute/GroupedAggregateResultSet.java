@@ -604,7 +604,7 @@ class GroupedAggregateResultSet extends GenericAggregateResultSet
 		// REVISIT: could we reuse the same rowlocation object
 		// across several calls?
 		RowLocation rl;
-		rl = scanController.newRowLocationTemplate();
+		rl = (RowLocation) scanController.newRowLocationTemplate();
 		scanController.fetchLocation(rl);
 		return rl;
 	}

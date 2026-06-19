@@ -833,7 +833,7 @@ class CreateIndexConstantAction extends IndexConstantAction
 			RowLocation rl[] = new RowLocation[bulkFetchSize];
 			for (int i = 0; i < bulkFetchSize; i++)
 			{
-				rl[i] = scan.newRowLocationTemplate();
+				rl[i] = (RowLocation) scan.newRowLocationTemplate();
 
 				// Get an index row based on the base row
 				indexRowGenerator.getIndexRow(compactBaseRows[i], rl[i], indexRows[i], bitSet);

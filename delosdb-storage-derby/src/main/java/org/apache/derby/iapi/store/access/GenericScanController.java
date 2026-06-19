@@ -25,9 +25,8 @@ import org.apache.derby.iapi.services.io.Storable;
 
 import org.apache.derby.shared.common.error.StandardException;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -125,7 +124,7 @@ public interface GenericScanController extends RowCountable
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-	RowLocation newRowLocationTemplate()
+	StoreRowLocation newRowLocationTemplate()
 		throws StandardException;
 
     /**
@@ -177,10 +176,10 @@ public interface GenericScanController extends RowCountable
 	@exception StandardException Standard exception policy.
     **/
 	void reopenScan(
-    DataValueDescriptor[]   startKeyValue,
+    StoreDataValue[]        startKeyValue,
     int                     startSearchOperator,
     Qualifier               qualifier[][],
-    DataValueDescriptor[]   stopKeyValue,
+    StoreDataValue[]        stopKeyValue,
     int                     stopSearchOperator)
         throws StandardException;
 
@@ -215,7 +214,7 @@ public interface GenericScanController extends RowCountable
 	@exception StandardException Standard exception policy.
     **/
 	void reopenScanByRowLocation(
-    RowLocation startRowLocation,
+    StoreRowLocation startRowLocation,
     Qualifier qualifier[][])
         throws StandardException;
 }

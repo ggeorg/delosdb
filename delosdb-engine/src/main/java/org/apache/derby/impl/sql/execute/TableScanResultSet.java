@@ -733,7 +733,7 @@ class TableScanResultSet extends ScanResultSet
 			if (currentRowIsValid) {
 				// we reuse the same rowlocation object across several calls.
 				if (rlTemplate == null)
-					rlTemplate = scanController.newRowLocationTemplate();
+					rlTemplate = (RowLocation) scanController.newRowLocationTemplate();
 				rl = rlTemplate;
 				try {
 					scanController.fetchLocation(rl);

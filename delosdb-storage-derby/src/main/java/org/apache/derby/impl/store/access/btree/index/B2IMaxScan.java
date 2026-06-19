@@ -35,7 +35,7 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -161,10 +161,10 @@ public class B2IMaxScan extends BTreeMaxScan
             lock_level,
             b2i_locking_policy,
             scanColumnList,
-            (DataValueDescriptor[]) null,// no start position supported
+            (StoreDataValue[]) null,// no start position supported
             ScanController.NA,           // no start position supported
             (Qualifier[][]) null,        // no qualifier supported
-            (DataValueDescriptor[]) null,// no stop position supported
+            (StoreDataValue[]) null,// no stop position supported
             ScanController.NA,           // no stop position supported
             conglomerate,
             undo,

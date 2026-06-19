@@ -33,6 +33,8 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
@@ -231,14 +233,14 @@ class HeapScan
 
 	@exception StandardException Standard exception policy.
     **/
-    public boolean fetchNext(DataValueDescriptor[] fetch_row)
+    public boolean fetchNext(StoreDataValue[] fetch_row)
 		throws StandardException
 	{
         // Turn this call into a group fetch of a 1 element group.
         if (fetch_row == null)
             fetchNext_one_slot_array[0] = RowUtil.EMPTY_ROW;
         else
-            fetchNext_one_slot_array[0] = fetch_row;
+            fetchNext_one_slot_array[0] = (DataValueDescriptor[]) fetch_row;
 
         boolean ret_val = 
             fetchRows(
@@ -281,7 +283,7 @@ class HeapScan
     /**
      * @see org.apache.derby.iapi.store.access.ScanController#positionAtRowLocation
      */
-    public boolean positionAtRowLocation(RowLocation rl) throws StandardException {
+    public boolean positionAtRowLocation(StoreRowLocation rl) throws StandardException {
         if (open_conglom.isClosed() && !rowLocationsInvalidated) 
         {
             reopenAfterEndTransaction();
@@ -293,7 +295,7 @@ class HeapScan
             
         } else {
             return(reopenScanByRecordHandleAndSetLocks
-                (((HeapRowLocation)rl).
+                (((HeapRowLocation) rl).
                  getRecordHandle(open_conglom.getContainer())));
         }
     }
@@ -306,7 +308,7 @@ class HeapScan
     /**
 	@see org.apache.derby.iapi.store.access.ScanController#fetchLocation
 	**/
-	public void fetchLocation(RowLocation templateLocation)
+	public void fetchLocation(StoreRowLocation templateLocation)
 		throws StandardException
 	{
 		if (open_conglom.getContainer() == null  || 
@@ -320,23 +322,23 @@ class HeapScan
 	}
 
     public int fetchNextGroup(
-    DataValueDescriptor[][] row_array,
-    RowLocation[]           rowloc_array)
+    StoreDataValue[][]      row_array,
+    StoreRowLocation[]      rowloc_array)
         throws StandardException
 	{
         return(
             fetchRows(
-                row_array, 
-                rowloc_array,
+                (DataValueDescriptor[][]) row_array, 
+                (RowLocation[]) rowloc_array,
                 (BackingStoreHashtable) null,
                 row_array.length,
                 (int[]) null));
     }
 
     public int fetchNextGroup(
-    DataValueDescriptor[][] row_array,
-    RowLocation[]           old_rowloc_array,
-    RowLocation[]           new_rowloc_array)
+    StoreDataValue[][]      row_array,
+    StoreRowLocation[]      old_rowloc_array,
+    StoreRowLocation[]      new_rowloc_array)
         throws StandardException
 	{
         throw(StandardException.newException(
@@ -394,7 +396,7 @@ class HeapScan
 	@exception StandardException Standard exception policy.
     **/
 	public void reopenScanByRowLocation(
-    RowLocation startRowLocation,
+    StoreRowLocation startRowLocation,
     Qualifier qualifier[][])
         throws StandardException
     {

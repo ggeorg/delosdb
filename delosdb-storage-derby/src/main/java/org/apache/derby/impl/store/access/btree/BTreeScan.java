@@ -26,6 +26,8 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.store.access.conglomerate.LogicalUndo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
@@ -211,7 +213,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     abstract protected int fetchRows(
     BTreeRowPosition        pos,
     DataValueDescriptor[][] row_array,
-    RowLocation[]           rowloc_array,
+    StoreRowLocation[]      rowloc_array,
     BackingStoreHashtable   hash_table,
     long                    max_rowcnt,
     int[]                   key_column_numbers)
@@ -227,15 +229,15 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
      * @exception  StandardException  Standard exception policy.
      **/
     private void initScanParams(
-    DataValueDescriptor[]   startKeyValue,
+    StoreDataValue[]        startKeyValue,
     int                     startSearchOperator,
     Qualifier               qualifier[][],
-    DataValueDescriptor[]   stopKeyValue,
+    StoreDataValue[]        stopKeyValue,
     int                     stopSearchOperator)
         throws StandardException
     {
         // startKeyValue init.
-        this.init_startKeyValue         = startKeyValue;
+        this.init_startKeyValue         = (DataValueDescriptor[]) startKeyValue;
         if (RowUtil.isRowEmpty(this.init_startKeyValue))
             this.init_startKeyValue = null;
 
@@ -248,7 +250,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         this.init_qualifier             = qualifier;
 
         // stopKeyValue init.
-        this.init_stopKeyValue          = stopKeyValue;
+        this.init_stopKeyValue          = (DataValueDescriptor[]) stopKeyValue;
         if (RowUtil.isRowEmpty(this.init_stopKeyValue))
             this.init_stopKeyValue = null;
 
@@ -986,10 +988,10 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     int                             lock_level,
     BTreeLockingPolicy              btree_locking_policy,
     FormatableBitSet                scanColumnList,
-    DataValueDescriptor[]           startKeyValue,
+    StoreDataValue[]                startKeyValue,
     int                             startSearchOperator,
     Qualifier                       qualifier[][],
-    DataValueDescriptor[]           stopKeyValue,
+    StoreDataValue[]                stopKeyValue,
     int                             stopSearchOperator,
     BTree                           conglomerate,
     LogicalUndo                     undo,
@@ -1420,10 +1422,10 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
 
     @exception  StandardException  Standard exception policy.
     **/
-    public void fetch(DataValueDescriptor[] row)
+    public void fetch(StoreDataValue[] row)
         throws StandardException
     {
-        fetch(row, true);
+        fetch((DataValueDescriptor[]) row, true);
     }
 
     /**
@@ -1433,10 +1435,10 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
      * 
      * @exception  StandardException  Standard exception policy.
      */
-    public void fetchWithoutQualify(DataValueDescriptor[] row)
+    public void fetchWithoutQualify(StoreDataValue[] row)
         throws StandardException
     {
-        fetch(row, false);
+        fetch((DataValueDescriptor[]) row, false);
     }
     
     /**
@@ -1535,7 +1537,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
      *
      * Not implemented for this class
      */
-    public boolean positionAtRowLocation (RowLocation rLoc) 
+    public boolean positionAtRowLocation (StoreRowLocation rLoc) 
         throws StandardException 
     {
         throw StandardException.newException(
@@ -1557,7 +1559,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
             fetchRows(
                 scan_position,
                 fetchNext_one_slot_array, 
-                (RowLocation[]) null,
+                (StoreRowLocation[]) null,
                 (BackingStoreHashtable) null,
                 1,
                 (int[]) null) == 1;
@@ -1592,18 +1594,18 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
 
     @exception StandardException Standard exception policy.
     **/
-    public boolean fetchNext(DataValueDescriptor[] row)
+    public boolean fetchNext(StoreDataValue[] row)
         throws StandardException
     {
         boolean ret_val;
 
         // Turn this call into a group fetch of a 1 element group.
-        fetchNext_one_slot_array[0] = row;
+        fetchNext_one_slot_array[0] = (DataValueDescriptor[]) row;
         ret_val = 
             fetchRows(
                 scan_position,
                 fetchNext_one_slot_array, 
-                (RowLocation[]) null,
+                (StoreRowLocation[]) null,
                 (BackingStoreHashtable) null,
                 1,
                 (int[]) null) == 1;
@@ -1677,14 +1679,14 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
      * @exception  StandardException  Standard exception policy.
      **/
     public int fetchNextGroup(
-    DataValueDescriptor[][] row_array,
-    RowLocation[]           rowloc_array)
+    StoreDataValue[][]      row_array,
+    StoreRowLocation[]      rowloc_array)
         throws StandardException
     {
         return(
             fetchRows(
                 scan_position,
-                row_array, 
+                (DataValueDescriptor[][]) row_array, 
                 rowloc_array,
                 (BackingStoreHashtable) null,
                 row_array.length,
@@ -1692,9 +1694,9 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     }
 
     public int fetchNextGroup(
-    DataValueDescriptor[][] row_array,
-    RowLocation[]           old_rowloc_array,
-    RowLocation[]           new_rowloc_array)
+    StoreDataValue[][]      row_array,
+    StoreRowLocation[]      old_rowloc_array,
+    StoreRowLocation[]      new_rowloc_array)
         throws StandardException
     {
         // This interface is currently only used to move rows around in
@@ -1822,7 +1824,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         fetchRows(
             scan_position,
             (DataValueDescriptor[][]) null,
-            (RowLocation[]) null,
+            (StoreRowLocation[]) null,
             (BackingStoreHashtable) hash_table,
             max_rowcnt,
             key_column_numbers);
@@ -1876,10 +1878,10 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     @exception StandardException Standard exception policy.
     **/
     public final void reopenScan(
-    DataValueDescriptor[]   startKeyValue,
+    StoreDataValue[]        startKeyValue,
     int                     startSearchOperator,
     Qualifier               qualifier[][],
-    DataValueDescriptor[]   stopKeyValue,
+    StoreDataValue[]        stopKeyValue,
     int                     stopSearchOperator)
         throws StandardException
     {
@@ -1910,8 +1912,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         scan_position.current_positionKey  = null;
 
         initScanParams(
-            startKeyValue, startSearchOperator, 
-            qualifier, stopKeyValue, stopSearchOperator);
+            (DataValueDescriptor[]) startKeyValue, startSearchOperator, 
+            qualifier, (DataValueDescriptor[]) stopKeyValue, stopSearchOperator);
 
         if (!init_hold)
             this.scan_state = SCAN_INIT;
@@ -1951,7 +1953,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     @exception StandardException Standard exception policy.
     **/
     public void reopenScanByRowLocation(
-    RowLocation startRowLocation,
+    StoreRowLocation startRowLocation,
     Qualifier   qualifier[][])
         throws StandardException
     {
@@ -1969,7 +1971,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
 
     @exception  StandardException  Standard exception policy.
     **/
-    public void fetchLocation(RowLocation templateLocation)
+    public void fetchLocation(StoreRowLocation templateLocation)
         throws StandardException
     {
         throw StandardException.newException(
@@ -1998,7 +2000,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     @see ScanController#replace
     @exception  StandardException  Standard exception policy.
     **/
-    public boolean replace(DataValueDescriptor[] row, FormatableBitSet validColumns)
+    public boolean replace(StoreDataValue[] row, FormatableBitSet validColumns)
         throws StandardException
     {
         throw StandardException.newException(

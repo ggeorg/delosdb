@@ -24,6 +24,8 @@ package org.apache.derby.impl.store.access.heap;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.store.access.SpaceInfo;
 
@@ -77,13 +79,15 @@ class HeapCompressScan
      */
 
     public int fetchNextGroup(
-    DataValueDescriptor[][] row_array,
-    RowLocation[]           old_rowloc_array,
-    RowLocation[]           new_rowloc_array)
+    StoreDataValue[][]      row_array,
+    StoreRowLocation[]      old_rowloc_array,
+    StoreRowLocation[]      new_rowloc_array)
         throws StandardException
 	{
         return(fetchRowsForCompress(
-                    row_array, old_rowloc_array, new_rowloc_array));
+                    (DataValueDescriptor[][]) row_array,
+                    (RowLocation[]) old_rowloc_array,
+                    (RowLocation[]) new_rowloc_array));
     }
 
     /**

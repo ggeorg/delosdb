@@ -37,6 +37,8 @@ import org.apache.derby.iapi.store.access.ScanInfo;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
@@ -527,7 +529,7 @@ public abstract class GenericScanController
     }
 
     public void reopenScanByRowLocation(
-    RowLocation startRowLocation,
+    StoreRowLocation startRowLocation,
     Qualifier qualifier[][])
         throws StandardException
     {
@@ -1330,10 +1332,10 @@ public abstract class GenericScanController
     @exception StandardException Standard exception policy.
     **/
     public void reopenScan(
-    DataValueDescriptor[]   startKeyValue,
+    StoreDataValue[]        startKeyValue,
     int                     startSearchOperator,
     Qualifier               qualifier[][],
-    DataValueDescriptor[]   stopKeyValue,
+    StoreDataValue[]        stopKeyValue,
     int                     stopSearchOperator)
         throws StandardException
     {
@@ -1358,7 +1360,7 @@ public abstract class GenericScanController
     @see org.apache.derby.iapi.store.access.ScanController#replace
     **/
     public boolean replace(
-    DataValueDescriptor[]   row, 
+    StoreDataValue[]        row, 
     FormatableBitSet                 validColumns)
         throws StandardException
     {
@@ -1459,10 +1461,10 @@ public abstract class GenericScanController
     
     @see org.apache.derby.iapi.store.access.ScanController#fetchWithoutQualify
     **/
-    public void fetchWithoutQualify(DataValueDescriptor[] row)
+    public void fetchWithoutQualify(StoreDataValue[] row)
         throws StandardException
     {
-        fetch(row, false);
+        fetch((DataValueDescriptor[]) row, false);
     }
 
     /**
@@ -1481,10 +1483,10 @@ public abstract class GenericScanController
 
     @see org.apache.derby.iapi.store.access.ScanController#fetch
     **/
-    public void fetch(DataValueDescriptor[] row)
+    public void fetch(StoreDataValue[] row)
         throws StandardException
     {
-        fetch(row, true);
+        fetch((DataValueDescriptor[]) row, true);
     }
 
     /**
@@ -1556,7 +1558,7 @@ public abstract class GenericScanController
 
     @exception  StandardException  Standard exception policy.
     **/
-    public void fetchLocation(RowLocation templateLocation)
+    public void fetchLocation(StoreRowLocation templateLocation)
         throws StandardException
     {
         throw StandardException.newException(

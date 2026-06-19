@@ -43,7 +43,7 @@ import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 // imports of inherited impl's
 import org.apache.derby.impl.store.access.btree.BTree;
@@ -114,8 +114,8 @@ public class B2IUndo implements LogicalUndo, Formatable
     {
         ControlRow            root                      = null;
         ControlRow            control_row               = null;
-        DataValueDescriptor[] logged_index_row_template = null;
-        DataValueDescriptor[] template                  = null;
+        StoreDataValue[] logged_index_row_template = null;
+        StoreDataValue[] template                  = null;
         Page                  ret_page                  = null;
         ContainerHandle       container                 = pageOp.getContainer();
         RecordHandle          rechandle                 = pageOp.getRecordHandle();
@@ -266,7 +266,7 @@ public class B2IUndo implements LogicalUndo, Formatable
                     RecordHandle rh = 
                         control_row.getPage().fetchFromSlot(
                             (RecordHandle) null,
-                            sp.resultSlot, new DataValueDescriptor[0], 
+                            sp.resultSlot, new StoreDataValue[0], 
                             (FetchDescriptor) null,
                             true);
 

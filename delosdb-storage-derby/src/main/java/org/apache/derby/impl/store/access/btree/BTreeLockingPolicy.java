@@ -25,8 +25,8 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 /**
 
@@ -94,7 +94,7 @@ public interface BTreeLockingPolicy
     abstract public boolean lockScanCommittedDeletedRow(
     OpenBTree               open_btree,
     LeafControlRow          leaf,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]   template,
     FetchDescriptor         lock_fetch_desc,
     int                     slot_no)
 		throws StandardException;
@@ -132,8 +132,8 @@ public interface BTreeLockingPolicy
     OpenBTree               open_btree,
     BTreeRowPosition        pos,
     FetchDescriptor         lock_fetch_desc,
-    DataValueDescriptor[]   lock_template,
-    RowLocation             lock_row_loc,
+    StoreDataValue[]   lock_template,
+    StoreRowLocation        lock_row_loc,
     boolean                 previous_key_lock,
     boolean                 forUpdate,
     int                     lock_operation)
@@ -226,8 +226,8 @@ public interface BTreeLockingPolicy
     LeafControlRow          current_leaf,
     int                     current_slot,
     FetchDescriptor         lock_fetch_desc,
-    DataValueDescriptor[]   lock_template,
-    RowLocation             lock_row_loc,
+    StoreDataValue[]   lock_template,
+    StoreRowLocation        lock_row_loc,
     OpenBTree               open_btree,
     int                     lock_operation,
     int                     lock_duration)
@@ -272,7 +272,7 @@ public interface BTreeLockingPolicy
     BTree                   btree,
     LeafControlRow          current_leaf,
     LeafControlRow          aux_leaf,
-    DataValueDescriptor[]   current_row,
+    StoreDataValue[]   current_row,
     int                     lock_operation)
 		throws StandardException;
 
@@ -304,8 +304,8 @@ public interface BTreeLockingPolicy
     LeafControlRow          leaf,
     int                     slot,
     FetchDescriptor         lock_fetch_desc,
-    DataValueDescriptor[]   lock_template,
-    RowLocation             lock_row_loc,
+    StoreDataValue[]   lock_template,
+    StoreRowLocation        lock_row_loc,
     int                     lock_operation)
 		throws StandardException;
 }

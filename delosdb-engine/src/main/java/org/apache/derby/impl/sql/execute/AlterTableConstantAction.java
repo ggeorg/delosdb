@@ -2475,7 +2475,7 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
 			// create a base row template
 			baseRow[i] = td.getEmptyExecRow();
 			baseRowArray[i] = baseRow[i].getRowArray();
-			compressRL[i] = compressHeapGSC.newRowLocationTemplate();
+			compressRL[i] = (RowLocation) compressHeapGSC.newRowLocationTemplate();
 		}
 
 

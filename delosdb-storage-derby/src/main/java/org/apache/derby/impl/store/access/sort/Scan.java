@@ -27,17 +27,15 @@ import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.shared.common.i18n.MessageService;
 
-import org.apache.derby.iapi.types.RowLocation;
-
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.ScanInfo;
 
-
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import java.util.Properties;
 
@@ -88,8 +86,8 @@ public abstract class Scan implements ScanManager, ScanInfo
      * <p>
      **/
     public int fetchNextGroup(
-    DataValueDescriptor[][]     row_array,
-    RowLocation[]               rowloc_array)
+    StoreDataValue[][]          row_array,
+    StoreRowLocation[]          rowloc_array)
         throws StandardException
     {
         throw StandardException.newException(
@@ -97,9 +95,9 @@ public abstract class Scan implements ScanManager, ScanInfo
     }
 
     public int fetchNextGroup(
-    DataValueDescriptor[][]     row_array,
-    RowLocation[]               old_rowloc_array,
-    RowLocation[]               new_rowloc_array)
+    StoreDataValue[][]          row_array,
+    StoreRowLocation[]          old_rowloc_array,
+    StoreRowLocation[]          new_rowloc_array)
         throws StandardException
     {
         throw StandardException.newException(
@@ -139,7 +137,7 @@ public abstract class Scan implements ScanManager, ScanInfo
 	Fetch the location of the current position in the scan.
 	@see ScanController#fetchLocation
 	**/
-	public void fetchLocation(RowLocation templateLocation)
+	public void fetchLocation(StoreRowLocation templateLocation)
 		throws StandardException
 	{
         throw StandardException.newException(
@@ -263,10 +261,10 @@ public abstract class Scan implements ScanManager, ScanInfo
 	@see ScanController#reopenScan
     **/
 	public void reopenScan(
-    DataValueDescriptor[]   startKeyValue,
+    StoreDataValue[]        startKeyValue,
     int                     startSearchOperator,
     Qualifier               qualifier[][],
-    DataValueDescriptor[]   stopKeyValue,
+    StoreDataValue[]        stopKeyValue,
     int                     stopSearchOperator)
         throws StandardException
     {
@@ -284,7 +282,7 @@ public abstract class Scan implements ScanManager, ScanInfo
 	@exception StandardException Standard exception policy.
     **/
 	public void reopenScanByRowLocation(
-    RowLocation startRowLocation,
+    StoreRowLocation startRowLocation,
     Qualifier qualifier[][])
         throws StandardException
     {
@@ -297,7 +295,7 @@ public abstract class Scan implements ScanManager, ScanInfo
 	@see ScanController#replace
     **/
     public boolean replace(
-    DataValueDescriptor[]   val, 
+    StoreDataValue[]        val, 
     FormatableBitSet                 validColumns)
 		throws StandardException
 	{
@@ -310,7 +308,7 @@ public abstract class Scan implements ScanManager, ScanInfo
 	used in calls to fetchLocation.
 	@see ScanController#newRowLocationTemplate
 	**/
-	public RowLocation newRowLocationTemplate()
+	public StoreRowLocation newRowLocationTemplate()
 		throws StandardException
  	{
         throw StandardException.newException(
@@ -320,7 +318,7 @@ public abstract class Scan implements ScanManager, ScanInfo
     /**
      *@see ScanController#positionAtRowLocation
      */
-    public boolean positionAtRowLocation(RowLocation rl) 
+    public boolean positionAtRowLocation(StoreRowLocation rl) 
         throws StandardException 
     {
         throw StandardException.newException(

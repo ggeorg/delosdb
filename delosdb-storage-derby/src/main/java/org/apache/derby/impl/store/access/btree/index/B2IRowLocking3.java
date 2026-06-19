@@ -35,8 +35,9 @@ import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.types.RowLocation;
 
 import org.apache.derby.impl.store.access.btree.BTree;
@@ -228,8 +229,8 @@ class B2IRowLocking3 implements BTreeLockingPolicy
     int                     current_slot,
     BTreeRowPosition        position,
     FetchDescriptor         lock_fetch_desc,
-    DataValueDescriptor[]   lock_template,
-    RowLocation             lock_row_loc,
+    StoreDataValue[]   lock_template,
+    StoreRowLocation        lock_row_loc,
     int                     lock_operation,
     int                     lock_duration)
 		throws StandardException
@@ -271,7 +272,7 @@ class B2IRowLocking3 implements BTreeLockingPolicy
         // First try to get the lock NOWAIT, while latch is held.
         boolean ret_status =
             base_cc.lockRow(
-                lock_row_loc, 
+                (RowLocation) lock_row_loc, 
                 lock_operation,
                 false /* NOWAIT */, lock_duration);
 
@@ -304,7 +305,7 @@ class B2IRowLocking3 implements BTreeLockingPolicy
             }
 
             base_cc.lockRow(
-                lock_row_loc, 
+                (RowLocation) lock_row_loc, 
                 lock_operation,
                 true /* WAIT */, lock_duration);
         }
@@ -350,8 +351,8 @@ class B2IRowLocking3 implements BTreeLockingPolicy
     private boolean searchLeftAndLockPreviousKey(
     LeafControlRow          current_leaf,
     FetchDescriptor         lock_fetch_desc,
-    DataValueDescriptor[]   lock_template,
-    RowLocation             lock_row_loc,
+    StoreDataValue[]   lock_template,
+    StoreRowLocation        lock_row_loc,
     OpenBTree               open_btree,
     int                     lock_operation,
     int                     lock_duration)
@@ -530,8 +531,8 @@ class B2IRowLocking3 implements BTreeLockingPolicy
     BTreeRowPosition        pos,
     boolean                 request_row_lock,
     FetchDescriptor         lock_fetch_desc,
-    DataValueDescriptor[]   lock_template,
-    RowLocation             lock_row_loc,
+    StoreDataValue[]   lock_template,
+    StoreRowLocation        lock_row_loc,
     boolean                 previous_key_lock,
     boolean                 forUpdate,
     int                     lock_operation)
@@ -636,7 +637,7 @@ class B2IRowLocking3 implements BTreeLockingPolicy
     public boolean lockScanCommittedDeletedRow(
     OpenBTree               open_btree,
     LeafControlRow          leaf,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]   template,
     FetchDescriptor         lock_fetch_desc,
     int                     slot_no)
 		throws StandardException
@@ -697,8 +698,8 @@ class B2IRowLocking3 implements BTreeLockingPolicy
     OpenBTree               open_btree,
     BTreeRowPosition        pos,
     FetchDescriptor         lock_fetch_desc,
-    DataValueDescriptor[]   lock_template,
-    RowLocation             lock_row_loc,
+    StoreDataValue[]   lock_template,
+    StoreRowLocation        lock_row_loc,
     boolean                 previous_key_lock,
     boolean                 forUpdate,
     int                     lock_operation)
@@ -751,8 +752,8 @@ class B2IRowLocking3 implements BTreeLockingPolicy
     LeafControlRow          current_leaf,
     int                     current_slot,
     FetchDescriptor         lock_fetch_desc,
-    DataValueDescriptor[]   lock_template,
-    RowLocation             lock_row_loc,
+    StoreDataValue[]   lock_template,
+    StoreRowLocation        lock_row_loc,
     OpenBTree               open_btree,
     int                     lock_operation,
     int                     lock_duration)
@@ -823,7 +824,7 @@ class B2IRowLocking3 implements BTreeLockingPolicy
     BTree                   btree,
     LeafControlRow          current_leaf,
     LeafControlRow          aux_leaf,
-    DataValueDescriptor[]   current_row,
+    StoreDataValue[]   current_row,
     int                     lock_operation)
 		throws StandardException
     {
@@ -870,8 +871,8 @@ class B2IRowLocking3 implements BTreeLockingPolicy
     LeafControlRow          current_leaf,
     int                     current_slot,
     FetchDescriptor         lock_fetch_desc,
-    DataValueDescriptor[]   lock_template,
-    RowLocation             lock_row_loc,
+    StoreDataValue[]   lock_template,
+    StoreRowLocation        lock_row_loc,
     int                     lock_operation)
 		throws StandardException
     {

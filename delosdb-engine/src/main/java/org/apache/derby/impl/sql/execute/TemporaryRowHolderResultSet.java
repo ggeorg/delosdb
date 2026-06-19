@@ -520,7 +520,7 @@ class TemporaryRowHolderResultSet implements CursorResultSet, NoPutResultSet, Cl
 		else
 		{
 			if (baseRowLocation == null)
-				baseRowLocation = scan.newRowLocationTemplate();
+				baseRowLocation = (RowLocation) scan.newRowLocationTemplate();
 			scan.fetchLocation(baseRowLocation);
 			if(heapCC == null)
 			{

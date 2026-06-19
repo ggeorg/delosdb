@@ -8182,3 +8182,351 @@ tasks.register('verifyLegacyDerbyKernelB5sScanFetchLocationBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5sScanFetchLocationBridge'
 }
+
+// -----------------------------------------------------------------------------
+// B5t — B-tree scan init/fetch boundary bridge
+// -----------------------------------------------------------------------------
+// B5s moved the public scan-controller API to StoreDataValue/StoreRowLocation.
+// B5t continues inward at the B-tree scan boundary without changing the
+// row-locking template internals yet.
+def delosdbB5tReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5t-btree-scan-boundary-bridge.txt')
+def delosdbB5tBaselineImportCount = 77
+
+def delosdbB5tBTreeScan = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeScan.java')
+def delosdbB5tBTreeForwardScan = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeForwardScan.java')
+def delosdbB5tBTreeMaxScan = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeMaxScan.java')
+def delosdbB5tB2IForwardScan = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IForwardScan.java')
+def delosdbB5tB2IMaxScan = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IMaxScan.java')
+
+def delosdbB5tTouchedFiles = [
+    delosdbB5tBTreeScan,
+    delosdbB5tBTreeForwardScan,
+    delosdbB5tBTreeMaxScan,
+    delosdbB5tB2IForwardScan,
+    delosdbB5tB2IMaxScan
+]
+
+def delosdbB5tRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5tRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5tStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].findAll { it.isDirectory() }
+     .collectMany { root -> fileTree(root) { include '**/*.java' }.files }
+     .sort { a, b -> delosdbB5tRelPath(a) <=> delosdbB5tRelPath(b) }
+     .collectMany { source ->
+        source.readLines().findAll { line ->
+            line ==~ /import\s+org\.apache\.derby\.iapi\.types\..*;/
+        }.collect { line ->
+            delosdbB5tRelPath(source) + ': ' + line.trim()
+        }
+     }
+}
+
+def delosdbB5tRetiredImportsRemaining = { ->
+    [
+        [source: delosdbB5tBTreeForwardScan, retiredImport: 'import org.apache.derby.iapi.types.RowLocation;'],
+        [source: delosdbB5tBTreeMaxScan, retiredImport: 'import org.apache.derby.iapi.types.RowLocation;'],
+        [source: delosdbB5tB2IForwardScan, retiredImport: 'import org.apache.derby.iapi.types.DataValueDescriptor;'],
+        [source: delosdbB5tB2IMaxScan, retiredImport: 'import org.apache.derby.iapi.types.DataValueDescriptor;']
+    ].findAll { item -> delosdbB5tRead(item.source).contains(item.retiredImport) }
+     .collect { item -> delosdbB5tRelPath(item.source) + ': ' + item.retiredImport }
+}
+
+tasks.register('legacyDerbyStoreKernelB5tBtreeScanBoundaryBridgeReport') {
+    group = 'verification'
+    description = 'B5t: reports StoreDataValue/StoreRowLocation bridge progress for B-tree scan init/fetch boundaries.'
+    dependsOn 'verifyLegacyDerbyKernelB5sScanFetchLocationBridge'
+    outputs.file(delosdbB5tReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5tStoreTypeImportLines()
+        def retiredImportsRemaining = delosdbB5tRetiredImportsRemaining()
+        def reportFile = delosdbB5tReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5t B-tree scan boundary bridge batch
+=================================================
+
+Purpose
+-------
+Continue B5 by moving the B-tree scan init/fetch boundary to the SQL-neutral
+StoreDataValue and StoreRowLocation bridge. This deliberately does not rewrite
+B-tree row-locking templates yet, because those paths still preserve Derby
+locking semantics through concrete RowLocation internals.
+
+Touched files
+-------------
+${delosdbB5tTouchedFiles.collect { '  - ' + delosdbB5tRelPath(it) }.join('\n')}
+
+Retired direct imports in B5t boundary files
+--------------------------------------------
+${retiredImportsRemaining.isEmpty() ? '  none remain in the B5t-retired import set' : retiredImportsRemaining.collect { '  - ' + it }.join('\n')}
+
+Relocated-store direct org.apache.derby.iapi.types import count
+---------------------------------------------------------------
+  before B5t baseline: ${delosdbB5tBaselineImportCount}
+  after B5t:           ${remainingStoreTypeImports.size()}
+
+Remaining direct relocated-store iapi.types imports
+---------------------------------------------------
+${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+Boundary decision
+-----------------
+B5t bridges B-tree scan start/stop key parameters and fetch row-location arrays.
+It leaves concrete DataValueDescriptor row storage and RowLocation lock-template
+internals for later slices so B2I row-locking behavior remains unchanged.
+
+B6 readiness
+------------
+NOT YET. The relocated store still has direct org.apache.derby.iapi.types imports.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5tRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5tBtreeScanBoundaryBridge') {
+    group = 'verification'
+    description = 'B5t: verifies StoreDataValue/StoreRowLocation bridge progress for B-tree scan init/fetch boundaries.'
+    dependsOn 'legacyDerbyStoreKernelB5tBtreeScanBoundaryBridgeReport'
+    doLast {
+        delosdbB5tTouchedFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5t missing required source file: ' + delosdbB5tRelPath(source))
+            }
+        }
+
+        def btreeScan = delosdbB5tRead(delosdbB5tBTreeScan)
+        if (!btreeScan.contains('StoreDataValue[]                startKeyValue') ||
+            !btreeScan.contains('StoreDataValue[]                stopKeyValue') ||
+            !btreeScan.contains('StoreRowLocation[]      rowloc_array')) {
+            throw new GradleException('B5t BTreeScan must expose store-facing scan boundary parameters')
+        }
+        if (!btreeScan.contains('(DataValueDescriptor[]) startKeyValue') ||
+            !btreeScan.contains('(DataValueDescriptor[]) stopKeyValue')) {
+            throw new GradleException('B5t BTreeScan must keep internal DataValueDescriptor adaptation explicit')
+        }
+
+        [delosdbB5tBTreeForwardScan, delosdbB5tBTreeMaxScan].each { source ->
+            def text = delosdbB5tRead(source)
+            if (!text.contains('StoreRowLocation[]      rowloc_array') ||
+                text.contains('import org.apache.derby.iapi.types.RowLocation;')) {
+                throw new GradleException('B5t ' + delosdbB5tRelPath(source) + ' must use StoreRowLocation[] at fetchRows boundary')
+            }
+        }
+
+        [delosdbB5tB2IForwardScan, delosdbB5tB2IMaxScan].each { source ->
+            def text = delosdbB5tRead(source)
+            if (!text.contains('StoreDataValue') ||
+                text.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
+                throw new GradleException('B5t ' + delosdbB5tRelPath(source) + ' must use StoreDataValue at scan init boundary')
+            }
+        }
+
+        def remainingStoreTypeImports = delosdbB5tStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5tBaselineImportCount) {
+            throw new GradleException('B5t relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5tBaselineImportCount + ': ' + remainingStoreTypeImports.size())
+        }
+
+        def reportText = delosdbB5tRead(delosdbB5tReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5t report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5t B-tree scan boundary bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5tBtreeScanBoundaryBridge'
+}
+
+// B5u — B-tree locking policy value bridge before real store compilation
+// ----------------------------------------------------------------------
+// B5t reduced the scan boundary. B5u keeps moving along the B-tree seam by
+// moving locking-policy row templates and row-location parameters to the
+// store-facing type bridge while leaving the concrete row-locking semantics in
+// the inherited B2I implementations.
+
+def delosdbB5uReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5u-btree-locking-policy-bridge.txt')
+def delosdbB5uBaselineImportCount = 73
+
+def delosdbB5uBTreeLockingPolicy = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeLockingPolicy.java')
+def delosdbB5uB2INoLocking = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2INoLocking.java')
+def delosdbB5uB2IRowLocking1 = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IRowLocking1.java')
+def delosdbB5uB2IRowLocking3 = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IRowLocking3.java')
+def delosdbB5uB2IRowLockingRR = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IRowLockingRR.java')
+def delosdbB5uB2IUndo = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IUndo.java')
+def delosdbB5uControlRow = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/ControlRow.java')
+
+def delosdbB5uTouchedFiles = [
+    delosdbB5uBTreeLockingPolicy,
+    delosdbB5uB2INoLocking,
+    delosdbB5uB2IRowLocking1,
+    delosdbB5uB2IRowLocking3,
+    delosdbB5uB2IRowLockingRR,
+    delosdbB5uB2IUndo,
+    delosdbB5uControlRow
+]
+
+def delosdbB5uRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5uRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5uStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].collectMany { root ->
+        fileTree(root) { include '**/*.java' }.files.findAll { it.isFile() }.collectMany { source ->
+            source.readLines().findAll { it.trim().startsWith('import org.apache.derby.iapi.types.') }.collect { line ->
+                delosdbB5uRelPath(source) + ': ' + line.trim()
+            }
+        }
+    }.sort()
+}
+
+def delosdbB5uRetiredImportsRemaining = { ->
+    [delosdbB5uBTreeLockingPolicy, delosdbB5uB2INoLocking, delosdbB5uB2IRowLocking1, delosdbB5uB2IRowLockingRR, delosdbB5uB2IUndo].collectMany { source ->
+        def text = delosdbB5uRead(source)
+        ['DataValueDescriptor', 'RowLocation'].findAll { typeName ->
+            text.contains('import org.apache.derby.iapi.types.' + typeName + ';')
+        }.collect { typeName ->
+            delosdbB5uRelPath(source) + ': import org.apache.derby.iapi.types.' + typeName + ';'
+        }
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5uBtreeLockingPolicyBridgeReport') {
+    group = 'verification'
+    description = 'B5u: reports the B-tree locking-policy bridge slice.'
+    dependsOn 'verifyLegacyDerbyKernelB5tBtreeScanBoundaryBridge'
+    outputs.file(delosdbB5uReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5uStoreTypeImportLines()
+        def retiredImportsRemaining = delosdbB5uRetiredImportsRemaining()
+        def lockingPolicyText = delosdbB5uRead(delosdbB5uBTreeLockingPolicy)
+        def rowLocking3Text = delosdbB5uRead(delosdbB5uB2IRowLocking3)
+        def undoText = delosdbB5uRead(delosdbB5uB2IUndo)
+        def controlRowText = delosdbB5uRead(delosdbB5uControlRow)
+        def reportFile = delosdbB5uReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5u B-tree locking-policy bridge slice
+=================================================
+
+Purpose
+-------
+B5u continues B5 after the B-tree scan boundary. It changes BTreeLockingPolicy
+row-template and lock row-location parameters from direct Derby type imports to
+StoreDataValue/StoreRowLocation. The B2I locking implementations keep concrete
+RowLocation casts only where the legacy heap lock call still requires Derby's
+real RowLocation contract.
+
+Changed files
+-------------
+${delosdbB5uTouchedFiles.collect { '  - ' + delosdbB5uRelPath(it) }.join('\n')}
+
+Retired direct imports still present in B5u-retired files
+---------------------------------------------------------
+${retiredImportsRemaining.isEmpty() ? '  none' : retiredImportsRemaining.collect { '  - ' + it }.join('\n')}
+
+BTreeLockingPolicy bridge state
+-------------------------------
+  StoreDataValue[] parameters: ${lockingPolicyText.contains('StoreDataValue[]') ? 'present' : 'missing'}
+  StoreRowLocation parameters: ${lockingPolicyText.contains('StoreRowLocation') ? 'present' : 'missing'}
+  direct DataValueDescriptor import: ${lockingPolicyText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  direct RowLocation import: ${lockingPolicyText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+
+B2IRowLocking3 compatibility cast state
+---------------------------------------
+  StoreDataValue[] parameters: ${rowLocking3Text.contains('StoreDataValue[]') ? 'present' : 'missing'}
+  StoreRowLocation parameters: ${rowLocking3Text.contains('StoreRowLocation') ? 'present' : 'missing'}
+  explicit RowLocation cast for heap locking: ${rowLocking3Text.contains('(RowLocation) lock_row_loc') ? 'present' : 'missing'}
+  direct DataValueDescriptor import: ${rowLocking3Text.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+
+B2IUndo bridge state
+--------------------
+  StoreDataValue[] logged row template: ${undoText.contains('StoreDataValue[] logged_index_row_template') ? 'present' : 'missing'}
+  zero-column fetch uses StoreDataValue[]: ${undoText.contains('new StoreDataValue[0]') ? 'present' : 'missing'}
+  direct DataValueDescriptor import: ${undoText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+
+ControlRow bridge state
+-----------------------
+  StoreDataValue[] compareIndexRowToKey overload: ${controlRowText.contains('compareIndexRowToKey(\n    StoreDataValue[]') ? 'present' : 'missing'}
+
+Relocated-store direct org.apache.derby.iapi.types import count
+---------------------------------------------------------------
+  before B5u baseline: ${delosdbB5uBaselineImportCount}
+  after B5u:           ${remainingStoreTypeImports.size()}
+
+Remaining direct relocated-store iapi.types imports
+---------------------------------------------------
+${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+B6 readiness
+------------
+NOT YET. Remaining direct type imports are still concentrated in controller,
+row-location, raw-page, and deep B-tree implementation paths.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5uRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5uBtreeLockingPolicyBridge') {
+    group = 'verification'
+    description = 'B5u: verifies B-tree locking policy uses StoreDataValue/StoreRowLocation at the boundary.'
+    dependsOn 'legacyDerbyStoreKernelB5uBtreeLockingPolicyBridgeReport'
+    doLast {
+        delosdbB5uTouchedFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5u missing required source file: ' + delosdbB5uRelPath(source))
+            }
+        }
+
+        def retiredImportsRemaining = delosdbB5uRetiredImportsRemaining()
+        if (!retiredImportsRemaining.isEmpty()) {
+            throw new GradleException('B5u retired direct imports are still present: ' + retiredImportsRemaining.join('; '))
+        }
+
+        def lockingPolicyText = delosdbB5uRead(delosdbB5uBTreeLockingPolicy)
+        if (!lockingPolicyText.contains('StoreDataValue[]') || !lockingPolicyText.contains('StoreRowLocation')) {
+            throw new GradleException('B5u BTreeLockingPolicy must expose StoreDataValue[] and StoreRowLocation boundary parameters')
+        }
+
+        def rowLocking3Text = delosdbB5uRead(delosdbB5uB2IRowLocking3)
+        if (!rowLocking3Text.contains('StoreDataValue[]') || !rowLocking3Text.contains('StoreRowLocation')) {
+            throw new GradleException('B5u B2IRowLocking3 must implement StoreDataValue[] and StoreRowLocation boundary parameters')
+        }
+        if (rowLocking3Text.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
+            throw new GradleException('B5u B2IRowLocking3 must not keep a direct DataValueDescriptor import')
+        }
+        if (!rowLocking3Text.contains('(RowLocation) lock_row_loc')) {
+            throw new GradleException('B5u B2IRowLocking3 must keep the explicit RowLocation cast at the heap-locking boundary')
+        }
+
+        def undoText = delosdbB5uRead(delosdbB5uB2IUndo)
+        if (undoText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
+            throw new GradleException('B5u B2IUndo must not keep direct DataValueDescriptor import')
+        }
+        if (!undoText.contains('StoreDataValue[] logged_index_row_template') || !undoText.contains('new StoreDataValue[0]')) {
+            throw new GradleException('B5u B2IUndo must use StoreDataValue[] for logged template and zero-column fetch')
+        }
+
+        def controlRowText = delosdbB5uRead(delosdbB5uControlRow)
+        if (!controlRowText.contains('compareIndexRowToKey(\n    StoreDataValue[]')) {
+            throw new GradleException('B5u ControlRow must provide a StoreDataValue[] compareIndexRowToKey overload')
+        }
+
+        def remainingStoreTypeImports = delosdbB5uStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5uBaselineImportCount) {
+            throw new GradleException('B5u relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5uBaselineImportCount + ': ' + remainingStoreTypeImports.size())
+        }
+
+        def reportText = delosdbB5uRead(delosdbB5uReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5u report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5u B-tree locking-policy bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5uBtreeLockingPolicyBridge'
+}

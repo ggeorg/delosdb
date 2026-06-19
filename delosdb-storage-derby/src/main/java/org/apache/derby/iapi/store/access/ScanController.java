@@ -25,9 +25,8 @@ import org.apache.derby.iapi.services.io.Storable;
 
 import org.apache.derby.shared.common.error.StandardException;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -214,7 +213,7 @@ public interface ScanController extends GenericScanController
 	@exception StandardException Standard exception policy.
 	@see RowUtil
     **/
-    void fetch(DataValueDescriptor[] destRow)
+    void fetch(StoreDataValue[] destRow)
 		throws StandardException;
 
     /**
@@ -227,7 +226,7 @@ public interface ScanController extends GenericScanController
 
      @exception StandardException Standard exception policy.
      */
-    void fetchWithoutQualify(DataValueDescriptor[] destRow)
+    void fetchWithoutQualify(StoreDataValue[] destRow)
 		throws StandardException;
 
     /**
@@ -258,7 +257,7 @@ public interface ScanController extends GenericScanController
 	@see ScanController#fetch
 	@see RowUtil
     **/
-    boolean fetchNext(DataValueDescriptor[] destRow)
+    boolean fetchNext(StoreDataValue[] destRow)
 		throws StandardException;
 
 	/**
@@ -280,7 +279,7 @@ public interface ScanController extends GenericScanController
 
 	@exception StandardException Standard exception policy.
 	**/
-	void fetchLocation(RowLocation destRowLocation)
+	void fetchLocation(StoreRowLocation destRowLocation)
 		throws StandardException;
 
     /**
@@ -328,7 +327,7 @@ public interface ScanController extends GenericScanController
      * @exception StandardException Standard exception policy.
      *
      */
-    boolean positionAtRowLocation(RowLocation rl) 
+    boolean positionAtRowLocation(StoreRowLocation rl) 
         throws StandardException;
 
 
@@ -342,7 +341,7 @@ public interface ScanController extends GenericScanController
 	@see RowUtil
     **/
 
-    boolean replace(DataValueDescriptor[] row, FormatableBitSet validColumns)
+    boolean replace(StoreDataValue[] row, FormatableBitSet validColumns)
 		throws StandardException;
 
 }

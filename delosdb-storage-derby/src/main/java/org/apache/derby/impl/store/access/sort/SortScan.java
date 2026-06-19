@@ -26,10 +26,10 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
 
@@ -109,7 +109,7 @@ public abstract class SortScan extends Scan
 
 	@exception StandardException Standard exception policy.
     **/
-    public final boolean fetchNext(DataValueDescriptor[] row)
+    public final boolean fetchNext(StoreDataValue[] row)
 		throws StandardException
 	{
         boolean ret_val = next();
@@ -124,7 +124,7 @@ public abstract class SortScan extends Scan
     Fetch the row at the current position of the Scan.
 	@see org.apache.derby.iapi.store.access.ScanController#fetch
     **/
-    public final void fetch(DataValueDescriptor[] result)
+    public final void fetch(StoreDataValue[] result)
 		throws StandardException
 	{
         if (SanityManager.DEBUG)
@@ -162,7 +162,7 @@ public abstract class SortScan extends Scan
     
     @see org.apache.derby.iapi.store.access.ScanController#fetchWithoutQualify
     **/
-    public final void fetchWithoutQualify(DataValueDescriptor[] result)
+    public final void fetchWithoutQualify(StoreDataValue[] result)
 		throws StandardException
 	{
         throw StandardException.newException(

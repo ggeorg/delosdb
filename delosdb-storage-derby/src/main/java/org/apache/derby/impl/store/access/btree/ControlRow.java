@@ -1251,6 +1251,47 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		return 0;
 	}
 
+
+	public static int compareIndexRowToKey(
+    StoreDataValue[]        indexrow, 
+    StoreDataValue[]        key,
+    int                     nCompareCols, 
+    int                     partialKeyOrder,
+    boolean[]               ascOrDesc)
+        throws StandardException
+	{
+		// Get the actual number of key columns present
+		// in the partial key.
+		int partialKeyCols = key.length;
+
+		// Compare corresponding columns in the index row and the key.
+		for (int i = 0; i < nCompareCols; i++)
+		{
+			// See if we have run out of partial key columns.
+			if (i >= partialKeyCols)
+			{
+				return partialKeyOrder;
+			}
+
+			// Compare them through the store-facing type bridge.
+			int r = StoreTypeUtil.compare(indexrow[i], key[i]);
+
+			// If the columns don't compare equal, we're done.
+			// Return the sense of the comparison.
+			if (r != 0)
+			{
+				if (ascOrDesc[i])  // true - column in ascending order
+					return r;
+				else
+					return -r;
+		    }
+		}
+
+		// We made it through all the columns, and they must have
+		// all compared equal.  So return that the rows compare equal.
+		return 0;
+	}
+
 	/**
 	 ** Perform consistency checks which are common to all
 	 ** pages that derive from ControlRow (both leaf and 

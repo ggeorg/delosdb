@@ -24,13 +24,13 @@ package org.apache.derby.impl.store.access.btree.index;
 import org.apache.derby.shared.common.error.StandardException; 
 
 import org.apache.derby.iapi.store.access.ConglomerateController;
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.impl.store.access.btree.BTree;
 import org.apache.derby.impl.store.access.btree.BTreeLockingPolicy;
@@ -115,8 +115,8 @@ class B2IRowLocking1 extends B2IRowLocking2 implements BTreeLockingPolicy
     OpenBTree               open_btree,
     BTreeRowPosition        pos,
     FetchDescriptor         lock_fetch_desc,
-    DataValueDescriptor[]   lock_template,
-    RowLocation             lock_row_loc,
+    StoreDataValue[]   lock_template,
+    StoreRowLocation        lock_row_loc,
     boolean                 previous_key_lock,
     boolean                 forUpdate,
     int                     lock_operation)

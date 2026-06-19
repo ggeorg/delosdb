@@ -2072,7 +2072,7 @@ class InsertResultSet extends DMLWriteGeneratedColumnsResultSet implements Targe
         }
         else
         {
-            rl = bulkHeapSC.newRowLocationTemplate();
+            rl = (RowLocation) bulkHeapSC.newRowLocationTemplate();
         }
 
         bulkHeapSC.close();

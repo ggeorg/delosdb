@@ -25,9 +25,8 @@ import org.apache.derby.iapi.services.io.Storable;
 
 import org.apache.derby.shared.common.error.StandardException;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -104,7 +103,7 @@ public interface GroupFetchScanController extends GenericScanController
      * Expected usage:
      *
      * // allocate an array of 5 empty rows
-     * DataValueDescriptor[][] row_array = allocate_row_array(5);
+     * StoreDataValue[][]      row_array = allocate_row_array(5);
      * int row_cnt = 0;
      *
      * scan = openScan();
@@ -134,14 +133,14 @@ public interface GroupFetchScanController extends GenericScanController
 	 * @exception  StandardException  Standard exception policy.
      **/
     public int fetchNextGroup(
-    DataValueDescriptor[][] row_array,
-    RowLocation[]           rowloc_array)
+    StoreDataValue[][]      row_array,
+    StoreRowLocation[]      rowloc_array)
         throws StandardException;
 
     public int fetchNextGroup(
-    DataValueDescriptor[][] row_array,
-    RowLocation[]           oldrowloc_array,
-    RowLocation[]           newrowloc_array)
+    StoreDataValue[][]      row_array,
+    StoreRowLocation[]      oldrowloc_array,
+    StoreRowLocation[]      newrowloc_array)
         throws StandardException;
 
     /**
