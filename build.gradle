@@ -6278,3 +6278,133 @@ tasks.register('verifyLegacyDerbyKernelB5iTypeOperations') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5iTypeOperations'
 }
+
+// B5j — First low-risk relocated-store rewrite slice away from iapi.types
+//
+// B5h/B5i established the SQL-neutral store type bridge. B5j performs the
+// first deliberately small source rewrite: only leaf store-facing interfaces
+// where the inherited Derby type dependency can be replaced by the bridge
+// without changing runtime behavior or forcing the whole store source tree to
+// move at once.
+def delosdbB5jReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5j-first-type-rewrite.txt')
+def delosdbB5jBinaryOrderable = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/BinaryOrderable.java')
+def delosdbB5jStaticCompiledInfo = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/StaticCompiledOpenConglomInfo.java')
+def delosdbB5jRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5jRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5jStoreTypeImportLines = { ->
+    fileTree('delosdb-storage-derby/src/main/java') { include '**/*.java' }.files.findAll { it.isFile() }.collectMany { source ->
+        source.readLines().findAll { it.trim().startsWith('import org.apache.derby.iapi.types.') }.collect { line ->
+            delosdbB5jRelPath(source) + ': ' + line.trim()
+        }
+    }.sort()
+}
+def delosdbB5jTouchedForbiddenTypeImports = { ->
+    [delosdbB5jBinaryOrderable, delosdbB5jStaticCompiledInfo].collectMany { source ->
+        source.readLines().findAll { it.trim().startsWith('import org.apache.derby.iapi.types.') }.collect { line ->
+            delosdbB5jRelPath(source) + ': ' + line.trim()
+        }
+    }.sort()
+}
+
+tasks.register('legacyDerbyStoreKernelB5jFirstTypeRewriteReport') {
+    group = 'verification'
+    description = 'B5j: reports the first low-risk relocated-store rewrite away from iapi.types.'
+    dependsOn 'verifyLegacyDerbyKernelB5iTypeOperations'
+    outputs.file(delosdbB5jReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5jStoreTypeImportLines()
+        def touchedForbiddenImports = delosdbB5jTouchedForbiddenTypeImports()
+        def reportFile = delosdbB5jReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5j first relocated-store type rewrite
+================================================
+
+Purpose
+-------
+B5j is the first real source rewrite after the B5h/B5i store-facing type
+bridge. It intentionally touches only two leaf store-facing contracts so the
+next failure, if any, is attributable.
+
+Rewritten contracts
+-------------------
+  - ${delosdbB5jRelPath(delosdbB5jBinaryOrderable)}
+      Orderable -> StoreOrderable
+  - ${delosdbB5jRelPath(delosdbB5jStaticCompiledInfo)}
+      DataValueDescriptor return -> StoreDataValue return
+
+Forbidden iapi.types imports in rewritten contracts
+---------------------------------------------------
+${touchedForbiddenImports.isEmpty() ? '  none' : touchedForbiddenImports.collect { '  - ' + it }.join('\n')}
+
+Remaining relocated-store iapi.types import count
+-------------------------------------------------
+  ${remainingStoreTypeImports.size()}
+
+Remaining relocated-store iapi.types imports
+--------------------------------------------
+${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+Boundary decision
+-----------------
+This is a controlled rewrite slice, not a blind move of org.apache.derby.iapi.types.
+The inherited Derby SQL type implementations remain engine-owned and adapt to the
+kernel store-facing bridge.
+
+B6 readiness
+------------
+NOT YET. More relocated-store source slices still import org.apache.derby.iapi.types.*.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5jRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5jFirstTypeRewrite') {
+    group = 'verification'
+    description = 'B5j: verifies the first low-risk relocated-store rewrite away from iapi.types.'
+    dependsOn 'legacyDerbyStoreKernelB5jFirstTypeRewriteReport'
+    doLast {
+        [delosdbB5jBinaryOrderable, delosdbB5jStaticCompiledInfo].each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5j missing rewritten store contract: ' + delosdbB5jRelPath(source))
+            }
+        }
+
+        def binaryOrderableText = delosdbB5jRead(delosdbB5jBinaryOrderable)
+        if (!binaryOrderableText.contains('org.apache.derby.iapi.store.types.StoreOrderable')) {
+            throw new GradleException('B5j BinaryOrderable must import StoreOrderable')
+        }
+        if (binaryOrderableText.contains('import org.apache.derby.iapi.types.Orderable;')) {
+            throw new GradleException('B5j BinaryOrderable must not import iapi.types.Orderable')
+        }
+        if (!binaryOrderableText.contains('extends StoreOrderable')) {
+            throw new GradleException('B5j BinaryOrderable must extend StoreOrderable')
+        }
+
+        def staticInfoText = delosdbB5jRead(delosdbB5jStaticCompiledInfo)
+        if (!staticInfoText.contains('org.apache.derby.iapi.store.types.StoreDataValue')) {
+            throw new GradleException('B5j StaticCompiledOpenConglomInfo must import StoreDataValue')
+        }
+        if (staticInfoText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
+            throw new GradleException('B5j StaticCompiledOpenConglomInfo must not import iapi.types.DataValueDescriptor')
+        }
+        if (!staticInfoText.contains('StoreDataValue  getConglom()')) {
+            throw new GradleException('B5j StaticCompiledOpenConglomInfo must expose StoreDataValue getConglom()')
+        }
+
+        def touchedForbiddenImports = delosdbB5jTouchedForbiddenTypeImports()
+        if (!touchedForbiddenImports.isEmpty()) {
+            throw new GradleException('B5j rewritten contracts still import iapi.types: ' + touchedForbiddenImports.join('; '))
+        }
+
+        def reportText = delosdbB5jRead(delosdbB5jReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5j report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5j first relocated-store type rewrite; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5jFirstTypeRewrite'
+}
+

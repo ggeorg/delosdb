@@ -21,7 +21,7 @@
 
 package org.apache.derby.iapi.store.access;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.services.io.Storable;
 
@@ -54,5 +54,5 @@ public interface StaticCompiledOpenConglomInfo extends Storable
     /**
      * routine for internal use of store only.
      **/
-    DataValueDescriptor  getConglom();
+    StoreDataValue  getConglom();
 }

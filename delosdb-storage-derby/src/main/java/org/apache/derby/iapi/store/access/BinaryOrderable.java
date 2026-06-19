@@ -21,7 +21,7 @@
 
 package org.apache.derby.iapi.store.access;
 
-import org.apache.derby.iapi.types.Orderable;
+import org.apache.derby.iapi.store.types.StoreOrderable;
 
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -45,7 +45,7 @@ import java.io.IOException;
 
 **/
 
-public interface BinaryOrderable extends Orderable
+public interface BinaryOrderable extends StoreOrderable
 {
 	/**
 	 * Compare this Orderable with a given Orderable for the purpose of
@@ -65,7 +65,7 @@ public interface BinaryOrderable extends Orderable
 	 */
 	int binarycompare(
     ObjectInput  in, 
-    Orderable    other) 
+    StoreOrderable other) 
         throws IOException;
 
 	/**
@@ -97,7 +97,7 @@ public interface BinaryOrderable extends Orderable
 	boolean binarycompare(
     ObjectInput in,
     int         op, 
-    Orderable   other,
+    StoreOrderable other,
     boolean     orderedNulls, 
     boolean     unknownRV)
 				throws IOException;
