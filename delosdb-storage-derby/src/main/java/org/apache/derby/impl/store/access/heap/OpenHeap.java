@@ -25,7 +25,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 
 import org.apache.derby.shared.common.error.StandardException;
 
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.impl.store.access.conglomerate.OpenConglomerate;
 
@@ -67,7 +67,7 @@ class OpenHeap extends OpenConglomerate
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-	public RowLocation newRowLocationTemplate()
+	public StoreRowLocation newRowLocationTemplate()
 		throws StandardException
 	{
 		if (getContainer() == null)

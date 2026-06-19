@@ -39,10 +39,9 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
-
-import org.apache.derby.iapi.types.RowLocation;
 
 import java.util.Properties; 
 
@@ -122,7 +121,7 @@ public abstract class OpenConglomerate
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-	protected abstract RowLocation newRowLocationTemplate()
+	protected abstract StoreRowLocation newRowLocationTemplate()
 		throws StandardException;
 
     abstract public int[] getFormatIds();

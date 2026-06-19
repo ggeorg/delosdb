@@ -8530,3 +8530,196 @@ tasks.register('verifyLegacyDerbyKernelB5uBtreeLockingPolicyBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5uBtreeLockingPolicyBridge'
 }
+
+// B5v — row-location template bridge for cost/open-conglomerate boundary
+// ----------------------------------------------------------------------
+// B5u retired the B-tree locking-policy imports. B5v moves the next small
+// row-location template seam to StoreRowLocation without touching the deep
+// heap/B-tree fetch/delete/update paths that still enforce Derby RowLocation
+// semantics internally.
+
+def delosdbB5vReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5v-row-location-template-bridge.txt')
+def delosdbB5vBaselineImportCount = 63
+
+def delosdbB5vStoreCostController = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/StoreCostController.java')
+def delosdbB5vBTreeCostController = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeCostController.java')
+def delosdbB5vOpenConglomerate = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java')
+def delosdbB5vOpenHeap = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/OpenHeap.java')
+def delosdbB5vStoreCostControllerBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/StoreCostControllerBridge.java')
+def delosdbB5vResultColumnList = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/ResultColumnList.java')
+
+def delosdbB5vTouchedFiles = [
+    delosdbB5vStoreCostController,
+    delosdbB5vBTreeCostController,
+    delosdbB5vOpenConglomerate,
+    delosdbB5vOpenHeap,
+    delosdbB5vStoreCostControllerBridge,
+    delosdbB5vResultColumnList
+]
+
+def delosdbB5vRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5vRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5vStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].collectMany { root ->
+        fileTree(root) { include '**/*.java' }.files.findAll { it.isFile() }.collectMany { source ->
+            source.readLines().findAll { it.trim().startsWith('import org.apache.derby.iapi.types.') }.collect { line ->
+                delosdbB5vRelPath(source) + ': ' + line.trim()
+            }
+        }
+    }.sort()
+}
+
+def delosdbB5vRetiredImportsRemaining = { ->
+    [
+        delosdbB5vStoreCostController,
+        delosdbB5vBTreeCostController,
+        delosdbB5vOpenConglomerate,
+        delosdbB5vOpenHeap
+    ].collectMany { source ->
+        def text = delosdbB5vRead(source)
+        text.contains('import org.apache.derby.iapi.types.RowLocation;') ?
+            [delosdbB5vRelPath(source) + ': import org.apache.derby.iapi.types.RowLocation;'] : []
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5vRowLocationTemplateBridgeReport') {
+    group = 'verification'
+    description = 'B5v: reports the StoreRowLocation template bridge slice.'
+    dependsOn 'verifyLegacyDerbyKernelB5uBtreeLockingPolicyBridge'
+    outputs.file(delosdbB5vReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5vStoreTypeImportLines()
+        def retiredImportsRemaining = delosdbB5vRetiredImportsRemaining()
+        def storeCostText = delosdbB5vRead(delosdbB5vStoreCostController)
+        def btreeCostText = delosdbB5vRead(delosdbB5vBTreeCostController)
+        def openConglomText = delosdbB5vRead(delosdbB5vOpenConglomerate)
+        def openHeapText = delosdbB5vRead(delosdbB5vOpenHeap)
+        def bridgeText = delosdbB5vRead(delosdbB5vStoreCostControllerBridge)
+        def resultColumnsText = delosdbB5vRead(delosdbB5vResultColumnList)
+        def reportFile = delosdbB5vReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5v row-location template bridge slice
+================================================
+
+Purpose
+-------
+B5v moves the row-location template return seam to StoreRowLocation in the
+cost-controller and open-heap/open-conglomerate boundary. This is deliberately
+narrow: deep controller fetch/delete/update paths still preserve concrete Derby
+RowLocation semantics and are left for later B5 slices.
+
+Changed files
+-------------
+${delosdbB5vTouchedFiles.collect { '  - ' + delosdbB5vRelPath(it) }.join('\n')}
+
+Retired direct RowLocation imports still present in B5v-retired files
+---------------------------------------------------------------------
+${retiredImportsRemaining.isEmpty() ? '  none' : retiredImportsRemaining.collect { '  - ' + it }.join('\n')}
+
+StoreCostController state
+-------------------------
+  StoreRowLocation import: ${storeCostText.contains('import org.apache.derby.iapi.store.types.StoreRowLocation;') ? 'present' : 'missing'}
+  newRowLocationTemplate returns StoreRowLocation: ${storeCostText.contains('StoreRowLocation newRowLocationTemplate()') ? 'present' : 'missing'}
+  direct RowLocation import: ${storeCostText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+
+BTreeCostController state
+-------------------------
+  StoreRowLocation import: ${btreeCostText.contains('import org.apache.derby.iapi.store.types.StoreRowLocation;') ? 'present' : 'missing'}
+  newRowLocationTemplate returns StoreRowLocation: ${btreeCostText.contains('StoreRowLocation newRowLocationTemplate()') ? 'present' : 'missing'}
+  direct RowLocation import: ${btreeCostText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+
+OpenConglomerate/OpenHeap state
+-------------------------------
+  OpenConglomerate protected template returns StoreRowLocation: ${openConglomText.contains('protected abstract StoreRowLocation newRowLocationTemplate()') ? 'present' : 'missing'}
+  OpenHeap template returns StoreRowLocation: ${openHeapText.contains('StoreRowLocation newRowLocationTemplate()') ? 'present' : 'missing'}
+  OpenConglomerate direct RowLocation import: ${openConglomText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+  OpenHeap direct RowLocation import: ${openHeapText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+
+Engine SQL/cost adapter state
+-----------------------------
+  StoreCostControllerBridge returns StoreRowLocation: ${bridgeText.contains('StoreRowLocation newRowLocationTemplate()') ? 'present' : 'missing'}
+  SQL boundary casts StoreRowLocation back to RowLocation: ${resultColumnsText.contains('RowLocation rlTemplate = (RowLocation) scc.newRowLocationTemplate();') ? 'present' : 'missing'}
+
+Relocated-store direct org.apache.derby.iapi.types import count
+---------------------------------------------------------------
+  before B5v baseline: ${delosdbB5vBaselineImportCount}
+  after B5v:           ${remainingStoreTypeImports.size()}
+
+Remaining direct relocated-store iapi.types imports
+---------------------------------------------------
+${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+B6 readiness
+------------
+NOT YET. Remaining direct type imports are still concentrated in controller,
+row-location, raw-page, and deep B-tree/heap implementation paths.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5vRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5vRowLocationTemplateBridge') {
+    group = 'verification'
+    description = 'B5v: verifies StoreRowLocation row-location template bridge at cost/open-conglomerate boundaries.'
+    dependsOn 'legacyDerbyStoreKernelB5vRowLocationTemplateBridgeReport'
+    doLast {
+        delosdbB5vTouchedFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5v missing required source file: ' + delosdbB5vRelPath(source))
+            }
+        }
+
+        def retiredImportsRemaining = delosdbB5vRetiredImportsRemaining()
+        if (!retiredImportsRemaining.isEmpty()) {
+            throw new GradleException('B5v retired direct RowLocation imports are still present: ' + retiredImportsRemaining.join('; '))
+        }
+
+        def storeCostText = delosdbB5vRead(delosdbB5vStoreCostController)
+        if (!storeCostText.contains('StoreRowLocation newRowLocationTemplate()')) {
+            throw new GradleException('B5v StoreCostController must return StoreRowLocation from newRowLocationTemplate')
+        }
+
+        def btreeCostText = delosdbB5vRead(delosdbB5vBTreeCostController)
+        if (!btreeCostText.contains('StoreRowLocation newRowLocationTemplate()')) {
+            throw new GradleException('B5v BTreeCostController must return StoreRowLocation from newRowLocationTemplate')
+        }
+
+        def openConglomText = delosdbB5vRead(delosdbB5vOpenConglomerate)
+        if (!openConglomText.contains('protected abstract StoreRowLocation newRowLocationTemplate()')) {
+            throw new GradleException('B5v OpenConglomerate must expose StoreRowLocation for row-location template')
+        }
+
+        def openHeapText = delosdbB5vRead(delosdbB5vOpenHeap)
+        if (!openHeapText.contains('StoreRowLocation newRowLocationTemplate()')) {
+            throw new GradleException('B5v OpenHeap must return StoreRowLocation from newRowLocationTemplate')
+        }
+
+        def bridgeText = delosdbB5vRead(delosdbB5vStoreCostControllerBridge)
+        if (!bridgeText.contains('StoreRowLocation newRowLocationTemplate()')) {
+            throw new GradleException('B5v StoreCostControllerBridge must implement StoreRowLocation newRowLocationTemplate')
+        }
+
+        def resultColumnsText = delosdbB5vRead(delosdbB5vResultColumnList)
+        if (!resultColumnsText.contains('RowLocation rlTemplate = (RowLocation) scc.newRowLocationTemplate();')) {
+            throw new GradleException('B5v ResultColumnList must keep the explicit RowLocation cast at the SQL boundary')
+        }
+
+        def remainingStoreTypeImports = delosdbB5vStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5vBaselineImportCount) {
+            throw new GradleException('B5v relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5vBaselineImportCount + ': ' + remainingStoreTypeImports.size())
+        }
+
+        def reportText = delosdbB5vRead(delosdbB5vReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5v report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5v row-location template bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5vRowLocationTemplateBridge'
+}

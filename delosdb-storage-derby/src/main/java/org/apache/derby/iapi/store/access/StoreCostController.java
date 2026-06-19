@@ -22,8 +22,7 @@
 package org.apache.derby.iapi.store.access;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
-
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.shared.common.error.StandardException; 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -393,6 +392,6 @@ public interface StoreCostController extends RowCountable
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-	RowLocation newRowLocationTemplate()
+	StoreRowLocation newRowLocationTemplate()
 		throws StandardException;
 }

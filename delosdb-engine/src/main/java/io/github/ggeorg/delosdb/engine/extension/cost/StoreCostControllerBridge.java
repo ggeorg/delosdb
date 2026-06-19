@@ -4,7 +4,7 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.StoreCostResult;
 import org.apache.derby.iapi.store.types.StoreDataValue;
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
 
 import java.util.Locale;
@@ -135,7 +135,7 @@ public final class StoreCostControllerBridge {
         }
 
         @Override
-        public RowLocation newRowLocationTemplate() throws StandardException {
+        public StoreRowLocation newRowLocationTemplate() throws StandardException {
             return delegate.newRowLocationTemplate();
         }
 

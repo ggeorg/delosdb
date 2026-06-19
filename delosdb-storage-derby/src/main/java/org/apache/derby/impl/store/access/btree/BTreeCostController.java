@@ -41,8 +41,7 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
-
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import java.util.Properties;
@@ -680,7 +679,7 @@ public class BTreeCostController extends OpenBTree
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-	public RowLocation newRowLocationTemplate()
+	public StoreRowLocation newRowLocationTemplate()
 		throws StandardException
 	{
         throw StandardException.newException(

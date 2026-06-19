@@ -1542,7 +1542,7 @@ class ResultColumnList extends QueryTreeNodeVector<ResultColumn>
 			row.setColumn(i + 1, dataValue );
 		}
 
-		RowLocation rlTemplate = scc.newRowLocationTemplate();
+		RowLocation rlTemplate = (RowLocation) scc.newRowLocationTemplate();
 
 		row.setColumn(baseCols.length + 1, rlTemplate);
 
