@@ -2722,8 +2722,38 @@ def delosdbDs1AllMainJavaFiles = {
     return files.unique { it.canonicalPath }.sort { it.path }
 }
 
-def delosdbDs1StoreApiRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
+def delosdbDs1EngineStoreApiRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
+def delosdbDs1StorageDerbyStoreApiRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store')
+def delosdbDs1StoreApiRoot = delosdbDs1EngineStoreApiRoot
+
 def delosdbDs1StoreImplRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+def delosdbDs1StorageDerbyStoreImplRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+
+def delosdbDs1StoreApiRoots = [delosdbDs1EngineStoreApiRoot, delosdbDs1StorageDerbyStoreApiRoot]
+def delosdbDs1StoreImplRoots = [delosdbDs1StoreImplRoot, delosdbDs1StorageDerbyStoreImplRoot]
+
+def delosdbDs1FilesUnderRoots = { Collection<File> roots ->
+    def result = []
+    roots.findAll { it.exists() }.each { root ->
+        result.addAll(fileTree(root) { include '**/*.java' }.files)
+    }
+    return result.unique { it.canonicalPath }.sort { it.path }
+}
+
+def delosdbDs1StoreApiFiles = { delosdbDs1FilesUnderRoots(delosdbDs1StoreApiRoots) }
+def delosdbDs1StoreImplFiles = { delosdbDs1FilesUnderRoots(delosdbDs1StoreImplRoots) }
+def delosdbDs1StoreFiles = {
+    def result = []
+    result.addAll(delosdbDs1StoreApiFiles())
+    result.addAll(delosdbDs1StoreImplFiles())
+    return result.unique { it.canonicalPath }.sort { it.path }
+}
+
+def delosdbDs1IsInheritedStoreSource = { File source ->
+    (delosdbDs1StoreApiRoots + delosdbDs1StoreImplRoots).any { root ->
+        root.exists() && delosdbDs1IsUnder(source, root)
+    }
+}
 
 tasks.register('verifyMvccNoDerbyStoreImports') {
     group = 'verification'
@@ -2741,9 +2771,7 @@ tasks.register('verifyDerbyStoreNoMvccImports') {
     group = 'verification'
     description = 'Verifies inherited Derby store sources do not compile-time import DelosDB-native MVCC internals.'
     doLast {
-        def storeSources = []
-        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store'))
-        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store'))
+        def storeSources = delosdbDs1StoreFiles()
         delosdbDs1RequireNoImports(
                 'legacy Derby store',
                 storeSources,
@@ -2770,8 +2798,8 @@ tasks.register('verifyLegacyDerbyStoreInventory') {
     group = 'verification'
     description = 'Verifies the inherited Derby store package inventory is present before modularization.'
     doLast {
-        def apiFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
-        def implFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+        def apiFiles = delosdbDs1StoreApiFiles()
+        def implFiles = delosdbDs1StoreImplFiles()
         if (apiFiles.isEmpty()) {
             throw new GradleException('Legacy Derby store API inventory is empty: org.apache.derby.iapi.store.*')
         }
@@ -2819,8 +2847,8 @@ tasks.register('legacyStoreDependencyReport') {
         def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-dependencies.txt').get().asFile
         reportFile.parentFile.mkdirs()
 
-        def apiFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
-        def implFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+        def apiFiles = delosdbDs1StoreApiFiles()
+        def implFiles = delosdbDs1StoreImplFiles()
         def storeFiles = []
         storeFiles.addAll(apiFiles)
         storeFiles.addAll(implFiles)
@@ -2828,7 +2856,7 @@ tasks.register('legacyStoreDependencyReport') {
         def allMainJava = delosdbDs1AllMainJavaFiles()
         def engineJava = delosdbDs1JavaFiles('delosdb-engine/src/main/java')
         def nonStoreEngineJava = engineJava.findAll { source ->
-            !delosdbDs1IsUnder(source, delosdbDs1StoreApiRoot) && !delosdbDs1IsUnder(source, delosdbDs1StoreImplRoot)
+            !delosdbDs1IsInheritedStoreSource(source)
         }
         def nonStoreEngineImports = delosdbDs1ImportMatches(
                 nonStoreEngineJava,
@@ -2935,9 +2963,7 @@ tasks.register('verifyLegacyDerbyStoreNoDataDictionaryImports') {
     group = 'verification'
     description = 'Verifies inherited Derby store sources no longer import the SQL DataDictionary interface.'
     doLast {
-        def storeSources = []
-        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store'))
-        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store'))
+        def storeSources = delosdbDs1StoreFiles()
         delosdbDs1RequireNoImports(
                 'legacy Derby store',
                 storeSources,
@@ -2996,9 +3022,7 @@ tasks.register('verifyLegacyDerbyStoreNoSqlConnectionImports') {
     group = 'verification'
     description = 'Verifies inherited Derby store sources no longer import SQL connection or statement context interfaces.'
     doLast {
-        def storeSources = []
-        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store'))
-        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store'))
+        def storeSources = delosdbDs1StoreFiles()
         delosdbDs1RequireNoImports(
                 'legacy Derby store',
                 storeSources,
@@ -3059,9 +3083,7 @@ tasks.register('verifyLegacyDerbyStoreNoSqlExecutionImports') {
     group = 'verification'
     description = 'Verifies inherited Derby store sources no longer import SQL execution implementation classes.'
     doLast {
-        def storeSources = []
-        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store'))
-        storeSources.addAll(delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store'))
+        def storeSources = delosdbDs1StoreFiles()
         delosdbDs1RequireNoImports(
                 'legacy Derby store',
                 storeSources,
@@ -3128,8 +3150,8 @@ tasks.register('legacyDerbyStorePhase1CloseoutReport') {
         def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-phase1-closeout.txt').get().asFile
         reportFile.parentFile.mkdirs()
 
-        def apiFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
-        def implFiles = delosdbDs1JavaFiles('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+        def apiFiles = delosdbDs1StoreApiFiles()
+        def implFiles = delosdbDs1StoreImplFiles()
         def storeFiles = []
         storeFiles.addAll(apiFiles)
         storeFiles.addAll(implFiles)
@@ -3153,8 +3175,8 @@ tasks.register('legacyDerbyStorePhase1CloseoutReport') {
 Status
 ------
 Phase 1 is extractable when this task and its dependencies are green.
-No store packages have moved yet.
-No new storage module has been created yet.
+The legacy store API source packages may now live under delosdb-storage-derby after DS8.
+Derby store API and implementation source packages move under delosdb-storage-derby by DS9; runtime packaging remains compatibility-first until DS10.
 No default-storage behavior changed.
 
 Inventory
@@ -3179,7 +3201,7 @@ ${upwardLeakImports.collect { "${it.file}:${it.line}: import ${it.importedType};
 Phase 2 entry condition
 -----------------------
 If this report says no remaining upward leaks and the closeout gate is green,
-Phase 2 may create delosdb-storage-derby and move whole store packages.
+Phase 2 may continue runtime packaging validation after DS8/DS9 whole-package source moves.
 """
         logger.lifecycle("Wrote ${delosdbDs1RelPath(reportFile)}")
     }
@@ -3211,7 +3233,7 @@ tasks.register('legacyDerbyStorePhase1Closeout') {
 
 tasks.register('verifyLegacyDerbyStorageModuleScaffold') {
     group = 'verification'
-    description = 'Verifies the DS7 delosdb-storage-derby scaffold exists without moving inherited Derby store packages yet.'
+    description = 'Verifies the delosdb-storage-derby scaffold and DS8/DS9 whole-package store source moves.'
     dependsOn ':delosdb-storage-derby:classes'
     doLast {
         def storageProjectDir = file('delosdb-storage-derby')
@@ -3228,16 +3250,21 @@ tasks.register('verifyLegacyDerbyStorageModuleScaffold') {
         }
         def storageApiRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store')
         def storageImplRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
-        if (storageApiRoot.exists() || storageImplRoot.exists()) {
-            throw new GradleException('DS7 must not move inherited Derby store packages into delosdb-storage-derby yet')
+        def engineApiRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
+        def engineImplRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+        if (!storageApiRoot.isDirectory()) {
+            throw new GradleException('DS8 expects inherited Derby store API packages under delosdb-storage-derby')
         }
-        if (!file('delosdb-engine/src/main/java/org/apache/derby/iapi/store').isDirectory()) {
-            throw new GradleException('DS7 expects inherited Derby store API packages to remain in delosdb-engine')
+        if (!storageImplRoot.isDirectory()) {
+            throw new GradleException('DS9 expects inherited Derby store implementation packages under delosdb-storage-derby')
         }
-        if (!file('delosdb-engine/src/main/java/org/apache/derby/impl/store').isDirectory()) {
-            throw new GradleException('DS7 expects inherited Derby store implementation packages to remain in delosdb-engine')
+        if (engineApiRoot.exists()) {
+            throw new GradleException('DS8 requires stale engine org/apache/derby/iapi/store sources to be removed; run scripts/cleanup-legacy-store-api-ds8.sh')
         }
-        logger.lifecycle('Verified DS7 legacy Derby storage module scaffold; no store packages moved yet')
+        if (engineImplRoot.exists()) {
+            throw new GradleException('DS9 requires stale engine org/apache/derby/impl/store sources to be removed; run scripts/cleanup-legacy-store-impl-ds9.sh')
+        }
+        logger.lifecycle('Verified DS9 legacy Derby store API and implementation source ownership under delosdb-storage-derby')
     }
 }
 

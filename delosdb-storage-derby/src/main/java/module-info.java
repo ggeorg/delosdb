@@ -1,9 +1,11 @@
 /**
- * Scaffold module for the inherited Derby-compatible heap/raw/access/WAL store.
+ * Source home for the inherited Derby-compatible heap/raw/access/WAL store.
  *
- * <p>DS7 intentionally contains no moved store packages. The whole
- * {@code org.apache.derby.iapi.store.*} and {@code org.apache.derby.impl.store.*}
- * packages move here later in DS8 and DS9.</p>
+ * <p>DS8 moves the {@code org.apache.derby.iapi.store.*} source packages here
+ * as whole packages. Until the remaining Derby kernel packages are extracted,
+ * these API sources are still compiled into {@code org.apache.derby.engine} to
+ * avoid a premature JPMS cycle. DS9 moves the implementation sources; the final
+ * Phase 2 closeout decides the runtime packaging boundary.</p>
  */
 module io.github.ggeorg.delosdb.storage.derby {
 }

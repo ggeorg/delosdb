@@ -9,6 +9,7 @@ group = rootProject.group
 
 def moduleName = 'org.apache.derby.engine'
 def sourceRoot = rootProject.file('delosdb-engine/src/main/java')
+def legacyDerbyStorageSourceRoot = rootProject.file('delosdb-storage-derby/src/main/java')
 def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
 def rootGeneratedSourceRoot = rootProject.layout.buildDirectory.dir("generated/sources/${moduleName}")
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
@@ -56,6 +57,13 @@ tasks.register('compileDerbyEngine', JavaCompile) {
     dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', ':delosdb-spi:compileDelosDbSpi', 'generateSqlParser'
     source = files(
             fileTree(sourceRoot) { include '**/*.java' },
+            // DS8/DS9 physically move the legacy store API and implementation
+            // sources under delosdb-storage-derby. Until kernel extraction and
+            // runtime packaging are complete, those sources are still compiled
+            // into org.apache.derby.engine to avoid a premature JPMS cycle with
+            // Derby kernel packages that still live in delosdb-engine.
+            fileTree(legacyDerbyStorageSourceRoot) { include 'org/apache/derby/iapi/store/**/*.java' },
+            fileTree(legacyDerbyStorageSourceRoot) { include 'org/apache/derby/impl/store/**/*.java' },
             fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
     )
     destinationDirectory = moduleClassDir

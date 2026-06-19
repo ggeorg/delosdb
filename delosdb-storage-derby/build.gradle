@@ -11,10 +11,17 @@ def sourceRoot = file('src/main/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 
 tasks.register('compileLegacyDerbyStorage', JavaCompile) {
-    source = fileTree(sourceRoot) { include '**/*.java' }
+    source = fileTree(sourceRoot) {
+        include '**/*.java'
+        // DS8/DS9 move legacy store API and implementation source ownership
+        // here, but those packages still compile into org.apache.derby.engine
+        // until kernel extraction/runtime packaging is complete. Compiling them
+        // into this scaffold module as well would create runtime split packages.
+        exclude 'org/apache/derby/iapi/store/**/*.java'
+        exclude 'org/apache/derby/impl/store/**/*.java'
+    }
     destinationDirectory = mainClassDir
     rootProject.ext.delosdbConfigureJavaCompile(delegate)
-    // DS7 is a scaffold only. Store packages move here in DS8/DS9.
     classpath = rootProject.files()
 }
 
@@ -32,7 +39,7 @@ tasks.register('legacyDerbyStorageJar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Legacy Derby Storage Scaffold')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Legacy Derby Storage')
     }
 }
 
