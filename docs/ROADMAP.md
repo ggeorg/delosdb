@@ -85,6 +85,29 @@ These remain deliberately shallow while MVCC is the active lane:
 - `TypeProvider`: metadata-only Derby type visibility.
 - new provider families: not opened.
 
+
+## Closed lane: legacy Derby store module extraction
+
+The two-phase Derby store surgery is closed when
+`legacyDerbyStoreModuleExtractionCloseout` is green.
+
+Result:
+
+```text
+delosdb-storage-derby
+  org.apache.derby.iapi.store.*
+  org.apache.derby.impl.store.*
+```
+
+The inherited Derby store is now a real source-ownership module. Derby package
+names, class names, disk format, `modules.properties` boot wiring, and default
+heap behavior remain compatible. Runtime packaging remains compatibility-first:
+`derby.jar` still includes the inherited Derby store runtime classes, and
+existing users do not need to manually add a separate storage jar yet.
+
+The extraction does not flip `delos_mvcc` to default and does not make MVCC
+depend on Derby store internals.
+
 ## Closed lane: MVCC semantic correctness sprint
 
 The MVCC path has moved beyond source mapping and simple provider smokes. It now

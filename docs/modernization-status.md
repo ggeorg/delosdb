@@ -67,6 +67,30 @@ memory -> provider-owned runtime proof
 `CREATE INDEX ... USING memory` remains intentionally rejected until DelosDB
 builds a real Derby executor/storage bridge for non-B-tree physical indexes.
 
+
+## Closed lane: legacy Derby store module extraction
+
+The inherited Derby-compatible heap/raw/access/WAL store has been separated from
+`delosdb-engine` at the source-ownership level:
+
+```text
+delosdb-storage-derby
+  org.apache.derby.iapi.store.*
+  org.apache.derby.impl.store.*
+```
+
+The extraction keeps Derby package/class names unchanged, preserves the existing
+disk format, and keeps heap as the default storage path. Runtime compatibility is
+preserved: derby.jar still includes the inherited Derby store runtime classes,
+and existing users do not need to manually add a separate storage jar yet.
+
+Permanent guards:
+
+```bash
+./gradlew verifyLegacyDerbyStoreBoundary
+./gradlew legacyDerbyStoreModuleExtractionCloseout
+```
+
 ## Closed lane: MVCC semantic correctness
 
 The MVCC path is no longer just a future design sketch. It has an isolated
@@ -142,7 +166,9 @@ Green/current product areas:
 - unified extension registry through `DELOSDB_EXTENSIONS()`;
 - type metadata visibility through `DELOSDB_TYPES()`;
 - MVCC guarded candidate path through `mvccDefaultProviderCandidateMatrix`;
-- MVCC A44--A52 semantic-correctness sprint through `mvccSqlCompatibilityCandidate`.
+- MVCC A44--A52 semantic-correctness sprint through `mvccSqlCompatibilityCandidate`;
+- legacy Derby store source ownership through `delosdb-storage-derby`;
+- Derby store extraction closeout through `legacyDerbyStoreModuleExtractionCloseout`.
 
 ## Research-friendly constraint
 

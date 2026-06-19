@@ -68,6 +68,40 @@ storage implementation. This distinction is important during the Derby store
 surgery: the legacy store may be modularized later, but its disk format, package
 identity, boot wiring, and default behavior remain compatible.
 
+
+## Legacy Derby store module extraction
+
+The inherited Derby-compatible heap/raw/access/WAL store now has a real source
+ownership module:
+
+```text
+delosdb-storage-derby
+  org.apache.derby.iapi.store.*
+  org.apache.derby.impl.store.*
+```
+
+The package and class names remain unchanged for compatibility. The module move
+is a source-ownership and build-boundary change, not a disk-format change and not
+a default-storage change.
+
+derby.jar still includes the inherited Derby store runtime classes. Existing
+users do not need to manually add a separate storage jar yet. A separate runtime
+jar split is a later explicit packaging decision, not part of this closeout.
+
+Permanent boundary rules:
+
+```text
+delosdb-storage-mvcc must not import Derby store internals.
+legacy Derby store code must not import MVCC internals.
+inherited store packages must not be split across modules.
+```
+
+The done-done gate is:
+
+```bash
+./gradlew legacyDerbyStoreModuleExtractionCloseout
+```
+
 ## MVCC compatibility rule
 
 The A44--A52 semantic-correctness sprint is green for the guarded MVCC candidate

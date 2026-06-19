@@ -26,6 +26,13 @@ Closed major lane:
 - The normal legacy Derby-compatible heap path remains the default.
 - The global default store has not been flipped.
 
+Closed major lane:
+
+- The inherited Derby store source ownership has moved to `delosdb-storage-derby`.
+- `org.apache.derby.iapi.store.*` and `org.apache.derby.impl.store.*` remain package-compatible.
+- `derby.jar` still includes the inherited Derby store runtime classes for existing users.
+- Existing users do not need to manually add a separate storage jar yet.
+
 Finished provider seams:
 
 - `CostModelProvider` v2 through Derby's native `StoreCostController` seam.
@@ -89,6 +96,12 @@ separate post-A52 decision.
 ./gradlew build
 ./gradlew derbyRuntimeSmoke
 ./gradlew :delosdb-tests:runDerbyLangSuite
+```
+
+Legacy Derby store extraction gate:
+
+```bash
+./gradlew legacyDerbyStoreModuleExtractionCloseout
 ```
 
 MVCC-focused gates:
@@ -157,6 +170,7 @@ If a previous Derby suite run was interrupted, start with:
 | `:delosdb-optionaltools` | optional tool integrations | `derbyoptionaltools.jar` |
 | `:delosdb-server` | network server | `derbynet.jar` |
 | `:delosdb-storage-mvcc` | opt-in MVCC/versioned-storage kernel and proofs | development module |
+| `:delosdb-storage-derby` | source home for inherited Derby-compatible heap/raw/access/WAL store | packaged in `derby.jar` for compatibility |
 | `:delosdb-storeless` | compiler/optimizer boot without storage | development module |
 | `:delosdb-tests` | inherited Derby test suite activation | test module |
 | `:delosdb-pptesting` | package-private inherited tests | test module |

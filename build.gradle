@@ -3521,3 +3521,169 @@ tasks.register('legacyDerbyStoreStaleSourceCleanupProof') {
             ':delosdb-engine:compileDerbyEngine',
             'mvccSqlCompatibilityCandidate'
 }
+
+
+// -----------------------------------------------------------------------------
+// DS12 — Legacy Derby store module extraction closeout
+// -----------------------------------------------------------------------------
+// DS12 is the done-done gate for the two-phase Derby store surgery. It adds no
+// new runtime behavior. It aggregates the Phase 2 packaging/source-ownership
+// proofs and records the compatibility decision: delosdb-storage-derby is now
+// the source home for the inherited store, while derby.jar still carries the
+// runtime classes for existing users.
+
+def delosdbDs12CloseoutDocs = [
+        file('README.md'),
+        file('docs/DERBY-COMPATIBILITY.md'),
+        file('docs/ROADMAP.md'),
+        file('docs/modernization-status.md')
+]
+
+tasks.register('verifyLegacyDerbyStoreModuleExtractionCloseout') {
+    group = 'verification'
+    description = 'Verifies the DS12 done-done invariants for legacy Derby store module extraction.'
+    dependsOn 'verifyLegacyDerbyStoreBoundary',
+            'verifyLegacyDerbyStoreNoStaleEngineSources',
+            'verifyLegacyDerbyStoreRuntimePackaging',
+            ':delosdb-storage-derby:check',
+            ':delosdb-engine:derbyJar'
+    doLast {
+        def storageApiRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store')
+        def storageImplRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+        def engineApiRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
+        def engineImplRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+        def storageModuleInfo = file('delosdb-storage-derby/src/main/java/module-info.java')
+        def storageBuildFile = file('delosdb-storage-derby/build.gradle')
+
+        if (!storageBuildFile.isFile()) {
+            throw new GradleException('DS12 requires delosdb-storage-derby/build.gradle')
+        }
+        if (!storageModuleInfo.isFile()) {
+            throw new GradleException('DS12 requires delosdb-storage-derby/src/main/java/module-info.java')
+        }
+        if (!storageApiRoot.isDirectory()) {
+            throw new GradleException('DS12 requires relocated org.apache.derby.iapi.store.* sources under delosdb-storage-derby')
+        }
+        if (!storageImplRoot.isDirectory()) {
+            throw new GradleException('DS12 requires relocated org.apache.derby.impl.store.* sources under delosdb-storage-derby')
+        }
+        if (engineApiRoot.exists()) {
+            throw new GradleException('DS12 forbids stale engine-side org.apache.derby.iapi.store sources: ' + delosdbDs1RelPath(engineApiRoot))
+        }
+        if (engineImplRoot.exists()) {
+            throw new GradleException('DS12 forbids stale engine-side org.apache.derby.impl.store sources: ' + delosdbDs1RelPath(engineImplRoot))
+        }
+
+        def docsMissing = delosdbDs12CloseoutDocs.findAll { !it.isFile() }
+        if (!docsMissing.isEmpty()) {
+            throw new GradleException('DS12 closeout documentation files are missing:\n' + docsMissing.collect { delosdbDs1RelPath(it) }.join('\n'))
+        }
+
+        def compatibilityDoc = file('docs/DERBY-COMPATIBILITY.md').text
+        [
+                'delosdb-storage-derby',
+                'derby.jar still includes the inherited Derby store runtime classes',
+                'Existing users do not need to manually add a separate storage jar'
+        ].each { requiredText ->
+            if (!compatibilityDoc.contains(requiredText)) {
+                throw new GradleException('docs/DERBY-COMPATIBILITY.md is missing DS12 closeout text: ' + requiredText)
+            }
+        }
+
+        logger.lifecycle('Verified DS12 legacy Derby store module extraction closeout invariants')
+    }
+}
+
+tasks.register('legacyDerbyStoreModuleExtractionCloseoutReport') {
+    group = 'verification'
+    description = 'Writes the DS12 done-done report for the legacy Derby store module extraction.'
+    dependsOn 'verifyLegacyDerbyStoreModuleExtractionCloseout',
+            'legacyDerbyStoreRuntimePackagingReport',
+            'legacyDerbyStoreSourceOwnershipReport'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-module-extraction-ds12.txt'))
+    doLast {
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-module-extraction-ds12.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+
+        def apiFiles = delosdbDs1StoreApiFiles()
+        def implFiles = delosdbDs1StoreImplFiles()
+        def nonStoreEngineImports = delosdbDs1JavaSources(file('delosdb-engine/src/main/java')).findAll { src ->
+            !src.path.contains('/org/apache/derby/iapi/store/') && !src.path.contains('/org/apache/derby/impl/store/')
+        }.collectMany { src -> delosdbDs1Imports(src).findAll { imp -> delosdbDs1IsDerbyStoreImport(imp.importedType) } }
+
+        reportFile.text = """DelosDB DS12 legacy Derby store module extraction closeout
+================================================================
+
+Status
+------
+Phase 1 preflight is closed.
+Phase 2 source extraction is closed.
+The inherited Derby store now has a real source-ownership module.
+
+Source ownership
+----------------
+delosdb-storage-derby:
+  org.apache.derby.iapi.store.* files: ${apiFiles.size()}
+  org.apache.derby.impl.store.* files: ${implFiles.size()}
+
+delosdb-engine:
+  no org.apache.derby.iapi.store source tree
+  no org.apache.derby.impl.store source tree
+
+Runtime compatibility decision
+------------------------------
+derby.jar still includes the inherited Derby store runtime classes.
+Existing users do not need to manually add a separate storage jar yet.
+delosdb-storage-derby is the store source home; runtime packaging remains
+compatibility-first until a later explicit packaging decision.
+
+Boundaries
+----------
+MVCC -> Derby store imports: forbidden by verifyMvccNoDerbyStoreImports
+Derby store -> MVCC imports: forbidden by verifyDerbyStoreNoMvccImports
+Split inherited-store packages: forbidden by verifyNoSplitStorePackages
+
+Engine users of the inherited store API
+---------------------------------------
+non-store engine files importing inherited Derby store: ${nonStoreEngineImports.collect { it.file }.unique().size()}
+
+Done-done gate
+--------------
+legacyDerbyStoreModuleExtractionCloseout aggregates:
+  verifyLegacyDerbyStoreBoundary
+  legacyDerbyStoreStaleSourceCleanupProof
+  legacyDerbyStoreRuntimePackagingProof
+  :delosdb-storage-derby:check
+  :delosdb-storage-mvcc:check
+  :delosdb-engine:derbyJar
+  mvccSqlCompatibilityCandidate
+  mvccSqlBridgeHistoryPrunedProof
+  :delosdb-tests:runDerbyLangSuite
+
+Out of scope
+------------
+No default-storage flip.
+No disk-format change.
+No Derby package/class rename.
+No separate runtime jar requirement yet.
+No module export tightening yet.
+No MVCC dependency on Derby store internals.
+"""
+        logger.lifecycle("Wrote ${delosdbDs1RelPath(reportFile)}")
+    }
+}
+
+tasks.register('legacyDerbyStoreModuleExtractionCloseout') {
+    group = 'verification'
+    description = 'Runs the DS12 done-done gate for legacy Derby store module extraction.'
+    dependsOn 'verifyLegacyDerbyStoreBoundary',
+            'legacyDerbyStoreStaleSourceCleanupProof',
+            'legacyDerbyStoreRuntimePackagingProof',
+            ':delosdb-storage-derby:check',
+            ':delosdb-storage-mvcc:check',
+            ':delosdb-engine:derbyJar',
+            'mvccSqlCompatibilityCandidate',
+            'mvccSqlBridgeHistoryPrunedProof',
+            ':delosdb-tests:runDerbyLangSuite',
+            'legacyDerbyStoreModuleExtractionCloseoutReport'
+}
