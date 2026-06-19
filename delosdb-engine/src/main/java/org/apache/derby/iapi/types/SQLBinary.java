@@ -21,6 +21,8 @@
 
 package org.apache.derby.iapi.types;
 
+import org.apache.derby.iapi.services.io.Resetable;
+
 import org.apache.derby.iapi.sql.conn.StatementContext;
 
 import org.apache.derby.shared.common.reference.ContextId;

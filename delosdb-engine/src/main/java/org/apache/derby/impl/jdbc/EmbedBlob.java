@@ -28,7 +28,7 @@ import org.apache.derby.iapi.jdbc.EngineLOB;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RawToBinaryFormatStream;
-import org.apache.derby.iapi.types.Resetable;
+import org.apache.derby.iapi.services.io.Resetable;
 import org.apache.derby.iapi.services.io.InputStreamUtil;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.util.InterruptStatus;

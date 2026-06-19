@@ -152,7 +152,6 @@ module org.apache.derby.engine
     //
     exports org.apache.derby.diag;
     exports org.apache.derby.iapi.db;
-    exports org.apache.derby.iapi.services.io;
     exports org.apache.derby.iapi.sql;
     exports org.apache.derby.iapi.sql.conn;
     exports org.apache.derby.iapi.sql.execute;

@@ -29,7 +29,7 @@ import org.apache.derby.shared.common.i18n.MessageService;
 
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
-import org.apache.derby.iapi.types.Resetable;
+import org.apache.derby.iapi.services.io.Resetable;
 
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.access.TransactionController;

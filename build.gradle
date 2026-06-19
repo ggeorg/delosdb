@@ -5177,3 +5177,151 @@ tasks.register('verifyLegacyDerbyKernelB5bLoaderSplit') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5bLoaderSplit'
 }
+
+// B5c — Move serialization service APIs into the engine kernel
+//
+// services.io is the large remaining low-level service blocker after loader.
+// The only direct type-cycle was Resetable, which is a stream contract rather
+// than a data-value contract. B5c relocates that contract into services.io and
+// moves services.io as a whole into delosdb-engine-kernel.
+def delosdbB5cKernelSourceRoot = file('delosdb-engine-kernel/src/main/java')
+def delosdbB5cEngineSourceRoot = file('delosdb-engine/src/main/java')
+def delosdbB5cStoreSourceRoot = file('delosdb-storage-derby/src/main/java')
+def delosdbB5cReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5c-services-io-split.txt')
+
+def delosdbB5cRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5cRead = { File f -> f.isFile() ? f.text : '' }
+
+tasks.register('legacyDerbyStoreKernelB5cServicesIoSplitReport') {
+    group = 'verification'
+    description = 'B5c: reports the services.io split and Resetable stream-contract relocation.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5bLoaderSplitReport'
+    outputs.file(delosdbB5cReportFile)
+    doLast {
+        def servicesIoDir = new File(delosdbB5cKernelSourceRoot, 'org/apache/derby/iapi/services/io')
+        def servicesIoFileCount = fileTree(servicesIoDir) { include '*.java' }.files.size()
+        def reportFile = delosdbB5cReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5c legacy Derby store services.io split
+=================================================
+
+Purpose
+-------
+Move Derby serialization service APIs into delosdb-engine-kernel so relocated
+legacy store code can eventually compile against kernel-owned serialization
+contracts instead of engine-owned services.
+
+Moved into delosdb-engine-kernel
+--------------------------------
+  - org.apache.derby.iapi.services.io (${servicesIoFileCount} Java files)
+
+Boundary adjustment
+-------------------
+Resetable was previously in org.apache.derby.iapi.types, but it is really a
+stream reset/init/close contract used by FormatIdInputStream, OverflowInputStream,
+BLOB/CLOB stream handling, and tests. B5c relocates it to:
+
+  org.apache.derby.iapi.services.io.Resetable
+
+This avoids moving the full iapi.types package just to compile services.io.
+
+Intentionally not moved in B5c
+------------------------------
+  - org.apache.derby.iapi.services.uuid
+  - org.apache.derby.iapi.util
+  - org.apache.derby.catalog.UUID
+  - org.apache.derby.iapi.types
+  - org.apache.derby.iapi.security
+
+B6 readiness
+------------
+NOT YET. Remaining blockers still include UUID/catalog, util, security, and
+store-facing type contracts.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5cRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5cServicesIoSplit') {
+    group = 'verification'
+    description = 'B5c: verifies services.io is kernel-owned and Resetable no longer lives in iapi.types.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5cServicesIoSplitReport'
+    doLast {
+        def servicesIoPackagePath = 'org/apache/derby/iapi/services/io'
+        def kernelServicesIoDir = new File(delosdbB5cKernelSourceRoot, servicesIoPackagePath)
+        if (!kernelServicesIoDir.isDirectory()) {
+            throw new GradleException('B5c expected kernel-owned services.io package: ' + delosdbB5cRelPath(kernelServicesIoDir))
+        }
+        if (fileTree(kernelServicesIoDir) { include '*.java' }.files.size() < 30) {
+            throw new GradleException('B5c expected full services.io source package in kernel: ' + delosdbB5cRelPath(kernelServicesIoDir))
+        }
+
+        def staleEngineServicesIoDir = new File(delosdbB5cEngineSourceRoot, servicesIoPackagePath)
+        if (staleEngineServicesIoDir.exists()) {
+            throw new GradleException('B5c stale engine services.io package remains after cleanup: ' + delosdbB5cRelPath(staleEngineServicesIoDir))
+        }
+
+        def kernelResetable = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/io/Resetable.java')
+        if (!kernelResetable.isFile()) {
+            throw new GradleException('B5c expected Resetable stream contract in services.io: ' + delosdbB5cRelPath(kernelResetable))
+        }
+        if (!delosdbB5cRead(kernelResetable).contains('package org.apache.derby.iapi.services.io;')) {
+            throw new GradleException('B5c Resetable must belong to org.apache.derby.iapi.services.io')
+        }
+
+        def staleResetable = file('delosdb-engine/src/main/java/org/apache/derby/iapi/types/Resetable.java')
+        if (staleResetable.exists()) {
+            throw new GradleException('B5c stale iapi.types.Resetable remains after cleanup: ' + delosdbB5cRelPath(staleResetable))
+        }
+
+        def oldResetableImports = fileTree(rootDir) {
+            include 'delosdb-engine/src/main/java/**/*.java'
+            include 'delosdb-storage-derby/src/main/java/**/*.java'
+            include 'delosdb-tests/src/test/java/**/*.java'
+            exclude '**/build/**'
+        }.files.findAll { it.text.contains('org.apache.derby.iapi.types.Resetable') }
+        if (!oldResetableImports.isEmpty()) {
+            throw new GradleException('B5c stale imports of org.apache.derby.iapi.types.Resetable remain: ' + oldResetableImports.collect { delosdbB5cRelPath(it) })
+        }
+
+        def requiredNewImportFiles = [
+                file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedBlob.java'),
+                file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedClob.java'),
+                file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/PositionedStoreStream.java'),
+                file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/StoreStreamClob.java'),
+                file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/OverflowInputStream.java'),
+                file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/util/streams/LoopingAlphabetStream.java')
+        ]
+        requiredNewImportFiles.each { sourceFile ->
+            if (!sourceFile.isFile() || !sourceFile.text.contains('org.apache.derby.iapi.services.io.Resetable')) {
+                throw new GradleException('B5c expected Resetable import rewrite in: ' + delosdbB5cRelPath(sourceFile))
+            }
+        }
+
+        ['SQLBinary.java', 'SQLChar.java', 'SQLClob.java'].each { typeSource ->
+            def sourceFile = file('delosdb-engine/src/main/java/org/apache/derby/iapi/types/' + typeSource)
+            if (!sourceFile.isFile() || !sourceFile.text.contains('org.apache.derby.iapi.services.io.Resetable')) {
+                throw new GradleException('B5c expected iapi.types stream classes to import services.io.Resetable: ' + delosdbB5cRelPath(sourceFile))
+            }
+        }
+
+        def kernelModuleInfo = delosdbB5cRead(file('delosdb-engine-kernel/src/main/java/module-info.java'))
+        if (!kernelModuleInfo.contains('exports org.apache.derby.iapi.services.io;')) {
+            throw new GradleException('B5c kernel module-info must export org.apache.derby.iapi.services.io')
+        }
+        def engineModuleInfo = delosdbB5cRead(file('delosdb-engine/src/main/java/module-info.java'))
+        if (engineModuleInfo.contains('    exports org.apache.derby.iapi.services.io;')) {
+            throw new GradleException('B5c engine module-info still exports moved services.io package')
+        }
+
+        def reportFile = delosdbB5cReportFile.get().asFile
+        if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
+            throw new GradleException('B5c report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5c services.io split into delosdb-engine-kernel')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5cServicesIoSplit'
+}

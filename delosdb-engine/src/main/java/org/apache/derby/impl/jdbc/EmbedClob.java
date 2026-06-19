@@ -27,7 +27,7 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.jdbc.EngineLOB;
 import org.apache.derby.iapi.jdbc.CharacterStreamDescriptor;
 import org.apache.derby.shared.common.sanity.SanityManager;
-import org.apache.derby.iapi.types.Resetable;
+import org.apache.derby.iapi.services.io.Resetable;
 import org.apache.derby.iapi.types.StringDataValue;
 
 import java.io.Reader;
