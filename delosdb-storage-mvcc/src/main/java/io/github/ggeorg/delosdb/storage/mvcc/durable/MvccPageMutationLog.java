@@ -333,12 +333,14 @@ public final class MvccPageMutationLog {
     }
 
     private static MvccVersionRecord recordCommittedAt(MvccVersionRecord record, MvccCommitSequence commitSequence) {
-        if (!record.header().commitSequence().equals(MvccCommitSequence.NONE)
-                && !record.header().commitSequence().equals(commitSequence)) {
-            throw new IllegalStateException("page mutation log commit sequence " + commitSequence
-                    + " conflicts with record commit sequence " + record.header().commitSequence());
-        }
         MvccTupleHeader header = record.header();
+        if (!header.commitSequence().equals(MvccCommitSequence.NONE)) {
+            // Checkpoint rewrites encode an already-committed image under a
+            // synthetic page-log transaction. The synthetic COMMIT marks the
+            // checkpoint image durable; it must not replace the original row
+            // version's commit sequence.
+            return record;
+        }
         return new MvccVersionRecord(
                 new MvccTupleHeader(
                         header.rowId(),

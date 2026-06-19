@@ -3200,3 +3200,47 @@ tasks.register('legacyDerbyStorePhase1Closeout') {
             ':delosdb-tests:runDerbyLangSuite',
             'legacyDerbyStorePhase1CloseoutReport'
 }
+
+
+// -----------------------------------------------------------------------------
+// DS7 — Legacy Derby storage module scaffold
+// -----------------------------------------------------------------------------
+// This is Phase 2's first physical step. It creates the Gradle/JPMS scaffold for
+// delosdb-storage-derby, but intentionally moves no store packages yet. The
+// inherited Derby store still lives in delosdb-engine until DS8/DS9.
+
+tasks.register('verifyLegacyDerbyStorageModuleScaffold') {
+    group = 'verification'
+    description = 'Verifies the DS7 delosdb-storage-derby scaffold exists without moving inherited Derby store packages yet.'
+    dependsOn ':delosdb-storage-derby:classes'
+    doLast {
+        def storageProjectDir = file('delosdb-storage-derby')
+        def moduleInfo = file('delosdb-storage-derby/src/main/java/module-info.java')
+        def buildFile = file('delosdb-storage-derby/build.gradle')
+        if (!storageProjectDir.isDirectory()) {
+            throw new GradleException('Missing delosdb-storage-derby project directory')
+        }
+        if (!buildFile.isFile()) {
+            throw new GradleException('Missing delosdb-storage-derby/build.gradle')
+        }
+        if (!moduleInfo.isFile()) {
+            throw new GradleException('Missing delosdb-storage-derby/src/main/java/module-info.java')
+        }
+        def storageApiRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store')
+        def storageImplRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+        if (storageApiRoot.exists() || storageImplRoot.exists()) {
+            throw new GradleException('DS7 must not move inherited Derby store packages into delosdb-storage-derby yet')
+        }
+        if (!file('delosdb-engine/src/main/java/org/apache/derby/iapi/store').isDirectory()) {
+            throw new GradleException('DS7 expects inherited Derby store API packages to remain in delosdb-engine')
+        }
+        if (!file('delosdb-engine/src/main/java/org/apache/derby/impl/store').isDirectory()) {
+            throw new GradleException('DS7 expects inherited Derby store implementation packages to remain in delosdb-engine')
+        }
+        logger.lifecycle('Verified DS7 legacy Derby storage module scaffold; no store packages moved yet')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStorageModuleScaffold'
+}

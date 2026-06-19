@@ -1,0 +1,45 @@
+plugins {
+    id 'base'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = rootProject.version
+group = rootProject.group
+
+def sourceRoot = file('src/main/java')
+def mainClassDir = layout.buildDirectory.dir('classes/main')
+
+tasks.register('compileLegacyDerbyStorage', JavaCompile) {
+    source = fileTree(sourceRoot) { include '**/*.java' }
+    destinationDirectory = mainClassDir
+    rootProject.ext.delosdbConfigureJavaCompile(delegate)
+    // DS7 is a scaffold only. Store packages move here in DS8/DS9.
+    classpath = rootProject.files()
+}
+
+tasks.register('classes') {
+    dependsOn 'compileLegacyDerbyStorage'
+}
+
+tasks.register('legacyDerbyStorageJar', Jar) {
+    dependsOn 'compileLegacyDerbyStorage'
+    archiveFileName = 'delosdb-storage-derby.jar'
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from mainClassDir
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Legacy Derby Storage Scaffold')
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn 'legacyDerbyStorageJar'
+}
+
+tasks.named('check') {
+    dependsOn 'compileLegacyDerbyStorage'
+}
