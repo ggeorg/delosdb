@@ -23,7 +23,7 @@ package org.apache.derby.impl.store.raw.data;
 
 
 import org.apache.derby.shared.common.reference.MessageId;
-import org.apache.derby.iapi.security.SecurityUtil;
+import org.apache.derby.iapi.services.security.StoreSecurityUtil;
 import org.apache.derby.shared.common.info.ProductVersionHolder;
 
 import org.apache.derby.database.Database;
@@ -236,7 +236,7 @@ public class BaseDataFileFactory
 	public BaseDataFileFactory() 
     {
         // Verify that we have permission to execute this method.
-        SecurityUtil.checkDerbyInternalsPrivilege();
+        StoreSecurityUtil.checkDerbyInternalsPrivilege();
 	}
 
 	/*

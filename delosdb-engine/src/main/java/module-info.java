@@ -130,6 +130,9 @@ module org.apache.derby.engine
     provides org.apache.derby.iapi.util.InterruptStatusKernelSupport
         with org.apache.derby.impl.sql.conn.EngineInterruptStatusKernelSupport;
 
+    provides org.apache.derby.iapi.services.security.StoreSecuritySupport
+        with org.apache.derby.impl.security.EngineStoreSecuritySupport;
+
     //
     // ALLOW RESOURCE LOOKUP VIA REFLECTION
     //

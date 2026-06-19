@@ -21,8 +21,8 @@
 
 package org.apache.derby.impl.store.access;
 
-import org.apache.derby.iapi.security.Securable;
-import org.apache.derby.iapi.security.SecurityUtil;
+import org.apache.derby.iapi.services.security.StoreSecurable;
+import org.apache.derby.iapi.services.security.StoreSecurityUtil;
 
 import org.apache.derby.iapi.services.cache.Cacheable;
 import org.apache.derby.iapi.services.cache.CacheableFactory;
@@ -981,7 +981,7 @@ public abstract class RAMAccessManager
 	{
         // make sure that application code doesn't bypass security checks
         // by calling this public entry point
-        SecurityUtil.authorize( Securable.FREEZE_DATABASE );
+        StoreSecurityUtil.authorize( StoreSecurable.FREEZE_DATABASE );
             
 		rawstore.freeze();
 	}
@@ -990,7 +990,7 @@ public abstract class RAMAccessManager
 	{
         // make sure that application code doesn't bypass security checks
         // by calling this public entry point
-        SecurityUtil.authorize( Securable.UNFREEZE_DATABASE );
+        StoreSecurityUtil.authorize( StoreSecurable.UNFREEZE_DATABASE );
             
 		rawstore.unfreeze();
 	}
@@ -1002,11 +1002,11 @@ public abstract class RAMAccessManager
 	{
         // make sure that application code doesn't bypass security checks
         // by calling this public entry point
-        SecurityUtil.authorize
+        StoreSecurityUtil.authorize
             (
              wait ?
-             Securable.BACKUP_DATABASE :
-             Securable.BACKUP_DATABASE_NOWAIT
+             StoreSecurable.BACKUP_DATABASE :
+             StoreSecurable.BACKUP_DATABASE_NOWAIT
              );
 		rawstore.backup(backupDir, wait);
 	}
@@ -1020,11 +1020,11 @@ public abstract class RAMAccessManager
 	{
         // make sure that application code doesn't bypass security checks
         // by calling this public entry point
-        SecurityUtil.authorize
+        StoreSecurityUtil.authorize
             (
              wait ?
-             Securable.BACKUP_DATABASE_AND_ENABLE_LOG_ARCHIVE_MODE :
-             Securable.BACKUP_DATABASE_AND_ENABLE_LOG_ARCHIVE_MODE_NOWAIT
+             StoreSecurable.BACKUP_DATABASE_AND_ENABLE_LOG_ARCHIVE_MODE :
+             StoreSecurable.BACKUP_DATABASE_AND_ENABLE_LOG_ARCHIVE_MODE_NOWAIT
              );
 		rawstore.backupAndEnableLogArchiveMode(backupDir, 
                                                deleteOnlineArchivedLogFiles, 
@@ -1036,7 +1036,7 @@ public abstract class RAMAccessManager
 	{
         // make sure that application code doesn't bypass security checks
         // by calling this public entry point
-        SecurityUtil.authorize( Securable.DISABLE_LOG_ARCHIVE_MODE );
+        StoreSecurityUtil.authorize( StoreSecurable.DISABLE_LOG_ARCHIVE_MODE );
             
 		rawstore.disableLogArchiveMode(deleteOnlineArchivedLogFiles);
 	}
@@ -1047,7 +1047,7 @@ public abstract class RAMAccessManager
 	{
         // make sure that application code doesn't bypass security checks
         // by calling this public entry point
-        SecurityUtil.authorize( Securable.CHECKPOINT_DATABASE );
+        StoreSecurityUtil.authorize( StoreSecurable.CHECKPOINT_DATABASE );
             
 		rawstore.checkpoint();
 	}

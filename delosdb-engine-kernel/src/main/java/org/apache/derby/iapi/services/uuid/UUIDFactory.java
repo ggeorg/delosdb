@@ -78,7 +78,7 @@ public interface UUIDFactory
 	/**
 	  Convert an opaque UUID token into the ANSI-safe identifier form used by
 	  Derby storage factories. The kernel API deliberately keeps the token as
-	  Object so storage code does not depend on org.apache.derby.catalog.UUID.
+	  Object so storage code does not depend on the engine-owned Derby UUID class.
 
 	  @param uuid       The opaque UUID token returned by this factory
 	  @return           The ANSI-safe UUID identifier

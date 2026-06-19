@@ -5610,3 +5610,159 @@ tasks.register('verifyLegacyDerbyKernelB5eUuidSplit') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5eUuidSplit'
 }
+
+// B5f — Remove direct legacy store dependency on SQL-owned security APIs
+//
+// The inherited store used org.apache.derby.iapi.security.SecurityUtil and
+// Securable directly. Those classes are SQL/dictionary-facing and must remain
+// engine-owned, so B5f adds a small kernel-owned store security facade and an
+// engine-side bridge instead of moving the whole iapi.security package.
+def delosdbB5fKernelSourceRoot = file('delosdb-engine-kernel/src/main/java')
+def delosdbB5fEngineSourceRoot = file('delosdb-engine/src/main/java')
+def delosdbB5fStoreSourceRoot = file('delosdb-storage-derby/src/main/java')
+def delosdbB5fReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5f-security-split.txt')
+
+def delosdbB5fRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5fRead = { File f -> f.isFile() ? f.text : '' }
+
+def delosdbB5fStoreJavaSources = { ->
+    fileTree(delosdbB5fStoreSourceRoot) {
+        include 'org/apache/derby/iapi/store/**/*.java'
+        include 'org/apache/derby/impl/store/**/*.java'
+    }.files.findAll { it.isFile() }
+}
+
+def delosdbB5fFilesImporting = { String importedPrefix ->
+    delosdbB5fStoreJavaSources().findAll { source ->
+        source.readLines().any { line ->
+            def trimmed = line.trim()
+            trimmed.startsWith('import ') && trimmed.contains(importedPrefix)
+        }
+    }.sort { it.path }
+}
+
+tasks.register('legacyDerbyStoreKernelB5fSecuritySplitReport') {
+    group = 'verification'
+    description = 'B5f: reports the store security facade split before the iapi.types decision.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5eUuidSplitReport'
+    outputs.file(delosdbB5fReportFile)
+    doLast {
+        def storeSecurityImports = delosdbB5fFilesImporting('org.apache.derby.iapi.security.')
+        def storeFacadeImports = delosdbB5fFilesImporting('org.apache.derby.iapi.services.security.')
+        def typeImports = delosdbB5fFilesImporting('org.apache.derby.iapi.types.')
+        def reportFile = delosdbB5fReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5f legacy Derby store security split
+=================================================
+
+Purpose
+-------
+B5f removes the legacy store's direct dependency on SQL-owned security APIs
+without moving org.apache.derby.iapi.security into delosdb-engine-kernel.
+
+Why not move org.apache.derby.iapi.security?
+-------------------------------------------
+SecurityUtil and Securable still depend on SQL authorization, DataDictionary,
+AliasDescriptor, StatementPermission, SchemaDescriptor, and catalog AliasInfo.
+Moving that package would make the kernel depend on SQL/dictionary machinery.
+
+Kernel-owned store-facing facade
+--------------------------------
+  - org.apache.derby.iapi.services.security.StoreSecurable
+  - org.apache.derby.iapi.services.security.StoreSecuritySupport
+  - org.apache.derby.iapi.services.security.StoreSecuritySupportRegistry
+  - org.apache.derby.iapi.services.security.StoreSecurityUtil
+
+Engine-owned implementation
+---------------------------
+  - org.apache.derby.impl.security.EngineStoreSecuritySupport
+
+Relocated store imports of org.apache.derby.iapi.security.*
+----------------------------------------------------------
+${storeSecurityImports.isEmpty() ? '  none' : storeSecurityImports.collect { '  - ' + delosdbB5fRelPath(it) }.join('\n')}
+
+Relocated store imports of org.apache.derby.iapi.services.security.*
+-------------------------------------------------------------------
+${storeFacadeImports.isEmpty() ? '  none' : storeFacadeImports.collect { '  - ' + delosdbB5fRelPath(it) }.join('\n')}
+
+B6 readiness
+------------
+NOT YET. Remaining direct store blockers still include org.apache.derby.iapi.types.
+
+Relocated store files still importing org.apache.derby.iapi.types.*
+------------------------------------------------------------------
+${typeImports.isEmpty() ? '  none' : typeImports.collect { '  - ' + delosdbB5fRelPath(it) }.join('\n')}
+"""
+        logger.lifecycle('Wrote ' + delosdbB5fRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5fSecuritySplit') {
+    group = 'verification'
+    description = 'B5f: verifies the store no longer imports SQL-owned security APIs directly.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5fSecuritySplitReport'
+    doLast {
+        def kernelSecurityDir = new File(delosdbB5fKernelSourceRoot, 'org/apache/derby/iapi/services/security')
+        if (!kernelSecurityDir.isDirectory()) {
+            throw new GradleException('B5f expected kernel-owned store security facade: ' + delosdbB5fRelPath(kernelSecurityDir))
+        }
+        ['StoreSecurable.java', 'StoreSecuritySupport.java', 'StoreSecuritySupportRegistry.java', 'StoreSecurityUtil.java'].each { name ->
+            def f = new File(kernelSecurityDir, name)
+            if (!f.isFile()) {
+                throw new GradleException('B5f missing kernel store security facade file: ' + delosdbB5fRelPath(f))
+            }
+        }
+
+        def staleStoreSecurityImports = delosdbB5fFilesImporting('org.apache.derby.iapi.security.')
+        if (!staleStoreSecurityImports.isEmpty()) {
+            throw new GradleException('B5f relocated store must not import SQL-owned iapi.security directly: ' + staleStoreSecurityImports.collect { delosdbB5fRelPath(it) }.join(', '))
+        }
+        def storeFacadeImports = delosdbB5fFilesImporting('org.apache.derby.iapi.services.security.')
+        if (storeFacadeImports.isEmpty()) {
+            throw new GradleException('B5f expected relocated store to use the kernel-owned store security facade')
+        }
+
+        def engineSupport = file('delosdb-engine/src/main/java/org/apache/derby/impl/security/EngineStoreSecuritySupport.java')
+        if (!engineSupport.isFile()) {
+            throw new GradleException('B5f expected engine-side StoreSecuritySupport provider: ' + delosdbB5fRelPath(engineSupport))
+        }
+        def engineSupportText = delosdbB5fRead(engineSupport)
+        if (!engineSupportText.contains('SecurityUtil.authorize') || !engineSupportText.contains('Securable.FREEZE_DATABASE')) {
+            throw new GradleException('B5f engine support must delegate to existing SecurityUtil/Securable authorization behavior')
+        }
+
+        def serviceDescriptor = file('delosdb-engine/src/main/resources/META-INF/services/org.apache.derby.iapi.services.security.StoreSecuritySupport')
+        if (!serviceDescriptor.isFile()) {
+            throw new GradleException('B5f expected classpath ServiceLoader descriptor for StoreSecuritySupport')
+        }
+        if (!serviceDescriptor.text.contains('org.apache.derby.impl.security.EngineStoreSecuritySupport')) {
+            throw new GradleException('B5f StoreSecuritySupport descriptor must name the engine provider')
+        }
+
+        def kernelModuleInfo = delosdbB5fRead(file('delosdb-engine-kernel/src/main/java/module-info.java'))
+        if (!kernelModuleInfo.contains('exports org.apache.derby.iapi.services.security;')) {
+            throw new GradleException('B5f kernel module-info must export org.apache.derby.iapi.services.security')
+        }
+        if (!kernelModuleInfo.contains('uses org.apache.derby.iapi.services.security.StoreSecuritySupport')) {
+            throw new GradleException('B5f kernel module-info must use StoreSecuritySupport')
+        }
+
+        def engineModuleInfo = delosdbB5fRead(file('delosdb-engine/src/main/java/module-info.java'))
+        if (!engineModuleInfo.contains('provides org.apache.derby.iapi.services.security.StoreSecuritySupport')) {
+            throw new GradleException('B5f engine module-info must provide StoreSecuritySupport')
+        }
+        if (!engineModuleInfo.contains('with org.apache.derby.impl.security.EngineStoreSecuritySupport')) {
+            throw new GradleException('B5f engine module-info must name EngineStoreSecuritySupport')
+        }
+
+        def reportFile = delosdbB5fReportFile.get().asFile
+        if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
+            throw new GradleException('B5f report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5f store security split; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5fSecuritySplit'
+}

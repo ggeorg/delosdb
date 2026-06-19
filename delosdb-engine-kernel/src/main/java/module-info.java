@@ -58,8 +58,11 @@ module io.github.ggeorg.delosdb.engine.kernel {
 
     exports org.apache.derby.iapi.services.uuid;
 
+    exports org.apache.derby.iapi.services.security;
+
     exports org.apache.derby.iapi.util;
 
     uses org.apache.derby.iapi.services.monitor.MonitorKernelSupport;
     uses org.apache.derby.iapi.util.InterruptStatusKernelSupport;
+    uses org.apache.derby.iapi.services.security.StoreSecuritySupport;
 }
