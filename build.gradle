@@ -4920,11 +4920,15 @@ tasks.register('verifyLegacyDerbyKernelB5DependencyDecision') {
         def catalogImports = delosdbB5PackageImports(imports, 'org.apache.derby.catalog.')
         def uuidImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.services.uuid.')
         ['org.apache.derby.iapi.types.DataValueDescriptor',
-         'org.apache.derby.iapi.types.RowLocation',
-         'org.apache.derby.iapi.types.DataValueFactory'].each { requiredImport ->
+         'org.apache.derby.iapi.types.RowLocation'].each { requiredImport ->
             if (!typeImports.any { it.importedType == requiredImport }) {
                 throw new GradleException('B5 expected relocated store to still expose exact type dependency: ' + requiredImport)
             }
+        }
+        def dataValueFactoryStillDirect = typeImports.any { it.importedType == 'org.apache.derby.iapi.types.DataValueFactory' }
+        def dataValueFactoryBridge = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreDataValueFactory.java')
+        if (!dataValueFactoryStillDirect && !dataValueFactoryBridge.isFile()) {
+            throw new GradleException('B5 expected DataValueFactory either to remain direct or to be retired behind StoreDataValueFactory')
         }
         if (serviceIoImports.isEmpty()) {
             throw new GradleException('B5 expected relocated store to still depend on org.apache.derby.iapi.services.io before the serialization boundary is cut')
@@ -5771,8 +5775,10 @@ tasks.named('verifyLegacyDerbyStoreBoundary') {
 //
 // After B5a-B5f the remaining independent-compilation blocker is not a
 // service package. It is the inherited Derby type system boundary. The legacy
-// store needs DataValueDescriptor/RowLocation/DataValueFactory and a few
-// concrete helper values, but the full org.apache.derby.iapi.types package is
+// store originally needed DataValueDescriptor/RowLocation/DataValueFactory
+// and a few concrete helper values. Later B5 slices may retire individual
+// direct imports behind the store-facing bridge, but the full
+// org.apache.derby.iapi.types package is
 // not kernel-safe because it reaches back into SQL, dictionary, activation,
 // catalog type descriptors, XML, JDBC and implementation classes. B5g records
 // the decision gate so B6 cannot silently depend on engine-owned types.
@@ -5921,10 +5927,15 @@ tasks.register('verifyLegacyDerbyKernelB5gTypesDecision') {
         if (typeCounts.isEmpty()) {
             throw new GradleException('B5g expected iapi.types to remain the explicit pre-B6 blocker')
         }
-        ['DataValueDescriptor', 'RowLocation', 'DataValueFactory'].each { required ->
+        ['DataValueDescriptor', 'RowLocation'].each { required ->
             if (!typeCounts.containsKey(required)) {
                 throw new GradleException('B5g expected relocated store to still import ' + required + ' as part of the type boundary inventory')
             }
+        }
+        def dataValueFactoryStillDirect = typeCounts.containsKey('DataValueFactory')
+        def dataValueFactoryBridge = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreDataValueFactory.java')
+        if (!dataValueFactoryStillDirect && !dataValueFactoryBridge.isFile()) {
+            throw new GradleException('B5g expected DataValueFactory either to remain direct or to be retired behind StoreDataValueFactory')
         }
         def riskyTypeImports = delosdbB5gRiskyTypeImports()
         if (riskyTypeImports.isEmpty()) {
