@@ -30,7 +30,6 @@ import org.apache.derby.iapi.store.access.conglomerate.LogicalUndo;
 
 import org.apache.derby.iapi.store.access.Qualifier;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 
 /**

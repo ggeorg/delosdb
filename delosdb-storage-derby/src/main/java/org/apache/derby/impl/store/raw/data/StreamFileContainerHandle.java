@@ -30,7 +30,6 @@ import org.apache.derby.iapi.store.raw.StreamContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import org.apache.derby.impl.store.raw.data.DropOnCommit;
 
@@ -150,7 +149,7 @@ final class StreamFileContainerHandle
     *
 	 * @exception  StandardException  Standard exception policy.
      **/
-	public boolean fetchNext(DataValueDescriptor[] row) 
+	public boolean fetchNext(Object[] row) 
         throws StandardException {
 
 		return container.fetchNext(row);

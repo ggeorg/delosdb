@@ -40,7 +40,7 @@ import org.apache.derby.iapi.store.raw.RecordHandle;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
-import org.apache.derby.iapi.types.SQLLongint;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.impl.store.access.StorableFormatId;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -99,7 +99,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * ContainerHandle.INVALID_PAGE_NUMBER.  All key values on the page which
      * is left must precede the first key value on the current page.
      **/
-	private SQLLongint leftSiblingPageNumber;
+	private DataValueDescriptor leftSiblingPageNumber;
 
     /**
      * Pointer to page which is "right" at the current level.
@@ -110,7 +110,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * is right of the current page must follow the last key value on the 
      * current page.
      **/
-	private SQLLongint rightSiblingPageNumber;
+	private DataValueDescriptor rightSiblingPageNumber;
 
     /**
      * The parent page of the current page.
@@ -124,7 +124,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * index.
      *
      **/
-	private SQLLongint parentPageNumber; // for consistency checking
+	private DataValueDescriptor parentPageNumber; // for consistency checking
 
 
     /**
@@ -136,7 +136,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * The smallest btree is a one page btree with only a leaf, and no branch
      * pages. 
      **/
-	private SQLLongint level;
+	private DataValueDescriptor level;
 
     /**
      * Is this page the root of the btree?
@@ -146,7 +146,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * RESOLVE (mikem) When real datatype come about, this value should 
      * probably be just a bit in some status word.
      **/
-	private SQLLongint isRoot = null;
+	private DataValueDescriptor isRoot = null;
 
     /**
      * A copy of the Conglomerate that describes the owning conglom.
@@ -318,23 +318,23 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		// Page numbers start out "invalid".  Presumably the caller will
 		// link the page into a page chain as one of its next steps.
 		leftSiblingPageNumber  = 
-            new SQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
+            (DataValueDescriptor) StoreTypeUtil.newSQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
 		rightSiblingPageNumber = 
-            new SQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
+            (DataValueDescriptor) StoreTypeUtil.newSQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
 
 		// Remember the parent if there is one and we're remembering parents.
-        parentPageNumber = new SQLLongint( 
-            (parent == null ?  
-                 ContainerHandle.INVALID_PAGE_NUMBER : 
+        parentPageNumber = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(
+            (parent == null ?
+                 ContainerHandle.INVALID_PAGE_NUMBER :
                  parent.page.getPageNumber()));
 
 		// All pages start out not being root pages.  The caller will setIsRoot
 		// if this is going to be a root page. Zero means false - see 
 		// getIsRoot/setIsRoot.
-		this.isRoot = new SQLLongint(isRoot ? 1 : 0);
+		this.isRoot = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(isRoot ? 1 : 0);
 
         // set the rest of the state, as passed in.
-		this.level   = new SQLLongint(level);
+		this.level   = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(level);
         this.version = new StorableFormatId(getTypeFormatId());
 
         // If it is a root page then store the real btree conglomerate, if it
@@ -485,9 +485,9 @@ public abstract class ControlRow implements AuxObject, TypedFormat
         
 		// Store the field.
 		if (leftSiblingPageNumber == null)
-			leftSiblingPageNumber = new SQLLongint(left_sib_pageno);
+			leftSiblingPageNumber = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(left_sib_pageno);
         else
-            this.leftSiblingPageNumber.setValue(left_sib_pageno);
+            StoreTypeUtil.setLongValue(this.leftSiblingPageNumber, left_sib_pageno);
 
 		// Write the field through to the underlying row
         try
@@ -541,9 +541,9 @@ public abstract class ControlRow implements AuxObject, TypedFormat
         
 		// Store the field.
 		if (rightSiblingPageNumber == null)
-			rightSiblingPageNumber = new SQLLongint(right_sib_pageno);
+			rightSiblingPageNumber = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(right_sib_pageno);
         else
-            this.rightSiblingPageNumber.setValue(right_sib_pageno);
+            StoreTypeUtil.setLongValue(this.rightSiblingPageNumber, right_sib_pageno);
 
 		// Write the field through to the underlying row
         try
@@ -581,7 +581,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		if (this.leftSiblingPageNumber == null)
 		{
 			// Fault in the page number.
-			this.leftSiblingPageNumber = new SQLLongint();
+			this.leftSiblingPageNumber = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
 
             if (SanityManager.DEBUG)
                 SanityManager.ASSERT(scratch_row != null);
@@ -594,7 +594,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 
 		}
 
-        return(leftSiblingPageNumber.getLong());
+        return(StoreTypeUtil.getLong(leftSiblingPageNumber));
 	}
 
 	/**
@@ -609,7 +609,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		if (this.rightSiblingPageNumber == null)
 		{
 			// Fault in the page number.
-			this.rightSiblingPageNumber = new SQLLongint();
+			this.rightSiblingPageNumber = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
 
             scratch_row[CR_RIGHTSIB_COLID] = this.rightSiblingPageNumber;
 
@@ -618,7 +618,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
                (RecordHandle) null, CR_SLOT, scratch_row, fetchDesc, false); 
 		}
 
-        return(rightSiblingPageNumber.getLong());
+        return(StoreTypeUtil.getLong(rightSiblingPageNumber));
 	}
 
 	/**
@@ -635,7 +635,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		if (this.parentPageNumber == null)
 		{
 			// Fault in the page number.
-			this.parentPageNumber = new SQLLongint();
+			this.parentPageNumber = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
 
             scratch_row[CR_PARENT_COLID] = this.parentPageNumber;
 
@@ -645,7 +645,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		}
 
 		// See NOTE3 about converting from int to long.
-		long pageno = parentPageNumber.getLong();
+		long pageno = StoreTypeUtil.getLong(parentPageNumber);
 		return pageno;
 	}
 	
@@ -654,8 +654,8 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	{
 		// Store the field.
 		if (parentPageNumber == null)
-			parentPageNumber = new SQLLongint();
-		this.parentPageNumber.setValue(parent);
+			parentPageNumber = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+		StoreTypeUtil.setLongValue(this.parentPageNumber, parent);
 
 		// Write the field through to the underlying row
         try
@@ -689,7 +689,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		if (this.level == null)
 		{
 			// Fault in the level
-			this.level = new SQLLongint();
+			this.level = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
 
             scratch_row[CR_LEVEL_COLID] = this.level;
 
@@ -698,7 +698,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
                (RecordHandle) null, CR_SLOT, scratch_row, fetchDesc, false); 
 		}
 
-		return((int) this.level.getLong());
+		return((int) StoreTypeUtil.getLong(this.level));
 	}
 
 	protected void setLevel(int newlevel)
@@ -706,8 +706,8 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	{
 		// Store the field.
 		if (this.level == null)
-			this.level = new SQLLongint();
-		this.level.setValue((long) newlevel);
+			this.level = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+		StoreTypeUtil.setLongValue(this.level, (long) newlevel);
 
 		// Write the field through to the underlying row.
 		this.page.updateFieldAtSlot(CR_SLOT, CR_LEVEL_COLID, this.level, null);
@@ -721,7 +721,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		if (this.isRoot == null)
 		{
 			// Fault in the level
-			this.isRoot = new SQLLongint();
+			this.isRoot = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
 
             scratch_row[CR_ISROOT_COLID] = this.isRoot;
 
@@ -730,7 +730,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
                (RecordHandle) null, CR_SLOT, scratch_row, fetchDesc, false); 
 		}
 
-		return((this.isRoot.getLong() == 1));
+		return((StoreTypeUtil.getLong(this.isRoot) == 1));
 	}
 	
 	protected void setIsRoot(boolean isRoot)
@@ -740,9 +740,9 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 
 		// Store the field.
 		if (this.isRoot == null)
-			this.isRoot = new SQLLongint();
+			this.isRoot = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
 
-		this.isRoot.setValue((isRoot) ? 1 : 0);
+		StoreTypeUtil.setLongValue(this.isRoot, (isRoot) ? 1 : 0);
 
 		// Write the field through to the underlying row.
 		this.page.updateFieldAtSlot(

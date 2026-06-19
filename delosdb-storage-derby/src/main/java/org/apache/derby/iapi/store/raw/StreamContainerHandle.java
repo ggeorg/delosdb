@@ -23,7 +23,6 @@ package org.apache.derby.iapi.store.raw;
 
 import org.apache.derby.shared.common.error.StandardException;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import java.util.Properties;
 
@@ -87,7 +86,7 @@ public interface StreamContainerHandle {
 
 		@exception StandardException	Standard Derby error policy
 	*/
-	boolean fetchNext(DataValueDescriptor[] row) throws StandardException;
+	boolean fetchNext(Object[] row) throws StandardException;
 
 	/**
 		Close me. After using this method the caller must throw away the

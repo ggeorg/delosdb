@@ -6489,8 +6489,8 @@ ${delosdbB5kFullyClearedFiles.collect { '  - ' + delosdbB5kRelPath(it) }.join('\
 Partially reduced file
 ----------------------
   - ${delosdbB5kRelPath(delosdbB5kBranchRow)}
-      Removed unused DataValueFactory import. DataValueDescriptor and SQLLongint
-      remain intentionally because BranchRow still constructs real branch rows.
+      Removed unused DataValueFactory import. Later B5 slices may also retire
+      DataValueDescriptor or SQLLongint through store-facing bridge operations.
 
 D_StoredPage zero-row fetch
 ---------------------------
@@ -6550,10 +6550,10 @@ tasks.register('verifyLegacyDerbyKernelB5kRawTypeImportCleanup') {
         if (branchRowText.contains('import org.apache.derby.iapi.types.DataValueFactory;')) {
             throw new GradleException('B5k BranchRow must not keep the unused DataValueFactory import')
         }
-        if (!branchRowText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ||
-                !branchRowText.contains('import org.apache.derby.iapi.types.SQLLongint;')) {
-            throw new GradleException('B5k BranchRow should only remove DataValueFactory; remaining used type imports must be handled by later slices')
-        }
+        // B5k originally left DataValueDescriptor and SQLLongint in BranchRow for
+        // later slices. Later B5 slices may legitimately retire either import through
+        // store-facing bridge operations. Keep this guard monotonic: B5k only owns
+        // the removal of the stale DataValueFactory import.
 
         def dStoredPageText = delosdbB5kRead(delosdbB5kDStoredPage)
         if (dStoredPageText.contains('new DataValueDescriptor[0]')) {
@@ -7020,4 +7020,187 @@ tasks.register('verifyLegacyDerbyKernelB5mFactoryCollationBridge') {
 
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5mFactoryCollationBridge'
+}
+
+// ------------------------------------------------------------------------
+// B5n — Raw stream and B-tree long-value bridge batch before real store compilation
+// ------------------------------------------------------------------------
+// B5m retired factory/collation/simple-constructor type imports. B5n widens the
+// next batch without taking the implementation-heavy DataValueDescriptor/RowLocation
+// rewrite yet: comment-only raw imports are removed, stream-container fetch rows
+// become Object[] at the raw boundary, and B-tree control-row SQLLongint allocation
+// and access go through StoreTypeUtil.
+def delosdbB5nReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5n-raw-stream-btree-long-bridge.txt')
+def delosdbB5nBaselineImportCount = 119
+
+def delosdbB5nPage = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/raw/Page.java')
+def delosdbB5nRowLocationRetRowSource = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowLocationRetRowSource.java')
+def delosdbB5nStreamContainerHandle = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/raw/StreamContainerHandle.java')
+def delosdbB5nStreamFileContainerHandle = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/StreamFileContainerHandle.java')
+def delosdbB5nControlRow = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/ControlRow.java')
+def delosdbB5nBranchControlRow = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BranchControlRow.java')
+def delosdbB5nStoreTypeUtil = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeUtil.java')
+
+def delosdbB5nTouchedFiles = [
+    delosdbB5nPage,
+    delosdbB5nRowLocationRetRowSource,
+    delosdbB5nStreamContainerHandle,
+    delosdbB5nStreamFileContainerHandle,
+    delosdbB5nControlRow,
+    delosdbB5nBranchControlRow
+]
+
+def delosdbB5nRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5nRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5nStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].collectMany { root ->
+        fileTree(root) { include '**/*.java' }.files.findAll { it.isFile() }.collectMany { source ->
+            source.readLines().findAll { it.trim().startsWith('import org.apache.derby.iapi.types.') }.collect { line ->
+                delosdbB5nRelPath(source) + ': ' + line.trim()
+            }
+        }
+    }.sort()
+}
+
+def delosdbB5nRetiredImportsRemaining = { ->
+    [
+        [source: delosdbB5nPage, retired: ['DataValueDescriptor']],
+        [source: delosdbB5nRowLocationRetRowSource, retired: ['DataValueDescriptor']],
+        [source: delosdbB5nStreamContainerHandle, retired: ['DataValueDescriptor']],
+        [source: delosdbB5nStreamFileContainerHandle, retired: ['DataValueDescriptor']],
+        [source: delosdbB5nControlRow, retired: ['SQLLongint']],
+        [source: delosdbB5nBranchControlRow, retired: ['SQLLongint']]
+    ].collectMany { entry ->
+        def text = delosdbB5nRead(entry.source)
+        entry.retired.findAll { typeName ->
+            text.contains('import org.apache.derby.iapi.types.' + typeName + ';')
+        }.collect { typeName ->
+            delosdbB5nRelPath(entry.source) + ': import org.apache.derby.iapi.types.' + typeName + ';'
+        }
+    }.sort()
+}
+
+tasks.register('legacyDerbyStoreKernelB5nRawStreamBtreeLongBridgeReport') {
+    group = 'verification'
+    description = 'B5n: reports raw stream cleanup and B-tree SQLLongint bridge retirement.'
+    dependsOn 'verifyLegacyDerbyKernelB5mFactoryCollationBridge'
+    outputs.file(delosdbB5nReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5nStoreTypeImportLines()
+        def retiredImportsRemaining = delosdbB5nRetiredImportsRemaining()
+        def reportFile = delosdbB5nReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5n raw stream and B-tree long-value bridge batch
+================================================================
+
+Purpose
+-------
+B5n continues the B5 type-boundary reduction with a wider but still controlled
+batch. It removes comment-only raw-store type imports, makes the raw stream
+container fetch boundary use Object[] instead of DataValueDescriptor[], and
+routes B-tree control-row SQLLongint allocation/access through StoreTypeUtil.
+
+Changed files
+-------------
+${delosdbB5nTouchedFiles.collect { '  - ' + delosdbB5nRelPath(it) }.join('\n')}
+
+Retired direct imports still present
+------------------------------------
+${retiredImportsRemaining.isEmpty() ? '  none' : retiredImportsRemaining.collect { '  - ' + it }.join('\n')}
+
+Stream-container raw fetch boundary
+-----------------------------------
+  - ${delosdbB5nRelPath(delosdbB5nStreamContainerHandle)}: fetchNext(Object[] row)
+  - ${delosdbB5nRelPath(delosdbB5nStreamFileContainerHandle)}: fetchNext(Object[] row)
+
+B-tree SQLLongint bridge usage
+------------------------------
+  - ${delosdbB5nRelPath(delosdbB5nControlRow)} uses StoreTypeUtil.newSQLLongint / setLongValue / getLong
+  - ${delosdbB5nRelPath(delosdbB5nBranchControlRow)} uses StoreTypeUtil.newSQLLongint / setLongValue / getLong
+
+Relocated-store direct org.apache.derby.iapi.types import count
+---------------------------------------------------------------
+  before B5n baseline: ${delosdbB5nBaselineImportCount}
+  after B5n:           ${remainingStoreTypeImports.size()}
+
+Remaining direct relocated-store iapi.types imports
+---------------------------------------------------
+${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+Boundary decision
+-----------------
+B5n does not perform the broad DataValueDescriptor/RowLocation rewrite. It only
+retires direct imports where the store code either did not need the type in code,
+can use Object[] at the raw stream boundary, or only needed SQLLongint as a long
+holder supplied by the engine-owned type bridge.
+
+B6 readiness
+------------
+NOT YET. The relocated store still has direct org.apache.derby.iapi.types imports.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5nRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5nRawStreamBtreeLongBridge') {
+    group = 'verification'
+    description = 'B5n: verifies raw stream cleanup and B-tree SQLLongint bridge retirement.'
+    dependsOn 'legacyDerbyStoreKernelB5nRawStreamBtreeLongBridgeReport'
+    doLast {
+        delosdbB5nTouchedFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5n missing required source file: ' + delosdbB5nRelPath(source))
+            }
+        }
+
+        def retiredImportsRemaining = delosdbB5nRetiredImportsRemaining()
+        if (!retiredImportsRemaining.isEmpty()) {
+            throw new GradleException('B5n retired direct store type imports still remain: ' + retiredImportsRemaining.join('; '))
+        }
+
+        def streamHandleText = delosdbB5nRead(delosdbB5nStreamContainerHandle)
+        def streamFileHandleText = delosdbB5nRead(delosdbB5nStreamFileContainerHandle)
+        if (!streamHandleText.contains('boolean fetchNext(Object[] row) throws StandardException;')) {
+            throw new GradleException('B5n StreamContainerHandle must expose fetchNext(Object[] row)')
+        }
+        if (!streamFileHandleText.contains('public boolean fetchNext(Object[] row)')) {
+            throw new GradleException('B5n StreamFileContainerHandle must implement fetchNext(Object[] row)')
+        }
+
+        def controlText = delosdbB5nRead(delosdbB5nControlRow)
+        def branchText = delosdbB5nRead(delosdbB5nBranchControlRow)
+        [controlText, branchText].eachWithIndex { text, index ->
+            def source = index == 0 ? delosdbB5nControlRow : delosdbB5nBranchControlRow
+            if (!text.contains('StoreTypeUtil.newSQLLongint')) {
+                throw new GradleException('B5n ' + delosdbB5nRelPath(source) + ' must allocate long holder values through StoreTypeUtil.newSQLLongint')
+            }
+            if (!text.contains('StoreTypeUtil.getLong')) {
+                throw new GradleException('B5n ' + delosdbB5nRelPath(source) + ' must read long holder values through StoreTypeUtil.getLong')
+            }
+            if (!text.contains('StoreTypeUtil.setLongValue')) {
+                throw new GradleException('B5n ' + delosdbB5nRelPath(source) + ' must update long holder values through StoreTypeUtil.setLongValue')
+            }
+            if (text.contains('import org.apache.derby.iapi.types.SQLLongint;')) {
+                throw new GradleException('B5n ' + delosdbB5nRelPath(source) + ' must not import SQLLongint directly')
+            }
+        }
+
+        def remainingStoreTypeImports = delosdbB5nStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5nBaselineImportCount) {
+            throw new GradleException('B5n relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5nBaselineImportCount + ': ' + remainingStoreTypeImports.size())
+        }
+
+        def reportText = delosdbB5nRead(delosdbB5nReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5n report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5n raw stream/B-tree long bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5nRawStreamBtreeLongBridge'
 }
