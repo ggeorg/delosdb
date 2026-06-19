@@ -9,6 +9,7 @@ def buildToolsSourceRoot = file('src/main/java')
 def buildToolsClassDir = layout.buildDirectory.dir('classes/build-tools')
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
+def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 
 
 tasks.register('compileDerbyBuildTools', JavaCompile) {
@@ -19,6 +20,7 @@ tasks.register('compileDerbyBuildTools', JavaCompile) {
     // aggregate verification tasks.
     dependsOn ':processDerbyResources',
             ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-engine-kernel:compileDelosDbEngineKernel',
             ':delosdb-engine:compileDerbyEngine'
     source = files(
             'src/main/java/org/apache/derbyBuild/splitmessages.java',
@@ -35,7 +37,7 @@ tasks.register('compileDerbyBuildTools', JavaCompile) {
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
-    classpath = rootProject.files(commonsModuleClassDir, engineModuleClassDir)
+    classpath = rootProject.files(commonsModuleClassDir, kernelModuleClassDir, engineModuleClassDir)
     doLast {
         copy {
             from 'src/main/java/org/apache/derbyBuild/odbcgen_fragments.properties'

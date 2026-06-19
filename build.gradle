@@ -4686,6 +4686,12 @@ tasks.register('verifyLegacyDerbyKernelPropertyCacheLockExtraction') {
         if (!delosdbB4EngineBuild.text.contains("dependsOn ':delosdb-engine-kernel:compileDelosDbEngineKernelClassSizeCatalog'")) {
             throw new GradleException('B4 engine build must delegate ClassSizeCatalogImpl compilation to the kernel module')
         }
+        def buildToolsBuild = file('delosdb-buildtools/build.gradle').text
+        if (!buildToolsBuild.contains('kernelModuleClassDir') ||
+                !buildToolsBuild.contains("':delosdb-engine-kernel:compileDelosDbEngineKernel'") ||
+                !buildToolsBuild.contains('commonsModuleClassDir, kernelModuleClassDir, engineModuleClassDir')) {
+            throw new GradleException('B4 buildtools must compile ClassSizeCrawler with delosdb-engine-kernel on its classpath')
+        }
         logger.lifecycle('Verified B4 property/cache/lock service extraction into delosdb-engine-kernel')
     }
 }
