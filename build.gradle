@@ -6112,7 +6112,7 @@ tasks.named('verifyLegacyDerbyStoreBoundary') {
 // The kernel still does not import the inherited Derby type package; the
 // engine owns the casts to DataValueDescriptor behind StoreTypeSupport.
 def delosdbB5iKernelTypeRoot = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types')
-def delosdbB5iEngineProvider = file('delosdb-engine/src/main/java/org/apache/derby/impl/store/types/EngineStoreTypeSupport.java')
+def delosdbB5iEngineProvider = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineStoreTypeSupport.java')
 def delosdbB5iServiceFile = file('delosdb-engine/src/main/resources/META-INF/services/org.apache.derby.iapi.store.types.StoreTypeSupport')
 def delosdbB5iReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5i-type-operations.txt')
 
@@ -6254,7 +6254,7 @@ tasks.register('verifyLegacyDerbyKernelB5iTypeOperations') {
         if (!engineText.contains('org.apache.derby.iapi.types.DataValueDescriptor')) {
             throw new GradleException('B5i engine provider must own the DataValueDescriptor cast')
         }
-        if (!delosdbB5iRead(delosdbB5iServiceFile).contains('org.apache.derby.impl.store.types.EngineStoreTypeSupport')) {
+        if (!delosdbB5iRead(delosdbB5iServiceFile).contains('org.apache.derby.impl.services.storetypes.EngineStoreTypeSupport')) {
             throw new GradleException('B5i missing classpath service descriptor for EngineStoreTypeSupport')
         }
 

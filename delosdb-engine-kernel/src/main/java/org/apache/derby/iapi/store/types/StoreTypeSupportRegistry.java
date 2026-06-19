@@ -27,7 +27,7 @@ import java.util.ServiceLoader;
 final class StoreTypeSupportRegistry
 {
     private static final String ENGINE_PROVIDER =
-            "org.apache.derby.impl.store.types.EngineStoreTypeSupport";
+            "org.apache.derby.impl.services.storetypes.EngineStoreTypeSupport";
 
     private static volatile StoreTypeSupport support;
 
