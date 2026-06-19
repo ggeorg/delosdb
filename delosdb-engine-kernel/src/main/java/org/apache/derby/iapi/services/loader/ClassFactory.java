@@ -23,8 +23,6 @@ package org.apache.derby.iapi.services.loader;
 
 import org.apache.derby.shared.common.error.StandardException;
 
-import org.apache.derby.iapi.util.ByteArray;
-
 import java.io.ObjectStreamClass;
 
 
@@ -44,7 +42,7 @@ public interface ClassFactory {
 		@exception 	StandardException	Standard Derby error policy
 
 	*/
-	public GeneratedClass loadGeneratedClass(String fullyQualifiedName, ByteArray classDump)
+	public GeneratedClass loadGeneratedClass(String fullyQualifiedName, Object classDump)
 		throws StandardException;
 
 	/**

@@ -52,5 +52,7 @@ module io.github.ggeorg.delosdb.engine.kernel {
         org.apache.derby.engine,
         org.apache.derby.tests;
 
+    exports org.apache.derby.iapi.services.loader;
+
     uses org.apache.derby.iapi.services.monitor.MonitorKernelSupport;
 }

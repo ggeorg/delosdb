@@ -135,30 +135,32 @@ abstract class DatabaseClasses
 
 		@exception	StandardException Class format is bad.
 	*/
-	public final GeneratedClass loadGeneratedClass(String fullyQualifiedName, ByteArray classDump)
+	public final GeneratedClass loadGeneratedClass(String fullyQualifiedName, Object classDump)
 		throws StandardException {
 
+            ByteArray generatedClassData = (ByteArray) classDump;
 
 			try {
 
 
-				return loadGeneratedClassFromData(fullyQualifiedName, classDump);
+				return loadGeneratedClassFromData(fullyQualifiedName, generatedClassData);
 
 			} catch (LinkageError le) {
 
-			    writeClassFile(fullyQualifiedName, classDump, le);
+			    writeClassFile(fullyQualifiedName, generatedClassData, le);
 
 				throw StandardException.newException(SQLState.GENERATED_CLASS_LINKAGE_ERROR,
 							le, fullyQualifiedName);
 
     		} catch (VirtualMachineError vme) { // these may be beyond saving, but fwiw
 
-			    writeClassFile(fullyQualifiedName, classDump, vme);
+			    writeClassFile(fullyQualifiedName, generatedClassData, vme);
 
 			    throw vme;
 		    }
 
 	}
+
 
     private static void writeClassFile(String fullyQualifiedName, ByteArray bytecode, Throwable t) {
 

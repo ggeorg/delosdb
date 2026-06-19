@@ -5062,3 +5062,118 @@ tasks.register('verifyLegacyDerbyKernelB5aServiceSplit') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5aServiceSplit'
 }
+
+// B5b — Move loader service API into the engine kernel
+//
+// This keeps moving the dependency frontier required before services.io can be
+// kernel-owned. Loader is a low-level service API used by serialization code,
+// but ClassFactory previously exposed iapi.util.ByteArray. B5b erases that one
+// parameter at the kernel boundary so util does not move prematurely.
+def delosdbB5bKernelSourceRoot = file('delosdb-engine-kernel/src/main/java')
+def delosdbB5bEngineSourceRoot = file('delosdb-engine/src/main/java')
+def delosdbB5bReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5b-loader-split.txt')
+
+def delosdbB5bRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5bRead = { File f -> f.isFile() ? f.text : '' }
+
+tasks.register('legacyDerbyStoreKernelB5bLoaderSplitReport') {
+    group = 'verification'
+    description = 'B5b: reports the loader service API split into delosdb-engine-kernel.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5aServiceSplitReport'
+    outputs.file(delosdbB5bReportFile)
+    doLast {
+        def reportFile = delosdbB5bReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5b legacy Derby store loader service split
+====================================================
+
+Purpose
+-------
+Move the low-level loader service API into delosdb-engine-kernel as a
+precondition for moving services.io. services.io depends on loader for
+FormatIdInputStream/ApplicationObjectInputStream class resolution.
+
+Moved into delosdb-engine-kernel
+--------------------------------
+  - org.apache.derby.iapi.services.loader
+
+Boundary adjustment
+-------------------
+ClassFactory no longer exposes org.apache.derby.iapi.util.ByteArray in its
+kernel-owned method signature. The generated-class bytecode parameter is Object
+at the kernel boundary, and the engine-side DatabaseClasses implementation casts
+back to ByteArray internally. This avoids moving org.apache.derby.iapi.util in
+B5b just to support the loader API.
+
+Intentionally not moved in B5b
+------------------------------
+  - org.apache.derby.iapi.services.io
+  - org.apache.derby.iapi.services.uuid
+  - org.apache.derby.iapi.util
+  - org.apache.derby.catalog.UUID
+  - org.apache.derby.iapi.types
+  - org.apache.derby.iapi.security
+
+B6 readiness
+------------
+NOT YET. Remaining blockers still include services.io, util, UUID/catalog,
+security, and store-facing type contracts.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5bRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5bLoaderSplit') {
+    group = 'verification'
+    description = 'B5b: verifies the loader service API is kernel-owned and the ByteArray boundary was erased.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5bLoaderSplitReport'
+    doLast {
+        def packagePath = 'org/apache/derby/iapi/services/loader'
+        def kernelDir = new File(delosdbB5bKernelSourceRoot, packagePath)
+        if (!kernelDir.isDirectory()) {
+            throw new GradleException('B5b expected kernel-owned loader package: ' + delosdbB5bRelPath(kernelDir))
+        }
+        if (fileTree(kernelDir) { include '*.java' }.files.isEmpty()) {
+            throw new GradleException('B5b expected Java sources in kernel-owned loader package: ' + delosdbB5bRelPath(kernelDir))
+        }
+        def staleEngineDir = new File(delosdbB5bEngineSourceRoot, packagePath)
+        if (staleEngineDir.exists()) {
+            throw new GradleException('B5b stale engine loader package remains after cleanup: ' + delosdbB5bRelPath(staleEngineDir))
+        }
+
+        def classFactory = delosdbB5bRead(file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/loader/ClassFactory.java'))
+        if (classFactory.contains('org.apache.derby.iapi.util.ByteArray') || classFactory.contains('ByteArray classDump')) {
+            throw new GradleException('B5b ClassFactory must not expose iapi.util.ByteArray from the kernel boundary')
+        }
+        if (!classFactory.contains('loadGeneratedClass(String fullyQualifiedName, Object classDump)')) {
+            throw new GradleException('B5b ClassFactory must expose Object classDump at the kernel boundary')
+        }
+
+        def databaseClasses = delosdbB5bRead(file('delosdb-engine/src/main/java/org/apache/derby/impl/services/reflect/DatabaseClasses.java'))
+        if (!databaseClasses.contains('loadGeneratedClass(String fullyQualifiedName, Object classDump)')) {
+            throw new GradleException('B5b DatabaseClasses must implement the erased ClassFactory signature')
+        }
+        if (!databaseClasses.contains('ByteArray generatedClassData = (ByteArray) classDump')) {
+            throw new GradleException('B5b DatabaseClasses must cast classDump back to ByteArray internally')
+        }
+
+        def kernelModuleInfo = delosdbB5bRead(file('delosdb-engine-kernel/src/main/java/module-info.java'))
+        if (!kernelModuleInfo.contains('exports org.apache.derby.iapi.services.loader;')) {
+            throw new GradleException('B5b kernel module-info must export org.apache.derby.iapi.services.loader')
+        }
+        def engineModuleInfo = delosdbB5bRead(file('delosdb-engine/src/main/java/module-info.java'))
+        if (engineModuleInfo.contains('    exports org.apache.derby.iapi.services.loader;')) {
+            throw new GradleException('B5b engine module-info still exports moved loader package')
+        }
+
+        def reportFile = delosdbB5bReportFile.get().asFile
+        if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
+            throw new GradleException('B5b report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5b loader service split into delosdb-engine-kernel')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5bLoaderSplit'
+}
