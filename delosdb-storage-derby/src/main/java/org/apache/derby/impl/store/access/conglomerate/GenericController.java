@@ -150,7 +150,10 @@ abstract class GenericController
         if (open_conglom.isClosed())
             open_conglom.reopen();
 
-        return(open_conglom.newRowLocationTemplate());
+        // ConglomerateController is still a Derby SQL/access API and returns the
+        // concrete RowLocation type.  OpenConglomerate has already crossed into
+        // the store-facing bridge, so adapt back only at this compatibility edge.
+        return((RowLocation) open_conglom.newRowLocationTemplate());
 	}
 
     /**
