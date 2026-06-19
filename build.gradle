@@ -4177,8 +4177,8 @@ def delosdbB3aEngineContextRoot = file('delosdb-engine/src/main/java/org/apache/
 def delosdbB3aKernelModuleInfo = file('delosdb-engine-kernel/src/main/java/module-info.java')
 def delosdbB3aCommonsModuleInfo = file('delosdb-commons/src/main/java/module-info.java')
 def delosdbB3aEngineModuleInfo = file('delosdb-engine/src/main/java/module-info.java')
-def delosdbB3aEngineMonitorFile = file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/monitor/Monitor.java')
-def delosdbB3aEngineSupportFile = file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/monitor/EngineContextKernelSupport.java')
+def delosdbB3aKernelMonitorFile = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/monitor/Monitor.java')
+def delosdbB3aEngineSupportFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/EngineContextKernelSupport.java')
 
 def delosdbB3aJavaSourcesUnder = { File root ->
     return root.exists() ? fileTree(root) { include '**/*.java' }.files.sort { it.path } : []
@@ -4223,8 +4223,9 @@ kernel would create a kernel-to-engine dependency cycle and would accidentally
 pull SQL-facing security/property/monitor implementation code into the kernel.
 
 B3a therefore moves the whole context package and adds a small kernel-owned
-ContextKernelSupport seam. The engine monitor installs EngineContextKernelSupport,
-which delegates back to the existing Monitor and PropertyUtil behavior at runtime.
+ContextKernelSupport seam. The kernel-owned monitor installs context support through MonitorKernelSupport,
+whose engine-side provider delegates back to the existing FileMonitor, Monitor,
+and PropertyUtil behavior at runtime.
 
 Deferred to B3b
 ---------------
@@ -4326,8 +4327,8 @@ tasks.register('verifyLegacyDerbyKernelContextExtraction') {
         if (!delosdbB3aEngineSupportFile.isFile()) {
             throw new GradleException('B3a missing engine-side EngineContextKernelSupport')
         }
-        if (!delosdbB3aEngineMonitorFile.text.contains('ContextKernelSupportRegistry.install(new EngineContextKernelSupport())')) {
-            throw new GradleException('B3a Monitor must install EngineContextKernelSupport for the kernel-owned context package')
+        if (!delosdbB3aKernelMonitorFile.text.contains('ContextKernelSupportRegistry.install(MonitorKernelSupportRegistry.support().contextKernelSupport())')) {
+            throw new GradleException('B3a/B3b kernel Monitor must install context support through MonitorKernelSupport')
         }
         logger.lifecycle('Verified B3a context service extraction into delosdb-engine-kernel')
     }
@@ -4335,4 +4336,171 @@ tasks.register('verifyLegacyDerbyKernelContextExtraction') {
 
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelContextExtraction'
+}
+
+
+// -----------------------------------------------------------------------------
+// B3b — Engine-kernel monitor service extraction guard
+// -----------------------------------------------------------------------------
+
+def delosdbB3bKernelMonitorRoot = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/monitor')
+def delosdbB3bEngineMonitorRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/monitor')
+def delosdbB3bEngineImplMonitorRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor')
+def delosdbB3bKernelModuleInfo = file('delosdb-engine-kernel/src/main/java/module-info.java')
+def delosdbB3bEngineModuleInfo = file('delosdb-engine/src/main/java/module-info.java')
+
+def delosdbB3bJavaSourcesUnder = { File root ->
+    return root.exists() ? fileTree(root) { include '**/*.java' }.files.sort { it.path } : []
+}
+
+def delosdbB3bImportsByClass = { File root ->
+    def imports = new TreeMap<String, Integer>()
+    delosdbB3bJavaSourcesUnder(root).each { source ->
+        source.eachLine { line ->
+            def trimmed = line.trim()
+            if (trimmed.startsWith('import ') && trimmed.endsWith(';')) {
+                def imported = trimmed.substring('import '.length(), trimmed.length() - 1)
+                imports[imported] = (imports[imported] ?: 0) + 1
+            }
+        }
+    }
+    return imports
+}
+
+tasks.register('legacyDerbyStoreKernelB3bMonitorReport') {
+    group = 'verification'
+    description = 'B3b: reports the monitor-service extraction and the support seam that avoids a kernel-to-engine boot cycle.'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b3b-monitor.txt'))
+    doLast {
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b3b-monitor.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        def imports = delosdbB3bImportsByClass(delosdbB3bKernelMonitorRoot)
+        def importLines = imports.collect { imported, count -> String.format('  %-90s %5d', imported, count) }.join('\n')
+        reportFile.text = """DelosDB B3b legacy Derby monitor extraction report
+===================================================
+
+Moved in B3b
+------------
+org.apache.derby.iapi.services.monitor
+
+Why B3b needs a support seam
+----------------------------
+The inherited Monitor facade is store-facing boot infrastructure, but the
+concrete boot implementation still lives in org.apache.derby.impl.services.monitor
+inside delosdb-engine. Moving Monitor directly would create a kernel-to-engine
+cycle through FileMonitor, SecurityUtil, PropertyUtil, and loader InstanceGetter.
+
+B3b therefore moves the whole monitor API/facade package and adds a small
+kernel-owned MonitorKernelSupport seam. The engine provides
+EngineMonitorKernelSupport through ServiceLoader and keeps FileMonitor and the
+boot implementation in delosdb-engine.
+
+Still deferred after B3b
+------------------------
+org.apache.derby.iapi.services.property remains in delosdb-engine for B4.
+org.apache.derby.iapi.services.loader remains in delosdb-engine; ModuleFactory
+uses Object for classFromIdentifier at the kernel boundary so B3b does not force
+loader movement.
+
+Kernel monitor imports by exact class
+-------------------------------------
+${importLines ?: '  <none>'}
+
+B3b rule applied
+----------------
+Move whole monitor package only. Do not move FileMonitor or monitor
+implementation classes. Avoid a kernel-to-engine cycle through the
+MonitorKernelSupport seam.
+"""
+        logger.lifecycle('Wrote ' + reportFile)
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelMonitorExtraction') {
+    group = 'verification'
+    description = 'B3b: verifies org.apache.derby.iapi.services.monitor moved as a whole package into delosdb-engine-kernel.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB3bMonitorReport'
+    doLast {
+        def expectedFiles = [
+                'DerbyObservable.java',
+                'DerbyObserver.java',
+                'ModuleControl.java',
+                'ModuleFactory.java',
+                'ModuleSupportable.java',
+                'Monitor.java',
+                'MonitorKernelSupport.java',
+                'MonitorKernelSupportRegistry.java',
+                'PersistentService.java'
+        ]
+        def missing = expectedFiles.findAll { name -> !new File(delosdbB3bKernelMonitorRoot, name).isFile() }
+        if (!missing.isEmpty()) {
+            throw new GradleException('B3b missing kernel-owned monitor source file(s): ' + missing.join(', '))
+        }
+        def kernelFiles = delosdbB3bJavaSourcesUnder(delosdbB3bKernelMonitorRoot)
+        if (kernelFiles.size() != expectedFiles.size()) {
+            throw new GradleException('B3b expected exactly ' + expectedFiles.size() + ' monitor source files in delosdb-engine-kernel, found ' + kernelFiles.size())
+        }
+        if (delosdbB3bEngineMonitorRoot.exists() && !delosdbB3bJavaSourcesUnder(delosdbB3bEngineMonitorRoot).isEmpty()) {
+            throw new GradleException('B3b stale org.apache.derby.iapi.services.monitor source files remain under delosdb-engine. Run scripts/cleanup-legacy-derby-kernel-b3b.sh')
+        }
+        def forbiddenImports = [
+                'org.apache.derby.impl.services.monitor.',
+                'org.apache.derby.iapi.security.',
+                'org.apache.derby.iapi.services.property.',
+                'org.apache.derby.iapi.services.loader.'
+        ]
+        def offenders = []
+        kernelFiles.each { source ->
+            source.eachLine { line ->
+                def trimmed = line.trim()
+                if (trimmed.startsWith('import ')) {
+                    forbiddenImports.each { forbidden ->
+                        if (trimmed.contains(forbidden)) {
+                            offenders << source.path + ': ' + trimmed
+                        }
+                    }
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('B3b kernel-owned monitor package must not import engine monitor/security/property/loader directly:\n' + offenders.join('\n'))
+        }
+        def kernelModuleText = delosdbB3bKernelModuleInfo.text
+        if (!kernelModuleText.contains('exports org.apache.derby.iapi.services.monitor')) {
+            throw new GradleException('B3b kernel module must export org.apache.derby.iapi.services.monitor')
+        }
+        if (!kernelModuleText.contains('uses org.apache.derby.iapi.services.monitor.MonitorKernelSupport;')) {
+            throw new GradleException('B3b kernel module must use MonitorKernelSupport via ServiceLoader')
+        }
+        if (!kernelModuleText.contains('requires io.github.ggeorg.delosdb.spi;')) {
+            throw new GradleException('B3b kernel module must read delosdb-spi for inherited @LegacyInternal annotations')
+        }
+        def engineModuleText = delosdbB3bEngineModuleInfo.text
+        if (engineModuleText.contains('exports org.apache.derby.iapi.services.monitor')) {
+            throw new GradleException('B3b engine module must no longer export org.apache.derby.iapi.services.monitor')
+        }
+        if (!engineModuleText.contains('provides org.apache.derby.iapi.services.monitor.MonitorKernelSupport')) {
+            throw new GradleException('B3b engine module must provide EngineMonitorKernelSupport')
+        }
+        if (!new File(delosdbB3bEngineImplMonitorRoot, 'EngineMonitorKernelSupport.java').isFile()) {
+            throw new GradleException('B3b missing engine-side EngineMonitorKernelSupport')
+        }
+        if (!new File(delosdbB3bEngineImplMonitorRoot, 'EngineContextKernelSupport.java').isFile()) {
+            throw new GradleException('B3b missing repackaged engine-side EngineContextKernelSupport')
+        }
+        def monitorText = new File(delosdbB3bKernelMonitorRoot, 'Monitor.java').text
+        ['FileMonitor', 'SecurityUtil', 'PropertyUtil', 'InstanceGetter'].each { forbidden ->
+            if (monitorText.contains(forbidden) && forbidden != 'FileMonitor') {
+                throw new GradleException('B3b kernel Monitor must not directly reference ' + forbidden)
+            }
+        }
+        if (monitorText.contains('new org.apache.derby.impl.services.monitor.FileMonitor')) {
+            throw new GradleException('B3b kernel Monitor must create FileMonitor through MonitorKernelSupport')
+        }
+        logger.lifecycle('Verified B3b monitor service extraction into delosdb-engine-kernel')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelMonitorExtraction'
 }

@@ -256,7 +256,7 @@ public abstract class BaseActivation implements CursorActivation, GeneratedByteC
 
 		/* Get the UUID for this activation */
 		UUIDFactory uuidFactory =
-			getMonitor().getUUIDFactory();
+			((UUIDFactory) getMonitor().getUUIDFactory());
 
 		UUIDValue = uuidFactory.createUUID();
 		UUIDString = UUIDValue.toString();

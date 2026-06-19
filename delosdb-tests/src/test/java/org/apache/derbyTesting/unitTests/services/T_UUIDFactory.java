@@ -61,7 +61,7 @@ public class T_UUIDFactory extends T_Generic {
 	*/
 	protected void runTests() throws T_Fail {
 
-		factory = getMonitor().getUUIDFactory();
+		factory = ((UUIDFactory) getMonitor().getUUIDFactory());
 		if (factory == null) {
 			throw T_Fail.testFailMsg(getModuleToTestProtocolName() + " module not started.");
 		}

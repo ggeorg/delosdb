@@ -120,7 +120,7 @@ public class XactFactory implements TransactionFactory, ModuleControl, ModuleSup
 		throws StandardException
 	{
 
-		uuidFactory = getMonitor().getUUIDFactory();
+		uuidFactory = ((UUIDFactory) getMonitor().getUUIDFactory());
 
         /*
         dataValueFactory =  (DataValueFactory)

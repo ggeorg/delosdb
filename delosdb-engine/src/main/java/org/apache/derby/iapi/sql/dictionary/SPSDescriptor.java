@@ -1144,7 +1144,7 @@ public class SPSDescriptor extends UniqueSQLObjectDescriptor
 	{
 		if (uuidFactory == null)
 		{
-			uuidFactory = DataDescriptorGenerator.getMonitor().getUUIDFactory();
+			uuidFactory = ((UUIDFactory) DataDescriptorGenerator.getMonitor().getUUIDFactory());
 		}
 		return uuidFactory.recreateUUID(idString);
 	}

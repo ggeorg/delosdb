@@ -10,10 +10,20 @@ module io.github.ggeorg.delosdb.engine.kernel {
     requires java.base;
     requires java.sql;
     requires org.apache.derby.commons;
+    requires io.github.ggeorg.delosdb.spi;
 
     exports org.apache.derby.io;
     exports org.apache.derby.iapi.services.context to
         org.apache.derby.engine,
         org.apache.derby.optionaltools,
         org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.monitor to
+        org.apache.derby.engine,
+        org.apache.derby.server,
+        org.apache.derby.tools,
+        org.apache.derby.optionaltools,
+        org.apache.derby.tests;
+
+    uses org.apache.derby.iapi.services.monitor.MonitorKernelSupport;
 }

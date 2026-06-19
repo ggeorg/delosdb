@@ -176,7 +176,7 @@ final class XATransactionState extends ContextImpl {
     }
 
     private static TimerFactory getTimerFactory() {
-        return getMonitor().getTimerFactory();
+        return (TimerFactory) getMonitor().getTimerFactory();
     }
 
 	XATransactionState(ContextManager cm, EmbedConnection conn, 

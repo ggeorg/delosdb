@@ -522,7 +522,7 @@ public final class	DataDictionaryImpl
 
 		startupParameters = startParams;
 
-		uuidFactory = getMonitor().getUUIDFactory();
+		uuidFactory = ((UUIDFactory) getMonitor().getUUIDFactory());
 
 		engineType = Monitor.getEngineType( startParams );
 

@@ -22,6 +22,7 @@ def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def clientModuleClassDir = rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
+def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def javaccClasspath = rootProject.files('tools/java/javacc.jar')
 def execSupport = objects.newInstance(DelosDbToolsExecSupport)
 
@@ -90,7 +91,7 @@ tasks.register('generateIjParsers') {
 }
 
 tasks.register('compileDerbyTools', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine', ':delosdb-client:compileDerbyClient', 'generateIjParsers'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-kernel:compileDelosDbEngineKernel', ':delosdb-engine:compileDerbyEngine', ':delosdb-client:compileDerbyClient', 'generateIjParsers'
     source = files(
             fileTree(sourceRoot) { include '**/*.java' },
             fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
@@ -98,6 +99,7 @@ tasks.register('compileDerbyTools', JavaCompile) {
     destinationDirectory = moduleClassDir
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             commonsModuleClassDir,
+            kernelModuleClassDir,
             engineModuleClassDir,
             clientModuleClassDir,
             rootProject.configurations.delosdbAsm

@@ -55,6 +55,7 @@ import org.apache.derby.iapi.store.access.FileResource;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.util.IdUtil;
 import org.apache.derby.io.StorageFile;
+import org.apache.derby.iapi.services.uuid.UUIDFactory;
 
 public class JarUtil
 {
@@ -143,7 +144,7 @@ public class JarUtil
         try {
             notifyLoader(false);
             dd.invalidateAllSPSPlans();
-            UUID id = BaseActivation.getMonitor().getUUIDFactory().createUUID();
+            UUID id = ((UUIDFactory) BaseActivation.getMonitor().getUUIDFactory()).createUUID();
             final String jarExternalName = JarUtil.mkExternalName(
                 id, schemaName, sqlName, fr.getSeparatorChar());
 

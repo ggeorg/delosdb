@@ -341,7 +341,7 @@ public class ExternalSortFactory implements
 		throws StandardException
 	{
 		// Find the UUID factory.
-		UUIDFactory uuidFactory = getMonitor().getUUIDFactory();
+		UUIDFactory uuidFactory = ((UUIDFactory) getMonitor().getUUIDFactory());
 
 		// Make a UUID that identifies this sort's format.
 		formatUUID = uuidFactory.recreateUUID(FORMATUUIDSTRING);

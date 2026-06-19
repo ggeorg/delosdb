@@ -30,6 +30,7 @@ import org.apache.derby.iapi.services.monitor.ModuleFactory;
 import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.impl.db.BasicDatabase;
+import org.apache.derby.iapi.services.uuid.UUIDFactory;
 
 /**
  * Database implementation that drives the storeless engine
@@ -59,7 +60,7 @@ public class StorelessDatabase extends BasicDatabase {
 	
 	protected	UUID	makeDatabaseID(boolean create, Properties startParams)
 	{
-		return getMonitor().getUUIDFactory().createUUID();
+		return ((UUIDFactory) getMonitor().getUUIDFactory()).createUUID();
 	}
 	
 	protected Properties getAllDatabaseProperties()

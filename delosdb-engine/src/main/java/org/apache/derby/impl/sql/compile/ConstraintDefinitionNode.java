@@ -498,7 +498,7 @@ public class ConstraintDefinitionNode extends TableElementNode
 	{
 		if ( uuidFactory == null )
 		{
-			uuidFactory = getMonitor().getUUIDFactory();
+			uuidFactory = ((UUIDFactory) getMonitor().getUUIDFactory());
 		}
 		return	uuidFactory;
 	}

@@ -169,7 +169,7 @@ public class T_RawStoreFactory extends T_MultiThreadedIterations {
 				throw T_Fail.testFailMsg("LockFactory.MODULE not found");
 			}
 
-			uuidfactory = getMonitor().getUUIDFactory();
+			uuidfactory = ((UUIDFactory) getMonitor().getUUIDFactory());
 
 		} catch (StandardException mse) {
 			throw T_Fail.exceptionFail(mse);

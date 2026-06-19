@@ -44,6 +44,7 @@ import org.apache.derby.iapi.services.property.PropertyUtil;
 import org.apache.derby.mbeans.ManagementMBean;
 import org.apache.derby.mbeans.VersionMBean;
 import org.apache.derby.shared.common.security.SystemPermission;
+import org.apache.derby.iapi.services.uuid.UUIDFactory;
 
 /** 
  * This class implements the ManagementService interface and provides a simple
@@ -109,7 +110,7 @@ public final class JMXManagementService implements ManagementService, ModuleCont
         registeredMbeans = new HashMap<ObjectName,StandardMBean>();
         
         systemIdentifier =
-            getMonitor().getUUIDFactory().createUUID().toString();
+            ((UUIDFactory) getMonitor().getUUIDFactory()).createUUID().toString();
         
         findServer();
              

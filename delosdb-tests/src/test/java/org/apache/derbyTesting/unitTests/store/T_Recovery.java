@@ -167,7 +167,7 @@ public class T_Recovery extends T_Generic {
 
 		try {
 
-			uuidfactory = getMonitor().getUUIDFactory();
+			uuidfactory = ((UUIDFactory) getMonitor().getUUIDFactory());
 			if (uuidfactory == null) {
 				throw T_Fail.testFailMsg("UUIDFactory.MODULE not found");
 			}

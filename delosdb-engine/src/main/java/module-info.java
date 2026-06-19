@@ -124,6 +124,9 @@ module org.apache.derby.engine
     // DelosDB optional storage providers are discovered through ServiceLoader.
     uses io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
 
+    provides org.apache.derby.iapi.services.monitor.MonitorKernelSupport
+        with org.apache.derby.impl.services.monitor.EngineMonitorKernelSupport;
+
     //
     // ALLOW RESOURCE LOOKUP VIA REFLECTION
     //
@@ -195,12 +198,6 @@ module org.apache.derby.engine
         org.apache.derby.server;
 
     exports org.apache.derby.iapi.services.locks to
-        org.apache.derby.tests;
-
-    exports org.apache.derby.iapi.services.monitor to
-        org.apache.derby.server,
-        org.apache.derby.tools,
-        org.apache.derby.optionaltools,
         org.apache.derby.tests;
 
     exports org.apache.derby.iapi.services.property to

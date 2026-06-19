@@ -19,10 +19,11 @@
 
  */
 
-package org.apache.derby.iapi.services.monitor;
+package org.apache.derby.impl.services.monitor;
 
 import java.util.Locale;
 import org.apache.derby.iapi.services.context.ContextKernelSupport;
+import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.iapi.services.property.PropertyUtil;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.stream.HeaderPrintWriter;

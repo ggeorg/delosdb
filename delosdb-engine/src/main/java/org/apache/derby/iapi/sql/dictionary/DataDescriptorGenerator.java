@@ -429,7 +429,7 @@ public class DataDescriptorGenerator
 	protected UUIDFactory getUUIDFactory()
 	{
 		if (uuidf == null)
-			uuidf = getMonitor().getUUIDFactory();
+			uuidf = ((UUIDFactory) getMonitor().getUUIDFactory());
 		return uuidf;
 	}
 

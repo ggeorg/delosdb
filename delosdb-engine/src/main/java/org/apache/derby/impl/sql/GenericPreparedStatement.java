@@ -180,7 +180,7 @@ public class GenericPreparedStatement
 	GenericPreparedStatement() {
 		/* Get the UUID for this prepared statement */
 		UUIDFactory uuidFactory = 
-			getMonitor().getUUIDFactory();
+			((UUIDFactory) getMonitor().getUUIDFactory());
 
 		UUIDValue = uuidFactory.createUUID();
 		UUIDString = UUIDValue.toString();

@@ -188,7 +188,7 @@ final class GenericStatementContext
     }
 
     private static TimerFactory getTimerFactory() {
-        return GenericLanguageConnectionFactory.getMonitor().getTimerFactory();
+        return (TimerFactory) GenericLanguageConnectionFactory.getMonitor().getTimerFactory();
     }
 
 	// StatementContext Interface

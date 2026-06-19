@@ -140,7 +140,7 @@ public class DropDependencyFilter implements TupleFilter
 	{
 		if ( uuidFactory == null )
 		{
-			uuidFactory = DataDictionaryImpl.getMonitor().getUUIDFactory();
+			uuidFactory = ((UUIDFactory) DataDictionaryImpl.getMonitor().getUUIDFactory());
 		}
 		return	uuidFactory;
 	}

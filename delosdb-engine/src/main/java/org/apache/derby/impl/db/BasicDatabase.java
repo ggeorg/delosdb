@@ -592,7 +592,7 @@ public class BasicDatabase implements ModuleControl, ModuleSupportable, Property
 			// no property defined in the Transaction set
 			// this could be an upgrade, see if it's stored in the service set
 
-			UUIDFactory	uuidFactory  = getMonitor().getUUIDFactory();
+			UUIDFactory	uuidFactory  = ((UUIDFactory) getMonitor().getUUIDFactory());
 
 			
 			upgradeID = startParams.getProperty(DataDictionary.DATABASE_ID);

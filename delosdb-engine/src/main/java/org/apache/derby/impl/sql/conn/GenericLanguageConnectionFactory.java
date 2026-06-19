@@ -289,7 +289,7 @@ public class GenericLanguageConnectionFactory
 		//DVF with correct Locale is available to rest of the Derby code.
 		dvf = (DataValueFactory) bootServiceModule(create, this, org.apache.derby.shared.common.reference.ClassName.DataValueFactory, startParams);
 		javaFactory = (JavaFactory) startSystemModule(org.apache.derby.shared.common.reference.Module.JavaFactory);
-		uuidFactory = getMonitor().getUUIDFactory();
+		uuidFactory = ((UUIDFactory) getMonitor().getUUIDFactory());
 		classFactory = (ClassFactory) getServiceModule(this, org.apache.derby.shared.common.reference.Module.ClassFactory);
 		if (classFactory == null)
  			classFactory = (ClassFactory) findSystemModule(org.apache.derby.shared.common.reference.Module.ClassFactory);

@@ -360,7 +360,7 @@ public class B2IFactory implements ConglomerateFactory, ModuleControl
 	{
 		// Find the UUID factory.
 		UUIDFactory uuidFactory = 
-            getMonitor().getUUIDFactory();
+            ((UUIDFactory) getMonitor().getUUIDFactory());
 
 		// Make a UUID that identifies this conglomerate's format.
 		formatUUID = uuidFactory.recreateUUID(FORMATUUIDSTRING);

@@ -26,7 +26,6 @@ import org.apache.derby.shared.common.info.ProductVersionHolder;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.stream.InfoStreams;
 import org.apache.derby.iapi.services.monitor.PersistentService;
-import org.apache.derby.iapi.services.loader.InstanceGetter;
 
 import java.util.Properties;
 import java.util.Locale;
@@ -137,7 +136,7 @@ public interface ModuleFactory
 
 		@exception StandardException See Monitor.classFromIdentifier
 	*/
-	public InstanceGetter classFromIdentifier(int identifier)
+	public Object classFromIdentifier(int identifier)
 		throws StandardException;
 
 	/**
@@ -305,7 +304,7 @@ public interface ModuleFactory
 	 * Get the UUID factory for the system.  The UUID factory provides
 	 * methods to create and recreate database unique identifiers.
 	 */
-	public org.apache.derby.iapi.services.uuid.UUIDFactory getUUIDFactory();
+	public Object getUUIDFactory();
         
 	/**
 	 * Get the Timer factory for the system. The Timer factory provides
@@ -313,5 +312,5 @@ public interface ModuleFactory
      *
      * @return the system's Timer factory.
 	 */
-    public org.apache.derby.iapi.services.timer.TimerFactory getTimerFactory();
+    public Object getTimerFactory();
 }

@@ -273,7 +273,7 @@ public class BaseDataFileFactory
 
         dataDirectory = startParams.getProperty(PersistentService.ROOT);
 
-        UUIDFactory uf = getMonitor().getUUIDFactory();
+        UUIDFactory uf = ((UUIDFactory) getMonitor().getUUIDFactory());
 
         identifier = uf.createUUID();
 

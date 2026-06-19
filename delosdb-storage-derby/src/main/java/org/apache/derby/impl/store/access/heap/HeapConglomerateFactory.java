@@ -351,7 +351,7 @@ public class HeapConglomerateFactory implements ConglomerateFactory, ModuleContr
 	{
 		// Find the UUID factory.
 		UUIDFactory uuidFactory = 
-            getMonitor().getUUIDFactory();
+            ((UUIDFactory) getMonitor().getUUIDFactory());
 		
 		// Make a UUID that identifies this conglomerate's format.
 		formatUUID = uuidFactory.recreateUUID(FORMATUUIDSTRING);
