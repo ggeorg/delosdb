@@ -234,7 +234,7 @@ public class BranchRow
      **/
     protected void setPageNumber(long page_number)
     {
-        getChildPage().setValue(page_number);
+        StoreTypeUtil.setLongValue(getChildPage(), page_number);
     }
 
 

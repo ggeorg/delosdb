@@ -158,4 +158,9 @@ public final class StoreTypeUtil
     {
         StoreTypeSupportRegistry.support().setValue(target, source);
     }
+
+    public static void setLongValue(Object target, long value)
+    {
+        StoreTypeSupportRegistry.support().setLongValue(target, value);
+    }
 }

@@ -185,6 +185,12 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
         dataValue(target).setValue(dataValue(source));
     }
 
+    @Override
+    public void setLongValue(Object target, long value)
+    {
+        ((SQLLongint) target).setValue(value);
+    }
+
     private static DataValueDescriptor dataValue(Object value)
     {
         return (DataValueDescriptor) value;

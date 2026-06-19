@@ -91,4 +91,6 @@ public interface StoreTypeSupport
     int estimateMemoryUsage(Object value);
 
     void setValue(Object target, Object source) throws StandardException;
+
+    void setLongValue(Object target, long value);
 }
