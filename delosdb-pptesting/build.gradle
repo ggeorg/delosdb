@@ -23,7 +23,10 @@ def legacyBuildFile = file('src/test/legacy/build.xml')
 // classpath-compiled intentionally because they live in production packages to
 // exercise package-private behavior.
 def packagePrivateTestClassDir = layout.buildDirectory.dir('classes/pptesting')
-def testSupportClassDir = rootProject.project(':delosdb-tests').layout.buildDirectory.dir('classes/test-support')
+// The active Gradle test support now lives in the compiled inherited test module.
+// Keep package-private tests classpath-compiled, but depend on the proven
+// compileDerbyTestsModule task instead of the removed compileDerbyTestSupport task.
+def testSupportClassDir = rootProject.project(':delosdb-tests').layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
 def junitClasspath = rootProject.files('tools/java/junit.jar')
 def externalTestClasspath = rootProject.files(
         'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
@@ -41,7 +44,7 @@ def optionalToolsModuleClassDir = rootProject.project(':delosdb-optionaltools').
 def runnerModuleClassDir = rootProject.project(':delosdb-runner').layout.buildDirectory.dir('classes/modules/org.apache.derby.runner')
 
 tasks.register('compileDerbyPackagePrivateTests', JavaCompile) {
-    dependsOn ':delosdb-tests:compileDerbyTestSupport',
+    dependsOn ':delosdb-tests:compileDerbyTestsModule',
             ':delosdb-commons:compileDerbyCommons',
             ':delosdb-client:compileDerbyClient',
             ':delosdb-server:compileDerbyServer',
