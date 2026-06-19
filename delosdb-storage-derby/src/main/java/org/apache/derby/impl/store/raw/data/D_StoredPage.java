@@ -32,7 +32,6 @@ import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import java.util.Properties;
 import java.io.PrintStream;
@@ -279,7 +278,7 @@ public class D_StoredPage implements Diagnosticable
                 page.fetchFromSlot(
                     null, 
                     slot, 
-                    new DataValueDescriptor[0], 
+                    new Object[0], 
                     (FetchDescriptor) null, true).getId();
 
 			page.logRecord(slot, page.LOG_RECORD_DEFAULT, recordId,

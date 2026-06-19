@@ -39,8 +39,6 @@ import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 import org.apache.derby.iapi.store.raw.log.LogInstant;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

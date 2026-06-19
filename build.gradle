@@ -6408,3 +6408,163 @@ tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5jFirstTypeRewrite'
 }
 
+
+// B5k — Raw-store type import cleanup before real store compilation
+//
+// B5j rewrote the first leaf store-facing contracts to the SQL-neutral type
+// bridge. B5k takes the next compile-safe slice: remove dead or avoidable
+// iapi.types imports from raw-store support classes. This is deliberately not
+// B6; it only shrinks the remaining direct type dependency surface.
+def delosdbB5kReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5k-raw-type-import-cleanup.txt')
+def delosdbB5kBaselineImportCount = 143
+
+def delosdbB5kFullyClearedFiles = [
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/raw/LogicalUndoable.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_StoredPage.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DeleteOperation.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DirectActions.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/LoggableActions.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/LongColumnException.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/PageActions.java'),
+]
+
+def delosdbB5kBranchRow = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BranchRow.java')
+def delosdbB5kDStoredPage = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_StoredPage.java')
+def delosdbB5kRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5kRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5kStoreTypeImportLines = { ->
+    [file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+     file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')].collectMany { root ->
+        fileTree(root) { include '**/*.java' }.files.findAll { it.isFile() }.collectMany { source ->
+            source.readLines().findAll { it.trim().startsWith('import org.apache.derby.iapi.types.') }.collect { line ->
+                delosdbB5kRelPath(source) + ': ' + line.trim()
+            }
+        }
+    }.sort()
+}
+def delosdbB5kFullyClearedRemainingImports = { ->
+    delosdbB5kFullyClearedFiles.collectMany { source ->
+        source.readLines().findAll { it.trim().startsWith('import org.apache.derby.iapi.types.') }.collect { line ->
+            delosdbB5kRelPath(source) + ': ' + line.trim()
+        }
+    }.sort()
+}
+
+tasks.register('legacyDerbyStoreKernelB5kRawTypeImportCleanupReport') {
+    group = 'verification'
+    description = 'B5k: reports the raw-store dead/avoidable iapi.types import cleanup.'
+    dependsOn 'verifyLegacyDerbyKernelB5jFirstTypeRewrite'
+    outputs.file(delosdbB5kReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5kStoreTypeImportLines()
+        def fullyClearedRemainingImports = delosdbB5kFullyClearedRemainingImports()
+        def branchRowText = delosdbB5kRead(delosdbB5kBranchRow)
+        def dStoredPageText = delosdbB5kRead(delosdbB5kDStoredPage)
+        def reportFile = delosdbB5kReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5k raw-store type import cleanup
+================================================
+
+Purpose
+-------
+B5k continues the B5h/B5i/B5j type-boundary work with a deliberately small,
+compile-safe raw-store slice. It removes direct org.apache.derby.iapi.types
+imports that were either unused or avoidable without changing store behavior.
+
+Fully cleared files
+-------------------
+${delosdbB5kFullyClearedFiles.collect { '  - ' + delosdbB5kRelPath(it) }.join('\n')}
+
+Partially reduced file
+----------------------
+  - ${delosdbB5kRelPath(delosdbB5kBranchRow)}
+      Removed unused DataValueFactory import. DataValueDescriptor and SQLLongint
+      remain intentionally because BranchRow still constructs real branch rows.
+
+D_StoredPage zero-row fetch
+---------------------------
+  ${dStoredPageText.contains('new Object[0]') ? 'uses new Object[0] for raw Page.fetchFromSlot zero-column validation' : 'missing new Object[0] rewrite'}
+
+Forbidden iapi.types imports in fully cleared files
+---------------------------------------------------
+${fullyClearedRemainingImports.isEmpty() ? '  none' : fullyClearedRemainingImports.collect { '  - ' + it }.join('\n')}
+
+BranchRow DataValueFactory import
+---------------------------------
+  ${branchRowText.contains('import org.apache.derby.iapi.types.DataValueFactory;') ? 'still present [ERROR]' : 'removed'}
+
+Relocated-store iapi.types import count
+---------------------------------------
+  before B5k baseline: ${delosdbB5kBaselineImportCount}
+  after B5k:           ${remainingStoreTypeImports.size()}
+
+Remaining relocated-store iapi.types imports
+--------------------------------------------
+${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+Boundary decision
+-----------------
+This cleanup is not a broad move of org.apache.derby.iapi.types. It removes only
+stale or avoidable import dependencies from relocated store files. Implementation
+paths that still need real Derby value behavior remain for later B5 slices.
+
+B6 readiness
+------------
+NOT YET. The relocated store still has direct org.apache.derby.iapi.types imports.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5kRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5kRawTypeImportCleanup') {
+    group = 'verification'
+    description = 'B5k: verifies raw-store dead/avoidable iapi.types imports were removed and the count decreased.'
+    dependsOn 'legacyDerbyStoreKernelB5kRawTypeImportCleanupReport'
+    doLast {
+        delosdbB5kFullyClearedFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5k missing raw-store cleanup file: ' + delosdbB5kRelPath(source))
+            }
+        }
+        if (!delosdbB5kBranchRow.isFile()) {
+            throw new GradleException('B5k missing partially reduced file: ' + delosdbB5kRelPath(delosdbB5kBranchRow))
+        }
+
+        def fullyClearedRemainingImports = delosdbB5kFullyClearedRemainingImports()
+        if (!fullyClearedRemainingImports.isEmpty()) {
+            throw new GradleException('B5k fully cleared files still import iapi.types: ' + fullyClearedRemainingImports.join('; '))
+        }
+
+        def branchRowText = delosdbB5kRead(delosdbB5kBranchRow)
+        if (branchRowText.contains('import org.apache.derby.iapi.types.DataValueFactory;')) {
+            throw new GradleException('B5k BranchRow must not keep the unused DataValueFactory import')
+        }
+        if (!branchRowText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ||
+                !branchRowText.contains('import org.apache.derby.iapi.types.SQLLongint;')) {
+            throw new GradleException('B5k BranchRow should only remove DataValueFactory; remaining used type imports must be handled by later slices')
+        }
+
+        def dStoredPageText = delosdbB5kRead(delosdbB5kDStoredPage)
+        if (dStoredPageText.contains('new DataValueDescriptor[0]')) {
+            throw new GradleException('B5k D_StoredPage must not allocate DataValueDescriptor[] for zero-column raw fetch validation')
+        }
+        if (!dStoredPageText.contains('new Object[0]')) {
+            throw new GradleException('B5k D_StoredPage must use Object[] for zero-column raw fetch validation')
+        }
+
+        def remainingStoreTypeImports = delosdbB5kStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5kBaselineImportCount) {
+            throw new GradleException('B5k relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5kBaselineImportCount + ': ' + remainingStoreTypeImports.size())
+        }
+
+        def reportText = delosdbB5kRead(delosdbB5kReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5k report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5k raw-store type import cleanup; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5kRawTypeImportCleanup'
+}

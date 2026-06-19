@@ -31,8 +31,6 @@ import org.apache.derby.iapi.store.access.conglomerate.LogicalUndo;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-
 
 public interface PageActions 
 {
