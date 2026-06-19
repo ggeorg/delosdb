@@ -5325,3 +5325,148 @@ tasks.register('verifyLegacyDerbyKernelB5cServicesIoSplit') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5cServicesIoSplit'
 }
+
+// B5d — Move utility support APIs into the engine kernel
+//
+// B5c removed services.io as a blocker. The relocated store still imports a
+// small set of iapi.util classes. Moving util as a whole would have pulled a
+// SQL connection dependency through InterruptStatus, so B5d adds an engine
+// support seam for that one callback and keeps SQL packages out of the kernel.
+def delosdbB5dKernelSourceRoot = file('delosdb-engine-kernel/src/main/java')
+def delosdbB5dEngineSourceRoot = file('delosdb-engine/src/main/java')
+def delosdbB5dReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5d-util-split.txt')
+
+def delosdbB5dRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5dRead = { File f -> f.isFile() ? f.text : '' }
+
+tasks.register('legacyDerbyStoreKernelB5dUtilSplitReport') {
+    group = 'verification'
+    description = 'B5d: reports the iapi.util split into delosdb-engine-kernel.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5cServicesIoSplitReport'
+    outputs.file(delosdbB5dReportFile)
+    doLast {
+        def utilDir = new File(delosdbB5dKernelSourceRoot, 'org/apache/derby/iapi/util')
+        def utilFileCount = fileTree(utilDir) { include '*.java' }.files.size()
+        def reportFile = delosdbB5dReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5d legacy Derby store util split
+=========================================
+
+Purpose
+-------
+Move Derby utility APIs used by relocated legacy store code into
+ delosdb-engine-kernel without moving SQL connection packages into the kernel.
+
+Moved into delosdb-engine-kernel
+--------------------------------
+  - org.apache.derby.iapi.util (${utilFileCount} Java files)
+
+Boundary adjustment
+-------------------
+InterruptStatus previously imported LanguageConnectionContext directly. B5d
+replaces that direct SQL dependency with:
+
+  org.apache.derby.iapi.util.InterruptStatusKernelSupport
+
+and the engine-side provider:
+
+  org.apache.derby.impl.sql.conn.EngineInterruptStatusKernelSupport
+
+This keeps the kernel from depending on org.apache.derby.iapi.sql.conn while
+preserving the existing interrupted-exception storage behavior when the engine
+is present.
+
+Intentionally not moved in B5d
+------------------------------
+  - org.apache.derby.iapi.services.uuid
+  - org.apache.derby.catalog.UUID
+  - org.apache.derby.iapi.types
+  - org.apache.derby.iapi.security
+
+B6 readiness
+------------
+NOT YET. Remaining blockers still include UUID/catalog, security, and
+store-facing type contracts.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5dRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5dUtilSplit') {
+    group = 'verification'
+    description = 'B5d: verifies iapi.util is kernel-owned and InterruptStatus no longer imports SQL connection classes.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5dUtilSplitReport'
+    doLast {
+        def utilPackagePath = 'org/apache/derby/iapi/util'
+        def kernelUtilDir = new File(delosdbB5dKernelSourceRoot, utilPackagePath)
+        if (!kernelUtilDir.isDirectory()) {
+            throw new GradleException('B5d expected kernel-owned util package: ' + delosdbB5dRelPath(kernelUtilDir))
+        }
+        if (fileTree(kernelUtilDir) { include '*.java' }.files.size() < 10) {
+            throw new GradleException('B5d expected full iapi.util source package in kernel: ' + delosdbB5dRelPath(kernelUtilDir))
+        }
+
+        def staleEngineUtilDir = new File(delosdbB5dEngineSourceRoot, utilPackagePath)
+        if (staleEngineUtilDir.exists()) {
+            throw new GradleException('B5d stale engine util package remains after cleanup: ' + delosdbB5dRelPath(staleEngineUtilDir))
+        }
+
+        def interruptStatus = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/util/InterruptStatus.java')
+        if (!interruptStatus.isFile()) {
+            throw new GradleException('B5d expected kernel-owned InterruptStatus: ' + delosdbB5dRelPath(interruptStatus))
+        }
+        if (delosdbB5dRead(interruptStatus).contains('org.apache.derby.iapi.sql.conn.LanguageConnectionContext')) {
+            throw new GradleException('B5d InterruptStatus must not import LanguageConnectionContext from the SQL layer')
+        }
+        if (!delosdbB5dRead(interruptStatus).contains('InterruptStatusKernelSupport')) {
+            throw new GradleException('B5d InterruptStatus must use the kernel support seam')
+        }
+
+        def support = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/util/InterruptStatusKernelSupport.java')
+        if (!support.isFile()) {
+            throw new GradleException('B5d expected InterruptStatusKernelSupport in the kernel util package')
+        }
+
+        def engineSupport = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/EngineInterruptStatusKernelSupport.java')
+        if (!engineSupport.isFile()) {
+            throw new GradleException('B5d expected engine-side InterruptStatusKernelSupport implementation')
+        }
+        if (!delosdbB5dRead(engineSupport).contains('LanguageConnectionContext')) {
+            throw new GradleException('B5d engine support must remain the only side that touches LanguageConnectionContext')
+        }
+
+        def serviceDescriptor = file('delosdb-engine/src/main/resources/META-INF/services/org.apache.derby.iapi.util.InterruptStatusKernelSupport')
+        if (!serviceDescriptor.isFile()) {
+            throw new GradleException('B5d expected classpath service descriptor for InterruptStatusKernelSupport')
+        }
+        if (!serviceDescriptor.text.contains('org.apache.derby.impl.sql.conn.EngineInterruptStatusKernelSupport')) {
+            throw new GradleException('B5d InterruptStatusKernelSupport descriptor must name the engine provider')
+        }
+
+        def kernelModuleInfo = delosdbB5dRead(file('delosdb-engine-kernel/src/main/java/module-info.java'))
+        if (!kernelModuleInfo.contains('exports org.apache.derby.iapi.util;')) {
+            throw new GradleException('B5d kernel module-info must export org.apache.derby.iapi.util')
+        }
+        if (!kernelModuleInfo.contains('uses org.apache.derby.iapi.util.InterruptStatusKernelSupport')) {
+            throw new GradleException('B5d kernel module-info must use InterruptStatusKernelSupport')
+        }
+
+        def engineModuleInfo = delosdbB5dRead(file('delosdb-engine/src/main/java/module-info.java'))
+        if (engineModuleInfo.contains('    exports org.apache.derby.iapi.util;')) {
+            throw new GradleException('B5d engine module-info still exports moved util package')
+        }
+        if (!engineModuleInfo.contains('provides org.apache.derby.iapi.util.InterruptStatusKernelSupport')) {
+            throw new GradleException('B5d engine module-info must provide InterruptStatusKernelSupport')
+        }
+
+        def reportFile = delosdbB5dReportFile.get().asFile
+        if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
+            throw new GradleException('B5d report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5d util split into delosdb-engine-kernel')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5dUtilSplit'
+}

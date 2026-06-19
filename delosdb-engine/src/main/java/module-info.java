@@ -127,6 +127,9 @@ module org.apache.derby.engine
     provides org.apache.derby.iapi.services.monitor.MonitorKernelSupport
         with org.apache.derby.impl.services.monitor.EngineMonitorKernelSupport;
 
+    provides org.apache.derby.iapi.util.InterruptStatusKernelSupport
+        with org.apache.derby.impl.sql.conn.EngineInterruptStatusKernelSupport;
+
     //
     // ALLOW RESOURCE LOOKUP VIA REFLECTION
     //
@@ -157,7 +160,6 @@ module org.apache.derby.engine
     exports org.apache.derby.iapi.sql.execute;
     exports org.apache.derby.iapi.store.access;
     exports org.apache.derby.iapi.types;
-    exports org.apache.derby.iapi.util;
     exports org.apache.derby.impl.sql.execute;
     exports org.apache.derby.impl.load;
     exports org.apache.derby.impl.jdbc;

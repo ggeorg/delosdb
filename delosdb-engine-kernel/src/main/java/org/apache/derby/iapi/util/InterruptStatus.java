@@ -27,7 +27,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.services.context.Context;
 import org.apache.derby.iapi.services.context.ContextService;
-import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
+import java.util.ServiceLoader;
 
 /**
  * Static methods to save and retrieve information about a (session) thread's
@@ -57,6 +57,48 @@ import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 
 public class InterruptStatus {
 
+    private static final String LANGUAGE_CONNECTION_CONTEXT_ID =
+            org.apache.derby.shared.common.reference.ContextId.LANG_CONNECTION;
+
+    private static volatile InterruptStatusKernelSupport kernelSupport;
+
+    private static InterruptStatusKernelSupport supportOrNull() {
+        InterruptStatusKernelSupport support = kernelSupport;
+        if (support != null) {
+            return support;
+        }
+
+        support = ServiceLoader.load(InterruptStatusKernelSupport.class)
+                .findFirst()
+                .orElseGet(InterruptStatus::loadClasspathSupportOrNull);
+        kernelSupport = support;
+        return support;
+    }
+
+    private static InterruptStatusKernelSupport loadClasspathSupportOrNull() {
+        try {
+            Class<?> providerClass = Class.forName(
+                    "org.apache.derby.impl.sql.conn.EngineInterruptStatusKernelSupport");
+            return (InterruptStatusKernelSupport) providerClass
+                    .getDeclaredConstructor()
+                    .newInstance();
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return null;
+        }
+    }
+
+    private static StandardException getInterruptedException(Object lcc) {
+        InterruptStatusKernelSupport support = supportOrNull();
+        return support == null ? null : support.getInterruptedException(lcc);
+    }
+
+    private static void setInterruptedException(Object lcc, StandardException exception) {
+        InterruptStatusKernelSupport support = supportOrNull();
+        if (support != null) {
+            support.setInterruptedException(lcc, exception);
+        }
+    }
+
     /**
      * Constants used by code that retries file operations after seeing the
      * NIO file channel closed due to interrupts.
@@ -76,10 +118,9 @@ public class InterruptStatus {
      * also. Use lcc if available, else thread local variable.
      */
     public static void setInterrupted() {
-        LanguageConnectionContext lcc = null;
+        Object lcc = null;
         try {
-            lcc = (LanguageConnectionContext)getContextOrNull(
-                LanguageConnectionContext.CONTEXT_ID);
+            lcc = getContextOrNull(LANGUAGE_CONNECTION_CONTEXT_ID);
 
         } catch (ShutdownException e) {
             // Ignore. Can happen when: a) background thread (RawStoreDaemon)
@@ -94,8 +135,8 @@ public class InterruptStatus {
         StandardException e =
             StandardException.newException(SQLState.CONN_INTERRUPT);
 
-        if (lcc != null) {
-            lcc.setInterruptedException(e);
+        if (lcc != null && supportOrNull() != null) {
+            setInterruptedException(lcc, e);
 
         } else {
             exception.set(e);
@@ -106,9 +147,9 @@ public class InterruptStatus {
      * Use when lcc is dying to save info in thread local instead. Useful under
      * shutdown.
      */
-    public static void saveInfoFromLcc(LanguageConnectionContext lcc) {
+    public static void saveInfoFromLcc(Object lcc) {
         
-        StandardException e = lcc.getInterruptedException();
+        StandardException e = getInterruptedException(lcc);
 
         if (e != null) {
             exception.set(e);
@@ -194,11 +235,9 @@ public class InterruptStatus {
      */
     public static void restoreIntrFlagIfSeen() {
 
-        LanguageConnectionContext lcc = null;
+        Object lcc = null;
         try {
-            lcc =
-                (LanguageConnectionContext)getContextOrNull(
-                    LanguageConnectionContext.CONTEXT_ID);
+            lcc = getContextOrNull(LANGUAGE_CONNECTION_CONTEXT_ID);
         } catch (ShutdownException e) {
             // Ignore. DERBY-4911 Restoring interrupt flag is moot anyway if we
             // are closing down.
@@ -215,9 +254,9 @@ public class InterruptStatus {
                 Thread.currentThread().interrupt();
             }
 
-        } else if (lcc.getInterruptedException() != null) {
+        } else if (getInterruptedException(lcc) != null) {
 
-            lcc.setInterruptedException(null);
+            setInterruptedException(lcc, null);
 
             // Set thread's interrupt status flag back on before returning
             // control to user application
@@ -242,13 +281,12 @@ public class InterruptStatus {
      *
      * @param lcc the language connection context for this session
      */
-    public static void restoreIntrFlagIfSeen(LanguageConnectionContext lcc) {
+    public static void restoreIntrFlagIfSeen(Object lcc) {
 
         if (SanityManager.DEBUG) {
-            LanguageConnectionContext ctxLcc = null;
+            Object ctxLcc = null;
             try {
-                ctxLcc = (LanguageConnectionContext)
-                    getContextOrNull(LanguageConnectionContext.CONTEXT_ID);
+                ctxLcc = getContextOrNull(LANGUAGE_CONNECTION_CONTEXT_ID);
 
                 SanityManager.ASSERT(
                     lcc == ctxLcc,
@@ -259,9 +297,9 @@ public class InterruptStatus {
             }
         }
 
-        if (lcc.getInterruptedException() != null) {
+        if (getInterruptedException(lcc) != null) {
 
-            lcc.setInterruptedException(null);
+            setInterruptedException(lcc, null);
             // Set thread's interrupt status flag back on.
             Thread.currentThread().interrupt();
         }
@@ -284,17 +322,17 @@ public class InterruptStatus {
      * @throws StandardException (session level SQLState.CONN_INTERRUPT) if
      *                           interrupt seen
      */
-    public static void throwIf(LanguageConnectionContext lcc)
+    public static void throwIf(Object lcc)
             throws StandardException {
 
         if (Thread.currentThread().isInterrupted()) {
             setInterrupted();
         }
 
-        StandardException e = lcc.getInterruptedException();
+        StandardException e = getInterruptedException(lcc);
 
         if (e != null) {
-            lcc.setInterruptedException(null);
+            setInterruptedException(lcc, null);
             // Set thread's interrupt status flag back on:
             // see TransactionResourceImpl#wrapInSQLException
 
