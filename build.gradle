@@ -4175,6 +4175,7 @@ tasks.named('verifyLegacyDerbyStoreBoundary') {
 def delosdbB3aKernelContextRoot = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/context')
 def delosdbB3aEngineContextRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/context')
 def delosdbB3aKernelModuleInfo = file('delosdb-engine-kernel/src/main/java/module-info.java')
+def delosdbB3aCommonsModuleInfo = file('delosdb-commons/src/main/java/module-info.java')
 def delosdbB3aEngineModuleInfo = file('delosdb-engine/src/main/java/module-info.java')
 def delosdbB3aEngineMonitorFile = file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/monitor/Monitor.java')
 def delosdbB3aEngineSupportFile = file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/monitor/EngineContextKernelSupport.java')
@@ -4297,6 +4298,27 @@ tasks.register('verifyLegacyDerbyKernelContextExtraction') {
         }
         if (!delosdbB3aKernelModuleInfo.text.contains('exports org.apache.derby.iapi.services.context')) {
             throw new GradleException('B3a kernel module must export org.apache.derby.iapi.services.context')
+        }
+        if (!delosdbB3aKernelModuleInfo.text.contains('requires java.sql;')) {
+            throw new GradleException('B3a kernel module must read java.sql because ContextManager handles SQLException')
+        }
+        def commonsText = delosdbB3aCommonsModuleInfo.text
+        [
+                'org.apache.derby.shared.common.i18n',
+                'org.apache.derby.shared.common.info',
+                'org.apache.derby.shared.common.reference',
+                'org.apache.derby.shared.common.sanity',
+                'org.apache.derby.shared.common.stream'
+        ].each { exportedPackage ->
+            def exportIndex = commonsText.indexOf('exports ' + exportedPackage + ' to')
+            if (exportIndex < 0) {
+                throw new GradleException('B3a commons module must have a qualified export for ' + exportedPackage)
+            }
+            def exportEnd = commonsText.indexOf(';', exportIndex)
+            def exportBlock = exportEnd >= 0 ? commonsText.substring(exportIndex, exportEnd) : ''
+            if (!exportBlock.contains('io.github.ggeorg.delosdb.engine.kernel')) {
+                throw new GradleException('B3a commons module must export ' + exportedPackage + ' to io.github.ggeorg.delosdb.engine.kernel')
+            }
         }
         if (delosdbB3aEngineModuleInfo.text.contains('exports org.apache.derby.iapi.services.context')) {
             throw new GradleException('B3a engine module must no longer export org.apache.derby.iapi.services.context')

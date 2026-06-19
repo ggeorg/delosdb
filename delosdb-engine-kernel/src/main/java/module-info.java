@@ -5,8 +5,10 @@
  * <p>B1 intentionally moves no packages. Later B-steps will move whole kernel
  * packages here behind proof-gated overlays.</p>
  */
+@SuppressWarnings("module")
 module io.github.ggeorg.delosdb.engine.kernel {
     requires java.base;
+    requires java.sql;
     requires org.apache.derby.commons;
 
     exports org.apache.derby.io;
