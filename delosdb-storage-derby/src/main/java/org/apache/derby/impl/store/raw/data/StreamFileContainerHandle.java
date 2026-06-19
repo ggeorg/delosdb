@@ -34,7 +34,6 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import org.apache.derby.impl.store.raw.data.DropOnCommit;
 
-import org.apache.derby.catalog.UUID;
 
 import java.util.Properties;
 
@@ -58,7 +57,7 @@ final class StreamFileContainerHandle
 		Raw Store identifier
 		<BR> MT - Immutable
 	*/
-	private final UUID rawStoreId;
+	private final Object rawStoreId;
 
 	/**
 		Container identifier
@@ -100,7 +99,7 @@ final class StreamFileContainerHandle
 	** Constructor
 	*/
 	public StreamFileContainerHandle(
-    UUID            rawStoreId, 
+    Object            rawStoreId, 
     RawTransaction  xact, 
     ContainerKey    identity,
     boolean         hold) 
@@ -112,7 +111,7 @@ final class StreamFileContainerHandle
 	}
 
 	public StreamFileContainerHandle(
-    UUID                rawStoreId, 
+    Object                rawStoreId, 
     RawTransaction      xact, 
     StreamFileContainer container,
     boolean             hold) 

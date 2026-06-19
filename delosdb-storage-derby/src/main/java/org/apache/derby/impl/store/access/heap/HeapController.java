@@ -22,7 +22,6 @@
 package org.apache.derby.impl.store.access.heap;
 
 import java.util.List;
-import org.apache.derby.catalog.UUID;
 import org.apache.derby.shared.common.reference.SQLState;
 
 import org.apache.derby.shared.common.sanity.SanityManager;

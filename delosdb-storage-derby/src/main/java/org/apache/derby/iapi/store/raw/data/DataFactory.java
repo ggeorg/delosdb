@@ -41,7 +41,6 @@ import org.apache.derby.iapi.store.access.FileResource;
 import org.apache.derby.iapi.store.access.RowSource;
 import org.apache.derby.iapi.store.raw.log.LogInstant;
 import org.apache.derby.iapi.util.ByteArray;
-import org.apache.derby.catalog.UUID;
 
 import java.util.Properties;
 import java.io.File;
@@ -194,7 +193,7 @@ public interface DataFactory extends Corruptable {
 		This identifier is to be used as part of the lokcing key for objects
 		locked in the raw store by value (e.g. Containers).
 	*/
-	public UUID getIdentifier();
+	public Object getIdentifier();
 
 	/**
 		make data factory aware of which raw store factory it belongs to

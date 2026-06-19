@@ -37,7 +37,6 @@ import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.services.io.Formatable;
 import org.apache.derby.iapi.services.uuid.UUIDFactory;
-import org.apache.derby.catalog.UUID;
 
 import org.apache.derby.iapi.store.access.AccessFactoryGlobals;
 import org.apache.derby.iapi.store.access.TransactionController;
@@ -916,9 +915,9 @@ public class XactFactory implements TransactionFactory, ModuleControl, ModuleSup
 
 
 	/**
-		Make a new UUID for whomever that wants it
+		Make a new Object for whomever that wants it
 	*/
-	public UUID makeNewUUID()
+	public Object makeNewUUID()
 	{
 		return uuidFactory.createUUID();
 	}

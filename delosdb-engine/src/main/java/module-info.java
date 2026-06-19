@@ -186,8 +186,6 @@ module org.apache.derby.engine
     exports org.apache.derby.iapi.services.jmx to
         org.apache.derby.server;
 
-    exports org.apache.derby.iapi.services.uuid to
-        org.apache.derby.tests;
 
     exports org.apache.derby.iapi.sql.compile to
         org.apache.derby.tests;

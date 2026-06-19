@@ -44,7 +44,6 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import org.apache.derby.iapi.services.uuid.UUIDFactory;
 
-import org.apache.derby.catalog.UUID;
 
 // For JavaDoc references (i.e. @see)
 import org.apache.derby.iapi.store.access.conglomerate.MethodFactory;
@@ -63,7 +62,7 @@ public class ExternalSortFactory implements
 
 	private static final String IMPLEMENTATIONID = "sort external";
 	private static final String FORMATUUIDSTRING = "D2976090-D9F5-11d0-B54D-00A024BF8879";
-	private UUID formatUUID = null;
+	private Object formatUUID = null;
 
 	/**
 	 * Compatibility alias for inherited sort-buffer growth code.
@@ -111,7 +110,7 @@ public class ExternalSortFactory implements
 	/**
 	@see MethodFactory#supportsFormat
 	**/
-	public boolean supportsFormat(UUID formatid)
+	public boolean supportsFormat(Object formatid)
 	{
 		return formatid.equals(formatUUID);
 	}
@@ -119,7 +118,7 @@ public class ExternalSortFactory implements
 	/**
 	@see MethodFactory#primaryFormat
 	**/
-	public UUID primaryFormat()
+	public Object primaryFormat()
 	{
 		return formatUUID;
 	}
@@ -340,10 +339,10 @@ public class ExternalSortFactory implements
 	public void	boot(boolean create, Properties startParams)
 		throws StandardException
 	{
-		// Find the UUID factory.
+		// Find the Object factory.
 		UUIDFactory uuidFactory = ((UUIDFactory) getMonitor().getUUIDFactory());
 
-		// Make a UUID that identifies this sort's format.
+		// Make a Object that identifies this sort's format.
 		formatUUID = uuidFactory.recreateUUID(FORMATUUIDSTRING);
 
 		// See if there's a new maximum sort buffer size.

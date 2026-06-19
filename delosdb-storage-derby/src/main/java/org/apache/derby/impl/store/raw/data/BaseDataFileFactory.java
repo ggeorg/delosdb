@@ -70,7 +70,6 @@ import org.apache.derby.io.WritableStorageFactory;
 import org.apache.derby.io.StorageFile;
 import org.apache.derby.io.StorageRandomAccessFile;
 import org.apache.derby.iapi.services.uuid.UUIDFactory;
-import org.apache.derby.catalog.UUID;
 import org.apache.derby.shared.common.reference.Attribute;
 import org.apache.derby.shared.common.reference.Property;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -150,7 +149,7 @@ public class BaseDataFileFactory
                                                  // where lock file is not
                                                  // guaranteed.
 
-	private     UUID            identifier;      // unique id for locking 
+	private     Object            identifier;      // unique id for locking 
 
 	private final Object freezeSemaphore = new Object();
 
@@ -219,7 +218,7 @@ public class BaseDataFileFactory
     private ContainerKey    containerId;
     private boolean         stub;
     private StorageFile     actionFile;
-    private UUID            myUUID;
+    private Object            myUUID;
     private UUIDFactory     uuidFactory;
     private String          databaseDirectory;
 
@@ -1290,7 +1289,7 @@ public class BaseDataFileFactory
 
 		@see DataFactory#getIdentifier
 	*/
-	public UUID getIdentifier() 
+	public Object getIdentifier() 
     {
 		return identifier;
 	}
@@ -1857,7 +1856,7 @@ public class BaseDataFileFactory
 		database at this directory
 	*/
     private void getJBMSLockOnDB(
-        UUID        myUUID, 
+        Object        myUUID, 
         UUIDFactory uuidFactory, 
         String      databaseDirectory)
         throws StandardException
@@ -1931,7 +1930,7 @@ public class BaseDataFileFactory
                 catch (IOException ioe)
                 {
                     // The previous owner of the lock may have died before
-                    // finish writing its UUID down.
+                    // finish writing its Object down.
                     fileLockExisted = false;
                 }
 
@@ -1949,7 +1948,7 @@ public class BaseDataFileFactory
 
             // if file does not exists, we grab it immediately - there is a
             // possibility that some other JBMS got to it sooner than we do,
-            // check the UUID after we write it to make sure
+            // check the Object after we write it to make sure
             // SECURITY PERMISSION MP1
             // SECURITY PERMISSION OP5
             fileLockOnDB = fileLock.getRandomAccessFile( "rw");
@@ -1960,8 +1959,8 @@ public class BaseDataFileFactory
 
             fileLockOnDB.sync();
             fileLockOnDB.seek(0);
-            // check the UUID
-            UUID checkUUID = uuidFactory.recreateUUID(fileLockOnDB.readUTF());
+            // check the Object
+            Object checkUUID = uuidFactory.recreateUUID(fileLockOnDB.readUTF());
             if (!checkUUID.equals(myUUID))
             {
                 throw StandardException.newException(

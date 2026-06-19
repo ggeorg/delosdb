@@ -53,7 +53,6 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import org.apache.derby.iapi.services.uuid.UUIDFactory;
 
-import org.apache.derby.catalog.UUID;
 
 import java.util.Properties;
 
@@ -72,7 +71,7 @@ public class HeapConglomerateFactory implements ConglomerateFactory, ModuleContr
 
 	private static final String IMPLEMENTATIONID = "heap";
 	private static final String FORMATUUIDSTRING = "D2976090-D9F5-11d0-B54D-00A024BF8878";
-	private UUID formatUUID;
+	private Object formatUUID;
 
 	/*
 	 * Methods of MethodFactory (via ConglomerateFactory)
@@ -118,7 +117,7 @@ public class HeapConglomerateFactory implements ConglomerateFactory, ModuleContr
 
 	@see MethodFactory#supportsFormat
 	**/
-	public boolean supportsFormat(UUID formatid)
+	public boolean supportsFormat(Object formatid)
 	{
 		return formatid.equals(formatUUID);
 	}
@@ -129,7 +128,7 @@ public class HeapConglomerateFactory implements ConglomerateFactory, ModuleContr
 
 	@see MethodFactory#primaryFormat
 	**/
-	public UUID primaryFormat()
+	public Object primaryFormat()
 	{
 		return formatUUID;
 	}
@@ -349,11 +348,11 @@ public class HeapConglomerateFactory implements ConglomerateFactory, ModuleContr
 	public void	boot(boolean create, Properties startParams)
 		throws StandardException
 	{
-		// Find the UUID factory.
+		// Find the Object factory.
 		UUIDFactory uuidFactory = 
             ((UUIDFactory) getMonitor().getUUIDFactory());
 		
-		// Make a UUID that identifies this conglomerate's format.
+		// Make a Object that identifies this conglomerate's format.
 		formatUUID = uuidFactory.recreateUUID(FORMATUUIDSTRING);
 	}
 

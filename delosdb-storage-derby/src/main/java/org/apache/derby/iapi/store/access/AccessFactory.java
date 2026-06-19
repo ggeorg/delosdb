@@ -21,7 +21,6 @@
 
 package org.apache.derby.iapi.store.access;
 
-import org.apache.derby.catalog.UUID;
 
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.locks.LockFactory;
@@ -82,7 +81,7 @@ public interface AccessFactory
 	/**
 	 * Find an access method that implements a format type.
 	 **/
-	MethodFactory findMethodFactoryByFormat(UUID format);
+	MethodFactory findMethodFactoryByFormat(Object format);
 
     /**
      * Get the LockFactory to use with this store.

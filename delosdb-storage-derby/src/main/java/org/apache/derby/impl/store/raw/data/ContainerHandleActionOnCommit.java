@@ -34,7 +34,6 @@ import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 
 import org.apache.derby.iapi.services.locks.Lockable;
 
-import org.apache.derby.catalog.UUID;
 
 import org.apache.derby.shared.common.error.StandardException;
 

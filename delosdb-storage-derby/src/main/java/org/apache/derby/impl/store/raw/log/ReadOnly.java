@@ -48,7 +48,6 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.io.StorageFile;
 import org.apache.derby.iapi.store.access.DatabaseInstant;
-import org.apache.derby.catalog.UUID;
 
 import java.util.Properties;
 import java.io.File;
@@ -131,7 +130,7 @@ public class ReadOnly implements LogFactory, ModuleSupportable {
 	 * truncation point support (not supported)
 	 */
 
-	public LogInstant setTruncationLWM(UUID name,
+	public LogInstant setTruncationLWM(Object name,
 									   LogInstant instant,
 									   RawStoreFactory rawStoreFactory, 
 									  TransactionFactory transFactory)
@@ -148,7 +147,7 @@ public class ReadOnly implements LogFactory, ModuleSupportable {
 	/**
 	  @exception StandardException functionality not implemented
 	*/
-	public void setTruncationLWM(UUID name, LogInstant instant) throws StandardException
+	public void setTruncationLWM(Object name, LogInstant instant) throws StandardException
 	{
 		if (SanityManager.DEBUG)
 			SanityManager.THROWASSERT("functionality not implemented");
@@ -161,7 +160,7 @@ public class ReadOnly implements LogFactory, ModuleSupportable {
 	/**
 	  @exception StandardException functionality not implemented
 	*/
-	public void removeTruncationLWM(UUID name,
+	public void removeTruncationLWM(Object name,
 							 RawStoreFactory rawStoreFactory, 
 							 TransactionFactory transFactory)
 		 throws StandardException
@@ -177,7 +176,7 @@ public class ReadOnly implements LogFactory, ModuleSupportable {
 	/**
 	  @exception StandardException functionality not implemented
 	*/
-	public LogInstant getTruncationLWM(UUID name) throws StandardException
+	public LogInstant getTruncationLWM(Object name) throws StandardException
 	{
 		if (SanityManager.DEBUG)
 			SanityManager.THROWASSERT("functionality not implemented");
@@ -189,7 +188,7 @@ public class ReadOnly implements LogFactory, ModuleSupportable {
 	/**
 	  @exception StandardException functionality not implemented
 	*/
-	public void removeTruncationLWM(UUID name) throws StandardException
+	public void removeTruncationLWM(Object name) throws StandardException
 	{
 		if (SanityManager.DEBUG)
 			SanityManager.THROWASSERT("functionality not implemented");

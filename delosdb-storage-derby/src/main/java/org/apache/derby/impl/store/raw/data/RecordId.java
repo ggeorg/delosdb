@@ -31,7 +31,6 @@ import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.services.locks.VirtualLockTable;
 
-import org.apache.derby.catalog.UUID;
 import java.util.Map;
 
 /**

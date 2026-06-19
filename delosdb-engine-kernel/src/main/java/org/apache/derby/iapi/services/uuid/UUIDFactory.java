@@ -21,8 +21,6 @@
 
 package org.apache.derby.iapi.services.uuid;
 
-import org.apache.derby.catalog.UUID;
-
 /*
 	Internal comment (not for user documentation):
   Although this is an abstract interface, I believe that the
@@ -67,7 +65,7 @@ public interface UUIDFactory
 	  to be unique "across space and time".
 	  @return		The UUID.
 	**/
- 	public UUID createUUID();
+ 	public <T> T createUUID();
 
 	/**
 	  Recreate a UUID from a string produced by UUID.toString.
@@ -75,6 +73,6 @@ public interface UUIDFactory
       @param uuidstring       A UUID as a string
 	  @return		The UUID.
 	**/
-	public UUID recreateUUID(String uuidstring);
+	public <T> T recreateUUID(String uuidstring);
 }
 

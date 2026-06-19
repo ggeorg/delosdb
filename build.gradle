@@ -5470,3 +5470,136 @@ tasks.register('verifyLegacyDerbyKernelB5dUtilSplit') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5dUtilSplit'
 }
+
+// B5e — Move UUID factory API into the engine kernel without moving catalog.UUID
+//
+// The relocated store used org.apache.derby.catalog.UUID only as an opaque
+// identity/format token. Moving catalog.UUID alone would split the public
+// org.apache.derby.catalog package across modules, while moving the whole
+// catalog package would drag SQL dictionary and system procedure code into the
+// kernel. B5e keeps catalog.UUID in the engine public API, moves only the
+// UUIDFactory service API, and erases the store-facing UUID token type to Object.
+def delosdbB5eKernelSourceRoot = file('delosdb-engine-kernel/src/main/java')
+def delosdbB5eEngineSourceRoot = file('delosdb-engine/src/main/java')
+def delosdbB5eStoreSourceRoot = file('delosdb-storage-derby/src/main/java')
+def delosdbB5eReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5e-uuid-split.txt')
+
+def delosdbB5eRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5eRead = { File f -> f.isFile() ? f.text : '' }
+
+tasks.register('legacyDerbyStoreKernelB5eUuidSplitReport') {
+    group = 'verification'
+    description = 'B5e: reports the UUIDFactory split and catalog.UUID erasure from relocated store code.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5dUtilSplitReport'
+    outputs.file(delosdbB5eReportFile)
+    doLast {
+        def uuidFactory = new File(delosdbB5eKernelSourceRoot, 'org/apache/derby/iapi/services/uuid/UUIDFactory.java')
+        def storeUuidImports = fileTree(delosdbB5eStoreSourceRoot) {
+            include 'org/apache/derby/iapi/store/**/*.java'
+            include 'org/apache/derby/impl/store/**/*.java'
+        }.files.findAll { it.text.contains('org.apache.derby.catalog.UUID') }
+        def reportFile = delosdbB5eReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5e legacy Derby store UUID split
+=========================================
+
+Purpose
+-------
+Remove the UUID/catalog blocker without splitting the public
+org.apache.derby.catalog package across modules.
+
+Moved into delosdb-engine-kernel
+--------------------------------
+  - org.apache.derby.iapi.services.uuid.UUIDFactory
+
+Deliberately not moved
+----------------------
+  - org.apache.derby.catalog.UUID
+
+Reason
+------
+org.apache.derby.catalog.UUID is part of the public org.apache.derby.catalog
+package. Moving only UUID would create a split package between
+org.apache.derby.engine and io.github.ggeorg.delosdb.engine.kernel. Moving the
+whole catalog package would drag SQL dictionary/system-procedure code into the
+kernel. Therefore B5e keeps catalog.UUID in the engine and removes it from the
+relocated store boundary.
+
+Store-facing boundary adjustment
+--------------------------------
+Relocated store code now treats UUID/format identifiers as opaque Object tokens.
+Engine-side UUID implementations still provide the real org.apache.derby.catalog.UUID
+objects, and existing equality/toString behavior is preserved by the objects
+that flow through the store.
+
+UUIDFactory API shape
+---------------------
+${uuidFactory.isFile() ? uuidFactory.text.readLines().findAll { it.contains('createUUID') || it.contains('recreateUUID') }.collect { '  ' + it.trim() }.join('\n') : '  MISSING'}
+
+Relocated store imports of org.apache.derby.catalog.UUID
+-------------------------------------------------------
+${storeUuidImports.isEmpty() ? '  none' : storeUuidImports.collect { '  - ' + delosdbB5eRelPath(it) }.join('\n')}
+
+B6 readiness
+------------
+NOT YET. Remaining blockers still include iapi.types and iapi.security.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5eRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5eUuidSplit') {
+    group = 'verification'
+    description = 'B5e: verifies UUIDFactory is kernel-owned and relocated store no longer imports catalog.UUID.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5eUuidSplitReport'
+    doLast {
+        def kernelUuidFactory = new File(delosdbB5eKernelSourceRoot, 'org/apache/derby/iapi/services/uuid/UUIDFactory.java')
+        if (!kernelUuidFactory.isFile()) {
+            throw new GradleException('B5e expected kernel-owned UUIDFactory: ' + delosdbB5eRelPath(kernelUuidFactory))
+        }
+        def uuidFactoryText = delosdbB5eRead(kernelUuidFactory)
+        if (uuidFactoryText.contains('org.apache.derby.catalog.UUID')) {
+            throw new GradleException('B5e UUIDFactory must not import catalog.UUID')
+        }
+        if (!uuidFactoryText.contains('<T> T createUUID()') || !uuidFactoryText.contains('<T> T recreateUUID(String uuidstring)')) {
+            throw new GradleException('B5e UUIDFactory must expose generic object-returning UUID methods')
+        }
+
+        def staleEngineUuidDir = new File(delosdbB5eEngineSourceRoot, 'org/apache/derby/iapi/services/uuid')
+        if (staleEngineUuidDir.exists()) {
+            throw new GradleException('B5e stale engine UUID service package remains after cleanup: ' + delosdbB5eRelPath(staleEngineUuidDir))
+        }
+
+        def storeFiles = fileTree(delosdbB5eStoreSourceRoot) {
+            include 'org/apache/derby/iapi/store/**/*.java'
+            include 'org/apache/derby/impl/store/**/*.java'
+        }.files
+        def storeUuidImports = storeFiles.findAll { it.text.contains('org.apache.derby.catalog.UUID') }
+        if (!storeUuidImports.isEmpty()) {
+            throw new GradleException('B5e relocated store must not import catalog.UUID: ' + storeUuidImports.collect { delosdbB5eRelPath(it) }.join(', '))
+        }
+        def storeUuidTypes = storeFiles.findAll { (it.text =~ /\bUUID\b/).find() }
+        if (!storeUuidTypes.isEmpty()) {
+            throw new GradleException('B5e relocated store must not use UUID as a compile-time type: ' + storeUuidTypes.collect { delosdbB5eRelPath(it) }.join(', '))
+        }
+
+        def kernelModuleInfo = delosdbB5eRead(file('delosdb-engine-kernel/src/main/java/module-info.java'))
+        if (!kernelModuleInfo.contains('exports org.apache.derby.iapi.services.uuid;')) {
+            throw new GradleException('B5e kernel module-info must export org.apache.derby.iapi.services.uuid')
+        }
+        def engineModuleInfo = delosdbB5eRead(file('delosdb-engine/src/main/java/module-info.java'))
+        if (engineModuleInfo.contains('exports org.apache.derby.iapi.services.uuid')) {
+            throw new GradleException('B5e engine module-info still exports moved UUID service package')
+        }
+
+        def reportFile = delosdbB5eReportFile.get().asFile
+        if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
+            throw new GradleException('B5e report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5e UUIDFactory split into delosdb-engine-kernel')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5eUuidSplit'
+}

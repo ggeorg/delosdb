@@ -30,7 +30,6 @@ import org.apache.derby.iapi.services.monitor.ModuleFactory;
 import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
-import org.apache.derby.catalog.UUID;
 import org.apache.derby.iapi.services.uuid.UUIDFactory;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.access.AccessFactory;
@@ -73,7 +72,7 @@ public class B2IFactory implements ConglomerateFactory, ModuleControl
 
 	private static final String IMPLEMENTATIONID = "BTREE";
 	private static final String FORMATUUIDSTRING = "C6CEEEF0-DAD3-11d0-BB01-0060973F0942";
-	private UUID formatUUID;
+	private Object formatUUID;
 
 
 	/*
@@ -120,7 +119,7 @@ public class B2IFactory implements ConglomerateFactory, ModuleControl
 
 	@see org.apache.derby.iapi.store.access.conglomerate.MethodFactory#supportsFormat
 	**/
-	public boolean supportsFormat(UUID formatid)
+	public boolean supportsFormat(Object formatid)
 	{
 		return formatid.equals(formatUUID);
 	}
@@ -131,7 +130,7 @@ public class B2IFactory implements ConglomerateFactory, ModuleControl
 
 	@see org.apache.derby.iapi.store.access.conglomerate.MethodFactory#primaryFormat
 	**/
-	public UUID primaryFormat()
+	public Object primaryFormat()
 	{
 		return formatUUID;
 	}
@@ -358,11 +357,11 @@ public class B2IFactory implements ConglomerateFactory, ModuleControl
 	public void	boot(boolean create, Properties startParams)
 		throws StandardException
 	{
-		// Find the UUID factory.
+		// Find the Object factory.
 		UUIDFactory uuidFactory = 
             ((UUIDFactory) getMonitor().getUUIDFactory());
 
-		// Make a UUID that identifies this conglomerate's format.
+		// Make a Object that identifies this conglomerate's format.
 		formatUUID = uuidFactory.recreateUUID(FORMATUUIDSTRING);
 	}
 

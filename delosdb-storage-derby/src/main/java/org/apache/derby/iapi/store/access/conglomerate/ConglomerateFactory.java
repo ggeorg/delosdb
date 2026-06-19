@@ -23,7 +23,6 @@ package org.apache.derby.iapi.store.access.conglomerate;
 
 import java.util.Properties;
 
-import org.apache.derby.catalog.UUID;
 
 import org.apache.derby.shared.common.error.StandardException;
 

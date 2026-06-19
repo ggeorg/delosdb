@@ -44,7 +44,6 @@ import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 import org.apache.derby.iapi.store.raw.log.LogInstant;
 
 import org.apache.derby.iapi.util.ByteArray;
-import org.apache.derby.catalog.UUID;
 
 import java.util.Hashtable;
 import java.util.Properties;
@@ -131,7 +130,7 @@ public class BaseContainerHandle extends DerbyObservable
 	/**
 		Create an object that is only used for locking the container.
 	*/
-	public BaseContainerHandle(UUID rawStoreId, RawTransaction xact,
+	public BaseContainerHandle(Object rawStoreId, RawTransaction xact,
 		ContainerKey identity, LockingPolicy locking, int mode) 
     {
 		this.identity = identity;
@@ -145,7 +144,7 @@ public class BaseContainerHandle extends DerbyObservable
 		Create a container handle that is used to actually access the container.
 	*/
 	public BaseContainerHandle(
-    UUID                rawStoreId, 
+    Object                rawStoreId, 
     RawTransaction      xact,
     PageActions         actionsSet, 
     AllocationActions   allocActionsSet, 

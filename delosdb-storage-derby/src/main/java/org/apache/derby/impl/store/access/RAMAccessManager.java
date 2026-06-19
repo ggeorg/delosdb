@@ -63,7 +63,6 @@ import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.raw.log.LogFactory;
 import org.apache.derby.iapi.store.raw.data.DataFactory;
 
-import org.apache.derby.catalog.UUID;
 
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.reference.Attribute;
@@ -105,7 +104,7 @@ public abstract class RAMAccessManager
     /**
     Hash table on primary format.
     **/
-    private Map<UUID,MethodFactory> formathash;
+    private Map<Object,MethodFactory> formathash;
 
 	/**
 	Service properties.  These are supplied from ModuleControl.boot(),
@@ -169,7 +168,7 @@ public abstract class RAMAccessManager
         // Intialize the hash tables that hold the access methods that
         // this access manager knows about.
         implhash   = new HashMap<String,MethodFactory>();
-        formathash = new HashMap<UUID,MethodFactory>();
+        formathash = new HashMap<Object,MethodFactory>();
     }
 
     /**************************************************************************
@@ -619,7 +618,7 @@ public abstract class RAMAccessManager
     Find an access method that implements a format type.
     @see AccessFactory#findMethodFactoryByFormat
     **/
-    public MethodFactory findMethodFactoryByFormat(UUID format)
+    public MethodFactory findMethodFactoryByFormat(Object format)
     {
         MethodFactory factory;
         

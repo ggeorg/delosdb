@@ -22,7 +22,6 @@
 package org.apache.derby.iapi.store.access.conglomerate;
 
 import java.util.Properties;
-import org.apache.derby.catalog.UUID;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.monitor.ModuleSupportable;
 
@@ -64,7 +63,7 @@ public interface MethodFactory extends ModuleSupportable
 	Return whether this access method supports the format supplied in
 	the argument.
 	**/
-	boolean supportsFormat(UUID formatid);
+	boolean supportsFormat(Object formatid);
 
 	/**
 	Return the primary format that this access method supports.
@@ -72,6 +71,6 @@ public interface MethodFactory extends ModuleSupportable
 	is the usual one.  the access manager will put the primary format
 	in a hash table for fast access to the appropriate method.
 	**/
-	UUID primaryFormat();
+	Object primaryFormat();
 }
 
