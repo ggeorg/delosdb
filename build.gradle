@@ -3687,3 +3687,365 @@ tasks.register('legacyDerbyStoreModuleExtractionCloseout') {
             ':delosdb-tests:runDerbyLangSuite',
             'legacyDerbyStoreModuleExtractionCloseoutReport'
 }
+
+// -----------------------------------------------------------------------------
+// A0 — Legacy Derby store module reality gate
+// -----------------------------------------------------------------------------
+// A0 is intentionally read-only. It performs no file movement, no dependency
+// changes, and no provider facade work. It records the corrected post-DS12
+// reality: source ownership moved, but independent storage-module compilation
+// is not yet complete.
+
+def delosdbA0StoreApiRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store')
+def delosdbA0StoreImplRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+def delosdbA0EngineStoreApiRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
+def delosdbA0EngineStoreImplRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+def delosdbA0RelocatedStoreRoots = [delosdbA0StoreApiRoot, delosdbA0StoreImplRoot]
+
+def delosdbA0JavaSourcesUnder = { File root ->
+    if (!root.exists()) {
+        return [] as List<File>
+    }
+    return fileTree(root) { include '**/*.java' }.files.sort { it.path }
+}
+
+def delosdbA0RelocatedStoreSources = {
+    def result = []
+    delosdbA0RelocatedStoreRoots.each { root -> result.addAll(delosdbA0JavaSourcesUnder(root)) }
+    return result.unique { it.canonicalPath }.sort { it.path }
+}
+
+def delosdbA0RelPath = { File source ->
+    return rootDir.toPath().relativize(source.toPath()).toString().replace(File.separatorChar, '/' as char)
+}
+
+def delosdbA0Imports = { Collection<File> sources ->
+    def imports = []
+    sources.each { source ->
+        int lineNumber = 0
+        source.eachLine { line ->
+            lineNumber++
+            def matcher = line =~ /^\s*import\s+([^;]+);\s*$/
+            if (matcher.matches()) {
+                imports << [file: delosdbA0RelPath(source), line: lineNumber, importedType: matcher[0][1].trim()]
+            }
+        }
+    }
+    return imports
+}
+
+def delosdbA0ImportMatches = { Collection<File> sources, Collection<String> prefixes, Collection<String> exactTypes = [] ->
+    return delosdbA0Imports(sources).findAll { imported ->
+        exactTypes.contains(imported.importedType) || prefixes.any { prefix -> imported.importedType.startsWith(prefix) }
+    }
+}
+
+def delosdbA0GroupedImportSummary = { Collection<Map> imports ->
+    if (imports.isEmpty()) {
+        return '(none)'
+    }
+    return imports.groupBy { it.importedType }.collect { importedType, entries ->
+        def files = entries.collect { it.file }.unique().sort()
+        def locations = entries.collect { "  ${it.file}:${it.line}" }.sort().join('\n')
+        "${importedType}: ${entries.size()} import(s), ${files.size()} file(s)\n${locations}"
+    }.sort().join('\n')
+}
+
+def delosdbA0SimpleImportCounts = { Collection<Map> imports ->
+    if (imports.isEmpty()) {
+        return '(none)'
+    }
+    return imports.groupBy { it.importedType }.collect { importedType, entries ->
+        "${importedType}: ${entries.size()} import(s), ${entries.collect { it.file }.unique().size()} file(s)"
+    }.sort().join('\n')
+}
+
+def delosdbA0BuildFileContains = { String relativePath, String text ->
+    def buildFile = file(relativePath)
+    return buildFile.isFile() && buildFile.text.contains(text)
+}
+
+def delosdbA0EngineCompilesRelocatedStoreSources = {
+    return delosdbA0BuildFileContains('delosdb-engine/build.gradle', "fileTree(legacyDerbyStorageSourceRoot) { include 'org/apache/derby/iapi/store/**/*.java' }")
+            || delosdbA0BuildFileContains('delosdb-engine/build.gradle', 'include \'org/apache/derby/iapi/store/**/*.java\'')
+            || delosdbA0BuildFileContains('delosdb-engine/build.gradle', "include 'org/apache/derby/iapi/store/**/*.java'")
+            || delosdbA0BuildFileContains('delosdb-engine/build.gradle', "include 'org/apache/derby/impl/store/**/*.java'")
+}
+
+def delosdbA0StorageDerbyExcludesRealStoreSources = {
+    return delosdbA0BuildFileContains('delosdb-storage-derby/build.gradle', "exclude 'org/apache/derby/iapi/store/**/*.java'")
+            || delosdbA0BuildFileContains('delosdb-storage-derby/build.gradle', "exclude 'org/apache/derby/impl/store/**/*.java'")
+}
+
+def delosdbA0FacadeClassPresent = { String simpleName ->
+    def candidates = []
+    ['delosdb-spi/src/main/java', 'delosdb-engine/src/main/java', 'delosdb-storage-mvcc/src/main/java'].each { root ->
+        def sourceRoot = file(root)
+        if (sourceRoot.exists()) {
+            candidates.addAll(fileTree(sourceRoot) { include '**/*.java' }.files)
+        }
+    }
+    return candidates.any { source ->
+        source.name == "${simpleName}.java" || source.text.contains("interface ${simpleName}") || source.text.contains("class ${simpleName}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreSourceRelocation') {
+    group = 'verification'
+    description = 'A0: verifies inherited Derby store source ownership lives under delosdb-storage-derby and not delosdb-engine.'
+    doLast {
+        def apiFiles = delosdbA0JavaSourcesUnder(delosdbA0StoreApiRoot)
+        def implFiles = delosdbA0JavaSourcesUnder(delosdbA0StoreImplRoot)
+        if (apiFiles.isEmpty()) {
+            throw new GradleException('A0 source relocation failed: missing relocated org.apache.derby.iapi.store sources under delosdb-storage-derby')
+        }
+        if (implFiles.isEmpty()) {
+            throw new GradleException('A0 source relocation failed: missing relocated org.apache.derby.impl.store sources under delosdb-storage-derby')
+        }
+        def staleRoots = [delosdbA0EngineStoreApiRoot, delosdbA0EngineStoreImplRoot].findAll { it.exists() }
+        if (!staleRoots.isEmpty()) {
+            throw new GradleException('A0 source relocation failed: stale engine-side inherited store roots remain:\n'
+                    + staleRoots.collect { delosdbA0RelPath(it) }.join('\n'))
+        }
+        logger.lifecycle('A0 source relocation: PASS — relocated store tree has ' + apiFiles.size()
+                + ' iapi.store source files and ' + implFiles.size() + ' impl.store source files')
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreNoUpwardSqlImports') {
+    group = 'verification'
+    description = 'A0: verifies relocated inherited Derby store sources do not import SQL/executor or MVCC internals.'
+    dependsOn 'verifyLegacyDerbyStoreSourceRelocation'
+    doLast {
+        def storeSources = delosdbA0RelocatedStoreSources()
+        def matches = delosdbA0ImportMatches(storeSources,
+                ['org.apache.derby.impl.sql.execute.', 'io.github.ggeorg.delosdb.storage.mvcc.'],
+                ['org.apache.derby.iapi.sql.dictionary.DataDictionary',
+                 'org.apache.derby.iapi.sql.conn.LanguageConnectionContext',
+                 'org.apache.derby.iapi.sql.conn.StatementContext'])
+        if (!matches.isEmpty()) {
+            throw new GradleException('A0 relocated Derby store has forbidden upward SQL/MVCC imports:\n'
+                    + delosdbA0GroupedImportSummary(matches))
+        }
+        logger.lifecycle('A0 DS3-DS5 decoupling after relocation: PASS — no forbidden SQL/executor/MVCC imports in relocated store sources')
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreIndependentCompilationReadiness') {
+    group = 'verification'
+    description = 'A0: reports whether delosdb-storage-derby is already the independent compiler owner of the inherited Derby store.'
+    dependsOn 'verifyLegacyDerbyStoreSourceRelocation'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-independent-compilation-readiness-a0.txt'))
+    doLast {
+        def engineCompilesStore = delosdbA0EngineCompilesRelocatedStoreSources()
+        def storageExcludesStore = delosdbA0StorageDerbyExcludesRealStoreSources()
+        def independent = !engineCompilesStore && !storageExcludesStore
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-independent-compilation-readiness-a0.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB A0 legacy Derby store independent compilation readiness
+=================================================================
+
+independent Derby store compilation:
+  ${independent ? 'READY/ALREADY CUT OVER' : 'NOT YET'}
+
+delosdb-engine still compiles relocated store sources directly:
+  ${engineCompilesStore ? 'YES' : 'NO'}
+
+delosdb-storage-derby still excludes the real store packages:
+  ${storageExcludesStore ? 'YES' : 'NO'}
+
+Expected before Phase B6:
+  delosdb-engine: YES, still compiles relocated store sources directly
+  delosdb-storage-derby: YES, still excludes real store packages
+
+Required for Phase B6/B8 closeout:
+  delosdb-storage-derby compiles org.apache.derby.iapi.store.*
+  delosdb-storage-derby compiles org.apache.derby.impl.store.*
+  delosdb-engine depends on delosdb-storage-derby compiled output
+  delosdb-engine no longer compiles relocated store sources directly
+"""
+        logger.lifecycle('A0 independent Derby store compilation: ' + (independent ? 'READY/ALREADY CUT OVER' : 'NOT YET'))
+        logger.lifecycle('Wrote ' + delosdbA0RelPath(reportFile))
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelDependencyReport') {
+    group = 'verification'
+    description = 'A0: writes exact imported-class dependency blockers for compiling the relocated Derby store independently.'
+    dependsOn 'verifyLegacyDerbyStoreSourceRelocation'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-dependencies-a0.txt'))
+    doLast {
+        def storeSources = delosdbA0RelocatedStoreSources()
+        def imports = delosdbA0Imports(storeSources)
+        def kernelPrefixes = [
+                'org.apache.derby.io.',
+                'org.apache.derby.iapi.services.',
+                'org.apache.derby.shared.common.',
+                'org.apache.derby.catalog.',
+                'org.apache.derby.iapi.util.'
+        ]
+        def kernelImports = imports.findAll { imported -> kernelPrefixes.any { prefix -> imported.importedType.startsWith(prefix) } }
+        def iapiTypesImports = imports.findAll { it.importedType.startsWith('org.apache.derby.iapi.types.') }
+        def allOtherDerbyImports = imports.findAll { imported ->
+            imported.importedType.startsWith('org.apache.derby.')
+                    && !kernelPrefixes.any { prefix -> imported.importedType.startsWith(prefix) }
+                    && !imported.importedType.startsWith('org.apache.derby.iapi.types.')
+                    && !imported.importedType.startsWith('org.apache.derby.iapi.store.')
+                    && !imported.importedType.startsWith('org.apache.derby.impl.store.')
+        }
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-dependencies-a0.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB A0 legacy Derby store kernel dependency report
+=======================================================
+
+Relocated source tree scanned
+-----------------------------
+${delosdbA0RelPath(delosdbA0StoreApiRoot)}
+${delosdbA0RelPath(delosdbA0StoreImplRoot)}
+
+Relocated store source files: ${storeSources.size()}
+
+Kernel/service/shared imports by exact imported class
+----------------------------------------------------
+${delosdbA0SimpleImportCounts(kernelImports)}
+
+iapi.types usage by exact imported class
+----------------------------------------
+${delosdbA0SimpleImportCounts(iapiTypesImports)}
+
+Other non-store Derby imports by exact imported class
+----------------------------------------------------
+${delosdbA0SimpleImportCounts(allOtherDerbyImports)}
+
+Detailed kernel/service/shared import locations
+-----------------------------------------------
+${delosdbA0GroupedImportSummary(kernelImports)}
+
+Detailed iapi.types import locations
+------------------------------------
+${delosdbA0GroupedImportSummary(iapiTypesImports)}
+"""
+        logger.lifecycle('A0 kernel/service dependency imports: ' + kernelImports.groupBy { it.importedType }.size() + ' exact imported class(es)')
+        logger.lifecycle('A0 iapi.types imports: ' + iapiTypesImports.groupBy { it.importedType }.size() + ' exact imported class(es)')
+        logger.lifecycle('Wrote ' + delosdbA0RelPath(reportFile))
+    }
+}
+
+tasks.register('providerSpiRealityReport') {
+    group = 'verification'
+    description = 'A0: writes the current heap/MVCC storage-provider SPI reality before any common facade work.'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/provider-spi-reality-a0.txt'))
+    doLast {
+        def storageProvider = file('delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/storage/StorageProvider.java')
+        def versionedStorageProvider = file('delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/storage/versioned/VersionedStorageProvider.java')
+        def heapProvider = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/LegacyDerbyHeapStorageProvider.java')
+        def mvccProvider = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java')
+        [storageProvider, versionedStorageProvider, heapProvider, mvccProvider].each { required ->
+            if (!required.isFile()) {
+                throw new GradleException('A0 provider SPI reality check missing expected source file: ' + delosdbA0RelPath(required))
+            }
+        }
+        if (!heapProvider.text.contains('implements StorageProvider')) {
+            throw new GradleException('A0 provider SPI reality changed: LegacyDerbyHeapStorageProvider no longer implements StorageProvider')
+        }
+        if (!mvccProvider.text.contains('implements VersionedStorageProvider')) {
+            throw new GradleException('A0 provider SPI reality changed: DelosMvccStorageProvider no longer implements VersionedStorageProvider')
+        }
+        def facadeTypes = ['DelosStorageEngine', 'DelosTableAccess', 'DelosScan', 'DelosMutation']
+        def presentFacadeTypes = facadeTypes.findAll { delosdbA0FacadeClassPresent(it) }
+        def commonFacadePresent = !presentFacadeTypes.isEmpty()
+        def reportFile = layout.buildDirectory.file('reports/delosdb/provider-spi-reality-a0.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB A0 provider SPI reality report
+======================================
+
+StorageProvider:
+  metadata-only
+  source: ${delosdbA0RelPath(storageProvider)}
+  built-in heap implementation: ${delosdbA0RelPath(heapProvider)}
+
+VersionedStorageProvider:
+  MVCC-only operational SPI
+  source: ${delosdbA0RelPath(versionedStorageProvider)}
+  MVCC implementation: ${delosdbA0RelPath(mvccProvider)}
+
+Common operational facade:
+  ${commonFacadePresent ? 'PRESENT: ' + presentFacadeTypes.join(', ') : 'not present'}
+
+C-phase consolidation reminder:
+  StorageProvider remains metadata-only legacy SPI until the facade is introduced.
+  VersionedStorageProvider remains MVCC-internal operational SPI until adapted.
+  DelosStorageEngine must become the common engine-facing operational facade, not a third permanent SPI family.
+"""
+        logger.lifecycle('A0 common heap/MVCC operational provider facade: ' + (commonFacadePresent ? 'PRESENT' : 'NOT PRESENT'))
+        logger.lifecycle('Wrote ' + delosdbA0RelPath(reportFile))
+    }
+}
+
+tasks.register('legacyDerbyStoreModuleRealityGate') {
+    group = 'verification'
+    description = 'A0: runs the truth gate for legacy Derby store source ownership, compilation blockers, and provider SPI reality.'
+    dependsOn 'verifyLegacyDerbyStoreSourceRelocation',
+            'verifyLegacyDerbyStoreNoUpwardSqlImports',
+            'verifyLegacyDerbyStoreIndependentCompilationReadiness',
+            'legacyDerbyStoreKernelDependencyReport',
+            'providerSpiRealityReport'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-module-reality-a0.txt'))
+    doLast {
+        def apiFiles = delosdbA0JavaSourcesUnder(delosdbA0StoreApiRoot)
+        def implFiles = delosdbA0JavaSourcesUnder(delosdbA0StoreImplRoot)
+        def engineCompilesStore = delosdbA0EngineCompilesRelocatedStoreSources()
+        def storageExcludesStore = delosdbA0StorageDerbyExcludesRealStoreSources()
+        def independent = !engineCompilesStore && !storageExcludesStore
+        def commonFacadePresent = ['DelosStorageEngine', 'DelosTableAccess', 'DelosScan', 'DelosMutation'].any { delosdbA0FacadeClassPresent(it) }
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-module-reality-a0.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB A0 legacy Derby store module reality gate
+=================================================
+
+source relocation:
+  PASS
+  relocated org.apache.derby.iapi.store.* files: ${apiFiles.size()}
+  relocated org.apache.derby.impl.store.* files: ${implFiles.size()}
+
+DS3-DS5 decoupling after relocation:
+  PASS
+  forbidden SQL/executor/MVCC imports from relocated store sources: none
+
+independent Derby store compilation:
+  ${independent ? 'READY/ALREADY CUT OVER' : 'NOT YET'}
+  delosdb-engine still compiles relocated store sources directly: ${engineCompilesStore ? 'YES' : 'NO'}
+  delosdb-storage-derby still excludes the real store packages: ${storageExcludesStore ? 'YES' : 'NO'}
+
+common heap/MVCC operational provider facade:
+  ${commonFacadePresent ? 'PRESENT' : 'NOT PRESENT'}
+
+Provider SPI reality:
+  StorageProvider:
+    metadata-only
+
+  VersionedStorageProvider:
+    MVCC-only operational SPI
+
+  Common operational facade:
+    not present
+
+Generated detail reports:
+  build/reports/delosdb/legacy-store-independent-compilation-readiness-a0.txt
+  build/reports/delosdb/legacy-store-kernel-dependencies-a0.txt
+  build/reports/delosdb/provider-spi-reality-a0.txt
+
+A0 scope guard:
+  zero file movement
+  zero dependency changes
+  zero facade code
+  no docs-only correction
+"""
+        logger.lifecycle('A0 reality gate complete')
+        logger.lifecycle('source relocation: PASS')
+        logger.lifecycle('DS3-DS5 decoupling after relocation: PASS')
+        logger.lifecycle('independent Derby store compilation: ' + (independent ? 'READY/ALREADY CUT OVER' : 'NOT YET'))
+        logger.lifecycle('common heap/MVCC operational provider facade: ' + (commonFacadePresent ? 'PRESENT' : 'NOT PRESENT'))
+        logger.lifecycle('Wrote ' + delosdbA0RelPath(reportFile))
+    }
+}
