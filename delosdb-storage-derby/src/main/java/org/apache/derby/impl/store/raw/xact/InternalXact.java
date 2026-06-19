@@ -33,7 +33,7 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
 
-import org.apache.derby.iapi.types.DataValueFactory;
+import org.apache.derby.iapi.store.types.StoreDataValueFactory;
 
 import java.io.ObjectInput;
 
@@ -53,7 +53,7 @@ public class InternalXact extends Xact
     XactFactory         xactFactory, 
     LogFactory          logFactory, 
     DataFactory         dataFactory,
-    DataValueFactory    dataValueFactory) 
+    StoreDataValueFactory    dataValueFactory) 
     {
 		super(
             xactFactory, null, logFactory, dataFactory, dataValueFactory, 

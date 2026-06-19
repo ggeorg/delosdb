@@ -52,7 +52,7 @@ import org.apache.derby.iapi.store.raw.Transaction;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
-import org.apache.derby.iapi.types.StringDataValue;
+import org.apache.derby.iapi.store.types.StoreStringDataValue;
 
 import org.apache.derby.impl.store.access.btree.BTree;
 import org.apache.derby.impl.store.access.btree.BTreeLockingPolicy;
@@ -1159,7 +1159,7 @@ public class B2I extends BTree
         // and then reset as necessary.  For version ACCESS_B2I_V3_ID,
         // this is the default and no resetting is necessary.
         for (int i = 0; i < format_ids.length; i++)
-            collation_ids[i] = StringDataValue.COLLATION_TYPE_UCS_BASIC;
+            collation_ids[i] = StoreStringDataValue.COLLATION_TYPE_UCS_BASIC;
 
         // initialize the unique with null setting to false, to be reset
         // below when read from disk.  For version ACCESS_B2I_V3_ID and

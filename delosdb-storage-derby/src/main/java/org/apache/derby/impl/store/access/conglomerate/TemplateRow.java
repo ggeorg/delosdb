@@ -32,9 +32,9 @@ import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.raw.Transaction;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.DataValueFactory;
+import org.apache.derby.iapi.store.types.StoreDataValueFactory;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
-import org.apache.derby.iapi.types.SQLLongint;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -79,7 +79,7 @@ public final class TemplateRow
         int         num_cols = 
             (column_list == null ? format_ids.length : column_list.size());
 
-        DataValueFactory dvf = rawtran.getDataValueFactory();
+        StoreDataValueFactory dvf = rawtran.getDataValueFactory();
 
         for (int i = 0; i < num_cols; i++)
         {
@@ -93,7 +93,7 @@ public final class TemplateRow
                 // yes - create the column 
 
                 // get empty instance of object identified by the format id.
-                ret_row[i] = dvf.getNull(format_ids[i], collation_ids[i]);
+                ret_row[i] = (DataValueDescriptor) dvf.getNull(format_ids[i], collation_ids[i]);
 
                 if (SanityManager.DEBUG)
                 {
@@ -102,7 +102,7 @@ public final class TemplateRow
                     if (o == null)
                     {
                         SanityManager.THROWASSERT(
-                        "obj from DataValueFactory.newNull(" +
+                        "obj from StoreDataValueFactory.newNull(" +
                         format_ids[i] + ", " + collation_ids[i] + ") null." +
                         ";src column position = "  + i              +
                         ";dest column position = " + i  + 
@@ -132,7 +132,7 @@ public final class TemplateRow
 
         for (int i = 0; i < columns.length; i++)
         {
-            columns[i] = new SQLLongint(Long.MIN_VALUE);
+            columns[i] = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(Long.MIN_VALUE);
         }
 
 		return columns;
@@ -254,7 +254,7 @@ public final class TemplateRow
 	 * @exception  StandardException  Standard exception policy.
      **/
 	static public boolean checkColumnTypes(
-    DataValueFactory        dvf,
+    StoreDataValueFactory        dvf,
     int[]                   format_ids, 
     int[]                   collation_ids,
     DataValueDescriptor[]   row)

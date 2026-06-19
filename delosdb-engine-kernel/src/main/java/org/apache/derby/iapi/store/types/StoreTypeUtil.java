@@ -31,6 +31,26 @@ public final class StoreTypeUtil
     {
     }
 
+    public static StoreDataValue newSQLInteger()
+    {
+        return StoreTypeSupportRegistry.support().newSQLInteger();
+    }
+
+    public static StoreDataValue newSQLLongint(long value)
+    {
+        return StoreTypeSupportRegistry.support().newSQLLongint(value);
+    }
+
+    public static StoreDataValue newUserType()
+    {
+        return StoreTypeSupportRegistry.support().newUserType();
+    }
+
+    public static StoreDataValue newUserType(Object value)
+    {
+        return StoreTypeSupportRegistry.support().newUserType(value);
+    }
+
     public static StoreDataValue cloneHolder(Object value)
     {
         return StoreTypeSupportRegistry.support().cloneHolder(value);

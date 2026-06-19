@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.DataType;
-import org.apache.derby.iapi.types.StringDataValue;
+import org.apache.derby.iapi.store.types.StoreStringDataValue;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -220,7 +220,7 @@ public abstract class GenericConglomerate
      */
     public static boolean hasCollatedColumns(int[] collationIds) {
         for (int i=0; i < collationIds.length; i++) {
-            if (collationIds[i] != StringDataValue.COLLATION_TYPE_UCS_BASIC) {
+            if (collationIds[i] != StoreStringDataValue.COLLATION_TYPE_UCS_BASIC) {
                 return true;
             }
         }

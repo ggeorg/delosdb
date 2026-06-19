@@ -36,7 +36,7 @@ import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.StringDataValue;
+import org.apache.derby.iapi.store.types.StoreStringDataValue;
 
 import java.io.IOException; 
 import java.io.ObjectInput;
@@ -209,7 +209,7 @@ public final class ConglomerateUtil
      * Given an array of columnOrderings, return an array of collation ids.
      * <p>
      * If input array is null, produce a default collation_id array of all
-     * StringDataValue.COLLATION_TYPE_UCS_BASIC values.
+     * StoreStringDataValue.COLLATION_TYPE_UCS_BASIC values.
      *
      * @return An array of collation id's describing the input array of objects.
      **/
@@ -236,7 +236,7 @@ public final class ConglomerateUtil
         {
             for (int i = 0; i < collation_ids.length; i++)
             {
-                collation_ids[i] = StringDataValue.COLLATION_TYPE_UCS_BASIC;
+                collation_ids[i] = StoreStringDataValue.COLLATION_TYPE_UCS_BASIC;
             }
         }
 
@@ -247,7 +247,7 @@ public final class ConglomerateUtil
      * Write array of collation id's as a sparse array.
      * <p>
      * The format only writes out those array entries which are not 
-     * StringDataValue.COLLATION_TYPE_UCS_BASIC.  The sparse array
+     * StoreStringDataValue.COLLATION_TYPE_UCS_BASIC.  The sparse array
      * first writes the number of entries as a compressed int.  And
      * then for each non-COLLATION_TYPE_UCS_BASIC, it writes out a
      * pair of compressed ints:
@@ -269,7 +269,7 @@ public final class ConglomerateUtil
         for (int i = 0; i < collation_id_array.length; i++)
         {
             if (collation_id_array[i] != 
-                    StringDataValue.COLLATION_TYPE_UCS_BASIC)
+                    StoreStringDataValue.COLLATION_TYPE_UCS_BASIC)
             {
                 non_collate_val_count++;
             }
@@ -281,7 +281,7 @@ public final class ConglomerateUtil
         for (int i = 0; i < collation_id_array.length; i++)
         {
             if (collation_id_array[i] != 
-                    StringDataValue.COLLATION_TYPE_UCS_BASIC)
+                    StoreStringDataValue.COLLATION_TYPE_UCS_BASIC)
             {
                 // write array index as compressed number
                 CompressedNumber.writeInt(out, i);

@@ -21,5 +21,8 @@
 package org.apache.derby.iapi.store.types;
 
 /** SQL-neutral string-value marker for store-facing APIs. */
-public interface StoreStringDataValue extends StoreDataValue {
+public interface StoreStringDataValue extends StoreDataValue
+{
+    /** Store-facing UCS_BASIC collation marker used by raw/access metadata. */
+    int COLLATION_TYPE_UCS_BASIC = 0;
 }

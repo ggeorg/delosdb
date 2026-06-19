@@ -25,7 +25,6 @@ import org.apache.derby.shared.common.reference.Attribute;
 import org.apache.derby.shared.common.reference.Property;
 import org.apache.derby.shared.common.reference.SQLState;
 
-import org.apache.derby.iapi.types.UserType;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.services.io.FormatableHashtable; 
 import org.apache.derby.iapi.services.locks.CompatibilitySpace;
@@ -48,6 +47,7 @@ import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.services.property.PropertyFactory;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.ScanController;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.types.DataValueDescriptor;
@@ -176,7 +176,7 @@ class PropertyConglomerate
 		DataValueDescriptor[] template = new DataValueDescriptor[2];
 
 		template[0] = new UTF(key);
-		template[1] = new UserType(value);
+		template[1] = (DataValueDescriptor) StoreTypeUtil.newUserType(value);
 
         return(template);
     }
@@ -189,7 +189,7 @@ class PropertyConglomerate
 		DataValueDescriptor[] template = new DataValueDescriptor[2];
 
 		template[0] = new UTF();
-		template[1] = new UserType();
+		template[1] = (DataValueDescriptor) StoreTypeUtil.newUserType();
 
         return(template);
     }
@@ -308,7 +308,7 @@ class PropertyConglomerate
             {
 				// a value already exists, just replace the second columm
 
-				row[1] = new UserType(value);
+				row[1] = (DataValueDescriptor) StoreTypeUtil.newUserType(value);
 
 				scan.replace(row, (FormatableBitSet) null);
 			}
@@ -549,7 +549,7 @@ class PropertyConglomerate
 
 		if (!isThere) return null;
 
-		return (Serializable) (((UserType) row[1]).getObject());
+		return (Serializable) (StoreTypeUtil.getObject(row[1]));
 	}
 
 	private Serializable getCachedProperty(TransactionController tc,
@@ -718,8 +718,8 @@ class PropertyConglomerate
 
 		while (scan.fetchNext(row)) {
 
-			Object key = ((UserType) row[0]).getObject();
-			Object value = ((UserType) row[1]).getObject();
+			Object key = StoreTypeUtil.getObject(row[0]);
+			Object value = StoreTypeUtil.getObject(row[1]);
 			if (SanityManager.DEBUG) {
                 if (!(key instanceof String))
                     SanityManager.THROWASSERT(

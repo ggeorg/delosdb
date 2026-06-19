@@ -28,11 +28,38 @@ import org.apache.derby.iapi.store.types.StoreTypeSupport;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.LocatedRow;
 import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.types.UserType;
+import org.apache.derby.iapi.types.SQLLongint;
+import org.apache.derby.iapi.types.SQLInteger;
 import org.apache.derby.shared.common.error.StandardException;
 
 /** Engine-side bridge for inherited Derby SQL value operations. */
 public final class EngineStoreTypeSupport implements StoreTypeSupport
 {
+    @Override
+    public StoreDataValue newSQLInteger()
+    {
+        return new SQLInteger();
+    }
+
+    @Override
+    public StoreDataValue newSQLLongint(long value)
+    {
+        return new SQLLongint(value);
+    }
+
+    @Override
+    public StoreDataValue newUserType()
+    {
+        return new UserType();
+    }
+
+    @Override
+    public StoreDataValue newUserType(Object value)
+    {
+        return new UserType(value);
+    }
+
     @Override
     public StoreDataValue cloneHolder(Object value)
     {

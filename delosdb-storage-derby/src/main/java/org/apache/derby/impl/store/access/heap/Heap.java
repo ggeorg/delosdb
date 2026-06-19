@@ -64,7 +64,7 @@ import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.StringDataValue;
+import org.apache.derby.iapi.store.types.StoreStringDataValue;
 
 import org.apache.derby.iapi.services.cache.ClassSize;
 
@@ -191,7 +191,7 @@ public class Heap
     protected int[]   collation_ids;
     /**
      * Tells if there is at least one column in the conglomerate whose collation
-     * isn't StringDataValue.COLLATION_TYPE_UCS_BASIC.
+     * isn't StoreStringDataValue.COLLATION_TYPE_UCS_BASIC.
      */
     private boolean hasCollatedTypes;
 
@@ -1318,7 +1318,7 @@ public class Heap
         // and then reset as necessary.  For version ACCESS_HEAP_V2_ID,
         // this is the default and no resetting is necessary.
         for (int i = 0; i < format_ids.length; i++)
-            collation_ids[i] = StringDataValue.COLLATION_TYPE_UCS_BASIC;
+            collation_ids[i] = StoreStringDataValue.COLLATION_TYPE_UCS_BASIC;
 
 		if (conglom_format_id == StoredFormatIds.ACCESS_HEAP_V3_ID)
         {

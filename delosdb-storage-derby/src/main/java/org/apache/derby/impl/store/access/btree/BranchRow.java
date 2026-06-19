@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.SQLLongint;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 /**
  * Implements row which is stored in the branch pages of a btree.  A non-suffix
@@ -60,7 +60,7 @@ public class BranchRow
      * A reference to this object will be placed in the last slot of branchrow,
      * and this class expects that no-one will replace that reference.
      */
-    // private SQLLongint      child_page = null;
+    // private child page holder = null;
 
     /**
      * The array of object to be used as the row.
@@ -84,15 +84,15 @@ public class BranchRow
     BTree               btree)
         throws StandardException
 	{
-        SQLLongint child_page  = 
-            new SQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
+        DataValueDescriptor child_page  = 
+            (DataValueDescriptor) StoreTypeUtil.newSQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
 
         branchrow   = btree.createBranchTemplate(rawtran, child_page);
 
         if (SanityManager.DEBUG)
         {
             SanityManager.ASSERT(
-                child_page == ((SQLLongint) branchrow[branchrow.length - 1]));
+                child_page == branchrow[branchrow.length - 1]);
         }
 	}
 
@@ -105,17 +105,16 @@ public class BranchRow
      *
 	 * @return The child page object.
      **/
-    private SQLLongint getChildPage()
+    private DataValueDescriptor getChildPage()
     {
         // last column of branch row should be the child page pointer.
         if (SanityManager.DEBUG)
         {
             SanityManager.ASSERT(branchrow != null);
-            SanityManager.ASSERT(
-                branchrow[branchrow.length - 1] instanceof SQLLongint);
+            SanityManager.ASSERT(branchrow[branchrow.length - 1] != null);
         }
 
-        return((SQLLongint) branchrow[branchrow.length - 1]);
+        return(branchrow[branchrow.length - 1]);
     }
 
     /*
@@ -171,7 +170,7 @@ public class BranchRow
          * last column in the new branch row.
          */
         newbranch.branchrow[newbranch.branchrow.length - 1] = 
-            new SQLLongint(childpageno);
+            (DataValueDescriptor) StoreTypeUtil.newSQLLongint(childpageno);
 
         return(newbranch);
     }
@@ -209,7 +208,7 @@ public class BranchRow
          * last column in the new branch row.
          */
         newbranch.branchrow[newbranch.branchrow.length - 1] = 
-            new SQLLongint(childpageno);
+            (DataValueDescriptor) StoreTypeUtil.newSQLLongint(childpageno);
 
         return(newbranch);
     }

@@ -6761,3 +6761,252 @@ tasks.register('verifyLegacyDerbyKernelB5lLocatedRowBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5lLocatedRowBridge'
 }
+
+// B5m — Larger store type bridge cleanup batch before real store compilation
+// ------------------------------------------------------------------------
+// B5l proved the LocatedRow bridge. B5m takes a wider but still compile-safe
+// batch: factory boundary, collation constants, and simple engine-owned value
+// constructors now go through the store-facing type bridge.
+
+def delosdbB5mReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5m-factory-collation-bridge.txt')
+def delosdbB5mBaselineImportCount = 134
+
+def delosdbB5mKernelTypeRoot = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types')
+def delosdbB5mStoreDataValueFactory = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreDataValueFactory.java')
+def delosdbB5mStoreStringDataValue = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreStringDataValue.java')
+def delosdbB5mStoreTypeSupport = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeSupport.java')
+def delosdbB5mStoreTypeUtil = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeUtil.java')
+def delosdbB5mEngineProvider = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineStoreTypeSupport.java')
+
+def delosdbB5mTouchedStoreFiles = [
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/DiskHashtable.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowUtil.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/raw/Transaction.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/PropertyConglomerate.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BranchRow.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2I.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/ConglomerateUtil.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericConglomerate.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/TemplateRow.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/Heap.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/InternalXact.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/Xact.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/XactFactory.java')
+]
+
+def delosdbB5mDirectImportRetiredFiles = [
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/DiskHashtable.java'), retired: ['SQLInteger', 'StringDataValue']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowUtil.java'), retired: ['DataValueFactory']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/raw/Transaction.java'), retired: ['DataValueFactory']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/PropertyConglomerate.java'), retired: ['UserType']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BranchRow.java'), retired: ['SQLLongint']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2I.java'), retired: ['StringDataValue']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/ConglomerateUtil.java'), retired: ['StringDataValue']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericConglomerate.java'), retired: ['StringDataValue']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/TemplateRow.java'), retired: ['DataValueFactory', 'SQLLongint']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/Heap.java'), retired: ['StringDataValue']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/InternalXact.java'), retired: ['DataValueFactory']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/Xact.java'), retired: ['DataValueFactory']],
+    [source: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/XactFactory.java'), retired: ['DataValueFactory']]
+]
+
+def delosdbB5mRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5mRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5mStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].collectMany { root ->
+        fileTree(root) { include '**/*.java' }.files.findAll { it.isFile() }.collectMany { source ->
+            source.readLines().findAll { it.trim().startsWith('import org.apache.derby.iapi.types.') }.collect { line ->
+                delosdbB5mRelPath(source) + ': ' + line.trim()
+            }
+        }
+    }.sort()
+}
+
+def delosdbB5mRetiredImportsRemaining = { ->
+    delosdbB5mDirectImportRetiredFiles.collectMany { entry ->
+        def text = delosdbB5mRead(entry.source)
+        entry.retired.findAll { typeName ->
+            text.contains('import org.apache.derby.iapi.types.' + typeName + ';')
+        }.collect { typeName ->
+            delosdbB5mRelPath(entry.source) + ': import org.apache.derby.iapi.types.' + typeName + ';'
+        }
+    }
+}
+
+def delosdbB5mForbiddenKernelImports = { ->
+    def forbiddenPrefixes = [
+        'import org.apache.derby.iapi.sql.',
+        'import org.apache.derby.impl.sql.',
+        'import org.apache.derby.iapi.sql.dictionary.',
+        'import org.apache.derby.iapi.types.',
+        'import org.apache.derby.catalog.',
+        'import java.sql.'
+    ]
+    fileTree(delosdbB5mKernelTypeRoot) { include '**/*.java' }.files.findAll { it.isFile() }.collectMany { source ->
+        source.readLines().findAll { line ->
+            def trimmed = line.trim()
+            forbiddenPrefixes.any { trimmed.startsWith(it) }
+        }.collect { delosdbB5mRelPath(source) + ': ' + it.trim() }
+    }.sort()
+}
+
+def delosdbB5mRequiredBridgeMethods = [
+    'newSQLInteger()',
+    'newSQLLongint(long value)',
+    'newUserType()',
+    'newUserType(Object value)'
+]
+
+tasks.register('legacyDerbyStoreKernelB5mFactoryCollationBridgeReport') {
+    group = 'verification'
+    description = 'B5m: reports the factory, collation, and simple constructor bridge batch.'
+    dependsOn 'verifyLegacyDerbyKernelB5lLocatedRowBridge'
+    outputs.file(delosdbB5mReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5mStoreTypeImportLines()
+        def retiredImportsRemaining = delosdbB5mRetiredImportsRemaining()
+        def forbiddenKernelImports = delosdbB5mForbiddenKernelImports()
+        def reportFile = delosdbB5mReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5m factory/collation store type bridge batch
+=======================================================
+
+Purpose
+-------
+B5m continues the B5h/B5i/B5j/B5k/B5l type-boundary work with a larger,
+compile-safe batch. The store no longer imports selected engine-owned type
+helpers directly for value factories, UCS_BASIC collation metadata, SQLInteger,
+TemplateRow SQLLongint allocation, and property UserType allocation/access.
+
+Changed store files
+-------------------
+${delosdbB5mTouchedStoreFiles.collect { '  - ' + delosdbB5mRelPath(it) }.join('\n')}
+
+Bridge additions
+----------------
+  - ${delosdbB5mRelPath(delosdbB5mStoreDataValueFactory)} exposes store-facing getNull(formatId, collationType)
+  - ${delosdbB5mRelPath(delosdbB5mStoreStringDataValue)} exposes StoreStringDataValue.COLLATION_TYPE_UCS_BASIC
+  - ${delosdbB5mRelPath(delosdbB5mStoreTypeSupport)} / ${delosdbB5mRelPath(delosdbB5mStoreTypeUtil)} route simple value construction
+  - ${delosdbB5mRelPath(delosdbB5mEngineProvider)} keeps SQLInteger, SQLLongint, and UserType construction engine-owned
+
+Retired direct imports still present
+------------------------------------
+${retiredImportsRemaining.isEmpty() ? '  none' : retiredImportsRemaining.collect { '  - ' + it }.join('\n')}
+
+Kernel bridge SQL/type/catalog forbidden imports
+------------------------------------------------
+${forbiddenKernelImports.isEmpty() ? '  none' : forbiddenKernelImports.collect { '  - ' + it }.join('\n')}
+
+Relocated-store direct org.apache.derby.iapi.types import count
+---------------------------------------------------------------
+  before B5m baseline: ${delosdbB5mBaselineImportCount}
+  after B5m:           ${remainingStoreTypeImports.size()}
+
+Remaining direct relocated-store iapi.types imports
+---------------------------------------------------
+${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+Boundary decision
+-----------------
+This is still not a broad move of org.apache.derby.iapi.types. B5m removes a
+larger group of low-risk imports where the store only needed factory creation,
+constants, or simple value holders. Implementation-heavy DataValueDescriptor,
+RowLocation, DataType, RefDataValue, and the remaining B-tree SQLLongint usage
+stay deferred for later slices.
+
+B6 readiness
+------------
+NOT YET. The relocated store still has direct org.apache.derby.iapi.types imports.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5mRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5mFactoryCollationBridge') {
+    group = 'verification'
+    description = 'B5m: verifies the larger factory/collation bridge batch and import-count decrease.'
+    dependsOn 'legacyDerbyStoreKernelB5mFactoryCollationBridgeReport'
+    doLast {
+        ([delosdbB5mStoreDataValueFactory, delosdbB5mStoreStringDataValue,
+          delosdbB5mStoreTypeSupport, delosdbB5mStoreTypeUtil, delosdbB5mEngineProvider] + delosdbB5mTouchedStoreFiles).each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5m missing required source file: ' + delosdbB5mRelPath(source))
+            }
+        }
+
+        def factoryText = delosdbB5mRead(delosdbB5mStoreDataValueFactory)
+        if (!factoryText.contains('StoreDataValue getNull(int formatId, int collationType)')) {
+            throw new GradleException('B5m StoreDataValueFactory must expose store-facing getNull(formatId, collationType)')
+        }
+
+        def stringText = delosdbB5mRead(delosdbB5mStoreStringDataValue)
+        if (!stringText.contains('COLLATION_TYPE_UCS_BASIC')) {
+            throw new GradleException('B5m StoreStringDataValue must expose COLLATION_TYPE_UCS_BASIC')
+        }
+
+        def supportText = delosdbB5mRead(delosdbB5mStoreTypeSupport)
+        def utilText = delosdbB5mRead(delosdbB5mStoreTypeUtil)
+        def providerText = delosdbB5mRead(delosdbB5mEngineProvider)
+        delosdbB5mRequiredBridgeMethods.each { method ->
+            if (!supportText.contains(method)) {
+                throw new GradleException('B5m StoreTypeSupport missing bridge method: ' + method)
+            }
+            if (!utilText.contains(method)) {
+                throw new GradleException('B5m StoreTypeUtil missing bridge method: ' + method)
+            }
+            if (!providerText.contains(method)) {
+                throw new GradleException('B5m EngineStoreTypeSupport missing bridge method: ' + method)
+            }
+        }
+
+        def retiredImportsRemaining = delosdbB5mRetiredImportsRemaining()
+        if (!retiredImportsRemaining.isEmpty()) {
+            throw new GradleException('B5m retired direct store type imports still remain: ' + retiredImportsRemaining.join('; '))
+        }
+
+        def forbiddenKernelImports = delosdbB5mForbiddenKernelImports()
+        if (!forbiddenKernelImports.isEmpty()) {
+            throw new GradleException('B5m kernel store type bridge must stay SQL/type/catalog neutral: ' + forbiddenKernelImports.join('; '))
+        }
+
+        def diskText = delosdbB5mRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/DiskHashtable.java'))
+        if (!diskText.contains('StoreStringDataValue.COLLATION_TYPE_UCS_BASIC') ||
+                !diskText.contains('StoreTypeUtil.newSQLInteger()')) {
+            throw new GradleException('B5m DiskHashtable must use store bridge constants and SQLInteger construction')
+        }
+
+        def branchRowText = delosdbB5mRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BranchRow.java'))
+        if (!branchRowText.contains('StoreTypeUtil.newSQLLongint') ||
+                branchRowText.contains('import org.apache.derby.iapi.types.SQLLongint;')) {
+            throw new GradleException('B5m BranchRow must route child-page SQLLongint construction through StoreTypeUtil')
+        }
+
+        def propertyText = delosdbB5mRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/PropertyConglomerate.java'))
+        if (!propertyText.contains('StoreTypeUtil.newUserType') || !propertyText.contains('StoreTypeUtil.getObject')) {
+            throw new GradleException('B5m PropertyConglomerate must route UserType allocation/access through StoreTypeUtil')
+        }
+
+        def templateText = delosdbB5mRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/TemplateRow.java'))
+        if (!templateText.contains('StoreDataValueFactory') || !templateText.contains('StoreTypeUtil.newSQLLongint')) {
+            throw new GradleException('B5m TemplateRow must use StoreDataValueFactory and StoreTypeUtil.newSQLLongint')
+        }
+
+        def remainingStoreTypeImports = delosdbB5mStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5mBaselineImportCount) {
+            throw new GradleException('B5m relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5mBaselineImportCount + ': ' + remainingStoreTypeImports.size())
+        }
+
+        def reportText = delosdbB5mRead(delosdbB5mReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5m report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5m factory/collation bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5mFactoryCollationBridge'
+}

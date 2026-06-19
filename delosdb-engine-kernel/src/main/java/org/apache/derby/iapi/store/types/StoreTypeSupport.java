@@ -33,6 +33,14 @@ import org.apache.derby.shared.common.error.StandardException;
  */
 public interface StoreTypeSupport
 {
+    StoreDataValue newSQLInteger();
+
+    StoreDataValue newSQLLongint(long value);
+
+    StoreDataValue newUserType();
+
+    StoreDataValue newUserType(Object value);
+
     StoreDataValue cloneHolder(Object value);
 
     StoreDataValue cloneValue(Object value, boolean forceMaterialization)

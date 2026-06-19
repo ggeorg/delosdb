@@ -28,9 +28,9 @@ import java.util.Properties;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.SQLInteger;
 import org.apache.derby.iapi.types.RowLocation;
-import org.apache.derby.iapi.types.StringDataValue;
+import org.apache.derby.iapi.store.types.StoreStringDataValue;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 import org.apache.derby.iapi.services.context.Context;
 import org.apache.derby.iapi.services.context.ContextService;
@@ -63,7 +63,7 @@ public class DiskHashtable
     private final boolean                 remove_duplicates;
     private final TransactionController   tc;
     private final DataValueDescriptor[]   row;
-    private final DataValueDescriptor[]   scanKey = { new SQLInteger()};
+    private final DataValueDescriptor[]   scanKey = { (DataValueDescriptor) StoreTypeUtil.newSQLInteger()};
     private int                           size;
     private boolean                       keepStatistics;
     private final boolean                 keepAfterCommit;
@@ -145,7 +145,7 @@ public class DiskHashtable
         // RowLocation of the row in the "base" table of the hash overflow.
         btreeRow = 
             new DataValueDescriptor[] 
-                { new SQLInteger(), rowConglomerate.newRowLocationTemplate()};
+                { (DataValueDescriptor) StoreTypeUtil.newSQLInteger(), rowConglomerate.newRowLocationTemplate()};
 
         Properties btreeProps = new Properties();
 
@@ -164,8 +164,8 @@ public class DiskHashtable
 
         // default collation is used for hash code and row location
         int[] index_collation_ids = 
-            {StringDataValue.COLLATION_TYPE_UCS_BASIC,
-             StringDataValue.COLLATION_TYPE_UCS_BASIC};
+            {StoreStringDataValue.COLLATION_TYPE_UCS_BASIC,
+             StoreStringDataValue.COLLATION_TYPE_UCS_BASIC};
 
         btreeConglomerateId = 
             tc.createConglomerate( 

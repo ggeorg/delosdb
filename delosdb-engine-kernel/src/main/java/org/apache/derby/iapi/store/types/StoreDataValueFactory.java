@@ -20,6 +20,10 @@
  */
 package org.apache.derby.iapi.store.types;
 
+import org.apache.derby.shared.common.error.StandardException;
+
 /** SQL-neutral factory marker for store-facing value creation. */
-public interface StoreDataValueFactory {
+public interface StoreDataValueFactory
+{
+    StoreDataValue getNull(int formatId, int collationType) throws StandardException;
 }

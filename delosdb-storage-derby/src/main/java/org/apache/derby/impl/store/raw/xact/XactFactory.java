@@ -54,7 +54,7 @@ import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 import org.apache.derby.iapi.store.raw.xact.TransactionFactory;
 import org.apache.derby.iapi.store.raw.xact.TransactionId;
 
-import org.apache.derby.iapi.types.DataValueFactory;
+import org.apache.derby.iapi.store.types.StoreDataValueFactory;
 
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -84,7 +84,7 @@ public class XactFactory implements TransactionFactory, ModuleControl, ModuleSup
 	protected LockFactory           lockFactory;
 	protected LogFactory            logFactory;
 	protected DataFactory           dataFactory;
-	protected DataValueFactory      dataValueFactory;
+	protected StoreDataValueFactory      dataValueFactory;
 	protected RawStoreFactory       rawStoreFactory;
 
 	public TransactionTable ttab;
@@ -122,7 +122,7 @@ public class XactFactory implements TransactionFactory, ModuleControl, ModuleSup
 		uuidFactory = ((UUIDFactory) getMonitor().getUUIDFactory());
 
         /*
-        dataValueFactory =  (DataValueFactory)
+        dataValueFactory =  (StoreDataValueFactory)
             findServiceModule(
                 this,
                 org.apache.derby.shared.common.reference.ClassName.DataValueFactory);
@@ -130,7 +130,7 @@ public class XactFactory implements TransactionFactory, ModuleControl, ModuleSup
             // if datafactory has not been booted yet, try now.  This can
             // happen in the unit tests.  Usually it is booted before store
             // booting is called.
-            dataValueFactory = (DataValueFactory) 
+            dataValueFactory = (StoreDataValueFactory) 
                 bootServiceModule(
                     create, 
                     this,

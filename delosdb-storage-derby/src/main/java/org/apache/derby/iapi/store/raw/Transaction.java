@@ -29,7 +29,7 @@ import org.apache.derby.iapi.store.access.FileResource;
 import org.apache.derby.iapi.store.access.RowSource;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.services.context.ContextManager;
-import org.apache.derby.iapi.types.DataValueFactory;
+import org.apache.derby.iapi.store.types.StoreDataValueFactory;
 
 import java.util.Properties;
 
@@ -618,16 +618,16 @@ public interface Transaction {
 
 
     /**
-     * Get DataValueFactory.
+     * Get StoreDataValueFactory.
      * <p>
-     * Return a DataValueFactory that can be used to allocate objects.  Used
+     * Return a StoreDataValueFactory that can be used to allocate objects.  Used
      * to make calls to: 
-     *     DataValueFactory.getInstanceUsingFormatIdAndCollationType()
+     *     StoreDataValueFactory.getInstanceUsingFormatIdAndCollationType()
      *
 	 * @return a booted data value factory.
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    public DataValueFactory getDataValueFactory()
+    public StoreDataValueFactory getDataValueFactory()
 		throws StandardException;
 }

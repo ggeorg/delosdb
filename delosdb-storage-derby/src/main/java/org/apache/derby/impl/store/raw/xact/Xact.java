@@ -54,7 +54,7 @@ import org.apache.derby.iapi.store.access.RowSource;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.shared.common.error.ExceptionSeverity;
 
-import org.apache.derby.iapi.types.DataValueFactory;
+import org.apache.derby.iapi.store.types.StoreDataValueFactory;
 
 import org.apache.derby.iapi.services.property.PersistentSet;
 
@@ -168,7 +168,7 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 	protected final XactFactory		    xactFactory;
 	protected final DataFactory		    dataFactory;
 	protected final LogFactory		    logFactory;
-    protected final DataValueFactory    dataValueFactory;
+    protected final StoreDataValueFactory    dataValueFactory;
 	private   final CompatibilitySpace  compatibilitySpace;
 
 	// these fields remain fixedfor the lifetime
@@ -283,7 +283,7 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
     Xact          parentTransaction, 
     LogFactory          logFactory, 
     DataFactory         dataFactory,
-    DataValueFactory    dataValueFactory,
+    StoreDataValueFactory    dataValueFactory,
     boolean             readOnly,
     CompatibilitySpace  compatibilitySpace,
     boolean             flush_log_on_xact_end)
@@ -2810,17 +2810,17 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 	}
 
     /**
-     * Get DataValueFactory.
+     * Get StoreDataValueFactory.
      * <p>
-     * Return a DataValueFactory that can be used to allocate objects.  Used
+     * Return a StoreDataValueFactory that can be used to allocate objects.  Used
      * to make calls to: 
-     *     DataValueFactory.getInstanceUsingFormatIdAndCollationType()
+     *     StoreDataValueFactory.getInstanceUsingFormatIdAndCollationType()
      *
 	 * @return a booted data value factory.
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    public DataValueFactory getDataValueFactory()
+    public StoreDataValueFactory getDataValueFactory()
 		throws StandardException
     {
         return dataValueFactory;
