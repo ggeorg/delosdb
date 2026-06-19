@@ -3413,3 +3413,111 @@ tasks.register('legacyDerbyStoreRuntimePackagingProof') {
             'mvccSqlBridgeHistoryPrunedProof',
             ':delosdb-tests:runDerbyLangSuite'
 }
+
+// -----------------------------------------------------------------------------
+// DS11 — Stale source cleanup and permanent no-split-package proof
+// -----------------------------------------------------------------------------
+// DS8/DS9 moved legacy Derby store source ownership under delosdb-storage-derby.
+// DS11 makes the stale-source/no-split-package invariant explicit and permanent
+// before the final DS12 closeout documentation gate.
+
+def delosdbDs11StaleEngineStoreSourceRoots = [
+        file('delosdb-engine/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+]
+
+tasks.register('verifyLegacyDerbyStoreNoStaleEngineSources') {
+    group = 'verification'
+    description = 'Verifies no stale inherited Derby store source trees remain under delosdb-engine after DS8/DS9.'
+    doLast {
+        def staleRoots = delosdbDs11StaleEngineStoreSourceRoots.findAll { it.exists() }
+        if (!staleRoots.isEmpty()) {
+            throw new GradleException('Stale inherited Derby store source roots remain under delosdb-engine; run scripts/cleanup-legacy-store-stale-sources-ds11.sh:\n'
+                    + staleRoots.collect { delosdbDs1RelPath(it) }.join('\n'))
+        }
+
+        def storageApiRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store')
+        def storageImplRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+        if (!storageApiRoot.isDirectory()) {
+            throw new GradleException('Missing relocated inherited Derby store API source root: ' + delosdbDs1RelPath(storageApiRoot))
+        }
+        if (!storageImplRoot.isDirectory()) {
+            throw new GradleException('Missing relocated inherited Derby store implementation source root: ' + delosdbDs1RelPath(storageImplRoot))
+        }
+        logger.lifecycle('Verified DS11 stale-source cleanup: inherited Derby store sources live under delosdb-storage-derby only')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreNoStaleEngineSources'
+}
+
+tasks.register('legacyDerbyStoreSourceOwnershipReport') {
+    group = 'verification'
+    description = 'Writes the DS11 source-ownership and no-split-package report for the legacy Derby store.'
+    dependsOn 'verifyLegacyDerbyStoreNoStaleEngineSources', 'verifyNoSplitStorePackages', 'verifyLegacyDerbyStoreBoundary'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-source-ownership-ds11.txt'))
+    doLast {
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-source-ownership-ds11.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+
+        def apiFiles = delosdbDs1StoreApiFiles()
+        def implFiles = delosdbDs1StoreImplFiles()
+        def storageApiRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store')
+        def storageImplRoot = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+        def engineApiRoot = file('delosdb-engine/src/main/java/org/apache/derby/iapi/store')
+        def engineImplRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+
+        reportFile.text = """DelosDB DS11 legacy Derby store source ownership proof
+======================================================
+
+Status
+------
+DS8/DS9 source ownership move is complete.
+No inherited Derby store source tree may remain under delosdb-engine.
+Whole-package ownership is under delosdb-storage-derby.
+
+Expected source roots
+---------------------
+${delosdbDs1RelPath(storageApiRoot)}
+${delosdbDs1RelPath(storageImplRoot)}
+
+Stale engine roots checked absent
+---------------------------------
+${delosdbDs1RelPath(engineApiRoot)}
+${delosdbDs1RelPath(engineImplRoot)}
+
+Inventory after cleanup
+-----------------------
+org.apache.derby.iapi.store.* files: ${apiFiles.size()}
+org.apache.derby.impl.store.* files: ${implFiles.size()}
+
+Permanent guards
+----------------
+verifyLegacyDerbyStoreNoStaleEngineSources
+verifyNoSplitStorePackages
+verifyMvccNoDerbyStoreImports
+verifyDerbyStoreNoMvccImports
+
+Out of scope
+------------
+No runtime packaging change; DS10 keeps derby.jar compatibility packaging.
+No default-storage flip.
+No Derby package/class rename.
+No module export tightening yet.
+"""
+        logger.lifecycle("Wrote ${delosdbDs1RelPath(reportFile)}")
+    }
+}
+
+tasks.register('legacyDerbyStoreStaleSourceCleanupProof') {
+    group = 'verification'
+    description = 'Runs the DS11 stale-source cleanup and no-split-package gate after DS8/DS9.'
+    dependsOn 'verifyLegacyDerbyStoreNoStaleEngineSources',
+            'verifyNoSplitStorePackages',
+            'verifyLegacyDerbyStoreBoundary',
+            'legacyDerbyStoreSourceOwnershipReport',
+            ':delosdb-storage-derby:classes',
+            ':delosdb-engine:compileDerbyEngine',
+            'mvccSqlCompatibilityCandidate'
+}
