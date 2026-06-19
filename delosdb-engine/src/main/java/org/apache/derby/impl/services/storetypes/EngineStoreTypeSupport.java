@@ -162,6 +162,12 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
     }
 
     @Override
+    public boolean isNull(Object value) throws StandardException
+    {
+        return dataValue(value).isNull();
+    }
+
+    @Override
     public Object getObject(Object value) throws StandardException
     {
         return dataValue(value).getObject();

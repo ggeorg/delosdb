@@ -24,7 +24,7 @@ package org.apache.derby.impl.store.access.sort;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 /**
 
@@ -86,7 +86,7 @@ class SortBuffer
 	key from the node that was deleted from the tree.  This
 	field is only valid after a call to deleteLeftMost.
 	**/
-	private DataValueDescriptor[] deletedKey;
+	private StoreDataValue[] deletedKey;
 
 	/**
 	Set, as a side effect of deleteLeftMost and rotateRight,
@@ -204,7 +204,7 @@ class SortBuffer
 	<P>
 	See Knuth Vol. 3, Sec. 6.2.3, pp. 455-457 for the algorithm.
 	**/
-	int insert(DataValueDescriptor[] k)
+	int insert(StoreDataValue[] k)
 		throws StandardException
 	{
 		int c;
@@ -415,7 +415,7 @@ class SortBuffer
 	Return the lowest key and delete it from 
 	the tree, preserving the balance of the tree.
 	**/
-	DataValueDescriptor[] removeFirst()
+	StoreDataValue[] removeFirst()
 	{
 		if (head.rightLink == null)
 			return null;

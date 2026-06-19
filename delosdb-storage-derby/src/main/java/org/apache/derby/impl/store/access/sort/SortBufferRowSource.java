@@ -87,7 +87,7 @@ public class SortBufferRowSource extends Scan
 		if (sortBuffer == null)	// has been closed
 			return null;
 
-		DataValueDescriptor[] retval = sortBuffer.removeFirst();
+		DataValueDescriptor[] retval = (DataValueDescriptor[]) sortBuffer.removeFirst();
 
 		// Return the removed object to the free DataValueDescriptor[]
 		if (retval != null && writingToDisk)

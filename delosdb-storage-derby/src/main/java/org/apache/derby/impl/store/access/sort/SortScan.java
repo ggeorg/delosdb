@@ -30,6 +30,7 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 
 /**
@@ -55,7 +56,7 @@ public abstract class SortScan extends Scan
 	The row at the current position of the scan, from which
 	fetch will return values.
 	**/
-	protected DataValueDescriptor[] current;
+	protected StoreDataValue[] current;
 
 	/**
 	The row at the current position of the scan, from which

@@ -22,7 +22,8 @@
 package org.apache.derby.impl.store.access.sort;
 
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 /**
  * This class extends and customizes MergeSort to support unique indexes with
@@ -51,7 +52,7 @@ final class UniqueWithDuplicateNullsMergeSort extends MergeSort {
      * @return 0 for duplicates non zero for distinct keys 
      */
     @Override
-    protected int compare(DataValueDescriptor[] r1, DataValueDescriptor[] r2)
+    protected int compare(StoreDataValue[] r1, StoreDataValue[] r2)
     throws StandardException {
         // Get the number of columns we have to compare.
         int colsToCompare = columnOrdering.length;
@@ -86,7 +87,7 @@ final class UniqueWithDuplicateNullsMergeSort extends MergeSort {
             
             // If the columns don't compare equal, we're done.
             // Return the sense of the comparison.
-            if ((r = r1[colid].compare(r2[colid], nullsLow))
+            if ((r = StoreTypeUtil.compare(r1[colid], r2[colid], nullsLow))
             != 0) {
                 if (this.columnOrderingAscendingMap[i])
                     return r;
@@ -94,7 +95,7 @@ final class UniqueWithDuplicateNullsMergeSort extends MergeSort {
                     return -r;
             } else {
                 //set nonull to false if the fields are equal and null
-                if (r1[colid].isNull())
+                if (StoreTypeUtil.isNull(r1[colid]))
                     nonull = false;
             }
         }

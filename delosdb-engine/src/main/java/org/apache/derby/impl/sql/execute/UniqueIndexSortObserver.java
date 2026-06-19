@@ -28,6 +28,7 @@ import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
 /**
@@ -66,9 +67,9 @@ class UniqueIndexSortObserver extends BasicSortObserver
 	}
 
     @Override
-	public DataValueDescriptor[] insertDuplicateKey(
-    DataValueDescriptor[]   in, 
-    DataValueDescriptor[]   dup)
+	public StoreDataValue[] insertDuplicateKey(
+    StoreDataValue[]   in, 
+    StoreDataValue[]   dup)
 		throws StandardException
 	{
 		StandardException se = null;
@@ -88,13 +89,13 @@ class UniqueIndexSortObserver extends BasicSortObserver
     }
 
     @Override
-    public void rememberDuplicate(DataValueDescriptor[] row)
+    public void rememberDuplicate(StoreDataValue[] row)
             throws StandardException {
         deferredDuplicates = DeferredConstraintsMemory.rememberDuplicate(
                 lcc,
                 deferredDuplicates,
                 constraintId,
-                row);
+                (DataValueDescriptor[]) row);
     }
 
 }

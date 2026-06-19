@@ -84,6 +84,8 @@ public interface StoreTypeSupport
 
     long getLong(Object value) throws StandardException;
 
+    boolean isNull(Object value) throws StandardException;
+
     Object getObject(Object value) throws StandardException;
 
     InputStream getStream(Object value) throws StandardException;

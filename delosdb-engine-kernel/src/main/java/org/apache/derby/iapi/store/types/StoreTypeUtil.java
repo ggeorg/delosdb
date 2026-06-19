@@ -138,6 +138,11 @@ public final class StoreTypeUtil
         return StoreTypeSupportRegistry.support().getLong(value);
     }
 
+    public static boolean isNull(Object value) throws StandardException
+    {
+        return StoreTypeSupportRegistry.support().isNull(value);
+    }
+
     public static Object getObject(Object value) throws StandardException
     {
         return StoreTypeSupportRegistry.support().getObject(value);

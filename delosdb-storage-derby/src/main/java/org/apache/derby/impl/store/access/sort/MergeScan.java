@@ -30,7 +30,7 @@ import org.apache.derby.iapi.store.access.SortObserver;
 import org.apache.derby.iapi.store.raw.StreamContainerHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 // For JavaDoc references (i.e. @see)
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
@@ -217,7 +217,7 @@ public class MergeScan extends SortScan
 			SanityManager.ASSERT(openScans[scanindex] != null);
 		}
 
-		DataValueDescriptor[] row;
+		StoreDataValue[] row;
 
 		// Read rows from the merge run and stuff them into the
 		// sort buffer for as long as we encounter duplicates.

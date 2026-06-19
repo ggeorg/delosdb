@@ -27,6 +27,8 @@ import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
 /**
@@ -89,10 +91,10 @@ public class UniqueWithDuplicateNullsIndexSortObserver extends BasicSortObserver
      * @throws StandardException is the duplicate key has all non null parts
      */
     @Override
-    public DataValueDescriptor[] insertDuplicateKey(DataValueDescriptor[] in,
-            DataValueDescriptor[] dup) throws StandardException {
+    public StoreDataValue[] insertDuplicateKey(StoreDataValue[] in,
+            StoreDataValue[] dup) throws StandardException {
         for (int i = 0; i < in.length; i++) {
-            if (in [i].isNull()) {
+            if (StoreTypeUtil.isNull(in [i])) {
                 return super.insertDuplicateKey(in, dup);
             }
         }
@@ -114,13 +116,13 @@ public class UniqueWithDuplicateNullsIndexSortObserver extends BasicSortObserver
     }
 
     @Override
-    public void rememberDuplicate(DataValueDescriptor[] row)
+    public void rememberDuplicate(StoreDataValue[] row)
             throws StandardException {
         deferredDuplicates = DeferredConstraintsMemory.rememberDuplicate(
                 lcc,
                 deferredDuplicates,
                 constraintId,
-                row);
+                (DataValueDescriptor[]) row);
     }
 
 }

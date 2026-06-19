@@ -442,7 +442,7 @@ public class HashScanResultSet extends ScanResultSet
                             // qualifiers are checked down a bit by calling
                             // qualifyRow on rows returned from hash.
 
-                            DataValueDescriptor dvd = 
+                            Object dvd = 
                                 nextQualifiers[0][index].getOrderable();
 
                             if (dvd == null)

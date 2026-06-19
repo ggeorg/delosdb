@@ -29,6 +29,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.types.StoreDataValueFactory;
 
 import java.util.Enumeration;
@@ -608,8 +609,9 @@ public class RowUtil
             DataValueDescriptor columnValue = row[q.getColumnId()];
 
             row_qualifies =
-                columnValue.compare(
+                StoreTypeUtil.compare(
                     q.getOperator(),
+                    columnValue,
                     q.getOrderable(),
                     q.getOrderedNulls(),
                     q.getUnknownRV());
@@ -665,8 +667,9 @@ public class RowUtil
                 // do the compare between the column value and value in the
                 // qualifier.
                 row_qualifies = 
-                    columnValue.compare(
+                    StoreTypeUtil.compare(
                             q.getOperator(),
+                            columnValue,
                             q.getOrderable(),
                             q.getOrderedNulls(),
                             q.getUnknownRV());

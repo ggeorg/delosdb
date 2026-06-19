@@ -22,7 +22,7 @@
 package org.apache.derby.iapi.store.access;
 
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 
 /**
@@ -58,7 +58,7 @@ public interface SortController
 
 	@exception StandardException Standard exception policy.
     **/
-    void insert(DataValueDescriptor[] row)
+    void insert(StoreDataValue[] row)
 		throws StandardException;
 
 

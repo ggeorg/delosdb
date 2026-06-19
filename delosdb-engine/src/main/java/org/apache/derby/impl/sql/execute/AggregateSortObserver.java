@@ -24,6 +24,7 @@ package org.apache.derby.impl.sql.execute;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.sql.execute.ExecRow;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.UserDataValue;
 
@@ -104,11 +105,11 @@ class AggregateSortObserver extends BasicSortObserver
 	 *
 	 * @exception StandardException never thrown
 	 */
-	public DataValueDescriptor[] insertNonDuplicateKey(DataValueDescriptor[] insertRow)
+	public StoreDataValue[] insertNonDuplicateKey(StoreDataValue[] insertRow)
 		throws StandardException
 	{
 		DataValueDescriptor[] returnRow = 
-            super.insertNonDuplicateKey(insertRow);
+            asDataValueArray(super.insertNonDuplicateKey(insertRow));
 
 		/*
 		** If we have an aggregator column that hasn't been
@@ -153,7 +154,7 @@ class AggregateSortObserver extends BasicSortObserver
 	 *
 	 * @exception StandardException never thrown
 	 */
-	public DataValueDescriptor[] insertDuplicateKey(DataValueDescriptor[] insertRow, DataValueDescriptor[] existingRow) 
+	public StoreDataValue[] insertDuplicateKey(StoreDataValue[] insertRow, StoreDataValue[] existingRow) 
 			throws StandardException
 	{
 		if (aggsToProcess.length == 0)
@@ -166,18 +167,25 @@ class AggregateSortObserver extends BasicSortObserver
 		** we need to merge with it.  Otherwise, accumulate
 		** it.
 		*/
+        DataValueDescriptor[] insertDataRow = asDataValueArray(insertRow);
+        DataValueDescriptor[] existingDataRow = asDataValueArray(existingRow);
 		for (int i = 0; i < aggsToProcess.length; i++)
 		{
 			GenericAggregator aggregator = aggsToProcess[i];
-			if (insertRow[aggregator.getColumnId()].isNull())
+			if (insertDataRow[aggregator.getColumnId()].isNull())
 			{
-				aggregator.accumulate(insertRow, existingRow);
+				aggregator.accumulate(insertDataRow, existingDataRow);
 			}
 			else
 			{
-				aggregator.merge(insertRow, existingRow);
+				aggregator.merge(insertDataRow, existingDataRow);
 			}
 		}
 		return null;
 	}
+
+    private static DataValueDescriptor[] asDataValueArray(StoreDataValue[] row)
+    {
+        return (DataValueDescriptor[]) row;
+    }
 }

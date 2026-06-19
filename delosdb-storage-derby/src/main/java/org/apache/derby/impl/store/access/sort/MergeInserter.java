@@ -29,7 +29,7 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.access.SortController;
 import org.apache.derby.iapi.store.access.SortInfo;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 /**
 
@@ -86,7 +86,7 @@ final class MergeInserter implements SortController
     Insert a row into the sort.
 	@see SortController#insert
     **/
-    public void insert(DataValueDescriptor[] row)
+    public void insert(StoreDataValue[] row)
 		throws StandardException
 	{
 		if (SanityManager.DEBUG)
@@ -149,7 +149,7 @@ final class MergeInserter implements SortController
 	 * policy into {@link SortMemoryPolicy} so memory-budget decisions are not
 	 * embedded inside the row insertion path.</p>
 	 */
-	private boolean tryGrowInMemorySortBuffer(DataValueDescriptor[] row)
+	private boolean tryGrowInMemorySortBuffer(StoreDataValue[] row)
 		throws StandardException
 	{
 		Runtime jvm = Runtime.getRuntime();

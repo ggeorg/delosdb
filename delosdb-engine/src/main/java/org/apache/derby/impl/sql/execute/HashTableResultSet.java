@@ -39,6 +39,7 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.sql.Activation;
 
 import org.apache.derby.iapi.store.access.Qualifier;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.access.RowSource;
 import org.apache.derby.iapi.store.access.TransactionController;
 
@@ -430,8 +431,9 @@ class HashTableResultSet extends NoPutResultSetImpl
                         Qualifier q = nextQualifiers[0][index];
 
 						qualifies = 
-                            columns[q.getColumnId()].compare(
+                            StoreTypeUtil.compare(
                                 q.getOperator(),
+                                columns[q.getColumnId()],
                                 q.getOrderable(),
                                 q.getOrderedNulls(),
                                 q.getUnknownRV());

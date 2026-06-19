@@ -22,7 +22,7 @@
 package org.apache.derby.impl.store.access.sort;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.access.RowUtil;
 
 /**
@@ -36,7 +36,7 @@ final class Node
 	public int balance;
 	public Node leftLink;
 	public Node rightLink;
-	public DataValueDescriptor[] key;
+	public StoreDataValue[] key;
 	public int id;
 	public Node dupChain;
 	public int aux;
@@ -74,7 +74,7 @@ final class Node
 			rightLink = l;
 	}
 
-	DataValueDescriptor[] getKey()
+	StoreDataValue[] getKey()
 	{
 		return key;
 	}

@@ -83,7 +83,7 @@ public class MergeScanRowSource extends MergeScan implements ScanControllerRowSo
     public DataValueDescriptor[] getNextRowFromRowSource() 
         throws StandardException
     {
-		DataValueDescriptor[] row = sortBuffer.removeFirst();
+		DataValueDescriptor[] row = (DataValueDescriptor[]) sortBuffer.removeFirst();
 
 		if (row != null)
 		{

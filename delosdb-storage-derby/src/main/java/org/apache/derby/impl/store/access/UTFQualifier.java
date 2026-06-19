@@ -21,7 +21,8 @@
 
 package org.apache.derby.impl.store.access;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreOrderable;
 
 import org.apache.derby.iapi.store.access.Qualifier;
 
@@ -50,7 +51,7 @@ public class UTFQualifier implements Qualifier
 	/**
 	 * Get the value that the column is to be compared to.
 	 */
-	public DataValueDescriptor getOrderable() {
+	public StoreDataValue getOrderable() {
 		return value;
 	}
 
@@ -59,7 +60,7 @@ public class UTFQualifier implements Qualifier
      *  @see DataValueDescriptor#compare
      **/
 	public int getOperator() {
-		return DataValueDescriptor.ORDER_OP_EQUALS;
+		return StoreOrderable.ORDER_OP_EQUALS;
 
 	}
 

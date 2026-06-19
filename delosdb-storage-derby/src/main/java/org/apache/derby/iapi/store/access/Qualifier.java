@@ -21,7 +21,7 @@
 
 package org.apache.derby.iapi.store.access;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -222,7 +222,7 @@ public interface Qualifier
 	 *
 	 * @exception StandardException		Thrown on error
 	 */
-	DataValueDescriptor getOrderable() throws StandardException;
+	StoreDataValue getOrderable() throws StandardException;
 
 	/** Get the operator to use in the comparison. 
      *

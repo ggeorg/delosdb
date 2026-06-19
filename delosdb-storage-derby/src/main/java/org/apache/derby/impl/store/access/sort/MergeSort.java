@@ -40,6 +40,8 @@ import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.StreamContainerHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 /**
@@ -90,7 +92,7 @@ class MergeSort implements Sort
 	The template as passed in on create.  Valid when the state
 	is INITIALIZED through SCANNING, null otherwise.
 	**/
-	protected DataValueDescriptor[] template;
+	protected StoreDataValue[] template;
 
 	/**
 	The column ordering as passed in on create.  Valid when
@@ -426,7 +428,7 @@ class MergeSort implements Sort
 	XXX (nat) Currently checks that the classes implementing
 	each column are the same -- is this right?
 	**/
-	void checkColumnTypes(DataValueDescriptor[] row)
+	void checkColumnTypes(StoreDataValue[] row)
 		throws StandardException
 	{
 		int nCols = row.length;
@@ -467,8 +469,8 @@ class MergeSort implements Sort
 	}
 
 	protected int compare(
-    DataValueDescriptor[] r1, 
-    DataValueDescriptor[] r2)
+    StoreDataValue[] r1, 
+    StoreDataValue[] r2)
 		throws StandardException
 	{
 		// Get the number of columns we have to compare.
@@ -498,7 +500,7 @@ class MergeSort implements Sort
 
 			// If the columns don't compare equal, we're done.
 			// Return the sense of the comparison.
-			if ((r = r1[colid].compare(r2[colid], nullsLow)) 
+			if ((r = StoreTypeUtil.compare(r1[colid], r2[colid], nullsLow)) 
                     != 0)
 			{
 				if (this.columnOrderingAscendingMap[i])

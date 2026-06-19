@@ -27,6 +27,8 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.sql.execute.ExecRow;
 
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import java.util.ArrayList;
@@ -44,7 +46,7 @@ public class BasicSortObserver implements SortObserver
 	protected boolean	distinct;
 	private	  boolean	reuseWrappers;
 	private	  ExecRow	execRow;
-	private	  List<DataValueDescriptor[]>	vector;
+	private	  List<StoreDataValue[]>	vector;
 
 	/**
 	 * Simple constructor
@@ -66,7 +68,7 @@ public class BasicSortObserver implements SortObserver
 		this.distinct = distinct;
 		this.execRow = execRow;
 		this.reuseWrappers = reuseWrappers;
-		vector = new ArrayList<DataValueDescriptor[]>();
+		vector = new ArrayList<StoreDataValue[]>();
 	}
 
 	/**
@@ -82,7 +84,7 @@ public class BasicSortObserver implements SortObserver
 	 *
 	 * @exception StandardException never thrown
 	 */
-	public DataValueDescriptor[] insertNonDuplicateKey(DataValueDescriptor[] insertRow)
+	public StoreDataValue[] insertNonDuplicateKey(StoreDataValue[] insertRow)
 		throws StandardException
 	{
 		return (doClone) ? 
@@ -102,18 +104,18 @@ public class BasicSortObserver implements SortObserver
 	 *
 	 * @exception StandardException never thrown
 	 */
-	public DataValueDescriptor[] insertDuplicateKey(DataValueDescriptor[] insertRow, DataValueDescriptor[] existingRow) 
+	public StoreDataValue[] insertDuplicateKey(StoreDataValue[] insertRow, StoreDataValue[] existingRow) 
 			throws StandardException
 	{
 		return (distinct) ?
-					(DataValueDescriptor[])null :
+					(StoreDataValue[])null :
 						(doClone) ? 
 							getClone(insertRow) :
 							insertRow;
 
 	}
 
-	public void addToFreeList(DataValueDescriptor[] objectArray, int maxFreeListSize)
+	public void addToFreeList(StoreDataValue[] objectArray, int maxFreeListSize)
 	{
 		if (reuseWrappers && vector.size() < maxFreeListSize)
 		{
@@ -121,14 +123,14 @@ public class BasicSortObserver implements SortObserver
 		}
 	}
 
-	public DataValueDescriptor[] getArrayClone()
+	public StoreDataValue[] getArrayClone()
 		throws StandardException
 	{
 		int lastElement = vector.size();
 
 		if (lastElement > 0)
 		{
-			DataValueDescriptor[] retval = vector.get(lastElement - 1);
+			StoreDataValue[] retval = vector.get(lastElement - 1);
 			vector.remove(lastElement - 1);
 			return retval;
 		}
@@ -136,7 +138,8 @@ public class BasicSortObserver implements SortObserver
 	}
 
 
-	private DataValueDescriptor[] getClone(DataValueDescriptor[] origArray)
+	private StoreDataValue[] getClone(StoreDataValue[] origArray)
+        throws StandardException
 	{
 		/* If the free list is not empty, then
 		 * get an DataValueDescriptor[] from there and swap
@@ -169,7 +172,7 @@ public class BasicSortObserver implements SortObserver
             //          set very early, which causes store streams to fail
             //          because the container handle is closed.
             // Beetle 4896.
-            newArray[i] = origArray[i].cloneValue(true);
+            newArray[i] = (DataValueDescriptor) StoreTypeUtil.cloneValue(origArray[i], true);
 		}
 
 		return newArray;
@@ -183,7 +186,7 @@ public class BasicSortObserver implements SortObserver
         return false;
     }
 
-    public void rememberDuplicate(DataValueDescriptor[] row)
+    public void rememberDuplicate(StoreDataValue[] row)
             throws StandardException {
         if (SanityManager.DEBUG) {
             SanityManager.NOTREACHED();

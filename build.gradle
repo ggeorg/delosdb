@@ -7204,3 +7204,226 @@ tasks.register('verifyLegacyDerbyKernelB5nRawStreamBtreeLongBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5nRawStreamBtreeLongBridge'
 }
+
+// B5o — Sort/qualifier row-value bridge batch before real store compilation
+// -----------------------------------------------------------------------------
+// B5n retired raw-stream and B-tree long-value imports. B5o widens the pace in
+// the sort and qualifier boundary, where row values can be represented by the
+// SQL-neutral StoreDataValue bridge while engine-side observers keep concrete
+// Derby type knowledge.
+
+def delosdbB5oReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5o-sort-qualifier-bridge.txt')
+def delosdbB5oBaselineImportCount = 113
+
+def delosdbB5oStoreOrderable = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreOrderable.java')
+def delosdbB5oStoreTypeSupport = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeSupport.java')
+def delosdbB5oStoreTypeUtil = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeUtil.java')
+def delosdbB5oEngineStoreTypeSupport = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineStoreTypeSupport.java')
+def delosdbB5oSortObserver = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/SortObserver.java')
+def delosdbB5oSortController = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/SortController.java')
+def delosdbB5oQualifier = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/Qualifier.java')
+def delosdbB5oUTFQualifier = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/UTFQualifier.java')
+def delosdbB5oRowUtil = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowUtil.java')
+def delosdbB5oNode = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/Node.java')
+def delosdbB5oSortBuffer = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/SortBuffer.java')
+def delosdbB5oMergeInserter = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/MergeInserter.java')
+def delosdbB5oMergeSort = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/MergeSort.java')
+def delosdbB5oUniqueMergeSort = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/UniqueWithDuplicateNullsMergeSort.java')
+def delosdbB5oSortScan = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/SortScan.java')
+def delosdbB5oMergeScan = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/MergeScan.java')
+def delosdbB5oMergeScanRowSource = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/MergeScanRowSource.java')
+def delosdbB5oSortBufferRowSource = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/SortBufferRowSource.java')
+def delosdbB5oBasicSortObserver = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/BasicSortObserver.java')
+def delosdbB5oAggregateSortObserver = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/AggregateSortObserver.java')
+def delosdbB5oUniqueIndexSortObserver = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/UniqueIndexSortObserver.java')
+def delosdbB5oUniqueNullSortObserver = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/UniqueWithDuplicateNullsIndexSortObserver.java')
+def delosdbB5oHashScanResultSet = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/HashScanResultSet.java')
+def delosdbB5oHashTableResultSet = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/HashTableResultSet.java')
+
+def delosdbB5oTouchedFiles = [
+    delosdbB5oStoreOrderable,
+    delosdbB5oStoreTypeSupport,
+    delosdbB5oStoreTypeUtil,
+    delosdbB5oEngineStoreTypeSupport,
+    delosdbB5oSortObserver,
+    delosdbB5oSortController,
+    delosdbB5oQualifier,
+    delosdbB5oUTFQualifier,
+    delosdbB5oRowUtil,
+    delosdbB5oNode,
+    delosdbB5oSortBuffer,
+    delosdbB5oMergeInserter,
+    delosdbB5oMergeSort,
+    delosdbB5oUniqueMergeSort,
+    delosdbB5oSortScan,
+    delosdbB5oMergeScan,
+    delosdbB5oMergeScanRowSource,
+    delosdbB5oSortBufferRowSource,
+    delosdbB5oBasicSortObserver,
+    delosdbB5oAggregateSortObserver,
+    delosdbB5oUniqueIndexSortObserver,
+    delosdbB5oUniqueNullSortObserver,
+    delosdbB5oHashScanResultSet,
+    delosdbB5oHashTableResultSet
+]
+
+def delosdbB5oRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5oRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5oStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].collectMany { root ->
+        root.exists() ? fileTree(root).matching { include '**/*.java' }.files : []
+    }.sort { it.path }.collectMany { source ->
+        source.readLines().findAll { line ->
+            line ==~ /\s*import\s+org\.apache\.derby\.iapi\.types\..*;/
+        }.collect { line ->
+            delosdbB5oRelPath(source) + ': ' + line.trim()
+        }
+    }
+}
+
+def delosdbB5oRetiredImportsRemaining = { ->
+    [
+        [source: delosdbB5oSortObserver, retired: ['DataValueDescriptor']],
+        [source: delosdbB5oSortController, retired: ['DataValueDescriptor']],
+        [source: delosdbB5oQualifier, retired: ['DataValueDescriptor']],
+        [source: delosdbB5oUTFQualifier, retired: ['DataValueDescriptor']],
+        [source: delosdbB5oNode, retired: ['DataValueDescriptor']],
+        [source: delosdbB5oSortBuffer, retired: ['DataValueDescriptor']],
+        [source: delosdbB5oMergeInserter, retired: ['DataValueDescriptor']],
+        [source: delosdbB5oMergeScan, retired: ['DataValueDescriptor']],
+        [source: delosdbB5oUniqueMergeSort, retired: ['DataValueDescriptor']]
+    ].collectMany { entry ->
+        def text = delosdbB5oRead(entry.source)
+        entry.retired.findAll { typeName ->
+            text.contains('import org.apache.derby.iapi.types.' + typeName + ';')
+        }.collect { typeName ->
+            delosdbB5oRelPath(entry.source) + ': import org.apache.derby.iapi.types.' + typeName + ';'
+        }
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5oSortQualifierBridgeReport') {
+    group = 'verification'
+    description = 'B5o: reports sort/qualifier StoreDataValue bridge progress.'
+    dependsOn 'verifyLegacyDerbyKernelB5nRawStreamBtreeLongBridge'
+    outputs.file(delosdbB5oReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5oStoreTypeImportLines()
+        def retiredImportsRemaining = delosdbB5oRetiredImportsRemaining()
+        def reportFile = delosdbB5oReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5o sort/qualifier row-value bridge batch
+=================================================
+
+Goal
+----
+Continue B5 by widening the type-boundary reduction in the sort and qualifier
+boundary without starting B6 yet.
+
+Touched files
+-------------
+${delosdbB5oTouchedFiles.collect { '  - ' + delosdbB5oRelPath(it) }.join('\n')}
+
+Bridge changes
+--------------
+  - StoreOrderable carries store-facing comparison operator constants.
+  - StoreTypeSupport / StoreTypeUtil add isNull(Object) for sort/null checks.
+  - SortObserver and SortController now use StoreDataValue[] for store-facing row values.
+  - Qualifier#getOrderable now returns StoreDataValue instead of DataValueDescriptor.
+  - UTFQualifier uses StoreDataValue and StoreOrderable instead of direct Derby types.
+  - SortBuffer, Node, MergeInserter, MergeScan, and UniqueWithDuplicateNullsMergeSort use StoreDataValue[] internally.
+  - Engine-side sort observers adapt StoreDataValue[] back to concrete DataValueDescriptor[] only where SQL execution/aggregation requires it.
+
+Retired direct imports checked
+------------------------------
+${retiredImportsRemaining.isEmpty() ? '  none remain in B5o-retired files' : retiredImportsRemaining.collect { '  - ' + it }.join('\n')}
+
+Relocated store direct iapi.types import count
+---------------------------------------------
+  before B5o baseline: ${delosdbB5oBaselineImportCount}
+  after B5o:           ${remainingStoreTypeImports.size()}
+
+B6 readiness
+------------
+NOT YET
+
+Reason
+------
+B5o reduces the direct type import surface, but many relocated store access
+paths still import DataValueDescriptor and RowLocation directly. B6 must wait
+until those remaining imports are either eliminated or explicitly justified by
+a final B5 closeout guard/report.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5oRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5oSortQualifierBridge') {
+    group = 'verification'
+    description = 'B5o: verifies sort/qualifier StoreDataValue bridge progress.'
+    dependsOn 'legacyDerbyStoreKernelB5oSortQualifierBridgeReport'
+    doLast {
+        delosdbB5oTouchedFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5o missing required source file: ' + delosdbB5oRelPath(source))
+            }
+        }
+
+        def retiredImportsRemaining = delosdbB5oRetiredImportsRemaining()
+        if (!retiredImportsRemaining.isEmpty()) {
+            throw new GradleException('B5o retired direct store type imports still remain: ' + retiredImportsRemaining.join('; '))
+        }
+
+        def sortObserverText = delosdbB5oRead(delosdbB5oSortObserver)
+        if (!sortObserverText.contains('StoreDataValue[] insertNonDuplicateKey') ||
+            !sortObserverText.contains('StoreDataValue[] insertDuplicateKey') ||
+            !sortObserverText.contains('StoreDataValue[] getArrayClone()')) {
+            throw new GradleException('B5o SortObserver must expose StoreDataValue[] methods')
+        }
+
+        def sortControllerText = delosdbB5oRead(delosdbB5oSortController)
+        if (!sortControllerText.contains('void insert(StoreDataValue[] row)')) {
+            throw new GradleException('B5o SortController must insert StoreDataValue[] rows')
+        }
+
+        def qualifierText = delosdbB5oRead(delosdbB5oQualifier)
+        if (!qualifierText.contains('StoreDataValue getOrderable()')) {
+            throw new GradleException('B5o Qualifier#getOrderable must return StoreDataValue')
+        }
+
+        def utfQualifierText = delosdbB5oRead(delosdbB5oUTFQualifier)
+        if (!utfQualifierText.contains('StoreOrderable.ORDER_OP_EQUALS')) {
+            throw new GradleException('B5o UTFQualifier must use StoreOrderable comparison constants')
+        }
+
+        def storeTypeUtilText = delosdbB5oRead(delosdbB5oStoreTypeUtil)
+        if (!storeTypeUtilText.contains('boolean isNull(Object value)')) {
+            throw new GradleException('B5o StoreTypeUtil must expose isNull(Object)')
+        }
+
+        [delosdbB5oSortBuffer, delosdbB5oNode, delosdbB5oMergeInserter, delosdbB5oMergeScan, delosdbB5oUniqueMergeSort].each { source ->
+            def text = delosdbB5oRead(source)
+            if (!text.contains('StoreDataValue')) {
+                throw new GradleException('B5o ' + delosdbB5oRelPath(source) + ' must use StoreDataValue')
+            }
+        }
+
+        def remainingStoreTypeImports = delosdbB5oStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5oBaselineImportCount) {
+            throw new GradleException('B5o relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5oBaselineImportCount + ': ' + remainingStoreTypeImports.size())
+        }
+
+        def reportText = delosdbB5oRead(delosdbB5oReportFile.get().asFile)
+        if (!reportText.contains('NOT YET')) {
+            throw new GradleException('B5o report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5o sort/qualifier bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5oSortQualifierBridge'
+}

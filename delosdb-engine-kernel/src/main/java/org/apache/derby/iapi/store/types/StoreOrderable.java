@@ -20,6 +20,12 @@
  */
 package org.apache.derby.iapi.store.types;
 
-/** SQL-neutral ordering marker for store-facing values. */
-public interface StoreOrderable {
+/** SQL-neutral ordering constants and marker for store-facing values. */
+public interface StoreOrderable
+{
+    int ORDER_OP_EQUALS = 2;
+    int ORDER_OP_LESSTHAN = -1;
+    int ORDER_OP_LESSOREQUALS = -2;
+    int ORDER_OP_GREATERTHAN = 1;
+    int ORDER_OP_GREATEROREQUALS = -3;
 }

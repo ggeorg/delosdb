@@ -21,7 +21,7 @@
 
 package org.apache.derby.iapi.store.access;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -92,8 +92,8 @@ public interface SortObserver
 	 * 		or on expected user error that is to percolate back
 	 *		to the driver of the sort.
 	 */
-	DataValueDescriptor[] insertNonDuplicateKey(
-    DataValueDescriptor[] insertRow) 
+	StoreDataValue[] insertNonDuplicateKey(
+    StoreDataValue[] insertRow) 
 		throws StandardException;
 	
 	/**
@@ -117,16 +117,16 @@ public interface SortObserver
 	 * 		or on expected user error that is to percolate back
 	 *		to the driver of the sort.
 	 */
-	DataValueDescriptor[] insertDuplicateKey(
-    DataValueDescriptor[] insertRow, 
-    DataValueDescriptor[] existingRow) 
+	StoreDataValue[] insertDuplicateKey(
+    StoreDataValue[] insertRow, 
+    StoreDataValue[] existingRow) 
 			throws StandardException;
 
 	public void addToFreeList(
-    DataValueDescriptor[]   objectArray, 
+    StoreDataValue[]   objectArray, 
     int                     maxFreeListSize);
 
-	public DataValueDescriptor[] getArrayClone()
+	public StoreDataValue[] getArrayClone()
 		throws StandardException;
 
     /**
@@ -156,6 +156,6 @@ public interface SortObserver
      * @param row data of offending key
      * @throws StandardException standard error policy
      */
-    public void rememberDuplicate(DataValueDescriptor[] row)
+    public void rememberDuplicate(StoreDataValue[] row)
             throws StandardException;
 }
