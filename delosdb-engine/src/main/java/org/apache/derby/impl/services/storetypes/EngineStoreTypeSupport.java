@@ -23,8 +23,11 @@ package org.apache.derby.impl.services.storetypes;
 import java.io.InputStream;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreLocatedRow;
 import org.apache.derby.iapi.store.types.StoreTypeSupport;
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.types.LocatedRow;
+import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.shared.common.error.StandardException;
 
 /** Engine-side bridge for inherited Derby SQL value operations. */
@@ -47,6 +50,36 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
     public StoreDataValue getNewNull(Object value) throws StandardException
     {
         return dataValue(value).getNewNull();
+    }
+
+    @Override
+    public StoreLocatedRow newLocatedRow(Object columnValues, Object rowLocation)
+    {
+        return new LocatedRow(dataValueArray(columnValues), rowLocation(rowLocation));
+    }
+
+    @Override
+    public StoreLocatedRow newLocatedRow(Object columnsAndRowLocation)
+    {
+        return new LocatedRow(dataValueArray(columnsAndRowLocation));
+    }
+
+    @Override
+    public Object[] locatedRowColumnValues(Object locatedRow)
+    {
+        return locatedRow(locatedRow).columnValues();
+    }
+
+    @Override
+    public Object locatedRowLocation(Object locatedRow)
+    {
+        return locatedRow(locatedRow).rowLocation();
+    }
+
+    @Override
+    public Object[] flattenLocatedRow(Object columnValues, Object rowLocation)
+    {
+        return LocatedRow.flatten(dataValueArray(columnValues), rowLocation(rowLocation));
     }
 
     @Override
@@ -128,5 +161,20 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
     private static DataValueDescriptor dataValue(Object value)
     {
         return (DataValueDescriptor) value;
+    }
+
+    private static DataValueDescriptor[] dataValueArray(Object value)
+    {
+        return (DataValueDescriptor[]) value;
+    }
+
+    private static LocatedRow locatedRow(Object value)
+    {
+        return (LocatedRow) value;
+    }
+
+    private static RowLocation rowLocation(Object value)
+    {
+        return (RowLocation) value;
     }
 }

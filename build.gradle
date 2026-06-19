@@ -6568,3 +6568,196 @@ tasks.register('verifyLegacyDerbyKernelB5kRawTypeImportCleanup') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5kRawTypeImportCleanup'
 }
+
+// B5l — LocatedRow bridge slice before real store compilation
+//
+// B5k removed dead raw-store type imports. B5l takes the next narrow, compile-safe
+// dependency slice: BackingStoreHashtable no longer imports the engine-owned
+// LocatedRow class directly. Instead, it uses the SQL-neutral StoreLocatedRow
+// marker plus StoreTypeUtil operations supplied by the engine provider.
+def delosdbB5lReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5l-located-row-bridge.txt')
+def delosdbB5lBaselineImportCount = 135
+
+def delosdbB5lKernelTypeRoot = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types')
+def delosdbB5lStoreTypeSupport = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeSupport.java')
+def delosdbB5lStoreTypeUtil = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeUtil.java')
+def delosdbB5lStoreLocatedRow = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreLocatedRow.java')
+def delosdbB5lEngineProvider = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineStoreTypeSupport.java')
+def delosdbB5lBackingStoreHashtable = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/BackingStoreHashtable.java')
+
+def delosdbB5lRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5lRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5lStoreTypeImportLines = { ->
+    [file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+     file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')].collectMany { root ->
+        fileTree(root) { include '**/*.java' }.files.findAll { it.isFile() }.collectMany { source ->
+            source.readLines().findAll { it.trim().startsWith('import org.apache.derby.iapi.types.') }.collect { line ->
+                delosdbB5lRelPath(source) + ': ' + line.trim()
+            }
+        }
+    }.sort()
+}
+def delosdbB5lForbiddenKernelImports = { ->
+    def forbidden = [
+        'org.apache.derby.iapi.sql.',
+        'org.apache.derby.impl.sql.',
+        'org.apache.derby.iapi.sql.dictionary.',
+        'org.apache.derby.iapi.types.',
+        'org.apache.derby.catalog.',
+        'java.sql.'
+    ]
+    fileTree(delosdbB5lKernelTypeRoot) { include '**/*.java' }.files.findAll { it.isFile() }.collectMany { source ->
+        source.readLines().findAll { line ->
+            def trimmed = line.trim()
+            trimmed.startsWith('import ') && forbidden.any { prefix -> trimmed.contains(prefix) }
+        }.collect { delosdbB5lRelPath(source) + ': ' + it.trim() }
+    }.sort()
+}
+
+def delosdbB5lRequiredBridgeMethods = [
+    'newLocatedRow(Object columnValues, Object rowLocation)',
+    'newLocatedRow(Object columnsAndRowLocation)',
+    'locatedRowColumnValues(Object locatedRow)',
+    'locatedRowLocation(Object locatedRow)',
+    'flattenLocatedRow(Object columnValues, Object rowLocation)'
+]
+
+tasks.register('legacyDerbyStoreKernelB5lLocatedRowBridgeReport') {
+    group = 'verification'
+    description = 'B5l: reports the LocatedRow bridge slice away from direct iapi.types imports.'
+    dependsOn 'verifyLegacyDerbyKernelB5kRawTypeImportCleanup'
+    outputs.file(delosdbB5lReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5lStoreTypeImportLines()
+        def forbiddenKernelImports = delosdbB5lForbiddenKernelImports()
+        def supportText = delosdbB5lRead(delosdbB5lStoreTypeSupport)
+        def utilText = delosdbB5lRead(delosdbB5lStoreTypeUtil)
+        def providerText = delosdbB5lRead(delosdbB5lEngineProvider)
+        def backingText = delosdbB5lRead(delosdbB5lBackingStoreHashtable)
+        def reportFile = delosdbB5lReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5l LocatedRow bridge slice
+====================================
+
+Purpose
+-------
+B5l continues the B5h/B5i/B5j/B5k type-boundary work with a narrow LocatedRow
+slice. BackingStoreHashtable no longer imports the engine-owned
+org.apache.derby.iapi.types.LocatedRow class directly. Located-row creation,
+flattening, and access now go through StoreTypeUtil/StoreTypeSupport while the
+engine provider keeps the concrete inherited Derby casts.
+
+Touched files
+-------------
+  - ${delosdbB5lRelPath(delosdbB5lStoreTypeSupport)}
+  - ${delosdbB5lRelPath(delosdbB5lStoreTypeUtil)}
+  - ${delosdbB5lRelPath(delosdbB5lEngineProvider)}
+  - ${delosdbB5lRelPath(delosdbB5lBackingStoreHashtable)}
+
+LocatedRow bridge methods
+-------------------------
+${delosdbB5lRequiredBridgeMethods.collect { method ->
+    '  - ' + method +
+        (supportText.contains(method) && utilText.contains(method) && providerText.contains(method) ? ' [present]' : ' [missing]')
+}.join('\n')}
+
+BackingStoreHashtable direct LocatedRow import
+----------------------------------------------
+  ${backingText.contains('import org.apache.derby.iapi.types.LocatedRow;') ? 'still present [ERROR]' : 'removed'}
+
+BackingStoreHashtable bridge usage
+----------------------------------
+  StoreLocatedRow import: ${backingText.contains('org.apache.derby.iapi.store.types.StoreLocatedRow') ? 'present' : 'missing'}
+  StoreTypeUtil import:  ${backingText.contains('org.apache.derby.iapi.store.types.StoreTypeUtil') ? 'present' : 'missing'}
+
+Forbidden SQL/type/catalog imports in kernel store-type contracts
+-----------------------------------------------------------------
+${forbiddenKernelImports.isEmpty() ? '  none' : forbiddenKernelImports.collect { '  - ' + it }.join('\n')}
+
+Relocated-store iapi.types import count
+---------------------------------------
+  before B5l baseline: ${delosdbB5lBaselineImportCount}
+  after B5l:           ${remainingStoreTypeImports.size()}
+
+Remaining relocated-store iapi.types imports
+--------------------------------------------
+${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+Boundary decision
+-----------------
+This is not a broad move of org.apache.derby.iapi.types. B5l only removes the
+store module's direct dependency on the concrete LocatedRow holder. The remaining
+DataValueDescriptor and RowLocation dependencies in BackingStoreHashtable are
+still real and must be handled by later B5 slices.
+
+B6 readiness
+------------
+NOT YET. The relocated store still has direct org.apache.derby.iapi.types imports.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5lRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5lLocatedRowBridge') {
+    group = 'verification'
+    description = 'B5l: verifies the LocatedRow bridge slice and import-count decrease.'
+    dependsOn 'legacyDerbyStoreKernelB5lLocatedRowBridgeReport'
+    doLast {
+        [delosdbB5lStoreTypeSupport, delosdbB5lStoreTypeUtil, delosdbB5lStoreLocatedRow,
+         delosdbB5lEngineProvider, delosdbB5lBackingStoreHashtable].each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5l missing required source file: ' + delosdbB5lRelPath(source))
+            }
+        }
+
+        def supportText = delosdbB5lRead(delosdbB5lStoreTypeSupport)
+        def utilText = delosdbB5lRead(delosdbB5lStoreTypeUtil)
+        def providerText = delosdbB5lRead(delosdbB5lEngineProvider)
+        delosdbB5lRequiredBridgeMethods.each { method ->
+            if (!supportText.contains(method)) {
+                throw new GradleException('B5l StoreTypeSupport missing bridge method: ' + method)
+            }
+            if (!utilText.contains(method)) {
+                throw new GradleException('B5l StoreTypeUtil missing bridge method: ' + method)
+            }
+            if (!providerText.contains(method)) {
+                throw new GradleException('B5l EngineStoreTypeSupport missing bridge method: ' + method)
+            }
+        }
+
+        def backingText = delosdbB5lRead(delosdbB5lBackingStoreHashtable)
+        if (backingText.contains('import org.apache.derby.iapi.types.LocatedRow;')) {
+            throw new GradleException('B5l BackingStoreHashtable must not import engine-owned LocatedRow directly')
+        }
+        if (!backingText.contains('import org.apache.derby.iapi.store.types.StoreLocatedRow;') ||
+                !backingText.contains('import org.apache.derby.iapi.store.types.StoreTypeUtil;')) {
+            throw new GradleException('B5l BackingStoreHashtable must use StoreLocatedRow and StoreTypeUtil')
+        }
+        if (!backingText.contains('StoreTypeUtil.newLocatedRow') ||
+                !backingText.contains('StoreTypeUtil.flattenLocatedRow') ||
+                !backingText.contains('StoreTypeUtil.locatedRowColumnValues') ||
+                !backingText.contains('StoreTypeUtil.locatedRowLocation')) {
+            throw new GradleException('B5l BackingStoreHashtable must route LocatedRow operations through StoreTypeUtil')
+        }
+
+        def forbiddenKernelImports = delosdbB5lForbiddenKernelImports()
+        if (!forbiddenKernelImports.isEmpty()) {
+            throw new GradleException('B5l kernel store type bridge must stay SQL/type/catalog neutral: ' + forbiddenKernelImports.join('; '))
+        }
+
+        def remainingStoreTypeImports = delosdbB5lStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5lBaselineImportCount) {
+            throw new GradleException('B5l relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5lBaselineImportCount + ': ' + remainingStoreTypeImports.size())
+        }
+
+        def reportText = delosdbB5lRead(delosdbB5lReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5l report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5l LocatedRow bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5lLocatedRowBridge'
+}

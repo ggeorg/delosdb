@@ -40,6 +40,16 @@ public interface StoreTypeSupport
 
     StoreDataValue getNewNull(Object value) throws StandardException;
 
+    StoreLocatedRow newLocatedRow(Object columnValues, Object rowLocation);
+
+    StoreLocatedRow newLocatedRow(Object columnsAndRowLocation);
+
+    Object[] locatedRowColumnValues(Object locatedRow);
+
+    Object locatedRowLocation(Object locatedRow);
+
+    Object[] flattenLocatedRow(Object columnValues, Object rowLocation);
+
     int compare(Object left, Object right) throws StandardException;
 
     int compare(Object left, Object right, boolean nullsOrderedLow)

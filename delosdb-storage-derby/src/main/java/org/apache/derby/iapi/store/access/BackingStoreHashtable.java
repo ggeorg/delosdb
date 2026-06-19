@@ -24,8 +24,9 @@ package org.apache.derby.iapi.store.access;
 import org.apache.derby.shared.common.error.StandardException; 
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.LocatedRow;
 import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreLocatedRow;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 import org.apache.derby.iapi.services.cache.ClassSize;
 
@@ -480,7 +481,7 @@ public class BackingStoreHashtable
 
         Object key = KeyHasher.buildHashKey( columnValues, key_column_numbers );
         Object hashValue = !includeRowLocations() ?
-            columnValues : new LocatedRow( columnValues, rowLocation );
+            columnValues : StoreTypeUtil.newLocatedRow( columnValues, rowLocation );
         Object duplicate_value = hash_table.put( key, hashValue );
 
         if (duplicate_value == null)
@@ -571,7 +572,7 @@ public class BackingStoreHashtable
                  getEstimatedMemUsage
                  (
                   !includeRowLocations() ?
-                  columnValues : new LocatedRow( columnValues, rowLocation )
+                  columnValues : StoreTypeUtil.newLocatedRow( columnValues, rowLocation )
                  )
                 )
             {
@@ -634,9 +635,10 @@ public class BackingStoreHashtable
         DataValueDescriptor[]   allColumns = null;
         if ( includeRowLocations() )
         {
-            LocatedRow  locatedRow = (LocatedRow) raw;
+            StoreLocatedRow locatedRow = (StoreLocatedRow) raw;
             allColumns = makeDiskRow
-                ( locatedRow.columnValues(), locatedRow.rowLocation() );
+                ( (DataValueDescriptor[]) StoreTypeUtil.locatedRowColumnValues(locatedRow),
+                  (RowLocation) StoreTypeUtil.locatedRowLocation(locatedRow) );
         }
         else { allColumns = (DataValueDescriptor[]) raw; }
 
@@ -683,7 +685,7 @@ public class BackingStoreHashtable
         }
         else
         {
-            return new LocatedRow( diskRow );
+            return StoreTypeUtil.newLocatedRow( diskRow );
         }
     }
 
@@ -703,7 +705,7 @@ public class BackingStoreHashtable
         }
         else
         {
-            return LocatedRow.flatten( columnValues, rowLocation );
+            return (DataValueDescriptor[]) StoreTypeUtil.flattenLocatedRow( columnValues, rowLocation );
         }
     }
 
@@ -727,14 +729,14 @@ public class BackingStoreHashtable
         }
         else
         {
-            LocatedRow  locatedRow = (LocatedRow) hashValue;
-            row = locatedRow.columnValues();
+            StoreLocatedRow locatedRow = (StoreLocatedRow) hashValue;
+            row = (DataValueDescriptor[]) StoreTypeUtil.locatedRowColumnValues(locatedRow);
 
             // account for the RowLocation size and class overhead
-            RowLocation rowLocation = locatedRow.rowLocation();
+            RowLocation rowLocation = (RowLocation) StoreTypeUtil.locatedRowLocation(locatedRow);
             if ( rowLocation != null )
             {
-                rowMem += locatedRow.rowLocation().estimateMemoryUsage();
+                rowMem += rowLocation.estimateMemoryUsage();
                 rowMem += ClassSize.refSize;
             }
 

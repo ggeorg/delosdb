@@ -47,6 +47,31 @@ public final class StoreTypeUtil
         return StoreTypeSupportRegistry.support().getNewNull(value);
     }
 
+    public static StoreLocatedRow newLocatedRow(Object columnValues, Object rowLocation)
+    {
+        return StoreTypeSupportRegistry.support().newLocatedRow(columnValues, rowLocation);
+    }
+
+    public static StoreLocatedRow newLocatedRow(Object columnsAndRowLocation)
+    {
+        return StoreTypeSupportRegistry.support().newLocatedRow(columnsAndRowLocation);
+    }
+
+    public static Object[] locatedRowColumnValues(Object locatedRow)
+    {
+        return StoreTypeSupportRegistry.support().locatedRowColumnValues(locatedRow);
+    }
+
+    public static Object locatedRowLocation(Object locatedRow)
+    {
+        return StoreTypeSupportRegistry.support().locatedRowLocation(locatedRow);
+    }
+
+    public static Object[] flattenLocatedRow(Object columnValues, Object rowLocation)
+    {
+        return StoreTypeSupportRegistry.support().flattenLocatedRow(columnValues, rowLocation);
+    }
+
     public static int compare(Object left, Object right) throws StandardException
     {
         return StoreTypeSupportRegistry.support().compare(left, right);
