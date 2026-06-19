@@ -7615,3 +7615,179 @@ tasks.register('verifyLegacyDerbyKernelB5pRowSourceSortFactoryBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5pRowSourceSortFactoryBridge'
 }
+
+// ------------------------------------------------------------------------
+// B5q — Cost/search template bridge batch
+// ------------------------------------------------------------------------
+// B5p moved row-source callback and sort-template boundaries to the neutral
+// store-facing bridge. B5q continues with a compile-safe optimizer-facing
+// slice: store cost scan templates and B-tree search parameters now use
+// StoreDataValue[] while RowLocation return contracts remain unchanged for
+// this step to avoid widening the lock/location surface too early.
+def delosdbB5qReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5q-cost-search-template-bridge.txt')
+def delosdbB5qBaselineImportCount = 97
+
+def delosdbB5qStoreCostController = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/StoreCostController.java')
+def delosdbB5qBTreeCostController = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeCostController.java')
+def delosdbB5qHeapCostController = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapCostController.java')
+def delosdbB5qSearchParameters = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/SearchParameters.java')
+def delosdbB5qControlRow = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/ControlRow.java')
+def delosdbB5qB2IStaticCompiledInfo = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IStaticCompiledInfo.java')
+def delosdbB5qStoreCostControllerBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/StoreCostControllerBridge.java')
+
+def delosdbB5qTouchedFiles = [
+    delosdbB5qStoreCostController,
+    delosdbB5qBTreeCostController,
+    delosdbB5qHeapCostController,
+    delosdbB5qSearchParameters,
+    delosdbB5qControlRow,
+    delosdbB5qB2IStaticCompiledInfo,
+    delosdbB5qStoreCostControllerBridge
+]
+
+def delosdbB5qRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5qRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5qStoreTypeImportLines = { ->
+    def roots = [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ]
+    roots.collectMany { root ->
+        root.isDirectory() ? fileTree(root) { include '**/*.java' }.files : []
+    }.collectMany { source ->
+        source.readLines().findAll { line ->
+            line.trim().startsWith('import org.apache.derby.iapi.types.')
+        }.collect { line ->
+            delosdbB5qRelPath(source) + ': ' + line.trim()
+        }
+    }.sort()
+}
+def delosdbB5qRetiredImportsRemaining = { ->
+    [
+        [source: delosdbB5qStoreCostController, retired: ['DataValueDescriptor']],
+        [source: delosdbB5qBTreeCostController, retired: ['DataValueDescriptor']],
+        [source: delosdbB5qHeapCostController, retired: ['DataValueDescriptor']],
+        [source: delosdbB5qSearchParameters, retired: ['DataValueDescriptor']],
+        [source: delosdbB5qB2IStaticCompiledInfo, retired: ['DataValueDescriptor']]
+    ].collectMany { entry ->
+        def text = delosdbB5qRead(entry.source)
+        entry.retired.findAll { typeName ->
+            text.contains('import org.apache.derby.iapi.types.' + typeName + ';')
+        }.collect { typeName ->
+            delosdbB5qRelPath(entry.source) + ': import org.apache.derby.iapi.types.' + typeName + ';'
+        }
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5qCostSearchTemplateBridgeReport') {
+    group = 'verification'
+    description = 'B5q: reports StoreDataValue bridge progress for cost-controller scan templates and B-tree search parameters.'
+    dependsOn 'verifyLegacyDerbyKernelB5pRowSourceSortFactoryBridge'
+    outputs.file(delosdbB5qReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5qStoreTypeImportLines()
+        def retiredImportsRemaining = delosdbB5qRetiredImportsRemaining()
+        def reportFile = delosdbB5qReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5q cost/search template bridge batch
+=================================================
+
+Purpose
+-------
+Continue Phase B/B5 by retiring another optimizer-facing group of direct
+org.apache.derby.iapi.types imports from relocated Derby store code.
+
+Changed boundary shape
+----------------------
+  - StoreCostController#getScanCost accepts StoreDataValue[] scan templates and boundary keys
+  - BTreeCostController and HeapCostController implement the StoreDataValue[] cost signature
+  - SearchParameters carries StoreDataValue[] search keys and templates
+  - ControlRow compares B-tree search values through StoreTypeUtil.compare(...)
+  - B2IStaticCompiledInfo#getConglom returns StoreDataValue
+  - StoreCostControllerBridge adapts to the new StoreDataValue[] cost-controller signature
+
+Touched files
+-------------
+${delosdbB5qTouchedFiles.collect { '  - ' + delosdbB5qRelPath(it) }.join('\n')}
+
+Retired direct imports still present
+------------------------------------
+${retiredImportsRemaining.isEmpty() ? '  none remain in B5q-retired files' : retiredImportsRemaining.collect { '  - ' + it }.join('\n')}
+
+Relocated-store direct org.apache.derby.iapi.types import count
+---------------------------------------------------------------
+  before B5q baseline: ${delosdbB5qBaselineImportCount}
+  after B5q:           ${remainingStoreTypeImports.size()}
+
+Remaining direct relocated-store iapi.types imports
+---------------------------------------------------
+${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+Boundary decision
+-----------------
+B5q intentionally does not change newRowLocationTemplate() return types yet.
+That keeps RowLocation and Derby locking/location semantics out of this slice
+while the value-template side moves behind the SQL-neutral store bridge.
+
+B6 readiness
+------------
+NOT YET. The relocated store still has direct org.apache.derby.iapi.types imports.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5qRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5qCostSearchTemplateBridge') {
+    group = 'verification'
+    description = 'B5q: verifies StoreDataValue bridge progress for cost-controller scan templates and B-tree search parameters.'
+    dependsOn 'legacyDerbyStoreKernelB5qCostSearchTemplateBridgeReport'
+    doLast {
+        delosdbB5qTouchedFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5q missing required source file: ' + delosdbB5qRelPath(source))
+            }
+        }
+
+        def retiredImportsRemaining = delosdbB5qRetiredImportsRemaining()
+        if (!retiredImportsRemaining.isEmpty()) {
+            throw new GradleException('B5q retired direct store type imports still remain: ' + retiredImportsRemaining.join('; '))
+        }
+
+        [delosdbB5qStoreCostController, delosdbB5qBTreeCostController, delosdbB5qHeapCostController, delosdbB5qSearchParameters].each { source ->
+            def text = delosdbB5qRead(source)
+            if (!text.contains('StoreDataValue[]')) {
+                throw new GradleException('B5q ' + delosdbB5qRelPath(source) + ' must use StoreDataValue[] for cost/search templates')
+            }
+        }
+
+        def controlRowText = delosdbB5qRead(delosdbB5qControlRow)
+        if (!controlRowText.contains('StoreTypeUtil.compare(indexrow[i], key[i])')) {
+            throw new GradleException('B5q ControlRow must compare search values through StoreTypeUtil.compare(...)')
+        }
+
+        def staticInfoText = delosdbB5qRead(delosdbB5qB2IStaticCompiledInfo)
+        if (!staticInfoText.contains('StoreDataValue getConglom()')) {
+            throw new GradleException('B5q B2IStaticCompiledInfo#getConglom must return StoreDataValue')
+        }
+
+        def bridgeText = delosdbB5qRead(delosdbB5qStoreCostControllerBridge)
+        if (!bridgeText.contains('StoreDataValue[] template') || !bridgeText.contains('delegate.getScanCost')) {
+            throw new GradleException('B5q StoreCostControllerBridge must adapt the StoreDataValue[] cost-controller signature')
+        }
+
+        def remainingStoreTypeImports = delosdbB5qStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5qBaselineImportCount) {
+            throw new GradleException('B5q relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5qBaselineImportCount + ': ' + remainingStoreTypeImports.size())
+        }
+
+        def reportText = delosdbB5qRead(delosdbB5qReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5q report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5q cost/search template bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5qCostSearchTemplateBridge'
+}

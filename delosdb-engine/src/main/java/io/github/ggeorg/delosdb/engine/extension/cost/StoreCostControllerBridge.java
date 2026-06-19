@@ -3,7 +3,7 @@ package io.github.ggeorg.delosdb.engine.extension.cost;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.StoreCostResult;
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -87,10 +87,10 @@ public final class StoreCostControllerBridge {
                 int groupSize,
                 boolean forUpdate,
                 FormatableBitSet scanColumnList,
-                DataValueDescriptor[] template,
-                DataValueDescriptor[] startKeyValue,
+                StoreDataValue[] template,
+                StoreDataValue[] startKeyValue,
                 int startSearchOperator,
-                DataValueDescriptor[] stopKeyValue,
+                StoreDataValue[] stopKeyValue,
                 int stopSearchOperator,
                 boolean reopenScan,
                 int accessType,

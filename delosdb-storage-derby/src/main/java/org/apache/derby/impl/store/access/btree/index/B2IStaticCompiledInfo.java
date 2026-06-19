@@ -30,7 +30,7 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import java.io.IOException;
 import java.io.ObjectInput;
@@ -116,7 +116,7 @@ public class B2IStaticCompiledInfo implements StaticCompiledOpenConglomInfo
      *
 	 * @return the secondary index Conglomerate Object.
      **/
-    public DataValueDescriptor getConglom()
+    public StoreDataValue getConglom()
     {
         return(b2i);
     }

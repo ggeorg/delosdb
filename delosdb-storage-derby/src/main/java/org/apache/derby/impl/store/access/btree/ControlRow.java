@@ -41,6 +41,7 @@ import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.impl.store.access.StorableFormatId;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -1122,8 +1123,8 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	public static int compareIndexRowFromPageToKey(
     ControlRow              indexpage,
     int                     slot,
-    DataValueDescriptor[]   indexrow, 
-    DataValueDescriptor[]	key,
+    StoreDataValue[]        indexrow, 
+    StoreDataValue[]	key,
     int                     nCompareCols, 
     int                     partialKeyOrder,
     boolean[]               ascOrDesc)
@@ -1173,7 +1174,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 			// Compare them.
 			// int r = indexcol.compare(keycol);
 
-            int r = indexrow[i].compare(key[i]);
+            int r = StoreTypeUtil.compare(indexrow[i], key[i]);
 
 			// If the columns don't compare equal, we're done.
 			// Return the sense of the comparison.

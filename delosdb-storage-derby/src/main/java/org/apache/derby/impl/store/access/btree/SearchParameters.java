@@ -27,7 +27,7 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.store.access.RowUtil;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 
 /**
@@ -58,7 +58,7 @@ public class SearchParameters
 	The key being searched for.  Never intended to be modified
 	for the lifetime of the object.
 	**/
-	public DataValueDescriptor[] searchKey;
+	public StoreDataValue[] searchKey;
 
 	/**
     Value to return in comparisons where partial key matches exactly 
@@ -105,7 +105,7 @@ public class SearchParameters
 	they will be overwritten; there is only one template per
 	search.
 	**/
-	public DataValueDescriptor[] template;
+	public StoreDataValue[] template;
 
 	/**
 	The b-tree this search is for.  Effectively read-only for the
@@ -151,9 +151,9 @@ public class SearchParameters
     @exception StandardException Standard exception policy.
 	**/
 	public SearchParameters(
-    DataValueDescriptor[]   searchKey, 
+    StoreDataValue[]        searchKey, 
     int                     partial_key_match_op,
-    DataValueDescriptor[]   template, 
+    StoreDataValue[]        template, 
     OpenBTree               btree,
     boolean                 searchForOptimizer)
         throws StandardException

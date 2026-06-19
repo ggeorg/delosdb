@@ -21,7 +21,7 @@
 
 package org.apache.derby.iapi.store.access;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.types.RowLocation;
 
@@ -375,10 +375,10 @@ public interface StoreCostController extends RowCountable
         int                     group_size,
 		boolean                 forUpdate,
 		FormatableBitSet                 scanColumnList,
-		DataValueDescriptor[]   template,
-		DataValueDescriptor[]   startKeyValue,
+		StoreDataValue[]        template,
+		StoreDataValue[]        startKeyValue,
 		int                     startSearchOperator,
-		DataValueDescriptor[]   stopKeyValue,
+		StoreDataValue[]        stopKeyValue,
 		int                     stopSearchOperator,
         boolean                 reopen_scan,
         int                     access_type,

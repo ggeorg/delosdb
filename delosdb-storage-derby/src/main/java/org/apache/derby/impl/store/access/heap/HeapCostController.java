@@ -35,7 +35,7 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.impl.store.access.conglomerate.GenericCostController;
 import org.apache.derby.impl.store.access.conglomerate.OpenConglomerate;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import java.util.Properties;
@@ -336,10 +336,10 @@ public class HeapCostController
     int                     group_size,
     boolean                 forUpdate,
     FormatableBitSet        scanColumnList,
-    DataValueDescriptor[]   template,
-    DataValueDescriptor[]   startKeyValue,
+    StoreDataValue[]        template,
+    StoreDataValue[]        startKeyValue,
     int                     startSearchOperator,
-    DataValueDescriptor[]   stopKeyValue,
+    StoreDataValue[]        stopKeyValue,
     int                     stopSearchOperator,
     boolean                 reopen_scan,
     int                     access_type,
