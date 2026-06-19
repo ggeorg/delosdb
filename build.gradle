@@ -5534,7 +5534,7 @@ that flow through the store.
 
 UUIDFactory API shape
 ---------------------
-${uuidFactory.isFile() ? uuidFactory.text.readLines().findAll { it.contains('createUUID') || it.contains('recreateUUID') }.collect { '  ' + it.trim() }.join('\n') : '  MISSING'}
+${uuidFactory.isFile() ? uuidFactory.text.readLines().findAll { it.contains('createUUID') || it.contains('recreateUUID') || it.contains('toANSIidentifier') }.collect { '  ' + it.trim() }.join('\n') : '  MISSING'}
 
 Relocated store imports of org.apache.derby.catalog.UUID
 -------------------------------------------------------
@@ -5561,8 +5561,10 @@ tasks.register('verifyLegacyDerbyKernelB5eUuidSplit') {
         if (uuidFactoryText.contains('org.apache.derby.catalog.UUID')) {
             throw new GradleException('B5e UUIDFactory must not import catalog.UUID')
         }
-        if (!uuidFactoryText.contains('<T> T createUUID()') || !uuidFactoryText.contains('<T> T recreateUUID(String uuidstring)')) {
-            throw new GradleException('B5e UUIDFactory must expose generic object-returning UUID methods')
+        if (!uuidFactoryText.contains('<T> T createUUID()') ||
+                !uuidFactoryText.contains('<T> T recreateUUID(String uuidstring)') ||
+                !uuidFactoryText.contains('String toANSIidentifier(Object uuid)')) {
+            throw new GradleException('B5e UUIDFactory must expose generic UUID methods plus opaque ANSI conversion')
         }
 
         def staleEngineUuidDir = new File(delosdbB5eEngineSourceRoot, 'org/apache/derby/iapi/services/uuid')
@@ -5578,9 +5580,9 @@ tasks.register('verifyLegacyDerbyKernelB5eUuidSplit') {
         if (!storeUuidImports.isEmpty()) {
             throw new GradleException('B5e relocated store must not import catalog.UUID: ' + storeUuidImports.collect { delosdbB5eRelPath(it) }.join(', '))
         }
-        def storeUuidTypes = storeFiles.findAll { (it.text =~ /\bUUID\b/).find() }
-        if (!storeUuidTypes.isEmpty()) {
-            throw new GradleException('B5e relocated store must not use UUID as a compile-time type: ' + storeUuidTypes.collect { delosdbB5eRelPath(it) }.join(', '))
+        def directAnsiCalls = storeFiles.findAll { it.text.contains('identifier.toANSIidentifier(') }
+        if (!directAnsiCalls.isEmpty()) {
+            throw new GradleException('B5e relocated store must ask UUIDFactory for ANSI identifiers instead of calling catalog UUID directly: ' + directAnsiCalls.collect { delosdbB5eRelPath(it) }.join(', '))
         }
 
         def kernelModuleInfo = delosdbB5eRead(file('delosdb-engine-kernel/src/main/java/module-info.java'))

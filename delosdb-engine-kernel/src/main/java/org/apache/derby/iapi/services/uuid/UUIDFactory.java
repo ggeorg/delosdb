@@ -74,5 +74,15 @@ public interface UUIDFactory
 	  @return		The UUID.
 	**/
 	public <T> T recreateUUID(String uuidstring);
+
+	/**
+	  Convert an opaque UUID token into the ANSI-safe identifier form used by
+	  Derby storage factories. The kernel API deliberately keeps the token as
+	  Object so storage code does not depend on org.apache.derby.catalog.UUID.
+
+	  @param uuid       The opaque UUID token returned by this factory
+	  @return           The ANSI-safe UUID identifier
+	**/
+	public String toANSIidentifier(Object uuid);
 }
 

@@ -288,7 +288,7 @@ public class BaseDataFileFactory
                         Property.STORAGE_TEMP_DIRECTORY,
                         PropertyUtil.getSystemProperty(
                             Property.STORAGE_TEMP_DIRECTORY)),
-                    identifier.toANSIidentifier());
+                    uf.toANSIidentifier(identifier));
         }
         catch(IOException ioe)
         {

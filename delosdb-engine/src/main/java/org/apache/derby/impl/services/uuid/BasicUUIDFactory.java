@@ -142,6 +142,16 @@ public final class BasicUUIDFactory
 		return new BasicUUID(uuidstring);
 	}
 
+	/**
+	 * Convert an opaque UUID token into the ANSI-safe form expected by the
+	 * storage factory without exposing org.apache.derby.catalog.UUID to the
+	 * storage module boundary.
+	 */
+	public String toANSIidentifier(Object uuid)
+	{
+		return ((UUID) uuid).toANSIidentifier();
+	}
+
 	private void bumpMajor() {
 
 		// 48 bits only
