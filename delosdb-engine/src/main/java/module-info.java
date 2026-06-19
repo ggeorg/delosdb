@@ -181,12 +181,7 @@ module org.apache.derby.engine
         org.apache.derby.tools,
         org.apache.derby.tests;
 
-    exports org.apache.derby.iapi.services.crypto to
-        org.apache.derby.optionaltools,
-        org.apache.derby.tests;
 
-    exports org.apache.derby.iapi.services.diag to
-        org.apache.derby.tests;
 
     exports org.apache.derby.iapi.services.jmx to
         org.apache.derby.server;

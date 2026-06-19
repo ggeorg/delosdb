@@ -4955,3 +4955,110 @@ tasks.register('verifyLegacyDerbyKernelB5DependencyDecision') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5DependencyDecision'
 }
+
+// B5a — Move low-risk diagnostics and crypto service APIs into the engine kernel
+//
+// This is the first executable split after the B5 decision report. It only
+// moves whole, low-risk service packages that relocated Derby store code imports
+// directly and that do not drag SQL/catalog/type machinery into the kernel.
+def delosdbB5aKernelSourceRoot = file('delosdb-engine-kernel/src/main/java')
+def delosdbB5aEngineSourceRoot = file('delosdb-engine/src/main/java')
+def delosdbB5aReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5a-service-split.txt')
+
+def delosdbB5aRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5aRead = { File f -> f.isFile() ? f.text : '' }
+
+tasks.register('legacyDerbyStoreKernelB5aServiceSplitReport') {
+    group = 'verification'
+    description = 'B5a: reports the low-risk diagnostics/crypto service split into delosdb-engine-kernel.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5DependencyDecisionReport'
+    outputs.file(delosdbB5aReportFile)
+    doLast {
+        def reportFile = delosdbB5aReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5a legacy Derby store low-risk service split
+================================================================
+
+Purpose
+-------
+Move only the low-risk service APIs that relocated Derby store code imports
+but which do not require moving iapi.types, catalog.UUID, UUIDFactory, loader,
+or SQL-facing infrastructure.
+
+Moved into delosdb-engine-kernel
+--------------------------------
+  - org.apache.derby.iapi.services.diag
+  - org.apache.derby.iapi.services.crypto
+
+Intentionally not moved in B5a
+------------------------------
+  - org.apache.derby.iapi.services.io
+  - org.apache.derby.iapi.services.loader
+  - org.apache.derby.iapi.services.uuid
+  - org.apache.derby.iapi.util
+  - org.apache.derby.catalog.UUID
+  - org.apache.derby.iapi.types
+
+Why this is safe
+----------------
+The diagnostics package depends only on shared error APIs. The crypto API package
+only depends on shared error APIs and org.apache.derby.io, which is already
+kernel-owned since B2. Moving them reduces direct store dependencies without
+turning the kernel into a disguised SQL/catalog/type module.
+
+B6 readiness
+------------
+NOT YET. Remaining blockers still include services.io, util, UUID/catalog, and
+store-facing type contracts.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5aRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5aServiceSplit') {
+    group = 'verification'
+    description = 'B5a: verifies diagnostics and crypto service APIs are kernel-owned and stale engine sources are gone.'
+    dependsOn ':delosdb-engine-kernel:classes', 'legacyDerbyStoreKernelB5aServiceSplitReport'
+    doLast {
+        [
+                'org/apache/derby/iapi/services/diag',
+                'org/apache/derby/iapi/services/crypto'
+        ].each { packagePath ->
+            def kernelDir = new File(delosdbB5aKernelSourceRoot, packagePath)
+            if (!kernelDir.isDirectory()) {
+                throw new GradleException('B5a expected kernel-owned package directory: ' + delosdbB5aRelPath(kernelDir))
+            }
+            if (fileTree(kernelDir) { include '*.java' }.files.isEmpty()) {
+                throw new GradleException('B5a expected Java sources in kernel-owned package: ' + delosdbB5aRelPath(kernelDir))
+            }
+            def staleEngineDir = new File(delosdbB5aEngineSourceRoot, packagePath)
+            if (staleEngineDir.exists()) {
+                throw new GradleException('B5a stale engine package remains after cleanup: ' + delosdbB5aRelPath(staleEngineDir))
+            }
+        }
+
+        def kernelModuleInfo = delosdbB5aRead(file('delosdb-engine-kernel/src/main/java/module-info.java'))
+        ['org.apache.derby.iapi.services.diag', 'org.apache.derby.iapi.services.crypto'].each { exportedPackage ->
+            if (!kernelModuleInfo.contains('exports ' + exportedPackage)) {
+                throw new GradleException('B5a kernel module-info must export moved package: ' + exportedPackage)
+            }
+        }
+
+        def engineModuleInfo = delosdbB5aRead(file('delosdb-engine/src/main/java/module-info.java'))
+        ['exports org.apache.derby.iapi.services.diag', 'exports org.apache.derby.iapi.services.crypto'].each { staleExport ->
+            if (engineModuleInfo.contains(staleExport)) {
+                throw new GradleException('B5a engine module-info still exports moved package: ' + staleExport)
+            }
+        }
+
+        def reportFile = delosdbB5aReportFile.get().asFile
+        if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
+            throw new GradleException('B5a report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5a diagnostics/crypto service split into delosdb-engine-kernel')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5aServiceSplit'
+}
