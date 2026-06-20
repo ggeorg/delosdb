@@ -8293,7 +8293,8 @@ B5t bridges B-tree scan start/stop key parameters and fetch row-location arrays.
 It leaves concrete DataValueDescriptor row storage and RowLocation lock-template
 internals for later slices so B2I row-locking behavior remains unchanged. Later
 B5ae direct-import closeout may fully qualify that internal DataValueDescriptor
-adaptation; the compatibility edge is still explicit.
+adaptation. Later B6f may retire that internal concrete adaptation entirely by
+moving BTreeScan's remaining runtime paths to the store-facing bridge.
 
 B6 readiness
 ------------
@@ -8324,8 +8325,12 @@ tasks.register('verifyLegacyDerbyKernelB5tBtreeScanBoundaryBridge') {
             btreeScan.contains('(org.apache.derby.iapi.types.DataValueDescriptor[]) startKeyValue')
         def hasStopKeyAdaptation = btreeScan.contains('(DataValueDescriptor[]) stopKeyValue') ||
             btreeScan.contains('(org.apache.derby.iapi.types.DataValueDescriptor[]) stopKeyValue')
-        if (!hasStartKeyAdaptation || !hasStopKeyAdaptation) {
-            throw new GradleException('B5t BTreeScan must keep internal DataValueDescriptor adaptation explicit or fully qualified after direct-import closeout')
+        def hasLaterStoreNativeScanPath = !btreeScan.contains('DataValueDescriptor') &&
+            !btreeScan.contains('org.apache.derby.iapi.types.DataValueDescriptor') &&
+            btreeScan.contains('StoreDataValue[][]') &&
+            btreeScan.contains('StoreDataValue[] fetchNext_one_slot_array')
+        if ((!hasStartKeyAdaptation || !hasStopKeyAdaptation) && !hasLaterStoreNativeScanPath) {
+            throw new GradleException('B5t BTreeScan must keep internal DataValueDescriptor adaptation explicit, fully qualified after direct-import closeout, or retired by the later B6f store-native scan path')
         }
 
         [delosdbB5tBTreeForwardScan, delosdbB5tBTreeMaxScan].each { source ->
