@@ -134,6 +134,11 @@ public class HeapRowLocation extends StoreDataValueBase
         return toString();
     }
 
+    public String getTypeName()
+    {
+        return "RowLocation";
+    }
+
     /*
     ** Store ordering methods.
     */
