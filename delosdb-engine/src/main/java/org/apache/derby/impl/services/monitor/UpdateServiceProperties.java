@@ -22,6 +22,7 @@
 package org.apache.derby.impl.services.monitor;
 
 import org.apache.derby.iapi.services.monitor.PersistentService;
+import org.apache.derby.iapi.services.monitor.StoreServiceProperties;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 import java.util.Properties;
@@ -34,7 +35,7 @@ import org.apache.derby.shared.common.reference.Property;
 
 /**
 */
-public class UpdateServiceProperties extends Properties {
+public class UpdateServiceProperties extends Properties implements StoreServiceProperties {
 
 	private PersistentService serviceType;
 	private String serviceName;

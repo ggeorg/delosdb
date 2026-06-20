@@ -4411,7 +4411,9 @@ B3b rule applied
 ----------------
 Move whole monitor package only. Do not move FileMonitor or monitor
 implementation classes. Avoid a kernel-to-engine cycle through the
-MonitorKernelSupport seam.
+MonitorKernelSupport seam. Later B6 preparation may add small kernel-owned
+facades under this package, such as StoreServiceProperties, as long as they do
+not reintroduce engine implementation dependencies.
 """
         logger.lifecycle('Wrote ' + reportFile)
     }
@@ -4433,13 +4435,18 @@ tasks.register('verifyLegacyDerbyKernelMonitorExtraction') {
                 'MonitorKernelSupportRegistry.java',
                 'PersistentService.java'
         ]
+        def laterKernelFacadeFiles = [
+                'StoreServiceProperties.java'
+        ]
         def missing = expectedFiles.findAll { name -> !new File(delosdbB3bKernelMonitorRoot, name).isFile() }
         if (!missing.isEmpty()) {
             throw new GradleException('B3b missing kernel-owned monitor source file(s): ' + missing.join(', '))
         }
         def kernelFiles = delosdbB3bJavaSourcesUnder(delosdbB3bKernelMonitorRoot)
-        if (kernelFiles.size() != expectedFiles.size()) {
-            throw new GradleException('B3b expected exactly ' + expectedFiles.size() + ' monitor source files in delosdb-engine-kernel, found ' + kernelFiles.size())
+        def allowedFiles = (expectedFiles + laterKernelFacadeFiles) as Set
+        def unexpected = kernelFiles.collect { it.name }.findAll { name -> !allowedFiles.contains(name) }
+        if (!unexpected.isEmpty()) {
+            throw new GradleException('B3b found unexpected kernel-owned monitor source file(s): ' + unexpected.join(', '))
         }
         if (delosdbB3bEngineMonitorRoot.exists() && !delosdbB3bJavaSourcesUnder(delosdbB3bEngineMonitorRoot).isEmpty()) {
             throw new GradleException('B3b stale org.apache.derby.iapi.services.monitor source files remain under delosdb-engine. Run scripts/cleanup-legacy-derby-kernel-b3b.sh')

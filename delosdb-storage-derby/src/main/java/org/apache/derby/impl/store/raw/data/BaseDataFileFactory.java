@@ -26,7 +26,6 @@ import org.apache.derby.shared.common.reference.MessageId;
 import org.apache.derby.iapi.services.security.StoreSecurityUtil;
 import org.apache.derby.shared.common.info.ProductVersionHolder;
 
-import org.apache.derby.database.Database;
 import org.apache.derby.iapi.services.cache.CacheFactory;
 import org.apache.derby.iapi.services.cache.CacheManager;
 import org.apache.derby.iapi.services.cache.Cacheable;
@@ -115,6 +114,9 @@ that file was made to inherit from this one.
 public class BaseDataFileFactory
     implements DataFactory, CacheableFactory, ModuleControl, ModuleSupportable
 {
+    /** Store-private copy of the external database Lucene directory name. */
+    private static final String LUCENE_DIR = "LUCENE";
+
 
     StorageFactory storageFactory;
 
@@ -2655,7 +2657,7 @@ public class BaseDataFileFactory
             for (int i = 0; i < cfilelist.length; i++) 
             {
                 //delete only the seg* directories in the database home
-                if(cfilelist[i].startsWith("seg") || Database.LUCENE_DIR.equals( cfilelist[i] ))
+                if(cfilelist[i].startsWith("seg") || LUCENE_DIR.equals( cfilelist[i] ))
                 {
                     csegdir = storageFactory.newStorageFile( cfilelist[i]);
                     if(!csegdir.deleteAll())
@@ -2673,7 +2675,7 @@ public class BaseDataFileFactory
         for (int i = 0; i < bfilelist.length; i++) 
         {
             //copy only the seg* directories and copy them from backup
-            if (bfilelist[i].startsWith("seg") || Database.LUCENE_DIR.equals( bfilelist[i] ))
+            if (bfilelist[i].startsWith("seg") || LUCENE_DIR.equals( bfilelist[i] ))
             {
                 csegdir = storageFactory.newStorageFile( bfilelist[i]);
                 File bsegdir1 = new java.io.File(backupRoot, bfilelist[i]);
@@ -2725,7 +2727,7 @@ public class BaseDataFileFactory
         throws StandardException
     {
         StorageFactory storageFactory = getStorageFactory();
-        StorageFile luceneDir = storageFactory.newStorageFile( Database.LUCENE_DIR );
+        StorageFile luceneDir = storageFactory.newStorageFile( LUCENE_DIR );
 
         return luceneDir.exists();
     }

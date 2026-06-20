@@ -19,6 +19,7 @@ module io.github.ggeorg.delosdb.engine.kernel {
         org.apache.derby.tests;
 
     exports org.apache.derby.iapi.services.monitor to
+        io.github.ggeorg.delosdb.storage.derby,
         org.apache.derby.engine,
         org.apache.derby.server,
         org.apache.derby.tools,

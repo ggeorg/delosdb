@@ -55,7 +55,7 @@ import org.apache.derby.iapi.store.raw.data.DataFactory;
 import org.apache.derby.iapi.store.raw.log.LogFactory;
 import org.apache.derby.iapi.store.raw.log.LogInstant;
 import org.apache.derby.iapi.util.StringUtil;
-import org.apache.derby.impl.services.monitor.UpdateServiceProperties;
+import org.apache.derby.iapi.services.monitor.StoreServiceProperties;
 
 import org.apache.derby.io.StorageFactory;
 import org.apache.derby.io.WritableStorageFactory;
@@ -220,10 +220,10 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 		dataFactory.setRawStoreFactory(this, create, properties);
 		xactFactory.setRawStoreFactory(this);
 
-        if( properties instanceof UpdateServiceProperties)
+        if (properties instanceof StoreServiceProperties)
         {
-            if( storageFactory instanceof WritableStorageFactory)
-                ((UpdateServiceProperties)properties).setStorageFactory( (WritableStorageFactory) storageFactory);
+            if (storageFactory instanceof WritableStorageFactory)
+                ((StoreServiceProperties) properties).setStorageFactory((WritableStorageFactory) storageFactory);
         }
         
 		// log factory is booted by the data factory
@@ -274,7 +274,7 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 		// restore from. This marks the end of restore from backup.
 		if (restoreFromBackup !=null)
 		{
-			((UpdateServiceProperties)properties).saveServiceProperties();
+			((StoreServiceProperties) properties).saveServiceProperties();
 		}
 
 
