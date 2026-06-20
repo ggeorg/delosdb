@@ -30,9 +30,10 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 
@@ -152,7 +153,7 @@ public class BTreeMaxScan extends BTreeScan
      **/
     protected int fetchRows(
     BTreeRowPosition        pos,
-    DataValueDescriptor[][] row_array,
+    StoreDataValue[][]      row_array,
     StoreRowLocation[]      rowloc_array,
     BackingStoreHashtable   hash_table,
     long                    max_rowcnt,
@@ -288,7 +289,7 @@ public class BTreeMaxScan extends BTreeScan
 	 * @exception  StandardException  Standard exception policy.
      **/
     public boolean fetchMax(
-    DataValueDescriptor[]   fetch_row)
+    StoreDataValue[]       fetch_row)
         throws StandardException
     {
         BTreeRowPosition    pos           = scan_position;
@@ -510,7 +511,7 @@ public class BTreeMaxScan extends BTreeScan
                     this.stat_numdeleted_rows_visited++;
                     pos.current_rh_qualified = false;
                 }
-                else if (fetch_row[0].isNull())
+                else if (StoreTypeUtil.isNull(fetch_row[0]))
                 {
                     pos.current_rh_qualified = false;
                 }

@@ -299,6 +299,33 @@ public class RowUtil
 		return -1;
 	}
 
+
+	/**
+		Return the column number of the first column out of range, or a number
+        less than zero if all columns are in range.
+	*/
+	public static int columnOutOfRange(
+    Object[]   row, 
+    FormatableBitSet                 columnList, 
+    int                     maxColumns) 
+    {
+
+		if (columnList == null) {
+			if (row.length > maxColumns)
+				return maxColumns;
+
+			return -1;
+		}
+
+		int size = columnList.getLength();
+		for (int i = maxColumns; i < size; i++) {
+			if (columnList.isSet(i))
+				return i;
+		}
+
+		return -1;
+	}
+
 	/**
 		Get the next valid column after or including start column.
 		Returns -1 if no valid columns exist after startColumn

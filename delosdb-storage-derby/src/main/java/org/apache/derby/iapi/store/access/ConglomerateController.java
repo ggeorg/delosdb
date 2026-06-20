@@ -25,7 +25,7 @@ import org.apache.derby.iapi.store.access.RowUtil;
 
 import org.apache.derby.iapi.services.io.Storable;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.types.RowLocation;
 
@@ -182,7 +182,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
      **/
     boolean fetch(
     RowLocation             loc, 
-    DataValueDescriptor[]   destRow, 
+    StoreDataValue[]     destRow, 
     FormatableBitSet                 validColumns) 
 		throws StandardException;
 
@@ -215,7 +215,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
      **/
     boolean fetch(
     RowLocation loc, 
-    DataValueDescriptor[]   destRow, 
+    StoreDataValue[]     destRow, 
     FormatableBitSet     validColumns,
     boolean     waitForLock) 
 		throws StandardException;
@@ -257,7 +257,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
     /*
     boolean fetch(
     RowLocation             loc, 
-    DataValueDescriptor[]   destRow, 
+    StoreDataValue[]     destRow, 
     FormatableBitSet                 validColumns, 
     Qualifier[][]           qualifier)
 		throws StandardException;
@@ -279,7 +279,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
 	@exception StandardException Standard exception policy.
 	@see RowUtil
     **/
-	int insert(DataValueDescriptor[]    row) 
+	int insert(StoreDataValue[]    row) 
 		throws StandardException;
 
     /**
@@ -302,7 +302,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
 	 * @see RowUtil
      **/
 	void insertAndFetchLocation(
-    DataValueDescriptor[]   row, 
+    StoreDataValue[]     row, 
     RowLocation             destRowLocation)
 		throws StandardException;
 
@@ -437,7 +437,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
     **/
     boolean replace(
     RowLocation             loc, 
-    DataValueDescriptor[]   row, 
+    StoreDataValue[]     row, 
     FormatableBitSet                 validColumns)
 		throws StandardException;
 

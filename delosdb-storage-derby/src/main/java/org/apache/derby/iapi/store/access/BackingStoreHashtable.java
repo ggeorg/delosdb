@@ -25,6 +25,8 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreLocatedRow;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
@@ -382,7 +384,7 @@ public class BackingStoreHashtable
 				int index = 0;
 				for ( ; index < key_column_numbers.length; index++)
 				{
-					if (row[key_column_numbers[index]].isNull())
+					if (StoreTypeUtil.isNull(row[key_column_numbers[index]]))
 					{
 						break;
 					}
@@ -1021,8 +1023,8 @@ public class BackingStoreHashtable
     public boolean putRow
         (
          boolean     needsToClone,
-         DataValueDescriptor[]    row,
-         RowLocation    rowLocation
+         StoreDataValue[]    row,
+         StoreRowLocation rowLocation
          )
 		throws StandardException
     {
@@ -1032,7 +1034,7 @@ public class BackingStoreHashtable
 			int index = 0;
 			for ( ; index < key_column_numbers.length; index++)
 			{
-				if (row[key_column_numbers[index]].isNull())
+				if (StoreTypeUtil.isNull(row[key_column_numbers[index]]))
 				{
 					return false;
 				}
@@ -1047,7 +1049,7 @@ public class BackingStoreHashtable
         }
         else
         {
-            add_row_to_hash_table( row, rowLocation, needsToClone );
+            add_row_to_hash_table( (DataValueDescriptor[]) row, (RowLocation) rowLocation, needsToClone );
             return(true);
         }
     }

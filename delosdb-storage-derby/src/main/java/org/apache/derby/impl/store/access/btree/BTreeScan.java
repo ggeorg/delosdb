@@ -212,7 +212,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
      **/
     abstract protected int fetchRows(
     BTreeRowPosition        pos,
-    DataValueDescriptor[][] row_array,
+    StoreDataValue[][]      row_array,
     StoreRowLocation[]      rowloc_array,
     BackingStoreHashtable   hash_table,
     long                    max_rowcnt,
@@ -699,7 +699,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
      * @exception  StandardException  Standard exception policy.
      */
     protected boolean process_qualifier(
-    DataValueDescriptor[]     row) 
+    StoreDataValue[]          row) 
         throws StandardException
     {
         boolean     row_qualifies = true;
@@ -747,7 +747,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
 
             // Get the column from the possibly partial row, of the 
             // q.getColumnId()'th column in the full row.
-            DataValueDescriptor columnValue = row[q.getColumnId()];
+            StoreDataValue columnValue = row[q.getColumnId()];
 
             row_qualifies =
                 StoreTypeUtil.compare(
@@ -788,7 +788,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
 
                 // Get the column from the possibly partial row, of the 
                 // q.getColumnId()'th column in the full row.
-                DataValueDescriptor columnValue = row[q.getColumnId()];
+                StoreDataValue columnValue = row[q.getColumnId()];
 
                 row_qualifies =
                     StoreTypeUtil.compare(
@@ -1686,7 +1686,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         return(
             fetchRows(
                 scan_position,
-                (DataValueDescriptor[][]) row_array, 
+                row_array, 
                 rowloc_array,
                 (BackingStoreHashtable) null,
                 row_array.length,
@@ -1823,7 +1823,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         
         fetchRows(
             scan_position,
-            (DataValueDescriptor[][]) null,
+            (StoreDataValue[][]) null,
             (StoreRowLocation[]) null,
             (BackingStoreHashtable) hash_table,
             max_rowcnt,
@@ -2083,7 +2083,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
      * @throws StandardException if an error occurs while saving the position
      * @see #reposition(BTreeRowPosition, boolean)
      */
-    void savePositionAndReleasePage(DataValueDescriptor[] partialKey,
+    void savePositionAndReleasePage(StoreDataValue[] partialKey,
                                     int[] vcols)
             throws StandardException {
 
@@ -2114,7 +2114,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
                         (vcols == null) ? partialKey.length : vcols.length;
                 for (int i = 0; i < partialKeyLength; i++) {
                     if (vcols == null || vcols[i] != 0) {
-                        fullKey[i].setValue(partialKey[i]);
+                        StoreTypeUtil.setValue(fullKey[i], partialKey[i]);
                         copiedCols++;
                     }
                 }

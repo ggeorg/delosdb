@@ -42,6 +42,7 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 
@@ -1346,7 +1347,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
 	@exception StandardException Standard exception policy.
     **/
-	public int insert(DataValueDescriptor[] row) 
+	public int insert(StoreDataValue[] row) 
          throws StandardException
     {
 
@@ -1369,7 +1370,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             SanityManager.ASSERT(this.container != null);
         }
 
-		return doIns(row);
+		return doIns((DataValueDescriptor[]) row);
 	}
 
     /**
@@ -1600,7 +1601,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     **/
     public boolean fetch(
     RowLocation loc, 
-    DataValueDescriptor[]   row, 
+    StoreDataValue[]     row, 
     FormatableBitSet                 validColumns) 
 		throws StandardException
 	{
@@ -1616,7 +1617,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     **/
     public boolean fetch(
     RowLocation             loc, 
-    DataValueDescriptor[]   row, 
+    StoreDataValue[]     row, 
     FormatableBitSet                 validColumns,
     boolean                 waitForLock) 
 		throws StandardException
@@ -1636,7 +1637,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     @exception StandardException Standard exception policy.
 	**/
 	public void insertAndFetchLocation(
-    DataValueDescriptor[]	row,
+    StoreDataValue[]	row,
     RowLocation             templateRowLocation)
         throws StandardException
 	{
@@ -1718,7 +1719,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     **/
     public boolean replace(
     RowLocation             loc, 
-    DataValueDescriptor[]   row, 
+    StoreDataValue[]     row, 
     FormatableBitSet                 validColumns)
 		throws StandardException
 	{

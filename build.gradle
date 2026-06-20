@@ -9014,3 +9014,167 @@ tasks.register('verifyLegacyDerbyKernelB5xRemainingTypeImports') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5xRemainingTypeImports'
 }
+
+// -----------------------------------------------------------------------------
+// B5y — Controller row and B-tree fetch row bridge
+// -----------------------------------------------------------------------------
+// B5x deliberately exposed the remaining hard iapi.types seams. B5y removes a
+// broader batch by moving the ConglomerateController row-array API and B-tree
+// fetch-row callback boundary to StoreDataValue while keeping exact Derby
+// RowLocation semantics unchanged for this slice.
+
+def delosdbB5yReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5y-controller-row-bridge.txt')
+def delosdbB5yBaselineImportCount = 57
+
+def delosdbB5yFiles = [
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/ConglomerateController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowUtil.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/BackingStoreHashtable.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericConglomerateController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeScan.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeForwardScan.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeMaxScan.java')
+]
+
+def delosdbB5yRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5yRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5yStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].collectMany { root ->
+        root.exists() ? fileTree(root).matching { include '**/*.java' }.files : []
+    }.sort { it.path }.collectMany { source ->
+        source.readLines().findAll { line ->
+            line ==~ /\s*import\s+org\.apache\.derby\.iapi\.types\..*;/
+        }.collect { line ->
+            delosdbB5yRelPath(source) + ': ' + line.trim()
+        }
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5yControllerRowBridgeReport') {
+    group = 'verification'
+    description = 'B5y: reports the controller row-array and B-tree fetch-row StoreDataValue bridge slice.'
+    dependsOn 'verifyLegacyDerbyKernelB5xRemainingTypeImports'
+    outputs.file(delosdbB5yReportFile)
+    doLast {
+        def imports = delosdbB5yStoreTypeImportLines()
+        def ccText = delosdbB5yRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/ConglomerateController.java'))
+        def genericText = delosdbB5yRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericConglomerateController.java'))
+        def b2iControllerText = delosdbB5yRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IController.java'))
+        def btreeForwardText = delosdbB5yRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeForwardScan.java'))
+        def btreeMaxText = delosdbB5yRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeMaxScan.java'))
+        def rowUtilText = delosdbB5yRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowUtil.java'))
+        def reportFile = delosdbB5yReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5y controller row-array and B-tree fetch-row bridge
+================================================================
+
+Purpose
+-------
+B5y removes a real batch of remaining direct iapi.types imports by moving the
+ConglomerateController row-array API and the B-tree fetchRows row-array boundary
+to the SQL-neutral StoreDataValue marker. Exact Derby RowLocation semantics are
+left intact in this slice.
+
+Changed files
+-------------
+${delosdbB5yFiles.collect { '  - ' + delosdbB5yRelPath(it) }.join('\n')}
+
+Controller row API state
+------------------------
+  ConglomerateController imports StoreDataValue: ${ccText.contains('import org.apache.derby.iapi.store.types.StoreDataValue;') ? 'yes' : 'no'}
+  ConglomerateController direct DataValueDescriptor import: ${ccText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  GenericConglomerateController direct DataValueDescriptor import: ${genericText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  B2IController direct DataValueDescriptor import: ${b2iControllerText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  RowUtil has Object[] columnOutOfRange overload: ${rowUtilText.contains('public static int columnOutOfRange(\n    Object[]   row,') ? 'yes' : 'no'}
+
+B-tree fetch row boundary state
+-------------------------------
+  BTreeForwardScan direct DataValueDescriptor import: ${btreeForwardText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  BTreeMaxScan direct DataValueDescriptor import: ${btreeMaxText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  BTreeForwardScan fetchRows uses StoreDataValue[][]: ${btreeForwardText.contains('StoreDataValue[][]      row_array') ? 'yes' : 'no'}
+  BTreeMaxScan fetchRows uses StoreDataValue[][]: ${btreeMaxText.contains('StoreDataValue[][]      row_array') ? 'yes' : 'no'}
+
+Relocated store direct iapi.types import count
+---------------------------------------------
+  before B5y baseline: ${delosdbB5yBaselineImportCount}
+  after B5y:           ${imports.size()}
+
+Remaining direct import lines
+-----------------------------
+${imports.collect { '  - ' + it }.join('\n')}
+
+B6 readiness
+------------
+NOT YET. Remaining imports are still concentrated in TransactionController,
+heap/B-tree internal row-location/value implementations, and concrete inherited
+DataType subclasses. Those need follow-up slices or an explicit closeout guard.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5yRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5yControllerRowBridge') {
+    group = 'verification'
+    description = 'B5y: verifies controller row-array and B-tree fetch-row type bridge progress.'
+    dependsOn 'legacyDerbyStoreKernelB5yControllerRowBridgeReport'
+    doLast {
+        delosdbB5yFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5y missing required source file: ' + delosdbB5yRelPath(source))
+            }
+        }
+
+        def ccText = delosdbB5yRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/ConglomerateController.java'))
+        if (ccText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
+            throw new GradleException('B5y ConglomerateController must not import DataValueDescriptor directly')
+        }
+        if (!ccText.contains('import org.apache.derby.iapi.store.types.StoreDataValue;') ||
+            !ccText.contains('int insert(StoreDataValue[]    row)') ||
+            !ccText.contains('StoreDataValue[]     destRow')) {
+            throw new GradleException('B5y ConglomerateController must expose row arrays as StoreDataValue[]')
+        }
+
+        def genericText = delosdbB5yRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericConglomerateController.java'))
+        if (genericText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
+            throw new GradleException('B5y GenericConglomerateController must not import DataValueDescriptor directly')
+        }
+
+        def b2iControllerText = delosdbB5yRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IController.java'))
+        if (b2iControllerText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
+            throw new GradleException('B5y B2IController must not import DataValueDescriptor directly')
+        }
+
+        def btreeForwardText = delosdbB5yRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeForwardScan.java'))
+        def btreeMaxText = delosdbB5yRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeMaxScan.java'))
+        if (btreeForwardText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ||
+            btreeMaxText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
+            throw new GradleException('B5y B-tree fetch scan implementations must not import DataValueDescriptor directly')
+        }
+        if (!btreeForwardText.contains('StoreDataValue[][]      row_array') ||
+            !btreeMaxText.contains('StoreDataValue[][]      row_array')) {
+            throw new GradleException('B5y B-tree fetch scan implementations must use StoreDataValue[][] row arrays')
+        }
+
+        def imports = delosdbB5yStoreTypeImportLines()
+        if (imports.size() >= delosdbB5yBaselineImportCount) {
+            throw new GradleException('B5y relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5yBaselineImportCount + ': ' + imports.size())
+        }
+
+        def reportText = delosdbB5yRead(delosdbB5yReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5y report must explicitly say B6 readiness is NOT YET')
+        }
+
+        logger.lifecycle('Verified B5y controller row bridge; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5yControllerRowBridge'
+}

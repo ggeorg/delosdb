@@ -34,7 +34,7 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.impl.store.access.btree.BTreeController;
 import org.apache.derby.impl.store.access.btree.BTreeLockingPolicy;
@@ -190,7 +190,7 @@ public class B2IController extends BTreeController
 
     @exception StandardException Standard exception policy.
     **/
-    public int insert(DataValueDescriptor[] row)
+    public int insert(StoreDataValue[] row)
 		throws StandardException
 	{
         if (SanityManager.DEBUG)

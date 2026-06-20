@@ -35,7 +35,7 @@ import org.apache.derby.iapi.store.access.RowUtil;
 
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.types.RowLocation;
 
@@ -215,7 +215,7 @@ public abstract class GenericConglomerateController
      **/
     public boolean fetch(
     RowLocation             loc, 
-    DataValueDescriptor[]   row, 
+    StoreDataValue[]     row, 
     FormatableBitSet                 validColumns) 
 		throws StandardException
 	{
@@ -319,7 +319,7 @@ public abstract class GenericConglomerateController
      **/
     public boolean fetch(
     RowLocation             loc, 
-    DataValueDescriptor[]   row, 
+    StoreDataValue[]     row, 
     FormatableBitSet                 validColumns,
     boolean                 waitForLock) 
 		throws StandardException
@@ -424,7 +424,7 @@ public abstract class GenericConglomerateController
      **/
     public boolean replace(
     RowLocation             loc, 
-    DataValueDescriptor[]   row, 
+    StoreDataValue[]     row, 
     FormatableBitSet                 validColumns)
 		throws StandardException
 	{

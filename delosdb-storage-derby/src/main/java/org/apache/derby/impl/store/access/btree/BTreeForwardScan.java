@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.access.ScanController;
 
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
@@ -79,7 +79,7 @@ public class BTreeForwardScan extends BTreeScan
      **/
     protected int fetchRows(
     BTreeRowPosition        pos,
-    DataValueDescriptor[][] row_array,
+    StoreDataValue[][]      row_array,
     StoreRowLocation[]      rowloc_array,
     BackingStoreHashtable   hash_table,
     long                    max_rowcnt,
@@ -95,7 +95,7 @@ public class BTreeForwardScan extends BTreeScan
         }
 
         int                     ret_row_count     = 0;
-        DataValueDescriptor[]   fetch_row         = null;
+        StoreDataValue[]       fetch_row         = null;
         RecordHandle            rh;
 
         if (max_rowcnt == -1)

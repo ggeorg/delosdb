@@ -41,6 +41,7 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
@@ -569,7 +570,7 @@ public class HeapController
      **************************************************************************
      */
 
-    public int insert(DataValueDescriptor[] row)
+    public int insert(StoreDataValue[] row)
 		throws StandardException
 	{
 		if (open_conglom.isClosed())
@@ -586,13 +587,13 @@ public class HeapController
             } 
         }
 
-		doInsert(row);
+		doInsert((DataValueDescriptor[]) row);
 
         return(0);
 	}
 
 	public void insertAndFetchLocation(
-    DataValueDescriptor[] row, 
+    StoreDataValue[] row, 
     RowLocation           templateRowLocation)
 		throws StandardException
 	{
@@ -610,7 +611,7 @@ public class HeapController
             } 
         }
 
-		RecordHandle rh = doInsert(row);
+		RecordHandle rh = doInsert((DataValueDescriptor[]) row);
         if (SanityManager.DEBUG)
         {
             SanityManager.ASSERT(
