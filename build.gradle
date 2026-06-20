@@ -11426,7 +11426,7 @@ tasks.named('verifyLegacyDerbyStoreBoundary') {
 // engine/catalog execution code still treats heap row locations as inherited
 // RowLocation/DataValueDescriptor values. B6j records that compatibility edge so
 // the next slice can bridge engine callers before removing the final references.
-def delosdbB6jBaselineQualifiedTypeCodeRefs = 8
+def delosdbB6jBaselineQualifiedTypeCodeRefs = 10
 
 def delosdbB6jHeapRowLocationFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapRowLocation.java')
 def delosdbB6jEngineRowLocationConsumerRoots = [
@@ -11474,7 +11474,7 @@ tasks.register('legacyDerbyStoreB6jHeapRowLocationCompatibilityReport') {
 
 Purpose
 -------
-B6j records the final inherited type seam after B6i. HeapRowLocation is special:
+B6j records the final inherited type seam after B6i. The measured B6i state leaves ten executable fully-qualified inherited type references, all intentionally isolated to HeapRowLocation. HeapRowLocation is special:
 it is not only a store row-location object. Engine/catalog code still uses it as
 an inherited Derby RowLocation/DataValueDescriptor value when building index rows,
 sequence row locations, and catalog lookup keys.
@@ -11518,7 +11518,7 @@ behavior regressions.
 
 B6 closeout sequence
 --------------------
-B6j: freeze and document the final row-location compatibility seam.
+B6j: freeze and document the final row-location compatibility seam at the measured B6i count of ten references.
 B6k: bridge engine/catalog RowLocation consumers to StoreRowLocation/StoreDataValue
      at the smallest stable boundary.
 B6l: make HeapRowLocation store-native and remove the final inherited type refs.
@@ -11558,7 +11558,7 @@ tasks.register('verifyLegacyDerbyStoreB6jHeapRowLocationCompatibility') {
         if (engineConsumers.isEmpty()) {
             throw new GradleException('B6j expected engine/catalog RowLocation consumers to be visible before removing HeapRowLocation compatibility')
         }
-        logger.lifecycle("Verified B6j HeapRowLocation compatibility seam; remaining inherited type references stay isolated at ${fqRefs.size()}")
+        logger.lifecycle("Verified B6j HeapRowLocation compatibility seam; remaining inherited type references stay isolated at ${fqRefs.size()} / ${delosdbB6jBaselineQualifiedTypeCodeRefs}")
     }
 }
 
