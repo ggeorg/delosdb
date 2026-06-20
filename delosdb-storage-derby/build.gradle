@@ -16,6 +16,17 @@ def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirector
 
 tasks.register('compileLegacyDerbyStorage', JavaCompile) {
     dependsOn ':delosdb-engine:compileDerbyEngine'
+    // B6g/B6h compatibility classpath consumes generated engine/kernel output.
+    // Declare all producers explicitly so Gradle 8.14 does not infer an
+    // unsafe implicit dependency from raw output directories.
+    dependsOn ':processDerbyResources'
+    dependsOn ':generateOdbcMetadata'
+    dependsOn ':ensureCatalogMetadataResources'
+    dependsOn ':splitEngineMessages'
+    dependsOn ':delosdb-engine-kernel:compileDelosDbEngineKernelClassSizeCatalog'
+    dependsOn ':delosdb-engine-kernel:classes'
+    dependsOn ':delosdb-commons:classes'
+    dependsOn ':delosdb-spi:classes'
     source = fileTree(sourceRoot) {
         include 'org/apache/derby/iapi/store/**/*.java'
         include 'org/apache/derby/impl/store/**/*.java'
