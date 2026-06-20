@@ -24,6 +24,10 @@ tasks.register('compileLegacyDerbyStorage', JavaCompile) {
     destinationDirectory = mainClassDir
     sourceCompatibility = rootProject.ext.javaRelease.toString()
     targetCompatibility = rootProject.ext.javaRelease.toString()
+    // B6g compiles relocated inherited store sources against the existing
+    // compatibility output path. Keep this proof on the classpath for now;
+    // the named JPMS boundary is closed in the later B6 source-owner flip.
+    modularity.inferModulePath = false
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false

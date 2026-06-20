@@ -10190,6 +10190,14 @@ def delosdbB5afStorageBuildExcludesRealStore = {
         text.contains("exclude 'org/apache/derby/impl/store/**/*.java'")
 }
 
+def delosdbB5afStorageBuildCompilesRealStore = {
+    def text = delosdbB5afRead(delosdbB5afStorageBuildFile)
+    text.contains("include 'org/apache/derby/iapi/store/**/*.java'") &&
+        text.contains("include 'org/apache/derby/impl/store/**/*.java'") &&
+        !text.contains("exclude 'org/apache/derby/iapi/store/**/*.java'") &&
+        !text.contains("exclude 'org/apache/derby/impl/store/**/*.java'")
+}
+
 def delosdbB5afEngineBuildFile = file('delosdb-engine/build.gradle')
 
 def delosdbB5afEngineStillCompilesRelocatedStore = {
@@ -10207,6 +10215,7 @@ tasks.register('legacyDerbyStoreKernelB5afB6PreflightReport') {
         def directImports = delosdbB5afDirectTypeImports()
         def qualifiedRefs = delosdbB5afQualifiedTypeCodeRefs()
         def storageExcludes = delosdbB5afStorageBuildExcludesRealStore()
+        def storageCompilesRealStore = delosdbB5afStorageBuildCompilesRealStore()
         def engineCompilesRelocatedStore = delosdbB5afEngineStillCompilesRelocatedStore()
         def reportFile = delosdbB5afReportFile.get().asFile
         reportFile.parentFile.mkdirs()
@@ -10237,19 +10246,18 @@ ${qualifiedRefs ? delosdbB5afQualifiedTypeRefsByFile(qualifiedRefs) : '  none'}
 Boundary ownership state
 ------------------------
   delosdb-storage-derby still excludes real store packages: ${storageExcludes ? 'YES' : 'NO'}
+  delosdb-storage-derby compiles real store packages: ${storageCompilesRealStore ? 'YES' : 'NO'}
   delosdb-engine still references delosdb-storage-derby source roots: ${engineCompilesRelocatedStore ? 'YES' : 'NO'}
 
 B6 interpretation
 -----------------
 DIRECT IMPORT BLOCKER: GONE.
-REAL MODULE COMPILATION: NOT YET.
+REAL MODULE COMPILATION: ${storageCompilesRealStore ? 'SWITCHED BY B6g' : 'NOT YET'}.
 
-The remaining fully-qualified references are no longer import leaks, but they
-are still compile-time references to inherited Derby type contracts and concrete
-value classes. B6 must now do the honest module switch and let
-:delosdb-storage-derby:classes reveal whether those references are already
-satisfied by the kernel/bridge shape or require a final minimal type-contract
-extraction/quarantine.
+The remaining fully-qualified references are no longer import leaks. Before B6g,
+they were pre-switch compatibility seams. After B6g, :delosdb-storage-derby:classes
+is the owner-side compile proof and may use the temporary compatibility classpath
+until B6h removes direct engine-side source compilation.
 
 Next expected step
 ------------------
@@ -10276,22 +10284,24 @@ tasks.register('verifyLegacyDerbyKernelB5afB6Preflight') {
         }
 
         def storageExcludes = delosdbB5afStorageBuildExcludesRealStore()
-        if (!storageExcludes) {
-            throw new GradleException('B5af is a B6 preflight only; delosdb-storage-derby should still exclude real store packages until B6')
+        def storageCompilesRealStore = delosdbB5afStorageBuildCompilesRealStore()
+        if (!storageExcludes && !storageCompilesRealStore) {
+            throw new GradleException('B5af expected either the original pre-B6 excludes or the later B6g real-store compile switch')
         }
 
         def reportText = delosdbB5afRead(delosdbB5afReportFile.get().asFile)
         if (!reportText.contains('DIRECT IMPORT BLOCKER: GONE')) {
             throw new GradleException('B5af report must state that the direct import blocker is gone')
         }
-        if (!reportText.contains('REAL MODULE COMPILATION: NOT YET')) {
-            throw new GradleException('B5af report must state that real module compilation is not yet switched')
+        if (!reportText.contains('REAL MODULE COMPILATION: NOT YET') &&
+                !reportText.contains('REAL MODULE COMPILATION: SWITCHED BY B6g')) {
+            throw new GradleException('B5af report must state whether real module compilation is pre-switch or switched by B6g')
         }
         if (!reportText.contains(':delosdb-storage-derby:classes')) {
             throw new GradleException('B5af report must name the B6 independent compilation proof')
         }
 
-        logger.lifecycle('Verified B5af B6 preflight; direct relocated-store iapi.types imports are zero; B6 module switch is next')
+        logger.lifecycle('Verified B5af B6 preflight/evolved B6g state; direct relocated-store iapi.types imports are zero')
     }
 }
 
