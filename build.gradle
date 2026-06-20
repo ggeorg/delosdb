@@ -7536,7 +7536,7 @@ Changed boundary shape
   - ExternalSortFactory forwards StoreDataValue[] templates to MergeSort
   - MergeSort initialization and sanity checks use StoreDataValue[] templates
   - RowLocationRetRowSource callbacks accept StoreRowLocation
-  - SQL execution adapters cast StoreRowLocation back to RowLocation only outside the relocated store
+  - SQL execution adapters adapt StoreRowLocation back to RowLocation only outside the relocated store
 
 Touched files
 -------------
@@ -7600,12 +7600,18 @@ tasks.register('verifyLegacyDerbyKernelB5pRowSourceSortFactoryBridge') {
         }
 
         def noPutText = delosdbB5pRead(delosdbB5pNoPutResultSetImpl)
-        if (!noPutText.contains('StoreRowLocation') || !noPutText.contains('(RowLocation) rl')) {
+        def noPutAdaptsStoreRowLocation = noPutText.contains('StoreRowLocation') && (
+                noPutText.contains('(RowLocation) rl') ||
+                noPutText.contains('EngineStoreRowLocationBridge.requireEngineRowLocation(rl)'))
+        if (!noPutAdaptsStoreRowLocation) {
             throw new GradleException('B5p NoPutResultSetImpl must adapt StoreRowLocation back to RowLocation at the SQL execution boundary')
         }
 
         def alterText = delosdbB5pRead(delosdbB5pAlterTableConstantAction)
-        if (!alterText.contains('StoreRowLocation') || !alterText.contains('insertIntoSorter(index, (RowLocation) rl)')) {
+        def alterAdaptsStoreRowLocation = alterText.contains('StoreRowLocation') && (
+                alterText.contains('insertIntoSorter(index, (RowLocation) rl)') ||
+                alterText.contains('insertIntoSorter(index, EngineStoreRowLocationBridge.requireEngineRowLocation(rl))'))
+        if (!alterAdaptsStoreRowLocation) {
             throw new GradleException('B5p AlterTableConstantAction must adapt StoreRowLocation at the SQL execution boundary')
         }
 
@@ -11366,11 +11372,11 @@ ${byFile ? byFile.collect { path, typed -> "${path}\n" + typed.collect { type, c
 
 B6 interpretation
 -----------------
-B6i removes the metadata-value side of the inherited type cycle. The remaining
-fully-qualified inherited type references should now be isolated in
+B6i removes the metadata-value side of the inherited type cycle. Before B6m,
+any remaining fully-qualified inherited type references must be isolated in
 HeapRowLocation, because row-location compatibility still crosses into engine
-execution code. B6j should target that row-location seam before removing direct
-engine-side store source compilation.
+execution code. After B6m closes that seam, zero remaining inherited type
+references is also a valid stricter state.
 """
         logger.lifecycle("Wrote ${report}")
     }
@@ -11407,8 +11413,8 @@ tasks.register('verifyLegacyDerbyStoreB6iStoreNativeMetadataValue') {
             }
         }
         def remainingFiles = fqRefs.collect { it.source.name }.toSet()
-        if (remainingFiles != ['HeapRowLocation.java'] as Set) {
-            throw new GradleException("B6i expected remaining inherited type refs to be isolated in HeapRowLocation.java, found ${remainingFiles}")
+        if (!remainingFiles.isEmpty() && remainingFiles != ['HeapRowLocation.java'] as Set) {
+            throw new GradleException("B6i expected remaining inherited type refs to be isolated in HeapRowLocation.java or fully eliminated by a later seam-close step; found ${remainingFiles}")
         }
         logger.lifecycle("Verified B6i store-native metadata value bridge; fully-qualified inherited type references now ${fqRefs.size()}")
     }
