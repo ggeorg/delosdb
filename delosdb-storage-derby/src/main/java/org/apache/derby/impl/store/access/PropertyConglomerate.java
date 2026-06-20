@@ -47,10 +47,10 @@ import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.services.property.PropertyFactory;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.ScanController;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import java.io.Serializable;
 import java.util.HashMap;
@@ -125,7 +125,7 @@ class PropertyConglomerate
 		}
 
 		if (create) {
-			DataValueDescriptor[] template = makeNewTemplate();
+			StoreDataValue[] template = makeNewTemplate();
 
 			Properties conglomProperties = new Properties();
 
@@ -171,12 +171,12 @@ class PropertyConglomerate
     /**
      * Create a new PropertyConglomerate row, with values in it.
      **/
-    private DataValueDescriptor[] makeNewTemplate(String key, Serializable value)
+    private StoreDataValue[] makeNewTemplate(String key, Serializable value)
     {
-		DataValueDescriptor[] template = new DataValueDescriptor[2];
+		StoreDataValue[] template = new StoreDataValue[2];
 
 		template[0] = new UTF(key);
-		template[1] = (DataValueDescriptor) StoreTypeUtil.newUserType(value);
+		template[1] = StoreTypeUtil.newUserType(value);
 
         return(template);
     }
@@ -184,12 +184,12 @@ class PropertyConglomerate
     /**
      * Create a new empty PropertyConglomerate row, to fetch values into.
      **/
-    private DataValueDescriptor[] makeNewTemplate()
+    private StoreDataValue[] makeNewTemplate()
     {
-		DataValueDescriptor[] template = new DataValueDescriptor[2];
+		StoreDataValue[] template = new StoreDataValue[2];
 
 		template[0] = new UTF();
-		template[1] = (DataValueDescriptor) StoreTypeUtil.newUserType();
+		template[1] = StoreTypeUtil.newUserType();
 
         return(template);
     }
@@ -233,10 +233,10 @@ class PropertyConglomerate
                 TransactionController.MODE_TABLE,
                 TransactionController.ISOLATION_SERIALIZABLE,
                 (FormatableBitSet) null,
-                (DataValueDescriptor[]) null,	// start key
+                (StoreDataValue[]) null,	// start key
                 ScanController.NA,
                 qualifiers,
-                (DataValueDescriptor[]) null,	// stop key
+                (StoreDataValue[]) null,	// stop key
                 ScanController.NA);
 
 		return(scan);
@@ -294,7 +294,7 @@ class PropertyConglomerate
 		ScanController scan = 
             this.openScan(tc, key, TransactionController.OPENMODE_FORUPDATE);
 
-        DataValueDescriptor[] row = makeNewTemplate();
+        StoreDataValue[] row = makeNewTemplate();
 
 		if (scan.fetchNext(row)) 
         {
@@ -308,7 +308,7 @@ class PropertyConglomerate
             {
 				// a value already exists, just replace the second columm
 
-				row[1] = (DataValueDescriptor) StoreTypeUtil.newUserType(value);
+				row[1] = StoreTypeUtil.newUserType(value);
 
 				scan.replace(row, (FormatableBitSet) null);
 			}
@@ -540,7 +540,7 @@ class PropertyConglomerate
 		// scan the table for a row with matching "key"
 		ScanController scan = openScan(tc, key, 0);
 
-		DataValueDescriptor[] row = makeNewTemplate();
+		StoreDataValue[] row = makeNewTemplate();
 
 		// did we find at least one row?
 		boolean isThere = scan.fetchNext(row);
@@ -714,7 +714,7 @@ class PropertyConglomerate
         // scan the table for a row with no matching "key"
 		ScanController scan = openScan(tc, (String) null, 0);
 
-		DataValueDescriptor[] row = makeNewTemplate();
+		StoreDataValue[] row = makeNewTemplate();
 
 		while (scan.fetchNext(row)) {
 

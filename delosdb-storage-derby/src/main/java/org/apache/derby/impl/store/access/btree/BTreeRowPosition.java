@@ -31,9 +31,8 @@ import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.access.RowUtil;
 
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
-import org.apache.derby.iapi.types.DataValueDescriptor;
-
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.impl.store.access.conglomerate.RowPosition;
 
@@ -47,11 +46,11 @@ public class BTreeRowPosition extends RowPosition
      * Fields of the class
      **************************************************************************
      */
-    public    DataValueDescriptor[] current_positionKey;
+    public    StoreDataValue[] current_positionKey;
     public    LeafControlRow        current_leaf;
     protected LeafControlRow        next_leaf;
-    public    DataValueDescriptor[] current_lock_template;
-    public    RowLocation           current_lock_row_loc;
+    public    StoreDataValue[] current_lock_template;
+    public    StoreRowLocation        current_lock_row_loc;
 
     /** The scan that owns this position object. */
     private final BTreeScan parent;
@@ -65,7 +64,7 @@ public class BTreeRowPosition extends RowPosition
     long versionWhenSaved;
 
     /** Cached template for saving this position by key. */
-    private DataValueDescriptor[] positionKey_template;
+    private StoreDataValue[] positionKey_template;
 
     /**
      * Cached fetch descriptor that can be used to fetch the key columns that
@@ -137,7 +136,7 @@ public class BTreeRowPosition extends RowPosition
      * @throws StandardException if an error occurs while allocating the
      * template array
      */
-    DataValueDescriptor[] getKeyTemplate() throws StandardException {
+    StoreDataValue[] getKeyTemplate() throws StandardException {
         if (positionKey_template == null) {
             positionKey_template = parent.getRuntimeMem().
                     get_row_for_export(parent.getRawTran());

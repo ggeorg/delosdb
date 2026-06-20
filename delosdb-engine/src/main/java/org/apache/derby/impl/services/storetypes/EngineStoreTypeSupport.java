@@ -48,6 +48,12 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
     }
 
     @Override
+    public StoreDataValue[] newValueArray(int length)
+    {
+        return new DataValueDescriptor[length];
+    }
+
+    @Override
     public StoreDataValue newSQLLongint(long value)
     {
         return new SQLLongint(value);
@@ -194,6 +200,12 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
     public void setValue(Object target, Object source) throws StandardException
     {
         dataValue(target).setValue(dataValue(source));
+    }
+
+    @Override
+    public void setIntValue(Object target, int value)
+    {
+        ((SQLInteger) target).setValue(value);
     }
 
     @Override

@@ -39,9 +39,8 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
-
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import java.util.Properties; 
 
@@ -789,7 +788,7 @@ public abstract class OpenConglomerate
 
             // get a template.
 
-            DataValueDescriptor[] row = 
+            StoreDataValue[] row = 
                 runtime_mem.get_row_for_export(getRawTran());
 
             // Print pages of the heap.

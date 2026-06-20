@@ -40,6 +40,8 @@ public interface StoreTypeSupport
 {
     StoreDataValue newSQLInteger();
 
+    StoreDataValue[] newValueArray(int length);
+
     StoreDataValue newSQLLongint(long value);
 
     StoreDataValue newUserType();
@@ -98,6 +100,8 @@ public interface StoreTypeSupport
     int estimateMemoryUsage(Object value);
 
     void setValue(Object target, Object source) throws StandardException;
+
+    void setIntValue(Object target, int value);
 
     void setLongValue(Object target, long value);
 

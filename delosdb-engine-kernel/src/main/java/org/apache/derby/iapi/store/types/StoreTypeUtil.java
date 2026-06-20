@@ -41,6 +41,11 @@ public final class StoreTypeUtil
         return StoreTypeSupportRegistry.support().newSQLInteger();
     }
 
+    public static StoreDataValue[] newValueArray(int length)
+    {
+        return StoreTypeSupportRegistry.support().newValueArray(length);
+    }
+
     public static StoreDataValue newSQLLongint(long value)
     {
         return StoreTypeSupportRegistry.support().newSQLLongint(value);
@@ -167,6 +172,11 @@ public final class StoreTypeUtil
         throws StandardException
     {
         StoreTypeSupportRegistry.support().setValue(target, source);
+    }
+
+    public static void setIntValue(Object target, int value)
+    {
+        StoreTypeSupportRegistry.support().setIntValue(target, value);
     }
 
     public static void setLongValue(Object target, long value)

@@ -28,7 +28,7 @@ import org.apache.derby.iapi.store.access.RowUtil;
 
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -57,21 +57,21 @@ public class OpenConglomerateScratchSpace
      * create new rows for export from this class.  This variable is for
      * use by get_row_for_export().
      **/
-    private DataValueDescriptor[]   row_for_export_template;
+    private StoreDataValue[]   row_for_export_template;
 
     /**
      * A Scratch template used for searching and qualifying rows in the 
      * conglomerate.  This is a full template, independent of the 
      * FormatableBitSet used for access.
      **/
-    private DataValueDescriptor[]   scratch_template;
+    private StoreDataValue[]   scratch_template;
 
     /**
      * A Scratch row used for qualifying rows in the 
      * conglomerate.  This is a row which matches the FormatableBitSet of rows
      * being returned.
      **/
-    private DataValueDescriptor[]   scratch_row;
+    private StoreDataValue[]   scratch_row;
 
     /**
      * A complete array of format id's and collation_ids for this conglomerate.
@@ -144,7 +144,7 @@ public class OpenConglomerateScratchSpace
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    public DataValueDescriptor[] get_row_for_export(Transaction rawtran)
+    public StoreDataValue[] get_row_for_export(Transaction rawtran)
         throws StandardException
     {
         // Create a partial row class template template from the initial scan
@@ -175,7 +175,7 @@ public class OpenConglomerateScratchSpace
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    public DataValueDescriptor[] get_scratch_row(Transaction    rawtran)
+    public StoreDataValue[] get_scratch_row(Transaction    rawtran)
         throws StandardException
     {
         // Create a partial row class template template from the initial scan
@@ -200,7 +200,7 @@ public class OpenConglomerateScratchSpace
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    public DataValueDescriptor[] get_template(Transaction rawtran)
+    public StoreDataValue[] get_template(Transaction rawtran)
         throws StandardException
     {
         // Create a partial row class template from the initial scan parameters.

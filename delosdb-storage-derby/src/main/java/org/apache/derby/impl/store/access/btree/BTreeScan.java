@@ -51,8 +51,6 @@ import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
-import org.apache.derby.iapi.types.RowLocation;
-
 import org.apache.derby.impl.store.access.conglomerate.TemplateRow;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -264,11 +262,11 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         scan_position.init();
 
         scan_position.current_lock_template = 
-            new DataValueDescriptor[this.init_template.length];
+            new StoreDataValue[this.init_template.length];
 
         scan_position.current_lock_template[this.init_template.length - 1] = 
-            scan_position.current_lock_row_loc = (RowLocation)
-                init_template[init_template.length - 1].cloneValue(false);
+            scan_position.current_lock_row_loc = (StoreRowLocation)
+                StoreTypeUtil.cloneValue(init_template[init_template.length - 1], false);
 
         // Verify that all columns in start key value, stop key value, and
         // qualifiers are present in the list of columns described by the
@@ -1019,7 +1017,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         this.init_hold                  = hold;
 
         this.init_template              = 
-            runtime_mem.get_template(getRawTran());
+            (DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
 
         this.init_scanColumnList        = scanColumnList;
 
@@ -1554,7 +1552,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         throws StandardException
     {
         // Turn this call into a group fetch of a 1 element group.
-        fetchNext_one_slot_array[0] = runtime_mem.get_scratch_row(getRawTran());
+        fetchNext_one_slot_array[0] = (DataValueDescriptor[]) runtime_mem.get_scratch_row(getRawTran());
         boolean ret_val = 
             fetchRows(
                 scan_position,
@@ -1985,7 +1983,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
 
     @exception  StandardException  Standard exception policy.
     **/
-    public RowLocation newRowLocationTemplate()
+    public StoreRowLocation newRowLocationTemplate()
         throws StandardException
     {
         throw StandardException.newException(
@@ -2104,7 +2102,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         }
 
         try {
-            DataValueDescriptor[] fullKey = scan_position.getKeyTemplate();
+            StoreDataValue[] fullKey = scan_position.getKeyTemplate();
 
             FetchDescriptor fetchDescriptor = null;
             boolean haveAllColumns = false;

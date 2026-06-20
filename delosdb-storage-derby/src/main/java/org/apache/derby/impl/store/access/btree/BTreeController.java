@@ -589,7 +589,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 return NO_MATCH;
         }
         //It might be a deleted record try getting a lock on it
-        DataValueDescriptor[] template = runtime_mem.get_template(getRawTran());
+        DataValueDescriptor[] template = (DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
         FetchDescriptor lock_fetch_desc = RowUtil.getFetchDescriptorConstant(
                                                     template.length - 1);
         RowLocation lock_row_loc = 
@@ -635,7 +635,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             }
             if (!hasnull) {
                 DataValueDescriptor index [] =  
-                        runtime_mem.get_template(getRawTran());
+                        (DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
                 int ret = comparePreviousRecord(insert_slot - 1, 
                         targetleaf, index, rowToInsert);
                 if (ret > 0) {
@@ -674,7 +674,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
         if (scratch_template == null)
         {
-            scratch_template = runtime_mem.get_template(getRawTran());
+            scratch_template = (DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
         }
 
         if (SanityManager.DEBUG)
@@ -1506,7 +1506,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
         if (scratch_template == null)
         {
-            scratch_template = runtime_mem.get_template(getRawTran());
+            scratch_template = (DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
         }
 
         LeafControlRow current_leaf = null;

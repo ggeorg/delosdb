@@ -38,7 +38,6 @@ import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.store.types.StoreRowLocation;
-import org.apache.derby.iapi.types.RowLocation;
 
 import org.apache.derby.impl.store.access.btree.BTree;
 import org.apache.derby.impl.store.access.btree.BTreeLockingPolicy;
@@ -272,7 +271,7 @@ class B2IRowLocking3 implements BTreeLockingPolicy
         // First try to get the lock NOWAIT, while latch is held.
         boolean ret_status =
             base_cc.lockRow(
-                (RowLocation) lock_row_loc, 
+                lock_row_loc, 
                 lock_operation,
                 false /* NOWAIT */, lock_duration);
 
@@ -305,7 +304,7 @@ class B2IRowLocking3 implements BTreeLockingPolicy
             }
 
             base_cc.lockRow(
-                (RowLocation) lock_row_loc, 
+                lock_row_loc, 
                 lock_operation,
                 true /* WAIT */, lock_duration);
         }
@@ -657,7 +656,7 @@ class B2IRowLocking3 implements BTreeLockingPolicy
             SanityManager.ASSERT(template != null, "template is null");
         }
 
-        RowLocation row_loc = (RowLocation) 
+        StoreRowLocation row_loc = (StoreRowLocation) 
             template[((B2I) open_btree.getConglomerate()).rowLocationColumn];
 
         // Fetch the row location to lock.
@@ -837,7 +836,7 @@ class B2IRowLocking3 implements BTreeLockingPolicy
         // First try to get the lock NOWAIT, while latch is held.
         boolean ret_status = 
             base_cc.lockRow(
-                (RowLocation) current_row[b2i.rowLocationColumn], 
+                (StoreRowLocation) current_row[b2i.rowLocationColumn], 
                 lock_operation,
                 false /* NOWAIT */, 
                 TransactionManager.LOCK_COMMIT_DURATION);
@@ -858,7 +857,7 @@ class B2IRowLocking3 implements BTreeLockingPolicy
             }
 
             base_cc.lockRow(
-                (RowLocation) current_row[b2i.rowLocationColumn], 
+                (StoreRowLocation) current_row[b2i.rowLocationColumn], 
                 lock_operation,
                 true /* WAIT */, 
                 TransactionManager.LOCK_COMMIT_DURATION);

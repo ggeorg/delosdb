@@ -488,7 +488,7 @@ class BTreePostCommit implements Serviceable
         if (num_possible_commit_delete > 0)
         {
             DataValueDescriptor[] scratch_template = 
-                open_btree.getRuntimeMem().get_template(
+                (DataValueDescriptor[]) open_btree.getRuntimeMem().get_template(
                     open_btree.getRawTran());
 
             Page page   = leaf.page;

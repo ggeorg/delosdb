@@ -9498,3 +9498,165 @@ tasks.register('verifyLegacyDerbyKernelB5aaGenericHeapScanBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5aaGenericHeapScanBridge'
 }
+
+// B5ab continues from B5aa with a wider bounded slice over scratch rows,
+// disk/property temporary rows, and B-tree lock-position templates. This keeps
+// the bridge moving in batches while leaving true concrete DataType
+// implementations and the remaining B-tree row materialization internals for
+// explicit follow-up.
+
+def delosdbB5abReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5ab-scratch-disk-lock-bridge.txt')
+def delosdbB5abBaselineImportCount = 37
+
+def delosdbB5abFiles = [
+    file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeSupport.java'),
+    file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeUtil.java'),
+    file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineStoreTypeSupport.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/DiskHashtable.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/PropertyConglomerate.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerateScratchSpace.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeRowPosition.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeScan.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreePostCommit.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IRowLocking2.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IRowLocking3.java')
+]
+
+def delosdbB5abRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5abRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5abStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].collectMany { root ->
+        root.exists() ? fileTree(root).matching { include '**/*.java' }.files : []
+    }.sort { it.path }.collectMany { source ->
+        source.readLines().findAll { line ->
+            line ==~ /\s*import\s+org\.apache\.derby\.iapi\.types\..*;/
+        }.collect { line ->
+            delosdbB5abRelPath(source) + ': ' + line.trim()
+        }
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5abScratchDiskLockBridgeReport') {
+    group = 'verification'
+    description = 'B5ab: reports scratch-row, disk/property row, and B-tree lock-template bridge progress.'
+    dependsOn 'verifyLegacyDerbyKernelB5aaGenericHeapScanBridge'
+    outputs.file(delosdbB5abReportFile)
+    doLast {
+        def imports = delosdbB5abStoreTypeImportLines()
+        def supportText = delosdbB5abRead(file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeSupport.java'))
+        def utilText = delosdbB5abRead(file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeUtil.java'))
+        def diskText = delosdbB5abRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/DiskHashtable.java'))
+        def propText = delosdbB5abRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/PropertyConglomerate.java'))
+        def scratchText = delosdbB5abRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerateScratchSpace.java'))
+        def posText = delosdbB5abRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeRowPosition.java'))
+        def locking3Text = delosdbB5abRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IRowLocking3.java'))
+        def reportFile = delosdbB5abReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5ab scratch/disk/lock bridge
+========================================
+
+Purpose
+-------
+B5ab removes another bounded batch of direct relocated-store iapi.types imports
+by moving scratch rows, temporary disk/property rows, and B-tree lock-position
+state to StoreDataValue/StoreRowLocation bridge types. Concrete inherited
+DataType implementations are intentionally left as explicit remaining work.
+
+Changed files
+-------------
+${delosdbB5abFiles.collect { '  - ' + delosdbB5abRelPath(it) }.join('\n')}
+
+Bridge state
+------------
+  StoreTypeSupport exposes newValueArray(int): ${supportText.contains('StoreDataValue[] newValueArray(int length);') ? 'yes' : 'no'}
+  StoreTypeSupport exposes setIntValue(...): ${supportText.contains('void setIntValue(Object target, int value);') ? 'yes' : 'no'}
+  StoreTypeUtil routes newValueArray(int): ${utilText.contains('newValueArray(int length)') ? 'yes' : 'no'}
+  DiskHashtable direct DataValueDescriptor import: ${diskText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  DiskHashtable uses StoreDataValue[] rows: ${diskText.contains('private final StoreDataValue[]   row') ? 'yes' : 'no'}
+  PropertyConglomerate direct DataValueDescriptor import: ${propText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  OpenConglomerateScratchSpace direct DataValueDescriptor import: ${scratchText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  OpenConglomerateScratchSpace exposes StoreDataValue[] rows: ${scratchText.contains('public StoreDataValue[] get_row_for_export') && scratchText.contains('public StoreDataValue[] get_template') ? 'yes' : 'no'}
+  BTreeRowPosition direct DataValueDescriptor import: ${posText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  BTreeRowPosition direct RowLocation import: ${posText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+  BTreeRowPosition lock state uses StoreRowLocation: ${posText.contains('StoreRowLocation        current_lock_row_loc') ? 'yes' : 'no'}
+  B2IRowLocking3 direct RowLocation import: ${locking3Text.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+
+Relocated store direct iapi.types import count
+---------------------------------------------
+  before B5ab baseline: ${delosdbB5abBaselineImportCount}
+  after B5ab:           ${imports.size()}
+
+Remaining direct import lines
+-----------------------------
+${imports.collect { '  - ' + it }.join('\n')}
+
+B6 readiness
+------------
+NOT YET. Remaining direct imports are now mostly concrete inherited DataType /
+RowLocation implementations plus B-tree row-template/materialization internals
+that need either explicit bridge conversion or explicit final justification.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5abRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5abScratchDiskLockBridge') {
+    group = 'verification'
+    description = 'B5ab: verifies scratch-row, disk/property row, and B-tree lock-template bridge progress.'
+    dependsOn 'legacyDerbyStoreKernelB5abScratchDiskLockBridgeReport'
+    doLast {
+        delosdbB5abFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5ab missing required source file: ' + delosdbB5abRelPath(source))
+            }
+        }
+
+        [
+            'delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/DiskHashtable.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/PropertyConglomerate.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerateScratchSpace.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeRowPosition.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IRowLocking3.java'
+        ].each { path ->
+            def text = delosdbB5abRead(file(path))
+            if (text.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ||
+                text.contains('import org.apache.derby.iapi.types.RowLocation;')) {
+                throw new GradleException('B5ab source kept a retired direct type import: ' + path)
+            }
+        }
+
+        def supportText = delosdbB5abRead(file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeSupport.java'))
+        if (!supportText.contains('StoreDataValue[] newValueArray(int length);') ||
+            !supportText.contains('void setIntValue(Object target, int value);')) {
+            throw new GradleException('B5ab StoreTypeSupport must expose value-array and int-value bridge operations')
+        }
+
+        def scratchText = delosdbB5abRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerateScratchSpace.java'))
+        if (!scratchText.contains('public StoreDataValue[] get_row_for_export') ||
+            !scratchText.contains('public StoreDataValue[] get_template')) {
+            throw new GradleException('B5ab scratch space must expose StoreDataValue[] row/template accessors')
+        }
+
+        def imports = delosdbB5abStoreTypeImportLines()
+        if (imports.size() >= delosdbB5abBaselineImportCount) {
+            throw new GradleException('B5ab relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5abBaselineImportCount + ': ' + imports.size())
+        }
+
+        def reportText = delosdbB5abRead(delosdbB5abReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5ab report must explicitly say B6 readiness is NOT YET')
+        }
+
+        logger.lifecycle('Verified B5ab scratch/disk/lock bridge; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5abScratchDiskLockBridge'
+}

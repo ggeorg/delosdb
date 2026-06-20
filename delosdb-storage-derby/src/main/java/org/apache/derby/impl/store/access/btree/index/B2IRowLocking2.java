@@ -29,6 +29,7 @@ import org.apache.derby.iapi.store.access.ConglomerateController;
 
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 import org.apache.derby.impl.store.access.btree.BTreeLockingPolicy;
 import org.apache.derby.impl.store.access.btree.BTreeRowPosition;
@@ -88,7 +89,7 @@ class B2IRowLocking2 extends B2IRowLockingRR implements BTreeLockingPolicy
                 "pos.current_lock_row_loc is null");
 
 			SanityManager.ASSERT(
-                !pos.current_lock_row_loc.isNull(), 
+                !StoreTypeUtil.isNull(pos.current_lock_row_loc), 
                 "pos.current_lock_row_loc isNull()");
 		}
 

@@ -27,7 +27,7 @@ import java.util.NoSuchElementException;
 import java.util.Properties;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
@@ -58,12 +58,12 @@ public class DiskHashtable
     private       ConglomerateController  rowConglomerate;
     private final long                    btreeConglomerateId;
     private       ConglomerateController  btreeConglomerate;
-    private final DataValueDescriptor[]   btreeRow;
+    private final StoreDataValue[]   btreeRow;
     private final int[]                   key_column_numbers;
     private final boolean                 remove_duplicates;
     private final TransactionController   tc;
-    private final DataValueDescriptor[]   row;
-    private final DataValueDescriptor[]   scanKey = { (DataValueDescriptor) StoreTypeUtil.newSQLInteger()};
+    private final StoreDataValue[]   row;
+    private final StoreDataValue[]   scanKey = { StoreTypeUtil.newSQLInteger()};
     private int                           size;
     private boolean                       keepStatistics;
     private final boolean                 keepAfterCommit;
@@ -82,7 +82,7 @@ public class DiskHashtable
      */
     public DiskHashtable( 
     TransactionController   tc,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]   template,
     int[]                   collation_ids,
     int[]                   key_column_numbers,
     boolean                 remove_duplicates,
@@ -101,10 +101,10 @@ public class DiskHashtable
 
         // Create template row used for creating the conglomerate and 
         // fetching rows.
-        row = new DataValueDescriptor[template.length];
+        row = new StoreDataValue[template.length];
         for( int i = 0; i < row.length; i++)
         {
-            row[i] = template[i].getNewNull();
+            row[i] = StoreTypeUtil.getNewNull(template[i]);
 
             if (SanityManager.DEBUG)
             {
@@ -144,8 +144,8 @@ public class DiskHashtable
         // is the hash code of the row key.  The second column is the 
         // RowLocation of the row in the "base" table of the hash overflow.
         btreeRow = 
-            new DataValueDescriptor[] 
-                { (DataValueDescriptor) StoreTypeUtil.newSQLInteger(), (DataValueDescriptor) rowConglomerate.newRowLocationTemplate()};
+            new StoreDataValue[] 
+                { StoreTypeUtil.newSQLInteger(), rowConglomerate.newRowLocationTemplate()};
 
         Properties btreeProps = new Properties();
 
@@ -206,7 +206,7 @@ public class DiskHashtable
      *
      * @exception StandardException standard error policy
      */
-    public boolean put(Object key, Object[] row)
+    public boolean put(Object key, StoreDataValue[] row)
         throws StandardException
     {
         boolean isDuplicate = false;
@@ -220,11 +220,11 @@ public class DiskHashtable
 
         // insert the row into the "base" conglomerate.
         rowConglomerate.insertAndFetchLocation( 
-            (DataValueDescriptor[]) row, (StoreRowLocation) btreeRow[1]);
+            row, (StoreRowLocation) btreeRow[1]);
 
         // create index row from hashcode and rowlocation just inserted, and
         // insert index row into index.
-        btreeRow[0].setValue( key.hashCode());
+        StoreTypeUtil.setIntValue(btreeRow[0], key.hashCode());
         btreeConglomerate.insert( btreeRow);
 
         if (keepStatistics && !isDuplicate)
@@ -258,10 +258,10 @@ public class DiskHashtable
     {
         int hashCode = key.hashCode();
         int rowCount = 0;
-        DataValueDescriptor[] firstRow = null;
-        List<DataValueDescriptor[]> allRows = null;
+        StoreDataValue[] firstRow = null;
+        List<StoreDataValue[]> allRows = null;
 
-        scanKey[0].setValue( hashCode);
+        StoreTypeUtil.setIntValue(scanKey[0], hashCode);
         ScanController scan = 
             tc.openScan( 
                 btreeConglomerateId,
@@ -288,8 +288,8 @@ public class DiskHashtable
                     if( existenceOnly)
                         return this;
 
-                    DataValueDescriptor[] clonedRow =
-                            BackingStoreHashtable.shallowCloneRow(row);
+                    StoreDataValue[] clonedRow =
+                            shallowCloneRow(row);
 
                     rowCount++;
                     if( rowCount == 1)
@@ -307,7 +307,7 @@ public class DiskHashtable
                             // convert the "single" row retrieved from the
                             // first trip in the loop, to a vector with the
                             // first two rows.
-                            allRows = new ArrayList<DataValueDescriptor[]>(2);
+                            allRows = new ArrayList<StoreDataValue[]>(2);
                             allRows.add(firstRow);
                         }
                         allRows.add(clonedRow);
@@ -340,8 +340,25 @@ public class DiskHashtable
     } // end of getRemove
 
 
+
+    private static StoreDataValue[] shallowCloneRow(StoreDataValue[] oldRow)
+        throws StandardException
+    {
+        StoreDataValue[] newRow = StoreTypeUtil.newValueArray(oldRow.length);
+
+        for (int i = 0; i < oldRow.length; i++)
+        {
+            if (oldRow[i] != null)
+            {
+                newRow[i] = StoreTypeUtil.cloneHolder(oldRow[i]);
+            }
+        }
+
+        return newRow;
+    }
+
     private boolean rowMatches( 
-    DataValueDescriptor[] row,
+    StoreDataValue[] row,
     Object                key)
     {
         if( key_column_numbers.length == 1)
@@ -420,10 +437,10 @@ public class DiskHashtable
                                     TransactionController.MODE_TABLE,
                                     TransactionController.ISOLATION_NOLOCK,
                                     (FormatableBitSet) null, // all columns
-                                    (DataValueDescriptor[]) null, // no start key
+                                    (StoreDataValue[]) null, // no start key
                                     0, // no start key operator
                                     (Qualifier[][]) null,
-                                    (DataValueDescriptor[]) null, // no stop key
+                                    (StoreDataValue[]) null, // no stop key
                                     0 /* no stop key operator */);
                 hasMore = scan.next();
                 if( ! hasMore)
@@ -473,7 +490,7 @@ public class DiskHashtable
 
                 scan.fetch(row);
 
-                Object retValue =  BackingStoreHashtable.shallowCloneRow( row);
+                Object retValue =  shallowCloneRow(row);
                 hasMore = scan.next();
 
                 if( ! hasMore)
