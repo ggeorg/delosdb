@@ -83,11 +83,11 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     protected Transaction           init_rawtran             = null;
     protected boolean               init_forUpdate;
     protected FormatableBitSet      init_scanColumnList;
-    protected org.apache.derby.iapi.types.DataValueDescriptor[] init_template;
-    protected org.apache.derby.iapi.types.DataValueDescriptor[] init_startKeyValue;
+    protected StoreDataValue[] init_template;
+    protected StoreDataValue[] init_startKeyValue;
     protected int                   init_startSearchOperator = 0;
     protected Qualifier             init_qualifier[][]       = null;
-    protected org.apache.derby.iapi.types.DataValueDescriptor[] init_stopKeyValue;
+    protected StoreDataValue[] init_stopKeyValue;
     protected int                   init_stopSearchOperator  = 0;
     protected boolean               init_hold;
 
@@ -187,8 +187,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
      * A 1 element array to turn fetchNext and fetch calls into 
      * fetchNextGroup calls.
      **/
-    protected org.apache.derby.iapi.types.DataValueDescriptor[][] fetchNext_one_slot_array = 
-                                            new org.apache.derby.iapi.types.DataValueDescriptor[1][];
+    protected StoreDataValue[][] fetchNext_one_slot_array = 
+                                            new StoreDataValue[1][];
 
     /* Constructors for This class: */
 
@@ -234,7 +234,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         throws StandardException
     {
         // startKeyValue init.
-        this.init_startKeyValue         = (org.apache.derby.iapi.types.DataValueDescriptor[]) startKeyValue;
+        this.init_startKeyValue         = startKeyValue;
         if (RowUtil.isRowEmpty(this.init_startKeyValue))
             this.init_startKeyValue = null;
 
@@ -247,7 +247,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         this.init_qualifier             = qualifier;
 
         // stopKeyValue init.
-        this.init_stopKeyValue          = (org.apache.derby.iapi.types.DataValueDescriptor[]) stopKeyValue;
+        this.init_stopKeyValue          = stopKeyValue;
         if (RowUtil.isRowEmpty(this.init_stopKeyValue))
             this.init_stopKeyValue = null;
 
@@ -1016,7 +1016,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         this.init_hold                  = hold;
 
         this.init_template              = 
-            (org.apache.derby.iapi.types.DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
+            runtime_mem.get_template(getRawTran());
 
         this.init_scanColumnList        = scanColumnList;
 
@@ -1335,7 +1335,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
      * 
      * @exception  StandardException  Standard exception policy.
      */
-    private void fetch(org.apache.derby.iapi.types.DataValueDescriptor[] row, boolean qualify)
+    private void fetch(StoreDataValue[] row, boolean qualify)
         throws StandardException
     {
         if (scan_state != SCAN_INPROGRESS)
@@ -1422,7 +1422,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     public void fetch(StoreDataValue[] row)
         throws StandardException
     {
-        fetch((org.apache.derby.iapi.types.DataValueDescriptor[]) row, true);
+        fetch(row, true);
     }
 
     /**
@@ -1435,7 +1435,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     public void fetchWithoutQualify(StoreDataValue[] row)
         throws StandardException
     {
-        fetch((org.apache.derby.iapi.types.DataValueDescriptor[]) row, false);
+        fetch(row, false);
     }
     
     /**
@@ -1551,7 +1551,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         throws StandardException
     {
         // Turn this call into a group fetch of a 1 element group.
-        fetchNext_one_slot_array[0] = (org.apache.derby.iapi.types.DataValueDescriptor[]) runtime_mem.get_scratch_row(getRawTran());
+        fetchNext_one_slot_array[0] = runtime_mem.get_scratch_row(getRawTran());
         boolean ret_val = 
             fetchRows(
                 scan_position,
@@ -1597,7 +1597,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         boolean ret_val;
 
         // Turn this call into a group fetch of a 1 element group.
-        fetchNext_one_slot_array[0] = (org.apache.derby.iapi.types.DataValueDescriptor[]) row;
+        fetchNext_one_slot_array[0] = row;
         ret_val = 
             fetchRows(
                 scan_position,
@@ -1643,7 +1643,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
      * Expected usage:
      *
      * // allocate an array of 5 empty row templates
-     * org.apache.derby.iapi.types.DataValueDescriptor[][] row_array = allocate_row_array(5);
+     * StoreDataValue[][] row_array = allocate_row_array(5);
      * int row_cnt = 0;
      *
      * scan = openScan();
@@ -1909,8 +1909,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         scan_position.current_positionKey  = null;
 
         initScanParams(
-            (org.apache.derby.iapi.types.DataValueDescriptor[]) startKeyValue, startSearchOperator, 
-            qualifier, (org.apache.derby.iapi.types.DataValueDescriptor[]) stopKeyValue, stopSearchOperator);
+            startKeyValue, startSearchOperator, 
+            qualifier, stopKeyValue, stopSearchOperator);
 
         if (!init_hold)
             this.scan_state = SCAN_INIT;
