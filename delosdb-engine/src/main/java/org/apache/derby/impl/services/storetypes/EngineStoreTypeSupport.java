@@ -20,7 +20,12 @@
  */
 package org.apache.derby.impl.services.storetypes;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+
+import org.apache.derby.iapi.services.io.ArrayInputStream;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreLocatedRow;
@@ -195,6 +200,32 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
     public void setLongValue(Object target, long value)
     {
         ((SQLLongint) target).setValue(value);
+    }
+
+    @Override
+    public void restoreToNull(Object value)
+    {
+        dataValue(value).restoreToNull();
+    }
+
+    @Override
+    public void readExternal(Object value, ObjectInput input)
+        throws IOException, ClassNotFoundException
+    {
+        dataValue(value).readExternal(input);
+    }
+
+    @Override
+    public void readExternalFromArray(Object value, ArrayInputStream input)
+        throws IOException, ClassNotFoundException
+    {
+        dataValue(value).readExternalFromArray(input);
+    }
+
+    @Override
+    public void writeExternal(Object value, ObjectOutput output) throws IOException
+    {
+        dataValue(value).writeExternal(output);
     }
 
     private static DataValueDescriptor dataValue(Object value)

@@ -8723,3 +8723,158 @@ tasks.register('verifyLegacyDerbyKernelB5vRowLocationTemplateBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5vRowLocationTemplateBridge'
 }
+
+// B5w — raw-page store value IO bridge
+// ----------------------------------------------------------------------
+// B5v bridged row-location templates. B5w moves the next hard raw-page seam:
+// StoredPage still has to read/write inherited Derby SQL values, but it now
+// does that through StoreTypeUtil instead of importing DataValueDescriptor.
+
+
+def delosdbB5wReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5w-raw-page-value-io-bridge.txt')
+def delosdbB5wBaselineImportCount = 59
+
+def delosdbB5wStoreTypeSupport = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeSupport.java')
+def delosdbB5wStoreTypeUtil = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreTypeUtil.java')
+def delosdbB5wEngineStoreTypeSupport = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineStoreTypeSupport.java')
+def delosdbB5wStoredPage = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/StoredPage.java')
+
+def delosdbB5wTouchedFiles = [
+    delosdbB5wStoreTypeSupport,
+    delosdbB5wStoreTypeUtil,
+    delosdbB5wEngineStoreTypeSupport,
+    delosdbB5wStoredPage
+]
+
+def delosdbB5wRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5wRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5wStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].collectMany { root ->
+        fileTree(root) { include '**/*.java' }.files.findAll { it.isFile() }.collectMany { source ->
+            source.readLines().findAll { it.trim().startsWith('import org.apache.derby.iapi.types.') }.collect { line ->
+                delosdbB5wRelPath(source) + ': ' + line.trim()
+            }
+        }
+    }.sort()
+}
+
+tasks.register('legacyDerbyStoreKernelB5wRawPageValueIoBridgeReport') {
+    group = 'verification'
+    description = 'B5w: reports the raw-page StoreDataValue IO bridge slice.'
+    dependsOn 'verifyLegacyDerbyKernelB5vRowLocationTemplateBridge'
+    outputs.file(delosdbB5wReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5wStoreTypeImportLines()
+        def supportText = delosdbB5wRead(delosdbB5wStoreTypeSupport)
+        def utilText = delosdbB5wRead(delosdbB5wStoreTypeUtil)
+        def engineSupportText = delosdbB5wRead(delosdbB5wEngineStoreTypeSupport)
+        def storedPageText = delosdbB5wRead(delosdbB5wStoredPage)
+        def reportFile = delosdbB5wReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5w raw-page StoreDataValue IO bridge slice
+====================================================
+
+Purpose
+-------
+B5w removes StoredPage's direct DataValueDescriptor import. Raw-page row IO
+still reads and writes inherited Derby value implementations, but the concrete
+operations now live behind StoreTypeUtil/EngineStoreTypeSupport.
+
+Changed files
+-------------
+${delosdbB5wTouchedFiles.collect { '  - ' + delosdbB5wRelPath(it) }.join('\n')}
+
+Bridge operation state
+----------------------
+  StoreTypeSupport restoreToNull(Object): ${supportText.contains('void restoreToNull(Object value)') ? 'present' : 'missing'}
+  StoreTypeSupport readExternal(Object,ObjectInput): ${supportText.contains('void readExternal(Object value, ObjectInput input)') ? 'present' : 'missing'}
+  StoreTypeSupport readExternalFromArray(Object,ArrayInputStream): ${supportText.contains('void readExternalFromArray(Object value, ArrayInputStream input)') ? 'present' : 'missing'}
+  StoreTypeSupport writeExternal(Object,ObjectOutput): ${supportText.contains('void writeExternal(Object value, ObjectOutput output)') ? 'present' : 'missing'}
+  StoreTypeUtil exposes restore/read/write helpers: ${(utilText.contains('restoreToNull(Object value)') && utilText.contains('readExternalFromArray(Object value, ArrayInputStream input)') && utilText.contains('writeExternal(Object value, ObjectOutput output)')) ? 'yes' : 'no'}
+  Engine bridge implements restore/read/write helpers: ${(engineSupportText.contains('public void restoreToNull(Object value)') && engineSupportText.contains('public void readExternalFromArray(Object value, ArrayInputStream input)') && engineSupportText.contains('public void writeExternal(Object value, ObjectOutput output)')) ? 'yes' : 'no'}
+
+StoredPage state
+----------------
+  direct DataValueDescriptor import: ${storedPageText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  StoreDataValue marker import: ${storedPageText.contains('import org.apache.derby.iapi.store.types.StoreDataValue;') ? 'present' : 'missing'}
+  raw-page IO uses StoreTypeUtil.readExternal: ${storedPageText.contains('StoreTypeUtil.readExternal(column,') ? 'present' : 'missing'}
+  raw-page IO uses StoreTypeUtil.readExternalFromArray: ${storedPageText.contains('StoreTypeUtil.readExternalFromArray(column,') ? 'present' : 'missing'}
+  raw-page IO uses StoreTypeUtil.writeExternal: ${storedPageText.contains('StoreTypeUtil.writeExternal(column, logicalDataOut)') ? 'present' : 'missing'}
+  raw-page null restore uses StoreTypeUtil.restoreToNull: ${storedPageText.contains('StoreTypeUtil.restoreToNull(column)') ? 'present' : 'missing'}
+
+Relocated-store direct org.apache.derby.iapi.types import count
+---------------------------------------------------------------
+  before B5w baseline: ${delosdbB5wBaselineImportCount}
+  after B5w:           ${remainingStoreTypeImports.size()}
+
+Remaining direct relocated-store iapi.types imports
+---------------------------------------------------
+${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+B6 readiness
+------------
+NOT YET. Remaining direct type imports are still concentrated in controller,
+row-location, access utility, and heap/B-tree implementation paths.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5wRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5wRawPageValueIoBridge') {
+    group = 'verification'
+    description = 'B5w: verifies StoredPage raw value IO uses StoreTypeUtil instead of direct DataValueDescriptor imports.'
+    dependsOn 'legacyDerbyStoreKernelB5wRawPageValueIoBridgeReport'
+    doLast {
+        delosdbB5wTouchedFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5w missing required source file: ' + delosdbB5wRelPath(source))
+            }
+        }
+
+        def storedPageText = delosdbB5wRead(delosdbB5wStoredPage)
+        if (storedPageText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
+            throw new GradleException('B5w StoredPage must not import DataValueDescriptor directly')
+        }
+        if (!storedPageText.contains('import org.apache.derby.iapi.store.types.StoreDataValue;')) {
+            throw new GradleException('B5w StoredPage must use StoreDataValue as the raw-page value marker')
+        }
+        if (!storedPageText.contains('StoreTypeUtil.readExternal(column,') ||
+            !storedPageText.contains('StoreTypeUtil.readExternalFromArray(column,') ||
+            !storedPageText.contains('StoreTypeUtil.writeExternal(column, logicalDataOut)') ||
+            !storedPageText.contains('StoreTypeUtil.restoreToNull(column)')) {
+            throw new GradleException('B5w StoredPage must route raw value read/write/null operations through StoreTypeUtil')
+        }
+
+        def supportText = delosdbB5wRead(delosdbB5wStoreTypeSupport)
+        if (!supportText.contains('void restoreToNull(Object value)') ||
+            !supportText.contains('void readExternal(Object value, ObjectInput input)') ||
+            !supportText.contains('void readExternalFromArray(Object value, ArrayInputStream input)') ||
+            !supportText.contains('void writeExternal(Object value, ObjectOutput output)')) {
+            throw new GradleException('B5w StoreTypeSupport must expose raw value IO bridge operations')
+        }
+
+        def engineSupportText = delosdbB5wRead(delosdbB5wEngineStoreTypeSupport)
+        if (!engineSupportText.contains('dataValue(value).readExternalFromArray(input)') ||
+            !engineSupportText.contains('dataValue(value).writeExternal(output)')) {
+            throw new GradleException('B5w EngineStoreTypeSupport must keep concrete DataValueDescriptor IO implementation engine-owned')
+        }
+
+        def remainingStoreTypeImports = delosdbB5wStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5wBaselineImportCount) {
+            throw new GradleException('B5w relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5wBaselineImportCount + ': ' + remainingStoreTypeImports.size())
+        }
+
+        def reportText = delosdbB5wRead(delosdbB5wReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5w report must explicitly say B6 readiness is NOT YET')
+        }
+        logger.lifecycle('Verified B5w raw-page value IO bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5wRawPageValueIoBridge'
+}

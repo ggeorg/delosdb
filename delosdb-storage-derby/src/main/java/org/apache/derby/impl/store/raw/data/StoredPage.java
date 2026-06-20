@@ -61,8 +61,8 @@ import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.log.LogInstant;
 import org.apache.derby.iapi.store.raw.xact.RawTransaction;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
-import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.util.ByteArray;
 
 
@@ -4533,8 +4533,7 @@ public class StoredPage extends CachedPage
 
             // Get the column from the possibly partial row, of the 
             // q.getColumnId()'th column in the full row.
-            DataValueDescriptor columnValue = 
-                    (DataValueDescriptor) row[q.getColumnId()];
+            Object columnValue = row[q.getColumnId()];
 
             row_qualifies =
                 StoreTypeUtil.compare(
@@ -4581,8 +4580,7 @@ public class StoredPage extends CachedPage
 
                 // Get the column from the possibly partial row, of the 
                 // q.getColumnId()'th column in the full row.
-                DataValueDescriptor columnValue = 
-                    (DataValueDescriptor) row[q.getColumnId()];
+                Object columnValue = row[q.getColumnId()];
 
                 if (SanityManager.DEBUG)
                 {
@@ -4758,15 +4756,13 @@ public class StoredPage extends CachedPage
                     }
 
                     // Deal with Storable columns
-                    if (column instanceof DataValueDescriptor) 
+                    if (column instanceof StoreDataValue) 
                     {
-                        DataValueDescriptor sColumn = 
-                            (DataValueDescriptor) column;
-
+                        
                         // is the column null ?
                         if (StoredFieldHeader.isNull(fieldStatus)) 
                         {
-                            sColumn.restoreToNull();
+                            StoreTypeUtil.restoreToNull(column);
                         }
                         else
                         {
@@ -4777,7 +4773,7 @@ public class StoredPage extends CachedPage
 
                                 lrdi.setLimit(fieldDataLength);
                                 inUserCode = lrdi;
-                                sColumn.readExternalFromArray(lrdi);
+                                StoreTypeUtil.readExternalFromArray(column, lrdi);
                                 inUserCode = null;
                                 int unread = lrdi.clearLimit();
                                 if (unread != 0)
@@ -4790,14 +4786,14 @@ public class StoredPage extends CachedPage
                                 FormatIdInputStream newIn = 
                                     new FormatIdInputStream(overflowIn);
 
-                                if ((sColumn instanceof StreamStorable)) 
+                                if ((column instanceof StreamStorable)) 
                                 {
-                                    ((StreamStorable)sColumn).setStream(newIn);
+                                    ((StreamStorable) column).setStream(newIn);
                                 } 
                                 else 
                                 {
                                     inUserCode = newIn;
-                                    sColumn.readExternal(newIn);
+                                    StoreTypeUtil.readExternal(column, newIn);
                                     inUserCode = null;
                                 }
                             } 
@@ -4840,14 +4836,14 @@ public class StoredPage extends CachedPage
 
                     // field is non-existent
 
-                    if (column instanceof DataValueDescriptor) 
+                    if (column instanceof StoreDataValue) 
                     {
                         // RESOLVE - This is in place for 1.2. In the future
                         // we may want to return this column as non-existent
                         // even if it is a storable column, or maybe use a
                         // supplied default.
 
-                        ((DataValueDescriptor) column).restoreToNull();
+                        StoreTypeUtil.restoreToNull(column);
                     } 
                     else 
                     {
@@ -4859,13 +4855,13 @@ public class StoredPage extends CachedPage
             {
                 // field does not exist on this page.
 
-                if (column instanceof DataValueDescriptor) 
+                if (column instanceof StoreDataValue) 
                 {
                     // RESOLVE - This is in place for 1.2. In the future
                     // we may want to return this column as non-existent
                     // even if it is a storable column, or maybe use a 
                     // supplied default.
-                    ((DataValueDescriptor) column).restoreToNull();
+                    StoreTypeUtil.restoreToNull(column);
                 } 
                 else 
                 {
@@ -5276,14 +5272,14 @@ public class StoredPage extends CachedPage
                     // field is non-existent
                     Object column = row[columnId];
 
-                    if (column instanceof DataValueDescriptor) 
+                    if (column instanceof StoreDataValue) 
                     {
                         // RESOLVE - This is in place for 1.2. In the future
                         // we may want to return this column as non-existent
                         // even if it is a storable column, or maybe use a
                         // supplied default.
 
-                        ((DataValueDescriptor) column).restoreToNull();
+                        StoreTypeUtil.restoreToNull(column);
                     } 
                     else 
                     {
@@ -5317,13 +5313,13 @@ public class StoredPage extends CachedPage
                 if (StoredFieldHeader.isNonexistent(fieldStatus)) 
                 {
 
-                    if (column instanceof DataValueDescriptor) 
+                    if (column instanceof StoreDataValue) 
                     {
                         // RESOLVE - This is in place for 1.2. In the future
                         // we may want to return this column as non-existent
                         // even if it is a storable column, or maybe use a 
                         // supplied default.
-                        ((DataValueDescriptor) column).restoreToNull();
+                        StoreTypeUtil.restoreToNull(column);
                     } 
                     else 
                     {
@@ -5357,14 +5353,13 @@ public class StoredPage extends CachedPage
                 }
 
                 // Deal with Object columns
-                if (column instanceof DataValueDescriptor) 
+                if (column instanceof StoreDataValue) 
                 {
-                    DataValueDescriptor sColumn = (DataValueDescriptor) column;
-
+                    
                     // is the column null ?
                     if (StoredFieldHeader.isNull(fieldStatus)) 
                     {
-                        sColumn.restoreToNull();
+                        StoreTypeUtil.restoreToNull(column);
                         continue;
                     }
 
@@ -5375,7 +5370,7 @@ public class StoredPage extends CachedPage
 
                         dataIn.setLimit(fieldDataLength);
                         inUserCode = dataIn;
-                        sColumn.readExternal(dataIn);
+                        StoreTypeUtil.readExternal(column, dataIn);
                         inUserCode = null;
                         int unread = dataIn.clearLimit();
                         if (unread != 0)
@@ -5392,19 +5387,19 @@ public class StoredPage extends CachedPage
                         // fetch it as a stream.
                         boolean fetchStream = true;
 
-                        if (!(sColumn instanceof StreamStorable)) 
+                        if (!(column instanceof StreamStorable)) 
                         {
                             fetchStream = false;
                         }
 
                         if (fetchStream) 
                         {
-                            ((StreamStorable)sColumn).setStream(newIn);
+                            ((StreamStorable) column).setStream(newIn);
                         } 
                         else 
                         {
                             inUserCode = newIn;
-                            sColumn.readExternal(newIn);
+                            StoreTypeUtil.readExternal(column, newIn);
                             inUserCode = null;
                         }
 
@@ -5660,11 +5655,9 @@ public class StoredPage extends CachedPage
                         }
 
                         // Deal with Object columns
-                        if (column instanceof DataValueDescriptor) 
+                        if (column instanceof StoreDataValue) 
                         {
-                            DataValueDescriptor sColumn = 
-                                (DataValueDescriptor) column;
-
+                            
                             // is the column null ?
                             if ((fieldStatus & 
                                         StoredFieldHeader.FIELD_NULL) == 0)
@@ -5678,7 +5671,7 @@ public class StoredPage extends CachedPage
 
                                     dataIn.setLimit(fieldDataLength);
                                     inUserCode = dataIn;
-                                    sColumn.readExternalFromArray(dataIn);
+                                    StoreTypeUtil.readExternalFromArray(column, dataIn);
                                     inUserCode = null;
                                     int unread = dataIn.clearLimit();
                                     if (unread != 0)
@@ -5695,27 +5688,27 @@ public class StoredPage extends CachedPage
 
                                     boolean fetchStream = true;
 
-                                    if (!(sColumn instanceof StreamStorable)) 
+                                    if (!(column instanceof StreamStorable)) 
                                     {
                                         fetchStream = false;
                                     }
 
                                     if (fetchStream) 
                                     {
-                                        ((StreamStorable) sColumn).setStream(
+                                        ((StreamStorable) column).setStream(
                                                                          newIn);
                                     } 
                                     else 
                                     {
                                         inUserCode = newIn;
-                                        sColumn.readExternal(newIn);
+                                        StoreTypeUtil.readExternal(column, newIn);
                                         inUserCode = null;
                                     }
                                 } 
                             }
                             else
                             {
-                                sColumn.restoreToNull();
+                                StoreTypeUtil.restoreToNull(column);
                             }
 
                         }
@@ -5754,13 +5747,13 @@ public class StoredPage extends CachedPage
                     {
                         // column is non-existent.
 
-                        if (column instanceof DataValueDescriptor) 
+                        if (column instanceof StoreDataValue) 
                         {
                             // RESOLVE - This is in place for 1.2. In the future
                             // we may want to return this column as non-existent
                             // even if it is a storable column, or maybe use a 
                             // supplied default.
-                            ((DataValueDescriptor) column).restoreToNull();
+                            StoreTypeUtil.restoreToNull(column);
                         } 
                         else 
                         {
@@ -5776,14 +5769,14 @@ public class StoredPage extends CachedPage
                     // field is non-existent
                     Object column = row[columnId];
 
-                    if (column instanceof DataValueDescriptor) 
+                    if (column instanceof StoreDataValue) 
                     {
                         // RESOLVE - This is in place for 1.2. In the future
                         // we may want to return this column as non-existent
                         // even if it is a storable column, or maybe use a
                         // supplied default.
 
-                        ((DataValueDescriptor) column).restoreToNull();
+                        StoreTypeUtil.restoreToNull(column);
                     } 
                     else 
                     {
@@ -6355,11 +6348,10 @@ public class StoredPage extends CachedPage
                     logicalDataOut, fieldStatus, 
                     fieldDataLength, slotFieldSize);
         }
-        else if (column instanceof DataValueDescriptor)
+        else if (column instanceof StoreDataValue)
         {
-            DataValueDescriptor sColumn = (DataValueDescriptor) column;
-
-            boolean isNull = (columnFlag == COLUMN_CREATE_NULL) || sColumn.isNull();
+            
+            boolean isNull = (columnFlag == COLUMN_CREATE_NULL) || StoreTypeUtil.isNull(column);
             if (isNull) 
             {
                 fieldStatus = StoredFieldHeader.setNull(fieldStatus, true);
@@ -6377,7 +6369,7 @@ public class StoredPage extends CachedPage
                 try 
                 {
                     columnBeginPosition = out.getPosition();
-                    sColumn.writeExternal(logicalDataOut);
+                    StoreTypeUtil.writeExternal(column, logicalDataOut);
                 }
                 catch (IOException ioe)
                 {

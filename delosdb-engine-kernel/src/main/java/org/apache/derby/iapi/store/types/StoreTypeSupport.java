@@ -20,7 +20,12 @@
  */
 package org.apache.derby.iapi.store.types;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+
+import org.apache.derby.iapi.services.io.ArrayInputStream;
 
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -95,4 +100,14 @@ public interface StoreTypeSupport
     void setValue(Object target, Object source) throws StandardException;
 
     void setLongValue(Object target, long value);
+
+    void restoreToNull(Object value);
+
+    void readExternal(Object value, ObjectInput input)
+        throws IOException, ClassNotFoundException;
+
+    void readExternalFromArray(Object value, ArrayInputStream input)
+        throws IOException, ClassNotFoundException;
+
+    void writeExternal(Object value, ObjectOutput output) throws IOException;
 }
