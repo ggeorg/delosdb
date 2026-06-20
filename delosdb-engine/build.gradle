@@ -13,6 +13,12 @@ def resourceRoot = rootProject.file('delosdb-engine/src/main/resources')
 def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
 def rootGeneratedSourceRoot = rootProject.layout.buildDirectory.dir("generated/sources/${moduleName}")
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
+
+// Use exact compile task dependencies but plain output locations. Do not resolve
+// cross-project task providers while this project is being evaluated: several
+// sibling projects have not registered their tasks yet. Also do not depend on
+// lifecycle tasks such as :delosdb-engine-kernel:classes, because that lifecycle
+// builds the generated ClassSizeCatalog and would re-enter compileDerbyEngine.
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def osgiModuleClassDir = rootProject.project(':delosdb-osgi-stub').layout.buildDirectory.dir('classes/modules/org.osgi.framework')
