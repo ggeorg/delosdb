@@ -42,10 +42,10 @@ import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
-import org.apache.derby.iapi.types.RowLocation;
 
 import org.apache.derby.impl.store.access.conglomerate.OpenConglomerate;
 import org.apache.derby.impl.store.access.conglomerate.GenericConglomerateController;
@@ -77,7 +77,7 @@ public class HeapController
      **************************************************************************
      */
     protected final void getRowPositionFromRowLocation(
-    RowLocation row_loc,
+    StoreRowLocation row_loc,
     RowPosition pos)
         throws StandardException
     {
@@ -594,7 +594,7 @@ public class HeapController
 
 	public void insertAndFetchLocation(
     StoreDataValue[] row, 
-    RowLocation           templateRowLocation)
+    StoreRowLocation      templateRowLocation)
 		throws StandardException
 	{
 		if (open_conglom.isClosed())
@@ -640,7 +640,7 @@ public class HeapController
 	 * @exception  StandardException  Standard exception policy.
      **/
     public boolean lockRow(
-    RowLocation     loc,
+    StoreRowLocation loc,
     int             lock_operation,
     boolean         wait,
     int             lock_duration)
@@ -670,7 +670,7 @@ public class HeapController
 	 * @exception  StandardException  Standard exception policy.
      **/
     public void unlockRowAfterRead(
-    RowLocation     loc,
+    StoreRowLocation loc,
     boolean         forUpdate,
     boolean         row_qualified)
         throws StandardException
@@ -727,7 +727,7 @@ public class HeapController
         return(lockRow(rh, lock_operation, wait, lock_duration));
     }
 
-	public RowLocation newRowLocationTemplate()
+	public StoreRowLocation newRowLocationTemplate()
 		throws StandardException
 	{
 		if (open_conglom.isClosed())

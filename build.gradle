@@ -9178,3 +9178,179 @@ tasks.register('verifyLegacyDerbyKernelB5yControllerRowBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5yControllerRowBridge'
 }
+
+// B5z continues from B5y by moving controller row-location callbacks and
+// transaction scan/template entry points to the store-facing bridge. This is a
+// larger boundary slice than B5x: it removes the direct TransactionController
+// and ConglomerateController iapi.types imports while keeping concrete Derby
+// values at old implementation edges.
+
+def delosdbB5zReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5z-controller-location-transaction-bridge.txt')
+def delosdbB5zBaselineImportCount = 52
+
+def delosdbB5zFiles = [
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/TransactionController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/ConglomerateController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/DiskHashtable.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/conglomerate/Conglomerate.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/BackingStoreHashTableFromScan.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericConglomerateController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/Heap.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2I.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IController.java'),
+    file('delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/IndexStatisticsDaemonImpl.java'),
+    file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/DataDictionaryImpl.java'),
+    file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/TabInfoImpl.java'),
+    file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/ResultColumnList.java'),
+    file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/AlterTableConstantAction.java'),
+    file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/IndexChanger.java'),
+    file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/RowChangerImpl.java'),
+    file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/TemporaryRowHolderImpl.java'),
+    file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/TemporaryRowHolderResultSet.java')
+]
+
+def delosdbB5zRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5zRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5zStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].collectMany { root ->
+        root.exists() ? fileTree(root).matching { include '**/*.java' }.files : []
+    }.sort { it.path }.collectMany { source ->
+        source.readLines().findAll { line ->
+            line ==~ /\s*import\s+org\.apache\.derby\.iapi\.types\..*;/
+        }.collect { line ->
+            delosdbB5zRelPath(source) + ': ' + line.trim()
+        }
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5zControllerLocationTransactionBridgeReport') {
+    group = 'verification'
+    description = 'B5z: reports controller row-location and transaction scan/template bridge progress.'
+    dependsOn 'verifyLegacyDerbyKernelB5yControllerRowBridge'
+    outputs.file(delosdbB5zReportFile)
+    doLast {
+        def imports = delosdbB5zStoreTypeImportLines()
+        def tcText = delosdbB5zRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/TransactionController.java'))
+        def ccText = delosdbB5zRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/ConglomerateController.java'))
+        def ramText = delosdbB5zRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java'))
+        def genericText = delosdbB5zRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericConglomerateController.java'))
+        def b2iControllerText = delosdbB5zRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IController.java'))
+        def diskHashText = delosdbB5zRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/DiskHashtable.java'))
+        def reportFile = delosdbB5zReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5z controller location and transaction bridge
+=======================================================
+
+Purpose
+-------
+B5z removes a larger remaining direct-type batch by moving the public
+TransactionController scan/template parameters and the ConglomerateController
+row-location callbacks to the SQL-neutral store-facing bridge. Concrete Derby
+RowLocation/DataValueDescriptor casts remain only at old SQL/access compatibility
+edges and implementation internals.
+
+Changed files
+-------------
+${delosdbB5zFiles.collect { '  - ' + delosdbB5zRelPath(it) }.join('\n')}
+
+Bridge state
+------------
+  TransactionController direct DataValueDescriptor import: ${tcText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  TransactionController imports StoreDataValue: ${tcText.contains('import org.apache.derby.iapi.store.types.StoreDataValue;') ? 'yes' : 'no'}
+  ConglomerateController direct RowLocation import: ${ccText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+  ConglomerateController imports StoreRowLocation: ${ccText.contains('import org.apache.derby.iapi.store.types.StoreRowLocation;') ? 'yes' : 'no'}
+  RAMTransaction direct DataValueDescriptor import: ${ramText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  GenericConglomerateController direct RowLocation import: ${genericText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+  B2IController direct RowLocation import: ${b2iControllerText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+  DiskHashtable direct RowLocation import: ${diskHashText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+
+Relocated store direct iapi.types import count
+---------------------------------------------
+  before B5z baseline: ${delosdbB5zBaselineImportCount}
+  after B5z:           ${imports.size()}
+
+Remaining direct import lines
+-----------------------------
+${imports.collect { '  - ' + it }.join('\n')}
+
+B6 readiness
+------------
+NOT YET. The remaining imports are now concentrated in deeper row materialization,
+raw/conglomerate template helpers, exact B-tree/heap internal RowLocation paths,
+and concrete inherited DataType subclasses.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5zRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5zControllerLocationTransactionBridge') {
+    group = 'verification'
+    description = 'B5z: verifies controller row-location and transaction scan/template bridge progress.'
+    dependsOn 'legacyDerbyStoreKernelB5zControllerLocationTransactionBridgeReport'
+    doLast {
+        delosdbB5zFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5z missing required source file: ' + delosdbB5zRelPath(source))
+            }
+        }
+
+        def tcText = delosdbB5zRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/TransactionController.java'))
+        if (tcText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ||
+            !tcText.contains('import org.apache.derby.iapi.store.types.StoreDataValue;') ||
+            !tcText.contains('StoreDataValue[]')) {
+            throw new GradleException('B5z TransactionController must expose row/search templates as StoreDataValue[]')
+        }
+
+        def ccText = delosdbB5zRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/ConglomerateController.java'))
+        if (ccText.contains('import org.apache.derby.iapi.types.RowLocation;') ||
+            !ccText.contains('import org.apache.derby.iapi.store.types.StoreRowLocation;') ||
+            !ccText.contains('StoreRowLocation newRowLocationTemplate()')) {
+            throw new GradleException('B5z ConglomerateController must expose row locations as StoreRowLocation')
+        }
+
+        [
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/BackingStoreHashTableFromScan.java'
+        ].each { path ->
+            def text = delosdbB5zRead(file(path))
+            if (text.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
+                throw new GradleException('B5z source must not keep direct DataValueDescriptor import: ' + path)
+            }
+        }
+
+        [
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericController.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericConglomerateController.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IController.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/DiskHashtable.java'
+        ].each { path ->
+            def text = delosdbB5zRead(file(path))
+            if (text.contains('import org.apache.derby.iapi.types.RowLocation;')) {
+                throw new GradleException('B5z source must not keep direct RowLocation import: ' + path)
+            }
+        }
+
+        def imports = delosdbB5zStoreTypeImportLines()
+        if (imports.size() >= delosdbB5zBaselineImportCount) {
+            throw new GradleException('B5z relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5zBaselineImportCount + ': ' + imports.size())
+        }
+
+        def reportText = delosdbB5zRead(delosdbB5zReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5z report must explicitly say B6 readiness is NOT YET')
+        }
+
+        logger.lifecycle('Verified B5z controller location/transaction bridge; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5zControllerLocationTransactionBridge'
+}

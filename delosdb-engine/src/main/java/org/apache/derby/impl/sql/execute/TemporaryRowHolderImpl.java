@@ -317,7 +317,7 @@ class TemporaryRowHolderImpl implements TemporaryRowHolder
                                      TransactionController.MODE_TABLE,
                                      TransactionController.ISOLATION_SERIALIZABLE);
             if(isUniqueStream)
-                destRowLocation = cc.newRowLocationTemplate();
+                destRowLocation = (RowLocation) cc.newRowLocationTemplate();
 
         }
 

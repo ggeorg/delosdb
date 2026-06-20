@@ -559,7 +559,7 @@ class TemporaryRowHolderResultSet implements CursorResultSet, NoPutResultSet, Cl
 		currentRow = rowArray[0].getNewNullRow();
 		indexRow = new DataValueDescriptor[2];
 		indexRow[0] = new SQLLongint(position);
-		indexRow[1] = 	heapCC.newRowLocationTemplate();
+		indexRow[1] = 	(RowLocation) heapCC.newRowLocationTemplate();
 
 		DataValueDescriptor[] searchRow =  new DataValueDescriptor[1];
 		searchRow[0] = new SQLLongint(position);

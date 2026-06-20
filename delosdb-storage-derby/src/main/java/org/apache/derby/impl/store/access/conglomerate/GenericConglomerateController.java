@@ -36,8 +36,8 @@ import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
-import org.apache.derby.iapi.types.RowLocation;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -147,7 +147,7 @@ public abstract class GenericConglomerateController
     /**
      * @see ConglomerateController#delete
      **/
-    public boolean delete(RowLocation loc)
+    public boolean delete(StoreRowLocation loc)
 		throws StandardException
 	{
         if (open_conglom.isClosed())
@@ -214,7 +214,7 @@ public abstract class GenericConglomerateController
      * @see ConglomerateController#fetch
      **/
     public boolean fetch(
-    RowLocation             loc, 
+    StoreRowLocation        loc, 
     StoreDataValue[]     row, 
     FormatableBitSet                 validColumns) 
 		throws StandardException
@@ -318,7 +318,7 @@ public abstract class GenericConglomerateController
      * @see ConglomerateController#fetch
      **/
     public boolean fetch(
-    RowLocation             loc, 
+    StoreRowLocation        loc, 
     StoreDataValue[]     row, 
     FormatableBitSet                 validColumns,
     boolean                 waitForLock) 
@@ -423,7 +423,7 @@ public abstract class GenericConglomerateController
      * @see ConglomerateController#replace
      **/
     public boolean replace(
-    RowLocation             loc, 
+    StoreRowLocation        loc, 
     StoreDataValue[]     row, 
     FormatableBitSet                 validColumns)
 		throws StandardException

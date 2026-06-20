@@ -556,7 +556,7 @@ public class Heap
     LockingPolicy           locking_policy,
     int                     isolation_level,
     FormatableBitSet                 scanColumnList,
-    DataValueDescriptor[]   fetchRow)
+    StoreDataValue[]        fetchRow)
         throws StandardException
     {
         // no support for max on a heap table.
@@ -822,10 +822,10 @@ public class Heap
     LockingPolicy                   locking_policy,
     int                             isolation_level,
 	FormatableBitSet				scanColumnList,
-    DataValueDescriptor[]	        startKeyValue,
+    StoreDataValue[]	        startKeyValue,
     int                             startSearchOperator,
     Qualifier                       qualifier[][],
-    DataValueDescriptor[]	        stopKeyValue,
+    StoreDataValue[]	        stopKeyValue,
     int                             stopSearchOperator,
     StaticCompiledOpenConglomInfo   static_info,
     DynamicCompiledOpenConglomInfo  dynamic_info)
@@ -842,8 +842,8 @@ public class Heap
 
         // Heap scans do not suppport start and stop scan positions (these
         // only make sense for ordered storage structures).
-		if (!RowUtil.isRowEmpty(startKeyValue)
-			|| !RowUtil.isRowEmpty(stopKeyValue))
+		if (!RowUtil.isRowEmpty((DataValueDescriptor[]) startKeyValue)
+			|| !RowUtil.isRowEmpty((DataValueDescriptor[]) stopKeyValue))
 		{
             throw StandardException.newException(
                     SQLState.HEAP_UNIMPLEMENTED_FEATURE);
@@ -874,10 +874,10 @@ public class Heap
         heapscan.init(
             open_conglom,
             scanColumnList,
-            startKeyValue,
+            (DataValueDescriptor[]) startKeyValue,
             startSearchOperator,
             qualifier,
-            stopKeyValue,
+            (DataValueDescriptor[]) stopKeyValue,
             stopSearchOperator);
 
 		return(heapscan);

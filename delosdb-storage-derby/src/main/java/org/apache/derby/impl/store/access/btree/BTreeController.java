@@ -43,6 +43,7 @@ import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 
@@ -1586,7 +1587,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
     @exception StandardException Standard exception policy.
     **/
-    public boolean delete(RowLocation loc)
+    public boolean delete(StoreRowLocation loc)
 		throws StandardException
 	{
         throw(StandardException.newException(
@@ -1600,7 +1601,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     @exception StandardException Standard exception policy.
     **/
     public boolean fetch(
-    RowLocation loc, 
+    StoreRowLocation loc, 
     StoreDataValue[]     row, 
     FormatableBitSet                 validColumns) 
 		throws StandardException
@@ -1616,7 +1617,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     @exception StandardException Standard exception policy.
     **/
     public boolean fetch(
-    RowLocation             loc, 
+    StoreRowLocation        loc, 
     StoreDataValue[]     row, 
     FormatableBitSet                 validColumns,
     boolean                 waitForLock) 
@@ -1638,7 +1639,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	**/
 	public void insertAndFetchLocation(
     StoreDataValue[]	row,
-    RowLocation             templateRowLocation)
+    StoreRowLocation        templateRowLocation)
         throws StandardException
 	{
         throw StandardException.newException(
@@ -1653,7 +1654,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
     @exception StandardException Standard exception policy.
 	**/
-	public RowLocation newRowLocationTemplate()
+	public StoreRowLocation newRowLocationTemplate()
 		throws StandardException
 	{
         throw StandardException.newException(
@@ -1679,7 +1680,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	 * @exception  StandardException  Standard exception policy.
      **/
     public boolean lockRow(
-    RowLocation loc,
+    StoreRowLocation loc,
     int         lock_operation,
     boolean     wait,
     int         lock_duration)
@@ -1702,7 +1703,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     }
 
     public void unlockRowAfterRead(
-    RowLocation     loc,
+    StoreRowLocation loc,
     boolean         forUpdate,
     boolean         row_qualifies)
         throws StandardException
@@ -1718,7 +1719,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     @exception StandardException Standard exception policy.
     **/
     public boolean replace(
-    RowLocation             loc, 
+    StoreRowLocation        loc, 
     StoreDataValue[]     row, 
     FormatableBitSet                 validColumns)
 		throws StandardException

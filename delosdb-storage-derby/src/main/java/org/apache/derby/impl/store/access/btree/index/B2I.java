@@ -705,7 +705,7 @@ public class B2I extends BTree
     LockingPolicy           locking_policy,
     int                     isolation_level,
     FormatableBitSet                 scanColumnList,
-    DataValueDescriptor[]   fetchRow)
+    StoreDataValue[]        fetchRow)
         throws StandardException
     {
         boolean row_exists;
@@ -850,10 +850,10 @@ public class B2I extends BTree
     LockingPolicy                   locking_policy,
     int                             isolation_level,
 	FormatableBitSet                         scanColumnList,
-    DataValueDescriptor[]			startKeyValue,
+    StoreDataValue[]			startKeyValue,
     int                             startSearchOperator,
     Qualifier                       qualifier[][],
-    DataValueDescriptor[]			stopKeyValue,
+    StoreDataValue[]			stopKeyValue,
     int                             stopSearchOperator,
     StaticCompiledOpenConglomInfo   static_info,
     DynamicCompiledOpenConglomInfo  dynamic_info)

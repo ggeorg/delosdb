@@ -253,7 +253,7 @@ class IndexChanger
 		}
 		else if (indexSC == null)
 		{
-			RowLocation templateBaseRowLocation = baseCC.newRowLocationTemplate();
+			RowLocation templateBaseRowLocation = (RowLocation) baseCC.newRowLocationTemplate();
 			/* DataDictionary doesn't have compiled info */
 			if (indexSCOCI == null)
 			{

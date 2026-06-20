@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.access.SpaceInfo;
 
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import java.util.Properties; 
 
@@ -56,7 +56,7 @@ abstract class GenericController
      **************************************************************************
      */
     protected void getRowPositionFromRowLocation(
-    RowLocation row_loc,
+    StoreRowLocation row_loc,
     RowPosition pos)
         throws StandardException
     {
@@ -144,16 +144,14 @@ abstract class GenericController
 		return(open_conglom.isKeyed());
 	}
 
-	public RowLocation newRowLocationTemplate()
+	public StoreRowLocation newRowLocationTemplate()
 		throws StandardException
 	{
         if (open_conglom.isClosed())
             open_conglom.reopen();
 
-        // ConglomerateController is still a Derby SQL/access API and returns the
-        // concrete RowLocation type.  OpenConglomerate has already crossed into
-        // the store-facing bridge, so adapt back only at this compatibility edge.
-        return((RowLocation) open_conglom.newRowLocationTemplate());
+        // OpenConglomerate has already crossed into the store-facing bridge.
+        return(open_conglom.newRowLocationTemplate());
 	}
 
     /**

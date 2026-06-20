@@ -1663,7 +1663,7 @@ class ResultColumnList extends QueryTreeNodeVector<ResultColumn>
                 isolationLevel);
 
         try {
-            return cc.newRowLocationTemplate();
+            return (RowLocation) cc.newRowLocationTemplate();
         } finally {
             cc.close();
         }

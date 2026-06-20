@@ -422,7 +422,7 @@ class RowChangerImpl	implements	RowChanger
 			isc.open(fixOnUpdate);
 
 			if (baseRowLocation == null)
-				baseRowLocation = baseCC.newRowLocationTemplate();
+				baseRowLocation = (RowLocation) baseCC.newRowLocationTemplate();
 		}
 
 		isOpen = true;
@@ -450,7 +450,7 @@ class RowChangerImpl	implements	RowChanger
             if (isc != null || getRL)
 			{
                 if (baseRowLocation == null) {
-                    baseRowLocation = baseCC.newRowLocationTemplate();
+                    baseRowLocation = (RowLocation) baseCC.newRowLocationTemplate();
                 }
 				baseCC.insertAndFetchLocation(baseRow.getRowArray(), baseRowLocation);
 

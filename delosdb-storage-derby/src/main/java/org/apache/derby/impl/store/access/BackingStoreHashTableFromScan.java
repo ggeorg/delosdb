@@ -29,7 +29,7 @@ import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.RowSource;
 import org.apache.derby.iapi.store.access.TransactionController;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -71,10 +71,10 @@ class BackingStoreHashTableFromScan extends BackingStoreHashtable
         int                     lock_level,
         int                     isolation_level,
 		FormatableBitSet                 scanColumnList,
-		DataValueDescriptor[]   startKeyValue,
+		StoreDataValue[]   startKeyValue,
 		int                     startSearchOperator,
 		Qualifier               qualifier[][],
-		DataValueDescriptor[]   stopKeyValue,
+		StoreDataValue[]   stopKeyValue,
 		int                     stopSearchOperator,
         long                    max_rowcnt,
         int[]                   key_column_numbers,

@@ -33,7 +33,7 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.raw.Loggable;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -428,7 +428,7 @@ public interface TransactionController
     **/
     long createConglomerate(
     String                  implementation,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]   template,
     ColumnOrdering[]        columnOrder,
     int[]                   collationIds,
     Properties              properties,
@@ -495,7 +495,7 @@ public interface TransactionController
 	**/
     long createAndLoadConglomerate(
     String                  implementation,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]   template,
 	ColumnOrdering[]		columnOrder,
     int[]                   collationIds,
     Properties              properties,
@@ -583,7 +583,7 @@ public interface TransactionController
     long recreateAndLoadConglomerate(
     String                  implementation,
     boolean                 recreate_ifempty,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]   template,
 	ColumnOrdering[]		columnOrder,
     int[]                   collationIds,
     Properties              properties,
@@ -958,10 +958,10 @@ public interface TransactionController
     int                     lock_level,
     int                     isolation_level,
     FormatableBitSet        scanColumnList,
-    DataValueDescriptor[]   startKeyValue,
+    StoreDataValue[]   startKeyValue,
     int                     startSearchOperator,
     Qualifier               qualifier[][],
-    DataValueDescriptor[]   stopKeyValue,
+    StoreDataValue[]   stopKeyValue,
     int                     stopSearchOperator,
     long                    max_rowcnt,
     int[]                   key_column_numbers,
@@ -1186,10 +1186,10 @@ public interface TransactionController
         int                             lock_level,
         int                             isolation_level,
 		FormatableBitSet                scanColumnList,
-		DataValueDescriptor[]           startKeyValue,
+		StoreDataValue[]           startKeyValue,
 		int                             startSearchOperator,
 		Qualifier                       qualifier[][],
-		DataValueDescriptor[]           stopKeyValue,
+		StoreDataValue[]           stopKeyValue,
 		int                             stopSearchOperator)
 			throws StandardException;
 
@@ -1235,10 +1235,10 @@ public interface TransactionController
         int                             lock_level,
         int                             isolation_level,
 		FormatableBitSet                scanColumnList,
-		DataValueDescriptor[]           startKeyValue,
+		StoreDataValue[]           startKeyValue,
 		int                             startSearchOperator,
 		Qualifier                       qualifier[][],
-		DataValueDescriptor[]           stopKeyValue,
+		StoreDataValue[]           stopKeyValue,
 		int                             stopSearchOperator,
         StaticCompiledOpenConglomInfo   static_info,
         DynamicCompiledOpenConglomInfo  dynamic_info)
@@ -1278,10 +1278,10 @@ public interface TransactionController
         int                             lock_level,
         int                             isolation_level,
 		FormatableBitSet                         scanColumnList,
-		DataValueDescriptor[]           startKeyValue,
+		StoreDataValue[]           startKeyValue,
 		int                             startSearchOperator,
 		Qualifier                       qualifier[][],
-		DataValueDescriptor[]           stopKeyValue,
+		StoreDataValue[]           stopKeyValue,
 		int                             stopSearchOperator)
 			throws StandardException;
 
@@ -1418,7 +1418,7 @@ public interface TransactionController
         int                     lock_level,
         int                     isolation_level,
 		FormatableBitSet                 scanColumnList,
-		DataValueDescriptor[]   fetchRow)
+		StoreDataValue[]   fetchRow)
 			throws StandardException;
 
 
@@ -1692,7 +1692,7 @@ public interface TransactionController
 	**/
 	long createSort(
     Properties              implParameters,
-    DataValueDescriptor[]   template,
+    StoreDataValue[]   template,
     ColumnOrdering          columnOrdering[],
     SortObserver            sortObserver,
     boolean                 alreadyInOrder,

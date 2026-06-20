@@ -27,7 +27,7 @@ import org.apache.derby.iapi.services.io.Storable;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -155,14 +155,14 @@ public interface ConglomerateController extends ConglomPropertyQueryable
 	at no longer represents a valid record.
 	@exception StandardException Standard exception policy.
     **/
-    boolean delete(RowLocation loc)
+    boolean delete(StoreRowLocation loc)
 		throws StandardException;
 
     /**
      * Fetch the (partial) row at the given location.
      * <p>
      *
-	 * @param loc             The "RowLocation" which describes the exact row
+	 * @param loc             The "StoreRowLocation" which describes the exact row
      *                        to fetch from the table.
 	 * @param destRow         The row to read the data into.
 	 * @param validColumns    A description of which columns to return from
@@ -181,7 +181,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
 	 * @see RowUtil
      **/
     boolean fetch(
-    RowLocation             loc, 
+    StoreRowLocation             loc, 
     StoreDataValue[]     destRow, 
     FormatableBitSet                 validColumns) 
 		throws StandardException;
@@ -190,7 +190,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
      * Fetch the (partial) row at the given location.
      * <p>
      *
-	 * @param loc             The "RowLocation" which describes the exact row
+	 * @param loc             The "StoreRowLocation" which describes the exact row
      *                        to fetch from the table.
 	 * @param destRow         The row to read the data into.
 	 * @param validColumns    A description of which columns to return from
@@ -214,7 +214,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
 	 * @see RowUtil
      **/
     boolean fetch(
-    RowLocation loc, 
+    StoreRowLocation loc, 
     StoreDataValue[]     destRow, 
     FormatableBitSet     validColumns,
     boolean     waitForLock) 
@@ -225,7 +225,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
      * <p>
      * RESOLVE - interface NOT SUPPORTED YET!!!!!
      *
-	 * @param loc             The "RowLocation" which describes the exact row
+	 * @param loc             The "StoreRowLocation" which describes the exact row
      *                        to fetch from the table.
 	 * @param destRow         The row to read the data into.
 	 * @param validColumns    A description of which columns to return from
@@ -256,7 +256,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
      **/
     /*
     boolean fetch(
-    RowLocation             loc, 
+    StoreRowLocation             loc, 
     StoreDataValue[]     destRow, 
     FormatableBitSet                 validColumns, 
     Qualifier[][]           qualifier)
@@ -303,7 +303,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
      **/
 	void insertAndFetchLocation(
     StoreDataValue[]     row, 
-    RowLocation             destRowLocation)
+    StoreRowLocation             destRowLocation)
 		throws StandardException;
 
     /**
@@ -331,7 +331,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
      *
 	 * @return true if lock was granted, only can be false if wait was false.
      *
-	 * @param loc           The "RowLocation" of the exact row to lock.
+	 * @param loc           The "StoreRowLocation" of the exact row to lock.
      * @param lock_oper     For what operation are we requesting the lock, this
      *                      should be one of the following 4 options:
      *                      LOCK_READ [read lock], 
@@ -350,7 +350,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
 	 * @exception  StandardException  Standard exception policy.
      **/
     boolean lockRow(
-    RowLocation     loc,
+    StoreRowLocation     loc,
     int             lock_oper,
     boolean         wait,
     int             lock_duration)
@@ -408,14 +408,14 @@ public interface ConglomerateController extends ConglomPropertyQueryable
      * RESOLVE (mikem) - move this call to ConglomerateManager so it is
      * obvious that non-access clients should not call this.
      *
-	 * @param loc           The "RowLocation" which describes the row to unlock.
+	 * @param loc           The "StoreRowLocation" which describes the row to unlock.
      * @param forUpdate     Row was locked for read or update.
      * @param row_qualified Row was qualified and returned to the user.
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
     public void unlockRowAfterRead(
-    RowLocation     loc,
+    StoreRowLocation     loc,
     boolean         forUpdate,
     boolean         row_qualified)
         throws StandardException;
@@ -425,7 +425,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
 	used in calls to insertAndFetchLocation.
 	@exception StandardException Standard exception policy.
 	**/
-	RowLocation newRowLocationTemplate()
+	StoreRowLocation newRowLocationTemplate()
 		throws StandardException;
 
 	/**
@@ -436,7 +436,7 @@ public interface ConglomerateController extends ConglomPropertyQueryable
 	@see RowUtil
     **/
     boolean replace(
-    RowLocation             loc, 
+    StoreRowLocation             loc, 
     StoreDataValue[]     row, 
     FormatableBitSet                 validColumns)
 		throws StandardException;

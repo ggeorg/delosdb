@@ -54,6 +54,7 @@ import org.apache.derby.iapi.store.access.GroupFetchScanController;
 import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.util.InterruptStatus;
 
 /**
@@ -477,7 +478,7 @@ public class IndexStatisticsDaemonImpl
 
                 indexRow[i] = irg.getNullIndexRow(
                         td.getColumnDescriptorList(),
-                        heapCC.newRowLocationTemplate());
+                        (RowLocation) heapCC.newRowLocationTemplate());
             }
         }
         finally

@@ -2417,7 +2417,7 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
                 TransactionController.MODE_TABLE,
                 TransactionController.ISOLATION_SERIALIZABLE);
 
-		rl = compressHeapCC.newRowLocationTemplate();
+		rl = (RowLocation) compressHeapCC.newRowLocationTemplate();
 
 		// Get the properties on the old heap
 		compressHeapCC.getInternalTablePropertySet(properties);
@@ -2629,7 +2629,7 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
                                 TransactionController.MODE_TABLE,
                                 TransactionController.ISOLATION_SERIALIZABLE);
 
-		rl = compressHeapCC.newRowLocationTemplate();
+		rl = (RowLocation) compressHeapCC.newRowLocationTemplate();
 		// Get the properties on the old heap
 		compressHeapCC.getInternalTablePropertySet(properties);
 		compressHeapCC.close();

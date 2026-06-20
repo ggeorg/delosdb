@@ -26,6 +26,7 @@ import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.RowLocationRetRowSource;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
@@ -152,7 +153,7 @@ public interface Conglomerate extends Storable, DataValueDescriptor
     LockingPolicy           locking_policy,
     int                     isolation_level,
     FormatableBitSet                 scanColumnList,
-    DataValueDescriptor[]   fetchRow)
+    StoreDataValue[]   fetchRow)
         throws StandardException;
 
 
@@ -309,10 +310,10 @@ public interface Conglomerate extends Storable, DataValueDescriptor
     LockingPolicy                   locking_policy,
     int                             isolation_level,
 	FormatableBitSet				scanColumnList,
-    DataValueDescriptor[]	        startKeyValue,
+    StoreDataValue[]	        startKeyValue,
     int                             startSearchOperator,
     Qualifier                       qualifier[][],
-    DataValueDescriptor[]           stopKeyValue,
+    StoreDataValue[]           stopKeyValue,
     int                             stopSearchOperator,
     StaticCompiledOpenConglomInfo   static_info,
     DynamicCompiledOpenConglomInfo  dynamic_info)

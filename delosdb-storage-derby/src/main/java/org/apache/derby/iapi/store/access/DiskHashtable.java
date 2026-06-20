@@ -28,7 +28,7 @@ import java.util.Properties;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
@@ -145,7 +145,7 @@ public class DiskHashtable
         // RowLocation of the row in the "base" table of the hash overflow.
         btreeRow = 
             new DataValueDescriptor[] 
-                { (DataValueDescriptor) StoreTypeUtil.newSQLInteger(), rowConglomerate.newRowLocationTemplate()};
+                { (DataValueDescriptor) StoreTypeUtil.newSQLInteger(), (DataValueDescriptor) rowConglomerate.newRowLocationTemplate()};
 
         Properties btreeProps = new Properties();
 
@@ -220,7 +220,7 @@ public class DiskHashtable
 
         // insert the row into the "base" conglomerate.
         rowConglomerate.insertAndFetchLocation( 
-            (DataValueDescriptor[]) row, (RowLocation) btreeRow[1]);
+            (DataValueDescriptor[]) row, (StoreRowLocation) btreeRow[1]);
 
         // create index row from hashcode and rowlocation just inserted, and
         // insert index row into index.
@@ -280,7 +280,7 @@ public class DiskHashtable
             while (scan.fetchNext(btreeRow))
             {
                 if (rowConglomerate.fetch(
-                        (RowLocation) btreeRow[1], 
+                        (StoreRowLocation) btreeRow[1], 
                         row, 
                         (FormatableBitSet) null /* all columns */)
                     && rowMatches( row, key))
@@ -314,7 +314,7 @@ public class DiskHashtable
                     }
                     if( remove)
                     {
-                        rowConglomerate.delete( (RowLocation) btreeRow[1]);
+                        rowConglomerate.delete((StoreRowLocation) btreeRow[1]);
                         scan.delete();
                         size--;
                     }
@@ -408,7 +408,7 @@ public class DiskHashtable
     {
         private ScanController scan;
         private boolean hasMore;
-        private RowLocation rowloc;
+        private StoreRowLocation rowloc;
 
         ElementEnum()
         {

@@ -3297,7 +3297,7 @@ public final class	DataDictionaryImpl
 			ExecRow outRow = rf.makeEmptyRow();
 			ExecIndexRow indexRow = getIndexRowFromHeapRow(
 				ti.getIndexRowGenerator(rf.SYSROLES_INDEX_ID_EE_OR_IDX),
-				heapCC.newRowLocationTemplate(),
+				(RowLocation) heapCC.newRowLocationTemplate(),
 				outRow);
 
 			while (sc.fetchNext(indexRow.getRowArray())) {
@@ -3588,7 +3588,7 @@ public final class	DataDictionaryImpl
 			ExecRow outRow = rf.makeEmptyRow();
 			ExecIndexRow indexRow = getIndexRowFromHeapRow(
 				ti.getIndexRowGenerator(indexNo),
-				heapCC.newRowLocationTemplate(),
+				(RowLocation) heapCC.newRowLocationTemplate(),
 				outRow);
 
 			while (sc.fetchNext(indexRow.getRowArray())) {
@@ -5968,7 +5968,7 @@ public final class	DataDictionaryImpl
 			// create an index row template
 			indexRow1 = getIndexRowFromHeapRow(
 									ti.getIndexRowGenerator(indexId),
-									heapCC.newRowLocationTemplate(),
+									(RowLocation) heapCC.newRowLocationTemplate(),
 									outRow);
 
 			scanController.fetch(indexRow1.getRowArray());
@@ -6284,7 +6284,7 @@ public final class	DataDictionaryImpl
 			// create an index row template
 			indexRow1 = getIndexRowFromHeapRow(
 								ti.getIndexRowGenerator(indexId), 
-								heapCC.newRowLocationTemplate(),
+								(RowLocation) heapCC.newRowLocationTemplate(),
 								outRow);
 	
 			// just interested in one column
@@ -8585,7 +8585,7 @@ public final class	DataDictionaryImpl
                 TransactionController.MODE_RECORD,
                 TransactionController.ISOLATION_REPEATABLE_READ);
 
-		ExecRow indexTemplateRow = rf.buildEmptyIndexRow( SYSTABLESRowFactory.SYSTABLES_INDEX1_ID, heapCC.newRowLocationTemplate() );
+		ExecRow indexTemplateRow = rf.buildEmptyIndexRow( SYSTABLESRowFactory.SYSTABLES_INDEX1_ID, (RowLocation) heapCC.newRowLocationTemplate() );
 
 		/* Scan the index and go to the data pages for qualifying rows to
 		 * build the column descriptor.
@@ -8897,7 +8897,7 @@ public final class	DataDictionaryImpl
             TransactionController.MODE_RECORD,
 			TransactionController.ISOLATION_REPEATABLE_READ);
 
-		rl = cc.newRowLocationTemplate();
+		rl = (RowLocation) cc.newRowLocationTemplate();
 		cc.close();
 
 		// Get an index row based on the base row
@@ -9444,7 +9444,7 @@ public final class	DataDictionaryImpl
  			// create an index row template
 			indexRow1 = getIndexRowFromHeapRow(
 									ti.getIndexRowGenerator(indexId),
-									heapCC.newRowLocationTemplate(),
+									(RowLocation) heapCC.newRowLocationTemplate(),
 									outRow);
 
 			// It is important for read uncommitted scans to use fetchNext()
@@ -10436,7 +10436,7 @@ public final class	DataDictionaryImpl
                 tableId, false, 0, tc.MODE_RECORD, tc.ISOLATION_READ_COMMITTED);
 		try
 		{
-			rl = heapCC.newRowLocationTemplate();
+			rl = (RowLocation) heapCC.newRowLocationTemplate();
 		}
 		finally
 		{
@@ -13820,7 +13820,7 @@ public final class	DataDictionaryImpl
         RowLocation rl = null;
         try
         {
-            rl = heapCC.newRowLocationTemplate();
+            rl = (RowLocation) heapCC.newRowLocationTemplate();
         }
         finally
         {

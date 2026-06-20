@@ -500,7 +500,7 @@ class TabInfoImpl
 			}
 		}
 
-		heapLocation = heapController.newRowLocationTemplate();
+		heapLocation = (RowLocation) heapController.newRowLocationTemplate();
 		rowLocationOut[0]=heapLocation;
 
 		// loop through rows on this list, inserting them into system table
@@ -713,7 +713,7 @@ class TabInfoImpl
 		// Get an index row based on the base row
 		drivingIndexRow = getIndexRowFromHeapRow(
 			getIndexRowGenerator( indexNumber ),
-			heapCC.newRowLocationTemplate(),
+			(RowLocation) heapCC.newRowLocationTemplate(),
 			crf.makeEmptyRow());
 
 		while (drivingScan.fetchNext(drivingIndexRow.getRowArray()))
@@ -870,7 +870,7 @@ class TabInfoImpl
 		// Get an index row based on the base row
 		drivingIndexRow = getIndexRowFromHeapRow(
 			getIndexRowGenerator( indexNumber ),
-			heapCC.newRowLocationTemplate(),
+			(RowLocation) heapCC.newRowLocationTemplate(),
 			crf.makeEmptyRow());
 
 		try	{
@@ -998,7 +998,7 @@ class TabInfoImpl
 		// Get an index row based on the base row
 		drivingIndexRow = getIndexRowFromHeapRow(
 			getIndexRowGenerator( indexNumber ),
-			heapCC.newRowLocationTemplate(),
+			(RowLocation) heapCC.newRowLocationTemplate(),
 			crf.makeEmptyRow());
 
 		int rowNum = 0;

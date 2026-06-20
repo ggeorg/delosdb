@@ -27,14 +27,14 @@ import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
-import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.store.access.TransactionController;
-import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 import org.apache.derby.impl.store.access.btree.BTreeController;
 import org.apache.derby.impl.store.access.btree.BTreeLockingPolicy;
@@ -199,11 +199,11 @@ public class B2IController extends BTreeController
             {
                 SanityManager.ASSERT(this.getConglomerate() instanceof B2I);
 
-                RowLocation rowloc = (RowLocation)
+                StoreRowLocation rowloc = (StoreRowLocation)
                     row[((B2I)(this.getConglomerate())).rowLocationColumn];
 
                 SanityManager.ASSERT(
-                    !rowloc.isNull(), "RowLocation value is null");
+                    !StoreTypeUtil.isNull(rowloc), "RowLocation value is null");
             }
         }
 
