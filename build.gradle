@@ -7889,7 +7889,8 @@ Changed boundary shape
 ----------------------
   - RowSource#getNextRowFromRowSource returns StoreDataValue[]
   - Sort row-source adapters expose StoreDataValue[] at the row-source boundary
-  - Store callers that still need concrete Derby rows cast explicitly at the boundary
+  - Store callers that still need concrete Derby rows may cast explicitly at the boundary
+  - Later B5 slices may retire those casts as internals move to StoreDataValue[]
   - ConglomerateFactory#createConglomerate accepts StoreDataValue[] templates
   - Heap/B-tree create paths accept StoreDataValue[] templates
   - ConglomerateUtil#createFormatIds/debugPage accept StoreDataValue[] templates
@@ -7913,10 +7914,12 @@ ${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.col
 
 Boundary decision
 -----------------
-B5r intentionally keeps concrete DataValueDescriptor casts at store/engine
-adaptation points where the old implementation still needs Derby row arrays.
-The public store-facing boundary moves to StoreDataValue[] first; deeper row
-array implementation rewrites remain for later B5 slices.
+B5r originally kept concrete DataValueDescriptor casts at store/engine
+adaptation points where the old implementation still needed Derby row arrays.
+Later B5 slices are allowed to retire those casts as row internals move to
+StoreDataValue[]. The historical B5r gate verifies the StoreDataValue[]
+row-source boundary and rejects regression to direct retired imports; it does
+not freeze the exact intermediate cast shape.
 
 B6 readiness
 ------------
@@ -7950,8 +7953,11 @@ tasks.register('verifyLegacyDerbyKernelB5rRowSourceCreateTemplateBridge') {
         }
         [delosdbB5rBackingStoreHashtable, delosdbB5rBTreeController, delosdbB5rHeapController, delosdbB5rCardinalityCounter].each { source ->
             def text = delosdbB5rRead(source)
-            if (!text.contains('(DataValueDescriptor[])') || !text.contains('getNextRowFromRowSource()')) {
-                throw new GradleException('B5r ' + delosdbB5rRelPath(source) + ' must make the concrete row cast explicit at the old implementation boundary')
+            if (!text.contains('getNextRowFromRowSource()')) {
+                throw new GradleException('B5r ' + delosdbB5rRelPath(source) + ' must still participate in the row-source boundary')
+            }
+            if (!text.contains('StoreDataValue[]') && !text.contains('(DataValueDescriptor[])')) {
+                throw new GradleException('B5r ' + delosdbB5rRelPath(source) + ' must adapt row-source rows through StoreDataValue[] or the old explicit concrete row cast')
             }
         }
         [delosdbB5rConglomerateFactory, delosdbB5rHeapConglomerateFactory, delosdbB5rB2IFactory, delosdbB5rHeap, delosdbB5rBTree, delosdbB5rB2I, delosdbB5rConglomerateUtil].each { source ->
