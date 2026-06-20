@@ -124,6 +124,9 @@ module org.apache.derby.engine
     // DelosDB optional storage providers are discovered through ServiceLoader.
     uses io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
 
+    // Store-owned hooks may be implemented by engine-side providers.
+    uses org.apache.derby.iapi.store.access.StoreCostControllerWrapper;
+
     provides org.apache.derby.iapi.services.monitor.MonitorKernelSupport
         with org.apache.derby.impl.services.monitor.EngineMonitorKernelSupport;
 
@@ -135,6 +138,9 @@ module org.apache.derby.engine
 
     provides org.apache.derby.iapi.store.types.StoreTypeSupport
         with org.apache.derby.impl.services.storetypes.EngineStoreTypeSupport;
+
+    provides org.apache.derby.iapi.store.access.StoreCostControllerWrapper
+        with io.github.ggeorg.delosdb.engine.extension.cost.StoreCostControllerBridge;
 
     //
     // ALLOW RESOURCE LOOKUP VIA REFLECTION

@@ -2,6 +2,7 @@ package io.github.ggeorg.delosdb.engine.extension.cost;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.StoreCostController;
+import org.apache.derby.iapi.store.access.StoreCostControllerWrapper;
 import org.apache.derby.iapi.store.access.StoreCostResult;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
@@ -15,11 +16,16 @@ import java.util.Optional;
  * Internal adapter from DelosDB cost-model providers to Derby's native
  * {@link StoreCostController} path.
  */
-public final class StoreCostControllerBridge {
+public final class StoreCostControllerBridge implements StoreCostControllerWrapper {
     private static final int FACTORY_ID_MASK = 0x0f;
     private static final CostModelProviderResolver BUILT_IN_RESOLVER = CostModelProviderResolver.builtIns();
 
-    private StoreCostControllerBridge() {
+    public StoreCostControllerBridge() {
+    }
+
+    @Override
+    public StoreCostController wrapStoreCostController(long conglomerateId, StoreCostController delegate) {
+        return wrap(conglomerateId, delegate);
     }
 
     public static StoreCostController wrap(long conglomerateId, StoreCostController delegate) {

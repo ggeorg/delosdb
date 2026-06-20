@@ -10293,3 +10293,460 @@ tasks.register('verifyLegacyDerbyKernelB5afB6Preflight') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5afB6Preflight'
 }
+
+// -----------------------------------------------------------------------------
+// B6a — restore direct engine-package blocker proof after B3b guard evolution
+// -----------------------------------------------------------------------------
+
+if (tasks.findByName('legacyDerbyStoreB6aEngineDependencyBlockersReport') == null) {
+    def delosdbB6aReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-b6a-engine-dependency-blockers.txt')
+
+    def delosdbB6aRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString().replace('\\', '/') }
+
+    def delosdbB6aStoreRoots = {
+        [
+                file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+                file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+        ]
+    }
+
+    def delosdbB6aStoreSources = {
+        delosdbB6aStoreRoots().findAll { it.exists() }.collectMany { root ->
+            fileTree(root) { include '**/*.java' }.files
+        }.sort { a, b -> delosdbB6aRelPath(a) <=> delosdbB6aRelPath(b) }
+    }
+
+    def delosdbB6aRead = { File file -> file.exists() ? file.getText('UTF-8') : '' }
+
+    def delosdbB6aImportLines = { Collection<File> sources ->
+        sources.collectMany { source ->
+            source.readLines('UTF-8').withIndex().findAll { line, index ->
+                line.trim().startsWith('import org.apache.derby.')
+            }.collect { line, index ->
+                [file: delosdbB6aRelPath(source), line: index + 1, text: line.trim()]
+            }
+        }
+    }
+
+    def delosdbB6aForbiddenEngineImports = {
+        def allowedPrefixes = [
+                'import org.apache.derby.iapi.store.',
+                'import org.apache.derby.impl.store.',
+                'import org.apache.derby.iapi.services.',
+                'import org.apache.derby.shared.common.',
+                'import org.apache.derby.io.',
+                'import org.apache.derby.iapi.util.'
+        ]
+        delosdbB6aImportLines(delosdbB6aStoreSources()).findAll { imported ->
+            imported.text.startsWith('import org.apache.derby.')
+                    && !allowedPrefixes.any { prefix -> imported.text.startsWith(prefix) }
+        }
+    }
+
+    def delosdbB6aExactEngineBlockerRefs = {
+        def blockers = [
+                'org.apache.derby.database.Database',
+                'org.apache.derby.impl.services.monitor.UpdateServiceProperties',
+                'Database.LUCENE_DIR',
+                'UpdateServiceProperties)'
+        ]
+        delosdbB6aStoreSources().collectMany { source ->
+            def text = source.readLines('UTF-8')
+            text.withIndex().findAll { line, index ->
+                blockers.any { blocker -> line.contains(blocker) }
+            }.collect { line, index ->
+                [file: delosdbB6aRelPath(source), line: index + 1, text: line.trim()]
+            }
+        }
+    }
+
+    def delosdbB6aFormatMatches = { Collection<Map> entries ->
+        entries.isEmpty()
+                ? '  none'
+                : entries.collect { "  - ${it.file}:${it.line}: ${it.text}" }.join('\n')
+    }
+
+    tasks.register('legacyDerbyStoreB6aEngineDependencyBlockersReport') {
+        group = 'verification'
+        description = 'B6a: reports direct store-to-engine package blockers before the real storage module compile switch.'
+        dependsOn 'verifyLegacyDerbyKernelB5afB6Preflight'
+        outputs.file(delosdbB6aReportFile)
+        doLast {
+            def storeSources = delosdbB6aStoreSources()
+            def forbiddenImports = delosdbB6aForbiddenEngineImports()
+            def exactRefs = delosdbB6aExactEngineBlockerRefs()
+            def rawStore = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java')
+            def dataFileFactory = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java')
+            def updateServiceProperties = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/UpdateServiceProperties.java')
+            def facade = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/services/monitor/StoreServiceProperties.java')
+            def reportFile = delosdbB6aReportFile.get().asFile
+            reportFile.parentFile.mkdirs()
+            reportFile.text = """DelosDB B6a direct engine dependency blocker report
+====================================================
+
+Purpose
+-------
+B6a removes the last direct relocated-store references to engine-owned packages
+that would make the B6 module switch depend on delosdb-engine.
+
+Relocated store source files scanned
+-----------------------------------
+  count: ${storeSources.size()}
+
+Forbidden direct org.apache.derby.* imports outside kernel/store/shared/io/util
+---------------------------------------------------------------------------
+${delosdbB6aFormatMatches(forbiddenImports)}
+
+Exact old blockers
+------------------
+${delosdbB6aFormatMatches(exactRefs)}
+
+Facade checks
+-------------
+  StoreServiceProperties facade exists: ${facade.isFile() ? 'YES' : 'NO'}
+  RawStore uses StoreServiceProperties: ${delosdbB6aRead(rawStore).contains('StoreServiceProperties') ? 'YES' : 'NO'}
+  UpdateServiceProperties implements facade: ${delosdbB6aRead(updateServiceProperties).contains('implements StoreServiceProperties') ? 'YES' : 'NO'}
+  BaseDataFileFactory owns LUCENE_DIR locally: ${delosdbB6aRead(dataFileFactory).contains('private static final String LUCENE_DIR = "LUCENE"') ? 'YES' : 'NO'}
+
+B6 interpretation
+-----------------
+DIRECT STORE -> ENGINE PACKAGE IMPORT BLOCKERS: GONE.
+REAL MODULE COMPILATION SWITCH: NOT YET.
+
+B6 can now move to the real compile switch with fewer false blockers. The
+remaining risk is not a direct engine-package import; it is the known inherited
+fully-qualified type compatibility seam recorded by B5af/B5ae.
+"""
+            logger.lifecycle('Wrote ' + delosdbB6aRelPath(reportFile))
+        }
+    }
+
+    tasks.register('verifyLegacyDerbyStoreB6aEngineDependencyBlockers') {
+        group = 'verification'
+        description = 'B6a: verifies direct relocated-store engine-package blockers are gone before the B6 compile switch.'
+        dependsOn 'legacyDerbyStoreB6aEngineDependencyBlockersReport'
+        doLast {
+            def forbiddenImports = delosdbB6aForbiddenEngineImports()
+            if (!forbiddenImports.isEmpty()) {
+                throw new GradleException('B6a found direct relocated-store engine-package imports:\n' + delosdbB6aFormatMatches(forbiddenImports))
+            }
+            def exactRefs = delosdbB6aExactEngineBlockerRefs()
+            if (!exactRefs.isEmpty()) {
+                throw new GradleException('B6a found stale exact engine-package blockers:\n' + delosdbB6aFormatMatches(exactRefs))
+            }
+            def rawStoreText = delosdbB6aRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java'))
+            if (!rawStoreText.contains('StoreServiceProperties')) {
+                throw new GradleException('B6a expected RawStore to use StoreServiceProperties facade')
+            }
+            def updateText = delosdbB6aRead(file('delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/UpdateServiceProperties.java'))
+            if (!updateText.contains('implements StoreServiceProperties')) {
+                throw new GradleException('B6a expected UpdateServiceProperties to implement StoreServiceProperties')
+            }
+            def dataFileFactoryText = delosdbB6aRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java'))
+            if (dataFileFactoryText.contains('Database.LUCENE_DIR') || dataFileFactoryText.contains('org.apache.derby.database.Database')) {
+                throw new GradleException('B6a expected BaseDataFileFactory to stop depending on org.apache.derby.database.Database')
+            }
+            logger.lifecycle('Verified B6a direct engine dependency blockers are gone; B6 compile switch is next')
+        }
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreB6aEngineDependencyBlockers'
+}
+
+// -----------------------------------------------------------------------------
+// B6b — store-owned cost-controller wrapper service
+// -----------------------------------------------------------------------------
+
+if (tasks.findByName('legacyDerbyStoreB6bCostWrapperServiceReport') == null) {
+    def delosdbB6bReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-b6b-cost-wrapper-service.txt')
+
+    def delosdbB6bRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString().replace('\\', '/') }
+    def delosdbB6bRead = { File file -> file.exists() ? file.getText('UTF-8') : '' }
+
+    def delosdbB6bStoreRoots = {
+        [
+                file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+                file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+        ]
+    }
+
+    def delosdbB6bStoreSources = {
+        delosdbB6bStoreRoots().findAll { it.exists() }.collectMany { root ->
+            fileTree(root) { include '**/*.java' }.files
+        }.sort { a, b -> delosdbB6bRelPath(a) <=> delosdbB6bRelPath(b) }
+    }
+
+    def delosdbB6bEngineCostRefs = {
+        def forbidden = 'io.github.ggeorg.delosdb.engine.extension.cost'
+        delosdbB6bStoreSources().collectMany { source ->
+            source.readLines('UTF-8').withIndex().findAll { line, index ->
+                line.contains(forbidden)
+            }.collect { line, index ->
+                [file: delosdbB6bRelPath(source), line: index + 1, text: line.trim()]
+            }
+        }
+    }
+
+    def delosdbB6bFormatMatches = { Collection<Map> entries ->
+        entries.isEmpty()
+                ? '  none'
+                : entries.collect { "  - ${it.file}:${it.line}: ${it.text}" }.join('\n')
+    }
+
+    tasks.register('legacyDerbyStoreB6bCostWrapperServiceReport') {
+        group = 'verification'
+        description = 'B6b: reports the store-owned cost-controller wrapper service that removes the RAMTransaction engine-extension import.'
+        dependsOn 'verifyLegacyDerbyStoreB6aEngineDependencyBlockers'
+        outputs.file(delosdbB6bReportFile)
+        doLast {
+            def ramTransaction = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java')
+            def wrapper = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/StoreCostControllerWrapper.java')
+            def wrappers = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/StoreCostControllerWrappers.java')
+            def bridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/StoreCostControllerBridge.java')
+            def moduleInfo = file('delosdb-engine/src/main/java/module-info.java')
+            def serviceDescriptor = file('delosdb-engine/src/main/resources/META-INF/services/org.apache.derby.iapi.store.access.StoreCostControllerWrapper')
+            def forbiddenRefs = delosdbB6bEngineCostRefs()
+            def reportFile = delosdbB6bReportFile.get().asFile
+            reportFile.parentFile.mkdirs()
+            reportFile.text = """DelosDB B6b store-owned cost-wrapper service report
+====================================================
+
+Purpose
+-------
+B6b removes the last direct relocated-store reference to the engine extension
+cost package. The inherited store now owns a tiny cost-controller wrapper
+service, and the engine bridge becomes an implementation of that service.
+
+Direct relocated-store references to engine extension cost package
+----------------------------------------------------------------
+${delosdbB6bFormatMatches(forbiddenRefs)}
+
+Service files
+-------------
+  StoreCostControllerWrapper exists: ${wrapper.isFile() ? 'YES' : 'NO'}
+  StoreCostControllerWrappers exists: ${wrappers.isFile() ? 'YES' : 'NO'}
+  RAMTransaction uses StoreCostControllerWrappers: ${delosdbB6bRead(ramTransaction).contains('StoreCostControllerWrappers.wrap(conglomId, scc)') ? 'YES' : 'NO'}
+  StoreCostControllerBridge implements wrapper: ${delosdbB6bRead(bridge).contains('implements StoreCostControllerWrapper') ? 'YES' : 'NO'}
+  Engine module declares uses wrapper: ${delosdbB6bRead(moduleInfo).contains('uses org.apache.derby.iapi.store.access.StoreCostControllerWrapper;') ? 'YES' : 'NO'}
+  Engine module provides wrapper: ${delosdbB6bRead(moduleInfo).contains('provides org.apache.derby.iapi.store.access.StoreCostControllerWrapper') ? 'YES' : 'NO'}
+  Service descriptor exists: ${serviceDescriptor.isFile() ? 'YES' : 'NO'}
+
+B6 interpretation
+-----------------
+DIRECT RAMTransaction -> ENGINE COST BRIDGE IMPORT: GONE.
+REAL STORAGE MODULE COMPILE SWITCH: NEXT.
+
+This keeps the cost-model provider behavior engine-owned while making the store
+source compile boundary storage-shaped. The next B6 step may now attempt to let
+:delosdb-storage-derby compile org/apache/derby/iapi/store/** and
+org/apache/derby/impl/store/** itself.
+"""
+            logger.lifecycle('Wrote ' + delosdbB6bRelPath(reportFile))
+        }
+    }
+
+    tasks.register('verifyLegacyDerbyStoreB6bCostWrapperService') {
+        group = 'verification'
+        description = 'B6b: verifies RAMTransaction no longer imports the engine cost bridge directly.'
+        dependsOn 'legacyDerbyStoreB6bCostWrapperServiceReport'
+        doLast {
+            def forbiddenRefs = delosdbB6bEngineCostRefs()
+            if (!forbiddenRefs.isEmpty()) {
+                throw new GradleException('B6b found direct relocated-store references to engine extension cost package:\n' + delosdbB6bFormatMatches(forbiddenRefs))
+            }
+            def ramTransactionText = delosdbB6bRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java'))
+            if (!ramTransactionText.contains('StoreCostControllerWrappers.wrap(conglomId, scc)')) {
+                throw new GradleException('B6b expected RAMTransaction to use StoreCostControllerWrappers.wrap(conglomId, scc)')
+            }
+            if (ramTransactionText.contains('StoreCostControllerBridge')) {
+                throw new GradleException('B6b expected RAMTransaction to stop referencing StoreCostControllerBridge')
+            }
+            def wrapperText = delosdbB6bRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/StoreCostControllerWrapper.java'))
+            if (!wrapperText.contains('interface StoreCostControllerWrapper')) {
+                throw new GradleException('B6b expected StoreCostControllerWrapper service interface')
+            }
+            def wrappersText = delosdbB6bRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/StoreCostControllerWrappers.java'))
+            if (!wrappersText.contains('ServiceLoader.load(StoreCostControllerWrapper.class)')) {
+                throw new GradleException('B6b expected StoreCostControllerWrappers to use ServiceLoader')
+            }
+            def bridgeText = delosdbB6bRead(file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/StoreCostControllerBridge.java'))
+            if (!bridgeText.contains('implements StoreCostControllerWrapper') || !bridgeText.contains('wrapStoreCostController')) {
+                throw new GradleException('B6b expected StoreCostControllerBridge to implement StoreCostControllerWrapper')
+            }
+            def moduleInfoText = delosdbB6bRead(file('delosdb-engine/src/main/java/module-info.java'))
+            if (!moduleInfoText.contains('uses org.apache.derby.iapi.store.access.StoreCostControllerWrapper;')) {
+                throw new GradleException('B6b expected engine module-info to declare uses StoreCostControllerWrapper')
+            }
+            if (!moduleInfoText.contains('provides org.apache.derby.iapi.store.access.StoreCostControllerWrapper')) {
+                throw new GradleException('B6b expected engine module-info to provide StoreCostControllerWrapper')
+            }
+            def descriptor = file('delosdb-engine/src/main/resources/META-INF/services/org.apache.derby.iapi.store.access.StoreCostControllerWrapper')
+            if (!descriptor.isFile() || !descriptor.getText('UTF-8').contains('io.github.ggeorg.delosdb.engine.extension.cost.StoreCostControllerBridge')) {
+                throw new GradleException('B6b expected META-INF/services descriptor for StoreCostControllerWrapper')
+            }
+            logger.lifecycle('Verified B6b store-owned cost-wrapper service; direct RAMTransaction engine bridge import is gone')
+        }
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreB6bCostWrapperService'
+}
+
+// B6c — independent storage compile blocker map.
+// B5 closed the direct iapi.types import blocker. B6a/B6b removed known direct
+// store-to-engine imports. Before flipping compilation ownership, keep the next
+// truth gate honest: fully qualified inherited type references still make the
+// real storage-module compile depend on the engine type package unless the type
+// core is moved to the kernel or the concrete internals are rewritten.
+def delosdbB6cStoreRoots = [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+]
+
+def delosdbB6cStoreFiles = {
+    delosdbB6cStoreRoots.findAll { it.exists() }.collectMany { root ->
+        fileTree(root) { include '**/*.java' }.files.findAll { it.isFile() }
+    }.sort { a, b -> a.path <=> b.path }
+}
+
+def delosdbB6cRead = { File source ->
+    source.exists() ? source.getText('UTF-8') : ''
+}
+
+def delosdbB6cCodeOnly = { String text ->
+    text
+            .replaceAll(/(?s)\/\*.*?\*\//, '')
+            .replaceAll(/(?m)\/\/.*$/, '')
+}
+
+def delosdbB6cDirectTypeImports = {
+    delosdbB6cStoreFiles().collectMany { source ->
+        delosdbB6cRead(source).readLines().findAll { line ->
+            line ==~ /\s*import\s+org\.apache\.derby\.iapi\.types\..*;/
+        }.collect { line -> [source: source, line: line.trim()] }
+    }
+}
+
+def delosdbB6cDirectEngineImports = {
+    def forbiddenPrefixes = [
+            'org.apache.derby.database.',
+            'org.apache.derby.iapi.sql.',
+            'org.apache.derby.impl.sql.',
+            'io.github.ggeorg.delosdb.engine.'
+    ]
+    delosdbB6cStoreFiles().collectMany { source ->
+        delosdbB6cRead(source).readLines().findAll { line ->
+            def trimmed = line.trim()
+            trimmed.startsWith('import ') && forbiddenPrefixes.any { prefix -> trimmed.contains(prefix) }
+        }.collect { line -> [source: source, line: line.trim()] }
+    }
+}
+
+def delosdbB6cFullyQualifiedTypeRefs = {
+    def pattern = ~/org\.apache\.derby\.iapi\.types\.([A-Za-z0-9_]+)/
+    delosdbB6cStoreFiles().collectMany { source ->
+        def code = delosdbB6cCodeOnly(delosdbB6cRead(source))
+        def refs = []
+        def matcher = pattern.matcher(code)
+        while (matcher.find()) {
+            refs << [source: source, type: matcher.group(1)]
+        }
+        refs
+    }
+}
+
+tasks.register('legacyDerbyStoreB6cIndependentCompileBlockersReport') {
+    group = 'Verification'
+    description = 'Reports the remaining fully-qualified inherited type blockers before the real B6 storage compile switch.'
+    dependsOn 'verifyLegacyDerbyKernelB5afB6Preflight', 'verifyLegacyDerbyStoreB6aEngineDependencyBlockers', 'verifyLegacyDerbyStoreB6bCostWrapperService'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b6c-independent-compile-blockers.txt'))
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        def directEngineImports = delosdbB6cDirectEngineImports()
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        def byType = fqRefs.groupBy { it.type }.collectEntries { type, refs -> [(type): refs.size()] }.sort { a, b -> a.key <=> b.key }
+        def byFile = fqRefs.groupBy { it.source.path - rootDir.path - File.separator }.collectEntries { path, refs ->
+            [(path): refs.groupBy { it.type }.collectEntries { type, typedRefs -> [(type): typedRefs.size()] }.sort { a, b -> a.key <=> b.key }]
+        }.sort { a, b -> a.key <=> b.key }
+        def storageBuild = file('delosdb-storage-derby/build.gradle')
+        def engineBuild = file('delosdb-engine/build.gradle')
+        def storageBuildText = delosdbB6cRead(storageBuild)
+        def engineBuildText = delosdbB6cRead(engineBuild)
+        def storageStillExcludesRealStore = storageBuildText.contains("exclude 'org/apache/derby/iapi/store/**/*.java'") &&
+                storageBuildText.contains("exclude 'org/apache/derby/impl/store/**/*.java'")
+        def engineStillCompilesRelocatedStore = engineBuildText.contains("include 'org/apache/derby/iapi/store/**/*.java'") &&
+                engineBuildText.contains("include 'org/apache/derby/impl/store/**/*.java'")
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-b6c-independent-compile-blockers.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = """DelosDB B6c independent storage compile blocker map
+=======================================================
+
+Purpose
+-------
+B5 closed the direct relocated-store org.apache.derby.iapi.types import blocker.
+B6a/B6b removed the known direct store-to-engine implementation/extension imports.
+This gate records the next honest blocker before the real B6 compilation ownership switch.
+
+Current direct dependency state
+-------------------------------
+Direct relocated-store org.apache.derby.iapi.types imports: ${directTypeImports.size()}
+Direct relocated-store engine-package imports: ${directEngineImports.size()}
+Fully-qualified inherited org.apache.derby.iapi.types references in store code: ${fqRefs.size()}
+
+delosdb-storage-derby still excludes real store packages: ${storageStillExcludesRealStore ? 'YES' : 'NO'}
+delosdb-engine still compiles relocated store sources: ${engineStillCompilesRelocatedStore ? 'YES' : 'NO'}
+
+Remaining fully-qualified inherited type references by type
+----------------------------------------------------------
+${byType.collect { type, count -> "- ${type}: ${count}" }.join('\n') ?: '- none'}
+
+Remaining fully-qualified inherited type references by file
+----------------------------------------------------------
+${byFile.collect { path, typed -> "${path}\n" + typed.collect { type, count -> "  - ${type}: ${count}" }.join('\n') }.join('\n') ?: 'none'}
+
+Interpretation
+--------------
+${fqRefs.isEmpty() ? 'B6c blocker status: RESOLVED. The real storage compile switch may proceed to the next proof.' : 'B6c blocker status: STILL PRESENT. The real storage compile switch must first resolve the inherited type-core seam.'}
+
+Acceptable next fixes
+---------------------
+1. Move a minimal, explicitly justified inherited type core to delosdb-engine-kernel; or
+2. Rewrite the remaining concrete store internals away from org.apache.derby.iapi.types.*;
+   but do not reintroduce a dependency from delosdb-storage-derby back to delosdb-engine.
+"""
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB6cIndependentCompileBlockers') {
+    group = 'Verification'
+    description = 'Verifies the B6c truth gate before the real delosdb-storage-derby compile switch.'
+    dependsOn 'legacyDerbyStoreB6cIndependentCompileBlockersReport'
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        if (!directTypeImports.isEmpty()) {
+            throw new GradleException('B6c requires direct relocated-store org.apache.derby.iapi.types imports to remain zero; found:\n' +
+                    directTypeImports.collect { "${it.source}: ${it.line}" }.join('\n'))
+        }
+        def directEngineImports = delosdbB6cDirectEngineImports()
+        if (!directEngineImports.isEmpty()) {
+            throw new GradleException('B6c found direct store-to-engine imports; B6a/B6b blocker removal regressed:\n' +
+                    directEngineImports.collect { "${it.source}: ${it.line}" }.join('\n'))
+        }
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        def storageBuildText = delosdbB6cRead(file('delosdb-storage-derby/build.gradle'))
+        def storageStillExcludesRealStore = storageBuildText.contains("exclude 'org/apache/derby/iapi/store/**/*.java'") &&
+                storageBuildText.contains("exclude 'org/apache/derby/impl/store/**/*.java'")
+        if (!fqRefs.isEmpty() && !storageStillExcludesRealStore) {
+            throw new GradleException('B6c refuses the real storage compile switch while fully-qualified inherited type references remain')
+        }
+        logger.lifecycle("Verified B6c independent compile blocker map; fully-qualified inherited type references: ${fqRefs.size()}")
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreB6cIndependentCompileBlockers'
+}
