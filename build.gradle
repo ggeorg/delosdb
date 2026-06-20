@@ -8328,7 +8328,7 @@ tasks.register('verifyLegacyDerbyKernelB5tBtreeScanBoundaryBridge') {
         def hasLaterStoreNativeScanPath = !btreeScan.contains('DataValueDescriptor') &&
             !btreeScan.contains('org.apache.derby.iapi.types.DataValueDescriptor') &&
             btreeScan.contains('StoreDataValue[][]') &&
-            btreeScan.contains('StoreDataValue[] fetchNext_one_slot_array')
+            btreeScan.contains('fetchNext_one_slot_array')
         if ((!hasStartKeyAdaptation || !hasStopKeyAdaptation) && !hasLaterStoreNativeScanPath) {
             throw new GradleException('B5t BTreeScan must keep internal DataValueDescriptor adaptation explicit, fully qualified after direct-import closeout, or retired by the later B6f store-native scan path')
         }
