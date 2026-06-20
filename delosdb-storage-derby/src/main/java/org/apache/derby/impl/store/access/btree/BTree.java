@@ -272,9 +272,9 @@ public abstract class BTree extends GenericConglomerate
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    final org.apache.derby.iapi.types.DataValueDescriptor[] createBranchTemplate(
+    final StoreDataValue[] createBranchTemplate(
     Transaction         rawtran,
-    org.apache.derby.iapi.types.DataValueDescriptor page_ptr)
+    StoreDataValue page_ptr)
         throws StandardException
     {
         return(
@@ -301,7 +301,7 @@ public abstract class BTree extends GenericConglomerate
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    final public org.apache.derby.iapi.types.DataValueDescriptor[] createTemplate(
+    final public StoreDataValue[] createTemplate(
     Transaction rawtran)
         throws StandardException
     {

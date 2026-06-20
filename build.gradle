@@ -10905,3 +10905,128 @@ tasks.register('verifyLegacyDerbyStoreB6dRowUtilTypeBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyStoreB6dRowUtilTypeBridge'
 }
+
+// -----------------------------------------------------------------------------
+// B6e — B-tree template materialization bridge
+// -----------------------------------------------------------------------------
+// B6d removed fully-qualified inherited type references from RowUtil. B6e moves
+// the B-tree template/materialization seam to StoreDataValue[] so the next B6
+// compile-switch attempt has fewer concrete Derby type references left.
+def delosdbB6eBaselineQualifiedTypeCodeRefs = 165
+
+def delosdbB6eFiles = [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/TemplateRow.java'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTree.java'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/OpenBTree.java'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/LeafControlRow.java'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BranchRow.java'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BranchControlRow.java'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/ControlRow.java'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreePostCommit.java')
+]
+
+tasks.register('legacyDerbyStoreB6eBtreeTemplateBridgeReport') {
+    group = 'Verification'
+    description = 'B6e: reports B-tree template/materialization bridge progress toward independent storage compilation.'
+    dependsOn 'verifyLegacyDerbyStoreB6dRowUtilTypeBridge'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b6e-btree-template-bridge.txt'))
+    doLast {
+        def directTypeImports = delosdbB6dDirectTypeImports()
+        def fqRefs = delosdbB6dFullyQualifiedTypeRefs()
+        def byType = fqRefs.groupBy { it.type }.collectEntries { type, refs -> [(type): refs.size()] }.sort { a, b -> a.key <=> b.key }
+        def byFile = fqRefs.groupBy { it.file }.collectEntries { path, refs -> [(path): refs.size()] }.sort { a, b -> a.key <=> b.key }
+        def touchedChecks = delosdbB6eFiles.collect { source ->
+            def code = delosdbB6dCodeOnly(delosdbB6dRead(source))
+            "  - ${delosdbB6dRelPath(source)}: ${code.contains('org.apache.derby.iapi.types.') ? 'HAS FQ TYPE REFS' : 'clear'}"
+        }.join('\n')
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-b6e-btree-template-bridge.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = """DelosDB B6e B-tree template bridge report
+================================================
+
+Purpose
+-------
+B6d removed fully-qualified inherited Derby type references from RowUtil.
+B6e removes the same blocker from the central B-tree template/materialization
+seam: TemplateRow, BTree template factories, branch/leaf/control-row template
+flow, and B-tree post-commit shrink-key materialization.
+
+Changed boundary
+----------------
+Template creation and branch-row materialization now use StoreDataValue[] at the
+store-facing boundary. Concrete Derby value construction continues to go through
+StoreDataValueFactory and StoreTypeUtil.
+
+Direct relocated-store iapi.types imports
+----------------------------------------
+  count: ${directTypeImports.size()}
+${directTypeImports ? directTypeImports.collect { "  - ${it.file}:${it.line}: ${it.text}" }.join('\n') : '  none'}
+
+Fully-qualified inherited type references in executable source
+-------------------------------------------------------------
+  before B6e baseline: ${delosdbB6eBaselineQualifiedTypeCodeRefs}
+  after B6e:           ${fqRefs.size()}
+
+By type:
+${byType ? byType.collect { type, count -> "  - ${type}: ${count}" }.join('\n') : '  none'}
+
+By file:
+${byFile ? byFile.collect { path, count -> "  - ${path}: ${count}" }.join('\n') : '  none'}
+
+Touched-file executable reference checks
+---------------------------------------
+${touchedChecks}
+
+B6 interpretation
+-----------------
+B6e is a large blocker-reduction step, but it still does not flip compilation
+ownership. Remaining fully-qualified inherited type references are now
+concentrated in BTreeController, BTreeScan, and concrete Derby value classes
+such as HeapRowLocation/StorableFormatId/GenericConglomerate/UTF. B6 readiness
+remains NOT YET.
+"""
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB6eBtreeTemplateBridge') {
+    group = 'Verification'
+    description = 'B6e: verifies the B-tree template/materialization seam no longer contains fully-qualified inherited Derby type references.'
+    dependsOn 'legacyDerbyStoreB6eBtreeTemplateBridgeReport'
+    doLast {
+        def directTypeImports = delosdbB6dDirectTypeImports()
+        if (!directTypeImports.isEmpty()) {
+            throw new GradleException('B6e requires direct relocated-store org.apache.derby.iapi.types imports to remain zero; found:\n' +
+                    directTypeImports.collect { "${it.file}:${it.line}: ${it.text}" }.join('\n'))
+        }
+        def fqRefs = delosdbB6dFullyQualifiedTypeRefs()
+        if (fqRefs.size() >= delosdbB6eBaselineQualifiedTypeCodeRefs) {
+            throw new GradleException("B6e expected fully-qualified inherited type refs to decrease below ${delosdbB6eBaselineQualifiedTypeCodeRefs}, found ${fqRefs.size()}")
+        }
+        delosdbB6eFiles.each { source ->
+            def code = delosdbB6dCodeOnly(delosdbB6dRead(source))
+            if (code.contains('org.apache.derby.iapi.types.')) {
+                throw new GradleException("B6e expected ${delosdbB6dRelPath(source)} to have zero executable fully-qualified org.apache.derby.iapi.types references")
+            }
+        }
+        def templateRowText = delosdbB6dRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/TemplateRow.java'))
+        if (!templateRowText.contains('private static StoreDataValue[] allocate_objects') ||
+                !templateRowText.contains('public static StoreDataValue[] newBranchRow')) {
+            throw new GradleException('B6e expected TemplateRow to expose StoreDataValue[] template factories')
+        }
+        def btreeText = delosdbB6dRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTree.java'))
+        if (!btreeText.contains('final StoreDataValue[] createBranchTemplate') ||
+                !btreeText.contains('final public StoreDataValue[] createTemplate')) {
+            throw new GradleException('B6e expected BTree template factories to return StoreDataValue[]')
+        }
+        def reportText = layout.buildDirectory.file('reports/delosdb/legacy-store-b6e-btree-template-bridge.txt').get().asFile.getText('UTF-8')
+        if (!reportText.contains('B6 readiness\nremains NOT YET') && !reportText.contains('B6 readiness remains NOT YET')) {
+            throw new GradleException('B6e report must explicitly keep B6 readiness as NOT YET')
+        }
+        logger.lifecycle("Verified B6e B-tree template bridge; fully-qualified inherited type references now ${fqRefs.size()}")
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreB6eBtreeTemplateBridge'
+}

@@ -36,6 +36,9 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
+
 
 import org.apache.derby.impl.store.access.conglomerate.OpenConglomerateScratchSpace;
 
@@ -497,19 +500,19 @@ public class OpenBTree
 
     @exception StandardException Standard Exception Policy.
     **/
-    void isIndexableRowConsistent(org.apache.derby.iapi.types.DataValueDescriptor[] row)
+    void isIndexableRowConsistent(StoreDataValue[] row)
         throws StandardException
     {
         if (SanityManager.DEBUG)
         {
-            org.apache.derby.iapi.types.DataValueDescriptor[] template = 
+            StoreDataValue[] template = 
                 this.init_conglomerate.createTemplate(getRawTran());
 
             for (int i = 0; i < row.length; i++)
             {
             	//DERBY-5531 If the row column's value is null, then 
             	// don't worry about the data type match.
-            	if (row[i].isNull())
+            	if (StoreTypeUtil.isNull(row[i]))
             		continue;
                 // Compare class's rather than format id's to pick up 
                 // different problems with wrong collation implementation.

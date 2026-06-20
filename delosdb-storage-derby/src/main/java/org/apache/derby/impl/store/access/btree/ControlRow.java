@@ -99,7 +99,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * ContainerHandle.INVALID_PAGE_NUMBER.  All key values on the page which
      * is left must precede the first key value on the current page.
      **/
-	private org.apache.derby.iapi.types.DataValueDescriptor leftSiblingPageNumber;
+	private StoreDataValue leftSiblingPageNumber;
 
     /**
      * Pointer to page which is "right" at the current level.
@@ -110,7 +110,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * is right of the current page must follow the last key value on the 
      * current page.
      **/
-	private org.apache.derby.iapi.types.DataValueDescriptor rightSiblingPageNumber;
+	private StoreDataValue rightSiblingPageNumber;
 
     /**
      * The parent page of the current page.
@@ -124,7 +124,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * index.
      *
      **/
-	private org.apache.derby.iapi.types.DataValueDescriptor parentPageNumber; // for consistency checking
+	private StoreDataValue parentPageNumber; // for consistency checking
 
 
     /**
@@ -136,7 +136,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * The smallest btree is a one page btree with only a leaf, and no branch
      * pages. 
      **/
-	private org.apache.derby.iapi.types.DataValueDescriptor level;
+	private StoreDataValue level;
 
     /**
      * Is this page the root of the btree?
@@ -146,7 +146,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * RESOLVE (mikem) When real datatype come about, this value should 
      * probably be just a bit in some status word.
      **/
-	private org.apache.derby.iapi.types.DataValueDescriptor isRoot = null;
+	private StoreDataValue isRoot = null;
 
     /**
      * A copy of the Conglomerate that describes the owning conglom.
@@ -167,12 +167,12 @@ public abstract class ControlRow implements AuxObject, TypedFormat
     /**
      * The page that this control row describes.
      **/
-	protected org.apache.derby.iapi.types.DataValueDescriptor row[];
+	protected StoreDataValue row[];
 
     /**
      * row used to replace fetchFieldFromSlot() calls.
      **/
-    protected org.apache.derby.iapi.types.DataValueDescriptor[] scratch_row;
+    protected StoreDataValue[] scratch_row;
 
     /**
      * FetchDescriptor used to replace fetchFieldFromSlot() calls.
@@ -272,7 +272,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
     protected ControlRow()
     {
         this.scratch_row = 
-            new org.apache.derby.iapi.types.DataValueDescriptor[getNumberOfControlRowColumns()];
+            StoreTypeUtil.newValueArray(getNumberOfControlRowColumns());
 
         this.fetchDesc   = 
             new FetchDescriptor(
@@ -318,12 +318,12 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		// Page numbers start out "invalid".  Presumably the caller will
 		// link the page into a page chain as one of its next steps.
 		leftSiblingPageNumber  = 
-            (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
+            StoreTypeUtil.newSQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
 		rightSiblingPageNumber = 
-            (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
+            StoreTypeUtil.newSQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
 
 		// Remember the parent if there is one and we're remembering parents.
-        parentPageNumber = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(
+        parentPageNumber = StoreTypeUtil.newSQLLongint(
             (parent == null ?
                  ContainerHandle.INVALID_PAGE_NUMBER :
                  parent.page.getPageNumber()));
@@ -331,10 +331,10 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		// All pages start out not being root pages.  The caller will setIsRoot
 		// if this is going to be a root page. Zero means false - see 
 		// getIsRoot/setIsRoot.
-		this.isRoot = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(isRoot ? 1 : 0);
+		this.isRoot = StoreTypeUtil.newSQLLongint(isRoot ? 1 : 0);
 
         // set the rest of the state, as passed in.
-		this.level   = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(level);
+		this.level   = StoreTypeUtil.newSQLLongint(level);
         this.version = new StorableFormatId(getTypeFormatId());
 
         // If it is a root page then store the real btree conglomerate, if it
@@ -348,7 +348,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 
         // Initialize the object array to be used for interacting with raw
         // store to insert, fetch, and update the control row.
-        this.row = new org.apache.derby.iapi.types.DataValueDescriptor[getNumberOfControlRowColumns()];
+        this.row = StoreTypeUtil.newValueArray(getNumberOfControlRowColumns());
 	    this.row[CR_VERSION_COLID]	= this.version;
 	    this.row[CR_LEFTSIB_COLID]	= this.leftSiblingPageNumber;
 	    this.row[CR_RIGHTSIB_COLID]	= this.rightSiblingPageNumber;
@@ -485,7 +485,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
         
 		// Store the field.
 		if (leftSiblingPageNumber == null)
-			leftSiblingPageNumber = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(left_sib_pageno);
+			leftSiblingPageNumber = StoreTypeUtil.newSQLLongint(left_sib_pageno);
         else
             StoreTypeUtil.setLongValue(this.leftSiblingPageNumber, left_sib_pageno);
 
@@ -541,7 +541,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
         
 		// Store the field.
 		if (rightSiblingPageNumber == null)
-			rightSiblingPageNumber = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(right_sib_pageno);
+			rightSiblingPageNumber = StoreTypeUtil.newSQLLongint(right_sib_pageno);
         else
             StoreTypeUtil.setLongValue(this.rightSiblingPageNumber, right_sib_pageno);
 
@@ -581,7 +581,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		if (this.leftSiblingPageNumber == null)
 		{
 			// Fault in the page number.
-			this.leftSiblingPageNumber = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+			this.leftSiblingPageNumber = StoreTypeUtil.newSQLLongint(0);
 
             if (SanityManager.DEBUG)
                 SanityManager.ASSERT(scratch_row != null);
@@ -609,7 +609,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		if (this.rightSiblingPageNumber == null)
 		{
 			// Fault in the page number.
-			this.rightSiblingPageNumber = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+			this.rightSiblingPageNumber = StoreTypeUtil.newSQLLongint(0);
 
             scratch_row[CR_RIGHTSIB_COLID] = this.rightSiblingPageNumber;
 
@@ -635,7 +635,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		if (this.parentPageNumber == null)
 		{
 			// Fault in the page number.
-			this.parentPageNumber = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+			this.parentPageNumber = StoreTypeUtil.newSQLLongint(0);
 
             scratch_row[CR_PARENT_COLID] = this.parentPageNumber;
 
@@ -654,7 +654,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	{
 		// Store the field.
 		if (parentPageNumber == null)
-			parentPageNumber = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+			parentPageNumber = StoreTypeUtil.newSQLLongint(0);
 		StoreTypeUtil.setLongValue(this.parentPageNumber, parent);
 
 		// Write the field through to the underlying row
@@ -689,7 +689,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		if (this.level == null)
 		{
 			// Fault in the level
-			this.level = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+			this.level = StoreTypeUtil.newSQLLongint(0);
 
             scratch_row[CR_LEVEL_COLID] = this.level;
 
@@ -706,7 +706,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	{
 		// Store the field.
 		if (this.level == null)
-			this.level = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+			this.level = StoreTypeUtil.newSQLLongint(0);
 		StoreTypeUtil.setLongValue(this.level, (long) newlevel);
 
 		// Write the field through to the underlying row.
@@ -721,7 +721,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		if (this.isRoot == null)
 		{
 			// Fault in the level
-			this.isRoot = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+			this.isRoot = StoreTypeUtil.newSQLLongint(0);
 
             scratch_row[CR_ISROOT_COLID] = this.isRoot;
 
@@ -740,7 +740,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 
 		// Store the field.
 		if (this.isRoot == null)
-			this.isRoot = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+			this.isRoot = StoreTypeUtil.newSQLLongint(0);
 
 		StoreTypeUtil.setLongValue(this.isRoot, (isRoot) ? 1 : 0);
 
@@ -873,7 +873,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
         
         StorableFormatId version = new StorableFormatId();
 
-        org.apache.derby.iapi.types.DataValueDescriptor[] version_ret = new org.apache.derby.iapi.types.DataValueDescriptor[1];
+        StoreDataValue[] version_ret = StoreTypeUtil.newValueArray(1);
         
         version_ret[0] = version;
 
@@ -1195,61 +1195,6 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		return 0;
 	}
 
-	public static int compareIndexRowToKey(
-    org.apache.derby.iapi.types.DataValueDescriptor[]   indexrow, 
-    org.apache.derby.iapi.types.DataValueDescriptor[]   key,
-    int                     nCompareCols, 
-    int                     partialKeyOrder,
-    boolean[]               ascOrDesc)
-        throws StandardException
-	{
-		// Get the actual number of key columns present
-		// in the partial key.
-		int partialKeyCols = key.length;
-
-		// Compare corresponding columns in the index row and the key.
-		for (int i = 0; i < nCompareCols; i++)
-		{
-			// See if we have run out of partial key columns.
-			if (i >= partialKeyCols)
-			{
-				// All the columns of the partial key match, and 
-				// there are more columns in the index row.  We
-				// want to return -1 or 1, depending on whether the
-				// caller wants to direct the search to the beginning
-				// of this key range or the beginning of the next
-				// one.  If the caller passes in -1, the index row
-				// will appear less than the partial key, sending the
-				// search to the next range ("to the right").  If the
-				// caller passes in 1, the index row will appear
-				// to be greater than the search key, sending the search
-				// to the beginning of the range ("to the left").
-				return partialKeyOrder;
-			}
-
-			// Get the corresponding columns to compare
-			org.apache.derby.iapi.types.DataValueDescriptor indexcol = indexrow[i];
-			org.apache.derby.iapi.types.DataValueDescriptor keycol = key[i];
-
-			// Compare them.
-			int r = indexcol.compare(keycol);
-
-			// If the columns don't compare equal, we're done.
-			// Return the sense of the comparison.
-			if (r != 0)
-			{
-				if (ascOrDesc[i])  // true - column in ascending order
-					return r;
-				else
-					return -r;
-		    }
-		}
-
-		// We made it through all the columns, and they must have
-		// all compared equal.  So return that the rows compare equal.
-		return 0;
-	}
-
 
 	public static int compareIndexRowToKey(
     StoreDataValue[]        indexrow, 
@@ -1359,8 +1304,8 @@ public abstract class ControlRow implements AuxObject, TypedFormat
         {
             RecordHandle            lesser_handle   = null;
             RecordHandle            greater_handle  = null;
-            org.apache.derby.iapi.types.DataValueDescriptor[]   lesser          = getRowTemplate(btree);
-            org.apache.derby.iapi.types.DataValueDescriptor[]   greater         = getRowTemplate(btree);
+            StoreDataValue[]   lesser          = getRowTemplate(btree);
+            StoreDataValue[]   greater         = getRowTemplate(btree);
             boolean                 is_consistent   = true;
            
             
@@ -1429,8 +1374,8 @@ public abstract class ControlRow implements AuxObject, TypedFormat
             if (left_sib.page.recordCount()  > 1 && 
                 right_sib.page.recordCount() > 1)
             {
-                org.apache.derby.iapi.types.DataValueDescriptor[] left_lastrow   = getRowTemplate(btree);
-                org.apache.derby.iapi.types.DataValueDescriptor[] right_firstrow = getRowTemplate(btree);
+                StoreDataValue[] left_lastrow   = getRowTemplate(btree);
+                StoreDataValue[] right_firstrow = getRowTemplate(btree);
 
                 RecordHandle    left_lastrow_handle   = 
                     left_sib.page.fetchFromSlot(
@@ -1702,7 +1647,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	 * @return The row.
      *
      **/
-    protected final org.apache.derby.iapi.types.DataValueDescriptor[] getRow()
+    protected final StoreDataValue[] getRow()
     {
         return(row);
     }
@@ -1879,7 +1824,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	 **/
 	protected abstract boolean shrinkFor(
     OpenBTree               btree, 
-    org.apache.derby.iapi.types.DataValueDescriptor[]   key)
+    StoreDataValue[]   key)
         throws StandardException;
 
     /**
@@ -1906,9 +1851,9 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      **/
 	protected abstract long splitFor(
     OpenBTree               open_btree, 
-    org.apache.derby.iapi.types.DataValueDescriptor[]   template, 
+    StoreDataValue[]   template, 
     BranchControlRow        parentpage, 
-    org.apache.derby.iapi.types.DataValueDescriptor[]   row,
+    StoreDataValue[]   row,
     int                     flag)
         throws StandardException;
 
@@ -1956,7 +1901,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    public org.apache.derby.iapi.types.DataValueDescriptor[] getRowTemplate(OpenBTree    open_btree)
+    public StoreDataValue[] getRowTemplate(OpenBTree    open_btree)
 		throws StandardException
     {
         return(open_btree.getConglomerate().createTemplate(
@@ -1988,7 +1933,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
             string.append(this.toString());
             string.append("\n");
 
-            org.apache.derby.iapi.types.DataValueDescriptor[] row = getRowTemplate(open_btree);
+            StoreDataValue[] row = getRowTemplate(open_btree);
 
             string.append(
                 ConglomerateUtil.debugPage(

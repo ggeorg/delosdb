@@ -39,6 +39,7 @@ import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
 
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -74,14 +75,14 @@ A branch row contains key fields and the pointer to the child page.
 **/
 public class BranchControlRow extends ControlRow
 {
-    protected org.apache.derby.iapi.types.DataValueDescriptor    left_child_page = null;
+    protected StoreDataValue    left_child_page = null;
 
 
     /**
      * Only allocate one child_pageno_buf to read the page pointer field into,
      * then cache to "empty" object for reuse by the page itself.
      **/
-    transient org.apache.derby.iapi.types.DataValueDescriptor     child_pageno_buf = null;
+    transient StoreDataValue     child_pageno_buf = null;
 
     /* Column assignments */
     private static final int CR_LEFTCHILD     = ControlRow.CR_COLID_LAST + 1;
@@ -125,14 +126,14 @@ public class BranchControlRow extends ControlRow
 		super(open_btree, page,
               level, parent, isRoot);
 
-        this.left_child_page = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(left_child);
+        this.left_child_page = StoreTypeUtil.newSQLLongint(left_child);
 
         // finish initializing the row to be used for interacting with
         // raw store to insert, fetch, and update the control row on the page.
         this.row[CR_LEFTCHILD] = left_child_page;
 
         // set up buffer to read a branch row's page number into.
-        child_pageno_buf = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+        child_pageno_buf = StoreTypeUtil.newSQLLongint(0);
 	}
 
 	/*
@@ -145,7 +146,7 @@ public class BranchControlRow extends ControlRow
      **/
     protected final void controlRowInit()
     {
-        child_pageno_buf = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+        child_pageno_buf = StoreTypeUtil.newSQLLongint(0);
     }
 
     /**
@@ -195,11 +196,11 @@ public class BranchControlRow extends ControlRow
 
 	public static long restartSplitFor(
     OpenBTree               open_btree,
-    org.apache.derby.iapi.types.DataValueDescriptor[]	template,
+    StoreDataValue[]	template,
     BranchControlRow        parent,
     ControlRow              child,
-    org.apache.derby.iapi.types.DataValueDescriptor[]	newbranchrow,
-    org.apache.derby.iapi.types.DataValueDescriptor[]	splitrow,
+    StoreDataValue[]	newbranchrow,
+    StoreDataValue[]	splitrow,
     int                     flag)
         throws StandardException
 	{
@@ -398,7 +399,7 @@ public class BranchControlRow extends ControlRow
 	 **/
 	protected boolean shrinkFor(
     OpenBTree               open_btree, 
-    org.apache.derby.iapi.types.DataValueDescriptor[]   shrink_key)
+    StoreDataValue[]   shrink_key)
         throws StandardException
     {
         ControlRow childpage = null;
@@ -576,9 +577,9 @@ public class BranchControlRow extends ControlRow
      **/
 	protected long splitFor(
     OpenBTree               open_btree,
-    org.apache.derby.iapi.types.DataValueDescriptor[]	template,
+    StoreDataValue[]	template,
     BranchControlRow        parent,
-    org.apache.derby.iapi.types.DataValueDescriptor[]	splitrow,
+    StoreDataValue[]	splitrow,
     int                     flag)
         throws StandardException
 	{
@@ -1173,7 +1174,7 @@ public class BranchControlRow extends ControlRow
 	 **/
 	private static void growRoot(
     OpenBTree               open_btree,
-    org.apache.derby.iapi.types.DataValueDescriptor[]   template,
+    StoreDataValue[]   template,
     BranchControlRow        root)
         throws StandardException
 	{
@@ -1287,7 +1288,7 @@ public class BranchControlRow extends ControlRow
 	{
 		// Store the field.
 		if (left_child_page == null)
-			left_child_page = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(leftchild_pageno);
+			left_child_page = StoreTypeUtil.newSQLLongint(leftchild_pageno);
         else
             StoreTypeUtil.setLongValue(this.left_child_page, leftchild_pageno);
 
@@ -1395,7 +1396,7 @@ public class BranchControlRow extends ControlRow
         {
             this.page.fetchFieldFromSlot(
                 slot, btree.getConglomerate().nKeyFields, child_pageno_buf);
-            child_page_id = child_pageno_buf.getLong();
+            child_page_id = StoreTypeUtil.getLong(child_pageno_buf);
         }
 
         return(child_page_id);
@@ -1419,7 +1420,7 @@ public class BranchControlRow extends ControlRow
                 child_pageno_buf);
 
             child_control_row =
-                ControlRow.get(open_btree, child_pageno_buf.getLong());
+                ControlRow.get(open_btree, StoreTypeUtil.getLong(child_pageno_buf));
         }
 
         return(child_control_row);
@@ -1480,7 +1481,7 @@ public class BranchControlRow extends ControlRow
     {
         if (this.left_child_page == null)
         {
-            this.left_child_page = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(0);
+            this.left_child_page = StoreTypeUtil.newSQLLongint(0);
 
             scratch_row[CR_LEFTCHILD] = this.left_child_page;
 
@@ -1517,7 +1518,7 @@ public class BranchControlRow extends ControlRow
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    public org.apache.derby.iapi.types.DataValueDescriptor[] getRowTemplate(OpenBTree    open_btree)
+    public StoreDataValue[] getRowTemplate(OpenBTree    open_btree)
 		throws StandardException
     {
         return(BranchRow.createEmptyTemplate(
