@@ -10750,3 +10750,158 @@ tasks.register('verifyLegacyDerbyStoreB6cIndependentCompileBlockers') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyStoreB6cIndependentCompileBlockers'
 }
+
+// -----------------------------------------------------------------------------
+// B6d — row utility bridge closeout for inherited type-core blockers
+// -----------------------------------------------------------------------------
+// B6c proved the real B6 compile switch is blocked by fully-qualified inherited
+// type references, not by direct imports. B6d removes that blocker from the
+// central RowUtil helper without moving the whole SQL type package into kernel.
+def delosdbB6dBaselineQualifiedTypeCodeRefs = 181
+
+def delosdbB6dStoreRoots = [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+]
+
+def delosdbB6dStoreFiles = {
+    delosdbB6dStoreRoots.findAll { it.exists() }.collectMany { root ->
+        fileTree(root) { include '**/*.java' }.files.findAll { it.isFile() }
+    }.sort { a, b -> a.path <=> b.path }
+}
+
+def delosdbB6dRead = { File source -> source.exists() ? source.getText('UTF-8') : '' }
+
+def delosdbB6dCodeOnly = { String text ->
+    text
+            .replaceAll(/(?s)\/\*.*?\*\//, '')
+            .replaceAll(/(?m)\/\/.*$/, '')
+}
+
+def delosdbB6dRelPath = { File source ->
+    rootDir.toPath().relativize(source.toPath()).toString().replace('\\', '/')
+}
+
+def delosdbB6dDirectTypeImports = {
+    delosdbB6dStoreFiles().collectMany { source ->
+        delosdbB6dRead(source).readLines().withIndex().findAll { line, index ->
+            line.trim() ==~ /import\s+org\.apache\.derby\.iapi\.types\..*;/
+        }.collect { line, index ->
+            [file: delosdbB6dRelPath(source), line: index + 1, text: line.trim()]
+        }
+    }
+}
+
+def delosdbB6dFullyQualifiedTypeRefs = {
+    def pattern = ~/org\.apache\.derby\.iapi\.types\.([A-Za-z0-9_]+)/
+    delosdbB6dStoreFiles().collectMany { source ->
+        def code = delosdbB6dCodeOnly(delosdbB6dRead(source))
+        def refs = []
+        code.readLines().eachWithIndex { line, index ->
+            def matcher = pattern.matcher(line)
+            while (matcher.find()) {
+                refs << [file: delosdbB6dRelPath(source), line: index + 1, type: matcher.group(1), text: line.trim()]
+            }
+        }
+        refs
+    }
+}
+
+def delosdbB6dRowUtil = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowUtil.java')
+
+tasks.register('legacyDerbyStoreB6dRowUtilTypeBridgeReport') {
+    group = 'Verification'
+    description = 'B6d: reports removal of fully-qualified inherited type references from RowUtil before the real storage compile switch.'
+    dependsOn 'verifyLegacyDerbyStoreB6cIndependentCompileBlockers'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b6d-rowutil-type-bridge.txt'))
+    doLast {
+        def directTypeImports = delosdbB6dDirectTypeImports()
+        def fqRefs = delosdbB6dFullyQualifiedTypeRefs()
+        def byType = fqRefs.groupBy { it.type }.collectEntries { type, refs -> [(type): refs.size()] }.sort { a, b -> a.key <=> b.key }
+        def byFile = fqRefs.groupBy { it.file }.collectEntries { path, refs -> [(path): refs.size()] }.sort { a, b -> a.key <=> b.key }
+        def rowUtilText = delosdbB6dRead(delosdbB6dRowUtil)
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-b6d-rowutil-type-bridge.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = """DelosDB B6d RowUtil inherited type bridge report
+==================================================
+
+Purpose
+-------
+B6c proved that B6 is now blocked by fully-qualified inherited Derby type
+references, not by direct imports. B6d removes that blocker from RowUtil, the
+central row helper used by heap, B-tree, sort, and raw-page paths.
+
+Changed boundary
+----------------
+RowUtil now exposes StoreDataValue[] for EMPTY_ROW, getColumn, isRowEmpty,
+newTemplate, newRowFromTemplate, and qualifyRow. Concrete Derby value creation
+and cloning continue to go through StoreDataValueFactory and StoreTypeUtil.
+
+Direct relocated-store iapi.types imports
+----------------------------------------
+  count: ${directTypeImports.size()}
+${directTypeImports ? directTypeImports.collect { "  - ${it.file}:${it.line}: ${it.text}" }.join('\n') : '  none'}
+
+Fully-qualified inherited type references in executable source
+-------------------------------------------------------------
+  before B6d baseline: ${delosdbB6dBaselineQualifiedTypeCodeRefs}
+  after B6d:           ${fqRefs.size()}
+
+By type:
+${byType ? byType.collect { type, count -> "  - ${type}: ${count}" }.join('\n') : '  none'}
+
+By file:
+${byFile ? byFile.collect { path, count -> "  - ${path}: ${count}" }.join('\n') : '  none'}
+
+RowUtil checks
+--------------
+  RowUtil has fully-qualified iapi.types refs: ${rowUtilText.contains('org.apache.derby.iapi.types.') ? 'YES' : 'NO'}
+  RowUtil EMPTY_ROW is StoreDataValue[]: ${rowUtilText.contains('public static final StoreDataValue[] EMPTY_ROW') ? 'YES' : 'NO'}
+  RowUtil qualifyRow is StoreDataValue[]: ${rowUtilText.contains('qualifyRow(\n    StoreDataValue[]') ? 'YES' : 'NO'}
+
+B6 interpretation
+-----------------
+B6d reduces the inherited type-core blocker but does not yet flip compilation
+ownership. Remaining fully-qualified type references are concentrated in
+concrete value/materialization and B-tree internals. B6 readiness remains NOT YET.
+"""
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB6dRowUtilTypeBridge') {
+    group = 'Verification'
+    description = 'B6d: verifies RowUtil no longer contains fully-qualified inherited Derby type references.'
+    dependsOn 'legacyDerbyStoreB6dRowUtilTypeBridgeReport'
+    doLast {
+        def directTypeImports = delosdbB6dDirectTypeImports()
+        if (!directTypeImports.isEmpty()) {
+            throw new GradleException('B6d requires direct relocated-store org.apache.derby.iapi.types imports to remain zero; found:\n' +
+                    directTypeImports.collect { "${it.file}:${it.line}: ${it.text}" }.join('\n'))
+        }
+        def rowUtilText = delosdbB6dRead(delosdbB6dRowUtil)
+        if (rowUtilText.contains('org.apache.derby.iapi.types.')) {
+            throw new GradleException('B6d expected RowUtil to have zero fully-qualified org.apache.derby.iapi.types references')
+        }
+        if (!rowUtilText.contains('public static final StoreDataValue[] EMPTY_ROW')) {
+            throw new GradleException('B6d expected RowUtil.EMPTY_ROW to be StoreDataValue[]')
+        }
+        if (!rowUtilText.contains('public static StoreDataValue getColumn') ||
+                !rowUtilText.contains('public static final boolean qualifyRow(\n    StoreDataValue[]')) {
+            throw new GradleException('B6d expected RowUtil row-facing APIs to use StoreDataValue')
+        }
+        def fqRefs = delosdbB6dFullyQualifiedTypeRefs()
+        if (fqRefs.size() >= delosdbB6dBaselineQualifiedTypeCodeRefs) {
+            throw new GradleException("B6d expected fully-qualified inherited type refs to decrease below ${delosdbB6dBaselineQualifiedTypeCodeRefs}, found ${fqRefs.size()}")
+        }
+        def reportText = layout.buildDirectory.file('reports/delosdb/legacy-store-b6d-rowutil-type-bridge.txt').get().asFile.getText('UTF-8')
+        if (!reportText.contains('B6 readiness remains NOT YET')) {
+            throw new GradleException('B6d report must explicitly keep B6 readiness as NOT YET')
+        }
+        logger.lifecycle("Verified B6d RowUtil type bridge; fully-qualified inherited type references now ${fqRefs.size()}")
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreB6dRowUtilTypeBridge'
+}
