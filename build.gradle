@@ -8126,8 +8126,10 @@ ${remainingStoreTypeImports.isEmpty() ? '  none' : remainingStoreTypeImports.col
 
 Boundary decision
 -----------------
-B5s intentionally keeps concrete DataValueDescriptor and RowLocation casts in
-old implementation bodies. The API-facing scan method signatures now use
+B5s intentionally keeps concrete DataValueDescriptor adaptation in old
+implementation bodies. Row-location values are adapted at the SQL execution
+boundary either by the pre-B6m explicit RowLocation cast or, after B6m, by
+EngineStoreRowLocationBridge. The API-facing scan method signatures now use
 StoreDataValue[] and StoreRowLocation so later B5 slices can continue inward.
 
 B6 readiness
@@ -8183,8 +8185,10 @@ tasks.register('verifyLegacyDerbyKernelB5sScanFetchLocationBridge') {
 
         [delosdbB5sCreateIndexConstantAction, delosdbB5sAlterTableConstantAction, delosdbB5sTemporaryRowHolderResultSet, delosdbB5sTableScanResultSet, delosdbB5sSortResultSet, delosdbB5sGroupedAggregateResultSet, delosdbB5sInsertResultSet, delosdbB5sConsistencyChecker].each { source ->
             def text = delosdbB5sRead(source)
-            if (!text.contains('(RowLocation)') || !text.contains('newRowLocationTemplate()')) {
-                throw new GradleException('B5s ' + delosdbB5sRelPath(source) + ' must keep the SQL-side row-location cast explicit')
+            def hasRowLocationBoundaryAdaptation = text.contains('(RowLocation)') ||
+                    text.contains('EngineStoreRowLocationBridge.requireEngineRowLocation(')
+            if (!hasRowLocationBoundaryAdaptation || !text.contains('newRowLocationTemplate()')) {
+                throw new GradleException('B5s ' + delosdbB5sRelPath(source) + ' must adapt StoreRowLocation back to RowLocation at the SQL execution boundary')
             }
         }
 
