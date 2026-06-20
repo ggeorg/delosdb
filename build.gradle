@@ -11417,3 +11417,151 @@ tasks.register('verifyLegacyDerbyStoreB6iStoreNativeMetadataValue') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyStoreB6iStoreNativeMetadataValue'
 }
+
+// -----------------------------------------------------------------------------
+// B6j — HeapRowLocation compatibility seam gate
+// -----------------------------------------------------------------------------
+// B6i moved concrete store metadata values onto store-native value operations.
+// The remaining inherited type seam is HeapRowLocation. Do not blindly rewrite it:
+// engine/catalog execution code still treats heap row locations as inherited
+// RowLocation/DataValueDescriptor values. B6j records that compatibility edge so
+// the next slice can bridge engine callers before removing the final references.
+def delosdbB6jBaselineQualifiedTypeCodeRefs = 8
+
+def delosdbB6jHeapRowLocationFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapRowLocation.java')
+def delosdbB6jEngineRowLocationConsumerRoots = [
+        file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog'),
+        file('delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon'),
+        file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes')
+]
+
+def delosdbB6jEngineRowLocationConsumerHits = {
+    def hits = []
+    delosdbB6jEngineRowLocationConsumerRoots.findAll { it.exists() }.each { root ->
+        root.eachFileRecurse { source ->
+            if (source.isFile() && source.name.endsWith('.java')) {
+                def text = delosdbB6cRead(source)
+                def code = delosdbB6cCodeOnly(text)
+                if (code.contains('org.apache.derby.iapi.types.RowLocation')
+                        || code.contains('import org.apache.derby.iapi.types.RowLocation;')
+                        || code.contains('(RowLocation)')) {
+                    hits << source
+                }
+            }
+        }
+    }
+    hits.unique().sort { a, b -> a.path <=> b.path }
+}
+
+tasks.register('legacyDerbyStoreB6jHeapRowLocationCompatibilityReport') {
+    group = 'Verification'
+    description = 'B6j: reports the final HeapRowLocation inherited type compatibility seam before source-owner closeout.'
+    dependsOn 'verifyLegacyDerbyStoreB6iStoreNativeMetadataValue'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b6j-heap-row-location-compatibility.txt'))
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        def byType = fqRefs.groupBy { it.type }.collectEntries { type, refs -> [(type): refs.size()] }.sort { a, b -> a.key <=> b.key }
+        def byFile = fqRefs.groupBy { it.source.path - rootDir.path - File.separator }.collectEntries { path, refs ->
+            [(path): refs.groupBy { it.type }.collectEntries { type, typedRefs -> [(type): typedRefs.size()] }.sort { a, b -> a.key <=> b.key }]
+        }.sort { a, b -> a.key <=> b.key }
+        def heapCode = delosdbB6cCodeOnly(delosdbB6cRead(delosdbB6jHeapRowLocationFile))
+        def engineConsumers = delosdbB6jEngineRowLocationConsumerHits()
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-b6j-heap-row-location-compatibility.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = """DelosDB B6j HeapRowLocation compatibility seam report
+======================================================
+
+Purpose
+-------
+B6j records the final inherited type seam after B6i. HeapRowLocation is special:
+it is not only a store row-location object. Engine/catalog code still uses it as
+an inherited Derby RowLocation/DataValueDescriptor value when building index rows,
+sequence row locations, and catalog lookup keys.
+
+Current source state
+--------------------
+delosdb-storage-derby compiles real store source: ${file('delosdb-storage-derby/build.gradle').text.contains("include 'org/apache/derby/impl/store/**/*.java'") ? 'YES' : 'NO'}
+delosdb-engine still compiles relocated store source directly: ${file('delosdb-engine/build.gradle').text.contains("fileTree(legacyDerbyStorageSourceRoot) { include 'org/apache/derby/impl/store/**/*.java' }") ? 'YES' : 'NO'}
+
+direct relocated-store org.apache.derby.iapi.types imports: ${directTypeImports.size()}
+${directTypeImports ? directTypeImports.collect { "  - ${it.source}: ${it.line}" }.join('\n') : '  none'}
+
+Fully-qualified inherited type references in executable relocated-store source
+-----------------------------------------------------------------------------
+  B6j baseline: ${delosdbB6jBaselineQualifiedTypeCodeRefs}
+  current:      ${fqRefs.size()}
+
+By type:
+${byType ? byType.collect { type, count -> "  - ${type}: ${count}" }.join('\n') : '  none'}
+
+By file:
+${byFile ? byFile.collect { path, typed -> "${path}\n" + typed.collect { type, count -> "  - ${type}: ${count}" }.join('\n') }.join('\n') : 'none'}
+
+HeapRowLocation compatibility contract
+--------------------------------------
+extends inherited DataType: ${heapCode.contains('extends org.apache.derby.iapi.types.DataType') ? 'YES' : 'NO'}
+implements inherited RowLocation: ${heapCode.contains('org.apache.derby.iapi.types.RowLocation') ? 'YES' : 'NO'}
+implements inherited RefDataValue: ${heapCode.contains('org.apache.derby.iapi.types.RefDataValue') ? 'YES' : 'NO'}
+
+Engine/catalog RowLocation consumers still present
+--------------------------------------------------
+  count: ${engineConsumers.size()}
+${engineConsumers ? engineConsumers.collect { "  - ${it.path - rootDir.path - File.separator}" }.join('\n') : '  none'}
+
+Decision
+--------
+Do not make HeapRowLocation purely store-native yet. Doing that while engine code
+still casts row-location templates and index-row cells to inherited RowLocation
+would compile in some places but risks runtime ClassCastException and catalog/index
+behavior regressions.
+
+B6 closeout sequence
+--------------------
+B6j: freeze and document the final row-location compatibility seam.
+B6k: bridge engine/catalog RowLocation consumers to StoreRowLocation/StoreDataValue
+     at the smallest stable boundary.
+B6l: make HeapRowLocation store-native and remove the final inherited type refs.
+B6m: remove direct relocated store source compilation from delosdb-engine.
+"""
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB6jHeapRowLocationCompatibility') {
+    group = 'Verification'
+    description = 'B6j: verifies the final inherited type seam is isolated to HeapRowLocation and remains runtime-compatible.'
+    dependsOn 'legacyDerbyStoreB6jHeapRowLocationCompatibilityReport'
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        if (!directTypeImports.isEmpty()) {
+            throw new GradleException('B6j requires direct relocated-store org.apache.derby.iapi.types imports to remain zero; found:\n' +
+                    directTypeImports.collect { "${it.source}: ${it.line}" }.join('\n'))
+        }
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        if (fqRefs.size() > delosdbB6jBaselineQualifiedTypeCodeRefs) {
+            throw new GradleException("B6j expected at most ${delosdbB6jBaselineQualifiedTypeCodeRefs} fully-qualified inherited type refs, found ${fqRefs.size()}")
+        }
+        def remainingFiles = fqRefs.collect { it.source.name }.toSet()
+        if (remainingFiles != ['HeapRowLocation.java'] as Set) {
+            throw new GradleException("B6j expected remaining inherited type refs to be isolated in HeapRowLocation.java, found ${remainingFiles}")
+        }
+        def heapCode = delosdbB6cCodeOnly(delosdbB6cRead(delosdbB6jHeapRowLocationFile))
+        if (!heapCode.contains('extends org.apache.derby.iapi.types.DataType')) {
+            throw new GradleException('B6j expected HeapRowLocation to keep inherited DataType compatibility until engine RowLocation consumers are bridged')
+        }
+        if (!heapCode.contains('org.apache.derby.iapi.types.RowLocation') ||
+                !heapCode.contains('org.apache.derby.iapi.types.RefDataValue')) {
+            throw new GradleException('B6j expected HeapRowLocation to keep inherited RowLocation/RefDataValue compatibility until engine consumers are bridged')
+        }
+        def engineConsumers = delosdbB6jEngineRowLocationConsumerHits()
+        if (engineConsumers.isEmpty()) {
+            throw new GradleException('B6j expected engine/catalog RowLocation consumers to be visible before removing HeapRowLocation compatibility')
+        }
+        logger.lifecycle("Verified B6j HeapRowLocation compatibility seam; remaining inherited type references stay isolated at ${fqRefs.size()}")
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreB6jHeapRowLocationCompatibility'
+}
