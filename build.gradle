@@ -9959,3 +9959,147 @@ tasks.register('verifyLegacyDerbyKernelB5adConcreteTypeImportQuarantine') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5adConcreteTypeImportQuarantine'
 }
+
+// B5ae — direct relocated-store type import closeout.
+def delosdbB5aeBaselineImportCount = 12
+
+def delosdbB5aeReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5ae-direct-type-import-closeout.txt')
+
+def delosdbB5aeFiles = [
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowUtil.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/TemplateRow.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/OpenBTree.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/LeafControlRow.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BranchRow.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BranchControlRow.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTree.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/ControlRow.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeScan.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreePostCommit.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2I.java')
+]
+
+def delosdbB5aeRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString().replace('\\\\', '/') }
+
+def delosdbB5aeRead = { File f -> f.exists() ? f.getText('UTF-8') : '' }
+
+def delosdbB5aeStoreTypeImportLines = {
+    def roots = [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ]
+    roots.collectMany { root ->
+        root.exists() ? fileTree(root).matching { include '**/*.java' }.files : []
+    }.sort { a, b -> a.path <=> b.path }.collectMany { source ->
+        source.readLines('UTF-8').findAll { line ->
+            line.trim().startsWith('import org.apache.derby.iapi.types.')
+        }.collect { line -> delosdbB5aeRelPath(source) + ': ' + line.trim() }
+    }
+}
+
+def delosdbB5aeQualifiedTypeRefs = {
+    def roots = [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ]
+    roots.collectMany { root ->
+        root.exists() ? fileTree(root).matching { include '**/*.java' }.files : []
+    }.sort { a, b -> a.path <=> b.path }.collectMany { source ->
+        def rel = delosdbB5aeRelPath(source)
+        source.readLines('UTF-8').withIndex().findAll { entry ->
+            entry[0].contains('org.apache.derby.iapi.types.')
+        }.collect { entry -> rel + ':' + (entry[1] + 1) + ': ' + entry[0].trim() }
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5aeDirectTypeImportCloseoutReport') {
+    group = 'verification'
+    description = 'B5ae: reports final direct relocated-store iapi.types import closeout before B6.'
+    dependsOn 'verifyLegacyDerbyKernelB5adConcreteTypeImportQuarantine'
+    outputs.file(delosdbB5aeReportFile)
+    doLast {
+        def imports = delosdbB5aeStoreTypeImportLines()
+        def refs = delosdbB5aeQualifiedTypeRefs()
+        def reportFile = delosdbB5aeReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5ae direct relocated-store type import closeout
+========================================================
+
+Purpose
+-------
+B5ae closes the B5 direct-import blocker by removing the last direct
+relocated-store imports from org.apache.derby.iapi.types.*. The remaining hard
+B-tree/materialization/concrete-value seams are intentionally left visible as
+fully-qualified inherited Derby type references. This is not hidden as B6-ready
+runtime independence; it is a direct-import closeout before the B6 real module
+compilation step.
+
+Changed files
+-------------
+${delosdbB5aeFiles.collect { '  - ' + delosdbB5aeRelPath(it) }.join('\n')}
+
+Relocated store direct iapi.types import count
+---------------------------------------------
+  before B5ae baseline: ${delosdbB5aeBaselineImportCount}
+  after B5ae:           ${imports.size()}
+
+Remaining direct import lines
+-----------------------------
+${imports ? imports.collect { '  - ' + it }.join('\n') : '  none'}
+
+Remaining fully-qualified inherited type references
+---------------------------------------------------
+${refs ? refs.collect { '  - ' + it }.join('\n') : '  none'}
+
+B6 readiness
+------------
+NOT YET. The direct import blocker is closed, but B6 still must prove the real
+storage module compiles independently and that any remaining inherited concrete
+value references are either satisfied by the decided kernel/bridge dependency
+shape or retired during the module-boundary switch.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5aeRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5aeDirectTypeImportCloseout') {
+    group = 'verification'
+    description = 'B5ae: verifies zero direct relocated-store org.apache.derby.iapi.types imports.'
+    dependsOn 'legacyDerbyStoreKernelB5aeDirectTypeImportCloseoutReport'
+    doLast {
+        delosdbB5aeFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5ae missing required source file: ' + delosdbB5aeRelPath(source))
+            }
+            def text = delosdbB5aeRead(source)
+            if (text.contains('import org.apache.derby.iapi.types.')) {
+                throw new GradleException('B5ae file still has a direct iapi.types import: ' + delosdbB5aeRelPath(source))
+            }
+        }
+
+        def imports = delosdbB5aeStoreTypeImportLines()
+        if (imports.size() != 0) {
+            throw new GradleException('B5ae expected zero direct relocated-store iapi.types imports, found ' + imports.size() + ': ' + imports.join('; '))
+        }
+
+        def refs = delosdbB5aeQualifiedTypeRefs()
+        if (refs.isEmpty()) {
+            throw new GradleException('B5ae report should still expose remaining fully-qualified inherited type references, not pretend the concrete seam disappeared')
+        }
+
+        def reportText = delosdbB5aeRead(delosdbB5aeReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5ae report must explicitly say B6 readiness is NOT YET')
+        }
+        if (!reportText.contains('fully-qualified inherited Derby type references')) {
+            throw new GradleException('B5ae report must honestly describe remaining fully-qualified inherited type references')
+        }
+
+        logger.lifecycle('Verified B5ae direct relocated-store type import closeout; relocated-store iapi.types imports now 0; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5aeDirectTypeImportCloseout'
+}

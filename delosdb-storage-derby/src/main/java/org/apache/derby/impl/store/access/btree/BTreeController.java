@@ -47,7 +47,6 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -68,7 +67,7 @@ import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
 public class BTreeController extends OpenBTree implements ConglomerateController
 {
 
-    transient DataValueDescriptor[] scratch_template = null;
+    transient org.apache.derby.iapi.types.DataValueDescriptor[] scratch_template = null;
 
     /**
      * Whether to get lock on the row being inserted, usually this lock
@@ -237,8 +236,8 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     start_xact_and_dosplit(
     boolean                 attempt_to_reclaim_deleted_rows,
     long                    leaf_pageno,
-    DataValueDescriptor[]   scratch_template, 
-    DataValueDescriptor[]   rowToInsert,
+    org.apache.derby.iapi.types.DataValueDescriptor[]   scratch_template, 
+    org.apache.derby.iapi.types.DataValueDescriptor[]   rowToInsert,
     int                     flag)
         throws StandardException
     {
@@ -395,8 +394,8 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      */
     private int comparePreviousRecord (int slot, 
                                     LeafControlRow  leaf, 
-                                    DataValueDescriptor [] rows,
-                                    DataValueDescriptor [] oldRows) 
+                                    org.apache.derby.iapi.types.DataValueDescriptor [] rows,
+                                    org.apache.derby.iapi.types.DataValueDescriptor [] oldRows) 
                                         throws StandardException {
         RecordHandle rh = null;
         boolean newLeaf = false;
@@ -486,8 +485,8 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      */
     private int compareNextRecord (int slot, 
                                     LeafControlRow  leaf, 
-                                    DataValueDescriptor [] rows,
-                                    DataValueDescriptor [] oldRows) 
+                                    org.apache.derby.iapi.types.DataValueDescriptor [] rows,
+                                    org.apache.derby.iapi.types.DataValueDescriptor [] oldRows) 
                                         throws StandardException {
         RecordHandle rh = null;
         boolean newLeaf = false;
@@ -579,8 +578,8 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      *          {@code MATCH_FOUND} if a duplicate is found, or
      *          {@code RESCAN_REQUIRED} if the B-tree must be rescanned
      */
-    private int compareRowsForInsert (DataValueDescriptor [] originalRow,
-                                      DataValueDescriptor [] newRow,
+    private int compareRowsForInsert (org.apache.derby.iapi.types.DataValueDescriptor [] originalRow,
+                                      org.apache.derby.iapi.types.DataValueDescriptor [] newRow,
                                       LeafControlRow leaf, int slot) 
                                             throws StandardException {
         for (int i = 0; i < originalRow.length - 1; i++) {
@@ -588,7 +587,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 return NO_MATCH;
         }
         //It might be a deleted record try getting a lock on it
-        DataValueDescriptor[] template = (DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
+        org.apache.derby.iapi.types.DataValueDescriptor[] template = (org.apache.derby.iapi.types.DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
         FetchDescriptor lock_fetch_desc = RowUtil.getFetchDescriptorConstant(
                                                     template.length - 1);
         StoreRowLocation lock_row_loc = 
@@ -618,7 +617,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      * @throws StandardException
      */
     private int compareLeftAndRightSiblings (
-                            DataValueDescriptor[] rowToInsert, 
+                            org.apache.derby.iapi.types.DataValueDescriptor[] rowToInsert, 
                             int insert_slot, 
                             LeafControlRow  targetleaf) throws StandardException {
         //proceed only if almost unique index
@@ -633,8 +632,8 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 }
             }
             if (!hasnull) {
-                DataValueDescriptor index [] =  
-                        (DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
+                org.apache.derby.iapi.types.DataValueDescriptor index [] =  
+                        (org.apache.derby.iapi.types.DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
                 int ret = comparePreviousRecord(insert_slot - 1, 
                         targetleaf, index, rowToInsert);
                 if (ret > 0) {
@@ -661,7 +660,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
 	@exception StandardException Standard exception policy.
     **/
-	private int doIns(DataValueDescriptor[] rowToInsert)
+	private int doIns(org.apache.derby.iapi.types.DataValueDescriptor[] rowToInsert)
         throws StandardException
 	{
 		LeafControlRow  targetleaf                      = null;
@@ -673,7 +672,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
         if (scratch_template == null)
         {
-            scratch_template = (DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
+            scratch_template = (org.apache.derby.iapi.types.DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
         }
 
         if (SanityManager.DEBUG)
@@ -860,7 +859,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                                 for (int i=0; i < rowsToUpdate; i++) {
                                 targetleaf.page.updateFieldAtSlot(
                                     insert_slot, i, 
-                                    (DataValueDescriptor) RowUtil.getColumn(
+                                    (org.apache.derby.iapi.types.DataValueDescriptor) RowUtil.getColumn(
                                         rowToInsert, 
                                         (FormatableBitSet) null, i),
                                     this.btree_undo);
@@ -877,7 +876,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                                         this.getConglomerate().nKeyFields - 1;
                                 targetleaf.page.updateFieldAtSlot(
                                     insert_slot, rowloc_index, 
-                                    (DataValueDescriptor) RowUtil.getColumn(
+                                    (org.apache.derby.iapi.types.DataValueDescriptor) RowUtil.getColumn(
                                         rowToInsert, 
                                         (FormatableBitSet) null, rowloc_index),
                                     this.btree_undo);
@@ -1053,7 +1052,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	 * @exception  StandardException  Standard exception policy.
      **/
 	private boolean do_load_insert(
-    DataValueDescriptor[]   rowToInsert,
+    org.apache.derby.iapi.types.DataValueDescriptor[]   rowToInsert,
     LeafControlRow          leaf,
     int                     insert_slot)
         throws StandardException
@@ -1153,7 +1152,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	 * @exception  StandardException  Standard exception policy.
      **/
 	private LeafControlRow do_load_split(
-    DataValueDescriptor[]   rowToInsert,
+    org.apache.derby.iapi.types.DataValueDescriptor[]   rowToInsert,
     LeafControlRow          leaf)
         throws StandardException
 	{
@@ -1370,7 +1369,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             SanityManager.ASSERT(this.container != null);
         }
 
-		return doIns((DataValueDescriptor[]) row);
+		return doIns((org.apache.derby.iapi.types.DataValueDescriptor[]) row);
 	}
 
     /**
@@ -1505,7 +1504,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
         if (scratch_template == null)
         {
-            scratch_template = (DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
+            scratch_template = (org.apache.derby.iapi.types.DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
         }
 
         LeafControlRow current_leaf = null;
@@ -1528,8 +1527,8 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             FormatableBitSet  validColumns = rowSource.getValidColumns();
             
 			// get the next row and its valid columns from the rowSource
-			DataValueDescriptor[] row;
-            while ((row = (DataValueDescriptor[]) rowSource.getNextRowFromRowSource()) != null)
+			org.apache.derby.iapi.types.DataValueDescriptor[] row;
+            while ((row = (org.apache.derby.iapi.types.DataValueDescriptor[]) rowSource.getNextRowFromRowSource()) != null)
             {
                 num_rows_loaded++;
 

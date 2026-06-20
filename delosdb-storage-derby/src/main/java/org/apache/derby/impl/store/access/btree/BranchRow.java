@@ -30,7 +30,6 @@ import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 /**
@@ -65,7 +64,7 @@ public class BranchRow
     /**
      * The array of object to be used as the row.
      */
-    private DataValueDescriptor[]    branchrow    = null;
+    private org.apache.derby.iapi.types.DataValueDescriptor[]    branchrow    = null;
 
 	/*
 	** Constructors of BranchRow
@@ -84,8 +83,8 @@ public class BranchRow
     BTree               btree)
         throws StandardException
 	{
-        DataValueDescriptor child_page  = 
-            (DataValueDescriptor) StoreTypeUtil.newSQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
+        org.apache.derby.iapi.types.DataValueDescriptor child_page  = 
+            (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(ContainerHandle.INVALID_PAGE_NUMBER);
 
         branchrow   = btree.createBranchTemplate(rawtran, child_page);
 
@@ -105,7 +104,7 @@ public class BranchRow
      *
 	 * @return The child page object.
      **/
-    private DataValueDescriptor getChildPage()
+    private org.apache.derby.iapi.types.DataValueDescriptor getChildPage()
     {
         // last column of branch row should be the child page pointer.
         if (SanityManager.DEBUG)
@@ -161,7 +160,7 @@ public class BranchRow
          * from old branch row to new branch row.
          */
 
-        newbranch.branchrow = new DataValueDescriptor[this.branchrow.length]; 
+        newbranch.branchrow = new org.apache.derby.iapi.types.DataValueDescriptor[this.branchrow.length]; 
         System.arraycopy(
             this.branchrow, 0, newbranch.branchrow, 0, 
             newbranch.branchrow.length - 1);
@@ -170,7 +169,7 @@ public class BranchRow
          * last column in the new branch row.
          */
         newbranch.branchrow[newbranch.branchrow.length - 1] = 
-            (DataValueDescriptor) StoreTypeUtil.newSQLLongint(childpageno);
+            (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(childpageno);
 
         return(newbranch);
     }
@@ -192,7 +191,7 @@ public class BranchRow
      * of the old leaf row which are referenced.
      */
     public static BranchRow createBranchRowFromOldLeafRow(
-    DataValueDescriptor[]   leafrow, 
+    org.apache.derby.iapi.types.DataValueDescriptor[]   leafrow, 
     long                    childpageno)
     {
         BranchRow newbranch = new BranchRow();
@@ -200,7 +199,7 @@ public class BranchRow
         /* create new object array for the row, and copy all object references 
          * from old leaf row to new branch row.
          */
-        newbranch.branchrow = new DataValueDescriptor[leafrow.length + 1];
+        newbranch.branchrow = new org.apache.derby.iapi.types.DataValueDescriptor[leafrow.length + 1];
 
         System.arraycopy(leafrow, 0, newbranch.branchrow, 0, leafrow.length);
 
@@ -208,7 +207,7 @@ public class BranchRow
          * last column in the new branch row.
          */
         newbranch.branchrow[newbranch.branchrow.length - 1] = 
-            (DataValueDescriptor) StoreTypeUtil.newSQLLongint(childpageno);
+            (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(childpageno);
 
         return(newbranch);
     }
@@ -216,13 +215,13 @@ public class BranchRow
     /**
      * Return the branch row.
      * <p>
-     * Return the DataValueDescriptor array that represents the branch row, 
+     * Return the org.apache.derby.iapi.types.DataValueDescriptor array that represents the branch row, 
      * for use in raw store calls to fetch, insert, and update.
      * <p>
      *
 	 * @return The branch row object array.
      **/
-    protected DataValueDescriptor[] getRow()
+    protected org.apache.derby.iapi.types.DataValueDescriptor[] getRow()
     {
         return(this.branchrow);
     }

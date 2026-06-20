@@ -31,7 +31,6 @@ import org.apache.derby.iapi.store.access.RowUtil;
 
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.store.types.StoreDataValueFactory;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
@@ -66,7 +65,7 @@ public final class TemplateRow
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    private static DataValueDescriptor[] allocate_objects(
+    private static org.apache.derby.iapi.types.DataValueDescriptor[] allocate_objects(
     Transaction         rawtran,
     int                 num_cols_to_allocate,
     FormatableBitSet    column_list,
@@ -74,8 +73,8 @@ public final class TemplateRow
     int[]               collation_ids)
 		throws StandardException
     {
-        DataValueDescriptor[] ret_row = 
-            new DataValueDescriptor[num_cols_to_allocate];
+        org.apache.derby.iapi.types.DataValueDescriptor[] ret_row = 
+            new org.apache.derby.iapi.types.DataValueDescriptor[num_cols_to_allocate];
         int         num_cols = 
             (column_list == null ? format_ids.length : column_list.size());
 
@@ -93,11 +92,11 @@ public final class TemplateRow
                 // yes - create the column 
 
                 // get empty instance of object identified by the format id.
-                ret_row[i] = (DataValueDescriptor) dvf.getNull(format_ids[i], collation_ids[i]);
+                ret_row[i] = (org.apache.derby.iapi.types.DataValueDescriptor) dvf.getNull(format_ids[i], collation_ids[i]);
 
                 if (SanityManager.DEBUG)
                 {
-                    DataValueDescriptor o = ret_row[i];
+                    org.apache.derby.iapi.types.DataValueDescriptor o = ret_row[i];
 
                     if (o == null)
                     {
@@ -126,13 +125,13 @@ public final class TemplateRow
     /**
     Constuctor for creating a template row which stores n SQLLongint's
     **/
-	public static DataValueDescriptor[] newU8Row(int nkeys)
+	public static org.apache.derby.iapi.types.DataValueDescriptor[] newU8Row(int nkeys)
 	{
-        DataValueDescriptor[] columns = new DataValueDescriptor[nkeys];
+        org.apache.derby.iapi.types.DataValueDescriptor[] columns = new org.apache.derby.iapi.types.DataValueDescriptor[nkeys];
 
         for (int i = 0; i < columns.length; i++)
         {
-            columns[i] = (DataValueDescriptor) StoreTypeUtil.newSQLLongint(Long.MIN_VALUE);
+            columns[i] = (org.apache.derby.iapi.types.DataValueDescriptor) StoreTypeUtil.newSQLLongint(Long.MIN_VALUE);
         }
 
 		return columns;
@@ -158,12 +157,12 @@ public final class TemplateRow
      *
      * @see RowUtil
      **/
-    public static DataValueDescriptor[] newRow(
-    DataValueDescriptor[]    template)
+    public static org.apache.derby.iapi.types.DataValueDescriptor[] newRow(
+    org.apache.derby.iapi.types.DataValueDescriptor[]    template)
         throws StandardException
     {
-        DataValueDescriptor[] columns = 
-            new DataValueDescriptor[template.length];
+        org.apache.derby.iapi.types.DataValueDescriptor[] columns = 
+            new org.apache.derby.iapi.types.DataValueDescriptor[template.length];
 
         for (int i = template.length; i-- > 0 ;)
         {
@@ -188,7 +187,7 @@ public final class TemplateRow
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    public static DataValueDescriptor[] newRow(
+    public static org.apache.derby.iapi.types.DataValueDescriptor[] newRow(
     Transaction          rawtran,
     FormatableBitSet     column_list,
     int[]                format_ids,
@@ -219,17 +218,17 @@ public final class TemplateRow
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    public static DataValueDescriptor[] newBranchRow(
+    public static org.apache.derby.iapi.types.DataValueDescriptor[] newBranchRow(
     Transaction         rawtran,
     int[]               format_ids,
     int[]               collation_ids,
-    DataValueDescriptor page_ptr) 
+    org.apache.derby.iapi.types.DataValueDescriptor page_ptr) 
         throws StandardException
     {
         // allocate an object array with the number of columns in the template
         // row (ie. number of columns in the leaf row) + one column to hold
         // the page pointer in the branch row.
-        DataValueDescriptor[] columns = 
+        org.apache.derby.iapi.types.DataValueDescriptor[] columns = 
             allocate_objects(
                 rawtran,
                 format_ids.length + 1, 
@@ -257,7 +256,7 @@ public final class TemplateRow
     StoreDataValueFactory        dvf,
     int[]                   format_ids, 
     int[]                   collation_ids,
-    DataValueDescriptor[]   row)
+    org.apache.derby.iapi.types.DataValueDescriptor[]   row)
 		throws StandardException
 	{
         boolean ret_val = true;

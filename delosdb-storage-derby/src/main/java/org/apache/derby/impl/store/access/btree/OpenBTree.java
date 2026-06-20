@@ -36,7 +36,6 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import org.apache.derby.impl.store.access.conglomerate.OpenConglomerateScratchSpace;
 
@@ -498,12 +497,12 @@ public class OpenBTree
 
     @exception StandardException Standard Exception Policy.
     **/
-    void isIndexableRowConsistent(DataValueDescriptor[] row)
+    void isIndexableRowConsistent(org.apache.derby.iapi.types.DataValueDescriptor[] row)
         throws StandardException
     {
         if (SanityManager.DEBUG)
         {
-            DataValueDescriptor[] template = 
+            org.apache.derby.iapi.types.DataValueDescriptor[] template = 
                 this.init_conglomerate.createTemplate(getRawTran());
 
             for (int i = 0; i < row.length; i++)

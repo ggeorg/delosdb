@@ -36,7 +36,6 @@ import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -145,7 +144,7 @@ public class LeafControlRow extends ControlRow
 
             rh2 = page.fetchFromSlot(
                     (RecordHandle) null, page.FIRST_SLOT_NUMBER, 
-                    new DataValueDescriptor[0], (FetchDescriptor) null, true); 
+                    new org.apache.derby.iapi.types.DataValueDescriptor[0], (FetchDescriptor) null, true); 
 
             SanityManager.ASSERT(rh.getId() == rh2.getId() &&
                                  rh.getPageNumber() == rh2.getPageNumber());
@@ -237,7 +236,7 @@ public class LeafControlRow extends ControlRow
             rh2 = page.fetchFromSlot(
                     (RecordHandle) null, 
                     Page.FIRST_SLOT_NUMBER, 
-                    new DataValueDescriptor[0], (FetchDescriptor) null, true); 
+                    new org.apache.derby.iapi.types.DataValueDescriptor[0], (FetchDescriptor) null, true); 
 
             SanityManager.ASSERT(rh.getId() == rh2.getId() &&
                                  rh.getPageNumber() == rh2.getPageNumber());
@@ -454,7 +453,7 @@ public class LeafControlRow extends ControlRow
 	 **/
 	protected boolean shrinkFor(
     OpenBTree               btree, 
-    DataValueDescriptor[]   key)
+    org.apache.derby.iapi.types.DataValueDescriptor[]   key)
         throws StandardException
     {
         boolean shrink_me = false;
@@ -514,9 +513,9 @@ public class LeafControlRow extends ControlRow
      **/
     protected long splitFor(
     OpenBTree               open_btree, 
-    DataValueDescriptor[]   template,
+    org.apache.derby.iapi.types.DataValueDescriptor[]   template,
     BranchControlRow        parent_page, 
-    DataValueDescriptor[]	splitrow,
+    org.apache.derby.iapi.types.DataValueDescriptor[]	splitrow,
     int                     flag)
         throws StandardException
     {
@@ -594,7 +593,7 @@ public class LeafControlRow extends ControlRow
 
         // Save away current split point leaf row, and build a branch row
         // based on it.
-        DataValueDescriptor[] split_leaf_row = 
+        org.apache.derby.iapi.types.DataValueDescriptor[] split_leaf_row = 
             open_btree.getConglomerate().createTemplate(
                     open_btree.getRawTran());
 
@@ -791,7 +790,7 @@ public class LeafControlRow extends ControlRow
 	 **/
 	private static void growRoot(
     OpenBTree               open_btree, 
-    DataValueDescriptor[]   template, 
+    org.apache.derby.iapi.types.DataValueDescriptor[]   template, 
     LeafControlRow          leafroot)
         throws StandardException
 	{

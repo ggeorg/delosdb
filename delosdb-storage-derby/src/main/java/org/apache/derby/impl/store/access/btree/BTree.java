@@ -43,7 +43,6 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
@@ -273,9 +272,9 @@ public abstract class BTree extends GenericConglomerate
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    final DataValueDescriptor[] createBranchTemplate(
+    final org.apache.derby.iapi.types.DataValueDescriptor[] createBranchTemplate(
     Transaction         rawtran,
-    DataValueDescriptor page_ptr)
+    org.apache.derby.iapi.types.DataValueDescriptor page_ptr)
         throws StandardException
     {
         return(
@@ -302,7 +301,7 @@ public abstract class BTree extends GenericConglomerate
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    final public DataValueDescriptor[] createTemplate(
+    final public org.apache.derby.iapi.types.DataValueDescriptor[] createTemplate(
     Transaction rawtran)
         throws StandardException
     {

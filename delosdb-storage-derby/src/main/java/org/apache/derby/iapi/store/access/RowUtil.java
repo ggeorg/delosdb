@@ -28,7 +28,6 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.types.StoreDataValueFactory;
@@ -45,7 +44,7 @@ import java.util.Vector;
   A row or partial row is described by two or three parameters.
   </P>
   <OL>
-  <LI>DataValueDescriptor[] row - an array of objects, one per column.</LI>
+  <LI>org.apache.derby.iapi.types.DataValueDescriptor[] row - an array of objects, one per column.</LI>
   <LI>FormatableBitSet validColumns - 
       an indication of which objects in row map to which columns</LI>
   </OL>
@@ -62,7 +61,7 @@ import java.util.Vector;
   <blockquote><pre>
 
   // allocate/initialize the row 
-  DataValueDescriptor row = new DataValueDescriptor[10]
+  org.apache.derby.iapi.types.DataValueDescriptor row = new org.apache.derby.iapi.types.DataValueDescriptor[10]
   row[0] = new FOO();
   row[4] = new BAR();
   row[7] = new MMM();
@@ -116,8 +115,8 @@ public class RowUtil
 		An object that can be used on a fetch to indicate no fields
 		need to be fetched.
 	*/
-	public static final DataValueDescriptor[] EMPTY_ROW = 
-        new DataValueDescriptor[0];
+	public static final org.apache.derby.iapi.types.DataValueDescriptor[] EMPTY_ROW = 
+        new org.apache.derby.iapi.types.DataValueDescriptor[0];
 
 	/**
 		An object that can be used on a fetch as a FormatableBitSet to indicate no fields
@@ -154,8 +153,8 @@ public class RowUtil
 
 		@return the obejct for the column, or null if the column is not represented.
 	*/
-	public static DataValueDescriptor getColumn(
-    DataValueDescriptor[]   row, 
+	public static org.apache.derby.iapi.types.DataValueDescriptor getColumn(
+    org.apache.derby.iapi.types.DataValueDescriptor[]   row, 
     FormatableBitSet                 columnList, 
     int                     columnId) 
     {
@@ -262,7 +261,7 @@ public class RowUtil
 		@return true if row is empty.
 	*/
 	public static boolean isRowEmpty(
-    DataValueDescriptor[]   row) 
+    org.apache.derby.iapi.types.DataValueDescriptor[]   row) 
     {
 
 		if (row == null)
@@ -372,9 +371,9 @@ public class RowUtil
      */
 
     /**
-     * Generate a template row of DataValueDescriptor's
+     * Generate a template row of org.apache.derby.iapi.types.DataValueDescriptor's
      * <p>
-     * Generate an array of DataValueDescriptor objects which will be used to 
+     * Generate an array of org.apache.derby.iapi.types.DataValueDescriptor objects which will be used to 
      * make calls to newRowFromClassInfoTemplate(), to repeatedly and
      * efficiently generate new rows.  This is important for certain 
      * applications like the sorter and fetchSet which generate large numbers
@@ -388,7 +387,7 @@ public class RowUtil
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    public static DataValueDescriptor[] newTemplate(
+    public static org.apache.derby.iapi.types.DataValueDescriptor[] newTemplate(
     StoreDataValueFactory    dvf,
     FormatableBitSet    column_list,
     int[]               format_ids,
@@ -396,7 +395,7 @@ public class RowUtil
         throws StandardException
     {
         int                   num_cols = format_ids.length;
-        DataValueDescriptor[] ret_row  = new DataValueDescriptor[num_cols];
+        org.apache.derby.iapi.types.DataValueDescriptor[] ret_row  = new org.apache.derby.iapi.types.DataValueDescriptor[num_cols];
 
 		int column_listSize = 
             (column_list == null) ? 0 : column_list.getLength();
@@ -416,7 +415,7 @@ public class RowUtil
 
                 // get empty instance of object identified by the format id.
 
-                ret_row[i] = (DataValueDescriptor) dvf.getNull(format_ids[i], collation_ids[i]);
+                ret_row[i] = (org.apache.derby.iapi.types.DataValueDescriptor) dvf.getNull(format_ids[i], collation_ids[i]);
             }
         }
 
@@ -424,35 +423,35 @@ public class RowUtil
     }
 
     /**
-     * Generate an "empty" row from an array of DataValueDescriptor objects.
+     * Generate an "empty" row from an array of org.apache.derby.iapi.types.DataValueDescriptor objects.
      * <p>
      * Generate an array of new'd objects by using the getNewNull()
-     * method on each of the DataValueDescriptor objects.  
+     * method on each of the org.apache.derby.iapi.types.DataValueDescriptor objects.  
      * <p>
      *
 	 * @return The new row.
      *
-     * @param  template            An array of DataValueDescriptor objects 
+     * @param  template            An array of org.apache.derby.iapi.types.DataValueDescriptor objects 
      *                             each of which can be used to create a new 
      *                             instance of the appropriate type to build a 
      *                             new empty template row.
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    public static DataValueDescriptor[] newRowFromTemplate(
-    DataValueDescriptor[]    template) 
+    public static org.apache.derby.iapi.types.DataValueDescriptor[] newRowFromTemplate(
+    org.apache.derby.iapi.types.DataValueDescriptor[]    template) 
         throws StandardException
     {
 
-        DataValueDescriptor[] columns = 
-            new DataValueDescriptor[template.length];
+        org.apache.derby.iapi.types.DataValueDescriptor[] columns = 
+            new org.apache.derby.iapi.types.DataValueDescriptor[template.length];
 
         
         for (int column_index = template.length; column_index-- > 0;)
         {
             if (template[column_index] != null)
             {
-                // get empty instance of DataValueDescriptor identified by 
+                // get empty instance of org.apache.derby.iapi.types.DataValueDescriptor identified by 
                 // the format id.
                 columns[column_index] = template[column_index].getNewNull();
             }
@@ -611,7 +610,7 @@ public class RowUtil
 	 * @exception  StandardException  Standard exception policy.
      **/
 	public static final boolean qualifyRow(
-    DataValueDescriptor[]        row, 
+    org.apache.derby.iapi.types.DataValueDescriptor[]        row, 
     Qualifier[][]   qual_list)
 		 throws StandardException
 	{
@@ -643,7 +642,7 @@ public class RowUtil
 
             // Get the column from the possibly partial row, of the 
             // q.getColumnId()'th column in the full row.
-            DataValueDescriptor columnValue = row[q.getColumnId()];
+            org.apache.derby.iapi.types.DataValueDescriptor columnValue = row[q.getColumnId()];
 
             row_qualifies =
                 StoreTypeUtil.compare(
@@ -690,7 +689,7 @@ public class RowUtil
 
                 // Get the column from the possibly partial row, of the 
                 // q.getColumnId()'th column in the full row.
-                DataValueDescriptor columnValue = row[q.getColumnId()];
+                org.apache.derby.iapi.types.DataValueDescriptor columnValue = row[q.getColumnId()];
 
                 if (SanityManager.DEBUG)
                 {

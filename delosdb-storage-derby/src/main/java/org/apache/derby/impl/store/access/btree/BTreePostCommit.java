@@ -42,7 +42,6 @@ import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -107,7 +106,7 @@ class BTreePostCommit implements Serviceable
 
     private final void doShrink(
     OpenBTree               open_btree, 
-    DataValueDescriptor[]	shrink_row)
+    org.apache.derby.iapi.types.DataValueDescriptor[]	shrink_row)
         throws StandardException
     {
         ControlRow root = null;
@@ -241,7 +240,7 @@ class BTreePostCommit implements Serviceable
                     TransactionController.MODE_TABLE, 
                     LockingPolicy.MODE_CONTAINER);
 
-            DataValueDescriptor[] shrink_key = 
+            org.apache.derby.iapi.types.DataValueDescriptor[] shrink_key = 
                 purgeCommittedDeletes(open_btree, this.page_number);
 
             if (shrink_key != null)
@@ -304,13 +303,13 @@ class BTreePostCommit implements Serviceable
         return(requeue_work ? Serviceable.REQUEUE : Serviceable.DONE);
     }
 
-    private final DataValueDescriptor[] getShrinkKey(
+    private final org.apache.derby.iapi.types.DataValueDescriptor[] getShrinkKey(
     OpenBTree   open_btree, 
     ControlRow  control_row,
     int         slot_no)
         throws StandardException
     {
-        DataValueDescriptor[] shrink_key = 
+        org.apache.derby.iapi.types.DataValueDescriptor[] shrink_key = 
             open_btree.getConglomerate().createTemplate(
                     open_btree.getRawTran());
 
@@ -341,13 +340,13 @@ class BTreePostCommit implements Serviceable
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    private final DataValueDescriptor[] purgeCommittedDeletes(
+    private final org.apache.derby.iapi.types.DataValueDescriptor[] purgeCommittedDeletes(
     OpenBTree           open_btree,
     long                pageno)
         throws StandardException
     {
         ControlRow              control_row = null;
-        DataValueDescriptor[]	shrink_key  = null; 
+        org.apache.derby.iapi.types.DataValueDescriptor[]	shrink_key  = null; 
 
         try
         {
@@ -487,8 +486,8 @@ class BTreePostCommit implements Serviceable
 
         if (num_possible_commit_delete > 0)
         {
-            DataValueDescriptor[] scratch_template = 
-                (DataValueDescriptor[]) open_btree.getRuntimeMem().get_template(
+            org.apache.derby.iapi.types.DataValueDescriptor[] scratch_template = 
+                (org.apache.derby.iapi.types.DataValueDescriptor[]) open_btree.getRuntimeMem().get_template(
                     open_btree.getRawTran());
 
             Page page   = leaf.page;
