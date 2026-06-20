@@ -4886,7 +4886,9 @@ Option A is not small enough yet:
 
 Chosen direction before B6:
   Use a follow-up dependency split for the serialization/type boundary instead
-  of a one-shot all-types move. The next executable cut must address these
+  of a one-shot all-types move. Later B5 slices may retire individual direct
+  type imports behind StoreDataValue, StoreRowLocation, or StoreDataValueFactory
+  while preserving this decision. The next executable cut must address these
   exact blockers in this order:
     1. org.apache.derby.iapi.services.io format/serialization support
     2. org.apache.derby.iapi.util and diagnostics used by store code
@@ -4919,16 +4921,16 @@ tasks.register('verifyLegacyDerbyKernelB5DependencyDecision') {
         def serviceIoImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.services.io.')
         def catalogImports = delosdbB5PackageImports(imports, 'org.apache.derby.catalog.')
         def uuidImports = delosdbB5PackageImports(imports, 'org.apache.derby.iapi.services.uuid.')
-        ['org.apache.derby.iapi.types.DataValueDescriptor',
-         'org.apache.derby.iapi.types.RowLocation'].each { requiredImport ->
-            if (!typeImports.any { it.importedType == requiredImport }) {
-                throw new GradleException('B5 expected relocated store to still expose exact type dependency: ' + requiredImport)
+        def storeTypeBridges = [
+            'org.apache.derby.iapi.types.DataValueDescriptor': file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreDataValue.java'),
+            'org.apache.derby.iapi.types.RowLocation': file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreRowLocation.java'),
+            'org.apache.derby.iapi.types.DataValueFactory': file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreDataValueFactory.java')
+        ]
+        storeTypeBridges.each { requiredImport, bridgeFile ->
+            def stillDirect = typeImports.any { it.importedType == requiredImport }
+            if (!stillDirect && !bridgeFile.isFile()) {
+                throw new GradleException('B5 expected ' + requiredImport + ' either to remain direct or to be retired behind ' + bridgeFile.name)
             }
-        }
-        def dataValueFactoryStillDirect = typeImports.any { it.importedType == 'org.apache.derby.iapi.types.DataValueFactory' }
-        def dataValueFactoryBridge = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/StoreDataValueFactory.java')
-        if (!dataValueFactoryStillDirect && !dataValueFactoryBridge.isFile()) {
-            throw new GradleException('B5 expected DataValueFactory either to remain direct or to be retired behind StoreDataValueFactory')
         }
         if (serviceIoImports.isEmpty()) {
             throw new GradleException('B5 expected relocated store to still depend on org.apache.derby.iapi.services.io before the serialization boundary is cut')
@@ -5894,7 +5896,7 @@ JDBC, catalog type descriptors, XML, and Derby implementation classes.
 
 Risky imports found in directly store-imported type classes
 ----------------------------------------------------------
-${riskyTypeImports.isEmpty() ? '  none' : riskyTypeImports.collect { fileName, imports -> '  - ' + fileName + '\n' + imports.collect { '      ' + it }.join('\n') }.join('\n')}
+${riskyTypeImports.isEmpty() ? '  none — later B5 bridge/quarantine work has retired the original risky type closure; see the remaining direct imports above.' : riskyTypeImports.collect { fileName, imports -> '  - ' + fileName + '\n' + imports.collect { '      ' + it }.join('\n') }.join('\n')}
 
 Decision
 --------
@@ -5938,8 +5940,9 @@ tasks.register('verifyLegacyDerbyKernelB5gTypesDecision') {
             throw new GradleException('B5g expected iapi.types either to remain the explicit pre-B6 blocker or to be fully retired behind store type bridges')
         }
         def riskyTypeImports = delosdbB5gRiskyTypeImports()
-        if (!typeCounts.isEmpty() && riskyTypeImports.isEmpty()) {
-            throw new GradleException('B5g expected the remaining direct type closure to expose risky SQL/catalog/JDBC dependencies')
+        def bridgeBoundaryExists = bridgeFilesByType.values().every { it.isFile() }
+        if (!typeCounts.isEmpty() && riskyTypeImports.isEmpty() && !bridgeBoundaryExists) {
+            throw new GradleException('B5g expected the remaining direct type closure to expose risky SQL/catalog/JDBC dependencies, or the store type bridge to exist as the evolved B5 state')
         }
         def reportFile = delosdbB5gReportFile.get().asFile
         def reportText = delosdbB5gRead(reportFile)
