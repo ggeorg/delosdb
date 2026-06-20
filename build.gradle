@@ -11565,3 +11565,288 @@ tasks.register('verifyLegacyDerbyStoreB6jHeapRowLocationCompatibility') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyStoreB6jHeapRowLocationCompatibility'
 }
+
+// -----------------------------------------------------------------------------
+// B6k — Engine/catalog row-location bridge
+// -----------------------------------------------------------------------------
+// B6j froze the final HeapRowLocation compatibility seam. B6k moves direct
+// engine/catalog casts of store-created row-location templates behind one
+// engine-owned bridge. HeapRowLocation remains inherited-compatible for now;
+// the point of this slice is to create the adaptation point needed before B6l.
+
+def delosdbB6kBridgeFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineStoreRowLocationBridge.java')
+def delosdbB6kEngineBridgeFiles = [
+        delosdbB6kBridgeFile,
+        file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineStoreTypeSupport.java'),
+        file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/DataDictionaryImpl.java'),
+        file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/TabInfoImpl.java'),
+        file('delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/IndexStatisticsDaemonImpl.java')
+]
+
+def delosdbB6kEngineRowLocationCastHits = {
+    def hits = []
+    delosdbB6jEngineRowLocationConsumerRoots.findAll { it.exists() }.each { root ->
+        root.eachFileRecurse { source ->
+            if (source.isFile() && source.name.endsWith('.java')) {
+                def code = delosdbB6cCodeOnly(delosdbB6cRead(source))
+                if (code.contains('(RowLocation)')) {
+                    hits << [source: source, count: code.count('(RowLocation)')]
+                }
+            }
+        }
+    }
+    hits.sort { a, b -> a.source.path <=> b.source.path }
+}
+
+def delosdbB6kNonBridgeRowLocationCastHits = {
+    delosdbB6kEngineRowLocationCastHits().findAll { it.source != delosdbB6kBridgeFile }
+}
+
+tasks.register('legacyDerbyStoreB6kEngineRowLocationBridgeReport') {
+    group = 'Verification'
+    description = 'B6k: reports engine/catalog RowLocation cast centralization behind EngineStoreRowLocationBridge.'
+    dependsOn 'verifyLegacyDerbyStoreB6jHeapRowLocationCompatibility'
+    dependsOn ':delosdb-engine:compileDerbyEngine'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b6k-engine-row-location-bridge.txt'))
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        def castHits = delosdbB6kEngineRowLocationCastHits()
+        def nonBridgeCastHits = delosdbB6kNonBridgeRowLocationCastHits()
+        def bridgeCode = delosdbB6cCodeOnly(delosdbB6cRead(delosdbB6kBridgeFile))
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-b6k-engine-row-location-bridge.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = """DelosDB B6k engine/catalog RowLocation bridge report
+=====================================================
+
+Purpose
+-------
+B6k creates the engine-owned adaptation point needed before HeapRowLocation can
+be made store-native. Engine/catalog code no longer casts store-created row
+locations directly. Those casts now go through EngineStoreRowLocationBridge.
+
+Relocated-store type state
+--------------------------
+direct relocated-store org.apache.derby.iapi.types imports: ${directTypeImports.size()}
+fully-qualified inherited type references in relocated-store executable code: ${fqRefs.size()}
+remaining inherited type files: ${fqRefs.collect { it.source.name }.toSet().sort().join(', ')}
+
+Engine/catalog direct RowLocation casts
+---------------------------------------
+non-bridge direct casts: ${nonBridgeCastHits.sum { it.count } ?: 0}
+${nonBridgeCastHits ? nonBridgeCastHits.collect { "  - ${it.source.path - rootDir.path - File.separator}: ${it.count}" }.join('\n') : '  none'}
+
+all direct casts, including the bridge itself: ${castHits.sum { it.count } ?: 0}
+${castHits ? castHits.collect { "  - ${it.source.path - rootDir.path - File.separator}: ${it.count}" }.join('\n') : '  none'}
+
+Bridge contract
+---------------
+bridge class present: ${delosdbB6kBridgeFile.exists() ? 'YES' : 'NO'}
+requireEngineRowLocation(Object): ${bridgeCode.contains('requireEngineRowLocation(Object value)') ? 'YES' : 'NO'}
+requireStoreRowLocation(Object): ${bridgeCode.contains('requireStoreRowLocation(Object value)') ? 'YES' : 'NO'}
+DataDictionaryImpl uses bridge: ${delosdbB6cRead(file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/DataDictionaryImpl.java')).contains('EngineStoreRowLocationBridge.requireEngineRowLocation') ? 'YES' : 'NO'}
+TabInfoImpl uses bridge: ${delosdbB6cRead(file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/TabInfoImpl.java')).contains('EngineStoreRowLocationBridge.requireEngineRowLocation') ? 'YES' : 'NO'}
+IndexStatisticsDaemonImpl uses bridge: ${delosdbB6cRead(file('delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/IndexStatisticsDaemonImpl.java')).contains('EngineStoreRowLocationBridge.requireEngineRowLocation') ? 'YES' : 'NO'}
+EngineStoreTypeSupport uses bridge: ${delosdbB6cRead(file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineStoreTypeSupport.java')).contains('EngineStoreRowLocationBridge.requireEngineRowLocation') ? 'YES' : 'NO'}
+
+Decision
+--------
+HeapRowLocation remains inherited-compatible in B6k. The next slice can now
+change or adapt the bridge instead of hunting direct catalog casts.
+
+B6 closeout sequence
+--------------------
+B6k: centralize engine/catalog RowLocation casts behind EngineStoreRowLocationBridge.
+B6l: move HeapRowLocation to a store-native implementation and adapt through the bridge.
+B6m: remove direct relocated store source compilation from delosdb-engine.
+"""
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB6kEngineRowLocationBridge') {
+    group = 'Verification'
+    description = 'B6k: verifies engine/catalog RowLocation casts are centralized behind EngineStoreRowLocationBridge.'
+    dependsOn 'legacyDerbyStoreB6kEngineRowLocationBridgeReport'
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        if (!directTypeImports.isEmpty()) {
+            throw new GradleException('B6k requires direct relocated-store org.apache.derby.iapi.types imports to remain zero; found:\n' +
+                    directTypeImports.collect { "${it.source}: ${it.line}" }.join('\n'))
+        }
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        if (fqRefs.size() > delosdbB6jBaselineQualifiedTypeCodeRefs) {
+            throw new GradleException("B6k expected relocated-store inherited type refs to stay at or below ${delosdbB6jBaselineQualifiedTypeCodeRefs}, found ${fqRefs.size()}")
+        }
+        def remainingFiles = fqRefs.collect { it.source.name }.toSet()
+        if (remainingFiles != ['HeapRowLocation.java'] as Set) {
+            throw new GradleException("B6k expected remaining inherited type refs to stay isolated in HeapRowLocation.java, found ${remainingFiles}")
+        }
+        if (!delosdbB6kBridgeFile.exists()) {
+            throw new GradleException('B6k expected EngineStoreRowLocationBridge to exist')
+        }
+        def bridgeCode = delosdbB6cCodeOnly(delosdbB6cRead(delosdbB6kBridgeFile))
+        if (!bridgeCode.contains('requireEngineRowLocation(Object value)') ||
+                !bridgeCode.contains('requireStoreRowLocation(Object value)')) {
+            throw new GradleException('B6k expected EngineStoreRowLocationBridge to expose engine/store row-location adaptation methods')
+        }
+        def nonBridgeCastHits = delosdbB6kNonBridgeRowLocationCastHits()
+        if (!nonBridgeCastHits.isEmpty()) {
+            throw new GradleException('B6k expected non-bridge engine/catalog RowLocation casts to be gone; found:\n' +
+                    nonBridgeCastHits.collect { "${it.source.path - rootDir.path - File.separator}: ${it.count}" }.join('\n'))
+        }
+        delosdbB6kEngineBridgeFiles.findAll { it != delosdbB6kBridgeFile }.each { source ->
+            def text = delosdbB6cRead(source)
+            if (!text.contains('EngineStoreRowLocationBridge.requireEngineRowLocation')) {
+                throw new GradleException("B6k expected ${source.path - rootDir.path - File.separator} to use EngineStoreRowLocationBridge")
+            }
+        }
+        logger.lifecycle('Verified B6k engine/catalog RowLocation bridge; direct RowLocation casts are centralized in EngineStoreRowLocationBridge')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreB6kEngineRowLocationBridge'
+}
+
+// B6l — Engine row-location construction bridge
+//
+// B6k centralized RowLocation casts. B6l centralizes engine-side construction of
+// HeapRowLocation as well. This is the final preparation step before replacing
+// the bridge implementation with an adapter around a store-native row location.
+
+def delosdbB6lEngineJavaFiles = {
+    fileTree('delosdb-engine/src/main/java') {
+        include '**/*.java'
+    }.files
+}
+
+def delosdbB6lHeapRowLocationConstructionHits = {
+    def hits = []
+    delosdbB6lEngineJavaFiles().each { source ->
+        if (source.exists()) {
+            def code = delosdbB6cCodeOnly(delosdbB6cRead(source))
+            def fqCount = code.count('org.apache.derby.impl.store.access.heap.HeapRowLocation')
+            def ctorCount = code.count('new HeapRowLocation(')
+            if (fqCount || ctorCount) {
+                hits << [source: source, fqCount: fqCount, ctorCount: ctorCount]
+            }
+        }
+    }
+    hits.sort { a, b -> a.source.path <=> b.source.path }
+}
+
+def delosdbB6lNonBridgeHeapRowLocationConstructionHits = {
+    delosdbB6lHeapRowLocationConstructionHits().findAll { it.source != delosdbB6kBridgeFile }
+}
+
+tasks.register('legacyDerbyStoreB6lEngineRowLocationConstructionBridgeReport') {
+    group = 'Verification'
+    description = 'B6l: reports engine-side HeapRowLocation construction centralized behind EngineStoreRowLocationBridge.'
+    dependsOn 'verifyLegacyDerbyStoreB6kEngineRowLocationBridge'
+    dependsOn ':delosdb-engine:compileDerbyEngine'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b6l-engine-row-location-construction-bridge.txt'))
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        def constructionHits = delosdbB6lHeapRowLocationConstructionHits()
+        def nonBridgeConstructionHits = delosdbB6lNonBridgeHeapRowLocationConstructionHits()
+        def bridgeCode = delosdbB6cCodeOnly(delosdbB6cRead(delosdbB6kBridgeFile))
+        def dataValueFactoryText = delosdbB6cRead(file('delosdb-engine/src/main/java/org/apache/derby/iapi/types/DataValueFactoryImpl.java'))
+        def constraintText = delosdbB6cRead(file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/ConstraintConstantAction.java'))
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-b6l-engine-row-location-construction-bridge.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = """DelosDB B6l engine row-location construction bridge report
+================================================================
+
+Purpose
+-------
+B6l completes the engine-side RowLocation preparation started in B6k. Direct
+engine construction of HeapRowLocation is centralized behind
+EngineStoreRowLocationBridge.newEngineRowLocation().
+
+Relocated-store type state
+--------------------------
+direct relocated-store org.apache.derby.iapi.types imports: ${directTypeImports.size()}
+fully-qualified inherited type references in relocated-store executable code: ${fqRefs.size()}
+remaining inherited type files: ${fqRefs.collect { it.source.name }.toSet().sort().join(', ')}
+
+Engine HeapRowLocation construction/import references
+-----------------------------------------------------
+non-bridge direct references: ${nonBridgeConstructionHits.sum { it.fqCount + it.ctorCount } ?: 0}
+${nonBridgeConstructionHits ? nonBridgeConstructionHits.collect { "  - ${it.source.path - rootDir.path - File.separator}: fq=${it.fqCount}, ctor=${it.ctorCount}" }.join('\n') : '  none'}
+
+all references, including bridge: ${constructionHits.sum { it.fqCount + it.ctorCount } ?: 0}
+${constructionHits ? constructionHits.collect { "  - ${it.source.path - rootDir.path - File.separator}: fq=${it.fqCount}, ctor=${it.ctorCount}" }.join('\n') : '  none'}
+
+Bridge contract
+---------------
+bridge class present: ${delosdbB6kBridgeFile.exists() ? 'YES' : 'NO'}
+newEngineRowLocation(): ${bridgeCode.contains('newEngineRowLocation()') ? 'YES' : 'NO'}
+bridge owns HeapRowLocation construction: ${bridgeCode.contains('new HeapRowLocation()') ? 'YES' : 'NO'}
+DataValueFactoryImpl uses bridge construction: ${dataValueFactoryText.contains('EngineStoreRowLocationBridge.newEngineRowLocation()') ? 'YES' : 'NO'}
+ConstraintConstantAction uses bridge construction: ${constraintText.contains('EngineStoreRowLocationBridge.newEngineRowLocation()') ? 'YES' : 'NO'}
+
+Decision
+--------
+HeapRowLocation still remains inherited-compatible in B6l. The engine now has
+one cast/adaptation point and one construction point in EngineStoreRowLocationBridge.
+The next slice can make HeapRowLocation store-native by changing that bridge
+instead of touching scattered engine/catalog callers.
+
+B6 closeout sequence
+--------------------
+B6k: centralize engine/catalog RowLocation casts behind EngineStoreRowLocationBridge.
+B6l: centralize engine-side HeapRowLocation construction behind EngineStoreRowLocationBridge.
+B6m: move HeapRowLocation to a store-native implementation and adapt through the bridge.
+B6n: remove direct relocated store source compilation from delosdb-engine.
+"""
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB6lEngineRowLocationConstructionBridge') {
+    group = 'Verification'
+    description = 'B6l: verifies engine-side HeapRowLocation construction is centralized behind EngineStoreRowLocationBridge.'
+    dependsOn 'legacyDerbyStoreB6lEngineRowLocationConstructionBridgeReport'
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        if (!directTypeImports.isEmpty()) {
+            throw new GradleException('B6l requires direct relocated-store org.apache.derby.iapi.types imports to remain zero; found:\n' +
+                    directTypeImports.collect { "${it.source}: ${it.line}" }.join('\n'))
+        }
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        if (fqRefs.size() > delosdbB6jBaselineQualifiedTypeCodeRefs) {
+            throw new GradleException("B6l expected relocated-store inherited type refs to stay at or below ${delosdbB6jBaselineQualifiedTypeCodeRefs}, found ${fqRefs.size()}")
+        }
+        def remainingFiles = fqRefs.collect { it.source.name }.toSet()
+        if (remainingFiles != ['HeapRowLocation.java'] as Set) {
+            throw new GradleException("B6l expected remaining inherited type refs to stay isolated in HeapRowLocation.java, found ${remainingFiles}")
+        }
+        if (!delosdbB6kBridgeFile.exists()) {
+            throw new GradleException('B6l expected EngineStoreRowLocationBridge to exist')
+        }
+        def bridgeCode = delosdbB6cCodeOnly(delosdbB6cRead(delosdbB6kBridgeFile))
+        if (!bridgeCode.contains('newEngineRowLocation()') || !bridgeCode.contains('new HeapRowLocation()')) {
+            throw new GradleException('B6l expected EngineStoreRowLocationBridge to own HeapRowLocation construction')
+        }
+        def nonBridgeConstructionHits = delosdbB6lNonBridgeHeapRowLocationConstructionHits()
+        if (!nonBridgeConstructionHits.isEmpty()) {
+            throw new GradleException('B6l expected non-bridge engine HeapRowLocation construction/import references to be gone; found:\n' +
+                    nonBridgeConstructionHits.collect { "${it.source.path - rootDir.path - File.separator}: fq=${it.fqCount}, ctor=${it.ctorCount}" }.join('\n'))
+        }
+        def dataValueFactoryText = delosdbB6cRead(file('delosdb-engine/src/main/java/org/apache/derby/iapi/types/DataValueFactoryImpl.java'))
+        if (!dataValueFactoryText.contains('EngineStoreRowLocationBridge.newEngineRowLocation()')) {
+            throw new GradleException('B6l expected DataValueFactoryImpl to use EngineStoreRowLocationBridge.newEngineRowLocation()')
+        }
+        def constraintText = delosdbB6cRead(file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/ConstraintConstantAction.java'))
+        if (!constraintText.contains('EngineStoreRowLocationBridge.newEngineRowLocation()')) {
+            throw new GradleException('B6l expected ConstraintConstantAction to use EngineStoreRowLocationBridge.newEngineRowLocation()')
+        }
+        logger.lifecycle('Verified B6l engine row-location construction bridge; direct HeapRowLocation construction is centralized')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreB6lEngineRowLocationConstructionBridge'
+}

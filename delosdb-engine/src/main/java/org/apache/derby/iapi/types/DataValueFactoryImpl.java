@@ -30,6 +30,7 @@ import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.services.monitor.ModuleControl;
 import org.apache.derby.iapi.services.monitor.ModuleFactory;
 import org.apache.derby.iapi.services.monitor.Monitor;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 import org.apache.derby.shared.common.reference.Attribute;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -1130,8 +1131,7 @@ public final class DataValueFactoryImpl implements DataValueFactory, ModuleContr
         case StoredFormatIds.ACCESS_HEAP_ROW_LOCATION_V1_ID: 
         // This is an specific implementation of RowLocation, known to be
         // a DTD.  
-             return(
-                 new org.apache.derby.impl.store.access.heap.HeapRowLocation());
+             return EngineStoreRowLocationBridge.newEngineRowLocation();
         default:return null;
         }
     }
