@@ -8622,6 +8622,12 @@ def delosdbB5vRetiredImportsRemaining = { ->
     }
 }
 
+
+def delosdbB5vResultColumnListUsesSqlBoundaryRowLocationAdapter(String text) {
+    return text.contains('RowLocation rlTemplate = (RowLocation) scc.newRowLocationTemplate();') ||
+        text.contains('RowLocation rlTemplate = EngineStoreRowLocationBridge.requireEngineRowLocation(scc.newRowLocationTemplate());')
+}
+
 tasks.register('legacyDerbyStoreKernelB5vRowLocationTemplateBridgeReport') {
     group = 'verification'
     description = 'B5v: reports the StoreRowLocation template bridge slice.'
@@ -8678,7 +8684,7 @@ OpenConglomerate/OpenHeap state
 Engine SQL/cost adapter state
 -----------------------------
   StoreCostControllerBridge returns StoreRowLocation: ${bridgeText.contains('StoreRowLocation newRowLocationTemplate()') ? 'present' : 'missing'}
-  SQL boundary casts StoreRowLocation back to RowLocation: ${resultColumnsText.contains('RowLocation rlTemplate = (RowLocation) scc.newRowLocationTemplate();') ? 'present' : 'missing'}
+  SQL boundary adapts StoreRowLocation back to RowLocation: ${delosdbB5vResultColumnListUsesSqlBoundaryRowLocationAdapter(resultColumnsText) ? 'present' : 'missing'}
 
 Relocated-store direct org.apache.derby.iapi.types import count
 ---------------------------------------------------------------
@@ -8740,8 +8746,8 @@ tasks.register('verifyLegacyDerbyKernelB5vRowLocationTemplateBridge') {
         }
 
         def resultColumnsText = delosdbB5vRead(delosdbB5vResultColumnList)
-        if (!resultColumnsText.contains('RowLocation rlTemplate = (RowLocation) scc.newRowLocationTemplate();')) {
-            throw new GradleException('B5v ResultColumnList must keep the explicit RowLocation cast at the SQL boundary')
+        if (!delosdbB5vResultColumnListUsesSqlBoundaryRowLocationAdapter(resultColumnsText)) {
+            throw new GradleException('B5v ResultColumnList must adapt StoreRowLocation back to RowLocation at the SQL boundary')
         }
 
         def remainingStoreTypeImports = delosdbB5vStoreTypeImportLines()
