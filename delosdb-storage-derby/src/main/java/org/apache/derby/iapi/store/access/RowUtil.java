@@ -29,6 +29,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.types.StoreDataValueFactory;
 
@@ -274,31 +275,20 @@ public class RowUtil
 	}
 
 	/**
-		Return the column number of the first column out of range, or a number
-        less than zero if all columns are in range.
+		See if a store-facing row actually contains no columns.
 	*/
-	public static int columnOutOfRange(
-    DataValueDescriptor[]   row, 
-    FormatableBitSet                 columnList, 
-    int                     maxColumns) 
+	public static boolean isRowEmpty(
+    StoreDataValue[]   row) 
     {
 
-		if (columnList == null) {
-			if (row.length > maxColumns)
-				return maxColumns;
+		if (row == null)
+			return true;
 
-			return -1;
-		}
+		if (row.length == 0)
+			return true;
 
-		int size = columnList.getLength();
-		for (int i = maxColumns; i < size; i++) {
-			if (columnList.isSet(i))
-				return i;
-		}
-
-		return -1;
+		return false;
 	}
-
 
 	/**
 		Return the column number of the first column out of range, or a number
@@ -465,6 +455,26 @@ public class RowUtil
                 // get empty instance of DataValueDescriptor identified by 
                 // the format id.
                 columns[column_index] = template[column_index].getNewNull();
+            }
+        }
+
+		return columns;
+    }
+
+
+    public static StoreDataValue[] newRowFromTemplate(
+    StoreDataValue[]    template) 
+        throws StandardException
+    {
+
+        StoreDataValue[] columns = 
+            new StoreDataValue[template.length];
+
+        for (int column_index = template.length; column_index-- > 0;)
+        {
+            if (template[column_index] != null)
+            {
+                columns[column_index] = StoreTypeUtil.getNewNull(template[column_index]);
             }
         }
 

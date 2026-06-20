@@ -46,9 +46,6 @@ import org.apache.derby.iapi.store.access.ScanInfo;
 
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.RowLocation;
-
 import org.apache.derby.impl.store.access.conglomerate.GenericScanController;
 import org.apache.derby.impl.store.access.conglomerate.RowPosition;
 
@@ -70,8 +67,8 @@ class HeapScan
      * A 1 element array to turn fetchNext and fetch calls into 
      * fetchNextGroup calls.
      **/
-    private DataValueDescriptor[][] fetchNext_one_slot_array = 
-        new DataValueDescriptor[1][];
+    private StoreDataValue[][] fetchNext_one_slot_array = 
+        new StoreDataValue[1][];
 
 
     /**************************************************************************
@@ -110,7 +107,7 @@ class HeapScan
      **************************************************************************
      */
     protected void setRowLocationArray(
-    RowLocation[]   rowloc_array,
+    StoreRowLocation[]      rowloc_array,
     int             index,
     RowPosition     pos)
         throws StandardException
@@ -131,14 +128,14 @@ class HeapScan
         }
     }
 
-    protected RowLocation makeRowLocation( RowPosition pos )
+    protected StoreRowLocation makeRowLocation( RowPosition pos )
         throws StandardException
     {
         return new HeapRowLocation( pos.current_rh );
     }
 
     protected void setRowLocationArray(
-    RowLocation[]   rowloc_array,
+    StoreRowLocation[]      rowloc_array,
     int             index,
     RecordHandle    rh)
         throws StandardException
@@ -240,12 +237,12 @@ class HeapScan
         if (fetch_row == null)
             fetchNext_one_slot_array[0] = RowUtil.EMPTY_ROW;
         else
-            fetchNext_one_slot_array[0] = (DataValueDescriptor[]) fetch_row;
+            fetchNext_one_slot_array[0] = fetch_row;
 
         boolean ret_val = 
             fetchRows(
                 fetchNext_one_slot_array, 
-                (RowLocation[]) null,
+                (StoreRowLocation[]) null,
                 (BackingStoreHashtable) null,
                 1,
                 (int[]) null) == 1;
@@ -272,7 +269,7 @@ class HeapScan
         boolean ret_val = 
             fetchRows(
                 fetchNext_one_slot_array, 
-                (RowLocation[]) null,
+                (StoreRowLocation[]) null,
                 (BackingStoreHashtable) null,
                 1,
                 (int[]) null) == 1;
@@ -328,8 +325,8 @@ class HeapScan
 	{
         return(
             fetchRows(
-                (DataValueDescriptor[][]) row_array, 
-                (RowLocation[]) rowloc_array,
+                row_array, 
+                rowloc_array,
                 (BackingStoreHashtable) null,
                 row_array.length,
                 (int[]) null));

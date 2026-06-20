@@ -35,9 +35,6 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.RowLocation;
-
 /**
  * A heap scan object represents an instance of a scan on a heap conglomerate.
  */
@@ -85,9 +82,9 @@ class HeapCompressScan
         throws StandardException
 	{
         return(fetchRowsForCompress(
-                    (DataValueDescriptor[][]) row_array,
-                    (RowLocation[]) old_rowloc_array,
-                    (RowLocation[]) new_rowloc_array));
+                    row_array,
+                    old_rowloc_array,
+                    new_rowloc_array));
     }
 
     /**
@@ -98,13 +95,13 @@ class HeapCompressScan
 	 * @exception  StandardException  Standard exception policy.
      **/
     private int fetchRowsForCompress(
-    DataValueDescriptor[][] row_array,
-    RowLocation[]           oldrowloc_array,
-    RowLocation[]           newrowloc_array)
+    StoreDataValue[][]      row_array,
+    StoreRowLocation[]      oldrowloc_array,
+    StoreRowLocation[]      newrowloc_array)
         throws StandardException
 	{
         int                     ret_row_count           = 0;
-        DataValueDescriptor[]   fetch_row               = null;
+        StoreDataValue[]        fetch_row               = null;
 
         // only fetch maximum number of rows per "group" as the size of
         // the array.  If more than one group is available on page, just

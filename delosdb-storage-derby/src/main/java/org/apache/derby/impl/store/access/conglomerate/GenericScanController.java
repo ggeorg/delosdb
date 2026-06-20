@@ -42,10 +42,6 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-
-import org.apache.derby.iapi.types.RowLocation;
-
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
@@ -168,10 +164,10 @@ public abstract class GenericScanController
      * These are just saved values from what was initially input.
      **/
     private FormatableBitSet                 init_scanColumnList;
-    private DataValueDescriptor[]   init_startKeyValue;
+    private StoreDataValue[]        init_startKeyValue;
     private int                     init_startSearchOperator;
     private Qualifier[][]           init_qualifier;
-    private DataValueDescriptor[]   init_stopKeyValue;
+    private StoreDataValue[]        init_stopKeyValue;
     private int                     init_stopSearchOperator;
 
     private FetchDescriptor init_fetchDesc;
@@ -285,10 +281,10 @@ public abstract class GenericScanController
      * by reopenScan().
      **/
     protected void positionAtInitScan(
-    DataValueDescriptor[]   startKeyValue,
+    StoreDataValue[]        startKeyValue,
     int                     startSearchOperator,
     Qualifier               qualifier[][],
-    DataValueDescriptor[]   stopKeyValue,
+    StoreDataValue[]        stopKeyValue,
     int                     stopSearchOperator,
     RowPosition             pos)
         throws StandardException
@@ -564,15 +560,15 @@ public abstract class GenericScanController
      * @exception  StandardException  Standard exception policy.
      **/
     protected int fetchRows(
-    DataValueDescriptor[][] row_array,
-    RowLocation[]           rowloc_array,
+    StoreDataValue[][]      row_array,
+    StoreRowLocation[]      rowloc_array,
     BackingStoreHashtable   hash_table,
     long                    max_rowcnt,
     int[]                   key_column_numbers)
         throws StandardException
     {
         int                     ret_row_count           = 0;
-        DataValueDescriptor[]   fetch_row               = null;
+        StoreDataValue[]        fetch_row               = null;
 
         if (max_rowcnt == -1)
             max_rowcnt = Long.MAX_VALUE;
@@ -802,7 +798,7 @@ public abstract class GenericScanController
                     }
                     else
                     {
-                        RowLocation     rowLocation =
+                        StoreRowLocation rowLocation =
                             hash_table.includeRowLocations() ?
                             makeRowLocation( scan_position ) : null;
                         if (
@@ -891,14 +887,14 @@ public abstract class GenericScanController
     }
 
     protected abstract void setRowLocationArray(
-    RowLocation[]   rowloc_array,
+    StoreRowLocation[]      rowloc_array,
     int             index,
     RowPosition     pos)
         throws StandardException
         ;
 
     /** Make a RowLocation from a RowPosition */
-    protected abstract RowLocation makeRowLocation( RowPosition pos )
+    protected abstract StoreRowLocation makeRowLocation( RowPosition pos )
         throws StandardException;
 
     /**************************************************************************
@@ -913,10 +909,10 @@ public abstract class GenericScanController
     public void init(
     OpenConglomerate                open_conglom,
     FormatableBitSet                scanColumnList,
-    DataValueDescriptor[]           startKeyValue,
+    StoreDataValue[]                startKeyValue,
     int                             startSearchOperator,
     Qualifier                       qualifier[][],
-    DataValueDescriptor[]           stopKeyValue,
+    StoreDataValue[]                stopKeyValue,
     int                             stopSearchOperator)
         throws StandardException
     {
@@ -956,7 +952,7 @@ public abstract class GenericScanController
     {
         return(init_scanColumnList);
     }
-    public final DataValueDescriptor[] getStartKeyValue()
+    public final StoreDataValue[] getStartKeyValue()
     {
         return(init_startKeyValue);
     }
@@ -964,7 +960,7 @@ public abstract class GenericScanController
     {
         return(init_startSearchOperator);
     }
-    public final DataValueDescriptor[] getStopKeyValue()
+    public final StoreDataValue[] getStopKeyValue()
     {
         return(init_stopKeyValue);
     }
@@ -1278,8 +1274,8 @@ public abstract class GenericScanController
         throws StandardException
     {
         fetchRows(
-            (DataValueDescriptor[][]) null,
-            (RowLocation[]) null,
+            (StoreDataValue[][]) null,
+            (StoreRowLocation[]) null,
             hash_table,
             max_rowcnt,
             key_column_numbers);
@@ -1435,7 +1431,7 @@ public abstract class GenericScanController
             return(false);
         }
 
-        DataValueDescriptor row[] = 
+        StoreDataValue row[] = 
             open_conglom.getRuntimeMem().get_scratch_row(
                 open_conglom.getRawTran());
 
@@ -1464,7 +1460,7 @@ public abstract class GenericScanController
     public void fetchWithoutQualify(StoreDataValue[] row)
         throws StandardException
     {
-        fetch((DataValueDescriptor[]) row, false);
+        fetch(row, false);
     }
 
     /**
@@ -1486,7 +1482,7 @@ public abstract class GenericScanController
     public void fetch(StoreDataValue[] row)
         throws StandardException
     {
-        fetch((DataValueDescriptor[]) row, true);
+        fetch(row, true);
     }
 
     /**
@@ -1499,7 +1495,7 @@ public abstract class GenericScanController
 
     @exception StandardException Standard exception policy.
     **/
-    private void fetch(DataValueDescriptor[] row, boolean qualify)
+    private void fetch(StoreDataValue[] row, boolean qualify)
         throws StandardException
     {
         if (scan_state != SCAN_INPROGRESS)

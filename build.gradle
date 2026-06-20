@@ -9354,3 +9354,147 @@ tasks.register('verifyLegacyDerbyKernelB5zControllerLocationTransactionBridge') 
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5zControllerLocationTransactionBridge'
 }
+
+// B5aa continues from B5z by moving the generic heap scan row buffer and
+// row-location helper seam to StoreDataValue/StoreRowLocation. This avoids a
+// cosmetic one-import cleanup and removes a bounded batch from the remaining
+// scan internals while leaving the deeper B-tree/value-template seams for the
+// next slice.
+
+def delosdbB5aaReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5aa-generic-heap-scan-bridge.txt')
+def delosdbB5aaBaselineImportCount = 43
+
+def delosdbB5aaFiles = [
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowUtil.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericScanController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapScan.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapCompressScan.java')
+]
+
+def delosdbB5aaRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5aaRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5aaStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].collectMany { root ->
+        root.exists() ? fileTree(root).matching { include '**/*.java' }.files : []
+    }.sort { it.path }.collectMany { source ->
+        source.readLines().findAll { line ->
+            line ==~ /\s*import\s+org\.apache\.derby\.iapi\.types\..*;/
+        }.collect { line ->
+            delosdbB5aaRelPath(source) + ': ' + line.trim()
+        }
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5aaGenericHeapScanBridgeReport') {
+    group = 'verification'
+    description = 'B5aa: reports generic/heap scan row-buffer and row-location bridge progress.'
+    dependsOn 'verifyLegacyDerbyKernelB5zControllerLocationTransactionBridge'
+    outputs.file(delosdbB5aaReportFile)
+    doLast {
+        def imports = delosdbB5aaStoreTypeImportLines()
+        def genericText = delosdbB5aaRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericScanController.java'))
+        def heapScanText = delosdbB5aaRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapScan.java'))
+        def heapCompressText = delosdbB5aaRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapCompressScan.java'))
+        def rowUtilText = delosdbB5aaRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowUtil.java'))
+        def reportFile = delosdbB5aaReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5aa generic/heap scan bridge
+======================================
+
+Purpose
+-------
+B5aa moves the generic heap scan row-buffer and row-location helper seam from
+engine-owned DataValueDescriptor/RowLocation imports to the store-facing
+StoreDataValue/StoreRowLocation bridge. It deliberately does not rewrite the
+B-tree template/value internals or concrete DataType subclasses in this slice.
+
+Changed files
+-------------
+${delosdbB5aaFiles.collect { '  - ' + delosdbB5aaRelPath(it) }.join('\n')}
+
+Bridge state
+------------
+  GenericScanController direct DataValueDescriptor import: ${genericText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  GenericScanController direct RowLocation import: ${genericText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+  GenericScanController fetchRows uses StoreDataValue[][]: ${genericText.contains('StoreDataValue[][]      row_array') ? 'yes' : 'no'}
+  GenericScanController row locations use StoreRowLocation[]: ${genericText.contains('StoreRowLocation[]      rowloc_array') ? 'yes' : 'no'}
+  HeapScan direct DataValueDescriptor import: ${heapScanText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  HeapScan direct RowLocation import: ${heapScanText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+  HeapCompressScan direct DataValueDescriptor import: ${heapCompressText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  HeapCompressScan direct RowLocation import: ${heapCompressText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+  RowUtil exposes StoreDataValue[] isRowEmpty overload: ${rowUtilText.contains('boolean isRowEmpty(\n    StoreDataValue[]') ? 'yes' : 'no'}
+
+Relocated store direct iapi.types import count
+---------------------------------------------
+  before B5aa baseline: ${delosdbB5aaBaselineImportCount}
+  after B5aa:           ${imports.size()}
+
+Remaining direct import lines
+-----------------------------
+${imports.collect { '  - ' + it }.join('\n')}
+
+B6 readiness
+------------
+NOT YET. Remaining imports are still concentrated in B-tree templates, raw row
+materialization helpers, BackingStoreHashtable/DiskHashtable row shapes, and
+concrete inherited DataType/RowLocation implementations.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5aaRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5aaGenericHeapScanBridge') {
+    group = 'verification'
+    description = 'B5aa: verifies generic/heap scan row-buffer and row-location bridge progress.'
+    dependsOn 'legacyDerbyStoreKernelB5aaGenericHeapScanBridgeReport'
+    doLast {
+        delosdbB5aaFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5aa missing required source file: ' + delosdbB5aaRelPath(source))
+            }
+        }
+
+        [
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericScanController.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapScan.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapCompressScan.java'
+        ].each { path ->
+            def text = delosdbB5aaRead(file(path))
+            if (text.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ||
+                text.contains('import org.apache.derby.iapi.types.RowLocation;')) {
+                throw new GradleException('B5aa source must not keep direct DataValueDescriptor/RowLocation import: ' + path)
+            }
+        }
+
+        def genericText = delosdbB5aaRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericScanController.java'))
+        if (!genericText.contains('StoreDataValue[][]      row_array') ||
+            !genericText.contains('StoreRowLocation[]      rowloc_array') ||
+            !genericText.contains('protected abstract StoreRowLocation makeRowLocation')) {
+            throw new GradleException('B5aa GenericScanController must expose fetchRows/helper seams through store-facing types')
+        }
+
+        def rowUtilText = delosdbB5aaRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/RowUtil.java'))
+        if (!rowUtilText.contains('boolean isRowEmpty(\n    StoreDataValue[]')) {
+            throw new GradleException('B5aa RowUtil must expose a StoreDataValue[] isRowEmpty overload')
+        }
+
+        def imports = delosdbB5aaStoreTypeImportLines()
+        if (imports.size() >= delosdbB5aaBaselineImportCount) {
+            throw new GradleException('B5aa relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5aaBaselineImportCount + ': ' + imports.size())
+        }
+
+        def reportText = delosdbB5aaRead(delosdbB5aaReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5aa report must explicitly say B6 readiness is NOT YET')
+        }
+
+        logger.lifecycle('Verified B5aa generic/heap scan bridge; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5aaGenericHeapScanBridge'
+}
