@@ -49,7 +49,7 @@ import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.services.uuid.UUIDFactory;
@@ -245,7 +245,7 @@ public class HeapConglomerateFactory implements ConglomerateFactory, ModuleContr
     {
         ContainerHandle         container   = null;
         Page                    page        = null;
-        DataValueDescriptor[]   control_row = new DataValueDescriptor[1];
+        StoreDataValue[]   control_row = new StoreDataValue[1];
 
         try
         {

@@ -44,7 +44,6 @@ import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 
 import org.apache.derby.impl.store.access.conglomerate.OpenConglomerate;
@@ -212,7 +211,7 @@ public class HeapController
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-	private RecordHandle doInsert(DataValueDescriptor[] row)
+	private RecordHandle doInsert(StoreDataValue[] row)
 		throws StandardException
 	{
 		Page page = null;
@@ -394,8 +393,8 @@ public class HeapController
 		try
 		{
  			// get the next row and its valid columns from the rowSource
-			DataValueDescriptor[] row;
-            while ((row = (DataValueDescriptor[]) rowSource.getNextRowFromRowSource()) != null)
+			StoreDataValue[] row;
+            while ((row = rowSource.getNextRowFromRowSource()) != null)
             {
                 num_rows_loaded++;
 
@@ -587,7 +586,7 @@ public class HeapController
             } 
         }
 
-		doInsert((DataValueDescriptor[]) row);
+		doInsert(row);
 
         return(0);
 	}
@@ -611,7 +610,7 @@ public class HeapController
             } 
         }
 
-		RecordHandle rh = doInsert((DataValueDescriptor[]) row);
+		RecordHandle rh = doInsert(row);
         if (SanityManager.DEBUG)
         {
             SanityManager.ASSERT(

@@ -49,7 +49,6 @@ import org.apache.derby.iapi.store.raw.Transaction;
 
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
-import org.apache.derby.iapi.types.RowLocation;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
@@ -592,8 +591,8 @@ public class BTreeController extends OpenBTree implements ConglomerateController
         DataValueDescriptor[] template = (DataValueDescriptor[]) runtime_mem.get_template(getRawTran());
         FetchDescriptor lock_fetch_desc = RowUtil.getFetchDescriptorConstant(
                                                     template.length - 1);
-        RowLocation lock_row_loc = 
-            (RowLocation) scratch_template[scratch_template.length - 1];
+        StoreRowLocation lock_row_loc = 
+            (StoreRowLocation) scratch_template[scratch_template.length - 1];
         boolean latch_released = !getLockingPolicy().lockNonScanRowOnPage(
                 leaf, slot, lock_fetch_desc, template,
                 lock_row_loc, ConglomerateController.LOCK_UPD);
@@ -692,8 +691,8 @@ public class BTreeController extends OpenBTree implements ConglomerateController
         FetchDescriptor lock_fetch_desc = 
             RowUtil.getFetchDescriptorConstant(
                 scratch_template.length - 1);
-        RowLocation lock_row_loc = 
-            (RowLocation) scratch_template[scratch_template.length - 1];
+        StoreRowLocation lock_row_loc = 
+            (StoreRowLocation) scratch_template[scratch_template.length - 1];
 
         // Row locking - lock the row being inserted.
 

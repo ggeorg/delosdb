@@ -9661,3 +9661,151 @@ tasks.register('verifyLegacyDerbyKernelB5abScratchDiskLockBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5abScratchDiskLockBridge'
 }
+
+// B5ac — bridge heap/hash row values and one B-tree row-location compatibility edge.
+def delosdbB5acBaselineImportCount = 29
+
+def delosdbB5acReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5ac-heap-hash-row-bridge.txt')
+
+def delosdbB5acFiles = [
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/BackingStoreHashtable.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/Heap.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapController.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapConglomerateFactory.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java')
+]
+
+def delosdbB5acRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString().replace('\\\\', '/') }
+
+def delosdbB5acRead = { File f -> f.exists() ? f.getText('UTF-8') : '' }
+
+def delosdbB5acStoreTypeImportLines = {
+    def roots = [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ]
+    roots.collectMany { root ->
+        root.exists() ? fileTree(root).matching { include '**/*.java' }.files : []
+    }.sort { a, b -> a.path <=> b.path }.collectMany { source ->
+        source.readLines('UTF-8').findAll { line ->
+            line.trim().startsWith('import org.apache.derby.iapi.types.')
+        }.collect { line -> delosdbB5acRelPath(source) + ': ' + line.trim() }
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5acHeapHashRowBridgeReport') {
+    group = 'verification'
+    description = 'B5ac: reports heap/hash row bridge progress after B5ab.'
+    dependsOn 'verifyLegacyDerbyKernelB5abScratchDiskLockBridge'
+    outputs.file(delosdbB5acReportFile)
+    doLast {
+        def imports = delosdbB5acStoreTypeImportLines()
+        def hashText = delosdbB5acRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/BackingStoreHashtable.java'))
+        def heapText = delosdbB5acRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/Heap.java'))
+        def heapControllerText = delosdbB5acRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapController.java'))
+        def heapFactoryText = delosdbB5acRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapConglomerateFactory.java'))
+        def btreeControllerText = delosdbB5acRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java'))
+        def reportFile = delosdbB5acReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5ac heap/hash row bridge
+===================================
+
+Purpose
+-------
+B5ac removes another meaningful batch of direct relocated-store iapi.types
+imports by moving hash-table spill rows and heap controller/create/read paths
+to StoreDataValue/StoreRowLocation bridge types. It also removes a stale
+RowLocation import from the B-tree controller lock-row path.
+
+Changed files
+-------------
+${delosdbB5acFiles.collect { '  - ' + delosdbB5acRelPath(it) }.join('\n')}
+
+Bridge state
+------------
+  BackingStoreHashtable direct DataValueDescriptor import: ${hashText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  BackingStoreHashtable direct RowLocation import: ${hashText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+  BackingStoreHashtable uses StoreDataValue[] hash/disk rows: ${hashText.contains('private StoreDataValue[] getNextRowFromRowSource()') && hashText.contains('private StoreDataValue[]   makeDiskRow') ? 'yes' : 'no'}
+  BackingStoreHashtable clones through StoreTypeUtil: ${hashText.contains('StoreTypeUtil.cloneValue') && hashText.contains('StoreTypeUtil.cloneHolder') ? 'yes' : 'no'}
+  Heap direct DataValueDescriptor import: ${heapText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  HeapController direct DataValueDescriptor import: ${heapControllerText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  HeapConglomerateFactory direct DataValueDescriptor import: ${heapFactoryText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
+  BTreeController direct RowLocation import: ${btreeControllerText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
+
+Relocated store direct iapi.types import count
+---------------------------------------------
+  before B5ac baseline: ${delosdbB5acBaselineImportCount}
+  after B5ac:           ${imports.size()}
+
+Remaining direct import lines
+-----------------------------
+${imports.collect { '  - ' + it }.join('\n')}
+
+B6 readiness
+------------
+NOT YET. Remaining direct imports are now concentrated in two categories:
+  1. concrete inherited DataType/RowLocation implementation classes that may
+     require explicit final justification; and
+  2. B-tree row-template/materialization internals that still need one more
+     bridge pass before B6.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5acRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5acHeapHashRowBridge') {
+    group = 'verification'
+    description = 'B5ac: verifies heap/hash row bridge progress after B5ab.'
+    dependsOn 'legacyDerbyStoreKernelB5acHeapHashRowBridgeReport'
+    doLast {
+        delosdbB5acFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5ac missing required source file: ' + delosdbB5acRelPath(source))
+            }
+        }
+
+        [
+            'delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/BackingStoreHashtable.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/Heap.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapController.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapConglomerateFactory.java'
+        ].each { path ->
+            def text = delosdbB5acRead(file(path))
+            if (text.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
+                throw new GradleException('B5ac source kept a retired direct DataValueDescriptor import: ' + path)
+            }
+        }
+
+        def hashText = delosdbB5acRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/BackingStoreHashtable.java'))
+        if (hashText.contains('import org.apache.derby.iapi.types.RowLocation;')) {
+            throw new GradleException('B5ac BackingStoreHashtable must not import RowLocation directly')
+        }
+        if (!hashText.contains('StoreTypeUtil.cloneValue') || !hashText.contains('StoreTypeUtil.cloneHolder')) {
+            throw new GradleException('B5ac BackingStoreHashtable must clone values through StoreTypeUtil')
+        }
+
+        def btreeControllerText = delosdbB5acRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java'))
+        if (btreeControllerText.contains('import org.apache.derby.iapi.types.RowLocation;')) {
+            throw new GradleException('B5ac BTreeController must not import RowLocation directly')
+        }
+
+        def imports = delosdbB5acStoreTypeImportLines()
+        if (imports.size() >= delosdbB5acBaselineImportCount) {
+            throw new GradleException('B5ac relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5acBaselineImportCount + ': ' + imports.size())
+        }
+        if (imports.size() > 23) {
+            throw new GradleException('B5ac expected relocated-store iapi.types import count to be at most 23, found ' + imports.size())
+        }
+
+        def reportText = delosdbB5acRead(delosdbB5acReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5ac report must explicitly say B6 readiness is NOT YET')
+        }
+
+        logger.lifecycle('Verified B5ac heap/hash row bridge; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5acHeapHashRowBridge'
+}

@@ -63,7 +63,6 @@ import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 
@@ -328,7 +327,7 @@ public class Heap
 
             // row in slot 0 of heap page 1 which is just a single column with
             // the heap entry.
-            DataValueDescriptor[] control_row = new DataValueDescriptor[1];
+            StoreDataValue[] control_row = new StoreDataValue[1];
             control_row[0] = this;
 
             page =
@@ -371,7 +370,7 @@ public class Heap
      **/
     public void boot_create(
     long                    containerid,
-    DataValueDescriptor[]   template)
+    StoreDataValue[]   template)
     {
 		id = new ContainerKey(0, containerid);
         this.format_ids = ConglomerateUtil.createFormatIds(template);
@@ -471,7 +470,7 @@ public class Heap
            
             // row in slot 0 of heap page 1 which is just a single column with
             // the heap entry.
-            DataValueDescriptor[] control_row = new DataValueDescriptor[1];
+            StoreDataValue[] control_row = new StoreDataValue[1];
             control_row[0] = this;
 
             page =
@@ -842,8 +841,8 @@ public class Heap
 
         // Heap scans do not suppport start and stop scan positions (these
         // only make sense for ordered storage structures).
-		if (!RowUtil.isRowEmpty((DataValueDescriptor[]) startKeyValue)
-			|| !RowUtil.isRowEmpty((DataValueDescriptor[]) stopKeyValue))
+		if (!RowUtil.isRowEmpty(startKeyValue)
+			|| !RowUtil.isRowEmpty(stopKeyValue))
 		{
             throw StandardException.newException(
                     SQLState.HEAP_UNIMPLEMENTED_FEATURE);
@@ -874,10 +873,10 @@ public class Heap
         heapscan.init(
             open_conglom,
             scanColumnList,
-            (DataValueDescriptor[]) startKeyValue,
+            startKeyValue,
             startSearchOperator,
             qualifier,
-            (DataValueDescriptor[]) stopKeyValue,
+            stopKeyValue,
             stopSearchOperator);
 
 		return(heapscan);
@@ -1189,7 +1188,7 @@ public class Heap
      *
 	 * @return this
      **/
-    public DataValueDescriptor getConglom()
+    public StoreDataValue getConglom()
     {
         return(this);
     }

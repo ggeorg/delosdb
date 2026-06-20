@@ -23,8 +23,6 @@ package org.apache.derby.iapi.store.access;
 
 import org.apache.derby.shared.common.error.StandardException; 
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreLocatedRow;
@@ -310,7 +308,7 @@ public class BackingStoreHashtable
         {
             boolean needsToClone = row_source.needsToClone();
 
-            DataValueDescriptor[] row;
+            StoreDataValue[] row;
             while ((row = getNextRowFromRowSource()) != null)
             {
                 // If we haven't initialized the hash_table yet then that's
@@ -371,10 +369,10 @@ public class BackingStoreHashtable
      *
 	 * @exception  StandardException  Standard exception policy.
 	 */
-	private DataValueDescriptor[] getNextRowFromRowSource()
+	private StoreDataValue[] getNextRowFromRowSource()
 		throws StandardException
 	{
-		DataValueDescriptor[] row = (DataValueDescriptor[]) row_source.getNextRowFromRowSource();
+		StoreDataValue[] row = (StoreDataValue[]) row_source.getNextRowFromRowSource();
 
 		if (skipNullKeyColumns)
 		{
@@ -395,7 +393,7 @@ public class BackingStoreHashtable
 					return row;
 				}
 				// 1 or more null key columns
-				row = (DataValueDescriptor[]) row_source.getNextRowFromRowSource();
+				row = (StoreDataValue[]) row_source.getNextRowFromRowSource();
 			}
 		}
 		return row;
@@ -408,10 +406,10 @@ public class BackingStoreHashtable
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    private static DataValueDescriptor[] cloneRow(DataValueDescriptor[] old_row)
+    private static StoreDataValue[] cloneRow(StoreDataValue[] old_row)
         throws StandardException
     {
-        DataValueDescriptor[] new_row = new DataValueDescriptor[old_row.length];
+        StoreDataValue[] new_row = StoreTypeUtil.newValueArray(old_row.length);
 
         // History: We used to materialize streams when getting a clone
         //          here (i.e. used getClone, not cloneObject). We still do.
@@ -420,7 +418,7 @@ public class BackingStoreHashtable
         {
             if ( old_row[i] != null)
             {
-                new_row[i] = old_row[i].cloneValue(false);
+                new_row[i] = StoreTypeUtil.cloneValue(old_row[i], false);
             }
         }
 
@@ -434,10 +432,10 @@ public class BackingStoreHashtable
      *
      * @exception  StandardException  Standard exception policy.
      **/
-    static DataValueDescriptor[] shallowCloneRow(DataValueDescriptor[] old_row)
+    static StoreDataValue[] shallowCloneRow(StoreDataValue[] old_row)
         throws StandardException
     {
-        DataValueDescriptor[] new_row = new DataValueDescriptor[old_row.length];
+        StoreDataValue[] new_row = StoreTypeUtil.newValueArray(old_row.length);
         // History: We used to *not* materialize streams when getting a clone
         //          here (i.e. used cloneObject, not getClone).
         //          We still don't materialize, just clone the holder.
@@ -446,7 +444,7 @@ public class BackingStoreHashtable
         {
             if ( old_row[i] != null)
             {
-                new_row[i] = old_row[i].cloneHolder();
+                new_row[i] = StoreTypeUtil.cloneHolder(old_row[i]);
             }
         }
 
@@ -465,8 +463,8 @@ public class BackingStoreHashtable
      **/
     private void add_row_to_hash_table
         (
-         DataValueDescriptor[] columnValues,
-         RowLocation rowLocation,
+         StoreDataValue[] columnValues,
+         StoreRowLocation rowLocation,
          boolean needsToClone
          )
 		throws StandardException
@@ -549,15 +547,15 @@ public class BackingStoreHashtable
      */
     private boolean spillToDisk
         (
-         DataValueDescriptor[] columnValues,
-         RowLocation rowLocation
+         StoreDataValue[] columnValues,
+         StoreRowLocation rowLocation
          )
         throws StandardException
     {
         // Once we have started spilling all new rows will go to disk, even if we have freed up some
         // memory by moving duplicates to disk. This simplifies handling of duplicates and accounting.
 
-        DataValueDescriptor[]   diskRow = null;
+        StoreDataValue[]   diskRow = null;
         
         if ( diskHashtable == null)
         {
@@ -632,17 +630,17 @@ public class BackingStoreHashtable
      * makeInMemoryRow().
      * </p>
      */
-    private DataValueDescriptor[]   makeDiskRow( Object raw )
+    private StoreDataValue[]   makeDiskRow( Object raw )
     {
-        DataValueDescriptor[]   allColumns = null;
+        StoreDataValue[]   allColumns = null;
         if ( includeRowLocations() )
         {
             StoreLocatedRow locatedRow = (StoreLocatedRow) raw;
             allColumns = makeDiskRow
-                ( (DataValueDescriptor[]) StoreTypeUtil.locatedRowColumnValues(locatedRow),
-                  (RowLocation) StoreTypeUtil.locatedRowLocation(locatedRow) );
+                ( (StoreDataValue[]) StoreTypeUtil.locatedRowColumnValues(locatedRow),
+                  (StoreRowLocation) StoreTypeUtil.locatedRowLocation(locatedRow) );
         }
-        else { allColumns = (DataValueDescriptor[]) raw; }
+        else { allColumns = (StoreDataValue[]) raw; }
 
         return allColumns;
     }
@@ -666,7 +664,7 @@ public class BackingStoreHashtable
             for ( Object diskRow : diskRows )
             {
                 result.add
-                    ( makeInMemoryRow( (DataValueDescriptor[]) diskRow ) );
+                    ( makeInMemoryRow( (StoreDataValue[]) diskRow ) );
             }
 
             return result;
@@ -679,7 +677,7 @@ public class BackingStoreHashtable
      * of makeDiskRow().
      * </p>
      */
-    private Object  makeInMemoryRow( DataValueDescriptor[] diskRow )
+    private Object  makeInMemoryRow( StoreDataValue[] diskRow )
     {
         if ( !includeRowLocations() )
         {
@@ -698,8 +696,8 @@ public class BackingStoreHashtable
      * stored on disk when we spill to disk.
      * </p>
      */
-    private DataValueDescriptor[]   makeDiskRow
-        ( DataValueDescriptor[] columnValues, RowLocation rowLocation )
+    private StoreDataValue[]   makeDiskRow
+        ( StoreDataValue[] columnValues, StoreRowLocation rowLocation )
     {
         if ( !includeRowLocations() )
         {
@@ -707,7 +705,7 @@ public class BackingStoreHashtable
         }
         else
         {
-            return (DataValueDescriptor[]) StoreTypeUtil.flattenLocatedRow( columnValues, rowLocation );
+            return (StoreDataValue[]) StoreTypeUtil.flattenLocatedRow( columnValues, rowLocation );
         }
     }
 
@@ -723,22 +721,22 @@ public class BackingStoreHashtable
     private long getEstimatedMemUsage( Object hashValue )
     {
         long rowMem = 0;
-        DataValueDescriptor[] row = null;
+        StoreDataValue[] row = null;
 
-        if ( hashValue instanceof DataValueDescriptor[] )
+        if ( hashValue instanceof StoreDataValue[] )
         {
-            row = (DataValueDescriptor[]) hashValue;
+            row = (StoreDataValue[]) hashValue;
         }
         else
         {
             StoreLocatedRow locatedRow = (StoreLocatedRow) hashValue;
-            row = (DataValueDescriptor[]) StoreTypeUtil.locatedRowColumnValues(locatedRow);
+            row = (StoreDataValue[]) StoreTypeUtil.locatedRowColumnValues(locatedRow);
 
             // account for the RowLocation size and class overhead
-            RowLocation rowLocation = (RowLocation) StoreTypeUtil.locatedRowLocation(locatedRow);
+            StoreRowLocation rowLocation = (StoreRowLocation) StoreTypeUtil.locatedRowLocation(locatedRow);
             if ( rowLocation != null )
             {
-                rowMem += rowLocation.estimateMemoryUsage();
+                rowMem += StoreTypeUtil.estimateMemoryUsage(rowLocation);
                 rowMem += ClassSize.refSize;
             }
 
@@ -749,7 +747,7 @@ public class BackingStoreHashtable
         for( int i = 0; i < row.length; i++)
         {
             // account for the column's size and class overhead
-            rowMem += row[i].estimateMemoryUsage();
+            rowMem += StoreTypeUtil.estimateMemoryUsage(row[i]);
             rowMem += ClassSize.refSize;
         }
 
@@ -934,7 +932,7 @@ public class BackingStoreHashtable
         else
         {
             return makeInMemoryRow
-                ( (DataValueDescriptor[]) diskHashtableValue );
+                ( (StoreDataValue[]) diskHashtableValue );
         }
     }
 
@@ -1049,7 +1047,7 @@ public class BackingStoreHashtable
         }
         else
         {
-            add_row_to_hash_table( (DataValueDescriptor[]) row, (RowLocation) rowLocation, needsToClone );
+            add_row_to_hash_table( row, rowLocation, needsToClone );
             return(true);
         }
     }
@@ -1117,7 +1115,7 @@ public class BackingStoreHashtable
                 memoryIterator = null;
             }
             return makeInMemoryRow
-                ( ((DataValueDescriptor[]) diskEnumeration.nextElement()) );
+                ( ((StoreDataValue[]) diskEnumeration.nextElement()) );
         }
     } // end of class BackingStoreHashtableEnumeration
 
