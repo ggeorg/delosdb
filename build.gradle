@@ -11981,3 +11981,231 @@ tasks.register('verifyLegacyDerbyStoreB6mStoreNativeHeapRowLocation') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyStoreB6mStoreNativeHeapRowLocation'
 }
+
+// -----------------------------------------------------------------------------
+// B6n — Remove engine-side relocated store source compilation
+// -----------------------------------------------------------------------------
+// B6m closed the HeapRowLocation inherited type seam. B6n performs the source
+// owner cut: delosdb-storage-derby compiles the relocated Derby store first, and
+// delosdb-engine consumes that compiled output through a JPMS patch-module
+// compatibility seam instead of compiling the relocated store sources directly.
+
+def delosdbB6nEngineBuild = file('delosdb-engine/build.gradle')
+def delosdbB6nStorageBuild = file('delosdb-storage-derby/build.gradle')
+
+def delosdbB6nEngineBuildText = { delosdbB6nEngineBuild.getText('UTF-8') }
+def delosdbB6nStorageBuildText = { delosdbB6nStorageBuild.getText('UTF-8') }
+
+def delosdbB6nEngineDirectStoreSourceCompileHits = {
+    def text = delosdbB6nEngineBuildText()
+    def hits = []
+    [
+            "legacyDerbyStorageSourceRoot",
+            "fileTree(legacyDerbyStorageSourceRoot)",
+            "include 'org/apache/derby/iapi/store/**/*.java'",
+            "include \"org/apache/derby/iapi/store/**/*.java\"",
+            "include 'org/apache/derby/impl/store/**/*.java'",
+            "include \"org/apache/derby/impl/store/**/*.java\""
+    ].each { marker ->
+        if (text.contains(marker)) {
+            hits << marker
+        }
+    }
+    hits
+}
+
+def delosdbB6nStorageCompilesRealStoreSources = {
+    def text = delosdbB6nStorageBuildText()
+    text.contains("include 'org/apache/derby/iapi/store/**/*.java'") &&
+            text.contains("include 'org/apache/derby/impl/store/**/*.java'") &&
+            !text.contains("exclude 'org/apache/derby/iapi/store/**/*.java'") &&
+            !text.contains("exclude 'org/apache/derby/impl/store/**/*.java'")
+}
+
+def delosdbB6nStorageDependsOnEngineOutput = {
+    def text = delosdbB6nStorageBuildText()
+    text.contains(":delosdb-engine:compileDerbyEngine") ||
+            text.contains("engineModuleClassDir") ||
+            text.contains("classes/modules/org.apache.derby.engine")
+}
+
+def delosdbB6nEngineConsumesCompiledStorageOutput = {
+    def text = delosdbB6nEngineBuildText()
+    text.contains(":delosdb-storage-derby:compileLegacyDerbyStorage") &&
+            text.contains("--patch-module") &&
+            text.contains("storageDerbyClassDir")
+}
+
+def delosdbB6nDerbyJarPackagesCompiledStorageOutput = {
+    def text = delosdbB6nEngineBuildText()
+    text.contains("from(storageDerbyClassDir)") &&
+            text.contains("include 'org/apache/derby/iapi/store/**'") &&
+            text.contains("include 'org/apache/derby/impl/store/**'")
+}
+
+tasks.register('legacyDerbyStoreB6nEngineSourceCompileRemovalReport') {
+    group = 'Verification'
+    description = 'B6n: reports the removal of direct relocated store source compilation from delosdb-engine.'
+    dependsOn 'verifyLegacyDerbyStoreB6mStoreNativeHeapRowLocation'
+    dependsOn ':delosdb-storage-derby:classes'
+    dependsOn ':delosdb-engine:compileDerbyEngine'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b6n-engine-source-compile-removal.txt'))
+    doLast {
+        def directSourceHits = delosdbB6nEngineDirectStoreSourceCompileHits()
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-b6n-engine-source-compile-removal.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = """DelosDB B6n engine source compile removal report
+=================================================
+
+Purpose
+-------
+B6n removes direct relocated Derby store source compilation from delosdb-engine.
+The storage module now compiles org.apache.derby.iapi.store.* and
+org.apache.derby.impl.store.* first. The engine compatibility compile consumes
+that compiled output through --patch-module so derby.jar packaging remains stable
+while source ownership is closed.
+
+Source ownership
+----------------
+delosdb-storage-derby compiles real store sources: ${delosdbB6nStorageCompilesRealStoreSources() ? 'YES' : 'NO'}
+delosdb-storage-derby depends on delosdb-engine output: ${delosdbB6nStorageDependsOnEngineOutput() ? 'YES' : 'NO'}
+delosdb-engine compiles relocated store sources directly: ${directSourceHits.isEmpty() ? 'NO' : 'YES'}
+${directSourceHits ? directSourceHits.collect { "  - ${it}" }.join('\n') : '  none'}
+
+Engine compatibility seam
+-------------------------
+delosdb-engine depends on compiled storage output: ${delosdbB6nEngineConsumesCompiledStorageOutput() ? 'YES' : 'NO'}
+delosdb-engine patches compiled storage into org.apache.derby.engine: ${delosdbB6nEngineBuildText().contains('--patch-module') ? 'YES' : 'NO'}
+derby.jar packages compiled storage output: ${delosdbB6nDerbyJarPackagesCompiledStorageOutput() ? 'YES' : 'NO'}
+
+Type seam state
+---------------
+direct relocated-store org.apache.derby.iapi.types imports: ${delosdbB6cDirectTypeImports().size()}
+fully-qualified inherited type references in relocated-store executable code: ${delosdbB6cFullyQualifiedTypeRefs().size()}
+
+Decision
+--------
+B6n closes the source-compilation owner cut. B6o can now assert the full B6
+closeout invariant.
+"""
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB6nEngineSourceCompileRemoval') {
+    group = 'Verification'
+    description = 'B6n: verifies delosdb-engine no longer compiles relocated store sources directly.'
+    dependsOn 'legacyDerbyStoreB6nEngineSourceCompileRemovalReport'
+    doLast {
+        def directSourceHits = delosdbB6nEngineDirectStoreSourceCompileHits()
+        if (!directSourceHits.isEmpty()) {
+            throw new GradleException('B6n expected delosdb-engine to stop compiling relocated store sources directly; found markers:\n' +
+                    directSourceHits.collect { "  - ${it}" }.join('\n'))
+        }
+        if (!delosdbB6nStorageCompilesRealStoreSources()) {
+            throw new GradleException('B6n expected delosdb-storage-derby to compile both org/apache/derby/iapi/store/**/*.java and org/apache/derby/impl/store/**/*.java')
+        }
+        if (delosdbB6nStorageDependsOnEngineOutput()) {
+            throw new GradleException('B6n expected delosdb-storage-derby compilation to stop depending on delosdb-engine output')
+        }
+        if (!delosdbB6nEngineConsumesCompiledStorageOutput()) {
+            throw new GradleException('B6n expected delosdb-engine to depend on and patch compiled delosdb-storage-derby output')
+        }
+        if (!delosdbB6nDerbyJarPackagesCompiledStorageOutput()) {
+            throw new GradleException('B6n expected derby.jar packaging to include compiled storage output for compatibility')
+        }
+        logger.lifecycle('Verified B6n engine source compile removal; delosdb-engine consumes compiled storage output')
+    }
+}
+
+// -----------------------------------------------------------------------------
+// B6o — B6 closeout guard
+// -----------------------------------------------------------------------------
+// B6o is the closeout proof for Phase B6: source ownership, compile ownership,
+// and inherited type seams are all closed without starting Phase C.
+
+tasks.register('legacyDerbyStoreB6oCloseoutReport') {
+    group = 'Verification'
+    description = 'B6o: writes the B6 closeout report for the real Derby storage module boundary.'
+    dependsOn 'verifyLegacyDerbyStoreB6nEngineSourceCompileRemoval'
+    dependsOn 'verifyLegacyDerbyStoreIndependentCompilationReadiness'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b6o-closeout.txt'))
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        def engineDirectHits = delosdbB6nEngineDirectStoreSourceCompileHits()
+        def readinessReport = layout.buildDirectory.file('reports/delosdb/legacy-store-independent-compilation-readiness-a0.txt').get().asFile
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-b6o-closeout.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = """DelosDB B6 closeout report
+===========================
+
+Closed boundary
+---------------
+delosdb-storage-derby owns real store source compilation: ${delosdbB6nStorageCompilesRealStoreSources() ? 'YES' : 'NO'}
+delosdb-storage-derby compiles without delosdb-engine output: ${delosdbB6nStorageDependsOnEngineOutput() ? 'NO' : 'YES'}
+delosdb-engine no longer compiles relocated store source directly: ${engineDirectHits.isEmpty() ? 'YES' : 'NO'}
+delosdb-engine consumes compiled storage output: ${delosdbB6nEngineConsumesCompiledStorageOutput() ? 'YES' : 'NO'}
+derby.jar compatibility packaging includes compiled store output: ${delosdbB6nDerbyJarPackagesCompiledStorageOutput() ? 'YES' : 'NO'}
+
+Type boundary
+-------------
+direct relocated-store org.apache.derby.iapi.types imports: ${directTypeImports.size()}
+remaining relocated-store inherited type refs: ${fqRefs.size()}
+remaining inherited type files: ${fqRefs.collect { it.source.name }.toSet().sort().join(', ') ?: 'none'}
+
+A0 readiness result
+-------------------
+${readinessReport.isFile() ? readinessReport.getText('UTF-8').readLines().findAll { it.contains('independent Derby store compilation') || it.contains('delosdb-engine still compiles relocated store sources directly') || it.contains('delosdb-storage-derby still excludes the real store packages') }.join('\n') : '(readiness report missing)'}
+
+Decision
+--------
+B6 is closed. The inherited Derby heap/raw/access/WAL store is compiled by
+its storage module, the engine no longer compiles relocated store source files
+directly, and the remaining inherited type seam count is zero.
+
+Next safe phase
+---------------
+B7 runtime packaging proof, then B8/Phase-B closeout. Phase C must still wait
+until those packaging/runtime proofs are green.
+"""
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB6oCloseout') {
+    group = 'Verification'
+    description = 'B6o: verifies B6 is truly closed.'
+    dependsOn 'legacyDerbyStoreB6oCloseoutReport'
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        if (!directTypeImports.isEmpty()) {
+            throw new GradleException('B6o expected direct relocated-store org.apache.derby.iapi.types imports to be zero; found:\n' +
+                    directTypeImports.collect { "${it.source}: ${it.line}" }.join('\n'))
+        }
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        if (!fqRefs.isEmpty()) {
+            throw new GradleException('B6o expected remaining relocated-store inherited type refs to be zero; found:\n' +
+                    fqRefs.collect { "${it.source}:${it.line}: ${it.text}" }.join('\n'))
+        }
+        def engineDirectHits = delosdbB6nEngineDirectStoreSourceCompileHits()
+        if (!engineDirectHits.isEmpty()) {
+            throw new GradleException('B6o expected delosdb-engine direct relocated-store source compilation to be gone; found markers:\n' +
+                    engineDirectHits.collect { "  - ${it}" }.join('\n'))
+        }
+        if (!delosdbB6nStorageCompilesRealStoreSources()) {
+            throw new GradleException('B6o expected delosdb-storage-derby to own real store source compilation')
+        }
+        if (delosdbB6nStorageDependsOnEngineOutput()) {
+            throw new GradleException('B6o expected delosdb-storage-derby to compile without delosdb-engine output')
+        }
+        if (!delosdbB6nEngineConsumesCompiledStorageOutput()) {
+            throw new GradleException('B6o expected delosdb-engine to consume compiled delosdb-storage-derby output')
+        }
+        logger.lifecycle('Verified B6 closeout; real Derby storage module boundary is closed')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreB6oCloseout'
+}

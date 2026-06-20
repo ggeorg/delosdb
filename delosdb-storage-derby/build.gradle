@@ -9,21 +9,13 @@ group = rootProject.group
 
 def sourceRoot = file('src/main/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
-def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
 
 tasks.register('compileLegacyDerbyStorage', JavaCompile) {
-    dependsOn ':delosdb-engine:compileDerbyEngine'
-    // B6g/B6h compatibility classpath consumes generated engine/kernel output.
-    // Declare all producers explicitly so Gradle 8.14 does not infer an
-    // unsafe implicit dependency from raw output directories.
-    dependsOn ':processDerbyResources'
-    dependsOn ':generateOdbcMetadata'
-    dependsOn ':ensureCatalogMetadataResources'
-    dependsOn ':splitEngineMessages'
-    dependsOn ':delosdb-engine-kernel:compileDelosDbEngineKernelClassSizeCatalog'
+    // B6n closes the source-owner boundary: the storage module compiles the
+    // relocated Derby store without depending on delosdb-engine output.
     dependsOn ':delosdb-engine-kernel:classes'
     dependsOn ':delosdb-commons:classes'
     dependsOn ':delosdb-spi:classes'
@@ -35,9 +27,9 @@ tasks.register('compileLegacyDerbyStorage', JavaCompile) {
     destinationDirectory = mainClassDir
     sourceCompatibility = rootProject.ext.javaRelease.toString()
     targetCompatibility = rootProject.ext.javaRelease.toString()
-    // B6g compiles relocated inherited store sources against the existing
-    // compatibility output path. Keep this proof on the classpath for now;
-    // the named JPMS boundary is closed in the later B6 source-owner flip.
+    // Keep the storage compile itself classpath-based for now. The engine
+    // compatibility module consumes this compiled output through --patch-module
+    // so derby.jar remains runtime-compatible while source ownership is cut.
     modularity.inferModulePath = false
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
@@ -45,7 +37,6 @@ tasks.register('compileLegacyDerbyStorage', JavaCompile) {
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
     classpath = rootProject.files(
-            engineModuleClassDir,
             kernelModuleClassDir,
             commonsModuleClassDir,
             spiModuleClassDir)
