@@ -10755,10 +10755,13 @@ tasks.register('verifyLegacyDerbyStoreB6cIndependentCompileBlockers') {
         def storageBuildText = delosdbB6cRead(file('delosdb-storage-derby/build.gradle'))
         def storageStillExcludesRealStore = storageBuildText.contains("exclude 'org/apache/derby/iapi/store/**/*.java'") &&
                 storageBuildText.contains("exclude 'org/apache/derby/impl/store/**/*.java'")
-        if (!fqRefs.isEmpty() && !storageStillExcludesRealStore) {
-            throw new GradleException('B6c refuses the real storage compile switch while fully-qualified inherited type references remain')
+        def storageUsesB6gCompatibilityClasspath = storageBuildText.contains("dependsOn ':delosdb-engine:compileDerbyEngine'") &&
+                storageBuildText.contains('engineModuleClassDir') &&
+                storageBuildText.contains('modularity.inferModulePath = false')
+        if (!fqRefs.isEmpty() && !storageStillExcludesRealStore && !storageUsesB6gCompatibilityClasspath) {
+            throw new GradleException('B6c refuses an unclassified storage compile switch while fully-qualified inherited type references remain')
         }
-        logger.lifecycle("Verified B6c independent compile blocker map; fully-qualified inherited type references: ${fqRefs.size()}")
+        logger.lifecycle("Verified B6c independent compile blocker map/evolved B6g compatibility state; fully-qualified inherited type references: ${fqRefs.size()}")
     }
 }
 
@@ -11283,4 +11286,118 @@ tasks.register('verifyLegacyDerbyStoreB6gRealStoreCompile') {
         }
         logger.lifecycle('Verified B6g real relocated-store compilation in delosdb-storage-derby; engine source compile removal is next')
     }
+}
+
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreB6gRealStoreCompile'
+}
+
+// -----------------------------------------------------------------------------
+// B6h — Source-owner flip blocker classification after real store compile
+// -----------------------------------------------------------------------------
+
+tasks.register('legacyDerbyStoreB6hSourceOwnerFlipBlockerReport') {
+    group = 'verification'
+    description = 'B6h: reports why the final engine source-compile removal is or is not safe after B6g.'
+    dependsOn 'verifyLegacyDerbyStoreB6gRealStoreCompile'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b6h-source-owner-flip-blocker.txt'))
+    doLast {
+        def storageBuildText = delosdbB6gStorageBuild.text
+        def engineBuildText = delosdbB6gEngineBuild.text
+        def storageCompilesApi = storageBuildText.contains("include 'org/apache/derby/iapi/store/**/*.java'")
+        def storageCompilesImpl = storageBuildText.contains("include 'org/apache/derby/impl/store/**/*.java'")
+        def storageExcludesRealStore = storageBuildText.contains("exclude 'org/apache/derby/iapi/store/**/*.java'") ||
+                storageBuildText.contains("exclude 'org/apache/derby/impl/store/**/*.java'")
+        def storageUsesCompatibilityClasspath = storageBuildText.contains("dependsOn ':delosdb-engine:compileDerbyEngine'") &&
+                storageBuildText.contains('engineModuleClassDir') &&
+                storageBuildText.contains('modularity.inferModulePath = false')
+        def engineCompilesStoreSources = engineBuildText.contains("fileTree(legacyDerbyStorageSourceRoot) { include 'org/apache/derby/iapi/store/**/*.java' }") ||
+                engineBuildText.contains("fileTree(legacyDerbyStorageSourceRoot) { include 'org/apache/derby/impl/store/**/*.java' }")
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        def directEngineImports = delosdbB6cDirectEngineImports()
+        def blockedByCompatibilityCycle = engineCompilesStoreSources && storageUsesCompatibilityClasspath && !fqRefs.isEmpty()
+        def closed = !engineCompilesStoreSources && directTypeImports.isEmpty() && directEngineImports.isEmpty()
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-b6h-source-owner-flip-blocker.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B6h source-owner flip blocker report
+================================================
+
+B6g compile-owner state
+-----------------------
+delosdb-storage-derby compiles org.apache.derby.iapi.store.* source: ${storageCompilesApi ? 'YES' : 'NO'}
+delosdb-storage-derby compiles org.apache.derby.impl.store.* source: ${storageCompilesImpl ? 'YES' : 'NO'}
+delosdb-storage-derby still excludes real store source: ${storageExcludesRealStore ? 'YES' : 'NO'}
+
+Engine source-compile state
+---------------------------
+delosdb-engine still compiles relocated store source directly: ${engineCompilesStoreSources ? 'YES' : 'NO'}
+
+Compatibility edge
+------------------
+delosdb-storage-derby uses temporary engine-output compatibility classpath: ${storageUsesCompatibilityClasspath ? 'YES' : 'NO'}
+remaining fully-qualified inherited org.apache.derby.iapi.types references: ${fqRefs.size()}
+direct relocated-store org.apache.derby.iapi.types imports: ${directTypeImports.size()}
+direct relocated-store engine-package imports: ${directEngineImports.size()}
+
+Decision
+--------
+${closed ? 'B6h status: CLOSED. The engine no longer compiles relocated store source directly.' : blockedByCompatibilityCycle ? 'B6h status: BLOCKED BY TYPE-COMPATIBILITY CYCLE. B6g is the maximum honest compile-owner state until the remaining concrete value/type seam is moved out of org.apache.derby.engine or isolated behind a non-cyclic compiled-output path.' : 'B6h status: REVIEW REQUIRED. The tree is neither the known B6g compatibility state nor the fully closed source-owner state.'}
+
+Why a blind source-owner flip is unsafe
+---------------------------------------
+The clean target is delosdb-engine -> delosdb-storage-derby -> delosdb-engine-kernel.
+The current B6g proof still has the reverse temporary compile edge because the final
+legacy value/conglomerate classes implement inherited Derby type contracts that still
+live in org.apache.derby.engine. If delosdb-engine stopped compiling relocated store
+source before that seam moves, the compile graph would become circular.
+
+Next safe step
+--------------
+Move or isolate the remaining concrete value/type seam, then remove the compatibility
+edge and finally remove direct relocated-store source compilation from delosdb-engine.
+"""
+        logger.lifecycle('B6h source-owner flip blocker report: ' + (closed ? 'CLOSED' : blockedByCompatibilityCycle ? 'BLOCKED BY TYPE-COMPATIBILITY CYCLE' : 'REVIEW REQUIRED'))
+        logger.lifecycle('Wrote ' + delosdbB6gRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB6hSourceOwnerFlipBlocker') {
+    group = 'verification'
+    description = 'B6h: verifies the final source-owner flip is either closed or explicitly blocked by the remaining non-cyclic type seam.'
+    dependsOn 'legacyDerbyStoreB6hSourceOwnerFlipBlockerReport'
+    doLast {
+        def storageBuildText = delosdbB6gStorageBuild.text
+        def engineBuildText = delosdbB6gEngineBuild.text
+        def storageCompilesRealStore = storageBuildText.contains("include 'org/apache/derby/iapi/store/**/*.java'") &&
+                storageBuildText.contains("include 'org/apache/derby/impl/store/**/*.java'") &&
+                !storageBuildText.contains("exclude 'org/apache/derby/iapi/store/**/*.java'") &&
+                !storageBuildText.contains("exclude 'org/apache/derby/impl/store/**/*.java'")
+        if (!storageCompilesRealStore) {
+            throw new GradleException('B6h requires the B6g real-store compile switch to remain in place')
+        }
+        if (!delosdbB6cDirectTypeImports().isEmpty()) {
+            throw new GradleException('B6h requires direct relocated-store org.apache.derby.iapi.types imports to remain zero')
+        }
+        if (!delosdbB6cDirectEngineImports().isEmpty()) {
+            throw new GradleException('B6h requires direct relocated-store engine-package imports to remain zero')
+        }
+        def storageUsesCompatibilityClasspath = storageBuildText.contains("dependsOn ':delosdb-engine:compileDerbyEngine'") &&
+                storageBuildText.contains('engineModuleClassDir') &&
+                storageBuildText.contains('modularity.inferModulePath = false')
+        def engineCompilesStoreSources = engineBuildText.contains("fileTree(legacyDerbyStorageSourceRoot) { include 'org/apache/derby/iapi/store/**/*.java' }") ||
+                engineBuildText.contains("fileTree(legacyDerbyStorageSourceRoot) { include 'org/apache/derby/impl/store/**/*.java' }")
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        def knownBlockedState = engineCompilesStoreSources && storageUsesCompatibilityClasspath && !fqRefs.isEmpty()
+        def closedState = !engineCompilesStoreSources
+        if (!knownBlockedState && !closedState) {
+            throw new GradleException('B6h expected either the known B6g compatibility-cycle blocker or the final closed source-owner state')
+        }
+        logger.lifecycle('Verified B6h source-owner flip blocker/closed-state classification; engine still compiles relocated store source directly: ' + (engineCompilesStoreSources ? 'YES' : 'NO'))
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyStoreB6hSourceOwnerFlipBlocker'
 }
