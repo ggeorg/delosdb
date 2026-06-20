@@ -53,7 +53,6 @@ import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
-import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 
 import org.apache.derby.impl.store.access.btree.BTree;

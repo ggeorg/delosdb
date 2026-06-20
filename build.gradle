@@ -8878,3 +8878,139 @@ tasks.register('verifyLegacyDerbyKernelB5wRawPageValueIoBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5wRawPageValueIoBridge'
 }
+
+// -----------------------------------------------------------------------------
+// B5x — Remaining relocated-store type import inventory after raw-page IO bridge
+// -----------------------------------------------------------------------------
+// B5w moved the central StoredPage value IO path behind StoreTypeUtil. B5x is a
+// consolidation checkpoint before the next hard rewrite: it removes a stale
+// B2I RowLocation import and records the remaining direct iapi.types seams so
+// B6 cannot be attempted on a vague or cosmetic definition of progress.
+
+def delosdbB5xReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5x-remaining-type-imports.txt')
+def delosdbB5xBaselineImportCount = 58
+
+def delosdbB5xB2I = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2I.java')
+def delosdbB5xTouchedFiles = [delosdbB5xB2I]
+
+def delosdbB5xRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString() }
+def delosdbB5xRead = { File f -> f.isFile() ? f.text : '' }
+def delosdbB5xStoreTypeImportLines = { ->
+    [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ].collectMany { root ->
+        root.exists() ? fileTree(root).matching { include '**/*.java' }.files : []
+    }.sort { it.path }.collectMany { source ->
+        source.readLines().findAll { line ->
+            line ==~ /\s*import\s+org\.apache\.derby\.iapi\.types\..*;/
+        }.collect { line ->
+            delosdbB5xRelPath(source) + ': ' + line.trim()
+        }
+    }
+}
+
+def delosdbB5xRemainingByType = { ->
+    def counts = [:].withDefault { 0 }
+    delosdbB5xStoreTypeImportLines().each { line ->
+        def matcher = (line =~ /import org\.apache\.derby\.iapi\.types\.([A-Za-z0-9_]+);/)
+        if (matcher.find()) {
+            counts[matcher.group(1)] = counts[matcher.group(1)] + 1
+        }
+    }
+    counts.sort { a, b -> a.key <=> b.key }
+}
+
+def delosdbB5xRetiredImportsRemaining = { ->
+    def text = delosdbB5xRead(delosdbB5xB2I)
+    text.contains('import org.apache.derby.iapi.types.RowLocation;') ?
+        [delosdbB5xRelPath(delosdbB5xB2I) + ': import org.apache.derby.iapi.types.RowLocation;'] :
+        []
+}
+
+tasks.register('legacyDerbyStoreKernelB5xRemainingTypeImportsReport') {
+    group = 'verification'
+    description = 'B5x: reports remaining relocated-store iapi.types imports after B5w.'
+    dependsOn 'verifyLegacyDerbyKernelB5wRawPageValueIoBridge'
+    outputs.file(delosdbB5xReportFile)
+    doLast {
+        def remainingStoreTypeImports = delosdbB5xStoreTypeImportLines()
+        def remainingByType = delosdbB5xRemainingByType()
+        def retiredImportsRemaining = delosdbB5xRetiredImportsRemaining()
+        def reportFile = delosdbB5xReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5x remaining relocated-store type import inventory
+============================================================
+
+Goal
+----
+Consolidate B5 after the raw-page value IO bridge, remove one stale B2I import,
+and make the remaining direct iapi.types surface explicit before the next hard
+rewrite.
+
+Touched files
+-------------
+${delosdbB5xTouchedFiles.collect { '  - ' + delosdbB5xRelPath(it) }.join('\n')}
+
+Retired direct imports checked
+------------------------------
+${retiredImportsRemaining.isEmpty() ? '  B2I no longer imports org.apache.derby.iapi.types.RowLocation' : retiredImportsRemaining.collect { '  - ' + it }.join('\n')}
+
+Relocated store direct iapi.types import count
+---------------------------------------------
+  before B5x baseline: ${delosdbB5xBaselineImportCount}
+  after B5x:           ${remainingStoreTypeImports.size()}
+
+Remaining imports by type
+-------------------------
+${remainingByType.collect { entry -> '  - ' + entry.key + ': ' + entry.value }.join('\n')}
+
+Remaining direct import lines
+-----------------------------
+${remainingStoreTypeImports.collect { '  - ' + it }.join('\n')}
+
+B6 readiness
+------------
+NOT YET
+
+Reason
+------
+The remaining imports are no longer mostly dead imports. They are concentrated
+in the hard seams: ConglomerateController exact-row APIs, heap/B-tree controller
+internals, row-location concrete implementations, and rows/templates still
+implemented as Derby DataValueDescriptor arrays. B6 must wait until these seams
+are either bridged in follow-up slices or explicitly justified by a final B5
+closeout guard.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5xRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5xRemainingTypeImports') {
+    group = 'verification'
+    description = 'B5x: verifies remaining relocated-store type import inventory and stale B2I cleanup.'
+    dependsOn 'legacyDerbyStoreKernelB5xRemainingTypeImportsReport'
+    doLast {
+        delosdbB5xTouchedFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5x missing required source file: ' + delosdbB5xRelPath(source))
+            }
+        }
+
+        def retiredImportsRemaining = delosdbB5xRetiredImportsRemaining()
+        if (!retiredImportsRemaining.isEmpty()) {
+            throw new GradleException('B5x stale direct type imports still remain: ' + retiredImportsRemaining.join('; '))
+        }
+
+        def remainingStoreTypeImports = delosdbB5xStoreTypeImportLines()
+        if (remainingStoreTypeImports.size() >= delosdbB5xBaselineImportCount) {
+            throw new GradleException('B5x expected relocated-store iapi.types imports to decrease below ' + delosdbB5xBaselineImportCount + ', found ' + remainingStoreTypeImports.size())
+        }
+
+        logger.lifecycle('Verified B5x remaining type import inventory; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5xRemainingTypeImports'
+}
