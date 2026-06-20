@@ -9,20 +9,31 @@ group = rootProject.group
 
 def sourceRoot = file('src/main/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
+def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
+def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
+def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
 
 tasks.register('compileLegacyDerbyStorage', JavaCompile) {
+    dependsOn ':delosdb-engine:compileDerbyEngine'
     source = fileTree(sourceRoot) {
-        include '**/*.java'
-        // DS8/DS9 move legacy store API and implementation source ownership
-        // here, but those packages still compile into org.apache.derby.engine
-        // until kernel extraction/runtime packaging is complete. Compiling them
-        // into this scaffold module as well would create runtime split packages.
-        exclude 'org/apache/derby/iapi/store/**/*.java'
-        exclude 'org/apache/derby/impl/store/**/*.java'
+        include 'org/apache/derby/iapi/store/**/*.java'
+        include 'org/apache/derby/impl/store/**/*.java'
+        exclude 'module-info.java'
     }
     destinationDirectory = mainClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate)
-    classpath = rootProject.files()
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
+    classpath = rootProject.files(
+            engineModuleClassDir,
+            kernelModuleClassDir,
+            commonsModuleClassDir,
+            spiModuleClassDir)
 }
 
 tasks.register('classes') {

@@ -11164,3 +11164,113 @@ tasks.register('verifyLegacyDerbyStoreB6fBtreeControllerScanBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyStoreB6fBtreeControllerScanBridge'
 }
+
+// -----------------------------------------------------------------------------
+// B6g — Real relocated store compilation in delosdb-storage-derby
+// -----------------------------------------------------------------------------
+
+def delosdbB6gStoreSourceRoots = [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+]
+
+def delosdbB6gJavaSources = { File root ->
+    root.isDirectory() ? fileTree(root) { include '**/*.java' }.files.toList().sort { it.path } : []
+}
+
+def delosdbB6gRelPath = { File f ->
+    rootDir.toPath().relativize(f.toPath()).toString().replace(File.separatorChar, '/' as char)
+}
+
+def delosdbB6gDirectTypeImportCount = {
+    delosdbB6gStoreSourceRoots.collectMany { delosdbB6gJavaSources(it) }.sum { File source ->
+        source.readLines().count { it ==~ /^\s*import\s+org\.apache\.derby\.iapi\.types\..*/ }
+    } ?: 0
+}
+
+def delosdbB6gStorageBuild = file('delosdb-storage-derby/build.gradle')
+def delosdbB6gEngineBuild = file('delosdb-engine/build.gradle')
+
+tasks.register('legacyDerbyStoreB6gRealStoreCompileReport') {
+    group = 'verification'
+    description = 'B6g: reports that delosdb-storage-derby now compiles the relocated store source tree itself.'
+    dependsOn ':delosdb-storage-derby:classes'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b6g-real-store-compile.txt'))
+    doLast {
+        def apiFiles = delosdbB6gJavaSources(delosdbB6gStoreSourceRoots[0])
+        def implFiles = delosdbB6gJavaSources(delosdbB6gStoreSourceRoots[1])
+        def storageBuildText = delosdbB6gStorageBuild.text
+        def engineBuildText = delosdbB6gEngineBuild.text
+        def storageCompilesApi = storageBuildText.contains("include 'org/apache/derby/iapi/store/**/*.java'")
+        def storageCompilesImpl = storageBuildText.contains("include 'org/apache/derby/impl/store/**/*.java'")
+        def storageExcludesApi = storageBuildText.contains("exclude 'org/apache/derby/iapi/store/**/*.java'")
+        def storageExcludesImpl = storageBuildText.contains("exclude 'org/apache/derby/impl/store/**/*.java'")
+        def usesCompatibilityClasspath = storageBuildText.contains("dependsOn ':delosdb-engine:compileDerbyEngine'")
+                && storageBuildText.contains('engineModuleClassDir')
+        def engineStillCompilesStore = engineBuildText.contains("fileTree(legacyDerbyStorageSourceRoot) { include 'org/apache/derby/iapi/store/**/*.java' }")
+                || engineBuildText.contains("fileTree(legacyDerbyStorageSourceRoot) { include 'org/apache/derby/impl/store/**/*.java' }")
+        def reportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-b6g-real-store-compile.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B6g real relocated-store compile report
+================================================
+
+Relocated store source inventory
+--------------------------------
+iapi.store source files: ${apiFiles.size()}
+impl.store source files: ${implFiles.size()}
+
+delosdb-storage-derby compilation ownership
+-------------------------------------------
+compiles org.apache.derby.iapi.store.* source: ${storageCompilesApi ? 'YES' : 'NO'}
+compiles org.apache.derby.impl.store.* source: ${storageCompilesImpl ? 'YES' : 'NO'}
+still excludes org.apache.derby.iapi.store.* source: ${storageExcludesApi ? 'YES' : 'NO'}
+still excludes org.apache.derby.impl.store.* source: ${storageExcludesImpl ? 'YES' : 'NO'}
+
+Type-boundary state
+-------------------
+direct relocated-store org.apache.derby.iapi.types imports: ${delosdbB6gDirectTypeImportCount()}
+
+B6 compatibility note
+---------------------
+B6g proves that delosdb-storage-derby now compiles the relocated store tree itself.
+It intentionally uses the existing engine output as a temporary compatibility classpath
+because the final concrete legacy value classes still implement inherited Derby type
+contracts.
+
+Engine source ownership state
+-----------------------------
+delosdb-engine still compiles relocated store source directly: ${engineStillCompilesStore ? 'YES' : 'NO'}
+
+B6 closeout sequence
+--------------------
+B6g: delosdb-storage-derby compiles the real relocated store tree itself.
+B6h: remove direct relocated store source compilation from delosdb-engine, once the
+     concrete value compatibility seam is moved or accepted through a compiled output path.
+"""
+        logger.lifecycle('B6g real relocated-store compile: storage module now compiles iapi.store and impl.store sources')
+        logger.lifecycle('Wrote ' + delosdbB6gRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB6gRealStoreCompile') {
+    group = 'verification'
+    description = 'B6g: verifies delosdb-storage-derby compiles relocated iapi.store and impl.store sources itself.'
+    dependsOn 'legacyDerbyStoreB6gRealStoreCompileReport'
+    doLast {
+        def storageBuildText = delosdbB6gStorageBuild.text
+        if (!storageBuildText.contains("include 'org/apache/derby/iapi/store/**/*.java'")) {
+            throw new GradleException('B6g expected delosdb-storage-derby to compile org/apache/derby/iapi/store/**/*.java')
+        }
+        if (!storageBuildText.contains("include 'org/apache/derby/impl/store/**/*.java'")) {
+            throw new GradleException('B6g expected delosdb-storage-derby to compile org/apache/derby/impl/store/**/*.java')
+        }
+        if (storageBuildText.contains("exclude 'org/apache/derby/iapi/store/**/*.java'") ||
+                storageBuildText.contains("exclude 'org/apache/derby/impl/store/**/*.java'")) {
+            throw new GradleException('B6g expected delosdb-storage-derby to stop excluding real relocated store packages')
+        }
+        if (delosdbB6gDirectTypeImportCount() != 0) {
+            throw new GradleException('B6g expected direct relocated-store org.apache.derby.iapi.types imports to remain zero')
+        }
+        logger.lifecycle('Verified B6g real relocated-store compilation in delosdb-storage-derby; engine source compile removal is next')
+    }
+}
