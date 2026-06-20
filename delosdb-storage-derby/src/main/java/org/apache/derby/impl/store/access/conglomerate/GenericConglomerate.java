@@ -30,6 +30,8 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
 
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreDataValueBase;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -42,7 +44,7 @@ the Conglomerate interface.
 **/
 
 public abstract class GenericConglomerate 
-    extends org.apache.derby.iapi.types.DataType implements Conglomerate
+    extends StoreDataValueBase implements Conglomerate
 {
 
     /**************************************************************************
@@ -109,7 +111,7 @@ public abstract class GenericConglomerate
 	/**
      * @see org.apache.derby.iapi.types.DataValueDescriptor#cloneValue
 	 */
-	public org.apache.derby.iapi.types.DataValueDescriptor cloneValue(boolean forceMaterialization)
+	public StoreDataValue cloneValue(boolean forceMaterialization)
     {
         if (SanityManager.DEBUG)
             SanityManager.THROWASSERT("Not implemented!.");
@@ -122,7 +124,7 @@ public abstract class GenericConglomerate
 	 *
      * @see org.apache.derby.iapi.types.DataValueDescriptor#getNewNull
 	 */
-	public org.apache.derby.iapi.types.DataValueDescriptor getNewNull()
+	public StoreDataValue getNewNull()
     {
         if (SanityManager.DEBUG)
             SanityManager.THROWASSERT("Not implemented!.");
@@ -162,7 +164,7 @@ public abstract class GenericConglomerate
 	 *
      * @see org.apache.derby.iapi.types.DataValueDescriptor#setValue
 	 */
-	protected void setFrom(org.apache.derby.iapi.types.DataValueDescriptor theValue) 
+	protected void setFrom(StoreDataValue theValue) 
         throws StandardException
     {
         throw(StandardException.newException(
@@ -202,7 +204,7 @@ public abstract class GenericConglomerate
      *
      * @see org.apache.derby.iapi.types.DataValueDescriptor#compare
 	 */
-	public int compare(org.apache.derby.iapi.types.DataValueDescriptor other) 
+	public int compare(StoreDataValue other) 
         throws StandardException
 	{
         throw(StandardException.newException(

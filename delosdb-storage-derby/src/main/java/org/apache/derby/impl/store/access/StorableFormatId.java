@@ -31,6 +31,8 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.services.cache.ClassSize;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreDataValueBase;
 
 
 import java.sql.ResultSet;
@@ -40,7 +42,7 @@ import java.io.ObjectOutput;
 import java.io.ObjectInput;
 import java.io.IOException;
 
-public class StorableFormatId extends org.apache.derby.iapi.types.DataType 
+public class StorableFormatId extends StoreDataValueBase 
 {
 
     private int    format_id;
@@ -175,7 +177,7 @@ public class StorableFormatId extends org.apache.derby.iapi.types.DataType
 	/**
      * @see org.apache.derby.iapi.types.DataValueDescriptor#cloneValue
 	 */
-    public org.apache.derby.iapi.types.DataValueDescriptor cloneValue(boolean forceMaterialization)
+    public StoreDataValue cloneValue(boolean forceMaterialization)
     {
         if (SanityManager.DEBUG)
             SanityManager.THROWASSERT("Not implemented!.");
@@ -188,7 +190,7 @@ public class StorableFormatId extends org.apache.derby.iapi.types.DataType
 	 *
      * @see org.apache.derby.iapi.types.DataValueDescriptor#getNewNull
 	 */
-	public org.apache.derby.iapi.types.DataValueDescriptor getNewNull()
+	public StoreDataValue getNewNull()
     {
         if (SanityManager.DEBUG)
             SanityManager.THROWASSERT("Not implemented!.");
@@ -227,7 +229,7 @@ public class StorableFormatId extends org.apache.derby.iapi.types.DataType
 	 *
      * @see org.apache.derby.iapi.types.DataValueDescriptor#setValue
 	 */
-	protected void setFrom(org.apache.derby.iapi.types.DataValueDescriptor theValue) 
+	protected void setFrom(StoreDataValue theValue) 
         throws StandardException
     {
         throw(StandardException.newException(
@@ -267,7 +269,7 @@ public class StorableFormatId extends org.apache.derby.iapi.types.DataType
      *
      * @see org.apache.derby.iapi.types.DataValueDescriptor#compare
 	 */
-	public int compare(org.apache.derby.iapi.types.DataValueDescriptor other) 
+	public int compare(StoreDataValue other) 
         throws StandardException
 	{
         throw(StandardException.newException(

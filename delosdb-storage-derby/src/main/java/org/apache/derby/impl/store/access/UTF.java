@@ -21,6 +21,14 @@
 
 package org.apache.derby.impl.store.access;
 
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+
+import org.apache.derby.iapi.services.cache.ClassSize;
+import org.apache.derby.iapi.services.io.StoredFormatIds;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreDataValueBase;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 /**
@@ -30,29 +38,119 @@ import org.apache.derby.shared.common.sanity.SanityManager;
   @see org.apache.derby.iapi.services.io.FormatIdOutputStream
  **/
 
-public class UTF extends org.apache.derby.iapi.types.UserType
+public class UTF extends StoreDataValueBase
 {
+    private String value;
+
+    private static final int BASE_MEMORY_USAGE =
+            ClassSize.estimateBaseFromCatalog(UTF.class);
+
     public UTF()
     {
     }
 
     public UTF(String value)
     {
-        super(value);
+        this.value = value;
+    }
+
+    @Override
+    public int estimateMemoryUsage()
+    {
+        return BASE_MEMORY_USAGE + (value == null ? 0 : value.length() * 2);
+    }
+
+    @Override
+    public String getString()
+    {
+        return value;
+    }
+
+    @Override
+    public Object getObject()
+    {
+        return value;
+    }
+
+    @Override
+    public int getLength()
+    {
+        return value == null ? 0 : value.length();
+    }
+
+    @Override
+    public int getTypeFormatId()
+    {
+        return StoredFormatIds.SQL_USERTYPE_ID_V3;
+    }
+
+    @Override
+    public boolean isNull()
+    {
+        return value == null;
+    }
+
+    @Override
+    public void writeExternal(ObjectOutput out) throws IOException
+    {
+        if (SanityManager.DEBUG)
+            SanityManager.ASSERT(!isNull(),
+                    "writeExternal() is not supposed to be called for null values.");
+
+        out.writeObject(value);
+    }
+
+    @Override
+    public void readExternal(ObjectInput in)
+        throws IOException, ClassNotFoundException
+    {
+        value = (String) in.readObject();
+    }
+
+    @Override
+    public StoreDataValue cloneValue(boolean forceMaterialization)
+    {
+        return new UTF(value);
+    }
+
+    @Override
+    public StoreDataValue getNewNull()
+    {
+        return new UTF();
+    }
+
+    @Override
+    public void restoreToNull()
+    {
+        value = null;
+    }
+
+    @Override
+    protected void setFrom(StoreDataValue source)
+    {
+        if (SanityManager.DEBUG)
+            SanityManager.ASSERT(source instanceof UTF);
+
+        value = ((UTF) source).value;
     }
 
     /*
      * The following methods implement the Orderable protocol.
      */
 
-    public int compare(org.apache.derby.iapi.types.DataValueDescriptor other)
+    @Override
+    public int compare(StoreDataValue other)
     {
         if (SanityManager.DEBUG)
             SanityManager.ASSERT(other instanceof UTF);
 
         UTF arg = (UTF) other;
 
-		return ((String) getObject()).compareTo((String) arg.getObject());
+        if (value == null)
+            return arg.value == null ? 0 : 1;
+        if (arg.value == null)
+            return -1;
 
+        return value.compareTo(arg.value);
     }
 }

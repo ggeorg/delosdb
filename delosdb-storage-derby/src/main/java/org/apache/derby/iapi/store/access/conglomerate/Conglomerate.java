@@ -61,7 +61,7 @@ Storable).
 
 **/
 
-public interface Conglomerate extends Storable, org.apache.derby.iapi.types.DataValueDescriptor
+public interface Conglomerate extends Storable, StoreDataValue
 {
 
     /**

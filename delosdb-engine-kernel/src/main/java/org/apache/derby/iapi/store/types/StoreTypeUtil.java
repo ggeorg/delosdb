@@ -63,17 +63,29 @@ public final class StoreTypeUtil
 
     public static StoreDataValue cloneHolder(Object value)
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            return operations.cloneHolder();
+        }
         return StoreTypeSupportRegistry.support().cloneHolder(value);
     }
 
     public static StoreDataValue cloneValue(Object value, boolean forceMaterialization)
         throws StandardException
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            return operations.cloneValue(forceMaterialization);
+        }
         return StoreTypeSupportRegistry.support().cloneValue(value, forceMaterialization);
     }
 
     public static StoreDataValue getNewNull(Object value) throws StandardException
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            return operations.getNewNull();
+        }
         return StoreTypeSupportRegistry.support().getNewNull(value);
     }
 
@@ -104,12 +116,22 @@ public final class StoreTypeUtil
 
     public static int compare(Object left, Object right) throws StandardException
     {
+        if (left instanceof StoreValueOperations operations
+                && right instanceof StoreDataValue storeRight)
+        {
+            return operations.compare(storeRight);
+        }
         return StoreTypeSupportRegistry.support().compare(left, right);
     }
 
     public static int compare(Object left, Object right, boolean nullsOrderedLow)
         throws StandardException
     {
+        if (left instanceof StoreValueOperations operations
+                && right instanceof StoreDataValue storeRight)
+        {
+            return operations.compare(storeRight, nullsOrderedLow);
+        }
         return StoreTypeSupportRegistry.support().compare(left, right, nullsOrderedLow);
     }
 
@@ -121,6 +143,11 @@ public final class StoreTypeUtil
         boolean unknownRV)
         throws StandardException
     {
+        if (left instanceof StoreValueOperations operations
+                && right instanceof StoreDataValue storeRight)
+        {
+            return operations.compare(op, storeRight, orderedNulls, unknownRV);
+        }
         return StoreTypeSupportRegistry.support().compare(
             op, left, right, orderedNulls, unknownRV);
     }
@@ -134,76 +161,142 @@ public final class StoreTypeUtil
         boolean unknownRV)
         throws StandardException
     {
+        if (left instanceof StoreValueOperations operations
+                && right instanceof StoreDataValue storeRight)
+        {
+            return operations.compare(
+                op, storeRight, orderedNulls, nullsOrderedLow, unknownRV);
+        }
         return StoreTypeSupportRegistry.support().compare(
             op, left, right, orderedNulls, nullsOrderedLow, unknownRV);
     }
 
     public static int getLength(Object value) throws StandardException
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            return operations.getLength();
+        }
         return StoreTypeSupportRegistry.support().getLength(value);
     }
 
     public static long getLong(Object value) throws StandardException
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            return operations.getLong();
+        }
         return StoreTypeSupportRegistry.support().getLong(value);
     }
 
     public static boolean isNull(Object value) throws StandardException
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            return operations.isNull();
+        }
         return StoreTypeSupportRegistry.support().isNull(value);
     }
 
     public static Object getObject(Object value) throws StandardException
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            return operations.getObject();
+        }
         return StoreTypeSupportRegistry.support().getObject(value);
     }
 
     public static InputStream getStream(Object value) throws StandardException
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            return operations.getStream();
+        }
         return StoreTypeSupportRegistry.support().getStream(value);
     }
 
     public static int estimateMemoryUsage(Object value)
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            return operations.estimateMemoryUsage();
+        }
         return StoreTypeSupportRegistry.support().estimateMemoryUsage(value);
     }
 
     public static void setValue(Object target, Object source)
         throws StandardException
     {
+        if (target instanceof StoreValueOperations operations
+                && source instanceof StoreDataValue storeSource)
+        {
+            operations.setValue(storeSource);
+            return;
+        }
         StoreTypeSupportRegistry.support().setValue(target, source);
     }
 
     public static void setIntValue(Object target, int value)
     {
+        if (target instanceof StoreValueOperations operations)
+        {
+            operations.setIntValue(value);
+            return;
+        }
         StoreTypeSupportRegistry.support().setIntValue(target, value);
     }
 
     public static void setLongValue(Object target, long value)
     {
+        if (target instanceof StoreValueOperations operations)
+        {
+            operations.setLongValue(value);
+            return;
+        }
         StoreTypeSupportRegistry.support().setLongValue(target, value);
     }
 
     public static void restoreToNull(Object value)
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            operations.restoreToNull();
+            return;
+        }
         StoreTypeSupportRegistry.support().restoreToNull(value);
     }
 
     public static void readExternal(Object value, ObjectInput input)
         throws IOException, ClassNotFoundException
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            operations.readExternal(input);
+            return;
+        }
         StoreTypeSupportRegistry.support().readExternal(value, input);
     }
 
     public static void readExternalFromArray(Object value, ArrayInputStream input)
         throws IOException, ClassNotFoundException
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            operations.readExternalFromArray(input);
+            return;
+        }
         StoreTypeSupportRegistry.support().readExternalFromArray(value, input);
     }
 
     public static void writeExternal(Object value, ObjectOutput output)
         throws IOException
     {
+        if (value instanceof StoreValueOperations operations)
+        {
+            operations.writeExternal(output);
+            return;
+        }
         StoreTypeSupportRegistry.support().writeExternal(value, output);
     }
 }
