@@ -35,7 +35,6 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import org.apache.derby.iapi.services.io.Storable;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -62,7 +61,7 @@ Storable).
 
 **/
 
-public interface Conglomerate extends Storable, DataValueDescriptor
+public interface Conglomerate extends Storable, org.apache.derby.iapi.types.DataValueDescriptor
 {
 
     /**

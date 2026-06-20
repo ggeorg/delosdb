@@ -22,8 +22,6 @@
 package org.apache.derby.impl.store.access;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
-import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.UserType;
 
 /**
   A class that is used to store java.lang.Strings and provide
@@ -32,7 +30,7 @@ import org.apache.derby.iapi.types.UserType;
   @see org.apache.derby.iapi.services.io.FormatIdOutputStream
  **/
 
-public class UTF extends UserType
+public class UTF extends org.apache.derby.iapi.types.UserType
 {
     public UTF()
     {
@@ -47,7 +45,7 @@ public class UTF extends UserType
      * The following methods implement the Orderable protocol.
      */
 
-    public int compare(DataValueDescriptor other)
+    public int compare(org.apache.derby.iapi.types.DataValueDescriptor other)
     {
         if (SanityManager.DEBUG)
             SanityManager.ASSERT(other instanceof UTF);

@@ -29,8 +29,6 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
 
-import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.iapi.types.DataType;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 
 import java.sql.ResultSet;
@@ -44,11 +42,11 @@ the Conglomerate interface.
 **/
 
 public abstract class GenericConglomerate 
-    extends DataType implements Conglomerate
+    extends org.apache.derby.iapi.types.DataType implements Conglomerate
 {
 
     /**************************************************************************
-     * Public Methods implementing DataValueDescriptor interface.
+     * Public Methods implementing org.apache.derby.iapi.types.DataValueDescriptor interface.
      **************************************************************************
      */
 
@@ -111,7 +109,7 @@ public abstract class GenericConglomerate
 	/**
      * @see org.apache.derby.iapi.types.DataValueDescriptor#cloneValue
 	 */
-	public DataValueDescriptor cloneValue(boolean forceMaterialization)
+	public org.apache.derby.iapi.types.DataValueDescriptor cloneValue(boolean forceMaterialization)
     {
         if (SanityManager.DEBUG)
             SanityManager.THROWASSERT("Not implemented!.");
@@ -124,7 +122,7 @@ public abstract class GenericConglomerate
 	 *
      * @see org.apache.derby.iapi.types.DataValueDescriptor#getNewNull
 	 */
-	public DataValueDescriptor getNewNull()
+	public org.apache.derby.iapi.types.DataValueDescriptor getNewNull()
     {
         if (SanityManager.DEBUG)
             SanityManager.THROWASSERT("Not implemented!.");
@@ -133,7 +131,7 @@ public abstract class GenericConglomerate
     }
 
 	/**
-	 * Set the value based on the value for the specified DataValueDescriptor
+	 * Set the value based on the value for the specified org.apache.derby.iapi.types.DataValueDescriptor
 	 * from the specified ResultSet.
 	 *
 	 * @param resultSet		The specified ResultSet.
@@ -158,13 +156,13 @@ public abstract class GenericConglomerate
 
 
 	/**
-	 * Set the value of this DataValueDescriptor from another.
+	 * Set the value of this org.apache.derby.iapi.types.DataValueDescriptor from another.
 	 *
-	 * @param theValue	The Date value to set this DataValueDescriptor to
+	 * @param theValue	The Date value to set this org.apache.derby.iapi.types.DataValueDescriptor to
 	 *
      * @see org.apache.derby.iapi.types.DataValueDescriptor#setValue
 	 */
-	protected void setFrom(DataValueDescriptor theValue) 
+	protected void setFrom(org.apache.derby.iapi.types.DataValueDescriptor theValue) 
         throws StandardException
     {
         throw(StandardException.newException(
@@ -202,9 +200,9 @@ public abstract class GenericConglomerate
 	 *
 	 * @exception StandardException		Thrown on error
      *
-     * @see DataValueDescriptor#compare
+     * @see org.apache.derby.iapi.types.DataValueDescriptor#compare
 	 */
-	public int compare(DataValueDescriptor other) 
+	public int compare(org.apache.derby.iapi.types.DataValueDescriptor other) 
         throws StandardException
 	{
         throw(StandardException.newException(

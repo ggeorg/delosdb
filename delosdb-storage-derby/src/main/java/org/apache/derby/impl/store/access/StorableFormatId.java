@@ -32,8 +32,6 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.services.cache.ClassSize;
 
-import org.apache.derby.iapi.types.DataType;
-import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -42,7 +40,7 @@ import java.io.ObjectOutput;
 import java.io.ObjectInput;
 import java.io.IOException;
 
-public class StorableFormatId extends DataType 
+public class StorableFormatId extends org.apache.derby.iapi.types.DataType 
 {
 
     private int    format_id;
@@ -114,7 +112,7 @@ public class StorableFormatId extends DataType
     }
 
     /**************************************************************************
-     * Public Methods implementing DataValueDescriptor interface.
+     * Public Methods implementing org.apache.derby.iapi.types.DataValueDescriptor interface.
      **************************************************************************
      */
 
@@ -177,7 +175,7 @@ public class StorableFormatId extends DataType
 	/**
      * @see org.apache.derby.iapi.types.DataValueDescriptor#cloneValue
 	 */
-    public DataValueDescriptor cloneValue(boolean forceMaterialization)
+    public org.apache.derby.iapi.types.DataValueDescriptor cloneValue(boolean forceMaterialization)
     {
         if (SanityManager.DEBUG)
             SanityManager.THROWASSERT("Not implemented!.");
@@ -190,7 +188,7 @@ public class StorableFormatId extends DataType
 	 *
      * @see org.apache.derby.iapi.types.DataValueDescriptor#getNewNull
 	 */
-	public DataValueDescriptor getNewNull()
+	public org.apache.derby.iapi.types.DataValueDescriptor getNewNull()
     {
         if (SanityManager.DEBUG)
             SanityManager.THROWASSERT("Not implemented!.");
@@ -199,7 +197,7 @@ public class StorableFormatId extends DataType
     }
 
 	/**
-	 * Set the value based on the value for the specified DataValueDescriptor
+	 * Set the value based on the value for the specified org.apache.derby.iapi.types.DataValueDescriptor
 	 * from the specified ResultSet.
 	 *
 	 * @param resultSet		The specified ResultSet.
@@ -223,13 +221,13 @@ public class StorableFormatId extends DataType
     }
 
 	/**
-	 * Set the value of this DataValueDescriptor from another.
+	 * Set the value of this org.apache.derby.iapi.types.DataValueDescriptor from another.
 	 *
-	 * @param theValue	The Date value to set this DataValueDescriptor to
+	 * @param theValue	The Date value to set this org.apache.derby.iapi.types.DataValueDescriptor to
 	 *
      * @see org.apache.derby.iapi.types.DataValueDescriptor#setValue
 	 */
-	protected void setFrom(DataValueDescriptor theValue) 
+	protected void setFrom(org.apache.derby.iapi.types.DataValueDescriptor theValue) 
         throws StandardException
     {
         throw(StandardException.newException(
@@ -267,9 +265,9 @@ public class StorableFormatId extends DataType
 	 *
 	 * @exception StandardException		Thrown on error
      *
-     * @see DataValueDescriptor#compare
+     * @see org.apache.derby.iapi.types.DataValueDescriptor#compare
 	 */
-	public int compare(DataValueDescriptor other) 
+	public int compare(org.apache.derby.iapi.types.DataValueDescriptor other) 
         throws StandardException
 	{
         throw(StandardException.newException(

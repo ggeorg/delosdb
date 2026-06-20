@@ -9815,3 +9815,144 @@ tasks.register('verifyLegacyDerbyKernelB5acHeapHashRowBridge') {
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyKernelB5acHeapHashRowBridge'
 }
+
+// B5ad — quarantine concrete inherited value implementation imports.
+def delosdbB5adBaselineImportCount = 23
+
+def delosdbB5adReportFile = layout.buildDirectory.file('reports/delosdb/legacy-store-kernel-b5ad-concrete-type-import-quarantine.txt')
+
+def delosdbB5adFiles = [
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/conglomerate/Conglomerate.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/UTF.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/StorableFormatId.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericConglomerate.java'),
+    file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapRowLocation.java')
+]
+
+def delosdbB5adRelPath = { File f -> rootDir.toPath().relativize(f.toPath()).toString().replace('\\\\', '/') }
+
+def delosdbB5adRead = { File f -> f.exists() ? f.getText('UTF-8') : '' }
+
+def delosdbB5adStoreTypeImportLines = {
+    def roots = [
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store'),
+        file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store')
+    ]
+    roots.collectMany { root ->
+        root.exists() ? fileTree(root).matching { include '**/*.java' }.files : []
+    }.sort { a, b -> a.path <=> b.path }.collectMany { source ->
+        source.readLines('UTF-8').findAll { line ->
+            line.trim().startsWith('import org.apache.derby.iapi.types.')
+        }.collect { line -> delosdbB5adRelPath(source) + ': ' + line.trim() }
+    }
+}
+
+def delosdbB5adConcreteTypeRefs = {
+    delosdbB5adFiles.collectMany { source ->
+        def rel = delosdbB5adRelPath(source)
+        source.readLines('UTF-8').withIndex().findAll { entry ->
+            entry[0].contains('org.apache.derby.iapi.types.')
+        }.collect { entry -> rel + ':' + (entry[1] + 1) + ': ' + entry[0].trim() }
+    }
+}
+
+tasks.register('legacyDerbyStoreKernelB5adConcreteTypeImportQuarantineReport') {
+    group = 'verification'
+    description = 'B5ad: reports direct-import quarantine for concrete inherited value implementation seams.'
+    dependsOn 'verifyLegacyDerbyKernelB5acHeapHashRowBridge'
+    outputs.file(delosdbB5adReportFile)
+    doLast {
+        def imports = delosdbB5adStoreTypeImportLines()
+        def refs = delosdbB5adConcreteTypeRefs()
+        def reportFile = delosdbB5adReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = """DelosDB B5ad concrete type import quarantine
+================================================
+
+Purpose
+-------
+B5ad removes a larger near-end batch of direct relocated-store iapi.types import
+lines from concrete inherited value/metadata implementation classes. These
+classes still implement or extend inherited Derby type contracts, so this is a
+quarantine step, not a claim that the concrete type dependency is gone.
+
+Changed files
+-------------
+${delosdbB5adFiles.collect { '  - ' + delosdbB5adRelPath(it) }.join('\n')}
+
+Quarantine state
+----------------
+${delosdbB5adFiles.collect { source ->
+    def text = delosdbB5adRead(source)
+    '  ' + delosdbB5adRelPath(source) + ' direct iapi.types import: ' +
+        (text.contains('import org.apache.derby.iapi.types.') ? 'present [ERROR]' : 'removed')
+}.join('\n')}
+
+Relocated store direct iapi.types import count
+---------------------------------------------
+  before B5ad baseline: ${delosdbB5adBaselineImportCount}
+  after B5ad:           ${imports.size()}
+
+Remaining direct import lines
+-----------------------------
+${imports.collect { '  - ' + it }.join('\n')}
+
+Concrete inherited type references still present in B5ad files
+--------------------------------------------------------------
+${refs.collect { '  - ' + it }.join('\n')}
+
+B6 readiness
+------------
+NOT YET. B5ad intentionally distinguishes direct import cleanup from the
+remaining concrete implementation inheritance seam. The remaining direct import
+lines are now concentrated in RowUtil, TemplateRow, B-tree row/control materialization,
+and B2I metadata. The concrete implementation classes above need final B5 closeout
+justification or a later, explicit type-base extraction before B6.
+"""
+        logger.lifecycle('Wrote ' + delosdbB5adRelPath(reportFile))
+    }
+}
+
+tasks.register('verifyLegacyDerbyKernelB5adConcreteTypeImportQuarantine') {
+    group = 'verification'
+    description = 'B5ad: verifies the concrete inherited value implementation direct-import quarantine.'
+    dependsOn 'legacyDerbyStoreKernelB5adConcreteTypeImportQuarantineReport'
+    doLast {
+        delosdbB5adFiles.each { source ->
+            if (!source.isFile()) {
+                throw new GradleException('B5ad missing required source file: ' + delosdbB5adRelPath(source))
+            }
+            def text = delosdbB5adRead(source)
+            if (text.contains('import org.apache.derby.iapi.types.')) {
+                throw new GradleException('B5ad concrete implementation file still has a direct iapi.types import: ' + delosdbB5adRelPath(source))
+            }
+        }
+
+        def heapRowLocationText = delosdbB5adRead(file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapRowLocation.java'))
+        if (!heapRowLocationText.contains('return "RowLocation";')) {
+            throw new GradleException('B5ad must preserve HeapRowLocation getTypeName() behavior')
+        }
+
+        def imports = delosdbB5adStoreTypeImportLines()
+        if (imports.size() >= delosdbB5adBaselineImportCount) {
+            throw new GradleException('B5ad relocated-store iapi.types import count did not decrease from baseline ' + delosdbB5adBaselineImportCount + ': ' + imports.size())
+        }
+        if (imports.size() > 12) {
+            throw new GradleException('B5ad expected relocated-store iapi.types import count to be at most 12, found ' + imports.size())
+        }
+
+        def reportText = delosdbB5adRead(delosdbB5adReportFile.get().asFile)
+        if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
+            throw new GradleException('B5ad report must explicitly say B6 readiness is NOT YET')
+        }
+        if (!reportText.contains('concrete implementation inheritance seam')) {
+            throw new GradleException('B5ad report must honestly describe the remaining concrete implementation seam')
+        }
+
+        logger.lifecycle('Verified B5ad concrete type import quarantine; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreBoundary') {
+    dependsOn 'verifyLegacyDerbyKernelB5adConcreteTypeImportQuarantine'
+}
