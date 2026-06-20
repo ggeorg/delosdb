@@ -13,6 +13,7 @@ def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
+def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
 def toolsModuleClassDir = rootProject.project(':delosdb-tools').layout.buildDirectory.dir('classes/modules/org.apache.derby.tools')
 def externalModulePath = rootProject.files(
         'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
@@ -23,7 +24,7 @@ def externalModulePath = rootProject.files(
 )
 
 tasks.register('compileDerbyServer', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-kernel:compileDelosDbEngineKernel', ':delosdb-engine:compileDerbyEngine', ':delosdb-tools:compileDerbyTools'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-kernel:compileDelosDbEngineKernel', ':delosdb-engine:compileDerbyEngine', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-tools:compileDerbyTools'
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = moduleClassDir
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
@@ -34,6 +35,9 @@ tasks.register('compileDerbyServer', JavaCompile) {
             externalModulePath,
             rootProject.configurations.delosdbAsm
     ])
+    doFirst {
+        options.compilerArgs.addAll(['--patch-module', "org.apache.derby.engine=${storageDerbyClassDir.get().asFile.absolutePath}"])
+    }
 }
 
 tasks.register('classes') {
