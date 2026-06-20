@@ -8415,9 +8415,9 @@ Purpose
 -------
 B5u continues B5 after the B-tree scan boundary. It changes BTreeLockingPolicy
 row-template and lock row-location parameters from direct Derby type imports to
-StoreDataValue/StoreRowLocation. The B2I locking implementations keep concrete
-RowLocation casts only where the legacy heap lock call still requires Derby's
-real RowLocation contract.
+StoreDataValue/StoreRowLocation. Later B5 slices may retire the temporary
+concrete RowLocation casts as more heap lock boundaries accept the store-facing
+row-location bridge.
 
 Changed files
 -------------
@@ -8434,11 +8434,12 @@ BTreeLockingPolicy bridge state
   direct DataValueDescriptor import: ${lockingPolicyText.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
   direct RowLocation import: ${lockingPolicyText.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
 
-B2IRowLocking3 compatibility cast state
----------------------------------------
+B2IRowLocking3 compatibility state
+----------------------------------
   StoreDataValue[] parameters: ${rowLocking3Text.contains('StoreDataValue[]') ? 'present' : 'missing'}
   StoreRowLocation parameters: ${rowLocking3Text.contains('StoreRowLocation') ? 'present' : 'missing'}
-  explicit RowLocation cast for heap locking: ${rowLocking3Text.contains('(RowLocation) lock_row_loc') ? 'present' : 'missing'}
+  temporary RowLocation heap-lock cast: ${rowLocking3Text.contains('(RowLocation) lock_row_loc') ? 'present [older B5u state]' : 'retired by later slice'}
+  direct RowLocation import: ${rowLocking3Text.contains('import org.apache.derby.iapi.types.RowLocation;') ? 'present [ERROR]' : 'removed'}
   direct DataValueDescriptor import: ${rowLocking3Text.contains('import org.apache.derby.iapi.types.DataValueDescriptor;') ? 'present [ERROR]' : 'removed'}
 
 B2IUndo bridge state
@@ -8497,8 +8498,8 @@ tasks.register('verifyLegacyDerbyKernelB5uBtreeLockingPolicyBridge') {
         if (rowLocking3Text.contains('import org.apache.derby.iapi.types.DataValueDescriptor;')) {
             throw new GradleException('B5u B2IRowLocking3 must not keep a direct DataValueDescriptor import')
         }
-        if (!rowLocking3Text.contains('(RowLocation) lock_row_loc')) {
-            throw new GradleException('B5u B2IRowLocking3 must keep the explicit RowLocation cast at the heap-locking boundary')
+        if (rowLocking3Text.contains('import org.apache.derby.iapi.types.RowLocation;')) {
+            throw new GradleException('B5u B2IRowLocking3 must not keep a direct RowLocation import after later row-location bridge slices')
         }
 
         def undoText = delosdbB5uRead(delosdbB5uB2IUndo)
