@@ -257,6 +257,6 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
 
     private static RowLocation rowLocation(Object value)
     {
-        return (RowLocation) value;
+        return EngineStoreRowLocationBridge.requireEngineRowLocation(value);
     }
 }

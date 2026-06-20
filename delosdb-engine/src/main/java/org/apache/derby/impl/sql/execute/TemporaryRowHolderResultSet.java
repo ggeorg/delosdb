@@ -46,6 +46,7 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.types.SQLLongint;
 import org.apache.derby.iapi.sql.dictionary.DataDictionary;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * A result set to scan temporary row holders.  Ultimately, this
@@ -520,7 +521,7 @@ class TemporaryRowHolderResultSet implements CursorResultSet, NoPutResultSet, Cl
 		else
 		{
 			if (baseRowLocation == null)
-				baseRowLocation = (RowLocation) scan.newRowLocationTemplate();
+				baseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(scan.newRowLocationTemplate());
 			scan.fetchLocation(baseRowLocation);
 			if(heapCC == null)
 			{
@@ -559,7 +560,7 @@ class TemporaryRowHolderResultSet implements CursorResultSet, NoPutResultSet, Cl
 		currentRow = rowArray[0].getNewNullRow();
 		indexRow = new DataValueDescriptor[2];
 		indexRow[0] = new SQLLongint(position);
-		indexRow[1] = 	(RowLocation) heapCC.newRowLocationTemplate();
+		indexRow[1] = EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate());
 
 		DataValueDescriptor[] searchRow =  new DataValueDescriptor[1];
 		searchRow[0] = new SQLLongint(position);

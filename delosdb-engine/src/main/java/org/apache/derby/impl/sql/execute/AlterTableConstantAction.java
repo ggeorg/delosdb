@@ -86,6 +86,7 @@ import org.apache.derby.iapi.util.IdUtil;
 import org.apache.derby.impl.sql.compile.ColumnDefinitionNode;
 import org.apache.derby.impl.sql.compile.StatementNode;
 import org.apache.derby.shared.common.sanity.SanityManager;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  *	This class  describes actions that are ALWAYS performed for an
@@ -2417,7 +2418,7 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
                 TransactionController.MODE_TABLE,
                 TransactionController.ISOLATION_SERIALIZABLE);
 
-		rl = (RowLocation) compressHeapCC.newRowLocationTemplate();
+		rl = EngineStoreRowLocationBridge.requireEngineRowLocation(compressHeapCC.newRowLocationTemplate());
 
 		// Get the properties on the old heap
 		compressHeapCC.getInternalTablePropertySet(properties);
@@ -2475,7 +2476,7 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
 			// create a base row template
 			baseRow[i] = td.getEmptyExecRow();
 			baseRowArray[i] = baseRow[i].getRowArray();
-			compressRL[i] = (RowLocation) compressHeapGSC.newRowLocationTemplate();
+			compressRL[i] = EngineStoreRowLocationBridge.requireEngineRowLocation(compressHeapGSC.newRowLocationTemplate());
 		}
 
 
@@ -2629,7 +2630,7 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
                                 TransactionController.MODE_TABLE,
                                 TransactionController.ISOLATION_SERIALIZABLE);
 
-		rl = (RowLocation) compressHeapCC.newRowLocationTemplate();
+		rl = EngineStoreRowLocationBridge.requireEngineRowLocation(compressHeapCC.newRowLocationTemplate());
 		// Get the properties on the old heap
 		compressHeapCC.getInternalTablePropertySet(properties);
 		compressHeapCC.close();
@@ -3416,7 +3417,7 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
 			}
 			for (int index = 0; index < maxIndex; index++)
 			{
-				insertIntoSorter(index, (RowLocation) rl);
+				insertIntoSorter(index, EngineStoreRowLocationBridge.requireEngineRowLocation(rl));
 			}
 		}
 	}
@@ -3449,7 +3450,7 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
 		indexRows[index].getNewObjectArray();
 		// Associate the index row with the source row
 		compressIRGs[index].getIndexRow(currentRow, 
-                                        (RowLocation) rl.cloneValue(false),
+                                        EngineStoreRowLocationBridge.requireEngineRowLocation(rl.cloneValue(false)),
 										indexRows[index],
 										(FormatableBitSet) null);
 

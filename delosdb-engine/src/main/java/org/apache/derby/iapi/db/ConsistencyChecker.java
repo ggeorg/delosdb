@@ -57,6 +57,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
 import java.sql.SQLException;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * The ConsistencyChecker class provides static methods for verifying
@@ -246,8 +247,8 @@ public class ConsistencyChecker
 										0);		// not used with null stop posn.
 
 					/* Also, get the row location template for index rows */
-					rl = (RowLocation) scan.newRowLocationTemplate();
-					scanRL = (RowLocation) scan.newRowLocationTemplate();
+					rl = EngineStoreRowLocationBridge.requireEngineRowLocation(scan.newRowLocationTemplate());
+					scanRL = EngineStoreRowLocationBridge.requireEngineRowLocation(scan.newRowLocationTemplate());
 
 					for (baseRowCount = 0; scan.next(); baseRowCount++)
 						;	/* Empty statement */

@@ -21,6 +21,9 @@
 
 package org.apache.derby.impl.sql.catalog;
 
+
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.services.io.StreamStorable;
@@ -500,7 +503,7 @@ class TabInfoImpl
 			}
 		}
 
-		heapLocation = (RowLocation) heapController.newRowLocationTemplate();
+		heapLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(heapController.newRowLocationTemplate());
 		rowLocationOut[0]=heapLocation;
 
 		// loop through rows on this list, inserting them into system table
@@ -713,13 +716,13 @@ class TabInfoImpl
 		// Get an index row based on the base row
 		drivingIndexRow = getIndexRowFromHeapRow(
 			getIndexRowGenerator( indexNumber ),
-			(RowLocation) heapCC.newRowLocationTemplate(),
+			EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate()),
 			crf.makeEmptyRow());
 
 		while (drivingScan.fetchNext(drivingIndexRow.getRowArray()))
 		{
-			baseRowLocation = (RowLocation)
-						drivingIndexRow.getColumn(drivingIndexRow.nColumns());
+			baseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(
+						drivingIndexRow.getColumn(drivingIndexRow.nColumns()));
 
 			boolean base_row_exists = 
                 heapCC.fetch(
@@ -870,14 +873,14 @@ class TabInfoImpl
 		// Get an index row based on the base row
 		drivingIndexRow = getIndexRowFromHeapRow(
 			getIndexRowGenerator( indexNumber ),
-			(RowLocation) heapCC.newRowLocationTemplate(),
+			EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate()),
 			crf.makeEmptyRow());
 
 		try	{
 			if (drivingScan.fetchNext(drivingIndexRow.getRowArray()))
 			{
-				rl[0] = baseRowLocation = (RowLocation)
-					drivingIndexRow.getColumn(drivingIndexRow.nColumns());
+				rl[0] = baseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(
+					drivingIndexRow.getColumn(drivingIndexRow.nColumns()));
 				boolean base_row_exists = 
                     heapCC.fetch(
                         baseRowLocation, baseRow.getRowArray(), (FormatableBitSet) null);
@@ -998,14 +1001,14 @@ class TabInfoImpl
 		// Get an index row based on the base row
 		drivingIndexRow = getIndexRowFromHeapRow(
 			getIndexRowGenerator( indexNumber ),
-			(RowLocation) heapCC.newRowLocationTemplate(),
+			EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate()),
 			crf.makeEmptyRow());
 
 		int rowNum = 0;
 		while (drivingScan.fetchNext(drivingIndexRow.getRowArray()))
 		{
-			baseRowLocation = (RowLocation)
-						drivingIndexRow.getColumn(drivingIndexRow.nColumns());
+			baseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(
+						drivingIndexRow.getColumn(drivingIndexRow.nColumns()));
 			boolean base_row_exists = 
                 heapCC.fetch(
                     baseRowLocation, baseRow.getRowArray(), (FormatableBitSet) null);

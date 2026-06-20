@@ -39,6 +39,7 @@ import org.apache.derby.iapi.types.SQLLongint;
 
 
 import java.util.Properties;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * This is a class that is used to temporarily
@@ -317,7 +318,7 @@ class TemporaryRowHolderImpl implements TemporaryRowHolder
                                      TransactionController.MODE_TABLE,
                                      TransactionController.ISOLATION_SERIALIZABLE);
             if(isUniqueStream)
-                destRowLocation = (RowLocation) cc.newRowLocationTemplate();
+                destRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(cc.newRowLocationTemplate());
 
         }
 

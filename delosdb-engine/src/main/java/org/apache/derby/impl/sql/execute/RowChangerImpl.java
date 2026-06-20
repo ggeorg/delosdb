@@ -48,6 +48,7 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 
 import java.util.Vector;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
   Perform row at a time DML operations of tables and maintain indexes.
@@ -422,7 +423,7 @@ class RowChangerImpl	implements	RowChanger
 			isc.open(fixOnUpdate);
 
 			if (baseRowLocation == null)
-				baseRowLocation = (RowLocation) baseCC.newRowLocationTemplate();
+				baseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(baseCC.newRowLocationTemplate());
 		}
 
 		isOpen = true;
@@ -450,7 +451,7 @@ class RowChangerImpl	implements	RowChanger
             if (isc != null || getRL)
 			{
                 if (baseRowLocation == null) {
-                    baseRowLocation = (RowLocation) baseCC.newRowLocationTemplate();
+                    baseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(baseCC.newRowLocationTemplate());
                 }
 				baseCC.insertAndFetchLocation(baseRow.getRowArray(), baseRowLocation);
 

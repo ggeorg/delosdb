@@ -36,6 +36,7 @@ import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.shared.common.sanity.SanityManager;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * This is a simple class used to store the run time information
@@ -308,7 +309,7 @@ public class FKInfo implements Formatable
 			** Create a new RowLocation from the format id.
 			*/
 			int formatid = FormatIdUtil.readFormatIdInteger(in);
-			rowLocation = (RowLocation)Monitor.newInstanceFromIdentifier(formatid);
+			rowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(Monitor.newInstanceFromIdentifier(formatid));
 			if (SanityManager.DEBUG)
 			{
 				SanityManager.ASSERT(rowLocation != null, "row location is null in readExternal");

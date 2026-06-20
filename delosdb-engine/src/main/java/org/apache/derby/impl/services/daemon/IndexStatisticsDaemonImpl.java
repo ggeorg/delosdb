@@ -20,6 +20,9 @@
  */
 package org.apache.derby.impl.services.daemon;
 
+
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+
 import java.io.PrintWriter;
 import java.sql.Connection;
 import java.util.ArrayList;
@@ -478,7 +481,7 @@ public class IndexStatisticsDaemonImpl
 
                 indexRow[i] = irg.getNullIndexRow(
                         td.getColumnDescriptorList(),
-                        (RowLocation) heapCC.newRowLocationTemplate());
+                        EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate()));
             }
         }
         finally

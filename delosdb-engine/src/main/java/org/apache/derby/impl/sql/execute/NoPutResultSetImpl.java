@@ -48,6 +48,7 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.LocatedRow;
 import org.apache.derby.iapi.types.Orderable;
 import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 
 /**
@@ -294,13 +295,13 @@ extends BasicNoPutResultSetImpl
 	public void rowLocation(StoreRowLocation rl)
 		throws StandardException
 	{
-		targetResultSet.changedRow(clonedExecRow, (RowLocation) rl);
+		targetResultSet.changedRow(clonedExecRow, EngineStoreRowLocationBridge.requireEngineRowLocation(rl));
 	}
 
     public void offendingRowLocation(
             StoreRowLocation rl, long containdId) throws StandardException {
 
-        targetResultSet.offendingRowLocation((RowLocation) rl, containdId);
+        targetResultSet.offendingRowLocation(EngineStoreRowLocationBridge.requireEngineRowLocation(rl), containdId);
     }
 	// class implementation
 

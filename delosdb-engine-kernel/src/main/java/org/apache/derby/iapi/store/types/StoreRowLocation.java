@@ -22,4 +22,12 @@ package org.apache.derby.iapi.store.types;
 
 /** SQL-neutral row-location marker for store-facing APIs. */
 public interface StoreRowLocation extends StoreDataValue {
+    /**
+     * Return the concrete store-owned row location behind an engine adapter.
+     * Store-native implementations return themselves.
+     */
+    default StoreRowLocation unwrapStoreRowLocation()
+    {
+        return this;
+    }
 }

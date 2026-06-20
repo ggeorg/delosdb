@@ -121,10 +121,10 @@ class HeapScan
             if (SanityManager.DEBUG)
             {
                 SanityManager.ASSERT(
-                    rowloc_array[index] instanceof HeapRowLocation);
+                    rowloc_array[index].unwrapStoreRowLocation() instanceof HeapRowLocation);
             }
 
-            ((HeapRowLocation)rowloc_array[index]).setFrom(pos.current_rh);
+            HeapRowLocation.from(rowloc_array[index]).setFrom(pos.current_rh);
         }
     }
 
@@ -149,10 +149,10 @@ class HeapScan
             if (SanityManager.DEBUG)
             {
                 SanityManager.ASSERT(
-                    rowloc_array[index] instanceof HeapRowLocation);
+                    rowloc_array[index].unwrapStoreRowLocation() instanceof HeapRowLocation);
             }
 
-            ((HeapRowLocation)rowloc_array[index]).setFrom(rh);
+            HeapRowLocation.from(rowloc_array[index]).setFrom(rh);
         }
     }
 
@@ -292,7 +292,7 @@ class HeapScan
             
         } else {
             return(reopenScanByRecordHandleAndSetLocks
-                (((HeapRowLocation) rl).
+                (HeapRowLocation.from(rl).
                  getRecordHandle(open_conglom.getContainer())));
         }
     }
@@ -314,7 +314,7 @@ class HeapScan
             throw StandardException.newException(
                     SQLState.HEAP_SCAN_NOT_POSITIONED);
         }
-		HeapRowLocation hrl = (HeapRowLocation) templateLocation;
+		HeapRowLocation hrl = HeapRowLocation.from(templateLocation);
 		hrl.setFrom(scan_position.current_rh);
 	}
 
@@ -398,7 +398,7 @@ class HeapScan
         throws StandardException
     {
         reopenScanByRecordHandle(
-            ((HeapRowLocation) startRowLocation).getRecordHandle(
+            HeapRowLocation.from(startRowLocation).getRecordHandle(
                  open_conglom.getContainer()),
             qualifier);
     }

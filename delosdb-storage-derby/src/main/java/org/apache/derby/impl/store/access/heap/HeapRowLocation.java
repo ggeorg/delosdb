@@ -33,6 +33,11 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreDataValueBase;
+import org.apache.derby.iapi.store.types.StoreOrderable;
+import org.apache.derby.iapi.store.types.StoreRefDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 
 import java.io.ObjectOutput;
@@ -42,36 +47,51 @@ import java.io.IOException;
 /**
  * A heap row location represents the location of a row in the heap.
  * <P>
- * It is implementad as a wrapper around a raw store record handle.
- * 
+ * It is implemented as a wrapper around a raw store record handle.
+ *
  * @derby.formatId ACCESS_HEAP_ROW_LOCATION_V1_ID
  *
- * @derby.purpose   Object used to store the location of a row within a Heap table.  
- *            One of these is stored in every row of a btree secondary index 
+ * @derby.purpose   Object used to store the location of a row within a Heap table.
+ *            One of these is stored in every row of a btree secondary index
  *            built on a heap base table.
  *
  * @derby.upgrade   The type of the btree determines the type of rowlocation stored.
  *            In current btree implementations only one type of rowlocation can
- *            be stored per tree, and it's type is stored in the format id 
+ *            be stored per tree, and its type is stored in the format id
  *            array stored in the Conglomerate object.
  *
- * @derby.diskLayout 
+ * @derby.diskLayout
  *     page number(CompressedNumber.writeLong())
  *     record id(CompressedNumber.writeInt())
  **/
 
-public class HeapRowLocation extends org.apache.derby.iapi.types.DataType implements org.apache.derby.iapi.types.RowLocation, org.apache.derby.iapi.types.RefDataValue
+public class HeapRowLocation extends StoreDataValueBase
+        implements StoreRowLocation, StoreRefDataValue
 {
-	/**
-	The HeapRowLocation simply maintains a raw store record handle.
-	**/
+    /**
+    The HeapRowLocation simply maintains a raw store record handle.
+    **/
     private long         pageno;
     private int          recid;
-	private RecordHandle rh;
+    private RecordHandle rh;
 
     private static final int BASE_MEMORY_USAGE = ClassSize.estimateBaseFromCatalog( HeapRowLocation.class);
     private static final int RECORD_HANDLE_MEMORY_USAGE
     = ClassSize.estimateBaseFromCatalog( org.apache.derby.impl.store.raw.data.RecordId.class);
+
+    /**
+     * Return the concrete heap row-location value behind any engine adapter.
+     */
+    public static HeapRowLocation from(StoreRowLocation rowLocation)
+    {
+        StoreRowLocation unwrapped = rowLocation.unwrapStoreRowLocation();
+        if (SanityManager.DEBUG)
+        {
+            SanityManager.ASSERT(unwrapped instanceof HeapRowLocation,
+                    "Expected a heap row location");
+        }
+        return (HeapRowLocation) unwrapped;
+    }
 
     public int estimateMemoryUsage()
     {
@@ -82,237 +102,172 @@ public class HeapRowLocation extends org.apache.derby.iapi.types.DataType implem
         return sz;
     } // end of estimateMemoryUsage
 
-	public String getTypeName() {
-		return "RowLocation";
-	}
+    public StoreDataValue getNewNull() {
+        return new HeapRowLocation();
+    }
 
-	public void setValueFromResultSet(java.sql.ResultSet resultSet, int colNumber,
-		boolean isNullable) {
-	}
+    public Object getObject() {
+        return this;
+    }
 
-	public org.apache.derby.iapi.types.DataValueDescriptor getNewNull() {
-		return new HeapRowLocation();
-	}
-
-	public Object getObject() {
-		return this;
-	}
-
-	public org.apache.derby.iapi.types.DataValueDescriptor cloneValue(boolean forceMaterialization) {
-		return new HeapRowLocation(this);
-	}
+    public StoreDataValue cloneValue(boolean forceMaterialization) {
+        return new HeapRowLocation(this);
+    }
 
     /**
      * Recycle this HeapRowLocation object.
      *
      * @return this object reset to its initial state
      */
-    public org.apache.derby.iapi.types.DataValueDescriptor recycle() {
+    public StoreDataValue recycle() {
         pageno = 0L;
         recid = 0;
         rh = null;
         return this;
     }
 
-	public int getLength() {
-		return 10;
-	}
+    public int getLength() {
+        return 10;
+    }
 
-	public String getString() {
-		return toString();
-	}
+    public String getString() {
+        return toString();
+    }
 
-	/*
-	** Methods of Orderable (from org.apache.derby.iapi.types.RowLocation)
-	**
-	** see description in
-	** protocol/Database/Storage/Access/Interface/Orderable.java 
-	**
-	*/
+    /*
+    ** Store ordering methods.
+    */
 
-	public boolean compare(int op,
-						   org.apache.derby.iapi.types.DataValueDescriptor other,
-						   boolean orderedNulls,
-						   boolean unknownRV)
-	{
-		// HeapRowLocation should not be null, ignore orderedNulls
-		int result = compare(other);
+    public boolean compare(int op,
+                           StoreDataValue other,
+                           boolean orderedNulls,
+                           boolean unknownRV)
+        throws StandardException
+    {
+        // HeapRowLocation should not be null, ignore orderedNulls
+        int result = compare(other);
 
-		switch(op)
-		{
-		case ORDER_OP_LESSTHAN:
-			return (result < 0); // this < other
-		case ORDER_OP_EQUALS:
-			return (result == 0);  // this == other
-		case ORDER_OP_LESSOREQUALS:
-			return (result <= 0);  // this <= other
-		default:
+        switch(op)
+        {
+        case StoreOrderable.ORDER_OP_LESSTHAN:
+            return (result < 0); // this < other
+        case StoreOrderable.ORDER_OP_EQUALS:
+            return (result == 0);  // this == other
+        case StoreOrderable.ORDER_OP_LESSOREQUALS:
+            return (result <= 0);  // this <= other
+        default:
 
             if (SanityManager.DEBUG)
                 SanityManager.THROWASSERT("Unexpected operation");
-			return false;
-		}
-	}
-
-	public int compare(org.apache.derby.iapi.types.DataValueDescriptor other)
-	{
-		// REVISIT: do we need this check?
-        if (SanityManager.DEBUG)
-            SanityManager.ASSERT(other instanceof HeapRowLocation);
-
-		HeapRowLocation arg = (HeapRowLocation) other;
-		
-		// XXX (nat) assumption is that these HeapRowLocations are
-		// never null.  However, if they ever become null, need
-		// to add null comparison logic.
-        //
-        // RESOLVE - change these to be state based
-        /*
-        if (SanityManager.DEBUG)
-            SanityManager.ASSERT(getRecordHandle() != null);
-        if (SanityManager.DEBUG)
-            SanityManager.ASSERT(arg.getRecordHandle() != null);
-        */
-
-		long myPage     = this.pageno;
-		long otherPage  = arg.pageno;
-
-		if (myPage < otherPage)
-			return -1;
-		else if (myPage > otherPage)
-			return 1;
-
-		int myRecordId      = this.recid;
-		int otherRecordId   = arg.recid;
-
-		if (myRecordId == otherRecordId)
-			return 0;
-		else if (myRecordId < otherRecordId)
-			return -1;
-		else
-			return 1;
-	}
-
-    public  void    setValue( org.apache.derby.iapi.types.RowLocation rowLocation )
-    {
-        HeapRowLocation hrl = (HeapRowLocation) rowLocation;
-
-        setFrom( hrl.rh );
+            return false;
+        }
     }
 
-	/*
-	** Methods of HeapRowLocation
-	*/
-
-	HeapRowLocation(RecordHandle rh)
-	{
-		setFrom(rh);
-	}
-
-	public HeapRowLocation()
-	{
-        this.pageno = 0; 
-        this.recid  = RecordHandle.INVALID_RECORD_HANDLE;
-	}
-
-	/* For cloning */
-	private HeapRowLocation(HeapRowLocation other)
-	{
-		this.pageno = other.pageno;
-		this.recid = other.recid;
-		this.rh = other.rh;
-	}
-
-	public RecordHandle getRecordHandle(ContainerHandle ch)
+    public boolean compare(
+        int op,
+        StoreDataValue other,
+        boolean orderedNulls,
+        boolean nullsOrderedLow,
+        boolean unknownRV)
         throws StandardException
-	{
-		if (rh != null)
-			return rh;
+    {
+        return compare(op, other, orderedNulls, unknownRV);
+    }
 
-		return rh = ch.makeRecordHandle(this.pageno, this.recid);
-	}
+    public int compare(StoreDataValue other)
+    {
+        HeapRowLocation arg = from((StoreRowLocation) other);
 
-	void setFrom(RecordHandle rh)
-	{
+        // XXX (nat) assumption is that these HeapRowLocations are
+        // never null.  However, if they ever become null, need
+        // to add null comparison logic.
+
+        long myPage     = this.pageno;
+        long otherPage  = arg.pageno;
+
+        if (myPage < otherPage)
+            return -1;
+        else if (myPage > otherPage)
+            return 1;
+
+        int myRecordId      = this.recid;
+        int otherRecordId   = arg.recid;
+
+        if (myRecordId == otherRecordId)
+            return 0;
+        else if (myRecordId < otherRecordId)
+            return -1;
+        else
+            return 1;
+    }
+
+    protected void setFrom(StoreDataValue rowLocation)
+    {
+        HeapRowLocation hrl = from((StoreRowLocation) rowLocation);
+
+        this.pageno = hrl.pageno;
+        this.recid = hrl.recid;
+        this.rh = hrl.rh;
+    }
+
+    /*
+    ** Methods of HeapRowLocation
+    */
+
+    HeapRowLocation(RecordHandle rh)
+    {
+        setFrom(rh);
+    }
+
+    public HeapRowLocation()
+    {
+        this.pageno = 0;
+        this.recid  = RecordHandle.INVALID_RECORD_HANDLE;
+    }
+
+    /* For cloning */
+    private HeapRowLocation(HeapRowLocation other)
+    {
+        this.pageno = other.pageno;
+        this.recid = other.recid;
+        this.rh = other.rh;
+    }
+
+    public RecordHandle getRecordHandle(ContainerHandle ch)
+        throws StandardException
+    {
+        if (rh != null)
+            return rh;
+
+        return rh = ch.makeRecordHandle(this.pageno, this.recid);
+    }
+
+    void setFrom(RecordHandle rh)
+    {
         this.pageno = rh.getPageNumber();
         this.recid  = rh.getId();
-		this.rh = rh;
-	}
+        this.rh = rh;
+    }
 
-	//public void setFrom(long pageno, int recid)
-	//{
-    //    this.pageno = pageno;
-    //    this.recid  = recid;
-	//}
-
-	/*
-	 * InternalRowLocation interface
-	 */
+    /*
+     * Storable interface, implies Externalizable, TypedFormat
+     */
 
     /**
-     * Return a RecordHandle built from current org.apache.derby.iapi.types.RowLocation.
-     * <p>
-     * Build a RecordHandle from the current org.apache.derby.iapi.types.RowLocation.  The main client
-     * of this interface is row level locking secondary indexes which read
-     * the org.apache.derby.iapi.types.RowLocation field from a secondary index row, and then need a
-     * RecordHandle built from this org.apache.derby.iapi.types.RowLocation.
-     * <p>
-     * The interface is not as generic as one may have wanted in order to
-     * store as compressed a version of a org.apache.derby.iapi.types.RowLocation as possible.  So 
-     * if an implementation of a org.apache.derby.iapi.types.RowLocation does not have the segmentid, 
-     * and containerid stored, use the input parameters instead.  If the
-     * org.apache.derby.iapi.types.RowLocation does have the values stored use them and ignore the
-     * input parameters.
-     * <p>
-     * Example:
-     * <p>
-     * The HeapRowLocation implementation of org.apache.derby.iapi.types.RowLocation generated by the 
-     * Heap class, only stores the page and record id.  The B2I conglomerate
-     * implements a secondary index on top of a Heap class.  B2I knows the
-     * segmentid and containerid of it's base table, and knows that it can
-     * find an InternalRowLocation in a particular column of it's rows.  It
-     * uses InternalRowLocation.getRecordHandle() to build a RecordHandle
-     * from the InternalRowLocation, and uses it to set a row lock on that
-     * row in the btree.
-     *
-	 * @return The newly allocated RecordHandle.
-     *
-     * @param segmentid     The segment id to store in RecordHandle.
-     * @param containerid   The segment id to store in RecordHandle.
-     *
-	 * @exception  StandardException  Standard exception policy.
-     **/
-    /*public RecordHandle getRecordHandle(
-    TransactionManager   tran,
-    long                 segmentid,
-    long                 containerid)
-        throws StandardException
-    {
-        return(
-            this.getRecordHandle(
-                tran.getRawStoreXact(), segmentid, containerid));
+        Return my format identifier.
+
+        @see org.apache.derby.iapi.services.io.TypedFormat#getTypeFormatId
+    */
+    public int getTypeFormatId() {
+        return StoredFormatIds.ACCESS_HEAP_ROW_LOCATION_V1_ID;
     }
-*/
-
-	/*
-	 * Storable interface, implies Externalizable, TypedFormat
-	 */
-
-	/**
-		Return my format identifier.
-
-		@see org.apache.derby.iapi.services.io.TypedFormat#getTypeFormatId
-	*/
-	public int getTypeFormatId() {
-		return StoredFormatIds.ACCESS_HEAP_ROW_LOCATION_V1_ID;
-	}
 
     public boolean isNull()
     {
         return false;
     }
 
-	public void writeExternal(ObjectOutput out) 
+    public void writeExternal(ObjectOutput out)
         throws IOException
     {
         // Write the page number, compressed
@@ -322,86 +277,78 @@ public class HeapRowLocation extends org.apache.derby.iapi.types.DataType implem
         CompressedNumber.writeInt(out, this.recid);
     }
 
-	/**
-	  @exception java.lang.ClassNotFoundException A class needed to read the
-	  stored form of this object could not be found.
-	  @see java.io.Externalizable#readExternal
-	  */
-	public void readExternal(ObjectInput in) 
+    /**
+      @exception java.lang.ClassNotFoundException A class needed to read the
+      stored form of this object could not be found.
+      @see java.io.Externalizable#readExternal
+      */
+    public void readExternal(ObjectInput in)
         throws IOException, ClassNotFoundException
     {
         this.pageno = CompressedNumber.readLong(in);
 
         this.recid  = CompressedNumber.readInt(in);
 
-		rh = null;
+        rh = null;
     }
-	public void readExternalFromArray(ArrayInputStream in) 
+    public void readExternalFromArray(ArrayInputStream in)
         throws IOException, ClassNotFoundException
     {
         this.pageno = in.readCompressedLong();
 
         this.recid  = in.readCompressedInt();
 
-		rh = null;
+        rh = null;
     }
 
     public void restoreToNull()
     {
-		if (SanityManager.DEBUG) 
-			SanityManager.THROWASSERT("HeapRowLocation is never null");
-    }
-	protected void setFrom(org.apache.derby.iapi.types.DataValueDescriptor theValue)  {
         if (SanityManager.DEBUG)
-            SanityManager.ASSERT(theValue instanceof HeapRowLocation,
-                    "Should only be set from another HeapRowLocation");
-        HeapRowLocation that = (HeapRowLocation) theValue;
-        this.pageno = that.pageno;
-        this.recid = that.recid;
-        this.rh = that.rh;
-	}
-	/*
-	**		Methods of Object
-	*/
+            SanityManager.THROWASSERT("HeapRowLocation is never null");
+    }
 
-	/**
-		Implement value equality.
-		<BR>
-		MT - Thread safe
-	*/
-	public boolean equals(Object ref) 
+    /*
+    **      Methods of Object
+    */
+
+    /**
+        Implement value equality.
+        <BR>
+        MT - Thread safe
+    */
+    public boolean equals(Object ref)
     {
 
-		if ((ref instanceof HeapRowLocation))
+        if ((ref instanceof StoreRowLocation))
         {
-            HeapRowLocation other = (HeapRowLocation) ref;
+            HeapRowLocation other = from((StoreRowLocation) ref);
 
             return(
                 (this.pageno == other.pageno) && (this.recid == other.recid));
         }
         else
         {
-			return false;
+            return false;
         }
 
-	}
+    }
 
-	/**
-		Return a hashcode based on value.
-		<BR>
-		MT - thread safe
-	*/
-	public int hashCode() 
+    /**
+        Return a hashcode based on value.
+        <BR>
+        MT - thread safe
+    */
+    public int hashCode()
     {
-		return ((int) this.pageno) ^ this.recid;
-	}
+        return ((int) this.pageno) ^ this.recid;
+    }
 
     /*
      * Standard toString() method.
      */
     public String toString()
     {
-        String string = 
+        String string =
            "(" + this.pageno + "," + this.recid + ")";
         return(string);
     }

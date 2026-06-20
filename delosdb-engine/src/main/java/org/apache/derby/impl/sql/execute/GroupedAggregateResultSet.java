@@ -43,6 +43,7 @@ import org.apache.derby.iapi.store.access.SortObserver;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * This ResultSet evaluates grouped, non distinct aggregates.
@@ -604,7 +605,7 @@ class GroupedAggregateResultSet extends GenericAggregateResultSet
 		// REVISIT: could we reuse the same rowlocation object
 		// across several calls?
 		RowLocation rl;
-		rl = (RowLocation) scanController.newRowLocationTemplate();
+		rl = EngineStoreRowLocationBridge.requireEngineRowLocation(scanController.newRowLocationTemplate());
 		scanController.fetchLocation(rl);
 		return rl;
 	}

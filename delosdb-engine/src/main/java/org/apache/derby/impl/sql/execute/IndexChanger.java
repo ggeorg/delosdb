@@ -50,6 +50,7 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.shared.common.sanity.SanityManager;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
   Perform Index maintenance associated with DML operations for a single index.
@@ -253,7 +254,7 @@ class IndexChanger
 		}
 		else if (indexSC == null)
 		{
-			RowLocation templateBaseRowLocation = (RowLocation) baseCC.newRowLocationTemplate();
+			RowLocation templateBaseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(baseCC.newRowLocationTemplate());
 			/* DataDictionary doesn't have compiled info */
 			if (indexSCOCI == null)
 			{

@@ -45,6 +45,7 @@ import org.apache.derby.iapi.services.io.FormatableArrayHolder;
 
 import java.util.Properties;
 import org.apache.derby.iapi.sql.execute.ExecRowBuilder;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * Takes a source result set, sends it to the sorter,
@@ -536,7 +537,7 @@ class SortResultSet extends NoPutResultSetImpl
 		// REVISIT: could we reuse the same rowlocation object
 		// across several calls?
 		RowLocation rl;
-		rl = (RowLocation) scanController.newRowLocationTemplate();
+		rl = EngineStoreRowLocationBridge.requireEngineRowLocation(scanController.newRowLocationTemplate());
 		scanController.fetchLocation(rl);
 		return rl;
 	}

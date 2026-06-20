@@ -42,6 +42,7 @@ import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * Takes a table and a table filter and returns
@@ -733,7 +734,7 @@ class TableScanResultSet extends ScanResultSet
 			if (currentRowIsValid) {
 				// we reuse the same rowlocation object across several calls.
 				if (rlTemplate == null)
-					rlTemplate = (RowLocation) scanController.newRowLocationTemplate();
+					rlTemplate = EngineStoreRowLocationBridge.requireEngineRowLocation(scanController.newRowLocationTemplate());
 				rl = rlTemplate;
 				try {
 					scanController.fetchLocation(rl);

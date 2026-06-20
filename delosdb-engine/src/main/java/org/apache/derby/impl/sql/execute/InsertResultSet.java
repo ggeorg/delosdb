@@ -78,6 +78,7 @@ import org.apache.derby.iapi.types.SQLBoolean;
 import org.apache.derby.iapi.util.StringUtil;
 import org.apache.derby.impl.sql.execute.DeferredConstraintsMemory.CheckInfo;
 import org.apache.derby.shared.common.sanity.SanityManager;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * Insert the rows from the source into the specified
@@ -2072,7 +2073,7 @@ class InsertResultSet extends DMLWriteGeneratedColumnsResultSet implements Targe
         }
         else
         {
-            rl = (RowLocation) bulkHeapSC.newRowLocationTemplate();
+            rl = EngineStoreRowLocationBridge.requireEngineRowLocation(bulkHeapSC.newRowLocationTemplate());
         }
 
         bulkHeapSC.close();

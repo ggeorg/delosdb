@@ -82,10 +82,10 @@ public class HeapController
     {
         if (SanityManager.DEBUG)
         {
-            SanityManager.ASSERT(row_loc instanceof HeapRowLocation);
+            SanityManager.ASSERT(row_loc.unwrapStoreRowLocation() instanceof HeapRowLocation);
         }
         pos.current_rh = 
-            ((HeapRowLocation) row_loc).getRecordHandle(
+            HeapRowLocation.from(row_loc).getRecordHandle(
                 open_conglom.getContainer());
         pos.current_rh_qualified = true;
     }
@@ -614,9 +614,9 @@ public class HeapController
         if (SanityManager.DEBUG)
         {
             SanityManager.ASSERT(
-                templateRowLocation instanceof HeapRowLocation);
+                templateRowLocation.unwrapStoreRowLocation() instanceof HeapRowLocation);
         }
-		HeapRowLocation hrl = (HeapRowLocation) templateRowLocation;
+		HeapRowLocation hrl = HeapRowLocation.from(templateRowLocation);
 		hrl.setFrom(rh);
 	}
 
@@ -646,7 +646,7 @@ public class HeapController
         throws StandardException
     {
         RecordHandle rh = 
-            ((HeapRowLocation) loc).getRecordHandle(
+            HeapRowLocation.from(loc).getRecordHandle(
                 open_conglom.getContainer());
 
         return(lockRow(rh, lock_operation, wait, lock_duration));
@@ -676,7 +676,7 @@ public class HeapController
     {
 
         RecordHandle rh = 
-            ((HeapRowLocation) loc).getRecordHandle(
+            HeapRowLocation.from(loc).getRecordHandle(
                 open_conglom.getContainer());
 
         open_conglom.getContainer().getLockingPolicy().

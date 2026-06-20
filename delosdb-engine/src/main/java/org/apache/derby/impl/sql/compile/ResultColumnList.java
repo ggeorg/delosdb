@@ -57,6 +57,7 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.types.TypeId;
 import org.apache.derby.iapi.util.JBitSet;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * A ResultColumnList is the target list of a SELECT, INSERT, or UPDATE.
@@ -1542,7 +1543,7 @@ class ResultColumnList extends QueryTreeNodeVector<ResultColumn>
 			row.setColumn(i + 1, dataValue );
 		}
 
-		RowLocation rlTemplate = (RowLocation) scc.newRowLocationTemplate();
+		RowLocation rlTemplate = EngineStoreRowLocationBridge.requireEngineRowLocation(scc.newRowLocationTemplate());
 
 		row.setColumn(baseCols.length + 1, rlTemplate);
 
@@ -1663,7 +1664,7 @@ class ResultColumnList extends QueryTreeNodeVector<ResultColumn>
                 isolationLevel);
 
         try {
-            return (RowLocation) cc.newRowLocationTemplate();
+            return EngineStoreRowLocationBridge.requireEngineRowLocation(cc.newRowLocationTemplate());
         } finally {
             cc.close();
         }

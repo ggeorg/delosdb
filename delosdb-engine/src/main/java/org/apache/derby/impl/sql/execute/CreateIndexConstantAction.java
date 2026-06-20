@@ -60,6 +60,7 @@ import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.types.TypeId;
 import org.apache.derby.impl.services.daemon.IndexStatisticsDaemonImpl;
 import org.apache.derby.shared.common.sanity.SanityManager;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * ConstantAction to create an index either through
@@ -833,7 +834,7 @@ class CreateIndexConstantAction extends IndexConstantAction
 			RowLocation rl[] = new RowLocation[bulkFetchSize];
 			for (int i = 0; i < bulkFetchSize; i++)
 			{
-				rl[i] = (RowLocation) scan.newRowLocationTemplate();
+				rl[i] = EngineStoreRowLocationBridge.requireEngineRowLocation(scan.newRowLocationTemplate());
 
 				// Get an index row based on the base row
 				indexRowGenerator.getIndexRow(compactBaseRows[i], rl[i], indexRows[i], bitSet);

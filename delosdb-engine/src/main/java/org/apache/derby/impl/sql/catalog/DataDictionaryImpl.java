@@ -21,6 +21,9 @@
 
 package org.apache.derby.impl.sql.catalog;
 
+
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+
 import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
 
 import java.io.File;
@@ -3297,7 +3300,7 @@ public final class	DataDictionaryImpl
 			ExecRow outRow = rf.makeEmptyRow();
 			ExecIndexRow indexRow = getIndexRowFromHeapRow(
 				ti.getIndexRowGenerator(rf.SYSROLES_INDEX_ID_EE_OR_IDX),
-				(RowLocation) heapCC.newRowLocationTemplate(),
+				EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate()),
 				outRow);
 
 			while (sc.fetchNext(indexRow.getRowArray())) {
@@ -3588,12 +3591,12 @@ public final class	DataDictionaryImpl
 			ExecRow outRow = rf.makeEmptyRow();
 			ExecIndexRow indexRow = getIndexRowFromHeapRow(
 				ti.getIndexRowGenerator(indexNo),
-				(RowLocation) heapCC.newRowLocationTemplate(),
+				EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate()),
 				outRow);
 
 			while (sc.fetchNext(indexRow.getRowArray())) {
-				RowLocation baseRowLocation = (RowLocation)indexRow.getColumn(
-					indexRow.nColumns());
+				RowLocation baseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(indexRow.getColumn(
+					indexRow.nColumns()));
 
 				boolean base_row_exists =
 					heapCC.fetch(
@@ -5968,13 +5971,13 @@ public final class	DataDictionaryImpl
 			// create an index row template
 			indexRow1 = getIndexRowFromHeapRow(
 									ti.getIndexRowGenerator(indexId),
-									(RowLocation) heapCC.newRowLocationTemplate(),
+									EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate()),
 									outRow);
 
 			scanController.fetch(indexRow1.getRowArray());
 
-			baseRowLocation = (RowLocation)	indexRow1.getColumn(
-												indexRow1.nColumns());
+			baseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(indexRow1.getColumn(
+												indexRow1.nColumns()));
 
 			boolean base_row_exists = 
                 heapCC.fetch(
@@ -6284,7 +6287,7 @@ public final class	DataDictionaryImpl
 			// create an index row template
 			indexRow1 = getIndexRowFromHeapRow(
 								ti.getIndexRowGenerator(indexId), 
-								(RowLocation) heapCC.newRowLocationTemplate(),
+								EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate()),
 								outRow);
 	
 			// just interested in one column
@@ -6312,8 +6315,8 @@ public final class	DataDictionaryImpl
 
 			while (scanController.fetchNext(indexRow1.getRowArray()))
 			{	
-				baseRowLocation = (RowLocation)	
-                    indexRow1.getColumn(indexRow1.nColumns());
+				baseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(
+                    indexRow1.getColumn(indexRow1.nColumns()));
 	
 				// get the row and grab the uuid
 				boolean base_row_exists = 
@@ -8585,7 +8588,7 @@ public final class	DataDictionaryImpl
                 TransactionController.MODE_RECORD,
                 TransactionController.ISOLATION_REPEATABLE_READ);
 
-		ExecRow indexTemplateRow = rf.buildEmptyIndexRow( SYSTABLESRowFactory.SYSTABLES_INDEX1_ID, (RowLocation) heapCC.newRowLocationTemplate() );
+		ExecRow indexTemplateRow = rf.buildEmptyIndexRow( SYSTABLESRowFactory.SYSTABLES_INDEX1_ID, EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate()) );
 
 		/* Scan the index and go to the data pages for qualifying rows to
 		 * build the column descriptor.
@@ -8611,8 +8614,8 @@ public final class	DataDictionaryImpl
 			RowLocation	baseRowLocation;
 
 
-			baseRowLocation = (RowLocation)	indexTemplateRow.getColumn(
-												indexTemplateRow.nColumns());
+			baseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(indexTemplateRow.getColumn(
+												indexTemplateRow.nColumns()));
 	
 			/* 1st column is TABLEID (UUID - char(36)) */
 			row.setColumn(SYSTABLESRowFactory.SYSTABLES_TABLEID, new SQLChar());
@@ -8897,7 +8900,7 @@ public final class	DataDictionaryImpl
             TransactionController.MODE_RECORD,
 			TransactionController.ISOLATION_REPEATABLE_READ);
 
-		rl = (RowLocation) cc.newRowLocationTemplate();
+		rl = EngineStoreRowLocationBridge.requireEngineRowLocation(cc.newRowLocationTemplate());
 		cc.close();
 
 		// Get an index row based on the base row
@@ -9444,7 +9447,7 @@ public final class	DataDictionaryImpl
  			// create an index row template
 			indexRow1 = getIndexRowFromHeapRow(
 									ti.getIndexRowGenerator(indexId),
-									(RowLocation) heapCC.newRowLocationTemplate(),
+									EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate()),
 									outRow);
 
 			// It is important for read uncommitted scans to use fetchNext()
@@ -9456,8 +9459,8 @@ public final class	DataDictionaryImpl
 				break;
 			}
 
-			baseRowLocation = (RowLocation)	indexRow1.getColumn(
-												indexRow1.nColumns());
+			baseRowLocation = EngineStoreRowLocationBridge.requireEngineRowLocation(indexRow1.getColumn(
+												indexRow1.nColumns()));
 
             // RESOLVE paulat - remove the try catch block when track 3677 is fixed
             // just leave the contents of the try block
@@ -10436,7 +10439,7 @@ public final class	DataDictionaryImpl
                 tableId, false, 0, tc.MODE_RECORD, tc.ISOLATION_READ_COMMITTED);
 		try
 		{
-			rl = (RowLocation) heapCC.newRowLocationTemplate();
+			rl = EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate());
 		}
 		finally
 		{
@@ -13820,7 +13823,7 @@ public final class	DataDictionaryImpl
         RowLocation rl = null;
         try
         {
-            rl = (RowLocation) heapCC.newRowLocationTemplate();
+            rl = EngineStoreRowLocationBridge.requireEngineRowLocation(heapCC.newRowLocationTemplate());
         }
         finally
         {
