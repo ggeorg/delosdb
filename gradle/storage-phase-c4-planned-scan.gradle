@@ -1,0 +1,254 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C4 planned scan proof.
+//
+// This is intentionally a tiny smoke/proof, not a runtime SQL reroute. It proves
+// that a planned table identity can drive a VersionedStorageExecutionBridge scan
+// directly, without adding a new SQL-regex path and without touching Derby heap
+// execution.
+
+ext.delosdbStoragePhaseC4ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC4ReportFile =
+        ext.delosdbStoragePhaseC4ReportDir.map { it.file('storage-phase-c4-planned-scan.txt') }
+ext.delosdbStoragePhaseC4SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c4-planned-scan-smoke')
+
+ext.delosdbStoragePhaseC4RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC4RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC4RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC4ForbiddenSourceHits = { Collection<File> sourceFiles, Collection<String> tokens ->
+    sourceFiles.collectMany { sourceFile ->
+        def text = sourceFile.text
+        tokens.findAll { token -> text.contains(token) }.collect { token ->
+            "${delosdbStoragePhaseC4RelPath(sourceFile)} contains forbidden token ${token}"
+        }
+    }.sort()
+}
+
+ext.delosdbStoragePhaseC4JavaFiles = { String projectPath ->
+    def sourceRoot = file("${projectPath}/src/main/java")
+    if (!sourceRoot.exists()) {
+        return [] as Set<File>
+    }
+    fileTree(sourceRoot).matching { include '**/*.java' }.files as Set<File>
+}
+
+ext.delosdbStoragePhaseC4Classpath = {
+    files(
+            delosdbStoragePhaseC4SmokeClassesDir,
+            moduleClassDir(moduleNames.engine),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.osgi),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            extensionRuntimeJars())
+}
+
+ext.delosdbStoragePhaseC4Proof = {
+    def errors = []
+    def lines = []
+
+    def smokeSource = file('dev/storage-phase-c4-planned-scan-smoke/src/main/java/delosdb/smoke/StoragePhaseC4PlannedScanSmoke.java')
+    def executionBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/execution/VersionedStorageExecutionBridge.java')
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def embedStatement = file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedStatement.java')
+    def heapProvider = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/LegacyDerbyHeapStorageProvider.java')
+    def mvccProvider = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java')
+    def storelessRoot = file('delosdb-storeless/src/main/java')
+
+    delosdbStoragePhaseC4RequireTokens(errors, smokeSource, [
+            'record PlannedScan',
+            'VersionedStorageExecutionBridge',
+            'VersionedTableMetadata',
+            'DelosMvccStorageProvider.PROVIDER_NAME',
+            'bridge.createTable(',
+            'bridge.insert(',
+            'scanPlan.execute(bridge, reader.currentView())',
+            'bridge.scanAll(open(bridge)',
+            'requireMissingProviderIsRejected'
+    ], 'Phase C4 planned scan smoke')
+
+    delosdbStoragePhaseC4RequireTokens(errors, executionBridge, [
+            'public <K, V> VersionedTable<K, V> openTable(',
+            'public <K, V> List<VersionedRow<K, V>> scanAll(',
+            'try (VersionedScan<K, V> scan = requireTable(table).openScan(requireView(view)))',
+            'return List.copyOf(rows);'
+    ], 'VersionedStorageExecutionBridge direct scan contract')
+
+    delosdbStoragePhaseC4RequireTokens(errors, sqlBridge, [
+            'Minimal SQL/JDBC bridge for the experimental',
+            'Attempts to execute a supported experimental MVCC SQL statement',
+            'tryExecute(sql, VersionedStorageSqlBridge.class, true)'
+    ], 'transitional VersionedStorageSqlBridge')
+
+    delosdbStoragePhaseC4RequireTokens(errors, embedStatement, [
+            'VersionedStorageSqlBridge.tryExecute('
+    ], 'current transitional EmbedStatement bridge hook')
+
+    delosdbStoragePhaseC4RequireTokens(errors, heapProvider, [
+            'implements StorageProvider',
+            'StorageCapabilities'
+    ], 'Derby heap provider remains metadata path')
+
+    delosdbStoragePhaseC4RequireTokens(errors, mvccProvider, [
+            'implements VersionedStorageProvider',
+            'public VersionedTransactionCoordinator transactionCoordinator()',
+            'public synchronized <K, V> VersionedTable<K, V> openTable('
+    ], 'MVCC provider remains versioned operational path')
+
+    if (!storelessRoot.exists()) {
+        errors << 'missing storeless source root: delosdb-storeless/src/main/java'
+    } else {
+        def storelessProviderHits = fileTree(storelessRoot).matching { include '**/*.java' }.files.findAll { sourceFile ->
+            def text = sourceFile.text
+            text.contains('implements StorageProvider') || text.contains('implements VersionedStorageProvider')
+        }.collect { delosdbStoragePhaseC4RelPath(it) }.sort()
+        if (!storelessProviderHits.isEmpty()) {
+            errors << 'storeless must remain a no-store negative proof, not a provider: ' + storelessProviderHits
+        }
+    }
+
+    if (smokeSource.exists()) {
+        errors.addAll(delosdbStoragePhaseC4ForbiddenSourceHits([smokeSource], [
+                'java.sql.',
+                'Connection',
+                'Statement',
+                'ResultSet',
+                'VersionedStorageSqlBridge',
+                'Pattern.compile',
+                'Matcher',
+                'select ',
+                'insert into',
+                'create table'
+        ]))
+    }
+
+    def engineStoreSourceRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+    if (engineStoreSourceRoot.exists()) {
+        errors << 'Phase C4 must not add engine-side org/apache/derby/impl/store sources: '
+                + delosdbStoragePhaseC4RelPath(engineStoreSourceRoot)
+    }
+
+    def thirdIslandNames = [
+            'DelosStorageEngine.java',
+            'DelosTableAccess.java',
+            'DelosScan.java',
+            'DelosMutationAccess.java',
+            'TableAccessProfile.java',
+            'StorageExecutionProfile.java',
+            'StorelessStorageProvider.java',
+            'StorelessVersionedStorageProvider.java'
+    ] as Set
+    def thirdIslandFiles = fileTree(rootProject.projectDir).matching {
+        include '**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+        exclude '**/.idea/**'
+        exclude '**/__MACOSX/**'
+    }.files.findAll { thirdIslandNames.contains(it.name) }
+            .collect { delosdbStoragePhaseC4RelPath(it) }.sort()
+    if (!thirdIslandFiles.isEmpty()) {
+        errors << 'Phase C4 must not introduce the third SPI/profile island before the planned-scan proof: '
+                + thirdIslandFiles
+    }
+
+    def allEngineVersionedFiles = delosdbStoragePhaseC4JavaFiles('delosdb-engine').findAll { sourceFile ->
+        delosdbStoragePhaseC4RelPath(sourceFile).contains('/versioned/')
+    }
+    def sqlRegexOwners = allEngineVersionedFiles.findAll { sourceFile ->
+        sourceFile.name != 'VersionedStorageSqlBridge.java' && sourceFile.text.contains('Pattern.compile(')
+    }.collect { delosdbStoragePhaseC4RelPath(it) }.sort()
+    if (!sqlRegexOwners.isEmpty()) {
+        errors << 'new MVCC planned-scan work must not add SQL regex owners outside VersionedStorageSqlBridge: '
+                + sqlRegexOwners
+    }
+
+    lines << 'DelosDB Storage Phase C4 Planned Scan Proof'
+    lines << '==========================================='
+    lines << ''
+    lines << 'C4 mechanic:'
+    lines << '  a planned table identity can open and scan delos_mvcc through VersionedStorageExecutionBridge.'
+    lines << ''
+    lines << 'Preserved boundaries:'
+    lines << '  heap:        LegacyDerbyHeapStorageProvider remains the metadata/capability StorageProvider path'
+    lines << '  mvcc:        DelosMvccStorageProvider remains the VersionedStorageProvider operational path'
+    lines << '  storeless:   still a no-store negative proof, not a StorageProvider implementation'
+    lines << '  SQL bridge:  still transitional; C4 adds no new SQL regex owner'
+    lines << ''
+    lines << 'Proof smoke:'
+    lines << '  dev/storage-phase-c4-planned-scan-smoke/src/main/java/delosdb/smoke/StoragePhaseC4PlannedScanSmoke.java'
+    lines << ''
+    lines << 'Runtime behavior:'
+    lines << '  unchanged for Derby heap; this is a dev smoke plus guard only.'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC4PlannedScanReport') {
+    group = 'verification'
+    description = 'Writes the Phase C4 planned scan proof report.'
+    dependsOn 'verifyStoragePhaseC3MvccMapping'
+    outputs.file(delosdbStoragePhaseC4ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC4Proof()
+        def outputFile = delosdbStoragePhaseC4ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C4 planned scan proof failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC4PlannedScanSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C4 direct planned-scan smoke test.'
+    source = files('dev/storage-phase-c4-planned-scan-smoke/src/main/java')
+    destinationDirectory = delosdbStoragePhaseC4SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC4Classpath()
+}
+
+tasks.register('storagePhaseC4PlannedScanSmoke', JavaExec) {
+    dependsOn 'compileStoragePhaseC4PlannedScanSmoke'
+    group = 'verification'
+    description = 'Runs the Phase C4 direct planned-scan smoke test without JDBC SQL-regex routing.'
+    classpath = delosdbStoragePhaseC4Classpath()
+    mainClass = 'delosdb.smoke.StoragePhaseC4PlannedScanSmoke'
+}
+
+tasks.register('verifyStoragePhaseC4PlannedScanProof') {
+    group = 'verification'
+    description = 'Verifies the Phase C4 first planned scan proof.'
+    dependsOn 'storagePhaseC4PlannedScanReport', 'storagePhaseC4PlannedScanSmoke'
+    doLast {
+        println 'Verified Phase C4 planned scan proof; next step must be one INSERT proof, not broad SQL bridge removal'
+    }
+}
