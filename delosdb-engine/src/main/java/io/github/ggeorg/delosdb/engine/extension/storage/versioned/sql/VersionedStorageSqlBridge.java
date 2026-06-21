@@ -1,6 +1,8 @@
 package io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.VersionedStorageProviderDiscovery;
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.VersionedStorageProviderRegistry;
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.execution.VersionedStorageExecutionBridge;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
@@ -98,6 +100,9 @@ public final class VersionedStorageSqlBridge {
     private static final Map<Object, SessionTransaction> SESSION_TRANSACTIONS = new IdentityHashMap<>();
     private static VersionedStorageProvider cachedProvider;
     private static Path pageBackedStorageDirectory;
+    private static final VersionedStorageExecutionBridge PLANNED_TABLE_OPERATION_BRIDGE =
+            new VersionedStorageExecutionBridge(VersionedStorageProviderRegistry.empty().resolver());
+
     private static volatile VersionedStorageAccessPath lastAccessPath;
     private static volatile long lastStatementCommandSequence = TxContext.UNKNOWN_STATEMENT_COMMAND_SEQUENCE;
 
@@ -392,7 +397,7 @@ public final class VersionedStorageSqlBridge {
         long rowKey = table.nextRowKey();
         try {
             table.reserveUniqueKeys(values, rowKey, statementTx.context());
-            table.table().insert(rowKey, values, statementTx.context());
+            PLANNED_TABLE_OPERATION_BRIDGE.insert(table.table(), rowKey, values, statementTx.context());
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.updateCount(1L);
         } catch (RuntimeException | SQLException e) {
