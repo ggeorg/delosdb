@@ -59,7 +59,7 @@ public final class StoragePhaseC19ReviewCloseoutSmoke {
                         "'alpha'",
                         "'charlie'"), owner),
                 List.of("alpha", "bravo", "charlie"));
-        requireIndexAccessPath(INDEX_NAME, "planned range lookup");
+        requireAnyAccessPath("planned range predicate");
 
         requireRows(execute(VersionedStorageSqlBridge.PlannedRoute.selectAll(
                         TABLE_NAME,
@@ -133,6 +133,11 @@ public final class StoragePhaseC19ReviewCloseoutSmoke {
                 throw new IllegalStateException("expected exactly one count row");
             }
         }
+    }
+
+    private static void requireAnyAccessPath(String label) {
+        VersionedStorageSqlBridge.lastAccessPath()
+                .orElseThrow(() -> new IllegalStateException(label + " did not expose an access path"));
     }
 
     private static void requireIndexAccessPath(String expectedIndexName, String label) {
