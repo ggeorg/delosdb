@@ -297,7 +297,8 @@ class ProjectRestrictResultSet extends NoPutResultSetImpl
 
                 while (rowLocations.hasMoreElements() && candidateRow == null) {
                     DataValueDescriptor[] row =
-                            (DataValueDescriptor[])rowLocations.nextElement();
+                            DeferredConstraintsMemory.dataValueArray(
+                                    rowLocations.nextElement());
                     RowLocation rl = (RowLocation)((SQLRef)row[0]).getObject();
                     ((ValidateCheckConstraintResultSet)source).
                         positionScanAtRowLocation(rl);

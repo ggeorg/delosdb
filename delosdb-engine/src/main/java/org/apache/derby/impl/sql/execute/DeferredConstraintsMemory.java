@@ -310,7 +310,7 @@ final public class DeferredConstraintsMemory
     }
 
 
-    private static DataValueDescriptor[] dataValueArray(Object value)
+    static DataValueDescriptor[] dataValueArray(Object value)
     {
         if (value instanceof DataValueDescriptor[] dataValues)
         {
