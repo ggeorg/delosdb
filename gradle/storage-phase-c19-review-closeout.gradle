@@ -1,0 +1,337 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C19 review closeout.
+//
+// C19 intentionally stays in the review lane. It fixes the post-C18 review
+// findings in one small slice: index reads delegate through the execution
+// bridge, the planned-route seam is typed and no longer test-shaped, and the
+// remaining provider-local SQL shim is inventoried honestly.
+
+ext.delosdbStoragePhaseC19ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC19ReportFile =
+        ext.delosdbStoragePhaseC19ReportDir.map { it.file('storage-phase-c19-review-closeout.txt') }
+ext.delosdbStoragePhaseC19SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c19-review-closeout-smoke')
+
+ext.delosdbStoragePhaseC19RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC19RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC19RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC19JavaFiles = { String projectPath ->
+    def sourceRoot = file("${projectPath}/src/main/java")
+    if (!sourceRoot.exists()) {
+        return [] as Set<File>
+    }
+    fileTree(sourceRoot).matching { include '**/*.java' }.files as Set<File>
+}
+
+ext.delosdbStoragePhaseC19ModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseC19RuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseC19Classpath = {
+    files(
+            delosdbStoragePhaseC19SmokeClassesDir,
+            delosdbStoragePhaseC19ModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseC19ModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseC19ModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseC19RuntimeJars())
+}
+
+ext.delosdbStoragePhaseC19Proof = {
+    def errors = []
+    def lines = []
+
+    def smokeSource = file('dev/storage-phase-c19-review-closeout-smoke/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/StoragePhaseC19ReviewCloseoutSmoke.java')
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def executionBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/execution/VersionedStorageExecutionBridge.java')
+    def providerLocalSqlShim = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java')
+    def heapProvider = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/LegacyDerbyHeapStorageProvider.java')
+    def mvccProvider = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java')
+    def storelessRoot = file('delosdb-storeless/src/main/java')
+
+    delosdbStoragePhaseC19RequireTokens(errors, smokeSource, [
+            'StoragePhaseC19ReviewCloseoutSmoke',
+            'VersionedStorageSqlBridge.PlannedRoute.createTable(',
+            'VersionedStorageSqlBridge.PlannedRoute.createIndex(',
+            'VersionedStorageSqlBridge.PlannedRoute.insertValues(',
+            'VersionedStorageSqlBridge.PlannedRoute.selectWhereEquals(',
+            'VersionedStorageSqlBridge.PlannedRoute.selectWhereBetween(',
+            'VersionedStorageSqlBridge.PlannedRoute.selectAll(',
+            'VersionedStorageSqlBridge.executePlannedRoute(',
+            'requireIndexAccessPath'
+    ], 'Phase C19 typed planned-route smoke')
+
+    if (smokeSource.exists()) {
+        def smokeText = smokeSource.text
+        [
+                'tryExecute(',
+                'executePlannedRouteForTesting(',
+                'Pattern.compile(',
+                '.matcher(',
+                'CREATE TABLE ',
+                'CREATE INDEX ',
+                'INSERT INTO ',
+                'SELECT ',
+                'UPDATE ',
+                'DELETE FROM '
+        ].each { token ->
+            if (smokeText.contains(token)) {
+                errors << "Phase C19 smoke must stay on the typed planned-route seam and not contain token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC19RequireTokens(errors, executionBridge, [
+            'public static VersionedStorageExecutionBridge resolvedTableOperations()',
+            'provider lookup is unavailable on a resolved-table operation bridge',
+            'public <K, V> VersionedTable<K, V> createTable(',
+            'public <K, V> VersionedTable<K, V> openTable(',
+            'public <K, V> void insert(',
+            'public <K, V> void update(',
+            'public <K, V> void delete(',
+            'public <K, V> Optional<V> read(',
+            'public <K, V> List<VersionedRow<K, V>> scanAll(',
+            'public <K, V> VersionedTableStats stats(',
+            'public <K, V> VersionedIndex<K, V> createIndex(',
+            'public <K, V> VersionedIndexStats indexStats(',
+            'public <K, V> List<VersionedRow<K, V>> lookup(',
+            'public <K, V> VersionedIndexStats indexStatsRange(',
+            'public <K, V> List<VersionedRow<K, V>> lookupRange('
+    ], 'VersionedStorageExecutionBridge post-C19 table/index operation surface')
+
+    delosdbStoragePhaseC19RequireTokens(errors, sqlBridge, [
+            'static record PlannedRoute(',
+            'static VersionedStorageSqlResult executePlannedRoute(',
+            'private static VersionedStorageSqlResult executePlannedRouteInternal(',
+            'private static PlannedRoute routeStatement(String normalizedSql)',
+            'Pattern.compile(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.createTable(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.createIndex(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.stats(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.indexStats(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.lookup(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.indexStatsRange(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.lookupRange(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.delete(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.update('
+    ], 'VersionedStorageSqlBridge post-C19 routing/delegation state')
+
+    if (sqlBridge.exists()) {
+        def bridgeText = sqlBridge.text
+        [
+                'executePlannedRouteForTesting(',
+                'private record RoutedStatement(',
+                'private static RoutedStatement routeStatement(',
+                'private static RoutedStatement route(',
+                'executeRoutedStatement(',
+                'new RoutedStatement(',
+                'List<String> groups',
+                'VersionedStorageProviderRegistry.empty().resolver()',
+                'provider.createTable(metadata)',
+                'provider.openTable(metadata)',
+                'cachedProvider.createTable(',
+                'cachedProvider.openTable(',
+                'table.table().insert(',
+                'table.table().update(',
+                'table.table().delete(',
+                'table.table().openScan(',
+                'table.table().stats(',
+                'table.table().createIndex(',
+                'index.index().stats(',
+                'index.index().lookup(',
+                'index.index().statsRange(',
+                'index.index().lookupRange('
+        ].each { token ->
+            if (bridgeText.contains(token)) {
+                errors << "VersionedStorageSqlBridge must not contain post-C19 forbidden token: ${token}"
+            }
+        }
+        def routeStart = bridgeText.indexOf('private static PlannedRoute routeStatement(String normalizedSql)')
+        def plannedEntryStart = bridgeText.indexOf('static VersionedStorageSqlResult executePlannedRoute(')
+        def executeStart = bridgeText.indexOf('private static VersionedStorageSqlResult executePlannedRouteInternal(')
+        if (routeStart < 0 || plannedEntryStart < 0 || executeStart < 0) {
+            errors << 'C19 requires routeStatement, executePlannedRoute, and executePlannedRouteInternal to exist'
+        }
+        if (routeStart >= 0 && executeStart >= 0 && executeStart < routeStart) {
+            errors << 'routeStatement must stay before executePlannedRouteInternal so routing and execution remain separated'
+        }
+        if (plannedEntryStart >= 0 && executeStart >= 0 && plannedEntryStart > executeStart) {
+            errors << 'typed planned route entry must remain before executePlannedRouteInternal'
+        }
+        if (!bridgeText.contains('Pattern.compile(')) {
+            errors << 'C19 must not pretend regex routing is retired; routing retirement is a later slice'
+        }
+    }
+
+    delosdbStoragePhaseC19RequireTokens(errors, providerLocalSqlShim, [
+            'DelosMvccSqlOptInSession',
+            'Pattern.compile(',
+            'CREATE_TABLE',
+            'INSERT_VALUES',
+            'SELECT_ALL',
+            'UPDATE_NAME_BY_ID',
+            'DELETE_BY_ID'
+    ], 'legacy provider-local DelosMvccSqlOptInSession inventory')
+
+    delosdbStoragePhaseC19RequireTokens(errors, heapProvider, [
+            'implements StorageProvider',
+            'StorageCapabilities'
+    ], 'Derby heap provider remains metadata path')
+
+    delosdbStoragePhaseC19RequireTokens(errors, mvccProvider, [
+            'implements VersionedStorageProvider',
+            'VersionedTable<K, V> createTable(',
+            'VersionedTable<K, V> openTable('
+    ], 'MVCC provider remains VersionedStorageProvider path')
+
+    if (storelessRoot.exists()) {
+        def storelessHits = fileTree(storelessRoot).matching { include '**/*.java' }.files.findAll { sourceFile ->
+            def text = sourceFile.text
+            text.contains('implements StorageProvider') || text.contains('implements VersionedStorageProvider')
+        }.collect { delosdbStoragePhaseC19RelPath(it) }.sort()
+        if (!storelessHits.isEmpty()) {
+            errors << 'Storeless must remain a no-store constraint, not a storage provider: ' + storelessHits
+        }
+    }
+
+    def engineStoreSourceRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+    if (engineStoreSourceRoot.exists()) {
+        errors << 'Phase C19 must not add engine-side org/apache/derby/impl/store sources: '
+                + delosdbStoragePhaseC19RelPath(engineStoreSourceRoot)
+    }
+
+    def thirdIslandNames = [
+            'DelosStorageEngine.java',
+            'DelosTableAccess.java',
+            'DelosScan.java',
+            'DelosMutationAccess.java',
+            'TableAccessProfile.java',
+            'StorageExecutionProfile.java',
+            'StorelessStorageProvider.java',
+            'StorelessVersionedStorageProvider.java'
+    ] as Set
+    def thirdIslandFiles = fileTree(rootProject.projectDir).matching {
+        include '**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+        exclude '**/.idea/**'
+        exclude '**/__MACOSX/**'
+    }.files.findAll { thirdIslandNames.contains(it.name) }
+            .collect { delosdbStoragePhaseC19RelPath(it) }.sort()
+    if (!thirdIslandFiles.isEmpty()) {
+        errors << 'Phase C19 must not introduce a third SPI/profile island before routing retirement: '
+                + thirdIslandFiles
+    }
+
+    def allEngineVersionedFiles = delosdbStoragePhaseC19JavaFiles('delosdb-engine').findAll { sourceFile ->
+        delosdbStoragePhaseC19RelPath(sourceFile).contains('/versioned/')
+    }
+    def sqlRegexOwners = allEngineVersionedFiles.findAll { sourceFile ->
+        sourceFile.name != 'VersionedStorageSqlBridge.java' && sourceFile.text.contains('Pattern.compile(')
+    }.collect { delosdbStoragePhaseC19RelPath(it) }.sort()
+    if (!sqlRegexOwners.isEmpty()) {
+        errors << 'C19 must not add engine-side SQL regex owners outside VersionedStorageSqlBridge: '
+                + sqlRegexOwners
+    }
+
+    lines << 'DelosDB Storage Phase C19 Review Closeout'
+    lines << '=========================================='
+    lines << ''
+    lines << 'C19 mechanic:'
+    lines << '  close the post-C18 review findings before any regex-routing retirement.'
+    lines << ''
+    lines << 'Resolved review findings:'
+    lines << '  index lookup/range/statistics now delegate through VersionedStorageExecutionBridge.'
+    lines << '  planned routes use a typed PlannedRoute seam, not executePlannedRouteForTesting or regex group lists.'
+    lines << '  DelosMvccSqlOptInSession is explicitly inventoried as a legacy provider-local SQL shim.'
+    lines << ''
+    lines << 'Still temporary:'
+    lines << '  VersionedStorageSqlBridge remains the normal SQL regex router.'
+    lines << '  regex route removal is intentionally not part of C19.'
+    lines << ''
+    lines << 'Next legal move after green confidence:'
+    lines << '  pick one regex route family and replace its routing source, or consolidate guard debt first.'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC19ReviewCloseoutReport') {
+    group = 'verification'
+    description = 'Writes the Phase C19 review closeout report.'
+    dependsOn 'verifyStoragePhaseC18DelegationCloseout'
+    outputs.file(delosdbStoragePhaseC19ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC19Proof()
+        def outputFile = delosdbStoragePhaseC19ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C19 review closeout failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC19ReviewCloseoutSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C19 review closeout smoke test.'
+    source = files('dev/storage-phase-c19-review-closeout-smoke/src/main/java')
+    destinationDirectory = delosdbStoragePhaseC19SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC19Classpath()
+}
+
+tasks.register('storagePhaseC19ReviewCloseoutSmoke', JavaExec) {
+    dependsOn 'compileStoragePhaseC19ReviewCloseoutSmoke'
+    group = 'verification'
+    description = 'Runs the Phase C19 review closeout smoke test.'
+    classpath = delosdbStoragePhaseC19Classpath()
+    mainClass = 'io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.StoragePhaseC19ReviewCloseoutSmoke'
+}
+
+tasks.register('verifyStoragePhaseC19ReviewCloseout') {
+    group = 'verification'
+    description = 'Verifies the Phase C19 review closeout before routing-retirement work.'
+    dependsOn 'storagePhaseC19ReviewCloseoutReport', 'storagePhaseC19ReviewCloseoutSmoke'
+    doLast {
+        println 'Verified Phase C19 review closeout; stay in review or choose one regex-routing replacement next'
+    }
+}
