@@ -437,7 +437,9 @@ public final class VersionedStorageSqlBridge {
         PredicateRange range = PredicateRange.parse(table.columns().get(columnIndex), operator, rawLeftValue, rawRightValue);
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
-            VersionedTableStats tableStats = table.table().stats(statementTx.context().currentView());
+            VersionedTableStats tableStats = PLANNED_TABLE_OPERATION_BRIDGE.stats(
+                    table.table(),
+                    statementTx.context().currentView());
             long tableScanCost = estimateTableScanCost(tableStats);
             Optional<IndexDefinition> indexDefinition = table.indexDefinitionForColumn(columnIndex);
             AccessPathSelection selection = chooseRangeAccessPath(
@@ -548,7 +550,9 @@ public final class VersionedStorageSqlBridge {
         Object predicateValue = table.columns().get(columnIndex).parseValue(rawValue.trim());
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
-            VersionedTableStats tableStats = table.table().stats(statementTx.context().currentView());
+            VersionedTableStats tableStats = PLANNED_TABLE_OPERATION_BRIDGE.stats(
+                    table.table(),
+                    statementTx.context().currentView());
             long tableScanCost = estimateTableScanCost(tableStats);
             Optional<IndexDefinition> indexDefinition = table.indexDefinitionForColumn(columnIndex);
             AccessPathSelection selection = chooseAccessPath(
@@ -654,12 +658,12 @@ public final class VersionedStorageSqlBridge {
             Object predicateValue,
             StatementTransaction statementTx) {
         List<List<Object>> rows = new ArrayList<>();
-        try (VersionedScan<Long, List<Object>> scan = table.table().openScan(statementTx.context().currentView())) {
-            while (scan.next()) {
-                List<Object> row = scan.row().value();
-                if (Objects.equals(predicateValue, row.get(columnIndex))) {
-                    rows.add(row);
-                }
+        for (VersionedRow<Long, List<Object>> visibleRow : PLANNED_TABLE_OPERATION_BRIDGE.scanAll(
+                table.table(),
+                statementTx.context().currentView())) {
+            List<Object> row = visibleRow.value();
+            if (Objects.equals(predicateValue, row.get(columnIndex))) {
+                rows.add(row);
             }
         }
         return rows;
@@ -671,12 +675,12 @@ public final class VersionedStorageSqlBridge {
             PredicateRange range,
             StatementTransaction statementTx) {
         List<List<Object>> rows = new ArrayList<>();
-        try (VersionedScan<Long, List<Object>> scan = table.table().openScan(statementTx.context().currentView())) {
-            while (scan.next()) {
-                List<Object> row = scan.row().value();
-                if (range.matches(row.get(columnIndex))) {
-                    rows.add(row);
-                }
+        for (VersionedRow<Long, List<Object>> visibleRow : PLANNED_TABLE_OPERATION_BRIDGE.scanAll(
+                table.table(),
+                statementTx.context().currentView())) {
+            List<Object> row = visibleRow.value();
+            if (range.matches(row.get(columnIndex))) {
+                rows.add(row);
             }
         }
         return rows;
@@ -767,7 +771,9 @@ public final class VersionedStorageSqlBridge {
             int transactionIsolation) throws SQLException {
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
-            VersionedTableStats tableStats = table.table().stats(statementTx.context().currentView());
+            VersionedTableStats tableStats = PLANNED_TABLE_OPERATION_BRIDGE.stats(
+                    table.table(),
+                    statementTx.context().currentView());
             long tableScanCost = estimateTableScanCost(tableStats);
             AccessPathSelection selection;
             if (orderColumnName == null) {
@@ -880,7 +886,9 @@ public final class VersionedStorageSqlBridge {
             int transactionIsolation) throws SQLException {
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
-            VersionedTableStats tableStats = table.table().stats(statementTx.context().currentView());
+            VersionedTableStats tableStats = PLANNED_TABLE_OPERATION_BRIDGE.stats(
+                    table.table(),
+                    statementTx.context().currentView());
             long visibleRows = tableStats.visibleRowCount();
             CachedRowSet rowSet = newRowSet(List.of(new ColumnDefinition("1", Types.INTEGER, "INTEGER", false, false)));
             append(rowSet, List.of(Math.toIntExact(visibleRows)), List.of(new ColumnDefinition("1", Types.INTEGER, "INTEGER", false, false)));
