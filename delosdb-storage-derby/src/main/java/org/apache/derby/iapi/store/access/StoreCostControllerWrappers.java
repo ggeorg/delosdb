@@ -23,6 +23,8 @@ package org.apache.derby.iapi.store.access;
 
 import org.apache.derby.shared.common.error.StandardException;
 
+import java.util.Iterator;
+import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 
 /** Utility for optional store cost-controller wrappers. */
@@ -33,7 +35,24 @@ public final class StoreCostControllerWrappers {
     public static StoreCostController wrap(long conglomerateId, StoreCostController controller)
             throws StandardException {
         StoreCostController wrapped = controller;
-        for (StoreCostControllerWrapper wrapper : ServiceLoader.load(StoreCostControllerWrapper.class)) {
+        Iterator<StoreCostControllerWrapper> wrappers =
+            ServiceLoader.load(StoreCostControllerWrapper.class).iterator();
+
+        while (true) {
+            StoreCostControllerWrapper wrapper;
+            try {
+                if (!wrappers.hasNext()) {
+                    break;
+                }
+                wrapper = wrappers.next();
+            }
+            catch (ServiceConfigurationError error) {
+                // Some Derby class-loading tests intentionally alter the
+                // application class path/class loader.  A stale or incompatible
+                // provider must not make the native Derby optimizer unusable;
+                // the extension point is optional, so fall back to the delegate.
+                continue;
+            }
             wrapped = wrapper.wrapStoreCostController(conglomerateId, wrapped);
         }
         return wrapped;

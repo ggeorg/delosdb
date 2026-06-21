@@ -99,12 +99,16 @@ public class DiskHashtable
 
         keepStatistics = (storeContext != null) && storeContext.getRunTimeStatisticsMode();
 
-        // Create template row used for creating the conglomerate and 
-        // fetching rows.
-        row = new StoreDataValue[template.length];
+        // Create a store-native template row used for creating the
+        // conglomerate and fetching rows.  The SQL engine may hand us a
+        // RowLocation compatibility adapter, but the temporary disk hash table
+        // belongs to the store and its B-tree assertions compare concrete
+        // column classes against the stored conglomerate template.
+        StoreDataValue[] storeTemplate = storeNativeRowLocationTemplate(template);
+        row = new StoreDataValue[storeTemplate.length];
         for( int i = 0; i < row.length; i++)
         {
-            row[i] = StoreTypeUtil.getNewNull(template[i]);
+            row[i] = StoreTypeUtil.getNewNull(storeTemplate[i]);
 
             if (SanityManager.DEBUG)
             {
@@ -125,7 +129,7 @@ public class DiskHashtable
         rowConglomerateId = 
             tc.createConglomerate( 
                 "heap",
-                template,
+                storeTemplate,
                 (ColumnOrdering[]) null,
                 collation_ids,
                 (Properties) null,
@@ -145,7 +149,10 @@ public class DiskHashtable
         // RowLocation of the row in the "base" table of the hash overflow.
         btreeRow = 
             new StoreDataValue[] 
-                { StoreTypeUtil.newSQLInteger(), rowConglomerate.newRowLocationTemplate()};
+                {
+                    StoreTypeUtil.newSQLInteger(),
+                    storeNativeRowLocation(rowConglomerate.newRowLocationTemplate())
+                };
 
         Properties btreeProps = new Properties();
 
@@ -187,6 +194,45 @@ public class DiskHashtable
 
     } // end of constructor
 
+
+    private static StoreDataValue[] storeNativeRowLocationTemplate(StoreDataValue[] template)
+    {
+        StoreDataValue[] nativeTemplate = new StoreDataValue[template.length];
+        for (int i = 0; i < template.length; i++)
+        {
+            nativeTemplate[i] = storeNativeRowLocation(template[i]);
+        }
+        return nativeTemplate;
+    }
+
+
+    private static StoreDataValue[] storeNativeRowLocationRow(StoreDataValue[] source)
+    {
+        StoreDataValue[] nativeRow = source;
+        for (int i = 0; i < source.length; i++)
+        {
+            StoreDataValue nativeValue = storeNativeRowLocation(source[i]);
+            if (nativeValue != source[i])
+            {
+                if (nativeRow == source)
+                {
+                    nativeRow = source.clone();
+                }
+                nativeRow[i] = nativeValue;
+            }
+        }
+        return nativeRow;
+    }
+
+    private static StoreDataValue storeNativeRowLocation(StoreDataValue value)
+    {
+        if (value instanceof StoreRowLocation rowLocation)
+        {
+            return (StoreDataValue) rowLocation.unwrapStoreRowLocation();
+        }
+        return value;
+    }
+
     public void close() throws StandardException
     {
         btreeConglomerate.close();
@@ -218,9 +264,12 @@ public class DiskHashtable
                 return false;
         }
 
-        // insert the row into the "base" conglomerate.
+        // Insert a store-native row into the "base" conglomerate.  Rows
+        // originating above the store may still carry engine row-location
+        // adapters; do not persist those adapter classes into the temporary
+        // disk hash table.
         rowConglomerate.insertAndFetchLocation( 
-            row, (StoreRowLocation) btreeRow[1]);
+            storeNativeRowLocationRow(row), (StoreRowLocation) btreeRow[1]);
 
         // create index row from hashcode and rowlocation just inserted, and
         // insert index row into index.

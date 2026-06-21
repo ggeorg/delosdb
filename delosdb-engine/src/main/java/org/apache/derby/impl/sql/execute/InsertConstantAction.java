@@ -41,6 +41,7 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 import org.apache.derby.catalog.UUID;
 
@@ -207,7 +208,8 @@ public class InsertConstantAction extends WriteCursorConstantAction
             // is there a better way to do cast the whole array?
             autoincRowLocation = new RowLocation[objectArray.length];
             for (int i = 0; i < objectArray.length; i++)
-                autoincRowLocation[i] = (RowLocation)objectArray[i];
+                autoincRowLocation[i] =
+                    EngineStoreRowLocationBridge.requireEngineRowLocation(objectArray[i]);
         }
 		
         schemaName = (String)in.readObject();
