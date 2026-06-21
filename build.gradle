@@ -2665,3 +2665,4 @@ tasks.register('mvccSqlBridgeHistoryPrunedProof') {
 // Legacy Derby store guard tasks are intentionally kept out of the root build file.
 // Compact permanent storage-Derby Phase-B boundary gates.
 apply from: file('gradle/storage-derby-boundary-guards.gradle')
+apply from: file('gradle/storage-spi-truth-map.gradle')

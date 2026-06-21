@@ -1,0 +1,229 @@
+// Phase C0 storage SPI truth map.
+//
+// This is intentionally a report/gate, not a new storage facade. It records the
+// storage families that exist after Phase B so Phase C does not accidentally add
+// a third parallel operational SPI beside StorageProvider and
+// VersionedStorageProvider.
+
+ext.delosdbStorageSpiTruthReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStorageSpiTruthReportFile =
+        ext.delosdbStorageSpiTruthReportDir.map { it.file('storage-spi-truth-map-c0.txt') }
+
+ext.delosdbStorageSpiRelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStorageSpiSourceFiles = { String projectPath, String includePattern ->
+    def sourceRoot = file("${projectPath}/src/main/java")
+    if (!sourceRoot.exists()) {
+        return [] as Set<File>
+    }
+    fileTree(sourceRoot).matching { include includePattern }.files as Set<File>
+}
+
+ext.delosdbStorageSpiJavaFiles = { String projectPath ->
+    delosdbStorageSpiSourceFiles(projectPath, '**/*.java')
+}
+
+ext.delosdbStorageSpiContainsAny = { File sourceFile, Collection<String> tokens ->
+    if (!sourceFile.exists()) {
+        return false
+    }
+    def text = sourceFile.text
+    tokens.any { text.contains(it) }
+}
+
+ext.delosdbStorageSpiCountReferences = { Collection<File> sourceFiles, String token ->
+    sourceFiles.count { it.text.contains(token) }
+}
+
+ext.delosdbStorageSpiFindFilesContaining = { Collection<File> sourceFiles, String token ->
+    sourceFiles.findAll { it.text.contains(token) }.collect { delosdbStorageSpiRelPath(it) }.sort()
+}
+
+ext.delosdbStorageSpiFacadeCandidates = {
+    def candidateNames = [
+            'DelosStorageEngine.java',
+            'DelosTableAccess.java',
+            'DelosScan.java',
+            'DelosMutation.java',
+            'OperationalStorageProvider.java',
+            'OperationalTableAccess.java'
+    ] as Set
+    def candidatePathFragments = [
+            '/spi/storage/engine/',
+            '/spi/storage/operational/',
+            '/engine/extension/storage/operational/'
+    ]
+    fileTree(rootProject.projectDir).matching {
+        include '**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+    }.files.findAll { sourceFile ->
+        candidateNames.contains(sourceFile.name) ||
+                candidatePathFragments.any { delosdbStorageSpiRelPath(sourceFile).contains(it) }
+    }.collect { delosdbStorageSpiRelPath(it) }.sort()
+}
+
+ext.delosdbStorageSpiTruthMap = {
+    def errors = []
+    def lines = []
+
+    def storageProvider = file('delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/storage/StorageProvider.java')
+    def versionedProvider = file('delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/storage/versioned/VersionedStorageProvider.java')
+    def indexProvider = file('delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/IndexProvider.java')
+    def storeCostWrapper = file('delosdb-storage-derby/src/main/java/org/apache/derby/iapi/store/access/StoreCostControllerWrapper.java')
+    def heapProvider = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/LegacyDerbyHeapStorageProvider.java')
+    def mvccProvider = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java')
+    def versionedExecutionBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/execution/VersionedStorageExecutionBridge.java')
+    def costBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/StoreCostControllerBridge.java')
+
+    def spiFiles = delosdbStorageSpiJavaFiles('delosdb-spi')
+    def engineFiles = delosdbStorageSpiJavaFiles('delosdb-engine')
+    def mvccFiles = delosdbStorageSpiJavaFiles('delosdb-storage-mvcc')
+    def derbyStoreFiles = delosdbStorageSpiJavaFiles('delosdb-storage-derby')
+
+    def versionedSpiFiles = delosdbStorageSpiSourceFiles('delosdb-spi', 'io/github/ggeorg/delosdb/spi/storage/versioned/**/*.java')
+    def derbyIapiStoreCount = delosdbStorageSpiSourceFiles('delosdb-storage-derby', 'org/apache/derby/iapi/store/**/*.java').size()
+    def derbyImplStoreCount = delosdbStorageSpiSourceFiles('delosdb-storage-derby', 'org/apache/derby/impl/store/**/*.java').size()
+
+    lines << 'Phase C0 storage SPI truth map'
+    lines << '=============================='
+    lines << ''
+    lines << 'Existing storage families after Phase B:'
+    lines << '  1. StorageProvider — metadata/capability table-storage SPI'
+    lines << "     file        : ${delosdbStorageSpiRelPath(storageProvider)}"
+    lines << "     implementation: ${heapProvider.exists() ? delosdbStorageSpiRelPath(heapProvider) : 'MISSING'}"
+    lines << '     role        : Derby-compatible heap table metadata and capability reporting'
+    lines << ''
+    lines << '  2. VersionedStorageProvider — operational MVCC/versioned-table SPI'
+    lines << "     file        : ${delosdbStorageSpiRelPath(versionedProvider)}"
+    lines << "     SPI files   : ${versionedSpiFiles.size()}"
+    lines << "     implementation: ${mvccProvider.exists() ? delosdbStorageSpiRelPath(mvccProvider) : 'MISSING'}"
+    lines << "     bridge      : ${versionedExecutionBridge.exists() ? delosdbStorageSpiRelPath(versionedExecutionBridge) : 'MISSING'}"
+    lines << '     role        : explicit opt-in MVCC tables, scans, transactions, and visibility'
+    lines << ''
+    lines << '  3. StoreCostControllerWrapper — store-owned cost-controller hook'
+    lines << "     file        : ${delosdbStorageSpiRelPath(storeCostWrapper)}"
+    lines << "     provider    : ${costBridge.exists() ? delosdbStorageSpiRelPath(costBridge) : 'MISSING'}"
+    lines << '     role        : adapter hook from relocated Derby store to engine cost model bridge'
+    lines << ''
+    lines << '  4. IndexProvider — provider-neutral index metadata/cost/access hook'
+    lines << "     file        : ${delosdbStorageSpiRelPath(indexProvider)}"
+    lines << '     role        : index provider identity, capabilities, optional cost and access hooks'
+    lines << ''
+    lines << 'Relocated Derby store ownership:'
+    lines << "  delosdb-storage-derby iapi.store sources: ${derbyIapiStoreCount}"
+    lines << "  delosdb-storage-derby impl.store sources: ${derbyImplStoreCount}"
+    lines << ''
+    lines << 'Reference counts:'
+    lines << "  StorageProvider refs in delosdb-spi       : ${delosdbStorageSpiCountReferences(spiFiles, 'StorageProvider')}"
+    lines << "  StorageProvider refs in delosdb-engine    : ${delosdbStorageSpiCountReferences(engineFiles, 'StorageProvider')}"
+    lines << "  VersionedStorageProvider refs in engine   : ${delosdbStorageSpiCountReferences(engineFiles, 'VersionedStorageProvider')}"
+    lines << "  VersionedStorageProvider refs in MVCC     : ${delosdbStorageSpiCountReferences(mvccFiles, 'VersionedStorageProvider')}"
+    lines << "  StoreCostControllerWrapper refs in engine : ${delosdbStorageSpiCountReferences(engineFiles, 'StoreCostControllerWrapper')}"
+    lines << "  StoreCostControllerWrapper refs in store  : ${delosdbStorageSpiCountReferences(derbyStoreFiles, 'StoreCostControllerWrapper')}"
+    lines << ''
+
+    if (!storageProvider.exists()) {
+        errors << 'missing metadata StorageProvider SPI'
+    } else {
+        def storageText = storageProvider.text
+        if (!storageText.contains('StorageCapabilities capabilities()')) {
+            errors << 'StorageProvider no longer exposes provider capability reporting'
+        }
+        if (!storageText.contains('TableStorageMetadata')) {
+            errors << 'StorageProvider no longer mentions table-storage metadata'
+        }
+        def forbiddenOperationalTokens = ['createTable(', 'openTable(', 'VersionedTable', 'VersionedScan', 'transactionCoordinator(']
+        def leakedTokens = forbiddenOperationalTokens.findAll { storageText.contains(it) }
+        if (!leakedTokens.isEmpty()) {
+            errors << 'StorageProvider has gained operational/versioned methods; C1 must consolidate intentionally, not mutate v0 metadata SPI: ' + leakedTokens.join(', ')
+        }
+    }
+
+    if (!versionedProvider.exists()) {
+        errors << 'missing operational VersionedStorageProvider SPI'
+    } else {
+        def versionedText = versionedProvider.text
+        ['transactionCoordinator()', 'createTable(', 'openTable('].each { token ->
+            if (!versionedText.contains(token)) {
+                errors << "VersionedStorageProvider is missing expected operational token ${token}"
+            }
+        }
+    }
+
+    [indexProvider, storeCostWrapper, heapProvider, mvccProvider, versionedExecutionBridge, costBridge].each { sourceFile ->
+        if (!sourceFile.exists()) {
+            errors << 'missing expected storage truth-map participant: ' + delosdbStorageSpiRelPath(sourceFile)
+        }
+    }
+
+    if (derbyIapiStoreCount == 0 || derbyImplStoreCount == 0) {
+        errors << 'relocated Derby store source ownership is missing from delosdb-storage-derby'
+    }
+
+    def facadeCandidates = delosdbStorageSpiFacadeCandidates()
+    lines << 'Third-family facade candidates:'
+    lines << "  ${facadeCandidates.isEmpty() ? 'none' : facadeCandidates.join(System.lineSeparator() + '  ')}"
+    if (!facadeCandidates.isEmpty()) {
+        errors << 'Phase C0 must not introduce the operational facade yet; found candidate third-family facade files: ' + facadeCandidates.take(10).join(', ')
+    }
+
+    lines << ''
+    lines << 'C0 conclusion:'
+    lines << '  Phase B closed the real Derby storage module boundary.'
+    lines << '  Current storage SPI state still has two storage-provider families:'
+    lines << '    - StorageProvider: metadata-only heap/table capabilities.'
+    lines << '    - VersionedStorageProvider: operational MVCC tables/scans/transactions.'
+    lines << '  Phase C1 must consolidate these deliberately; it must not add a third parallel SPI family.'
+    lines << ''
+    lines << "result: ${errors.isEmpty() ? 'PASS' : 'FAIL'}"
+    if (!errors.isEmpty()) {
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "- ${it}" }
+    }
+
+    [lines: lines, errors: errors]
+}
+
+tasks.register('storageSpiTruthMapReport') {
+    group = 'verification'
+    description = 'Writes the Phase C0 storage SPI truth-map report.'
+    outputs.file(delosdbStorageSpiTruthReportFile)
+    doLast {
+        def result = delosdbStorageSpiTruthMap()
+        def reportFile = delosdbStorageSpiTruthReportFile.get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${reportFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException('Storage SPI truth map failed; see ' + reportFile)
+        }
+    }
+}
+
+tasks.register('verifyStorageSpiTruthMap') {
+    group = 'verification'
+    description = 'Verifies the Phase C0 storage SPI truth map before Phase C facade work.'
+    dependsOn 'storageSpiTruthMapReport'
+    doLast {
+        println 'Verified Phase C0 storage SPI truth map; C1 must consolidate existing storage families instead of adding a third one'
+    }
+}
+
+tasks.register('verifyStoragePhaseC0TruthMap') {
+    group = 'verification'
+    description = 'Verifies Phase B boundary plus the Phase C0 storage SPI truth map.'
+    dependsOn 'verifyStorageDerbyBoundary', 'verifyStorageSpiTruthMap'
+    doLast {
+        println 'Verified Phase C0 truth gate; ready for C1 design slice'
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreC0StorageTruthMap') {
+    group = 'verification'
+    description = 'Compatibility alias for the Phase C0 storage SPI truth map.'
+    dependsOn 'verifyStoragePhaseC0TruthMap'
+}
