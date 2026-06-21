@@ -216,7 +216,7 @@ tasks.register('storagePhaseC23MvccContractMutationReport') {
 }
 
 tasks.register('compileStoragePhaseC23MvccContractMutationSmoke', JavaCompile) {
-    dependsOn 'jars', 'processDerbyResources'
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
     group = 'verification'
     description = 'Compiles the Phase C23 MVCC contract mutation smoke test.'
     source = files('dev/storage-phase-c23-mvcc-contract-mutation-smoke/src/main/java')
@@ -229,7 +229,7 @@ tasks.register('compileStoragePhaseC23MvccContractMutationSmoke', JavaCompile) {
 }
 
 tasks.register('storagePhaseC23MvccContractMutationSmoke', JavaExec) {
-    dependsOn 'compileStoragePhaseC23MvccContractMutationSmoke', 'processDerbyResources'
+    dependsOn 'compileStoragePhaseC23MvccContractMutationSmoke', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
     group = 'verification'
     description = 'Runs the Phase C23 MVCC contract mutation smoke test.'
     classpath = delosdbStoragePhaseC23Classpath()
