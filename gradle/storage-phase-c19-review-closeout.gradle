@@ -78,8 +78,16 @@ ext.delosdbStoragePhaseC19Proof = {
             'VersionedStorageSqlBridge.PlannedRoute.insertValues(',
             'VersionedStorageSqlBridge.PlannedRoute.selectWhereEquals(',
             'VersionedStorageSqlBridge.PlannedRoute.selectWhereBetween(',
+            'VersionedStorageSqlBridge.PlannedRoute.selectWhereRange(',
             'VersionedStorageSqlBridge.PlannedRoute.selectAll(',
+            'VersionedStorageSqlBridge.PlannedRoute.updateWhereEquals(',
+            'VersionedStorageSqlBridge.PlannedRoute.deleteWhereEquals(',
             'VersionedStorageSqlBridge.executePlannedRoute(',
+            'verifyEngineRowLocationAdapterBehavior',
+            'adapter.compare(adapter)',
+            'adapter.equals(adapter)',
+            'raw HeapRowLocation.equals(adapter)',
+            'requireNoRows',
             'requireIndexAccessPath'
     ], 'Phase C19 typed planned-route smoke')
 
@@ -280,6 +288,9 @@ ext.delosdbStoragePhaseC19Proof = {
     lines << 'Resolved review findings:'
     lines << '  index lookup/range/statistics now delegate through VersionedStorageExecutionBridge.'
     lines << '  planned routes use a typed PlannedRoute seam, not executePlannedRouteForTesting or regex group lists.'
+    lines << '  row-location adapter behavior is checked in the C19 closeout smoke, not only in the older C7S guard.'
+    lines << '  open/closed range predicates are checked through the typed route seam.'
+    lines << '  read-then-mutate replace/remove paths are checked through typed planned routes.'
     lines << '  DelosMvccSqlOptInSession is explicitly inventoried as a legacy provider-local SQL shim.'
     lines << ''
     lines << 'Still temporary:'

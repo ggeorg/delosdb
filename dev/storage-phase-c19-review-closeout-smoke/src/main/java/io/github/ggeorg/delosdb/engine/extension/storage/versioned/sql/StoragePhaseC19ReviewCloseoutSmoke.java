@@ -6,6 +6,13 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.derby.iapi.store.types.StoreOrderable;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.store.access.heap.HeapRowLocation;
+
 /**
  * Phase C19 review closeout smoke: exercise the typed planned route seam and
  * index read delegation without using SQL strings or regex routing.
@@ -18,6 +25,8 @@ public final class StoragePhaseC19ReviewCloseoutSmoke {
     }
 
     public static void main(String[] args) throws Exception {
+        verifyEngineRowLocationAdapterBehavior();
+
         RouteOwner owner = new RouteOwner();
         requireUpdateCount(execute(VersionedStorageSqlBridge.PlannedRoute.createTable(
                         TABLE_NAME,
@@ -59,7 +68,23 @@ public final class StoragePhaseC19ReviewCloseoutSmoke {
                         "'alpha'",
                         "'charlie'"), owner),
                 List.of("alpha", "bravo", "charlie"));
-        requireAnyAccessPath("planned range predicate");
+        requireAnyAccessPath("planned between range predicate");
+
+        requireRows(execute(VersionedStorageSqlBridge.PlannedRoute.selectWhereRange(
+                        TABLE_NAME,
+                        "value",
+                        ">=",
+                        "'bravo'"), owner),
+                List.of("bravo", "charlie"));
+        requireAnyAccessPath("planned lower-bound range predicate");
+
+        requireRows(execute(VersionedStorageSqlBridge.PlannedRoute.selectWhereRange(
+                        TABLE_NAME,
+                        "value",
+                        "<",
+                        "'charlie'"), owner),
+                List.of("alpha", "bravo"));
+        requireAnyAccessPath("planned upper-bound range predicate");
 
         requireRows(execute(VersionedStorageSqlBridge.PlannedRoute.selectAll(
                         TABLE_NAME,
@@ -70,8 +95,66 @@ public final class StoragePhaseC19ReviewCloseoutSmoke {
 
         requireCount(execute(VersionedStorageSqlBridge.PlannedRoute.selectCount(TABLE_NAME), owner), 3);
 
+        requireUpdateCount(execute(VersionedStorageSqlBridge.PlannedRoute.updateWhereEquals(
+                        TABLE_NAME,
+                        "value",
+                        "'delta'",
+                        "value",
+                        "'bravo'"), owner),
+                1L,
+                "planned read-then-replace mutation");
+        requireRows(execute(VersionedStorageSqlBridge.PlannedRoute.selectWhereEquals(
+                        TABLE_NAME,
+                        "value",
+                        "'delta'"), owner),
+                List.of("delta"));
+        requireNoRows(execute(VersionedStorageSqlBridge.PlannedRoute.selectWhereEquals(
+                        TABLE_NAME,
+                        "value",
+                        "'bravo'"), owner),
+                "old value after planned replace");
+
+        requireUpdateCount(execute(VersionedStorageSqlBridge.PlannedRoute.deleteWhereEquals(
+                        TABLE_NAME,
+                        "value",
+                        "'alpha'"), owner),
+                1L,
+                "planned read-then-remove mutation");
+        requireNoRows(execute(VersionedStorageSqlBridge.PlannedRoute.selectWhereEquals(
+                        TABLE_NAME,
+                        "value",
+                        "'alpha'"), owner),
+                "removed value after planned remove");
+        requireCount(execute(VersionedStorageSqlBridge.PlannedRoute.selectCount(TABLE_NAME), owner), 2);
+
         System.out.println("storage_phase_c19_review_closeout table=" + TABLE_NAME + " index=" + INDEX_NAME);
         System.out.println("DelosDB Phase C19 review closeout smoke test passed.");
+    }
+
+
+    private static void verifyEngineRowLocationAdapterBehavior() throws Exception {
+        RowLocation left = EngineStoreRowLocationBridge.newEngineRowLocation();
+        RowLocation right = EngineStoreRowLocationBridge.newEngineRowLocation();
+        HeapRowLocation raw = new HeapRowLocation();
+
+        require(left instanceof StoreRowLocation, "engine adapter must expose the store row-location contract");
+        require(right instanceof StoreRowLocation, "second engine adapter must expose the store row-location contract");
+
+        StoreRowLocation leftStore = EngineStoreRowLocationBridge.requireStoreRowLocation(left.getObject());
+        StoreRowLocation rightStore = EngineStoreRowLocationBridge.requireStoreRowLocation(right.getObject());
+        require(leftStore instanceof HeapRowLocation, "adapter object must unwrap to HeapRowLocation");
+        require(rightStore instanceof HeapRowLocation, "second adapter object must unwrap to HeapRowLocation");
+
+        require(left.compare((DataValueDescriptor) right) == 0,
+                "adapter.compare(adapter) must not throw and must compare equal for fresh locations");
+        require(right.compare((DataValueDescriptor) left) == 0,
+                "adapter comparison must be symmetric");
+        require(left.compare(StoreOrderable.ORDER_OP_EQUALS, (DataValueDescriptor) right, false, false),
+                "adapter ORDER_OP_EQUALS compare must succeed");
+        require(left.equals(right), "adapter.equals(adapter) must be value-based");
+        require(right.equals(left), "adapter equality must be symmetric");
+        require(left.equals(raw), "adapter.equals(raw HeapRowLocation) must be value-based");
+        require(raw.equals(left), "raw HeapRowLocation.equals(adapter) must be value-based");
     }
 
     private static VersionedStorageSqlResult execute(
@@ -113,6 +196,19 @@ public final class StoragePhaseC19ReviewCloseoutSmoke {
         }
         if (!actualValues.equals(expectedValues)) {
             throw new IllegalStateException("rows expected=" + expectedValues + " actual=" + actualValues);
+        }
+    }
+
+    private static void requireNoRows(VersionedStorageSqlResult result, String label)
+            throws SQLException {
+        if (result == null || !result.returnsRows()) {
+            throw new IllegalStateException(label + " did not return rows");
+        }
+        try (ResultSet rows = result.resultSet()) {
+            if (rows.next()) {
+                throw new IllegalStateException(label + " unexpectedly returned row id="
+                        + rows.getInt(1) + " value=" + rows.getString(2));
+            }
         }
     }
 
