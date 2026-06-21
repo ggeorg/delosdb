@@ -143,7 +143,8 @@ ext.delosdbStoragePhaseC12Proof = {
 
     delosdbStoragePhaseC12RequireTokens(errors, mvccProvider, [
             'implements VersionedStorageProvider',
-            'public VersionedTable<'
+            'VersionedTable<K, V> createTable(',
+            'VersionedTable<K, V> openTable('
     ], 'MVCC provider remains VersionedStorageProvider path')
 
     if (storelessRoot.exists()) {
