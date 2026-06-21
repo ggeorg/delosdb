@@ -12419,6 +12419,10 @@ def delosdbB9StaleB6ReadinessPhrase() {
     'B6 readiness' + ' is NOT YET'
 }
 
+def delosdbB9RelPath(File f) {
+    rootDir.toPath().relativize(f.toPath()).toString().replace('\\', '/')
+}
+
 def delosdbB9TaskRegistrations() {
     def matcher = delosdbB9BuildText() =~ /tasks\.register\('([^']+)'\)/
     matcher.collect { it[1] }
@@ -12451,7 +12455,7 @@ def delosdbB9DuplicateStoreSourceOwnership() {
             def relativePath = root.toPath().relativize(sourceFile.toPath()).toString().replace('\\', '/')
             if (relativePath.startsWith('org/apache/derby/iapi/store/') ||
                     relativePath.startsWith('org/apache/derby/impl/store/')) {
-                byRelativePath[relativePath] << delosdbB5RelPath(sourceFile)
+                byRelativePath[relativePath] << delosdbB9RelPath(sourceFile)
             }
         }
     }
@@ -12471,7 +12475,7 @@ def delosdbB9StaleWorkspaceArtifacts() {
         include '**/*~'
         include 'derby.log'
     }.files.each { candidate ->
-        def rel = './' + delosdbB5RelPath(candidate)
+        def rel = './' + delosdbB9RelPath(candidate)
         if (!ignoredPrefixes.any { rel.startsWith(it) } && !rel.contains('/build/')) {
             stale << rel.substring(2)
         }
