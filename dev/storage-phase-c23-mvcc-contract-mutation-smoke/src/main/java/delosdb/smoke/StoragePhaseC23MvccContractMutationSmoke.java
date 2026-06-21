@@ -149,8 +149,8 @@ public final class StoragePhaseC23MvccContractMutationSmoke {
         requireUpdateCount(plan.execute("DELETE FROM " + plan.tableName()
                 + " WHERE id = 1"), 1L, "contract delete");
 
-        requireSingleRow(plan.execute("SELECT * FROM " + plan.tableName() + " WHERE id = 2"), 2, "bravo-updated");
-        requireNoRows(plan.execute("SELECT * FROM " + plan.tableName() + " WHERE id = 1"));
+        VersionedStorageSqlResult finalRows = plan.execute("SELECT * FROM " + plan.tableName());
+        requireSingleRow(finalRows, 2, "bravo-updated");
     }
 
     private static void requireUpdateCount(
@@ -185,17 +185,6 @@ public final class StoragePhaseC23MvccContractMutationSmoke {
             }
             if (rows.next()) {
                 throw new IllegalStateException("expected exactly one MVCC row");
-            }
-        }
-    }
-
-    private static void requireNoRows(VersionedStorageSqlResult result) throws SQLException {
-        if (result == null || !result.returnsRows()) {
-            throw new IllegalStateException("select was not handled as rows by VersionedStorageSqlBridge");
-        }
-        try (ResultSet rows = result.resultSet()) {
-            if (rows.next()) {
-                throw new IllegalStateException("expected no MVCC rows after contract delete");
             }
         }
     }
