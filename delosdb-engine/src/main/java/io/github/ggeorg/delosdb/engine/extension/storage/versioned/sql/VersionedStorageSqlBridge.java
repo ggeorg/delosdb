@@ -15,6 +15,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableStats;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictException;
 import org.apache.derby.impl.services.storetypes.EngineMvccTableAccess;
+import org.apache.derby.impl.sql.compile.DelosVersionedStorageQueryTreeClassifier;
 import org.apache.derby.iapi.store.types.DelosAccessContext;
 import org.apache.derby.iapi.store.types.DelosPredicate;
 import org.apache.derby.iapi.store.types.DelosProjection;
@@ -81,6 +82,9 @@ public final class VersionedStorageSqlBridge {
     private static final String PROVIDER_NAME = "delos_mvcc";
     private static final String DEFAULT_STORAGE_PROVIDER_PROPERTY = "delosdb.storage.defaultProvider";
     private static final String DEFAULT_SCHEMA = "APP";
+    private static final String ROUTE_CLASSIFIER_UNHANDLED = "unhandled";
+    private static final String ROUTE_CLASSIFIER_REGEX = "regex";
+    private static final String ROUTE_CLASSIFIER_JAVACC_QUERY_TREE = "javacc-query-tree";
 
     private static final Pattern CREATE_TABLE = Pattern.compile(
             "(?is)^create\\s+table\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s*\\((.*)\\)(?:\\s+using\\s+([a-zA-Z_][a-zA-Z0-9_]*))?$");
@@ -113,6 +117,7 @@ public final class VersionedStorageSqlBridge {
 
     private static volatile VersionedStorageAccessPath lastAccessPath;
     private static volatile long lastStatementCommandSequence = TxContext.UNKNOWN_STATEMENT_COMMAND_SEQUENCE;
+    private static volatile String lastRouteClassifier = ROUTE_CLASSIFIER_UNHANDLED;
 
     private VersionedStorageSqlBridge() {
     }
@@ -387,6 +392,18 @@ public final class VersionedStorageSqlBridge {
     }
 
     /**
+     * Test-only diagnostic for Phase C24 parser-routing smokes. It reports
+     * whether the last handled bridge statement was classified by the temporary
+     * regex fallback or by Derby JavaCC / QueryTreeNode inspection.
+     */
+    public static Optional<String> lastRouteClassifierForTesting() {
+        String classifier = lastRouteClassifier;
+        return ROUTE_CLASSIFIER_UNHANDLED.equals(classifier)
+                ? Optional.empty()
+                : Optional.of(classifier);
+    }
+
+    /**
      * Configures the experimental SQL bridge to use the page-backed delos_mvcc
      * provider storage. This is intentionally internal and exists for the
      * Phase A durable SQL proof; the normal Derby heap path is untouched.
@@ -471,6 +488,7 @@ public final class VersionedStorageSqlBridge {
             int transactionIsolation) throws SQLException {
         try {
             String normalizedSql = stripTerminator(sql);
+            lastRouteClassifier = ROUTE_CLASSIFIER_UNHANDLED;
             PlannedRoute plannedRoute = routeStatement(normalizedSql);
             if (plannedRoute == null) {
                 return null;
@@ -503,9 +521,16 @@ public final class VersionedStorageSqlBridge {
     }
 
     private static PlannedRoute routeStatement(String normalizedSql) throws SQLException {
+        Optional<PlannedRoute> javaCcRoute = routeStatementWithJavaCcQueryTree(normalizedSql);
+        if (javaCcRoute.isPresent()) {
+            lastRouteClassifier = ROUTE_CLASSIFIER_JAVACC_QUERY_TREE;
+            return javaCcRoute.get();
+        }
+
         Matcher create = CREATE_TABLE.matcher(normalizedSql);
         if (create.matches()) {
             if (shouldHandleCreateTable(create.group(3))) {
+                lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
                 return PlannedRoute.createTable(create.group(1), create.group(2));
             }
             return null;
@@ -513,16 +538,19 @@ public final class VersionedStorageSqlBridge {
 
         Matcher insert = INSERT_VALUES.matcher(normalizedSql);
         if (insert.matches()) {
+            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
             return PlannedRoute.insertValues(insert.group(1), insert.group(2));
         }
 
         Matcher createIndex = CREATE_INDEX.matcher(normalizedSql);
         if (createIndex.matches()) {
+            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
             return PlannedRoute.createIndex(createIndex.group(1), createIndex.group(2), createIndex.group(3));
         }
 
         Matcher updateWhere = UPDATE_WHERE_EQUALS.matcher(normalizedSql);
         if (updateWhere.matches()) {
+            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
             return PlannedRoute.updateWhereEquals(
                     updateWhere.group(1),
                     updateWhere.group(2),
@@ -533,11 +561,13 @@ public final class VersionedStorageSqlBridge {
 
         Matcher deleteWhere = DELETE_WHERE_EQUALS.matcher(normalizedSql);
         if (deleteWhere.matches()) {
+            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
             return PlannedRoute.deleteWhereEquals(deleteWhere.group(1), deleteWhere.group(2), deleteWhere.group(3));
         }
 
         Matcher selectBetween = SELECT_WHERE_BETWEEN.matcher(normalizedSql);
         if (selectBetween.matches()) {
+            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
             return PlannedRoute.selectWhereBetween(
                     selectBetween.group(1),
                     selectBetween.group(2),
@@ -547,6 +577,7 @@ public final class VersionedStorageSqlBridge {
 
         Matcher selectRange = SELECT_WHERE_RANGE.matcher(normalizedSql);
         if (selectRange.matches()) {
+            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
             return PlannedRoute.selectWhereRange(
                     selectRange.group(1),
                     selectRange.group(2),
@@ -556,16 +587,19 @@ public final class VersionedStorageSqlBridge {
 
         Matcher selectWhere = SELECT_WHERE_EQUALS.matcher(normalizedSql);
         if (selectWhere.matches()) {
+            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
             return PlannedRoute.selectWhereEquals(selectWhere.group(1), selectWhere.group(2), selectWhere.group(3));
         }
 
         Matcher selectAll = SELECT_ALL.matcher(normalizedSql);
         if (selectAll.matches()) {
+            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
             return PlannedRoute.selectAll(selectAll.group(1), selectAll.group(2), selectAll.group(3));
         }
 
         Matcher selectCount = SELECT_COUNT.matcher(normalizedSql);
         if (selectCount.matches()) {
+            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
             return PlannedRoute.selectCount(selectCount.group(1));
         }
 
@@ -688,6 +722,15 @@ public final class VersionedStorageSqlBridge {
             default:
                 throw new IllegalStateException("Unhandled routed delos_mvcc statement: " + plannedRoute.type());
         }
+    }
+
+
+    private static Optional<PlannedRoute> routeStatementWithJavaCcQueryTree(String normalizedSql) {
+        return DelosVersionedStorageQueryTreeClassifier.selectWhereEquals(normalizedSql)
+                .map(route -> PlannedRoute.selectWhereEquals(
+                        route.tableName(),
+                        route.columnName(),
+                        route.rawValue()));
     }
 
 
