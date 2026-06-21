@@ -108,6 +108,30 @@ public final class VersionedStorageSqlBridge {
     private VersionedStorageSqlBridge() {
     }
 
+    private enum RoutedStatementType {
+        CREATE_TABLE,
+        INSERT_VALUES,
+        CREATE_INDEX,
+        UPDATE_WHERE_EQUALS,
+        DELETE_WHERE_EQUALS,
+        SELECT_WHERE_BETWEEN,
+        SELECT_WHERE_RANGE,
+        SELECT_WHERE_EQUALS,
+        SELECT_ALL,
+        SELECT_COUNT
+    }
+
+    private record RoutedStatement(RoutedStatementType type, List<String> groups) {
+        private RoutedStatement {
+            type = Objects.requireNonNull(type, "type");
+            groups = java.util.Collections.unmodifiableList(new ArrayList<>(groups));
+        }
+
+        private String group(int index) {
+            return groups.get(index - 1);
+        }
+    }
+
     /**
      * Attempts to execute a supported experimental MVCC SQL statement.
      *
@@ -225,125 +249,206 @@ public final class VersionedStorageSqlBridge {
             int transactionIsolation) throws SQLException {
         try {
             String normalizedSql = stripTerminator(sql);
+            RoutedStatement routedStatement = routeStatement(normalizedSql);
+            if (routedStatement == null) {
+                return null;
+            }
+            return executeRoutedStatement(
+                    routedStatement,
+                    transactionOwner,
+                    autoCommit,
+                    transactionIsolation);
+        } catch (VersionedWriteConflictException e) {
+            throw sqlException("40XL1", "delos_mvcc write conflict: " + e.getMessage());
+        }
+    }
 
-            Matcher create = CREATE_TABLE.matcher(normalizedSql);
+    private static RoutedStatement routeStatement(String normalizedSql) throws SQLException {
+        Matcher create = CREATE_TABLE.matcher(normalizedSql);
         if (create.matches()) {
             if (shouldHandleCreateTable(create.group(3))) {
-                return createTable(create.group(1), create.group(2));
+                return route(RoutedStatementType.CREATE_TABLE, create, 2);
             }
             return null;
         }
 
         Matcher insert = INSERT_VALUES.matcher(normalizedSql);
         if (insert.matches()) {
-            Optional<TableDefinition> table = findTable(insert.group(1));
-            if (table.isPresent()) {
-                return insertValues(table.get(), insert.group(2), transactionOwner, autoCommit, transactionIsolation);
-            }
-            return null;
+            return route(RoutedStatementType.INSERT_VALUES, insert, 2);
         }
 
         Matcher createIndex = CREATE_INDEX.matcher(normalizedSql);
         if (createIndex.matches()) {
-            Optional<TableDefinition> table = findTable(createIndex.group(2));
-            if (table.isPresent()) {
-                return createIndex(table.get(), createIndex.group(1), createIndex.group(3));
-            }
-            return null;
+            return route(RoutedStatementType.CREATE_INDEX, createIndex, 3);
         }
 
         Matcher updateWhere = UPDATE_WHERE_EQUALS.matcher(normalizedSql);
         if (updateWhere.matches()) {
-            Optional<TableDefinition> table = findTable(updateWhere.group(1));
-            if (table.isPresent()) {
-                return updateWhereEquals(
-                        table.get(),
-                        updateWhere.group(2),
-                        updateWhere.group(3),
-                        updateWhere.group(4),
-                        updateWhere.group(5),
-                        transactionOwner,
-                        autoCommit,
-                        transactionIsolation);
-            }
-            return null;
+            return route(RoutedStatementType.UPDATE_WHERE_EQUALS, updateWhere, 5);
         }
 
         Matcher deleteWhere = DELETE_WHERE_EQUALS.matcher(normalizedSql);
         if (deleteWhere.matches()) {
-            Optional<TableDefinition> table = findTable(deleteWhere.group(1));
-            if (table.isPresent()) {
-                return deleteWhereEquals(table.get(), deleteWhere.group(2), deleteWhere.group(3), transactionOwner, autoCommit, transactionIsolation);
-            }
-            return null;
+            return route(RoutedStatementType.DELETE_WHERE_EQUALS, deleteWhere, 3);
         }
 
         Matcher selectBetween = SELECT_WHERE_BETWEEN.matcher(normalizedSql);
         if (selectBetween.matches()) {
-            Optional<TableDefinition> table = findTable(selectBetween.group(1));
-            if (table.isPresent()) {
-                return selectWhereRange(
-                        table.get(),
-                        selectBetween.group(2),
-                        "between",
-                        selectBetween.group(3),
-                        selectBetween.group(4),
-                        transactionOwner,
-                        autoCommit,
-                        transactionIsolation);
-            }
-            return null;
+            return route(RoutedStatementType.SELECT_WHERE_BETWEEN, selectBetween, 4);
         }
 
         Matcher selectRange = SELECT_WHERE_RANGE.matcher(normalizedSql);
         if (selectRange.matches()) {
-            Optional<TableDefinition> table = findTable(selectRange.group(1));
-            if (table.isPresent()) {
-                return selectWhereRange(
-                        table.get(),
-                        selectRange.group(2),
-                        selectRange.group(3),
-                        selectRange.group(4),
-                        null,
-                        transactionOwner,
-                        autoCommit,
-                        transactionIsolation);
-            }
-            return null;
+            return route(RoutedStatementType.SELECT_WHERE_RANGE, selectRange, 4);
         }
 
         Matcher selectWhere = SELECT_WHERE_EQUALS.matcher(normalizedSql);
         if (selectWhere.matches()) {
-            Optional<TableDefinition> table = findTable(selectWhere.group(1));
-            if (table.isPresent()) {
-                return selectWhereEquals(table.get(), selectWhere.group(2), selectWhere.group(3), transactionOwner, autoCommit, transactionIsolation);
-            }
-            return null;
+            return route(RoutedStatementType.SELECT_WHERE_EQUALS, selectWhere, 3);
         }
 
         Matcher selectAll = SELECT_ALL.matcher(normalizedSql);
         if (selectAll.matches()) {
-            Optional<TableDefinition> table = findTable(selectAll.group(1));
-            if (table.isPresent()) {
-                return selectAll(table.get(), selectAll.group(2), selectAll.group(3), transactionOwner, autoCommit, transactionIsolation);
-            }
-            return null;
+            return route(RoutedStatementType.SELECT_ALL, selectAll, 3);
         }
 
         Matcher selectCount = SELECT_COUNT.matcher(normalizedSql);
         if (selectCount.matches()) {
-            Optional<TableDefinition> table = findTable(selectCount.group(1));
-            if (table.isPresent()) {
-                return selectCount(table.get(), transactionOwner, autoCommit, transactionIsolation);
-            }
-            return null;
+            return route(RoutedStatementType.SELECT_COUNT, selectCount, 1);
         }
 
-            return null;
-        } catch (VersionedWriteConflictException e) {
-            throw sqlException("40XL1", "delos_mvcc write conflict: " + e.getMessage());
+        return null;
+    }
+
+    private static RoutedStatement route(
+            RoutedStatementType type,
+            Matcher matcher,
+            int groupCount) {
+        List<String> groups = new ArrayList<>(groupCount);
+        for (int index = 1; index <= groupCount; index++) {
+            groups.add(matcher.group(index));
+        }
+        return new RoutedStatement(type, groups);
+    }
+
+    private static VersionedStorageSqlResult executeRoutedStatement(
+            RoutedStatement routedStatement,
+            Object transactionOwner,
+            boolean autoCommit,
+            int transactionIsolation) throws SQLException {
+        switch (routedStatement.type()) {
+            case CREATE_TABLE:
+                return createTable(routedStatement.group(1), routedStatement.group(2));
+            case INSERT_VALUES: {
+                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                if (table.isPresent()) {
+                    return insertValues(table.get(), routedStatement.group(2), transactionOwner, autoCommit, transactionIsolation);
+                }
+                return null;
+            }
+            case CREATE_INDEX: {
+                Optional<TableDefinition> table = findTable(routedStatement.group(2));
+                if (table.isPresent()) {
+                    return createIndex(table.get(), routedStatement.group(1), routedStatement.group(3));
+                }
+                return null;
+            }
+            case UPDATE_WHERE_EQUALS: {
+                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                if (table.isPresent()) {
+                    return updateWhereEquals(
+                            table.get(),
+                            routedStatement.group(2),
+                            routedStatement.group(3),
+                            routedStatement.group(4),
+                            routedStatement.group(5),
+                            transactionOwner,
+                            autoCommit,
+                            transactionIsolation);
+                }
+                return null;
+            }
+            case DELETE_WHERE_EQUALS: {
+                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                if (table.isPresent()) {
+                    return deleteWhereEquals(
+                            table.get(),
+                            routedStatement.group(2),
+                            routedStatement.group(3),
+                            transactionOwner,
+                            autoCommit,
+                            transactionIsolation);
+                }
+                return null;
+            }
+            case SELECT_WHERE_BETWEEN: {
+                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                if (table.isPresent()) {
+                    return selectWhereRange(
+                            table.get(),
+                            routedStatement.group(2),
+                            "between",
+                            routedStatement.group(3),
+                            routedStatement.group(4),
+                            transactionOwner,
+                            autoCommit,
+                            transactionIsolation);
+                }
+                return null;
+            }
+            case SELECT_WHERE_RANGE: {
+                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                if (table.isPresent()) {
+                    return selectWhereRange(
+                            table.get(),
+                            routedStatement.group(2),
+                            routedStatement.group(3),
+                            routedStatement.group(4),
+                            null,
+                            transactionOwner,
+                            autoCommit,
+                            transactionIsolation);
+                }
+                return null;
+            }
+            case SELECT_WHERE_EQUALS: {
+                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                if (table.isPresent()) {
+                    return selectWhereEquals(
+                            table.get(),
+                            routedStatement.group(2),
+                            routedStatement.group(3),
+                            transactionOwner,
+                            autoCommit,
+                            transactionIsolation);
+                }
+                return null;
+            }
+            case SELECT_ALL: {
+                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                if (table.isPresent()) {
+                    return selectAll(
+                            table.get(),
+                            routedStatement.group(2),
+                            routedStatement.group(3),
+                            transactionOwner,
+                            autoCommit,
+                            transactionIsolation);
+                }
+                return null;
+            }
+            case SELECT_COUNT: {
+                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                if (table.isPresent()) {
+                    return selectCount(table.get(), transactionOwner, autoCommit, transactionIsolation);
+                }
+                return null;
+            }
+            default:
+                throw new IllegalStateException("Unhandled routed delos_mvcc statement: " + routedStatement.type());
         }
     }
+
 
     private static boolean shouldHandleCreateTable(String explicitProviderName) throws SQLException {
         if (explicitProviderName != null) {
