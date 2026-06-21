@@ -28,9 +28,11 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.util.ArrayUtil;
 import org.apache.derby.iapi.services.io.Formatable;
 import org.apache.derby.iapi.services.io.StoredFormatIds;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.types.DataTypeDescriptor;
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * <p>
@@ -55,8 +57,10 @@ public class ExecRowBuilder implements Formatable {
 
     /**
      * Array of templates used for creating NULL values to put in the row.
-     * The templates are either {@code DataValueDescriptor}s or
-     * {@code DataTypeDescriptor}s.
+     * The templates are usually {@code DataValueDescriptor}s or
+     * {@code DataTypeDescriptor}s. Store-native row locations are accepted at
+     * the B6 boundary and adapted back to the inherited SQL row-location
+     * surface when the row is built.
      */
     private Object[] template;
 
@@ -92,19 +96,21 @@ public class ExecRowBuilder implements Formatable {
 
     /**
      * Add a template from which a NULL value of the correct type can be
-     * created. It should either be a {@code DataValueDescriptor} or a
-     * {@code DataTypeDescriptor}.
+     * created. It should either be a {@code DataValueDescriptor}, a
+     * {@code DataTypeDescriptor}, or a store-native row location that can be
+     * adapted to a SQL {@code RowLocation}.
      *
      * @param column the column number
      * @param columnTemplate a template from which a NULL value can be created
-     * (either a {@code DataValueDescriptor} or a {@code DataTypeDescriptor})
+     * (usually a {@code DataValueDescriptor} or a {@code DataTypeDescriptor})
      */
     public void setColumn(int column, Object columnTemplate) {
         if (SanityManager.DEBUG &&
                 !(columnTemplate instanceof DataTypeDescriptor) &&
-                !(columnTemplate instanceof DataValueDescriptor)) {
+                !(columnTemplate instanceof DataValueDescriptor) &&
+                !(columnTemplate instanceof StoreRowLocation)) {
             SanityManager.THROWASSERT(
-                "Expected DataTypeDescriptor or DataValueDescriptor. Got: " +
+                "Expected DataTypeDescriptor, DataValueDescriptor, or StoreRowLocation. Got: " +
                 ((columnTemplate == null) ? columnTemplate :
                     columnTemplate.getClass().getName()));
         }
@@ -129,13 +135,30 @@ public class ExecRowBuilder implements Formatable {
 
         for (int i = 0; i < count; i++) {
             Object o = template[i];
-            DataValueDescriptor dvd = (o instanceof DataValueDescriptor) ?
-                    ((DataValueDescriptor) o).getNewNull() :
-                    ((DataTypeDescriptor) o).getNull();
+            DataValueDescriptor dvd = newNullValue(o);
             row.setColumn(columns[i], dvd);
         }
 
         return row;
+    }
+
+    /**
+     * Create a SQL execution NULL from a template. Store-native row locations
+     * may appear in stored or generated row templates after the Derby store
+     * boundary moved to StoreRowLocation; adapt them before execution rows see
+     * them.
+     */
+    private static DataValueDescriptor newNullValue(Object template)
+            throws StandardException {
+        if (template instanceof DataValueDescriptor) {
+            return ((DataValueDescriptor) template).getNewNull();
+        }
+        if (template instanceof StoreRowLocation) {
+            return EngineStoreRowLocationBridge
+                    .requireEngineRowLocation(template)
+                    .getNewNull();
+        }
+        return ((DataTypeDescriptor) template).getNull();
     }
 
     /**

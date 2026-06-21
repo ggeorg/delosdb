@@ -157,7 +157,7 @@ public class T_ConsistencyChecker
 		heapScan.next();
 
 		// Get the RowLocation
-		RowLocation baseRL = heapScan.newRowLocationTemplate();
+		RowLocation baseRL = rowLocation(heapScan.newRowLocationTemplate());
 		heapScan.fetchLocation(baseRL);
 
 		// Replace the current row with nulls
@@ -191,8 +191,8 @@ public class T_ConsistencyChecker
 		ScanController heapScan = t_cc.openUnqualifiedHeapScan();
 
 		// Get the RowLocation
-		RowLocation baseRL = heapScan.newRowLocationTemplate();
-		RowLocation badRL = heapScan.newRowLocationTemplate();
+		RowLocation baseRL = rowLocation(heapScan.newRowLocationTemplate());
+		RowLocation badRL = rowLocation(heapScan.newRowLocationTemplate());
 		heapScan.close();
 
 		/* Open a scan on the index */
@@ -515,6 +515,32 @@ public class T_ConsistencyChecker
     private  static  Context    getContext( final String contextID )
     {
         return ContextService.getContext( contextID );
+    }
+
+
+    private static RowLocation rowLocation(Object rowLocation)
+    {
+        try
+        {
+            Class<?> bridgeClass = Class.forName(
+                "org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge");
+            java.lang.reflect.Method method =
+                bridgeClass.getMethod("requireEngineRowLocation", Object.class);
+            return (RowLocation) method.invoke(null, rowLocation);
+        }
+        catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException e)
+        {
+            throw new IllegalStateException("Unable to adapt store row location for Derby tests", e);
+        }
+        catch (java.lang.reflect.InvocationTargetException e)
+        {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException)
+            {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Unable to adapt store row location for Derby tests", cause);
+        }
     }
 
 }

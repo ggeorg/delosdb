@@ -42,6 +42,7 @@ import org.apache.derby.iapi.sql.execute.TargetResultSet;
 import org.apache.derby.iapi.sql.execute.RowChanger;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.RowLocationRetRowSource;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.access.RowSource;
 import org.apache.derby.iapi.types.DataValueDescriptor;
@@ -579,7 +580,26 @@ extends BasicNoPutResultSetImpl
     {
         if ( hashValue == null ) { return null; }
         else if ( hashValue instanceof DataValueDescriptor[] ) { return (DataValueDescriptor[]) hashValue; }
+        else if ( hashValue instanceof StoreDataValue[] ) { return toDataValueArray( (StoreDataValue[]) hashValue ); }
         else { return ((LocatedRow) hashValue).flatten(); }
+    }
+
+    /**
+     * Convert store-native row arrays back to the inherited SQL execution row
+     * surface. B6 makes the store APIs SQL-neutral, but execution/hash join
+     * callers still consume DataValueDescriptor arrays.
+     */
+    private static DataValueDescriptor[] toDataValueArray( StoreDataValue[] row )
+    {
+        DataValueDescriptor[] dataValues = new DataValueDescriptor[ row.length ];
+        for ( int i = 0; i < row.length; i++ )
+        {
+            StoreDataValue value = row[ i ];
+            dataValues[ i ] = ( value instanceof StoreRowLocation ) ?
+                EngineStoreRowLocationBridge.requireEngineRowLocation( value ) :
+                (DataValueDescriptor) value;
+        }
+        return dataValues;
     }
 
 }
