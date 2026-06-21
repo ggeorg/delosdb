@@ -14,6 +14,14 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableStats;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictException;
+import org.apache.derby.impl.services.storetypes.EngineMvccTableAccess;
+import org.apache.derby.iapi.store.types.DelosAccessContext;
+import org.apache.derby.iapi.store.types.DelosPredicate;
+import org.apache.derby.iapi.store.types.DelosProjection;
+import org.apache.derby.iapi.store.types.DelosRow;
+import org.apache.derby.iapi.store.types.DelosScan;
+import org.apache.derby.iapi.store.types.DelosTableIdentity;
+import org.apache.derby.iapi.store.types.DelosTableShape;
 
 import javax.sql.rowset.CachedRowSet;
 import javax.sql.rowset.RowSetMetaDataImpl;
@@ -888,32 +896,69 @@ public final class VersionedStorageSqlBridge {
         Object predicateValue = table.columns().get(columnIndex).parseValue(rawValue.trim());
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
-            VersionedTableStats tableStats = PLANNED_TABLE_OPERATION_BRIDGE.stats(
-                    table.table(),
-                    statementTx.context().currentView());
-            long tableScanCost = estimateTableScanCost(tableStats);
-            Optional<IndexDefinition> indexDefinition = table.indexDefinitionForColumn(columnIndex);
-            AccessPathSelection selection = chooseAccessPath(
-                    table,
-                    columnIndex,
-                    predicateValue,
-                    statementTx,
-                    tableStats,
-                    tableScanCost,
-                    indexDefinition);
+            EngineMvccTableAccess tableAccess = table.tableAccess();
+            List<DelosPredicate> pushedFilters = new ArrayList<>();
+            pushedFilters.add(DelosPredicate.equalsTo(
+                    table.columns().get(columnIndex).name(),
+                    EngineMvccTableAccess.value(predicateValue)));
+
+            List<List<Object>> rows = materializeContractRows(
+                    tableAccess.scan(
+                            delosAccessContext(statementTx),
+                            pushedFilters,
+                            DelosProjection.all()));
+            if (!pushedFilters.isEmpty()) {
+                rows = applyLeftoverPredicates(table, rows, pushedFilters);
+            }
 
             CachedRowSet rowSet = newRowSet(table.columns());
-            List<List<Object>> rows = selection.rows();
             for (int i = rows.size() - 1; i >= 0; i--) {
                 append(rowSet, rows.get(i), table.columns());
             }
             rowSet.beforeFirst();
-            lastAccessPath = selection.accessPath();
+            lastAccessPath = tableAccess.lastAccessPath().orElse(null);
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.rows(rowSet);
         } catch (RuntimeException | SQLException e) {
             throw failStatementTransactionAndTranslate(transactionOwner, statementTx, e);
         }
+    }
+
+    private static DelosAccessContext delosAccessContext(StatementTransaction statementTx) {
+        return DelosAccessContext.builder(true)
+                .put(EngineMvccTableAccess.TX_CONTEXT_KEY, statementTx.context())
+                .put(EngineMvccTableAccess.TX_VIEW_KEY, statementTx.context().currentView())
+                .build();
+    }
+
+    private static List<List<Object>> materializeContractRows(DelosScan scan) {
+        List<List<Object>> rows = new ArrayList<>();
+        try (DelosScan contractScan = scan) {
+            while (contractScan.next()) {
+                DelosRow row = contractScan.row();
+                List<Object> values = new ArrayList<>(row.values().size());
+                row.values().forEach(value -> values.add(EngineMvccTableAccess.nativeValue(value)));
+                rows.add(List.copyOf(values));
+            }
+        }
+        return rows;
+    }
+
+    private static List<List<Object>> applyLeftoverPredicates(
+            TableDefinition table,
+            List<List<Object>> rows,
+            List<DelosPredicate> leftoverPredicates) throws SQLException {
+        List<List<Object>> filteredRows = new ArrayList<>(rows);
+        for (DelosPredicate predicate : leftoverPredicates) {
+            if (predicate.operator() != org.apache.derby.iapi.store.types.DelosPredicateOperator.EQUAL
+                    || predicate.operands().size() != 1) {
+                throw sqlException("0A000", "Unsupported leftover delos_mvcc predicate above table access: " + predicate);
+            }
+            int columnIndex = table.columnIndex(predicate.columnName());
+            Object expected = EngineMvccTableAccess.nativeValue(predicate.operands().get(0));
+            filteredRows.removeIf(row -> !Objects.equals(expected, row.get(columnIndex)));
+        }
+        return List.copyOf(filteredRows);
     }
 
     private static AccessPathSelection chooseAccessPath(
@@ -1712,6 +1757,31 @@ public final class VersionedStorageSqlBridge {
 
         private VersionedTransactionCoordinator coordinator() {
             return coordinator;
+        }
+
+        private EngineMvccTableAccess tableAccess() {
+            List<EngineMvccTableAccess.IndexBinding> indexBindings = new ArrayList<>();
+            for (IndexDefinition definition : indexesByName.values()) {
+                indexBindings.add(new EngineMvccTableAccess.IndexBinding(
+                        definition.metadata().indexName(),
+                        columns.get(definition.columnIndex()).name(),
+                        isUniqueLookupColumn(definition.columnIndex()),
+                        definition.index()));
+            }
+            return new EngineMvccTableAccess(
+                    DelosTableIdentity.of(metadata.schemaName(), metadata.tableName()),
+                    tableShape(),
+                    table,
+                    PLANNED_TABLE_OPERATION_BRIDGE,
+                    indexBindings);
+        }
+
+        private DelosTableShape tableShape() {
+            List<DelosTableShape.Column> shapeColumns = new ArrayList<>();
+            for (ColumnDefinition column : columns) {
+                shapeColumns.add(new DelosTableShape.Column(column.name(), column.typeName(), true));
+            }
+            return DelosTableShape.of(shapeColumns);
         }
 
         private synchronized void createIndex(VersionedIndexMetadata metadata, int columnIndex, TxContext buildContext) throws SQLException {
