@@ -265,7 +265,7 @@ tasks.register('storagePhaseC20ContractsReport') {
 }
 
 tasks.register('compileStoragePhaseC20ContractsSmoke', JavaCompile) {
-    dependsOn ':delosdb-engine-kernel:compileDelosDbEngineKernel'
+    dependsOn ':delosdb-engine-kernel:compileDelosDbEngineKernel', 'processDerbyResources'
     group = 'verification'
     description = 'Compiles the Phase C20 table-access contracts smoke test.'
     source = files('dev/storage-phase-c20-contracts-smoke/src/main/java')
@@ -278,7 +278,7 @@ tasks.register('compileStoragePhaseC20ContractsSmoke', JavaCompile) {
 }
 
 tasks.register('storagePhaseC20ContractsSmoke', JavaExec) {
-    dependsOn 'compileStoragePhaseC20ContractsSmoke'
+    dependsOn 'compileStoragePhaseC20ContractsSmoke', 'processDerbyResources'
     group = 'verification'
     description = 'Runs the Phase C20 table-access contracts smoke test.'
     classpath = delosdbStoragePhaseC20Classpath()
