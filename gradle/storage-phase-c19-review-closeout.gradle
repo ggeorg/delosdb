@@ -176,6 +176,18 @@ ext.delosdbStoragePhaseC19Proof = {
         if (routeStart < 0 || plannedEntryStart < 0 || executeStart < 0) {
             errors << 'C19 requires routeStatement, executePlannedRoute, and executePlannedRouteInternal to exist'
         }
+        def updateCaseToken = '''case UPDATE_WHERE_EQUALS: {
+                Optional<TableDefinition> table = findTable(plannedRoute.tableName());
+                if (table.isPresent()) {
+                    return updateWhereEquals(
+                            table.get(),
+                            plannedRoute.setColumnName(),
+                            plannedRoute.setValue(),
+                            plannedRoute.predicateColumnName(),
+                            plannedRoute.predicateValue(),'''
+        if (!bridgeText.contains(updateCaseToken)) {
+            errors << 'C19 typed UPDATE route must pass predicateColumnName/predicateValue to updateWhereEquals, not order fields'
+        }
         if (routeStart >= 0 && executeStart >= 0 && executeStart < routeStart) {
             errors << 'routeStatement must stay before executePlannedRouteInternal so routing and execution remain separated'
         }

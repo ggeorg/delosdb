@@ -591,8 +591,8 @@ public final class VersionedStorageSqlBridge {
                             table.get(),
                             plannedRoute.setColumnName(),
                             plannedRoute.setValue(),
-                            plannedRoute.orderColumnName(),
-                            plannedRoute.orderDirection(),
+                            plannedRoute.predicateColumnName(),
+                            plannedRoute.predicateValue(),
                             transactionOwner,
                             autoCommit,
                             transactionIsolation);
