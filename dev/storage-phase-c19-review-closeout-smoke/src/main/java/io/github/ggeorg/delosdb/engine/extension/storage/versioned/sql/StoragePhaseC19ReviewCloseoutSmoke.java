@@ -24,6 +24,12 @@ public final class StoragePhaseC19ReviewCloseoutSmoke {
     private StoragePhaseC19ReviewCloseoutSmoke() {
     }
 
+    private static void require(boolean condition, String message) {
+        if (!condition) {
+            throw new IllegalStateException(message);
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         verifyEngineRowLocationAdapterBehavior();
 
