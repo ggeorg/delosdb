@@ -277,7 +277,7 @@ public class T_AccessFactory extends T_Generic
 		r1.setCol(0, c1);
 
 		// Get a location template
-		RowLocation rowloc = cc.newRowLocationTemplate();
+		RowLocation rowloc = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 
 
@@ -396,7 +396,7 @@ public class T_AccessFactory extends T_Generic
 		r1.setCol(0, new SQLInteger(value1));
 
 		// Get a location template
-		RowLocation rowloc = cc.newRowLocationTemplate();
+		RowLocation rowloc = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 		// Insert the row and remember its location.
 		cc.insertAndFetchLocation(r1.getRowArray(), rowloc);
@@ -458,7 +458,7 @@ public class T_AccessFactory extends T_Generic
 		r1.setCol(0, new SQLInteger(value1));
 
 		// Get a location template
-		RowLocation rowloc = cc.newRowLocationTemplate();
+		RowLocation rowloc = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 		// Insert the row and remember its location.
 		cc.insertAndFetchLocation(r1.getRowArray(), rowloc);
@@ -642,7 +642,7 @@ public class T_AccessFactory extends T_Generic
         scan1.next();
         scan1.next();
         scan1.next();
-        RowLocation third_row_rowloc = scan1.newRowLocationTemplate();
+        RowLocation third_row_rowloc = T_StoreNativeTestSupport.rowLocation(scan1.newRowLocationTemplate());
         scan1.fetchLocation(third_row_rowloc);
 
         // see if reopen scan interfaces work
@@ -1197,7 +1197,7 @@ public class T_AccessFactory extends T_Generic
 		r1.setCol(0, c1);
 
 		// Get a location template
-		RowLocation rowloc1 = cc.newRowLocationTemplate();
+		RowLocation rowloc1 = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 		// Insert the row and remember its location.
 		cc.insertAndFetchLocation(r1.getRowArray(), rowloc1);
@@ -1205,7 +1205,7 @@ public class T_AccessFactory extends T_Generic
         // create another 1 column row. int column = 2.
 		// Get a location template
         r1.setCol(0, new SQLInteger(2));
-		RowLocation rowloc2 = cc.newRowLocationTemplate();
+		RowLocation rowloc2 = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 		// Insert the row and remember its location.
 		cc.insertAndFetchLocation(r1.getRowArray(), rowloc2);
@@ -1580,7 +1580,7 @@ public class T_AccessFactory extends T_Generic
 		r1.setCol(1, c2);
 
 		// Get a location template
-		RowLocation rowloc1 = cc.newRowLocationTemplate();
+		RowLocation rowloc1 = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 		// Insert the row and remember its location.
 		cc.insertAndFetchLocation(r1.getRowArray(), rowloc1);
@@ -1589,7 +1589,7 @@ public class T_AccessFactory extends T_Generic
 		// Get a location template
         r1.setCol(0, new SQLInteger(2));
         r1.setCol(1, new SQLInteger(200));
-		RowLocation rowloc2 = cc.newRowLocationTemplate();
+		RowLocation rowloc2 = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 		// Insert the row and remember its location.
 		cc.insertAndFetchLocation(r1.getRowArray(), rowloc2);
@@ -1753,7 +1753,7 @@ public class T_AccessFactory extends T_Generic
 		r1.setCol(1, c2);
 
 		// Get a location template
-		RowLocation rowloc1 = cc.newRowLocationTemplate();
+		RowLocation rowloc1 = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 		// Insert the row and remember its location.
 		cc.insertAndFetchLocation(r1.getRowArray(), rowloc1);
@@ -1762,7 +1762,7 @@ public class T_AccessFactory extends T_Generic
 		// Get a location template
         r1.setCol(0, new SQLInteger(2));
         r1.setCol(1, new SQLInteger(200));
-		RowLocation rowloc2 = cc.newRowLocationTemplate();
+		RowLocation rowloc2 = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 		// Insert the row and remember its location.
 		cc.insertAndFetchLocation(r1.getRowArray(), rowloc2);
@@ -1970,7 +1970,7 @@ public class T_AccessFactory extends T_Generic
 		r1.setCol(1, c2);
 
 		// Get a location template
-		RowLocation rowloc1 = cc.newRowLocationTemplate();
+		RowLocation rowloc1 = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 		// Insert the row and remember its location.
 		cc.insertAndFetchLocation(r1.getRowArray(), rowloc1);
@@ -2052,7 +2052,7 @@ public class T_AccessFactory extends T_Generic
 		r1.setCol(1, c2);
 
 		// Get a location template
-		RowLocation rowloc1 = cc.newRowLocationTemplate();
+		RowLocation rowloc1 = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 		// Insert the row and remember its location.
 		cc.insertAndFetchLocation(r1.getRowArray(), rowloc1);
@@ -2209,7 +2209,7 @@ public class T_AccessFactory extends T_Generic
         REPORT("fetch scan cost (1 cols) of row loc = " + cost_result);
 
         // make sure you can get a row location.
-		rowloc1 = scc.newRowLocationTemplate();
+		rowloc1 = T_StoreNativeTestSupport.rowLocation(scc.newRowLocationTemplate());
 
 		REPORT("(storeCost) finishing");
 
@@ -2569,7 +2569,7 @@ public class T_AccessFactory extends T_Generic
 		// all rows in the base table have one IntCol
 		T_AccessRow template = new T_AccessRow(2);
 		SQLLongint col0 = new SQLLongint(0);
-		RowLocation col1 = sc.newRowLocationTemplate();
+		RowLocation col1 = T_StoreNativeTestSupport.rowLocation(sc.newRowLocationTemplate());
 		template.setCol(0, col0);
 		template.setCol(1, col1);
 
@@ -2604,7 +2604,7 @@ public class T_AccessFactory extends T_Generic
 		// all rows in the base table have one IntCol
 		T_AccessRow template = new T_AccessRow(2);
 		SQLLongint col0 = new SQLLongint(0);
-		RowLocation col1 = sc.newRowLocationTemplate();
+		RowLocation col1 = T_StoreNativeTestSupport.rowLocation(sc.newRowLocationTemplate());
 		template.setCol(0, col0);
 		template.setCol(1, col1);
 
@@ -3316,7 +3316,7 @@ public class T_AccessFactory extends T_Generic
 		r1.setCol(0, c1);
 
 		// Get a location template
-		RowLocation rowloc = cc.newRowLocationTemplate();
+		RowLocation rowloc = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
 		// Insert the row and remember its location.
 		cc.insertAndFetchLocation(r1.getRowArray(), rowloc);
@@ -3327,7 +3327,7 @@ public class T_AccessFactory extends T_Generic
 		// cc should be closed
 		try
 		{
-			cc.newRowLocationTemplate();
+			T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 			throw T_Fail.testFailMsg("conglomerate controller is not closed after commit");
 		}				
 		catch (StandardException se)
@@ -3501,7 +3501,7 @@ public class T_AccessFactory extends T_Generic
             r1.setCol(0, c1);
 
             // Get a location template
-            RowLocation rowloc = cc.newRowLocationTemplate();
+            RowLocation rowloc = T_StoreNativeTestSupport.rowLocation(cc.newRowLocationTemplate());
 
             // Insert the row and remember its location.
             cc.insertAndFetchLocation(r1.getRowArray(), rowloc);
@@ -3826,7 +3826,7 @@ public class T_AccessFactory extends T_Generic
         base_scan.next();
                 
         // Get the RowLocation for the first row:
-        RowLocation firstRow = base_scan.newRowLocationTemplate();
+        RowLocation firstRow = T_StoreNativeTestSupport.rowLocation(base_scan.newRowLocationTemplate());
         base_scan.fetchLocation(firstRow);
         base_scan.fetch(accessRow.getRowArray());        
         long key_value = ((SQLLongint) accessRow.getCol(0)).getLong();
@@ -4042,7 +4042,7 @@ public class T_AccessFactory extends T_Generic
         // now delete all the rows and remember the row location of the
         // last row.
 
-        RowLocation deleted_page_rowloc = base_scan.newRowLocationTemplate();
+        RowLocation deleted_page_rowloc = T_StoreNativeTestSupport.rowLocation(base_scan.newRowLocationTemplate());
 
 
         for (int i = 0; i < 10; i++)
@@ -4155,7 +4155,7 @@ public class T_AccessFactory extends T_Generic
         // now delete all the rows and remember the row location of the
         // last row.
 
-        RowLocation deleted_row_rowloc  = base_scan.newRowLocationTemplate();
+        RowLocation deleted_row_rowloc  = T_StoreNativeTestSupport.rowLocation(base_scan.newRowLocationTemplate());
 
         for (int i = 0; i < 3; i++)
         {

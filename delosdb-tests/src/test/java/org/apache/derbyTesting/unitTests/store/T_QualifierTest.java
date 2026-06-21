@@ -614,7 +614,7 @@ public class T_QualifierTest
         // create an array of "group_size" rows to use in the fetch group call.
         DataValueDescriptor[][] row_array = 
             new DataValueDescriptor[group_size][];
-        row_array[0] = TemplateRow.newRow(fetch_template);
+        row_array[0] = T_StoreNativeTestSupport.newRow(fetch_template);
 
         int  expect_key         = input_expect_key;
         long key                = -42;
@@ -1158,7 +1158,7 @@ public class T_QualifierTest
         ConglomerateController  index_cc            = null;
         RowLocation             base_rowloc         = null;
 
-        base_row = TemplateRow.newU8Row(3);
+        base_row = T_StoreNativeTestSupport.newU8Row(3);
 
         if (init_conglomerate_type.compareTo("BTREE") == 0)
         {
@@ -1177,7 +1177,7 @@ public class T_QualifierTest
                     TransactionController.MODE_RECORD,
                     TransactionController.ISOLATION_SERIALIZABLE);
 
-            base_rowloc = base_cc.newRowLocationTemplate();
+            base_rowloc = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
             index_row.init(base_row, base_rowloc, 4);
 
@@ -1203,8 +1203,8 @@ public class T_QualifierTest
             // make another template
             T_SecondaryIndexRow fetch_index_row = new T_SecondaryIndexRow();
             fetch_index_row.init(
-                TemplateRow.newU8Row(3),
-                base_cc.newRowLocationTemplate(), 
+                T_StoreNativeTestSupport.newU8Row(3),
+                T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate()), 
                 4);
             fetch_template = fetch_index_row.getRow();
         }
@@ -1229,11 +1229,11 @@ public class T_QualifierTest
                     TransactionController.MODE_RECORD,
                     TransactionController.ISOLATION_SERIALIZABLE);
 
-            base_rowloc = base_cc.newRowLocationTemplate();
+            base_rowloc = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
             conglomid = base_conglomid;
             openscan_template = base_row;
-            fetch_template    = TemplateRow.newU8Row(3);
+            fetch_template    = T_StoreNativeTestSupport.newU8Row(3);
         }
 
         // insert them in reverse order just to make sure btree is sorting them

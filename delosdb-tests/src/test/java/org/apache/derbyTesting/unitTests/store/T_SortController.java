@@ -26,6 +26,7 @@ import org.apache.derbyTesting.unitTests.harness.T_Generic;
 import org.apache.derbyTesting.unitTests.harness.T_Fail;
 
 import org.apache.derby.iapi.store.access.*;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.iapi.services.context.ContextService;
 
@@ -857,32 +858,32 @@ public class T_SortController extends T_Generic
 class T_DummySortObserver implements SortObserver
 {
 	T_AccessRow  template;
-	Vector<DataValueDescriptor[]> vector;
+	Vector<StoreDataValue[]> vector;
 
 	T_DummySortObserver(T_AccessRow template)
 	{
 		this.template = template;
-		vector = new Vector<DataValueDescriptor[]>();
+		vector = new Vector<StoreDataValue[]>();
 	}
 
 	/*
 	 * Methods of SortObserver
 	 */
-	public DataValueDescriptor[] insertNonDuplicateKey(
-    DataValueDescriptor[] insertRow)	
+	public StoreDataValue[] insertNonDuplicateKey(
+    StoreDataValue[] insertRow)	
 	{
 		return insertRow;
 	}
 
-	public DataValueDescriptor[] insertDuplicateKey(
-    DataValueDescriptor[]   insertRow, 
-    DataValueDescriptor[]   existingRow)
+	public StoreDataValue[] insertDuplicateKey(
+    StoreDataValue[]   insertRow, 
+    StoreDataValue[]   existingRow)
 	{
 		return insertRow;
 	}
 
 	public void addToFreeList(
-    DataValueDescriptor[]   objectArray, 
+    StoreDataValue[]   objectArray, 
     int                     maxFreeListSize)
 	{
 		if (vector.size() < maxFreeListSize)
@@ -891,7 +892,7 @@ class T_DummySortObserver implements SortObserver
 		}
 	}
 
-	public DataValueDescriptor[] getArrayClone()
+	public StoreDataValue[] getArrayClone()
 		throws StandardException
 	{
 		int lastElement = vector.size();
@@ -911,7 +912,7 @@ class T_DummySortObserver implements SortObserver
         return false;
     }
 
-    public void rememberDuplicate(DataValueDescriptor[] row)
+    public void rememberDuplicate(StoreDataValue[] row)
             throws StandardException {
         if (SanityManager.DEBUG) {
             SanityManager.NOTREACHED();
@@ -929,15 +930,15 @@ class T_DuplicateEliminator extends T_DummySortObserver
 	/*
 	 * Methods of SortObserver
 	 */
-	public DataValueDescriptor[] insertNonDuplicateKey(
-    DataValueDescriptor[] insertRow)	
+	public StoreDataValue[] insertNonDuplicateKey(
+    StoreDataValue[] insertRow)	
 	{
 		return insertRow;
 	}
 
-	public DataValueDescriptor[] insertDuplicateKey(
-    DataValueDescriptor[] insertRow, 
-    DataValueDescriptor[] existingRow)
+	public StoreDataValue[] insertDuplicateKey(
+    StoreDataValue[] insertRow, 
+    StoreDataValue[] existingRow)
 	{
 		return null;
 	}
@@ -956,15 +957,15 @@ class T_SumForIntCol implements SortObserver
 	 * Methods of SortObserver
 	 */
 
-	public DataValueDescriptor[] insertNonDuplicateKey(
-    DataValueDescriptor[] insertRow)	
+	public StoreDataValue[] insertNonDuplicateKey(
+    StoreDataValue[] insertRow)	
 	{
 		return insertRow;
 	}
 
-	public DataValueDescriptor[] insertDuplicateKey(
-    DataValueDescriptor[] insertRow, 
-    DataValueDescriptor[] existingRow)
+	public StoreDataValue[] insertDuplicateKey(
+    StoreDataValue[] insertRow, 
+    StoreDataValue[] existingRow)
 		throws StandardException
 	{
 
@@ -981,12 +982,12 @@ class T_SumForIntCol implements SortObserver
 	}
 
 	public void addToFreeList(
-    DataValueDescriptor[]   objectArray, 
+    StoreDataValue[]   objectArray, 
     int                     maxFreeListSize)
 	{
 	}
 
-	public DataValueDescriptor[] getArrayClone()
+	public StoreDataValue[] getArrayClone()
 		throws StandardException
 	{
 		return null;
@@ -1000,7 +1001,7 @@ class T_SumForIntCol implements SortObserver
         return false;
     }
 
-    public void rememberDuplicate(DataValueDescriptor[] row)
+    public void rememberDuplicate(StoreDataValue[] row)
             throws StandardException {
         if (SanityManager.DEBUG) {
             SanityManager.NOTREACHED();

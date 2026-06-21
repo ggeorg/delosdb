@@ -258,7 +258,7 @@ public class T_b2i extends T_MultiIterations
 		throws StandardException
     {
         T_SecondaryIndexRow index_row  = new T_SecondaryIndexRow();
-        DataValueDescriptor[] base_row = TemplateRow.newU8Row(num_cols);
+        DataValueDescriptor[] base_row = T_StoreNativeTestSupport.newU8Row(num_cols);
 
         if (varying_first_col)
         {
@@ -289,7 +289,7 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
         // initialize the secondary index row - pointing it at base row
-        RowLocation base_rowloc = base_cc.newRowLocationTemplate();
+        RowLocation base_rowloc = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
         index_row.init(base_row, base_rowloc, num_cols + 1);
         
         // create the secondary index
@@ -326,7 +326,7 @@ public class T_b2i extends T_MultiIterations
         ret_val.base_conglomid     = base_conglomid;
         ret_val.index_conglomid    = index_conglomid;
         // RESOLVE (mikem - 04/29/98 - why is following line commented out?
-        // ret_val.base_template_row  = TemplateRow.newU8Row(num_cols);
+        // ret_val.base_template_row  = T_StoreNativeTestSupport.newU8Row(num_cols);
         ret_val.index_template_row = index_row.getRow();
 
         return;
@@ -553,9 +553,9 @@ public class T_b2i extends T_MultiIterations
         index_cc.checkConsistency();
 
 		// Create a row and insert into base table, remembering it's location.
-		DataValueDescriptor[] r1             = TemplateRow.newU8Row(2);
+		DataValueDescriptor[] r1             = T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow  index_row1      = new T_SecondaryIndexRow();
-        RowLocation          base_rowloc1    = base_cc.newRowLocationTemplate();
+        RowLocation          base_rowloc1    = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row1.init(r1, base_rowloc1, 3);
 		((SQLLongint) r1[0]).setValue(2);
@@ -569,9 +569,9 @@ public class T_b2i extends T_MultiIterations
 			throw T_Fail.testFailMsg("insert failed");
 
 		// Make sure we read back the value we wrote from base and index table.
-		DataValueDescriptor[] r2            = TemplateRow.newU8Row(2);
+		DataValueDescriptor[] r2            = T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow   index_row2    = new T_SecondaryIndexRow();
-        RowLocation           base_rowloc2  = base_cc.newRowLocationTemplate();
+        RowLocation           base_rowloc2  = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row2.init(r2, base_rowloc2, 3);
 
@@ -751,9 +751,9 @@ public class T_b2i extends T_MultiIterations
         index_cc.checkConsistency();
 
 		// Create a row and insert into base table, remembering it's location.
-		DataValueDescriptor[]   r1           = TemplateRow.newU8Row(2);
+		DataValueDescriptor[]   r1           = T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow     index_row1   = new T_SecondaryIndexRow();
-        RowLocation             base_rowloc1 = base_cc.newRowLocationTemplate();
+        RowLocation             base_rowloc1 = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row1.init(r1, base_rowloc1, 3);
 
@@ -984,8 +984,8 @@ public class T_b2i extends T_MultiIterations
         boolean     ret_val = true;
 
         // run through a predicates as described in the openScan() interface //
-        DataValueDescriptor[] start_key  = TemplateRow.newU8Row(1);
-        DataValueDescriptor[] stop_key   = TemplateRow.newU8Row(1);
+        DataValueDescriptor[] start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        DataValueDescriptor[] stop_key   = T_StoreNativeTestSupport.newU8Row(1);
 
 
         // test predicate x = 5
@@ -1107,8 +1107,8 @@ public class T_b2i extends T_MultiIterations
 	    //  |x = 5 and y > 2  |{5,2} |GT|{5}  |GT|{5,4} .. {5,6}|{5,2} .. {9,1}|
         // 	+------------------------------------------------------------------+
         REPORT("scan (x = 5 and y > 2)");
-        start_key  = TemplateRow.newU8Row(2);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(2);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)start_key[1]).setValue(2);
         ((SQLLongint)stop_key[0]).setValue(5);
@@ -1129,8 +1129,8 @@ public class T_b2i extends T_MultiIterations
         // 	|x = 5 and y >= 2 | {5,2}|GE| {5} |GT|{5,2} .. {5,6}|{4,6} .. {9,1}|
         // 	+------------------------------------------------------------------+
         REPORT("scan (x = 5 and y >= 2)");
-        start_key  = TemplateRow.newU8Row(2);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(2);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)start_key[1]).setValue(2);
         ((SQLLongint)stop_key[0]).setValue(5);
@@ -1151,8 +1151,8 @@ public class T_b2i extends T_MultiIterations
         // 	|x = 5 and y < 5  | {5}  |GE|{5,5}|GE|{5,2} .. {5,4}|{4,6} .. {5,4}|
         // 	+------------------------------------------------------------------+
         REPORT("scan (x = 5 and y < 5)");
-        start_key  = TemplateRow.newU8Row(1);
-        stop_key   = TemplateRow.newU8Row(2);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(2);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)stop_key[0]).setValue(5);
         ((SQLLongint)stop_key[1]).setValue(5);
@@ -1173,8 +1173,8 @@ public class T_b2i extends T_MultiIterations
         // 	|x = 2            | {2}  |GE| {2} |GT|none          |{1,1} .. {1,1}|
         // 	+------------------------------------------------------------------+
         REPORT("scan (x = 2)");
-        start_key  = TemplateRow.newU8Row(1);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(2);
         ((SQLLongint)stop_key[0]).setValue(2);
         if (!T_QualifierTest.t_scan(tc, index_conglomid, template.getRow(),
@@ -1308,7 +1308,7 @@ public class T_b2i extends T_MultiIterations
 
         // base row template - last column is just to make row long so that
         // multiple pages are spanned.
-        DataValueDescriptor[] base_row             = TemplateRow.newU8Row(4);
+        DataValueDescriptor[] base_row             = T_StoreNativeTestSupport.newU8Row(4);
         base_row[3] = new SQLChar();
 
         String   string_1500char = new String();
@@ -1348,7 +1348,7 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
         // initialize the secondary index row - pointing it at base row
-        index_row.init(base_row, base_cc.newRowLocationTemplate(), 5);
+        index_row.init(base_row, T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate()), 5);
 
         Properties properties = 
             createProperties(
@@ -1380,7 +1380,7 @@ public class T_b2i extends T_MultiIterations
 
 		// Create a row.
         T_SecondaryIndexRow template = new T_SecondaryIndexRow();
-        RowLocation         row_loc  = base_cc.newRowLocationTemplate();
+        RowLocation         row_loc  = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
         template.init(base_row, row_loc, 5);
 
         // insert them in reverse order just to make sure btree is sorting them
@@ -1543,8 +1543,8 @@ public class T_b2i extends T_MultiIterations
 
 		// Create a row.
 		T_SecondaryIndexRow index_row = new T_SecondaryIndexRow();
-        RowLocation             rowloc    = base_cc.newRowLocationTemplate();
-        DataValueDescriptor[]   base_row  = TemplateRow.newU8Row(2);
+        RowLocation             rowloc    = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
+        DataValueDescriptor[]   base_row  = T_StoreNativeTestSupport.newU8Row(2);
         index_row.init(base_row, rowloc, 3); 
 
         // insert them in reverse order just to make sure btree is sorting them
@@ -1575,7 +1575,7 @@ public class T_b2i extends T_MultiIterations
         tc.commit();
 
         // Search for each of the keys and delete them one at a time.
-        DataValueDescriptor[] delete_key = TemplateRow.newU8Row(2);
+        DataValueDescriptor[] delete_key = T_StoreNativeTestSupport.newU8Row(2);
         for (int i = 200; i >= 0; i -= 4)
         {
             ((SQLLongint)delete_key[0]).setValue(1);
@@ -1707,12 +1707,12 @@ public class T_b2i extends T_MultiIterations
      * but that does not really give any more functionality than using scan
      * to find your key:
      *     ScanController.fetchLocation()
-     *     ScanController.newRowLocationTemplate()
+     *     T_StoreNativeTestSupport.rowLocation(ScanController.newRowLocationTemplate())
      *     ScanController.replace()
      *     ConglomerateController.delete()
      *     ConglomerateController.fetch()
 	 *     ConglomerateController.insertAndFetchLocation()
-	 *     ConglomerateController.newRowLocationTemplate()
+	 *     T_StoreNativeTestSupport.rowLocation(ConglomerateController.newRowLocationTemplate())
      *     ConglomerateController.replace()
      *
 	 * @exception  StandardException  Standard exception policy.
@@ -1746,8 +1746,8 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
 		// Create a base row template.
-        DataValueDescriptor[]   base_row    = TemplateRow.newU8Row(2);
-        RowLocation             base_rowloc = base_cc.newRowLocationTemplate();
+        DataValueDescriptor[]   base_row    = T_StoreNativeTestSupport.newU8Row(2);
+        RowLocation             base_rowloc = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         T_SecondaryIndexRow index_row_from_base_row = new T_SecondaryIndexRow();
         index_row_from_base_row.init(base_row, base_rowloc, 3);
@@ -1755,8 +1755,8 @@ public class T_b2i extends T_MultiIterations
 
 		// Create a row.
 		T_SecondaryIndexRow index_row = new T_SecondaryIndexRow();
-        index_row.init(TemplateRow.newU8Row(2), 
-                        base_cc.newRowLocationTemplate(), 3);
+        index_row.init(T_StoreNativeTestSupport.newU8Row(2), 
+                        T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate()), 3);
 
         // test: make sure scan position is right after inserts before scan
         //       no split case.  In this case the slot position of the current
@@ -1807,9 +1807,9 @@ public class T_b2i extends T_MultiIterations
         }
         try
         {
-            RowLocation rowloc = index_cc.newRowLocationTemplate();
+            RowLocation rowloc = T_StoreNativeTestSupport.rowLocation(index_cc.newRowLocationTemplate());
             return(FAIL(
-                "t_006: ConglomerateController.newRowLocationTemplate() succeeded."));
+                "t_006: T_StoreNativeTestSupport.rowLocation(ConglomerateController.newRowLocationTemplate()) succeeded."));
         }
         catch (StandardException e)
         {
@@ -1855,8 +1855,8 @@ public class T_b2i extends T_MultiIterations
 
             try
             {
-                RowLocation rowloc = scan.newRowLocationTemplate();
-                return(FAIL("t_006: scan.newRowLocationTemplate() succeeded"));
+                RowLocation rowloc = T_StoreNativeTestSupport.rowLocation(scan.newRowLocationTemplate());
+                return(FAIL("t_006: T_StoreNativeTestSupport.rowLocation(scan.newRowLocationTemplate()) succeeded"));
             }
             catch (StandardException e)
             {
@@ -1926,8 +1926,8 @@ public class T_b2i extends T_MultiIterations
 
 		// Create a row.
 		T_SecondaryIndexRow   index_row = new T_SecondaryIndexRow();
-        DataValueDescriptor[] base_row  = TemplateRow.newU8Row(2);
-        RowLocation           row_loc   = base_cc.newRowLocationTemplate();
+        DataValueDescriptor[] base_row  = T_StoreNativeTestSupport.newU8Row(2);
+        RowLocation           row_loc   = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
         index_row.init(base_row, row_loc, 3);
 
 		// Create a row.
@@ -2046,8 +2046,8 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
 		// Create a base row template.
-        DataValueDescriptor[]   base_row    = TemplateRow.newU8Row(2);
-        RowLocation             base_rowloc = base_cc.newRowLocationTemplate();
+        DataValueDescriptor[]   base_row    = T_StoreNativeTestSupport.newU8Row(2);
+        RowLocation             base_rowloc = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         T_SecondaryIndexRow index_row_from_base_row = new T_SecondaryIndexRow();
         index_row_from_base_row.init(base_row, base_rowloc, 3);
@@ -2055,8 +2055,8 @@ public class T_b2i extends T_MultiIterations
 
 		// Create a row.
 		T_SecondaryIndexRow index_row = new T_SecondaryIndexRow();
-        index_row.init(TemplateRow.newU8Row(2), 
-                        base_cc.newRowLocationTemplate(), 3);
+        index_row.init(T_StoreNativeTestSupport.newU8Row(2), 
+                        T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate()), 3);
 
         // test: make sure scan position is right after inserts before scan
         //       no split case.  In this case the slot position of the current
@@ -2195,9 +2195,9 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
 		// Create a row and insert into base table, remembering it's location.
-		DataValueDescriptor[] r1             = TemplateRow.newU8Row(2);
+		DataValueDescriptor[] r1             = T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow  index_row1      = new T_SecondaryIndexRow();
-        RowLocation          base_rowloc1    = base_cc.newRowLocationTemplate();
+        RowLocation          base_rowloc1    = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row1.init(r1, base_rowloc1, 3);
 
@@ -2220,7 +2220,7 @@ public class T_b2i extends T_MultiIterations
 
         // Delete the only entry and make sure it can be reinserted in same
         // xact.
-        DataValueDescriptor[] delete_key = TemplateRow.newU8Row(2);
+        DataValueDescriptor[] delete_key = T_StoreNativeTestSupport.newU8Row(2);
         ((SQLLongint)delete_key[0]).setValue(1);
         ((SQLLongint)delete_key[1]).setValue(1000);
 
@@ -2259,9 +2259,9 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
 		// Create a row and insert into base table, remembering it's location.
-		r1              = TemplateRow.newU8Row(2);
+		r1              = T_StoreNativeTestSupport.newU8Row(2);
         index_row1      = new T_SecondaryIndexRow();
-        base_rowloc1    = base_cc.newRowLocationTemplate();
+        base_rowloc1    = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row1.init(r1, base_rowloc1, 3);
 
@@ -2288,7 +2288,7 @@ public class T_b2i extends T_MultiIterations
 
         // Delete the only entry and make sure it can be reinserted in same
         // xact.
-        delete_key = TemplateRow.newU8Row(2);
+        delete_key = T_StoreNativeTestSupport.newU8Row(2);
         ((SQLLongint)delete_key[0]).setValue(1);
         ((SQLLongint)delete_key[1]).setValue(1000);
 
@@ -2351,7 +2351,7 @@ public class T_b2i extends T_MultiIterations
 
 
         // create the base table
-        DataValueDescriptor[]   base_row        = TemplateRow.newU8Row(2);
+        DataValueDescriptor[]   base_row        = T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow     index_row1      = new T_SecondaryIndexRow();
 
         long base_conglomid = 
@@ -2372,7 +2372,7 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.MODE_RECORD,
                 TransactionController.ISOLATION_SERIALIZABLE);
 
-        RowLocation         base_rowloc1    = base_cc.newRowLocationTemplate();
+        RowLocation         base_rowloc1    = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row1.init(base_row, base_rowloc1, 3);
 
@@ -2488,8 +2488,8 @@ public class T_b2i extends T_MultiIterations
 
 		// Create a row.
 		T_SecondaryIndexRow index_row = new T_SecondaryIndexRow();
-        RowLocation             rowloc    = base_cc.newRowLocationTemplate();
-        DataValueDescriptor[]   base_row  = TemplateRow.newU8Row(2);
+        RowLocation             rowloc    = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
+        DataValueDescriptor[]   base_row  = T_StoreNativeTestSupport.newU8Row(2);
         base_row[0] = new SQLChar("aaaaaaaaaa");
         index_row.init(base_row, rowloc, 3); 
 
@@ -2598,8 +2598,8 @@ public class T_b2i extends T_MultiIterations
 
 		// Create a row.
 		T_SecondaryIndexRow     index_row = new T_SecondaryIndexRow();
-        RowLocation             rowloc    = base_cc.newRowLocationTemplate();
-        DataValueDescriptor[]   base_row  = TemplateRow.newU8Row(2);
+        RowLocation             rowloc    = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
+        DataValueDescriptor[]   base_row  = T_StoreNativeTestSupport.newU8Row(2);
         base_row[0] = new SQLChar("aaaaaaaaaa");
         index_row.init(base_row, rowloc, 3); 
 
@@ -2728,16 +2728,16 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
 		// Create an index row object for the "delete row"
-		DataValueDescriptor[]         r1     = TemplateRow.newU8Row(2);
+		DataValueDescriptor[]         r1     = T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow     index_row1   = new T_SecondaryIndexRow();
-        RowLocation             base_rowloc1 = base_cc.newRowLocationTemplate();
+        RowLocation             base_rowloc1 = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row1.init(r1, base_rowloc1, 3);
 
         // Create another index row object for the other inserts.
-		DataValueDescriptor[]         r2              =  TemplateRow.newU8Row(2);
+		DataValueDescriptor[]         r2              =  T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow index_row2      = new T_SecondaryIndexRow();
-        RowLocation         base_rowloc2    = base_cc.newRowLocationTemplate();
+        RowLocation         base_rowloc2    = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row2.init(r2, base_rowloc2, 3);
 
@@ -2880,7 +2880,7 @@ public class T_b2i extends T_MultiIterations
 
 
         // create the base table
-        DataValueDescriptor[] base_row        = TemplateRow.newU8Row(2);
+        DataValueDescriptor[] base_row        = T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow   index_row1      = new T_SecondaryIndexRow();
 
         long base_conglomid = 
@@ -2901,7 +2901,7 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.MODE_RECORD,
                 TransactionController.ISOLATION_SERIALIZABLE);
 
-        RowLocation         base_rowloc1    = base_cc.newRowLocationTemplate();
+        RowLocation         base_rowloc1    = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row1.init(base_row, base_rowloc1, 3);
 
@@ -3023,9 +3023,9 @@ public class T_b2i extends T_MultiIterations
         index_cc.checkConsistency();
 
 		// Create a row and insert into base table, remembering it's location.
-		DataValueDescriptor[] r1           = TemplateRow.newU8Row(2);
+		DataValueDescriptor[] r1           = T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow   index_row1   = new T_SecondaryIndexRow();
-        RowLocation           base_rowloc1 = base_cc.newRowLocationTemplate();
+        RowLocation           base_rowloc1 = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row1.init(r1, base_rowloc1, 3);
 
@@ -3166,9 +3166,9 @@ public class T_b2i extends T_MultiIterations
         index_cc.checkConsistency();
 
 		// Create a row and insert into base table, remembering it's location.
-		DataValueDescriptor[] r1            = TemplateRow.newU8Row(2);
+		DataValueDescriptor[] r1            = T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow   index_row1    = new T_SecondaryIndexRow();
-        RowLocation           base_rowloc1  = base_cc.newRowLocationTemplate();
+        RowLocation           base_rowloc1  = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row1.init(r1, base_rowloc1, 3);
 
@@ -3317,8 +3317,8 @@ public class T_b2i extends T_MultiIterations
 
 		// Create a row.
 		T_SecondaryIndexRow index_row = new T_SecondaryIndexRow();
-        RowLocation             rowloc    = base_cc.newRowLocationTemplate();
-        DataValueDescriptor[]   base_row  = TemplateRow.newU8Row(2);
+        RowLocation             rowloc    = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
+        DataValueDescriptor[]   base_row  = T_StoreNativeTestSupport.newU8Row(2);
         index_row.init(base_row, rowloc, 3); 
 
         ((SQLLongint)base_row[0]).setValue(1);
@@ -3365,8 +3365,8 @@ public class T_b2i extends T_MultiIterations
         boolean     ret_val = true;
 
         // run through a predicates as described in the openScan() interface //
-        DataValueDescriptor[] start_key  = TemplateRow.newU8Row(1);
-        DataValueDescriptor[] stop_key   = TemplateRow.newU8Row(1);
+        DataValueDescriptor[] start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        DataValueDescriptor[] stop_key   = T_StoreNativeTestSupport.newU8Row(1);
 
 
         // test predicate x = 5
@@ -3488,8 +3488,8 @@ public class T_b2i extends T_MultiIterations
 	    //  |x = 5 and y > 2  |{5}   |GE|{5,2 |GE|{5,4} .. {5,6}|{5,2} .. {9,1}|
         // 	+------------------------------------------------------------------+
         REPORT("scan (x = 5 and y > 2)");
-        start_key  = TemplateRow.newU8Row(1);
-        stop_key   = TemplateRow.newU8Row(2);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(2);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)stop_key[0]).setValue(5);
         ((SQLLongint)stop_key[1]).setValue(2);
@@ -3510,8 +3510,8 @@ public class T_b2i extends T_MultiIterations
         // 	|x = 5 and y >= 2 |{5}  |GE|{5,2}|GT|{5,2} .. {5,6}|{4,6} .. {9,1}|
         // 	+------------------------------------------------------------------+
         REPORT("scan (x = 5 and y >= 2)");
-        start_key  = TemplateRow.newU8Row(1);
-        stop_key   = TemplateRow.newU8Row(2);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(2);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)stop_key[0]).setValue(5);
         ((SQLLongint)stop_key[1]).setValue(2);
@@ -3532,8 +3532,8 @@ public class T_b2i extends T_MultiIterations
         // 	|x = 5 and y < 5  | {5,5}} |GE|{5}|GT|{5,2} .. {5,4}|{4,6} .. {5,4}|
         // 	+------------------------------------------------------------------+
         REPORT("scan (x = 5 and y < 5)");
-        start_key  = TemplateRow.newU8Row(2);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(2);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)start_key[1]).setValue(5);
         ((SQLLongint)stop_key[0]).setValue(5);
@@ -3554,8 +3554,8 @@ public class T_b2i extends T_MultiIterations
         // 	|x = 2            | {2}  |GE| {2} |GT|none          |{1,1} .. {1,1}|
         // 	+------------------------------------------------------------------+
         REPORT("scan (x = 2)");
-        start_key  = TemplateRow.newU8Row(1);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(2);
         ((SQLLongint)stop_key[0]).setValue(2);
         if (!T_QualifierTest.t_scan(tc, index_conglomid, template.getRow(),
@@ -3692,7 +3692,7 @@ public class T_b2i extends T_MultiIterations
 
         // base row template - last column is just to make row long so that
         // multiple pages are spanned.
-        DataValueDescriptor[] base_row             = TemplateRow.newU8Row(4);
+        DataValueDescriptor[] base_row             = T_StoreNativeTestSupport.newU8Row(4);
         base_row[3] = new SQLChar();
 
         String   string_1500char = new String();
@@ -3734,7 +3734,7 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
         // initialize the secondary index row - pointing it at base row
-        index_row.init(base_row, base_cc.newRowLocationTemplate(), 5);
+        index_row.init(base_row, T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate()), 5);
 
         Properties properties = 
             createProperties(
@@ -3774,7 +3774,7 @@ public class T_b2i extends T_MultiIterations
 
 		// Create a row.
         T_SecondaryIndexRow template = new T_SecondaryIndexRow();
-        RowLocation         row_loc  = base_cc.newRowLocationTemplate();
+        RowLocation         row_loc  = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
         template.init(base_row, row_loc, 5);
 
         // insert them in reverse order just to make sure btree is sorting them
@@ -3885,8 +3885,8 @@ public class T_b2i extends T_MultiIterations
         boolean     ret_val = true;
 
         // run through a predicates as described in the openScan() interface //
-        DataValueDescriptor[] start_key  = TemplateRow.newU8Row(1);
-        DataValueDescriptor[] stop_key   = TemplateRow.newU8Row(1);
+        DataValueDescriptor[] start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        DataValueDescriptor[] stop_key   = T_StoreNativeTestSupport.newU8Row(1);
 
 
         // test predicate x = 5
@@ -3969,8 +3969,8 @@ public class T_b2i extends T_MultiIterations
         }
 
         REPORT("scan (x = 5 and y > 2)");
-        start_key  = TemplateRow.newU8Row(1);
-        stop_key   = TemplateRow.newU8Row(2);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(2);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)stop_key[0]).setValue(5);
         ((SQLLongint)stop_key[1]).setValue(2);
@@ -3986,8 +3986,8 @@ public class T_b2i extends T_MultiIterations
 
 
         REPORT("scan (x = 5 and y >= 2)");
-        start_key  = TemplateRow.newU8Row(1);
-        stop_key   = TemplateRow.newU8Row(2);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(2);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)stop_key[0]).setValue(5);
         ((SQLLongint)stop_key[1]).setValue(2);
@@ -4003,8 +4003,8 @@ public class T_b2i extends T_MultiIterations
 
 
         REPORT("scan (x = 5 and y < 5)");
-        start_key  = TemplateRow.newU8Row(2);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(2);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)start_key[1]).setValue(5);
         ((SQLLongint)stop_key[0]).setValue(5);
@@ -4019,8 +4019,8 @@ public class T_b2i extends T_MultiIterations
         }
 
         REPORT("scan (x = 2)");
-        start_key  = TemplateRow.newU8Row(1);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(2);
         ((SQLLongint)stop_key[0]).setValue(2);
         if (!T_QualifierTest.t_scan(tc, index_conglomid, template.getRow(),
@@ -4157,7 +4157,7 @@ public class T_b2i extends T_MultiIterations
 
         // base row template - last column is just to make row long so that
         // multiple pages are spanned.
-        DataValueDescriptor[] base_row             = TemplateRow.newU8Row(4);
+        DataValueDescriptor[] base_row             = T_StoreNativeTestSupport.newU8Row(4);
         base_row[3] = new SQLChar();
 
         String   string_1500char = new String();
@@ -4199,7 +4199,7 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
         // initialize the secondary index row - pointing it at base row
-        index_row.init(base_row, base_cc.newRowLocationTemplate(), 5);
+        index_row.init(base_row, T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate()), 5);
 
         Properties properties = 
             createProperties(
@@ -4239,7 +4239,7 @@ public class T_b2i extends T_MultiIterations
 
 		// Create a row.
         T_SecondaryIndexRow template = new T_SecondaryIndexRow();
-        RowLocation         row_loc  = base_cc.newRowLocationTemplate();
+        RowLocation         row_loc  = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
         template.init(base_row, row_loc, 5);
 
         // insert them in reverse order just to make sure btree is sorting them
@@ -4350,8 +4350,8 @@ public class T_b2i extends T_MultiIterations
         boolean     ret_val = true;
 
         // run through a predicates as described in the openScan() interface //
-        DataValueDescriptor[] start_key  = TemplateRow.newU8Row(1);
-        DataValueDescriptor[] stop_key   = TemplateRow.newU8Row(1);
+        DataValueDescriptor[] start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        DataValueDescriptor[] stop_key   = T_StoreNativeTestSupport.newU8Row(1);
 
 
         REPORT("scan (x = 5)");
@@ -4430,8 +4430,8 @@ public class T_b2i extends T_MultiIterations
         }
 
         REPORT("scan (x = 5 and y > 2)");
-        start_key  = TemplateRow.newU8Row(2);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(2);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)start_key[1]).setValue(2);
         ((SQLLongint)stop_key[0]).setValue(5);
@@ -4446,8 +4446,8 @@ public class T_b2i extends T_MultiIterations
         }
 
         REPORT("scan (x = 5 and y >= 2)");
-        start_key  = TemplateRow.newU8Row(2);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(2);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)start_key[1]).setValue(2);
         ((SQLLongint)stop_key[0]).setValue(5);
@@ -4462,8 +4462,8 @@ public class T_b2i extends T_MultiIterations
         }
 
         REPORT("scan (x = 5 and y < 5)");
-        start_key  = TemplateRow.newU8Row(1);
-        stop_key   = TemplateRow.newU8Row(2);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(2);
         ((SQLLongint)start_key[0]).setValue(5);
         ((SQLLongint)stop_key[0]).setValue(5);
 		((SQLLongint)stop_key[1]).setValue(5);
@@ -4479,8 +4479,8 @@ public class T_b2i extends T_MultiIterations
         }
 
         REPORT("scan (x = 2)");
-        start_key  = TemplateRow.newU8Row(1);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(2);
         ((SQLLongint)stop_key[0]).setValue(2);
         if (!T_QualifierTest.t_scan(tc, index_conglomid, template.getRow(),
@@ -4495,7 +4495,7 @@ public class T_b2i extends T_MultiIterations
 
         // values '2' does not exist as such in the data set 
         REPORT("scan (x > 2)");
-        stop_key   = TemplateRow.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)stop_key[0]).setValue(2);
         if (!T_QualifierTest.t_scan(tc, index_conglomid, template.getRow(),
                    template.getRow(),
@@ -4511,7 +4511,7 @@ public class T_b2i extends T_MultiIterations
 
         // values '2' does not exist as such in the data set 
         REPORT("scan (x >= 2)");
-        stop_key   = TemplateRow.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)stop_key[0]).setValue(2);
         if (!T_QualifierTest.t_scan(tc, index_conglomid, template.getRow(),
                    template.getRow(),
@@ -4526,7 +4526,7 @@ public class T_b2i extends T_MultiIterations
 
         // values '2' does not exist as such in the data set 
         REPORT("scan (x < 2)");
-        start_key  = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(2);
         if (!T_QualifierTest.t_scan(tc, index_conglomid, template.getRow(),
                    template.getRow(),
@@ -4541,7 +4541,7 @@ public class T_b2i extends T_MultiIterations
 
         // values '2' does not exist as such in the data set 
         REPORT("scan (x <= 2)");
-        start_key  = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(2);
         if (!T_QualifierTest.t_scan(tc, index_conglomid, template.getRow(),
                    template.getRow(),
@@ -4568,8 +4568,8 @@ public class T_b2i extends T_MultiIterations
         }
 
         REPORT("scan (x = 2 and y > 2)");
-        start_key  = TemplateRow.newU8Row(2);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(2);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(2);
         ((SQLLongint)start_key[1]).setValue(2);
         ((SQLLongint)stop_key[0]).setValue(2);
@@ -4584,8 +4584,8 @@ public class T_b2i extends T_MultiIterations
         }
 
         REPORT("scan (x = 2 and y >= 2)");
-        start_key  = TemplateRow.newU8Row(2);
-        stop_key   = TemplateRow.newU8Row(1);
+        start_key  = T_StoreNativeTestSupport.newU8Row(2);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(1);
         ((SQLLongint)start_key[0]).setValue(2);
         ((SQLLongint)start_key[1]).setValue(2);
         ((SQLLongint)stop_key[0]).setValue(2);
@@ -4600,8 +4600,8 @@ public class T_b2i extends T_MultiIterations
         }
 
         REPORT("scan (x = 4 and y <=2)");
-        start_key  = TemplateRow.newU8Row(1);
-        stop_key   = TemplateRow.newU8Row(2);
+        start_key  = T_StoreNativeTestSupport.newU8Row(1);
+        stop_key   = T_StoreNativeTestSupport.newU8Row(2);
         ((SQLLongint)start_key[0]).setValue(4);
         ((SQLLongint)stop_key[0]).setValue(4);
 		((SQLLongint)stop_key[1]).setValue(2);
@@ -4743,7 +4743,7 @@ public class T_b2i extends T_MultiIterations
 
         // base row template - last column is just to make row long so that
         // multiple pages are spanned.
-        DataValueDescriptor[] base_row             = TemplateRow.newU8Row(4);
+        DataValueDescriptor[] base_row             = T_StoreNativeTestSupport.newU8Row(4);
         base_row[3] = new SQLChar();
 
         String   string_1500char = new String();
@@ -4785,7 +4785,7 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
         // initialize the secondary index row - pointing it at base row
-        index_row.init(base_row, base_cc.newRowLocationTemplate(), 5);
+        index_row.init(base_row, T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate()), 5);
 
         Properties properties = 
             createProperties(
@@ -4825,7 +4825,7 @@ public class T_b2i extends T_MultiIterations
 
 		// Create a row.
         T_SecondaryIndexRow template = new T_SecondaryIndexRow();
-        RowLocation         row_loc  = base_cc.newRowLocationTemplate();
+        RowLocation         row_loc  = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
         template.init(base_row, row_loc, 5);
 
         // insert them in reverse order just to make sure btree is sorting them
@@ -4946,9 +4946,9 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
 		// objects used to insert rows into base and index tables.
-		DataValueDescriptor[] r1            = TemplateRow.newU8Row(2);
+		DataValueDescriptor[] r1            = T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow   index_row1    = new T_SecondaryIndexRow();
-        RowLocation           base_rowloc1  = base_cc.newRowLocationTemplate();
+        RowLocation           base_rowloc1  = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row1.init(r1, base_rowloc1, 3);
 
@@ -5038,9 +5038,9 @@ public class T_b2i extends T_MultiIterations
                 TransactionController.ISOLATION_SERIALIZABLE);
 
         // objects used to insert rows into base and index tables.
-        DataValueDescriptor[] r1            = TemplateRow.newU8Row(2);
+        DataValueDescriptor[] r1            = T_StoreNativeTestSupport.newU8Row(2);
         T_SecondaryIndexRow   index_row1    = new T_SecondaryIndexRow();
-        RowLocation           base_rowloc1  = base_cc.newRowLocationTemplate();
+        RowLocation           base_rowloc1  = T_StoreNativeTestSupport.rowLocation(base_cc.newRowLocationTemplate());
 
         index_row1.init(r1, base_rowloc1, 3);
 
@@ -5066,7 +5066,7 @@ public class T_b2i extends T_MultiIterations
         // Delete the row using the index and update locks. Before DERBY-4083,
         // the call to delete() would fail with record not found if the latch
         // was released.
-        DataValueDescriptor[] delete_key = TemplateRow.newU8Row(2);
+        DataValueDescriptor[] delete_key = T_StoreNativeTestSupport.newU8Row(2);
         ((SQLLongint)delete_key[0]).setValue(1);
         ((SQLLongint)delete_key[1]).setValue(1);
         if (!t_delete(tc, create_ret.index_conglomid, delete_key, true)) {
