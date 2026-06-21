@@ -58,7 +58,7 @@ ext.delosdbStoragePhaseC24Proof = {
     def smoke = file('dev/storage-phase-c24-javacc-classifier-smoke/src/main/java/delosdb/smoke/StoragePhaseC24JavaCcClassifierSmoke.java')
 
     delosdbStoragePhaseC24RequireTokens(errors, classifier, [
-            'CompilerContext compilerContext = lcc.pushCompilerContext()',
+            'compilerContext = lcc.pushCompilerContext()',
             'compilerContext.getParser().parseStatement(sql)',
             'classifySelectWhereEquals(sql, parsed)',
             'parsed instanceof CursorNode cursor',
