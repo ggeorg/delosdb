@@ -271,8 +271,9 @@ ext.delosdbStoragePhaseC3MvccMapping = {
     delosdbStoragePhaseC3RequireTokens(errors, mvccTxContext, [
             'implements TxContext',
             'public long transactionId()',
-            'public DelosMvccTxView currentView()',
-            'statementCommandSequence()'
+            'public TxView currentView()',
+            'statementCommandSequence()',
+            'public DelosMvccTxView mvccView()'
     ], 'DelosMvccTxContext transaction handle')
 
     delosdbStoragePhaseC3RequireTokens(errors, mvccTxView, [
