@@ -28,10 +28,29 @@ import java.util.Optional;
  */
 @InternalApi
 public final class VersionedStorageExecutionBridge {
+    private static final String PROVIDER_LOOKUP_UNAVAILABLE =
+            "provider lookup is unavailable on a resolved-table operation bridge";
+
     private final VersionedStorageProviderResolver resolver;
 
     public VersionedStorageExecutionBridge(VersionedStorageProviderResolver resolver) {
         this.resolver = Objects.requireNonNull(resolver, "resolver");
+    }
+
+    private VersionedStorageExecutionBridge() {
+        this.resolver = null;
+    }
+
+    /**
+     * Creates a bridge for operations that already have a resolved table.
+     *
+     * <p>This deliberately does not carry a provider resolver. It prevents SQL
+     * bridge call sites that only need insert/scan/read/update/delete on an
+     * existing {@link VersionedTable} from hiding an empty provider registry
+     * behind create/open methods.</p>
+     */
+    public static VersionedStorageExecutionBridge resolvedTableOperations() {
+        return new VersionedStorageExecutionBridge();
     }
 
     public <K, V> VersionedTable<K, V> createTable(String providerName, VersionedTableMetadata metadata) {
@@ -78,6 +97,9 @@ public final class VersionedStorageExecutionBridge {
     }
 
     private VersionedStorageProvider provider(String providerName) {
+        if (resolver == null) {
+            throw new IllegalStateException(PROVIDER_LOOKUP_UNAVAILABLE);
+        }
         return resolver.requireEnabled(requireProviderName(providerName));
     }
 

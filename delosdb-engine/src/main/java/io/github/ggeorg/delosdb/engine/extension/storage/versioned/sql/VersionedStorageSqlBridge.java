@@ -1,7 +1,6 @@
 package io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.VersionedStorageProviderDiscovery;
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.VersionedStorageProviderRegistry;
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.execution.VersionedStorageExecutionBridge;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
@@ -101,7 +100,7 @@ public final class VersionedStorageSqlBridge {
     private static VersionedStorageProvider cachedProvider;
     private static Path pageBackedStorageDirectory;
     private static final VersionedStorageExecutionBridge PLANNED_TABLE_OPERATION_BRIDGE =
-            new VersionedStorageExecutionBridge(VersionedStorageProviderRegistry.empty().resolver());
+            VersionedStorageExecutionBridge.resolvedTableOperations();
 
     private static volatile VersionedStorageAccessPath lastAccessPath;
     private static volatile long lastStatementCommandSequence = TxContext.UNKNOWN_STATEMENT_COMMAND_SEQUENCE;
