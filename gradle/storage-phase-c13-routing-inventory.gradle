@@ -1,0 +1,227 @@
+// Phase C13 routing-retirement inventory.
+//
+// This is deliberately not regex removal. C13 records the post-C12 state:
+// VersionedStorageSqlBridge is still the temporary SQL router, but ordinary
+// table operations must already delegate through VersionedStorageExecutionBridge.
+// The next slice should replace one routing path, not delete the whole bridge.
+
+ext.delosdbStoragePhaseC13ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC13ReportFile =
+        ext.delosdbStoragePhaseC13ReportDir.map { it.file('storage-phase-c13-routing-inventory.txt') }
+
+ext.delosdbStoragePhaseC13RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC13RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC13RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC13JavaFiles = { String projectPath ->
+    def sourceRoot = file("${projectPath}/src/main/java")
+    if (!sourceRoot.exists()) {
+        return [] as Set<File>
+    }
+    fileTree(sourceRoot).matching { include '**/*.java' }.files as Set<File>
+}
+
+ext.delosdbStoragePhaseC13Proof = {
+    def errors = []
+    def lines = []
+
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def executionBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/execution/VersionedStorageExecutionBridge.java')
+    def embedStatement = file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedStatement.java')
+    def heapProvider = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/LegacyDerbyHeapStorageProvider.java')
+    def mvccProvider = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java')
+    def storelessRoot = file('delosdb-storeless/src/main/java')
+
+    delosdbStoragePhaseC13RequireTokens(errors, sqlBridge, [
+            'private static final Pattern CREATE_TABLE',
+            'private static final Pattern INSERT_VALUES',
+            'private static final Pattern CREATE_INDEX',
+            'private static final Pattern SELECT_ALL',
+            'private static final Pattern SELECT_COUNT',
+            'private static final Pattern SELECT_WHERE_EQUALS',
+            'private static final Pattern SELECT_WHERE_RANGE',
+            'private static final Pattern SELECT_WHERE_BETWEEN',
+            'private static final Pattern UPDATE_WHERE_EQUALS',
+            'private static final Pattern DELETE_WHERE_EQUALS',
+            'VersionedStorageExecutionBridge.resolvedTableOperations()',
+            'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.stats(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.delete(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.update('
+    ], 'VersionedStorageSqlBridge routing inventory')
+
+    if (sqlBridge.exists()) {
+        def bridgeText = sqlBridge.text
+        [
+                'table.table().insert(',
+                'table.table().update(',
+                'table.table().delete(',
+                'table.table().openScan(',
+                'table.table().stats('
+        ].each { token ->
+            if (bridgeText.contains(token)) {
+                errors << "VersionedStorageSqlBridge must not call ${token} directly after C13"
+            }
+        }
+        [
+                'PLANNED_TABLE_OPERATION_BRIDGE.createTable(',
+                'PLANNED_TABLE_OPERATION_BRIDGE.openTable('
+        ].each { token ->
+            if (bridgeText.contains(token)) {
+                errors << "VersionedStorageSqlBridge must not call ${token}; the SQL bridge currently uses resolved-table operations only"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC13RequireTokens(errors, executionBridge, [
+            'public static VersionedStorageExecutionBridge resolvedTableOperations()',
+            'private static final String PROVIDER_LOOKUP_UNAVAILABLE',
+            'public <K, V> void insert(',
+            'public <K, V> void update(',
+            'public <K, V> void delete(',
+            'public <K, V> List<VersionedRow<K, V>> scanAll(',
+            'public <K, V> VersionedTableStats stats('
+    ], 'VersionedStorageExecutionBridge table operation surface')
+
+    delosdbStoragePhaseC13RequireTokens(errors, embedStatement, [
+            'VersionedStorageSqlBridge.tryExecute('
+    ], 'current transitional EmbedStatement bridge hook')
+
+    delosdbStoragePhaseC13RequireTokens(errors, heapProvider, [
+            'implements StorageProvider',
+            'StorageCapabilities'
+    ], 'Derby heap provider remains metadata path')
+
+    delosdbStoragePhaseC13RequireTokens(errors, mvccProvider, [
+            'implements VersionedStorageProvider',
+            'VersionedTable<K, V> createTable(',
+            'VersionedTable<K, V> openTable('
+    ], 'MVCC provider remains VersionedStorageProvider path')
+
+    if (storelessRoot.exists()) {
+        def storelessHits = fileTree(storelessRoot).matching { include '**/*.java' }.files.findAll { sourceFile ->
+            def text = sourceFile.text
+            text.contains('implements StorageProvider') || text.contains('implements VersionedStorageProvider')
+        }.collect { delosdbStoragePhaseC13RelPath(it) }.sort()
+        if (!storelessHits.isEmpty()) {
+            errors << 'Storeless must remain a no-store constraint, not a storage provider: ' + storelessHits
+        }
+    }
+
+    def engineStoreSourceRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+    if (engineStoreSourceRoot.exists()) {
+        errors << 'Phase C13 must not add engine-side org/apache/derby/impl/store sources: '
+                + delosdbStoragePhaseC13RelPath(engineStoreSourceRoot)
+    }
+
+    def thirdIslandNames = [
+            'DelosStorageEngine.java',
+            'DelosTableAccess.java',
+            'DelosScan.java',
+            'DelosMutationAccess.java',
+            'TableAccessProfile.java',
+            'StorageExecutionProfile.java',
+            'StorelessStorageProvider.java',
+            'StorelessVersionedStorageProvider.java'
+    ] as Set
+    def thirdIslandFiles = fileTree(rootProject.projectDir).matching {
+        include '**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+        exclude '**/.idea/**'
+        exclude '**/__MACOSX/**'
+    }.files.findAll { thirdIslandNames.contains(it.name) }
+            .collect { delosdbStoragePhaseC13RelPath(it) }.sort()
+    if (!thirdIslandFiles.isEmpty()) {
+        errors << 'Phase C13 must not introduce a third SPI/profile island while inventorying routing retirement: '
+                + thirdIslandFiles
+    }
+
+    def allEngineVersionedFiles = delosdbStoragePhaseC13JavaFiles('delosdb-engine').findAll { sourceFile ->
+        delosdbStoragePhaseC13RelPath(sourceFile).contains('/versioned/')
+    }
+    def sqlRegexOwners = allEngineVersionedFiles.findAll { sourceFile ->
+        sourceFile.name != 'VersionedStorageSqlBridge.java' && sourceFile.text.contains('Pattern.compile(')
+    }.collect { delosdbStoragePhaseC13RelPath(it) }.sort()
+    if (!sqlRegexOwners.isEmpty()) {
+        errors << 'C13 routing inventory must not add SQL regex owners outside VersionedStorageSqlBridge: '
+                + sqlRegexOwners
+    }
+
+    lines << 'DelosDB Storage Phase C13 Routing-Retirement Inventory'
+    lines << '======================================================='
+    lines << ''
+    lines << 'C13 mechanic:'
+    lines << '  record the post-C12 boundary before routing-retirement work starts.'
+    lines << ''
+    lines << 'Current state:'
+    lines << '  VersionedStorageSqlBridge remains the temporary SQL regex router.'
+    lines << '  INSERT, SELECT scan/stats, DELETE, and UPDATE table operations delegate through VersionedStorageExecutionBridge.'
+    lines << '  No direct VersionedTable insert/update/delete/openScan/stats calls are allowed in VersionedStorageSqlBridge.'
+    lines << ''
+    lines << 'Remaining router-owned statement families:'
+    lines << '  CREATE TABLE, INSERT VALUES, CREATE INDEX, SELECT *, SELECT COUNT, SELECT WHERE, SELECT RANGE, SELECT BETWEEN, UPDATE WHERE, DELETE WHERE.'
+    lines << ''
+    lines << 'Allowed temporary direct work after C13:'
+    lines << '  provider-local table creation remains inside the SQL bridge because page-backed provider configuration is still bridge-owned.'
+    lines << '  index operations remain outside VersionedStorageExecutionBridge until their own proof exists.'
+    lines << ''
+    lines << 'Not done in C13:'
+    lines << '  no regex routing is removed.'
+    lines << '  no parser/compiler path is introduced.'
+    lines << '  no whole-bridge retirement is attempted.'
+    lines << ''
+    lines << 'Next legal move:'
+    lines << '  pick one routing replacement proof, not a broad VersionedStorageSqlBridge rewrite.'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC13RoutingInventoryReport') {
+    group = 'verification'
+    description = 'Writes the Phase C13 routing-retirement inventory report.'
+    dependsOn 'verifyStoragePhaseC12ReadDelegationCloseout'
+    outputs.file(delosdbStoragePhaseC13ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC13Proof()
+        def outputFile = delosdbStoragePhaseC13ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C13 routing inventory failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('verifyStoragePhaseC13RoutingInventory') {
+    group = 'verification'
+    description = 'Verifies the Phase C13 routing-retirement inventory.'
+    dependsOn 'storagePhaseC13RoutingInventoryReport'
+    doLast {
+        println 'Verified Phase C13 routing inventory; next step must pick one routing replacement proof, not retire the whole SQL bridge'
+    }
+}
