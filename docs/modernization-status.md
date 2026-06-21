@@ -1,6 +1,6 @@
 # DelosDB Modernization Status
 
-Last updated: 2026-06-18
+Last updated: 2026-06-20
 
 DelosDB is a Gradle-only Java 21 modernization fork of Apache Derby with a
 Derby-compatible SQL/JDBC baseline and a controlled DelosDB extension surface.
@@ -87,9 +87,21 @@ and existing users do not need to manually add a separate storage jar yet.
 Permanent guards:
 
 ```bash
-./gradlew verifyLegacyDerbyStoreBoundary
-./gradlew legacyDerbyStoreModuleExtractionCloseout
+./scripts/cleanup-overlay-b9-stale-files.sh
+./gradlew verifyLegacyDerbyStoreB9StaticAnalysis
+./gradlew verifyLegacyDerbyStorePhaseBCloseout
+./gradlew verifyLegacyDerbyStoreB9Consolidation
 ```
+
+Focused diagnosis gates:
+
+```bash
+./gradlew verifyLegacyDerbyStoreB6oCloseout
+./gradlew verifyLegacyDerbyStoreB7RuntimePackaging
+./gradlew verifyLegacyDerbyStoreB8Closeout
+```
+
+See `docs/legacy-derby-store-phase-b-closeout.md`.
 
 ## Closed lane: MVCC semantic correctness
 
@@ -168,7 +180,7 @@ Green/current product areas:
 - MVCC guarded candidate path through `mvccDefaultProviderCandidateMatrix`;
 - MVCC A44--A52 semantic-correctness sprint through `mvccSqlCompatibilityCandidate`;
 - legacy Derby store source ownership through `delosdb-storage-derby`;
-- Derby store extraction closeout through `legacyDerbyStoreModuleExtractionCloseout`.
+- Derby store Phase B closeout through `verifyLegacyDerbyStoreB9Consolidation`.
 
 ## Research-friendly constraint
 
@@ -195,6 +207,11 @@ The regenerated inherited-code summary is maintained in
 `docs/inherited-code-static-analysis.md`. It records the current Derby-vs-DelosDB
 source delta, the modernization areas completed in the inherited engine, and the
 remaining algorithmic areas that must stay conservative.
+
+The legacy Derby store Phase B closeout is maintained in
+`docs/legacy-derby-store-phase-b-closeout.md`. B9 adds a static-analysis guard for
+stale proof text, duplicate Gradle task/helper names, duplicate store source
+ownership, and local stale workspace artifacts before Phase C starts.
 
 ## Current cleanup priority
 

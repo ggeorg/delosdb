@@ -4913,7 +4913,7 @@ Detailed remaining engine-owned import locations
 ${delosdbB5GroupedImportSummary(engineOwned)}
 """
         logger.lifecycle('Wrote ' + delosdbB5RelPath(reportFile))
-        logger.lifecycle('B5 decision: do not move all iapi.types blindly; B6 readiness is NOT YET')
+        logger.lifecycle('B5 decision: do not move all iapi.types blindly; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -4964,9 +4964,9 @@ tasks.register('verifyLegacyDerbyKernelB5DependencyDecision') {
         }
         def reportFile = delosdbB5ReportFile.get().asFile
         if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
-            throw new GradleException('B5 report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5 report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5 remaining dependency decision; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5 remaining dependency decision; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -5071,7 +5071,7 @@ tasks.register('verifyLegacyDerbyKernelB5aServiceSplit') {
 
         def reportFile = delosdbB5aReportFile.get().asFile
         if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
-            throw new GradleException('B5a report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5a report must preserve the historical B5/B6 transition marker')
         }
         logger.lifecycle('Verified B5a diagnostics/crypto service split into delosdb-engine-kernel')
     }
@@ -5186,7 +5186,7 @@ tasks.register('verifyLegacyDerbyKernelB5bLoaderSplit') {
 
         def reportFile = delosdbB5bReportFile.get().asFile
         if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
-            throw new GradleException('B5b report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5b report must preserve the historical B5/B6 transition marker')
         }
         logger.lifecycle('Verified B5b loader service split into delosdb-engine-kernel')
     }
@@ -5334,7 +5334,7 @@ tasks.register('verifyLegacyDerbyKernelB5cServicesIoSplit') {
 
         def reportFile = delosdbB5cReportFile.get().asFile
         if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
-            throw new GradleException('B5c report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5c report must preserve the historical B5/B6 transition marker')
         }
         logger.lifecycle('Verified B5c services.io split into delosdb-engine-kernel')
     }
@@ -5479,7 +5479,7 @@ tasks.register('verifyLegacyDerbyKernelB5dUtilSplit') {
 
         def reportFile = delosdbB5dReportFile.get().asFile
         if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
-            throw new GradleException('B5d report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5d report must preserve the historical B5/B6 transition marker')
         }
         logger.lifecycle('Verified B5d util split into delosdb-engine-kernel')
     }
@@ -5614,7 +5614,7 @@ tasks.register('verifyLegacyDerbyKernelB5eUuidSplit') {
 
         def reportFile = delosdbB5eReportFile.get().asFile
         if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
-            throw new GradleException('B5e report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5e report must preserve the historical B5/B6 transition marker')
         }
         logger.lifecycle('Verified B5e UUIDFactory split into delosdb-engine-kernel')
     }
@@ -5770,9 +5770,9 @@ tasks.register('verifyLegacyDerbyKernelB5fSecuritySplit') {
 
         def reportFile = delosdbB5fReportFile.get().asFile
         if (!reportFile.isFile() || !reportFile.text.contains('B6 readiness') || !reportFile.text.contains('NOT YET')) {
-            throw new GradleException('B5f report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5f report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5f store security split; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5f store security split; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -5960,9 +5960,9 @@ tasks.register('verifyLegacyDerbyKernelB5gTypesDecision') {
             throw new GradleException('B5g report must explicitly reject moving all iapi.types blindly')
         }
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5g report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5g report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5g iapi.types boundary decision; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5g iapi.types boundary decision; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -6116,9 +6116,9 @@ tasks.register('verifyLegacyDerbyKernelB5hTypeBridge') {
 
         def reportText = delosdbB5hRead(delosdbB5hReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5h report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5h report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5h SQL-neutral store type bridge; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5h SQL-neutral store type bridge; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -6290,9 +6290,9 @@ tasks.register('verifyLegacyDerbyKernelB5iTypeOperations') {
 
         def reportText = delosdbB5iRead(delosdbB5iReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5i report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5i report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5i store-facing type operation bridge; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5i store-facing type operation bridge; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -6419,9 +6419,9 @@ tasks.register('verifyLegacyDerbyKernelB5jFirstTypeRewrite') {
 
         def reportText = delosdbB5jRead(delosdbB5jReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5j report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5j report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5j first relocated-store type rewrite; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5j first relocated-store type rewrite; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -6580,9 +6580,9 @@ tasks.register('verifyLegacyDerbyKernelB5kRawTypeImportCleanup') {
 
         def reportText = delosdbB5kRead(delosdbB5kReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5k report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5k report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5k raw-store type import cleanup; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5k raw-store type import cleanup; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -6773,9 +6773,9 @@ tasks.register('verifyLegacyDerbyKernelB5lLocatedRowBridge') {
 
         def reportText = delosdbB5lRead(delosdbB5lReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5l report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5l report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5l LocatedRow bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5l LocatedRow bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -7022,9 +7022,9 @@ tasks.register('verifyLegacyDerbyKernelB5mFactoryCollationBridge') {
 
         def reportText = delosdbB5mRead(delosdbB5mReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5m report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5m report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5m factory/collation bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5m factory/collation bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -7205,9 +7205,9 @@ tasks.register('verifyLegacyDerbyKernelB5nRawStreamBtreeLongBridge') {
 
         def reportText = delosdbB5nRead(delosdbB5nReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5n report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5n report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5n raw stream/B-tree long bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5n raw stream/B-tree long bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -7428,9 +7428,9 @@ tasks.register('verifyLegacyDerbyKernelB5oSortQualifierBridge') {
 
         def reportText = delosdbB5oRead(delosdbB5oReportFile.get().asFile)
         if (!reportText.contains('NOT YET')) {
-            throw new GradleException('B5o report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5o report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5o sort/qualifier bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5o sort/qualifier bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -7622,9 +7622,9 @@ tasks.register('verifyLegacyDerbyKernelB5pRowSourceSortFactoryBridge') {
 
         def reportText = delosdbB5pRead(delosdbB5pReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5p report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5p report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5p row-source/sort-factory bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5p row-source/sort-factory bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -7798,9 +7798,9 @@ tasks.register('verifyLegacyDerbyKernelB5qCostSearchTemplateBridge') {
 
         def reportText = delosdbB5qRead(delosdbB5qReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5q report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5q report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5q cost/search template bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5q cost/search template bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -7993,9 +7993,9 @@ tasks.register('verifyLegacyDerbyKernelB5rRowSourceCreateTemplateBridge') {
 
         def reportText = delosdbB5rRead(delosdbB5rReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5r report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5r report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5r row-source/create-template bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5r row-source/create-template bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -8199,9 +8199,9 @@ tasks.register('verifyLegacyDerbyKernelB5sScanFetchLocationBridge') {
 
         def reportText = delosdbB5sRead(delosdbB5sReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5s report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5s report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5s scan fetch/location bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5s scan fetch/location bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -8366,9 +8366,9 @@ tasks.register('verifyLegacyDerbyKernelB5tBtreeScanBoundaryBridge') {
 
         def reportText = delosdbB5tRead(delosdbB5tReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5t report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5t report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5t B-tree scan boundary bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5t B-tree scan boundary bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -8558,9 +8558,9 @@ tasks.register('verifyLegacyDerbyKernelB5uBtreeLockingPolicyBridge') {
 
         def reportText = delosdbB5uRead(delosdbB5uReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5u report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5u report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5u B-tree locking-policy bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5u B-tree locking-policy bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -8757,9 +8757,9 @@ tasks.register('verifyLegacyDerbyKernelB5vRowLocationTemplateBridge') {
 
         def reportText = delosdbB5vRead(delosdbB5vReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5v report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5v report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5v row-location template bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5v row-location template bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -8912,9 +8912,9 @@ tasks.register('verifyLegacyDerbyKernelB5wRawPageValueIoBridge') {
 
         def reportText = delosdbB5wRead(delosdbB5wReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5w report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5w report must preserve the historical B5/B6 transition marker')
         }
-        logger.lifecycle('Verified B5w raw-page value IO bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5w raw-page value IO bridge; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -9050,7 +9050,7 @@ tasks.register('verifyLegacyDerbyKernelB5xRemainingTypeImports') {
             throw new GradleException('B5x expected relocated-store iapi.types imports to decrease below ' + delosdbB5xBaselineImportCount + ', found ' + remainingStoreTypeImports.size())
         }
 
-        logger.lifecycle('Verified B5x remaining type import inventory; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5x remaining type import inventory; relocated-store iapi.types imports now ' + remainingStoreTypeImports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -9211,10 +9211,10 @@ tasks.register('verifyLegacyDerbyKernelB5yControllerRowBridge') {
 
         def reportText = delosdbB5yRead(delosdbB5yReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5y report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5y report must preserve the historical B5/B6 transition marker')
         }
 
-        logger.lifecycle('Verified B5y controller row bridge; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5y controller row bridge; relocated-store iapi.types imports now ' + imports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -9387,10 +9387,10 @@ tasks.register('verifyLegacyDerbyKernelB5zControllerLocationTransactionBridge') 
 
         def reportText = delosdbB5zRead(delosdbB5zReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5z report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5z report must preserve the historical B5/B6 transition marker')
         }
 
-        logger.lifecycle('Verified B5z controller location/transaction bridge; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5z controller location/transaction bridge; relocated-store iapi.types imports now ' + imports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -9531,10 +9531,10 @@ tasks.register('verifyLegacyDerbyKernelB5aaGenericHeapScanBridge') {
 
         def reportText = delosdbB5aaRead(delosdbB5aaReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5aa report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5aa report must preserve the historical B5/B6 transition marker')
         }
 
-        logger.lifecycle('Verified B5aa generic/heap scan bridge; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5aa generic/heap scan bridge; relocated-store iapi.types imports now ' + imports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -9693,10 +9693,10 @@ tasks.register('verifyLegacyDerbyKernelB5abScratchDiskLockBridge') {
 
         def reportText = delosdbB5abRead(delosdbB5abReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5ab report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5ab report must preserve the historical B5/B6 transition marker')
         }
 
-        logger.lifecycle('Verified B5ab scratch/disk/lock bridge; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5ab scratch/disk/lock bridge; relocated-store iapi.types imports now ' + imports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -9841,10 +9841,10 @@ tasks.register('verifyLegacyDerbyKernelB5acHeapHashRowBridge') {
 
         def reportText = delosdbB5acRead(delosdbB5acReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5ac report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5ac report must preserve the historical B5/B6 transition marker')
         }
 
-        logger.lifecycle('Verified B5ac heap/hash row bridge; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5ac heap/hash row bridge; relocated-store iapi.types imports now ' + imports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -9979,13 +9979,13 @@ tasks.register('verifyLegacyDerbyKernelB5adConcreteTypeImportQuarantine') {
 
         def reportText = delosdbB5adRead(delosdbB5adReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5ad report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5ad report must preserve the historical B5/B6 transition marker')
         }
         if (!reportText.contains('concrete implementation inheritance seam')) {
             throw new GradleException('B5ad report must honestly describe the remaining concrete implementation seam')
         }
 
-        logger.lifecycle('Verified B5ad concrete type import quarantine; relocated-store iapi.types imports now ' + imports.size() + '; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5ad concrete type import quarantine; relocated-store iapi.types imports now ' + imports.size() + '; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -10123,13 +10123,13 @@ tasks.register('verifyLegacyDerbyKernelB5aeDirectTypeImportCloseout') {
 
         def reportText = delosdbB5aeRead(delosdbB5aeReportFile.get().asFile)
         if (!reportText.contains('B6 readiness') || !reportText.contains('NOT YET')) {
-            throw new GradleException('B5ae report must explicitly say B6 readiness is NOT YET')
+            throw new GradleException('B5ae report must preserve the historical B5/B6 transition marker')
         }
         if (!reportText.contains('fully-qualified inherited Derby type references')) {
             throw new GradleException('B5ae report must honestly describe remaining fully-qualified inherited type references')
         }
 
-        logger.lifecycle('Verified B5ae direct relocated-store type import closeout; relocated-store iapi.types imports now 0; B6 readiness is NOT YET')
+        logger.lifecycle('Verified B5ae direct relocated-store type import closeout; relocated-store iapi.types imports now 0; Phase B successor closeout is handled by B6/B7/B8 proofs')
     }
 }
 
@@ -12404,3 +12404,245 @@ tasks.register('verifyLegacyDerbyStoreB8Closeout') {
         logger.lifecycle('Verified B8 closeout; real Derby storage module boundary and runtime packaging are closed')
     }
 }
+// -----------------------------------------------------------------------------
+// B9 — Phase B consolidation and static-analysis closeout
+// -----------------------------------------------------------------------------
+// B9 is intentionally non-runtime work. It cleans stale proof language from the
+// B5/B6 transition era and adds a single Phase-B closeout/static-analysis gate
+// before Phase C opens the common operational storage facade.
+
+def delosdbB9BuildText() {
+    file('build.gradle').getText('UTF-8')
+}
+
+def delosdbB9StaleB6ReadinessPhrase() {
+    'B6 readiness' + ' is NOT YET'
+}
+
+def delosdbB9TaskRegistrations() {
+    def matcher = delosdbB9BuildText() =~ /tasks\.register\('([^']+)'\)/
+    matcher.collect { it[1] }
+}
+
+def delosdbB9DuplicateTaskRegistrations() {
+    delosdbB9TaskRegistrations().countBy { it }.findAll { name, count -> count > 1 }
+}
+
+def delosdbB9TopLevelDefinitions() {
+    def matcher = delosdbB9BuildText() =~ /(?m)^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:=|\()/
+    matcher.collect { it[1] }
+}
+
+def delosdbB9DuplicateTopLevelDefinitions() {
+    delosdbB9TopLevelDefinitions().countBy { it }.findAll { name, count -> count > 1 }
+}
+
+def delosdbB9DuplicateStoreSourceOwnership() {
+    def sourceRoots = [
+            file('delosdb-engine/src/main/java'),
+            file('delosdb-engine-kernel/src/main/java'),
+            file('delosdb-storage-derby/src/main/java')
+    ]
+    def byRelativePath = [:].withDefault { [] }
+    sourceRoots.findAll { it.isDirectory() }.each { root ->
+        fileTree(root) {
+            include '**/*.java'
+        }.files.each { sourceFile ->
+            def relativePath = root.toPath().relativize(sourceFile.toPath()).toString().replace('\\', '/')
+            if (relativePath.startsWith('org/apache/derby/iapi/store/') ||
+                    relativePath.startsWith('org/apache/derby/impl/store/')) {
+                byRelativePath[relativePath] << delosdbB5RelPath(sourceFile)
+            }
+        }
+    }
+    byRelativePath.findAll { relativePath, owners -> owners.size() > 1 }
+}
+
+def delosdbB9StaleWorkspaceArtifacts() {
+    def stale = []
+    def ignoredPrefixes = [
+            './.git/', './.gradle/', './.idea/', './build/', './out/'
+    ]
+    fileTree('.') {
+        include '**/.DS_Store'
+        include '**/__MACOSX/**'
+        include '**/*.orig'
+        include '**/*.rej'
+        include '**/*~'
+        include 'derby.log'
+    }.files.each { candidate ->
+        def rel = './' + delosdbB5RelPath(candidate)
+        if (!ignoredPrefixes.any { rel.startsWith(it) } && !rel.contains('/build/')) {
+            stale << rel.substring(2)
+        }
+    }
+    stale.sort()
+}
+
+tasks.register('legacyDerbyStoreB9StaticAnalysisReport') {
+    group = 'Verification'
+    description = 'B9: writes the Phase B static-analysis and cleanup report.'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b9-static-analysis.txt'))
+    doLast {
+        def staleB6ReadinessPhraseCount = delosdbB9BuildText().count(delosdbB9StaleB6ReadinessPhrase())
+        def duplicateTasks = delosdbB9DuplicateTaskRegistrations()
+        def duplicateDefinitions = delosdbB9DuplicateTopLevelDefinitions()
+        def duplicateStoreSources = delosdbB9DuplicateStoreSourceOwnership()
+        def staleArtifacts = delosdbB9StaleWorkspaceArtifacts()
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-b9-static-analysis.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = """DelosDB B9 Phase B static-analysis report
+==========================================
+
+Scope
+-----
+B9 is a non-runtime consolidation pass. It checks the Gradle proof layer and
+source ownership signals before Phase C starts.
+
+Checks
+------
+stale exact B6 readiness phrase count: ${staleB6ReadinessPhraseCount}
+duplicate Gradle task registrations: ${duplicateTasks.isEmpty() ? 'none' : duplicateTasks.collect { name, count -> name + ' x' + count }.join(', ')}
+duplicate top-level Gradle definitions: ${duplicateDefinitions.isEmpty() ? 'none' : duplicateDefinitions.collect { name, count -> name + ' x' + count }.join(', ')}
+duplicate legacy Derby store source ownership: ${duplicateStoreSources.isEmpty() ? 'none' : duplicateStoreSources.collect { relativePath, owners -> relativePath + ' -> ' + owners.join(', ') }.join('\n')}
+stale workspace artifacts: ${staleArtifacts.isEmpty() ? 'none' : staleArtifacts.join(', ')}
+
+Dead-code policy
+----------------
+No Java production code is deleted in B9. Inherited Derby code is removed only
+behind a behavior proof. This pass instead proves that the Phase-B store sources
+are not duplicated between engine/kernel/storage modules and that stale local
+artifacts are isolated to cleanup-script targets.
+
+Decision
+--------
+B9 static analysis is clean when stale B6 readiness text is gone, Gradle task
+and top-level helper names are unique, legacy Derby store source ownership is
+not duplicated, and stale workspace artifacts have been cleaned or explicitly
+reported.
+"""
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB9StaticAnalysis') {
+    group = 'Verification'
+    description = 'B9: verifies Phase B static-analysis cleanup signals.'
+    dependsOn 'legacyDerbyStoreB9StaticAnalysisReport'
+    doLast {
+        def staleB6ReadinessPhraseCount = delosdbB9BuildText().count(delosdbB9StaleB6ReadinessPhrase())
+        if (staleB6ReadinessPhraseCount != 0) {
+            throw new GradleException('B9 expected stale exact B6 readiness phrase count to be zero; found ' + staleB6ReadinessPhraseCount)
+        }
+        def duplicateTasks = delosdbB9DuplicateTaskRegistrations()
+        if (!duplicateTasks.isEmpty()) {
+            throw new GradleException('B9 expected unique Gradle task registrations; found ' + duplicateTasks.collect { name, count -> name + ' x' + count }.join(', '))
+        }
+        def duplicateDefinitions = delosdbB9DuplicateTopLevelDefinitions()
+        if (!duplicateDefinitions.isEmpty()) {
+            throw new GradleException('B9 expected unique top-level Gradle definitions; found ' + duplicateDefinitions.collect { name, count -> name + ' x' + count }.join(', '))
+        }
+        def duplicateStoreSources = delosdbB9DuplicateStoreSourceOwnership()
+        if (!duplicateStoreSources.isEmpty()) {
+            throw new GradleException('B9 expected legacy Derby store source ownership not to be duplicated; found:\n' +
+                    duplicateStoreSources.collect { relativePath, owners -> '  ' + relativePath + ' -> ' + owners.join(', ') }.join('\n'))
+        }
+        def staleArtifacts = delosdbB9StaleWorkspaceArtifacts()
+        if (!staleArtifacts.isEmpty()) {
+            throw new GradleException('B9 found stale workspace artifacts. Run ./scripts/cleanup-overlay-b9-stale-files.sh first. Found: ' + staleArtifacts.join(', '))
+        }
+        logger.lifecycle('Verified B9 static analysis; stale proof text, duplicate Gradle registrations, duplicate helpers, duplicate store source ownership, and stale workspace artifacts are clean')
+    }
+}
+
+tasks.named('verifyLegacyDerbyStoreB9StaticAnalysis') {
+    mustRunBefore 'verifyLegacyDerbyStoreB8Closeout'
+}
+
+tasks.register('legacyDerbyStorePhaseBCloseoutReport') {
+    group = 'Verification'
+    description = 'Writes the consolidated Phase B legacy Derby store closeout report.'
+    dependsOn 'verifyLegacyDerbyStoreB6oCloseout'
+    dependsOn 'verifyLegacyDerbyStoreB7RuntimePackaging'
+    dependsOn 'verifyLegacyDerbyStoreB8Closeout'
+    dependsOn 'verifyLegacyDerbyStoreNoStaleEngineSources'
+    dependsOn 'verifyLegacyDerbyStoreSourceRelocation'
+    dependsOn 'verifyLegacyDerbyStoreB9StaticAnalysis'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-phase-b-closeout.txt'))
+    doLast {
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-phase-b-closeout.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = '''DelosDB Phase B legacy Derby store closeout
+================================================
+
+Phase B complete
+----------------
+The real Derby storage module boundary and compatibility runtime packaging are
+closed.
+
+Closed proofs
+-------------
+- B6 real relocated-store compilation in delosdb-storage-derby
+- B6 engine source compile removal
+- B7 compatibility runtime packaging
+- B8 real Derby storage module boundary closeout
+- stale engine store source cleanup
+- stable relocated store inventory
+- B9 static-analysis cleanup
+
+Compatibility
+-------------
+- derby.jar carries legacy Derby store runtime classes without requiring users
+  to add delosdb-storage-derby.jar manually.
+- delosdb-engine consumes compiled storage output instead of compiling relocated
+  store sources directly.
+- the full Derby language suite is part of the B8 closeout gate.
+- MVCC/versioned-storage smoke proofs remain green as part of the B8 closeout
+  gate.
+
+Phase C entry rule
+------------------
+Phase C may start only after verifyLegacyDerbyStorePhaseBCloseout is green.
+'''
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStorePhaseBCloseout') {
+    group = 'Verification'
+    description = 'Verifies consolidated Phase B legacy Derby store closeout.'
+    dependsOn 'legacyDerbyStorePhaseBCloseoutReport'
+    doLast {
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-phase-b-closeout.txt').get().asFile
+        if (!report.isFile()) {
+            throw new GradleException('Missing Phase B closeout report: ' + report)
+        }
+        def text = report.getText('UTF-8')
+        [
+                'Phase B complete',
+                'B6 real relocated-store compilation',
+                'B6 engine source compile removal',
+                'B7 compatibility runtime packaging',
+                'B8 real Derby storage module boundary closeout',
+                'B9 static-analysis cleanup',
+                'The real Derby storage module boundary and compatibility runtime packaging are',
+                'Phase C may start only after verifyLegacyDerbyStorePhaseBCloseout is green.'
+        ].each { required ->
+            if (!text.contains(required)) {
+                throw new GradleException('Phase B closeout report is missing required text: ' + required)
+            }
+        }
+        logger.lifecycle('Verified Phase B closeout; legacy Derby store source ownership, real storage-module compilation, engine source compile removal, runtime packaging, B8 closeout, and B9 cleanup are closed')
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB9Consolidation') {
+    group = 'Verification'
+    description = 'B9: verifies static cleanup and consolidated Phase B closeout.'
+    dependsOn 'verifyLegacyDerbyStoreB9StaticAnalysis'
+    dependsOn 'verifyLegacyDerbyStorePhaseBCloseout'
+    doLast {
+        logger.lifecycle('Verified B9 consolidation; Phase B proof language, static analysis, closeout report, and Phase C entry gate are clean')
+    }
+}
+

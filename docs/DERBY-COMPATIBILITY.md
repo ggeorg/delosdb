@@ -99,8 +99,19 @@ inherited store packages must not be split across modules.
 The done-done gate is:
 
 ```bash
-./gradlew legacyDerbyStoreModuleExtractionCloseout
+./scripts/cleanup-overlay-b9-stale-files.sh
+./gradlew verifyLegacyDerbyStoreB9Consolidation
 ```
+
+Focused diagnosis gates remain available:
+
+```bash
+./gradlew verifyLegacyDerbyStoreB6oCloseout
+./gradlew verifyLegacyDerbyStoreB7RuntimePackaging
+./gradlew verifyLegacyDerbyStoreB8Closeout
+```
+
+See `docs/legacy-derby-store-phase-b-closeout.md`.
 
 ## MVCC compatibility rule
 

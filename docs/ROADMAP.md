@@ -86,10 +86,10 @@ These remain deliberately shallow while MVCC is the active lane:
 - new provider families: not opened.
 
 
-## Closed lane: legacy Derby store module extraction
+## Closed lane: legacy Derby store Phase B closeout
 
-The two-phase Derby store surgery is closed when
-`legacyDerbyStoreModuleExtractionCloseout` is green.
+The real Derby store module boundary is closed when
+`verifyLegacyDerbyStoreB9Consolidation` is green.
 
 Result:
 
@@ -99,14 +99,20 @@ delosdb-storage-derby
   org.apache.derby.impl.store.*
 ```
 
-The inherited Derby store is now a real source-ownership module. Derby package
+The inherited Derby store is now a real compiled storage module. Derby package
 names, class names, disk format, `modules.properties` boot wiring, and default
 heap behavior remain compatible. Runtime packaging remains compatibility-first:
 `derby.jar` still includes the inherited Derby store runtime classes, and
 existing users do not need to manually add a separate storage jar yet.
 
+B9 adds the final non-runtime consolidation guard: stale B5/B6 transition proof
+text is cleaned, Gradle task/helper names are checked for duplicates, legacy
+store source ownership is checked for duplication, and local stale workspace
+artifacts are isolated to `scripts/cleanup-overlay-b9-stale-files.sh`.
+
 The extraction does not flip `delos_mvcc` to default and does not make MVCC
-depend on Derby store internals.
+depend on Derby store internals. The detailed closeout notes live in
+`docs/legacy-derby-store-phase-b-closeout.md`.
 
 ## Closed lane: MVCC semantic correctness sprint
 

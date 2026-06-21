@@ -1,6 +1,6 @@
 # Inherited Derby Code Static Analysis Summary
 
-Last regenerated: 2026-06-15
+Last regenerated: 2026-06-20
 
 This summary describes the current inherited-code state after the DelosDB
 inherited-code modernization pass. It compares the current DelosDB workspace
@@ -21,6 +21,34 @@ Scope:            Java source; generated build output and workspace metadata exc
 
 Workspace metadata such as `.git/`, `.gradle/`, `.idea/`, `build/`, `out/`, and
 `__MACOSX/` is excluded from the comparison and must not be included in overlays.
+
+## B9 Phase B static-analysis closeout
+
+B9 adds a narrow static-analysis gate for the real Derby store module boundary.
+It is not a production Java deletion pass. The gate checks cleanup signals that
+are safe before Phase C:
+
+```text
+stale exact B6 readiness phrase count: 0
+duplicate Gradle task registrations: none
+duplicate top-level Gradle definitions: none
+duplicate legacy Derby store source ownership: none
+stale workspace artifacts: none after cleanup script
+```
+
+The source-ownership check is limited to the inherited Derby store packages under
+`org.apache.derby.iapi.store.*` and `org.apache.derby.impl.store.*` across
+`delosdb-engine`, `delosdb-engine-kernel`, and `delosdb-storage-derby`.
+
+The cleanup script is:
+
+```bash
+./scripts/cleanup-overlay-b9-stale-files.sh
+```
+
+It removes local artifacts such as `derby.log`, `.DS_Store`, `*.orig`, `*.rej`,
+backup `*~` files, and `__MACOSX/`. It intentionally does not remove `.git/`,
+`.gradle/`, `.idea/`, `build/`, or source files.
 
 ## High-level source delta
 
