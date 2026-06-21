@@ -1,0 +1,292 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C16 CREATE TABLE delegation proof.
+//
+// C16 keeps VersionedStorageSqlBridge as the temporary SQL router, but closes
+// the provider table-creation leak by delegating CREATE TABLE through
+// VersionedStorageExecutionBridge. Regex routing remains temporary and unchanged.
+
+ext.delosdbStoragePhaseC16ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC16ReportFile =
+        ext.delosdbStoragePhaseC16ReportDir.map { it.file('storage-phase-c16-create-delegation.txt') }
+ext.delosdbStoragePhaseC16SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c16-create-delegation-smoke')
+
+ext.delosdbStoragePhaseC16RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC16RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC16RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC16JavaFiles = { String projectPath ->
+    def sourceRoot = file("${projectPath}/src/main/java")
+    if (!sourceRoot.exists()) {
+        return [] as Set<File>
+    }
+    fileTree(sourceRoot).matching { include '**/*.java' }.files as Set<File>
+}
+
+ext.delosdbStoragePhaseC16ModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseC16RuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseC16Classpath = {
+    files(
+            delosdbStoragePhaseC16SmokeClassesDir,
+            delosdbStoragePhaseC16ModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseC16ModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseC16ModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseC16RuntimeJars())
+}
+
+ext.delosdbStoragePhaseC16Proof = {
+    def errors = []
+    def lines = []
+
+    def smokeSource = file('dev/storage-phase-c16-create-delegation-smoke/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/StoragePhaseC16CreateDelegationSmoke.java')
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def executionBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/execution/VersionedStorageExecutionBridge.java')
+    def heapProvider = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/LegacyDerbyHeapStorageProvider.java')
+    def mvccProvider = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java')
+    def storelessRoot = file('delosdb-storeless/src/main/java')
+
+    delosdbStoragePhaseC16RequireTokens(errors, smokeSource, [
+            'StoragePhaseC16CreateDelegationSmoke',
+            'VersionedStorageSqlBridge.executePlannedRouteForTesting(',
+            '"CREATE_TABLE"',
+            '"INSERT_VALUES"',
+            '"SELECT_ALL"',
+            '"SELECT_COUNT"',
+            'requireRows',
+            'requireCount'
+    ], 'Phase C16 CREATE delegation smoke')
+
+    if (smokeSource.exists()) {
+        def smokeText = smokeSource.text
+        [
+                'tryExecute(',
+                'Pattern.compile(',
+                '.matcher(',
+                'CREATE TABLE ',
+                'INSERT INTO ',
+                'SELECT ',
+                'UPDATE ',
+                'DELETE FROM '
+        ].each { token ->
+            if (smokeText.contains(token)) {
+                errors << "Phase C16 smoke must bypass SQL text/regex routing and not contain token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC16RequireTokens(errors, executionBridge, [
+            'public static VersionedStorageExecutionBridge resolvedTableOperations()',
+            'public <K, V> VersionedTable<K, V> createTable(String providerName, VersionedTableMetadata metadata)',
+            'public <K, V> VersionedTable<K, V> createTable(',
+            'VersionedStorageProvider provider,',
+            'return requireProvider(provider).createTable(requireMetadata(metadata));',
+            'public <K, V> VersionedTable<K, V> openTable(String providerName, VersionedTableMetadata metadata)',
+            'public <K, V> VersionedTable<K, V> openTable(',
+            'return requireProvider(provider).openTable(requireMetadata(metadata));',
+            'private static VersionedStorageProvider requireProvider(VersionedStorageProvider provider)'
+    ], 'VersionedStorageExecutionBridge resolved-provider table creation surface')
+
+    delosdbStoragePhaseC16RequireTokens(errors, sqlBridge, [
+            'private static VersionedStorageSqlResult createTable(String tableName, String columnList)',
+            'VersionedStorageProvider provider = provider();',
+            'VersionedTable<Long, List<Object>> table = PLANNED_TABLE_OPERATION_BRIDGE.createTable(provider, metadata);',
+            'VersionedTable<Long, List<Object>> reopenedTable = PLANNED_TABLE_OPERATION_BRIDGE.createTable(provider, metadata);',
+            'VersionedStorageExecutionBridge.resolvedTableOperations()',
+            'static VersionedStorageSqlResult executePlannedRouteForTesting(',
+            'return executeRoutedStatement(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.stats(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.delete(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.update('
+    ], 'VersionedStorageSqlBridge CREATE delegation boundary')
+
+    if (sqlBridge.exists()) {
+        def bridgeText = sqlBridge.text
+        [
+                'provider.createTable(metadata)',
+                'cachedProvider.createTable(',
+                'table.table().insert(',
+                'table.table().update(',
+                'table.table().delete(',
+                'table.table().openScan(',
+                'table.table().stats('
+        ].each { token ->
+            if (bridgeText.contains(token)) {
+                errors << "VersionedStorageSqlBridge must not call ${token} directly after C16"
+            }
+        }
+        def routeStart = bridgeText.indexOf('private static RoutedStatement routeStatement(String normalizedSql)')
+        def executeStart = bridgeText.indexOf('private static VersionedStorageSqlResult executeRoutedStatement(')
+        if (routeStart < 0 || executeStart < 0 || executeStart < routeStart) {
+            errors << 'C16 must preserve the C14/C15 routeStatement -> executeRoutedStatement boundary'
+        }
+        if (!bridgeText.contains('Pattern.compile(')) {
+            errors << 'C16 must not pretend regex routing is retired; routing replacement is a later slice'
+        }
+    }
+
+    delosdbStoragePhaseC16RequireTokens(errors, heapProvider, [
+            'implements StorageProvider',
+            'StorageCapabilities'
+    ], 'Derby heap provider remains metadata path')
+
+    delosdbStoragePhaseC16RequireTokens(errors, mvccProvider, [
+            'implements VersionedStorageProvider',
+            'VersionedTable<K, V> createTable(',
+            'VersionedTable<K, V> openTable('
+    ], 'MVCC provider remains VersionedStorageProvider path')
+
+    if (storelessRoot.exists()) {
+        def storelessHits = fileTree(storelessRoot).matching { include '**/*.java' }.files.findAll { sourceFile ->
+            def text = sourceFile.text
+            text.contains('implements StorageProvider') || text.contains('implements VersionedStorageProvider')
+        }.collect { delosdbStoragePhaseC16RelPath(it) }.sort()
+        if (!storelessHits.isEmpty()) {
+            errors << 'Storeless must remain a no-store constraint, not a storage provider: ' + storelessHits
+        }
+    }
+
+    def engineStoreSourceRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+    if (engineStoreSourceRoot.exists()) {
+        errors << 'Phase C16 must not add engine-side org/apache/derby/impl/store sources: '
+                + delosdbStoragePhaseC16RelPath(engineStoreSourceRoot)
+    }
+
+    def thirdIslandNames = [
+            'DelosStorageEngine.java',
+            'DelosTableAccess.java',
+            'DelosScan.java',
+            'DelosMutationAccess.java',
+            'TableAccessProfile.java',
+            'StorageExecutionProfile.java',
+            'StorelessStorageProvider.java',
+            'StorelessVersionedStorageProvider.java'
+    ] as Set
+    def thirdIslandFiles = fileTree(rootProject.projectDir).matching {
+        include '**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+        exclude '**/.idea/**'
+        exclude '**/__MACOSX/**'
+    }.files.findAll { thirdIslandNames.contains(it.name) }
+            .collect { delosdbStoragePhaseC16RelPath(it) }.sort()
+    if (!thirdIslandFiles.isEmpty()) {
+        errors << 'Phase C16 must not introduce a third SPI/profile island while delegating CREATE TABLE: '
+                + thirdIslandFiles
+    }
+
+    def allEngineVersionedFiles = delosdbStoragePhaseC16JavaFiles('delosdb-engine').findAll { sourceFile ->
+        delosdbStoragePhaseC16RelPath(sourceFile).contains('/versioned/')
+    }
+    def sqlRegexOwners = allEngineVersionedFiles.findAll { sourceFile ->
+        sourceFile.name != 'VersionedStorageSqlBridge.java' && sourceFile.text.contains('Pattern.compile(')
+    }.collect { delosdbStoragePhaseC16RelPath(it) }.sort()
+    if (!sqlRegexOwners.isEmpty()) {
+        errors << 'C16 must not add SQL regex owners outside VersionedStorageSqlBridge: '
+                + sqlRegexOwners
+    }
+
+    lines << 'DelosDB Storage Phase C16 CREATE Delegation Proof'
+    lines << '=================================================='
+    lines << ''
+    lines << 'C16 mechanic:'
+    lines << '  delegate provider table creation through VersionedStorageExecutionBridge.'
+    lines << ''
+    lines << 'Still temporary:'
+    lines << '  VersionedStorageSqlBridge remains the SQL regex router for normal JDBC traffic.'
+    lines << ''
+    lines << 'Expected boundary:'
+    lines << '  CREATE TABLE route -> executeRoutedStatement -> VersionedStorageExecutionBridge.createTable(provider, metadata).'
+    lines << ''
+    lines << 'Not done in C16:'
+    lines << '  no regex routing is removed.'
+    lines << '  no parser/compiler route is introduced.'
+    lines << '  no new storage SPI/profile family is introduced.'
+    lines << ''
+    lines << 'Next legal move:'
+    lines << '  delegate CREATE INDEX or decide the first real non-regex routing replacement.'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC16CreateDelegationReport') {
+    group = 'verification'
+    description = 'Writes the Phase C16 CREATE TABLE delegation report.'
+    dependsOn 'verifyStoragePhaseC15PlannedRoute'
+    outputs.file(delosdbStoragePhaseC16ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC16Proof()
+        def outputFile = delosdbStoragePhaseC16ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C16 CREATE delegation failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC16CreateDelegationSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C16 CREATE TABLE delegation smoke test.'
+    source = files('dev/storage-phase-c16-create-delegation-smoke/src/main/java')
+    destinationDirectory = delosdbStoragePhaseC16SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC16Classpath()
+}
+
+tasks.register('storagePhaseC16CreateDelegationSmoke', JavaExec) {
+    dependsOn 'compileStoragePhaseC16CreateDelegationSmoke'
+    group = 'verification'
+    description = 'Runs the Phase C16 CREATE TABLE delegation smoke test.'
+    classpath = delosdbStoragePhaseC16Classpath()
+    mainClass = 'io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.StoragePhaseC16CreateDelegationSmoke'
+}
+
+tasks.register('verifyStoragePhaseC16CreateDelegation') {
+    group = 'verification'
+    description = 'Verifies the Phase C16 CREATE TABLE delegation proof.'
+    dependsOn 'storagePhaseC16CreateDelegationReport', 'storagePhaseC16CreateDelegationSmoke'
+    doLast {
+        println 'Verified Phase C16 CREATE TABLE delegation; next step must stay one routed operation at a time'
+    }
+}

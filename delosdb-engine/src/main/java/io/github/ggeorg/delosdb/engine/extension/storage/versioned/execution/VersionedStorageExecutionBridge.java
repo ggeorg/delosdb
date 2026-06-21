@@ -54,11 +54,23 @@ public final class VersionedStorageExecutionBridge {
     }
 
     public <K, V> VersionedTable<K, V> createTable(String providerName, VersionedTableMetadata metadata) {
-        return provider(providerName).createTable(requireMetadata(metadata));
+        return createTable(provider(providerName), metadata);
+    }
+
+    public <K, V> VersionedTable<K, V> createTable(
+            VersionedStorageProvider provider,
+            VersionedTableMetadata metadata) {
+        return requireProvider(provider).createTable(requireMetadata(metadata));
     }
 
     public <K, V> VersionedTable<K, V> openTable(String providerName, VersionedTableMetadata metadata) {
-        return provider(providerName).openTable(requireMetadata(metadata));
+        return openTable(provider(providerName), metadata);
+    }
+
+    public <K, V> VersionedTable<K, V> openTable(
+            VersionedStorageProvider provider,
+            VersionedTableMetadata metadata) {
+        return requireProvider(provider).openTable(requireMetadata(metadata));
     }
 
     public <K, V> void insert(VersionedTable<K, V> table, K key, V value, TxContext transaction) {
@@ -101,6 +113,10 @@ public final class VersionedStorageExecutionBridge {
             throw new IllegalStateException(PROVIDER_LOOKUP_UNAVAILABLE);
         }
         return resolver.requireEnabled(requireProviderName(providerName));
+    }
+
+    private static VersionedStorageProvider requireProvider(VersionedStorageProvider provider) {
+        return Objects.requireNonNull(provider, "provider");
     }
 
     private static String requireProviderName(String providerName) {

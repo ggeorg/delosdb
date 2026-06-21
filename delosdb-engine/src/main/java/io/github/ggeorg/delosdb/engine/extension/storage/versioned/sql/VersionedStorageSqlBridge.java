@@ -500,7 +500,7 @@ public final class VersionedStorageSqlBridge {
             }
 
             VersionedStorageProvider provider = provider();
-            VersionedTable<Long, List<Object>> table = provider.createTable(metadata);
+            VersionedTable<Long, List<Object>> table = PLANNED_TABLE_OPERATION_BRIDGE.createTable(provider, metadata);
             TABLES.put(metadata, new TableDefinition(metadata, columns, table, provider.transactionCoordinator()));
         }
         return VersionedStorageSqlResult.updateCount(0L);
@@ -1523,7 +1523,7 @@ public final class VersionedStorageSqlBridge {
 
         private TableDefinition reopenWithProvider(VersionedStorageProvider provider) throws SQLException {
             VersionedTransactionCoordinator reopenedCoordinator = provider.transactionCoordinator();
-            VersionedTable<Long, List<Object>> reopenedTable = provider.createTable(metadata);
+            VersionedTable<Long, List<Object>> reopenedTable = PLANNED_TABLE_OPERATION_BRIDGE.createTable(provider, metadata);
             TableDefinition reopened = new TableDefinition(metadata, columns, reopenedTable, reopenedCoordinator);
             for (IndexDefinition existingIndex : indexesByName.values()) {
                 TxContext build = reopenedCoordinator.begin();
