@@ -2663,5 +2663,5 @@ tasks.register('mvccSqlBridgeHistoryPrunedProof') {
 // -----------------------------------------------------------------------------
 
 // Legacy Derby store guard tasks are intentionally kept out of the root build file.
-// See gradle/legacy-derby-store-guards.gradle for DS/A/B Phase-B verification gates.
-apply from: file('gradle/legacy-derby-store-guards.gradle')
+// Compact permanent storage-Derby Phase-B boundary gates.
+apply from: file('gradle/storage-derby-boundary-guards.gradle')
