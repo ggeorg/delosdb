@@ -263,6 +263,26 @@ public final class VersionedStorageSqlBridge {
         }
     }
 
+    static VersionedStorageSqlResult executePlannedRouteForTesting(
+            String routedStatementType,
+            List<String> groups,
+            Object transactionOwner,
+            boolean autoCommit,
+            int transactionIsolation) throws SQLException {
+        Objects.requireNonNull(routedStatementType, "routedStatementType");
+        Objects.requireNonNull(groups, "groups");
+        try {
+            return executeRoutedStatement(
+                    new RoutedStatement(RoutedStatementType.valueOf(routedStatementType), groups),
+                    transactionOwner,
+                    autoCommit,
+                    transactionIsolation);
+        } catch (IllegalArgumentException e) {
+            throw sqlException("X0MV5", "Unsupported planned delos_mvcc statement route: "
+                    + routedStatementType, e);
+        }
+    }
+
     private static RoutedStatement routeStatement(String normalizedSql) throws SQLException {
         Matcher create = CREATE_TABLE.matcher(normalizedSql);
         if (create.matches()) {

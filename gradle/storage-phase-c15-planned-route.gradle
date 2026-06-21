@@ -1,0 +1,316 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C15 planned route proof.
+//
+// C15 keeps VersionedStorageSqlBridge as the temporary regex router, but proves
+// that the routed-statement execution boundary extracted in C14 can be entered
+// from a non-regex planned route. This is not regex-routing removal and not
+// parser/compiler surgery.
+
+ext.delosdbStoragePhaseC15ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC15ReportFile =
+        ext.delosdbStoragePhaseC15ReportDir.map { it.file('storage-phase-c15-planned-route.txt') }
+ext.delosdbStoragePhaseC15SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c15-planned-route-smoke')
+
+ext.delosdbStoragePhaseC15RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC15RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC15RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC15JavaFiles = { String projectPath ->
+    def sourceRoot = file("${projectPath}/src/main/java")
+    if (!sourceRoot.exists()) {
+        return [] as Set<File>
+    }
+    fileTree(sourceRoot).matching { include '**/*.java' }.files as Set<File>
+}
+
+ext.delosdbStoragePhaseC15ModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseC15RuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseC15Classpath = {
+    files(
+            delosdbStoragePhaseC15SmokeClassesDir,
+            delosdbStoragePhaseC15ModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseC15ModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseC15ModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseC15RuntimeJars())
+}
+
+ext.delosdbStoragePhaseC15Proof = {
+    def errors = []
+    def lines = []
+
+    def smokeSource = file('dev/storage-phase-c15-planned-route-smoke/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/StoragePhaseC15PlannedRouteSmoke.java')
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def executionBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/execution/VersionedStorageExecutionBridge.java')
+    def heapProvider = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/LegacyDerbyHeapStorageProvider.java')
+    def mvccProvider = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java')
+    def storelessRoot = file('delosdb-storeless/src/main/java')
+
+    delosdbStoragePhaseC15RequireTokens(errors, smokeSource, [
+            'StoragePhaseC15PlannedRouteSmoke',
+            'VersionedStorageSqlBridge.executePlannedRouteForTesting(',
+            '"CREATE_TABLE"',
+            '"INSERT_VALUES"',
+            '"SELECT_ALL"',
+            '"SELECT_COUNT"',
+            'requireRows',
+            'requireCount'
+    ], 'Phase C15 planned route smoke')
+
+    if (smokeSource.exists()) {
+        def smokeText = smokeSource.text
+        [
+                'tryExecute(',
+                'Pattern.compile(',
+                '.matcher(',
+                'CREATE TABLE ',
+                'INSERT INTO ',
+                'SELECT ',
+                'UPDATE ',
+                'DELETE FROM '
+        ].each { token ->
+            if (smokeText.contains(token)) {
+                errors << "Phase C15 smoke must bypass SQL text/regex routing and not contain token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC15RequireTokens(errors, sqlBridge, [
+            'private enum RoutedStatementType',
+            'private record RoutedStatement(',
+            'private static RoutedStatement routeStatement(String normalizedSql)',
+            'private static VersionedStorageSqlResult executeRoutedStatement(',
+            'static VersionedStorageSqlResult executePlannedRouteForTesting(',
+            'new RoutedStatement(RoutedStatementType.valueOf(routedStatementType), groups)',
+            'RoutedStatement routedStatement = routeStatement(normalizedSql);',
+            'return executeRoutedStatement(',
+            'VersionedStorageExecutionBridge.resolvedTableOperations()',
+            'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.stats(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.delete(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.update('
+    ], 'VersionedStorageSqlBridge planned route boundary')
+
+    if (sqlBridge.exists()) {
+        def bridgeText = sqlBridge.text
+        def plannedStart = bridgeText.indexOf('static VersionedStorageSqlResult executePlannedRouteForTesting(')
+        def routeStart = bridgeText.indexOf('private static RoutedStatement routeStatement(String normalizedSql)')
+        def executeStart = bridgeText.indexOf('private static VersionedStorageSqlResult executeRoutedStatement(')
+        if (plannedStart < 0) {
+            errors << 'VersionedStorageSqlBridge must expose a package-private planned route entry for C15 smoke only'
+        }
+        if (plannedStart >= 0 && routeStart > plannedStart) {
+            def plannedBody = bridgeText.substring(plannedStart, routeStart)
+            [
+                    'routeStatement(',
+                    '.matcher(',
+                    'Pattern.compile('
+            ].each { token ->
+                if (plannedBody.contains(token)) {
+                    errors << "C15 planned route entry must not perform SQL regex routing token: ${token}"
+                }
+            }
+            if (!plannedBody.contains('executeRoutedStatement(')) {
+                errors << 'C15 planned route entry must enter the routed-statement execution boundary directly'
+            }
+        }
+        if (routeStart < 0 || executeStart < 0 || executeStart < routeStart) {
+            errors << 'C15 must preserve the C14 routeStatement -> executeRoutedStatement boundary'
+        }
+        [
+                'table.table().insert(',
+                'table.table().update(',
+                'table.table().delete(',
+                'table.table().openScan(',
+                'table.table().stats('
+        ].each { token ->
+            if (bridgeText.contains(token)) {
+                errors << "VersionedStorageSqlBridge must not call ${token} directly after C15"
+            }
+        }
+        [
+                'PLANNED_TABLE_OPERATION_BRIDGE.createTable(',
+                'PLANNED_TABLE_OPERATION_BRIDGE.openTable('
+        ].each { token ->
+            if (bridgeText.contains(token)) {
+                errors << "VersionedStorageSqlBridge must not call ${token}; the SQL bridge currently uses resolved-table operations only"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC15RequireTokens(errors, executionBridge, [
+            'public static VersionedStorageExecutionBridge resolvedTableOperations()',
+            'private static final String PROVIDER_LOOKUP_UNAVAILABLE',
+            'public <K, V> void insert(',
+            'public <K, V> void update(',
+            'public <K, V> void delete(',
+            'public <K, V> List<VersionedRow<K, V>> scanAll(',
+            'public <K, V> VersionedTableStats stats('
+    ], 'VersionedStorageExecutionBridge table operation surface')
+
+    delosdbStoragePhaseC15RequireTokens(errors, heapProvider, [
+            'implements StorageProvider',
+            'StorageCapabilities'
+    ], 'Derby heap provider remains metadata path')
+
+    delosdbStoragePhaseC15RequireTokens(errors, mvccProvider, [
+            'implements VersionedStorageProvider',
+            'VersionedTable<K, V> createTable(',
+            'VersionedTable<K, V> openTable('
+    ], 'MVCC provider remains VersionedStorageProvider path')
+
+    if (storelessRoot.exists()) {
+        def storelessHits = fileTree(storelessRoot).matching { include '**/*.java' }.files.findAll { sourceFile ->
+            def text = sourceFile.text
+            text.contains('implements StorageProvider') || text.contains('implements VersionedStorageProvider')
+        }.collect { delosdbStoragePhaseC15RelPath(it) }.sort()
+        if (!storelessHits.isEmpty()) {
+            errors << 'Storeless must remain a no-store constraint, not a storage provider: ' + storelessHits
+        }
+    }
+
+    def engineStoreSourceRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+    if (engineStoreSourceRoot.exists()) {
+        errors << 'Phase C15 must not add engine-side org/apache/derby/impl/store sources: '
+                + delosdbStoragePhaseC15RelPath(engineStoreSourceRoot)
+    }
+
+    def thirdIslandNames = [
+            'DelosStorageEngine.java',
+            'DelosTableAccess.java',
+            'DelosScan.java',
+            'DelosMutationAccess.java',
+            'TableAccessProfile.java',
+            'StorageExecutionProfile.java',
+            'StorelessStorageProvider.java',
+            'StorelessVersionedStorageProvider.java'
+    ] as Set
+    def thirdIslandFiles = fileTree(rootProject.projectDir).matching {
+        include '**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+        exclude '**/.idea/**'
+        exclude '**/__MACOSX/**'
+    }.files.findAll { thirdIslandNames.contains(it.name) }
+            .collect { delosdbStoragePhaseC15RelPath(it) }.sort()
+    if (!thirdIslandFiles.isEmpty()) {
+        errors << 'Phase C15 must not introduce a third SPI/profile island while proving a planned route: '
+                + thirdIslandFiles
+    }
+
+    def allEngineVersionedFiles = delosdbStoragePhaseC15JavaFiles('delosdb-engine').findAll { sourceFile ->
+        delosdbStoragePhaseC15RelPath(sourceFile).contains('/versioned/')
+    }
+    def sqlRegexOwners = allEngineVersionedFiles.findAll { sourceFile ->
+        sourceFile.name != 'VersionedStorageSqlBridge.java' && sourceFile.text.contains('Pattern.compile(')
+    }.collect { delosdbStoragePhaseC15RelPath(it) }.sort()
+    if (!sqlRegexOwners.isEmpty()) {
+        errors << 'C15 must not add SQL regex owners outside VersionedStorageSqlBridge: '
+                + sqlRegexOwners
+    }
+
+    lines << 'DelosDB Storage Phase C15 Planned Route Proof'
+    lines << '============================================='
+    lines << ''
+    lines << 'C15 mechanic:'
+    lines << '  prove routed-statement execution can be entered from a non-regex planned route.'
+    lines << ''
+    lines << 'Still temporary:'
+    lines << '  VersionedStorageSqlBridge remains the SQL regex router for normal JDBC traffic.'
+    lines << ''
+    lines << 'Expected boundary:'
+    lines << '  SQL route:     tryExecute -> routeStatement -> executeRoutedStatement.'
+    lines << '  planned route: executePlannedRouteForTesting -> executeRoutedStatement.'
+    lines << ''
+    lines << 'Not done in C15:'
+    lines << '  no regex routing is removed.'
+    lines << '  no parser/compiler route is introduced.'
+    lines << '  no new storage SPI/profile family is introduced.'
+    lines << ''
+    lines << 'Next legal move:'
+    lines << '  replace one statement family routing path, or first decide the non-test planned route owner.'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC15PlannedRouteReport') {
+    group = 'verification'
+    description = 'Writes the Phase C15 planned route report.'
+    dependsOn 'verifyStoragePhaseC14RoutingBoundary'
+    outputs.file(delosdbStoragePhaseC15ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC15Proof()
+        def outputFile = delosdbStoragePhaseC15ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C15 planned route failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC15PlannedRouteSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C15 planned route smoke test.'
+    source = files('dev/storage-phase-c15-planned-route-smoke/src/main/java')
+    destinationDirectory = delosdbStoragePhaseC15SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC15Classpath()
+}
+
+tasks.register('storagePhaseC15PlannedRouteSmoke', JavaExec) {
+    dependsOn 'compileStoragePhaseC15PlannedRouteSmoke'
+    group = 'verification'
+    description = 'Runs the Phase C15 planned route smoke test.'
+    classpath = delosdbStoragePhaseC15Classpath()
+    mainClass = 'io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.StoragePhaseC15PlannedRouteSmoke'
+}
+
+tasks.register('verifyStoragePhaseC15PlannedRoute') {
+    group = 'verification'
+    description = 'Verifies the Phase C15 non-regex planned route proof.'
+    dependsOn 'storagePhaseC15PlannedRouteReport', 'storagePhaseC15PlannedRouteSmoke'
+    doLast {
+        println 'Verified Phase C15 planned route; next step must decide the real routing replacement owner before removing regex paths'
+    }
+}
