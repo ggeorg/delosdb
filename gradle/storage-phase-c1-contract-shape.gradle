@@ -254,7 +254,11 @@ ext.delosdbStoragePhaseC1ContractShape = {
 
     def runtimeNames = []
     if (rootProject.ext.has('delosdbRuntimeJarNames')) {
-        runtimeNames = rootProject.ext.delosdbRuntimeJarNames.call().collect { it.toString() }.sort()
+        def runtimeJarNamesValue = rootProject.ext.delosdbRuntimeJarNames
+        if (runtimeJarNamesValue instanceof Closure) {
+            runtimeJarNamesValue = runtimeJarNamesValue.call()
+        }
+        runtimeNames = (runtimeJarNamesValue ?: []).collect { it.toString() }.sort()
         def storelessRuntime = runtimeNames.findAll { it.contains('storeless') }
         lines << "Runtime jar names                       : ${runtimeNames.join(', ')}"
         lines << "Storeless runtime jar entry             : ${storelessRuntime.isEmpty() ? 'none' : storelessRuntime.join(', ')}"
