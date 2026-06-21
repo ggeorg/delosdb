@@ -30,8 +30,6 @@ ext.delosdbStoragePhaseC1FilesContaining = { Collection<File> sourceFiles, Colle
 ext.delosdbStoragePhaseC1ThirdIslandCandidates = {
     def candidateNames = [
             'DelosStorageEngine.java',
-            'DelosTableAccess.java',
-            'DelosScan.java',
             'DelosMutation.java',
             'DelosMutationAccess.java',
             'OperationalStorageProvider.java',

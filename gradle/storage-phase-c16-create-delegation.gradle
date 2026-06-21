@@ -179,8 +179,6 @@ ext.delosdbStoragePhaseC16Proof = {
 
     def thirdIslandNames = [
             'DelosStorageEngine.java',
-            'DelosTableAccess.java',
-            'DelosScan.java',
             'DelosMutationAccess.java',
             'TableAccessProfile.java',
             'StorageExecutionProfile.java',

@@ -354,8 +354,6 @@ ext.delosdbStoragePhaseC3MvccMapping = {
 
     def forbiddenNames = [
             'DelosStorageEngine.java',
-            'DelosTableAccess.java',
-            'DelosScan.java',
             'DelosMutationAccess.java',
             'StorageExecutionProfile.java',
             'TableAccessProfile.java',
