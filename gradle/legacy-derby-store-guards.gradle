@@ -18,6 +18,23 @@ def delosdbLegacyStoreRuntimeJars = { ->
     rootProject.ext.delosdbRuntimeJars.call()
 }
 
+// Smoke helper source/runtime helpers exported by the root build file. Keep
+// these explicit for the same reason as runtimeJars(): extracted task closures
+// otherwise try to resolve unqualified variables on JavaCompile/JavaExec.
+def delosdbLegacyStoreSmokeUtilsSourceDir = { ->
+    if (!rootProject.ext.has('delosdbSmokeUtilsSourceDir')) {
+        throw new GradleException('Missing root ext.delosdbSmokeUtilsSourceDir; legacy Derby store guards must be applied after smoke helper paths are defined')
+    }
+    rootProject.ext.delosdbSmokeUtilsSourceDir
+}
+
+def delosdbLegacyStoreJavaRelease = { ->
+    if (!rootProject.ext.has('javaRelease')) {
+        throw new GradleException('Missing root ext.javaRelease; legacy Derby store guards must be applied after Java release is defined')
+    }
+    rootProject.ext.javaRelease
+}
+
 // DS1 — Legacy Derby store boundary proof
 // -----------------------------------------------------------------------------
 // These tasks are intentionally analysis-only. They do not move files and they do
@@ -360,11 +377,11 @@ tasks.register('compileLegacyDerbyStorePropertyConglomerateSmoke', JavaCompile) 
     dependsOn 'jars'
     group = 'verification'
     description = 'Compiles the DS3 legacy Derby store property conglomerate smoke test.'
-    source = files('dev/legacy-derby-store-property-smoke/src/main/java', smokeUtilsSourceDir)
+    source = files('dev/legacy-derby-store-property-smoke/src/main/java', delosdbLegacyStoreSmokeUtilsSourceDir())
     destinationDirectory = legacyDerbyStorePropertySmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
+    sourceCompatibility = delosdbLegacyStoreJavaRelease().toString()
+    targetCompatibility = delosdbLegacyStoreJavaRelease().toString()
+    options.release = delosdbLegacyStoreJavaRelease()
     options.encoding = 'UTF-8'
     classpath = delosdbLegacyStoreRuntimeJars()
 }
@@ -422,11 +439,11 @@ tasks.register('compileLegacyDerbyStoreSqlContextSmoke', JavaCompile) {
     dependsOn 'jars'
     group = 'verification'
     description = 'Compiles the DS4 legacy Derby store SQL context smoke test.'
-    source = files('dev/legacy-derby-store-context-smoke/src/main/java', smokeUtilsSourceDir)
+    source = files('dev/legacy-derby-store-context-smoke/src/main/java', delosdbLegacyStoreSmokeUtilsSourceDir())
     destinationDirectory = legacyDerbyStoreContextSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
+    sourceCompatibility = delosdbLegacyStoreJavaRelease().toString()
+    targetCompatibility = delosdbLegacyStoreJavaRelease().toString()
+    options.release = delosdbLegacyStoreJavaRelease()
     options.encoding = 'UTF-8'
     classpath = delosdbLegacyStoreRuntimeJars()
 }
@@ -480,11 +497,11 @@ tasks.register('compileLegacyDerbyStoreSqlExecutionSmoke', JavaCompile) {
     dependsOn 'jars'
     group = 'verification'
     description = 'Compiles the DS5 legacy Derby store SQL execution smoke test.'
-    source = files('dev/legacy-derby-store-execution-smoke/src/main/java', smokeUtilsSourceDir)
+    source = files('dev/legacy-derby-store-execution-smoke/src/main/java', delosdbLegacyStoreSmokeUtilsSourceDir())
     destinationDirectory = legacyDerbyStoreExecutionSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
+    sourceCompatibility = delosdbLegacyStoreJavaRelease().toString()
+    targetCompatibility = delosdbLegacyStoreJavaRelease().toString()
+    options.release = delosdbLegacyStoreJavaRelease()
     options.encoding = 'UTF-8'
     classpath = delosdbLegacyStoreRuntimeJars()
 }
@@ -711,11 +728,11 @@ tasks.register('compileLegacyDerbyStoreRuntimePackagingSmoke', JavaCompile) {
     dependsOn 'jars'
     group = 'verification'
     description = 'Compiles the DS10 jar-runtime heap boot smoke test.'
-    source = files('dev/legacy-derby-store-runtime-packaging-smoke/src/main/java', smokeUtilsSourceDir)
+    source = files('dev/legacy-derby-store-runtime-packaging-smoke/src/main/java', delosdbLegacyStoreSmokeUtilsSourceDir())
     destinationDirectory = legacyDerbyStoreRuntimePackagingSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
+    sourceCompatibility = delosdbLegacyStoreJavaRelease().toString()
+    targetCompatibility = delosdbLegacyStoreJavaRelease().toString()
+    options.release = delosdbLegacyStoreJavaRelease()
     options.encoding = 'UTF-8'
     classpath = delosdbLegacyStoreRuntimeJars()
 }

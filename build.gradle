@@ -620,6 +620,11 @@ tasks.register('smokeFromJars', JavaExec) {
 
 def smokeUtilsSourceDir = 'dev/smoke-utils/src/main/java'
 
+// Export smoke helper source path for extracted Gradle guard scripts.
+// Plain `smokeUtilsSourceDir` references inside task configuration closures may
+// resolve against the task object after extraction, so guards call this explicitly.
+ext.delosdbSmokeUtilsSourceDir = smokeUtilsSourceDir
+
 def modernizationSmokeClassesDir = layout.buildDirectory.dir('classes/modernization-smoke')
 
 tasks.register('compileModernizationSmoke', JavaCompile) {
