@@ -29,6 +29,7 @@ import org.apache.derby.iapi.services.io.ArrayInputStream;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreLocatedRow;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreTypeSupport;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.LocatedRow;
@@ -250,6 +251,14 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
 
     private static DataValueDescriptor dataValue(Object value)
     {
+        if (value instanceof DataValueDescriptor dataValue)
+        {
+            return dataValue;
+        }
+        if (value instanceof StoreRowLocation rowLocation)
+        {
+            return EngineStoreRowLocationBridge.requireEngineRowLocation(rowLocation);
+        }
         return (DataValueDescriptor) value;
     }
 
