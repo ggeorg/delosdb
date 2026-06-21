@@ -372,21 +372,19 @@ class HashTableResultSet extends NoPutResultSetImpl
 					{
 						entryVector = (List) hashEntry;
 						entryVectorSize = entryVector.size();
-						columns = 
-                            (DataValueDescriptor[]) entryVector.get(0);
+						columns = unpackHashValue(entryVector.get(0));
 					}
 					else
 					{
 						entryVector = null;
 						entryVectorSize = 0;
-						columns = (DataValueDescriptor[]) hashEntry;
+						columns = unpackHashValue(hashEntry);
 					}
 				}
 				else if (numFetchedOnNext < entryVectorSize)
 				{
 					// We are walking a list and there are more rows left.
-					columns = (DataValueDescriptor[]) 
-                        entryVector.get(numFetchedOnNext);
+					columns = unpackHashValue(entryVector.get(numFetchedOnNext));
 				}
 
 				if (columns != null)

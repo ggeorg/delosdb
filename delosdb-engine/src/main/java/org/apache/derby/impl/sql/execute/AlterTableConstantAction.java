@@ -857,8 +857,8 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
 
             DataValueDescriptor[][] row_array = new DataValueDescriptor[100][];
             row_array[0] = br.getRowArray();
-            RowLocation[] old_row_location_array = new RowLocation[100];
-            RowLocation[] new_row_location_array = new RowLocation[100];
+            StoreRowLocation[] old_row_location_array = new StoreRowLocation[100];
+            StoreRowLocation[] new_row_location_array = new StoreRowLocation[100];
 
             // Create the following 3 arrays which will be used to update
             // each index as the scan moves rows about the heap as part of
@@ -1078,8 +1078,8 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
     private static void fixIndex(
     DataValueDescriptor[]   base_row,
     DataValueDescriptor[]   index_row,
-    RowLocation             old_row_loc,
-    RowLocation             new_row_loc,
+    StoreRowLocation        old_row_loc,
+    StoreRowLocation        new_row_loc,
     ConglomerateController  index_cc,
     ScanController          index_scan,
 	int[]					index_col_map)
@@ -1101,7 +1101,8 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
             index_row[index] = base_row[index_col_map[index]];
         }
         // last column in index in the RowLocation
-        index_row[index_row.length - 1] = old_row_loc;
+        index_row[index_row.length - 1] =
+                EngineStoreRowLocationBridge.requireEngineRowLocation(old_row_loc);
 
         // position the scan for the delete, the scan should already be open.
         // This is done by setting start scan to full key, GE and stop scan
@@ -1131,7 +1132,8 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
         }
 
         // insert the new index row into the conglomerate
-        index_row[index_row.length - 1] = new_row_loc;
+        index_row[index_row.length - 1] =
+                EngineStoreRowLocationBridge.requireEngineRowLocation(new_row_loc);
 
         index_cc.insert(index_row);
     }

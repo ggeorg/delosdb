@@ -589,7 +589,7 @@ extends BasicNoPutResultSetImpl
      * surface. B6 makes the store APIs SQL-neutral, but execution/hash join
      * callers still consume DataValueDescriptor arrays.
      */
-    private static DataValueDescriptor[] toDataValueArray( StoreDataValue[] row )
+    protected static DataValueDescriptor[] toDataValueArray( StoreDataValue[] row )
     {
         DataValueDescriptor[] dataValues = new DataValueDescriptor[ row.length ];
         for ( int i = 0; i < row.length; i++ )
