@@ -749,7 +749,7 @@ public final class VersionedStorageSqlBridge {
         try {
             List<VersionedRow<Long, List<Object>>> rows = table.indexedRows(whereColumnIndex, whereValue, statementTx.context());
             for (VersionedRow<Long, List<Object>> row : rows) {
-                table.table().delete(row.key(), statementTx.context());
+                PLANNED_TABLE_OPERATION_BRIDGE.delete(table.table(), row.key(), statementTx.context());
             }
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.updateCount(rows.size());

@@ -1,0 +1,272 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C9 SQL DELETE operation delegation proof.
+//
+// This keeps VersionedStorageSqlBridge as the temporary regex router, but proves
+// the DELETE mutation itself no longer calls VersionedTable.delete directly.
+// DELETE delegates through VersionedStorageExecutionBridge after C8 proved the
+// direct planned delete operation.
+
+ext.delosdbStoragePhaseC9ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC9ReportFile =
+        ext.delosdbStoragePhaseC9ReportDir.map { it.file('storage-phase-c9-delete-delegation.txt') }
+ext.delosdbStoragePhaseC9SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c9-delete-delegation-smoke')
+
+ext.delosdbStoragePhaseC9RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC9RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC9RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC9ForbiddenSourceHits = { Collection<File> sourceFiles, Collection<String> tokens ->
+    sourceFiles.collectMany { sourceFile ->
+        def text = sourceFile.text
+        tokens.findAll { token -> text.contains(token) }.collect { token ->
+            "${delosdbStoragePhaseC9RelPath(sourceFile)} contains forbidden token ${token}"
+        }
+    }.sort()
+}
+
+ext.delosdbStoragePhaseC9JavaFiles = { String projectPath ->
+    def sourceRoot = file("${projectPath}/src/main/java")
+    if (!sourceRoot.exists()) {
+        return [] as Set<File>
+    }
+    fileTree(sourceRoot).matching { include '**/*.java' }.files as Set<File>
+}
+
+ext.delosdbStoragePhaseC9ModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseC9RuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseC9Classpath = {
+    files(
+            delosdbStoragePhaseC9SmokeClassesDir,
+            delosdbStoragePhaseC9ModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseC9ModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseC9ModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseC9RuntimeJars())
+}
+
+ext.delosdbStoragePhaseC9Proof = {
+    def errors = []
+    def lines = []
+
+    def smokeSource = file('dev/storage-phase-c9-delete-delegation-smoke/src/main/java/delosdb/smoke/StoragePhaseC9DeleteDelegationSmoke.java')
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def executionBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/execution/VersionedStorageExecutionBridge.java')
+    def embedStatement = file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedStatement.java')
+    def heapProvider = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/LegacyDerbyHeapStorageProvider.java')
+    def mvccProvider = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java')
+    def storelessRoot = file('delosdb-storeless/src/main/java')
+
+    delosdbStoragePhaseC9RequireTokens(errors, smokeSource, [
+            'SqlBridgePlan',
+            'VersionedStorageSqlBridge.tryExecute(sql, this, true)',
+            'CREATE TABLE ',
+            'USING delos_mvcc',
+            'CREATE INDEX C9_DELETE_VALUE_IDX',
+            'INSERT INTO ',
+            'DELETE FROM ',
+            'WHERE value =',
+            'SELECT * FROM ',
+            'requireUpdateCount',
+            'requireSingleRow',
+            'requireNoRows'
+    ], 'Phase C9 SQL DELETE delegation smoke')
+
+    delosdbStoragePhaseC9RequireTokens(errors, sqlBridge, [
+            'private static final Pattern DELETE_WHERE_EQUALS',
+            'return deleteWhereEquals(table.get(), deleteWhere.group(2), deleteWhere.group(3), transactionOwner, autoCommit, transactionIsolation);',
+            'PLANNED_TABLE_OPERATION_BRIDGE.delete(table.table(), row.key(), statementTx.context());',
+            'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.scanAll('
+    ], 'VersionedStorageSqlBridge DELETE operation delegation')
+
+    if (sqlBridge.exists() && sqlBridge.text.contains('table.table().delete(row.key(), statementTx.context());')) {
+        errors << 'VersionedStorageSqlBridge DELETE branch must not call VersionedTable.delete directly after C9'
+    }
+
+    delosdbStoragePhaseC9RequireTokens(errors, executionBridge, [
+            'public <K, V> void delete(',
+            'requireTable(table).delete(requireKey(key), requireTransaction(transaction));',
+            'public static VersionedStorageExecutionBridge resolvedTableOperations()'
+    ], 'VersionedStorageExecutionBridge delete operation')
+
+    delosdbStoragePhaseC9RequireTokens(errors, embedStatement, [
+            'VersionedStorageSqlBridge.tryExecute('
+    ], 'current transitional EmbedStatement bridge hook')
+
+    delosdbStoragePhaseC9RequireTokens(errors, heapProvider, [
+            'implements StorageProvider',
+            'StorageCapabilities'
+    ], 'Derby heap provider remains metadata path')
+
+    delosdbStoragePhaseC9RequireTokens(errors, mvccProvider, [
+            'implements VersionedStorageProvider',
+            'public VersionedTransactionCoordinator transactionCoordinator()',
+            'public synchronized <K, V> VersionedTable<K, V> openTable('
+    ], 'MVCC provider remains versioned operational path')
+
+    if (!storelessRoot.exists()) {
+        errors << 'missing storeless source root: delosdb-storeless/src/main/java'
+    } else {
+        def storelessProviderHits = fileTree(storelessRoot).matching { include '**/*.java' }.files.findAll { sourceFile ->
+            def text = sourceFile.text
+            text.contains('implements StorageProvider') || text.contains('implements VersionedStorageProvider')
+        }.collect { delosdbStoragePhaseC9RelPath(it) }.sort()
+        if (!storelessProviderHits.isEmpty()) {
+            errors << 'storeless must remain a no-store negative proof, not a provider: ' + storelessProviderHits
+        }
+    }
+
+    if (smokeSource.exists()) {
+        errors.addAll(delosdbStoragePhaseC9ForbiddenSourceHits([smokeSource], [
+                'DriverManager',
+                'Connection',
+                'Statement',
+                'Pattern.compile',
+                'Matcher'
+        ]))
+    }
+
+    def engineStoreSourceRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+    if (engineStoreSourceRoot.exists()) {
+        errors << 'Phase C9 must not add engine-side org/apache/derby/impl/store sources: '
+                + delosdbStoragePhaseC9RelPath(engineStoreSourceRoot)
+    }
+
+    def thirdIslandNames = [
+            'DelosStorageEngine.java',
+            'DelosTableAccess.java',
+            'DelosScan.java',
+            'DelosMutationAccess.java',
+            'TableAccessProfile.java',
+            'StorageExecutionProfile.java',
+            'StorelessStorageProvider.java',
+            'StorelessVersionedStorageProvider.java'
+    ] as Set
+    def thirdIslandFiles = fileTree(rootProject.projectDir).matching {
+        include '**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+        exclude '**/.idea/**'
+        exclude '**/__MACOSX/**'
+    }.files.findAll { thirdIslandNames.contains(it.name) }
+            .collect { delosdbStoragePhaseC9RelPath(it) }.sort()
+    if (!thirdIslandFiles.isEmpty()) {
+        errors << 'Phase C9 must not introduce a third SPI/profile island while delegating DELETE: '
+                + thirdIslandFiles
+    }
+
+    def allEngineVersionedFiles = delosdbStoragePhaseC9JavaFiles('delosdb-engine').findAll { sourceFile ->
+        delosdbStoragePhaseC9RelPath(sourceFile).contains('/versioned/')
+    }
+    def sqlRegexOwners = allEngineVersionedFiles.findAll { sourceFile ->
+        sourceFile.name != 'VersionedStorageSqlBridge.java' && sourceFile.text.contains('Pattern.compile(')
+    }.collect { delosdbStoragePhaseC9RelPath(it) }.sort()
+    if (!sqlRegexOwners.isEmpty()) {
+        errors << 'C9 DELETE delegation must not add SQL regex owners outside VersionedStorageSqlBridge: '
+                + sqlRegexOwners
+    }
+
+    lines << 'DelosDB Storage Phase C9 DELETE Delegation Proof'
+    lines << '================================================='
+    lines << ''
+    lines << 'C9 mechanic:'
+    lines << '  keep the temporary SQL DELETE regex router, but delegate the actual DELETE mutation through VersionedStorageExecutionBridge.'
+    lines << ''
+    lines << 'Preserved behavior:'
+    lines << '  SQL bridge still owns temporary regex statement routing.'
+    lines << '  DELETE update count and post-delete SELECT visibility are preserved by the smoke.'
+    lines << '  Derby heap execution remains untouched.'
+    lines << ''
+    lines << 'Boundary checked:'
+    lines << '  old direct call removed: table.table().delete(row.key(), statementTx.context())'
+    lines << '  new planned call used: PLANNED_TABLE_OPERATION_BRIDGE.delete(table.table(), row.key(), statementTx.context())'
+    lines << ''
+    lines << 'Not done in C9:'
+    lines << '  DELETE regex routing is intentionally not removed yet; that belongs to a later routing-retirement slice.'
+    lines << ''
+    lines << 'Proof smoke:'
+    lines << '  dev/storage-phase-c9-delete-delegation-smoke/src/main/java/delosdb/smoke/StoragePhaseC9DeleteDelegationSmoke.java'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC9DeleteDelegationReport') {
+    group = 'verification'
+    description = 'Writes the Phase C9 SQL DELETE delegation report.'
+    dependsOn 'verifyStoragePhaseC8DeleteProof'
+    outputs.file(delosdbStoragePhaseC9ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC9Proof()
+        def outputFile = delosdbStoragePhaseC9ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C9 DELETE delegation failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC9DeleteDelegationSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C9 SQL DELETE delegation smoke test.'
+    source = files('dev/storage-phase-c9-delete-delegation-smoke/src/main/java')
+    destinationDirectory = delosdbStoragePhaseC9SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC9Classpath()
+}
+
+tasks.register('storagePhaseC9DeleteDelegationSmoke', JavaExec) {
+    dependsOn 'compileStoragePhaseC9DeleteDelegationSmoke'
+    group = 'verification'
+    description = 'Runs the Phase C9 SQL DELETE delegation smoke test.'
+    classpath = delosdbStoragePhaseC9Classpath()
+    mainClass = 'delosdb.smoke.StoragePhaseC9DeleteDelegationSmoke'
+}
+
+tasks.register('verifyStoragePhaseC9DeleteDelegation') {
+    group = 'verification'
+    description = 'Verifies the Phase C9 SQL DELETE operation delegation.'
+    dependsOn 'storagePhaseC9DeleteDelegationReport', 'storagePhaseC9DeleteDelegationSmoke'
+    doLast {
+        println 'Verified Phase C9 DELETE delegation; next step should prove UPDATE directly before changing SQL UPDATE delegation'
+    }
+}
