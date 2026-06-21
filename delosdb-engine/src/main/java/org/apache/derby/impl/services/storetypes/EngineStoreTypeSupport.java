@@ -50,7 +50,7 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
     @Override
     public StoreDataValue[] newValueArray(int length)
     {
-        return new DataValueDescriptor[length];
+        return new StoreDataValue[length];
     }
 
     @Override
@@ -99,7 +99,15 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
     @Override
     public StoreLocatedRow newLocatedRow(Object columnsAndRowLocation)
     {
-        return new LocatedRow(dataValueArray(columnsAndRowLocation));
+        Object[] values = objectArray(columnsAndRowLocation);
+        DataValueDescriptor[] columnValues = new DataValueDescriptor[values.length - 1];
+        for (int i = 0; i < columnValues.length; i++)
+        {
+            columnValues[i] = dataValue(values[i]);
+        }
+        return new LocatedRow(
+            columnValues,
+            rowLocation(values[columnValues.length]));
     }
 
     @Override
@@ -247,12 +255,28 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
 
     private static DataValueDescriptor[] dataValueArray(Object value)
     {
-        return (DataValueDescriptor[]) value;
+        if (value instanceof DataValueDescriptor[] dataValues)
+        {
+            return dataValues;
+        }
+
+        Object[] values = objectArray(value);
+        DataValueDescriptor[] dataValues = new DataValueDescriptor[values.length];
+        for (int i = 0; i < values.length; i++)
+        {
+            dataValues[i] = dataValue(values[i]);
+        }
+        return dataValues;
     }
 
     private static LocatedRow locatedRow(Object value)
     {
         return (LocatedRow) value;
+    }
+
+    private static Object[] objectArray(Object value)
+    {
+        return (Object[]) value;
     }
 
     private static RowLocation rowLocation(Object value)

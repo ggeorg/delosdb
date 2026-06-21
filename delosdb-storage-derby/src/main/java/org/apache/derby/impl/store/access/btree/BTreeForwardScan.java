@@ -27,6 +27,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.shared.common.error.StandardException;
 
+import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.ScanController;
 
 import org.apache.derby.iapi.store.raw.RecordHandle;
@@ -241,8 +242,8 @@ public class BTreeForwardScan extends BTreeScan
                         // point at allocated row in array if one exists.
                         if (row_array[ret_row_count] == null)
                         {
-                            row_array[ret_row_count] = 
-                                runtime_mem.get_row_for_export(getRawTran());
+                            row_array[ret_row_count] =
+                                RowUtil.newRowFromTemplatePreservingArrayType(row_array[0]);
                         }
 
                         fetch_row = row_array[ret_row_count];

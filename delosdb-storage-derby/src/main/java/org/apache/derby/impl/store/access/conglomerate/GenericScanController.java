@@ -659,9 +659,8 @@ public abstract class GenericScanController
                          // point at allocated row in array if one exists.
                         if (row_array[ret_row_count] == null)
                         {
-                            row_array[ret_row_count] = 
-                              open_conglom.getRuntimeMem().get_row_for_export(
-                                  open_conglom.getRawTran());
+                            row_array[ret_row_count] =
+                              RowUtil.newRowFromTemplatePreservingArrayType(row_array[0]);
                         }
 
                         fetch_row = row_array[ret_row_count];

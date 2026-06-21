@@ -32,6 +32,8 @@ import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.types.StoreDataValueFactory;
 
+import java.lang.reflect.Array;
+
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Vector;
@@ -431,6 +433,38 @@ public class RowUtil
         StoreDataValue[] columns = 
             new StoreDataValue[template.length];
 
+        fillRowFromTemplate(columns, template);
+
+		return columns;
+    }
+
+    /**
+     * Generate an empty row from a template while preserving the runtime array
+     * component type of the template.
+     * <p>
+     * Engine-side bulk fetch callers still hand the store a
+     * {@code DataValueDescriptor[][]}.  After B6m/B6n the store internally uses
+     * {@code StoreDataValue[]}, but assigning that generic array into the
+     * caller's {@code DataValueDescriptor[][]} trips the JVM array store check.
+     * This helper keeps the row values store-facing while matching the array
+     * shape supplied by the caller.
+     **/
+    public static StoreDataValue[] newRowFromTemplatePreservingArrayType(
+    StoreDataValue[]    template)
+        throws StandardException
+    {
+        StoreDataValue[] columns = newArrayLike(template);
+
+        fillRowFromTemplate(columns, template);
+
+        return columns;
+    }
+
+    private static void fillRowFromTemplate(
+    StoreDataValue[]    columns,
+    StoreDataValue[]    template)
+        throws StandardException
+    {
         for (int column_index = template.length; column_index-- > 0;)
         {
             if (template[column_index] != null)
@@ -438,8 +472,17 @@ public class RowUtil
                 columns[column_index] = StoreTypeUtil.getNewNull(template[column_index]);
             }
         }
+    }
 
-		return columns;
+    private static StoreDataValue[] newArrayLike(StoreDataValue[] template)
+    {
+        Class<?> componentType = template.getClass().getComponentType();
+        if (componentType != null && StoreDataValue.class.isAssignableFrom(componentType))
+        {
+            return (StoreDataValue[]) Array.newInstance(componentType, template.length);
+        }
+
+        return new StoreDataValue[template.length];
     }
 
 

@@ -27,6 +27,7 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
+import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.SpaceInfo;
 
 import org.apache.derby.impl.store.access.conglomerate.RowPosition;
@@ -189,9 +190,8 @@ class HeapCompressScan
                      // point at allocated row in array if one exists.
                     if (row_array[ret_row_count] == null)
                     {
-                        row_array[ret_row_count] = 
-                          open_conglom.getRuntimeMem().get_row_for_export(
-                              open_conglom.getRawTran());
+                        row_array[ret_row_count] =
+                          RowUtil.newRowFromTemplatePreservingArrayType(row_array[0]);
                     }
 
                     fetch_row = row_array[ret_row_count];

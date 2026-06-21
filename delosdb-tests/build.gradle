@@ -57,6 +57,7 @@ def legacyHarnessQuarantineExcludes = [
 ]
 def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/demo/toursdb')
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
+def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
 
 def derbyRuntimeModuleClassDirs = rootProject.files(
         rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons'),
@@ -102,6 +103,7 @@ def compilePrerequisites = [
         ':delosdb-spi:compileDelosDbSpi',
         ':delosdb-engine-kernel:compileDelosDbEngineKernel',
         ':delosdb-engine:compileDerbyEngine',
+        ':delosdb-storage-derby:compileLegacyDerbyStorage',
         ':delosdb-engine:compileClassSizeCatalog',
         ':delosdb-client:compileDerbyClient',
         ':delosdb-server:compileDerbyServer',
@@ -154,6 +156,7 @@ tasks.register('compileDerbyTestsModule', JavaCompile) {
     doFirst {
         options.compilerArgs = [
                 '--module-path', testModulePath().asPath,
+                '--patch-module', "org.apache.derby.engine=${storageDerbyClassDir.get().asFile.absolutePath}",
                 '-proc:none'
         ]
     }
