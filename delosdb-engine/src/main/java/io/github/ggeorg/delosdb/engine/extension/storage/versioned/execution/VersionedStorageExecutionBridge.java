@@ -4,6 +4,9 @@ import io.github.ggeorg.delosdb.engine.extension.storage.versioned.VersionedStor
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
 import io.github.ggeorg.delosdb.spi.storage.versioned.TxView;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
@@ -22,9 +25,10 @@ import java.util.Optional;
  *
  * <p>This is deliberately not wired to Derby SQL execution yet. Its job is to
  * keep the upcoming SQL/JDBC bridge from calling provider implementations
- * directly. The first supported operation set is table-only: create/open,
- * insert, read, update, delete, scan, and stats. WAL, indexes, and optimizer
- * costing remain outside this bridge until their own proofs exist.</p>
+ * directly. The first supported operation set now covers table create/open,
+ * insert, read, update, delete, scan, stats, and the first provider-owned
+ * index creation proof. WAL and broader optimizer costing remain outside this
+ * bridge until their own proofs exist.</p>
  */
 @InternalApi
 public final class VersionedStorageExecutionBridge {
@@ -108,6 +112,17 @@ public final class VersionedStorageExecutionBridge {
         return requireTable(table).stats(requireView(view));
     }
 
+    public <K, V> VersionedIndex<K, V> createIndex(
+            VersionedTable<K, V> table,
+            VersionedIndexMetadata metadata,
+            VersionedIndexKeyExtractor<V> extractor,
+            TxView buildView) {
+        return requireTable(table).createIndex(
+                requireIndexMetadata(metadata),
+                requireIndexKeyExtractor(extractor),
+                requireView(buildView));
+    }
+
     private VersionedStorageProvider provider(String providerName) {
         if (resolver == null) {
             throw new IllegalStateException(PROVIDER_LOOKUP_UNAVAILABLE);
@@ -129,6 +144,15 @@ public final class VersionedStorageExecutionBridge {
 
     private static VersionedTableMetadata requireMetadata(VersionedTableMetadata metadata) {
         return Objects.requireNonNull(metadata, "metadata");
+    }
+
+    private static VersionedIndexMetadata requireIndexMetadata(VersionedIndexMetadata metadata) {
+        return Objects.requireNonNull(metadata, "metadata");
+    }
+
+    private static <V> VersionedIndexKeyExtractor<V> requireIndexKeyExtractor(
+            VersionedIndexKeyExtractor<V> extractor) {
+        return Objects.requireNonNull(extractor, "extractor");
     }
 
     private static <K, V> VersionedTable<K, V> requireTable(VersionedTable<K, V> table) {

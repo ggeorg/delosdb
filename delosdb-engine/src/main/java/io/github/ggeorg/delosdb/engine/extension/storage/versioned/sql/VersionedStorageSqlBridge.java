@@ -1494,7 +1494,8 @@ public final class VersionedStorageSqlBridge {
                 throw sqlException("X0MV2", "delos_mvcc Phase 8 supports one provider-owned index per column: "
                         + columns.get(columnIndex).name());
             }
-            VersionedIndex<Long, List<Object>> index = table.createIndex(
+            VersionedIndex<Long, List<Object>> index = PLANNED_TABLE_OPERATION_BRIDGE.createIndex(
+                    table,
                     metadata,
                     row -> row.get(columnIndex),
                     buildContext.currentView());

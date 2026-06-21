@@ -1,0 +1,300 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C17 CREATE INDEX delegation proof.
+//
+// C17 keeps VersionedStorageSqlBridge as the temporary SQL router, but closes
+// the provider index-creation leak by delegating CREATE INDEX through
+// VersionedStorageExecutionBridge. Regex routing remains temporary and unchanged.
+
+ext.delosdbStoragePhaseC17ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC17ReportFile =
+        ext.delosdbStoragePhaseC17ReportDir.map { it.file('storage-phase-c17-index-delegation.txt') }
+ext.delosdbStoragePhaseC17SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c17-index-delegation-smoke')
+
+ext.delosdbStoragePhaseC17RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC17RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC17RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC17JavaFiles = { String projectPath ->
+    def sourceRoot = file("${projectPath}/src/main/java")
+    if (!sourceRoot.exists()) {
+        return [] as Set<File>
+    }
+    fileTree(sourceRoot).matching { include '**/*.java' }.files as Set<File>
+}
+
+ext.delosdbStoragePhaseC17ModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseC17RuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseC17Classpath = {
+    files(
+            delosdbStoragePhaseC17SmokeClassesDir,
+            delosdbStoragePhaseC17ModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseC17ModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseC17ModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseC17RuntimeJars())
+}
+
+ext.delosdbStoragePhaseC17Proof = {
+    def errors = []
+    def lines = []
+
+    def smokeSource = file('dev/storage-phase-c17-index-delegation-smoke/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/StoragePhaseC17IndexDelegationSmoke.java')
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def executionBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/execution/VersionedStorageExecutionBridge.java')
+    def heapProvider = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/LegacyDerbyHeapStorageProvider.java')
+    def mvccProvider = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java')
+    def storelessRoot = file('delosdb-storeless/src/main/java')
+
+    delosdbStoragePhaseC17RequireTokens(errors, smokeSource, [
+            'StoragePhaseC17IndexDelegationSmoke',
+            'VersionedStorageSqlBridge.executePlannedRouteForTesting(',
+            '"CREATE_TABLE"',
+            '"CREATE_INDEX"',
+            '"INSERT_VALUES"',
+            '"SELECT_ALL"',
+            'VersionedStorageSqlBridge.lastAccessPath()',
+            'VersionedStorageAccessPath.INDEX_SCAN',
+            'requireIndexAccessPath'
+    ], 'Phase C17 index delegation smoke')
+
+    if (smokeSource.exists()) {
+        def smokeText = smokeSource.text
+        [
+                'tryExecute(',
+                'Pattern.compile(',
+                '.matcher(',
+                'CREATE TABLE ',
+                'CREATE INDEX ',
+                'INSERT INTO ',
+                'SELECT ',
+                'UPDATE ',
+                'DELETE FROM '
+        ].each { token ->
+            if (smokeText.contains(token)) {
+                errors << "Phase C17 smoke must bypass SQL text/regex routing and not contain token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC17RequireTokens(errors, executionBridge, [
+            'import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;',
+            'import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;',
+            'import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;',
+            'public <K, V> VersionedIndex<K, V> createIndex(',
+            'VersionedTable<K, V> table,',
+            'VersionedIndexMetadata metadata,',
+            'VersionedIndexKeyExtractor<V> extractor,',
+            'TxView buildView)',
+            'return requireTable(table).createIndex(',
+            'requireIndexMetadata(metadata)',
+            'requireIndexKeyExtractor(extractor)',
+            'requireView(buildView)'
+    ], 'VersionedStorageExecutionBridge provider-owned index creation surface')
+
+    delosdbStoragePhaseC17RequireTokens(errors, sqlBridge, [
+            'private static VersionedStorageSqlResult createIndex(',
+            'VersionedIndexMetadata indexMetadata = new VersionedIndexMetadata(',
+            'table.createIndex(indexMetadata, columnIndex, statementTx.context());',
+            'VersionedIndex<Long, List<Object>> index = PLANNED_TABLE_OPERATION_BRIDGE.createIndex(',
+            'row -> row.get(columnIndex)',
+            'buildContext.currentView()',
+            'static VersionedStorageSqlResult executePlannedRouteForTesting(',
+            'return executeRoutedStatement(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.createTable(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.stats(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.delete(',
+            'PLANNED_TABLE_OPERATION_BRIDGE.update('
+    ], 'VersionedStorageSqlBridge CREATE INDEX delegation boundary')
+
+    if (sqlBridge.exists()) {
+        def bridgeText = sqlBridge.text
+        [
+                'VersionedIndex<Long, List<Object>> index = table.createIndex(',
+                'table.table().insert(',
+                'table.table().update(',
+                'table.table().delete(',
+                'table.table().openScan(',
+                'table.table().stats(',
+                'provider.createTable(metadata)',
+                'cachedProvider.createTable('
+        ].each { token ->
+            if (bridgeText.contains(token)) {
+                errors << "VersionedStorageSqlBridge must not call ${token} directly after C17"
+            }
+        }
+        def routeStart = bridgeText.indexOf('private static RoutedStatement routeStatement(String normalizedSql)')
+        def executeStart = bridgeText.indexOf('private static VersionedStorageSqlResult executeRoutedStatement(')
+        if (routeStart < 0 || executeStart < 0 || executeStart < routeStart) {
+            errors << 'C17 must preserve the C14/C15 routeStatement -> executeRoutedStatement boundary'
+        }
+        if (!bridgeText.contains('Pattern.compile(')) {
+            errors << 'C17 must not pretend regex routing is retired; routing replacement is a later slice'
+        }
+    }
+
+    delosdbStoragePhaseC17RequireTokens(errors, heapProvider, [
+            'implements StorageProvider',
+            'StorageCapabilities'
+    ], 'Derby heap provider remains metadata path')
+
+    delosdbStoragePhaseC17RequireTokens(errors, mvccProvider, [
+            'implements VersionedStorageProvider',
+            'VersionedTable<K, V> createTable(',
+            'VersionedTable<K, V> openTable('
+    ], 'MVCC provider remains VersionedStorageProvider path')
+
+    if (storelessRoot.exists()) {
+        def storelessHits = fileTree(storelessRoot).matching { include '**/*.java' }.files.findAll { sourceFile ->
+            def text = sourceFile.text
+            text.contains('implements StorageProvider') || text.contains('implements VersionedStorageProvider')
+        }.collect { delosdbStoragePhaseC17RelPath(it) }.sort()
+        if (!storelessHits.isEmpty()) {
+            errors << 'Storeless must remain a no-store constraint, not a storage provider: ' + storelessHits
+        }
+    }
+
+    def engineStoreSourceRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+    if (engineStoreSourceRoot.exists()) {
+        errors << 'Phase C17 must not add engine-side org/apache/derby/impl/store sources: '
+                + delosdbStoragePhaseC17RelPath(engineStoreSourceRoot)
+    }
+
+    def thirdIslandNames = [
+            'DelosStorageEngine.java',
+            'DelosTableAccess.java',
+            'DelosScan.java',
+            'DelosMutationAccess.java',
+            'TableAccessProfile.java',
+            'StorageExecutionProfile.java',
+            'StorelessStorageProvider.java',
+            'StorelessVersionedStorageProvider.java'
+    ] as Set
+    def thirdIslandFiles = fileTree(rootProject.projectDir).matching {
+        include '**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+        exclude '**/.idea/**'
+        exclude '**/__MACOSX/**'
+    }.files.findAll { thirdIslandNames.contains(it.name) }
+            .collect { delosdbStoragePhaseC17RelPath(it) }.sort()
+    if (!thirdIslandFiles.isEmpty()) {
+        errors << 'Phase C17 must not introduce a third SPI/profile island while delegating CREATE INDEX: '
+                + thirdIslandFiles
+    }
+
+    def allEngineVersionedFiles = delosdbStoragePhaseC17JavaFiles('delosdb-engine').findAll { sourceFile ->
+        delosdbStoragePhaseC17RelPath(sourceFile).contains('/versioned/')
+    }
+    def sqlRegexOwners = allEngineVersionedFiles.findAll { sourceFile ->
+        sourceFile.name != 'VersionedStorageSqlBridge.java' && sourceFile.text.contains('Pattern.compile(')
+    }.collect { delosdbStoragePhaseC17RelPath(it) }.sort()
+    if (!sqlRegexOwners.isEmpty()) {
+        errors << 'C17 must not add SQL regex owners outside VersionedStorageSqlBridge: '
+                + sqlRegexOwners
+    }
+
+    lines << 'DelosDB Storage Phase C17 Index Delegation Proof'
+    lines << '==============================================='
+    lines << ''
+    lines << 'C17 mechanic:'
+    lines << '  delegate provider-owned CREATE INDEX through VersionedStorageExecutionBridge.'
+    lines << ''
+    lines << 'Still temporary:'
+    lines << '  VersionedStorageSqlBridge remains the SQL regex router for normal JDBC traffic.'
+    lines << ''
+    lines << 'Expected boundary:'
+    lines << '  CREATE INDEX route -> executeRoutedStatement -> TableDefinition.createIndex -> VersionedStorageExecutionBridge.createIndex(table, metadata, extractor, view).'
+    lines << ''
+    lines << 'Not done in C17:'
+    lines << '  no regex routing is removed.'
+    lines << '  no parser/compiler route is introduced.'
+    lines << '  no new storage SPI/profile family is introduced.'
+    lines << ''
+    lines << 'Next legal move:'
+    lines << '  decide the first real route migration or close another tiny bridge-owned operation leak.'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC17IndexDelegationReport') {
+    group = 'verification'
+    description = 'Writes the Phase C17 CREATE INDEX delegation report.'
+    dependsOn 'verifyStoragePhaseC16CreateDelegation'
+    outputs.file(delosdbStoragePhaseC17ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC17Proof()
+        def outputFile = delosdbStoragePhaseC17ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C17 index delegation failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC17IndexDelegationSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C17 CREATE INDEX delegation smoke test.'
+    source = files('dev/storage-phase-c17-index-delegation-smoke/src/main/java')
+    destinationDirectory = delosdbStoragePhaseC17SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC17Classpath()
+}
+
+tasks.register('storagePhaseC17IndexDelegationSmoke', JavaExec) {
+    dependsOn 'compileStoragePhaseC17IndexDelegationSmoke'
+    group = 'verification'
+    description = 'Runs the Phase C17 CREATE INDEX delegation smoke test.'
+    classpath = delosdbStoragePhaseC17Classpath()
+    mainClass = 'io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.StoragePhaseC17IndexDelegationSmoke'
+}
+
+tasks.register('verifyStoragePhaseC17IndexDelegation') {
+    group = 'verification'
+    description = 'Verifies the Phase C17 CREATE INDEX delegation proof.'
+    dependsOn 'storagePhaseC17IndexDelegationReport', 'storagePhaseC17IndexDelegationSmoke'
+    doLast {
+        println 'Verified Phase C17 CREATE INDEX delegation; next step must stay one routed operation at a time'
+    }
+}
