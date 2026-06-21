@@ -2666,3 +2666,4 @@ tasks.register('mvccSqlBridgeHistoryPrunedProof') {
 // Compact permanent storage-Derby Phase-B boundary gates.
 apply from: file('gradle/storage-derby-boundary-guards.gradle')
 apply from: file('gradle/storage-spi-truth-map.gradle')
+apply from: file('gradle/storage-phase-c1-contract-shape.gradle')
