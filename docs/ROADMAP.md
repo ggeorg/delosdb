@@ -173,6 +173,46 @@ The detailed mission and four-engine comparison live in:
 docs/MVCC-MISSION.md
 ```
 
+
+## Closed lane: storage Phase C table-access/routing slice
+
+The C19--C25 storage slice is closed by `verifyStoragePhaseC26Consolidation`.
+
+Result:
+
+```text
+C19 — review gaps closed
+C20 — real store-neutral table-access capability contracts
+C21 — MVCC equality SELECT through DelosFilterableTableAccess
+C22 — Derby heap compile-time honesty proof
+C23 — MVCC UPDATE/DELETE through scan-produced row identities
+C24 — Derby JavaCC / QueryTreeNode classifier proof
+C25 — first regex route deletion
+C26 — consolidation and cleanup boundary
+```
+
+The first regex route deleted is only:
+
+```text
+SELECT * FROM table WHERE column = literal
+```
+
+That route now goes through Derby JavaCC / QueryTreeNode classification and then
+through the table-access contract. Remaining regex routes are temporary fallbacks.
+Do not delete another regex route until an equivalent QueryTreeNode classifier is
+green for that exact statement type.
+
+Honest boundary: MVCC still enters through `EmbedStatement ->
+VersionedStorageSqlBridge.tryExecute(...)`. This work cleans routing and creates
+a real table-access execution boundary, but it does not yet move MVCC behind
+Derby's binder/compiler/executor metadata path.
+
+Detailed closeout notes live in:
+
+```text
+docs/storage-phase-c19-c25-closeout.md
+```
+
 ## Research-friendly constraint
 
 DelosDB should be friendly to database-systems research and university teaching,
