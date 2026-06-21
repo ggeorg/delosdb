@@ -2667,3 +2667,4 @@ tasks.register('mvccSqlBridgeHistoryPrunedProof') {
 apply from: file('gradle/storage-derby-boundary-guards.gradle')
 apply from: file('gradle/storage-spi-truth-map.gradle')
 apply from: file('gradle/storage-phase-c1-contract-shape.gradle')
+apply from: file('gradle/storage-phase-c2-heap-mapping.gradle')
