@@ -560,6 +560,12 @@ def extensionRuntimeJars = {
     runtimeJars()
 }
 
+// Export the runtime classpath helpers for extracted Gradle guard scripts.
+// Plain `runtimeJars()` calls inside task configuration closures may resolve
+// against the task object after extraction, so guards call these explicitly.
+ext.delosdbRuntimeJarNames = runtimeJarNames
+ext.delosdbRuntimeJars = runtimeJars
+
 def legalFileNames = ['LICENSE', 'NOTICE', 'NOTICE-FORK.md']
 def legalFiles = files(legalFileNames.collect { file(it) })
 

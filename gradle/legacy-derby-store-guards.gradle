@@ -1,6 +1,23 @@
 // Legacy Derby store guard tasks.
 // Extracted from the root build file after Phase B closeout to keep build.gradle readable.
 
+// Runtime classpath helpers exported by the root build file. Keep these
+// explicit because task configuration closures may resolve unqualified
+// method calls against the task object after this script is applied.
+def delosdbLegacyStoreRuntimeJarNames = { ->
+    if (!rootProject.ext.has('delosdbRuntimeJarNames')) {
+        throw new GradleException('Missing root ext.delosdbRuntimeJarNames; legacy Derby store guards must be applied after runtime jar helpers are defined')
+    }
+    rootProject.ext.delosdbRuntimeJarNames
+}
+
+def delosdbLegacyStoreRuntimeJars = { ->
+    if (!rootProject.ext.has('delosdbRuntimeJars')) {
+        throw new GradleException('Missing root ext.delosdbRuntimeJars; legacy Derby store guards must be applied after runtime jar helpers are defined')
+    }
+    rootProject.ext.delosdbRuntimeJars.call()
+}
+
 // DS1 — Legacy Derby store boundary proof
 // -----------------------------------------------------------------------------
 // These tasks are intentionally analysis-only. They do not move files and they do
@@ -349,14 +366,14 @@ tasks.register('compileLegacyDerbyStorePropertyConglomerateSmoke', JavaCompile) 
     targetCompatibility = javaRelease.toString()
     options.release = javaRelease
     options.encoding = 'UTF-8'
-    classpath = runtimeJars()
+    classpath = delosdbLegacyStoreRuntimeJars()
 }
 
 tasks.register('legacyDerbyStorePropertyConglomerateSmoke', JavaExec) {
     dependsOn 'compileLegacyDerbyStorePropertyConglomerateSmoke'
     group = 'verification'
     description = 'Verifies legacy Derby store property conglomerate/version behavior after DataDictionary decoupling.'
-    classpath = files(legacyDerbyStorePropertySmokeClassesDir, runtimeJars())
+    classpath = files(legacyDerbyStorePropertySmokeClassesDir, delosdbLegacyStoreRuntimeJars())
     mainClass = 'delosdb.smoke.LegacyDerbyStorePropertyConglomerateSmoke'
     args layout.buildDirectory.dir('legacy-derby-store-property-smoke/db').get().asFile.absolutePath
     workingDir = layout.buildDirectory.dir('legacy-derby-store-property-smoke').get().asFile
@@ -411,14 +428,14 @@ tasks.register('compileLegacyDerbyStoreSqlContextSmoke', JavaCompile) {
     targetCompatibility = javaRelease.toString()
     options.release = javaRelease
     options.encoding = 'UTF-8'
-    classpath = runtimeJars()
+    classpath = delosdbLegacyStoreRuntimeJars()
 }
 
 tasks.register('legacyDerbyStoreSqlContextSmoke', JavaExec) {
     dependsOn 'compileLegacyDerbyStoreSqlContextSmoke'
     group = 'verification'
     description = 'Verifies legacy Derby store session/statement behavior after SQL context decoupling.'
-    classpath = files(legacyDerbyStoreContextSmokeClassesDir, runtimeJars())
+    classpath = files(legacyDerbyStoreContextSmokeClassesDir, delosdbLegacyStoreRuntimeJars())
     mainClass = 'delosdb.smoke.LegacyDerbyStoreSqlContextSmoke'
     args layout.buildDirectory.dir('legacy-derby-store-context-smoke/db').get().asFile.absolutePath
     workingDir = layout.buildDirectory.dir('legacy-derby-store-context-smoke').get().asFile
@@ -469,14 +486,14 @@ tasks.register('compileLegacyDerbyStoreSqlExecutionSmoke', JavaCompile) {
     targetCompatibility = javaRelease.toString()
     options.release = javaRelease
     options.encoding = 'UTF-8'
-    classpath = runtimeJars()
+    classpath = delosdbLegacyStoreRuntimeJars()
 }
 
 tasks.register('legacyDerbyStoreSqlExecutionSmoke', JavaExec) {
     dependsOn 'compileLegacyDerbyStoreSqlExecutionSmoke'
     group = 'verification'
     description = 'Verifies deferred-constraint and sort behavior after removing SQL execution imports from the legacy store.'
-    classpath = files(legacyDerbyStoreExecutionSmokeClassesDir, runtimeJars())
+    classpath = files(legacyDerbyStoreExecutionSmokeClassesDir, delosdbLegacyStoreRuntimeJars())
     mainClass = 'delosdb.smoke.LegacyDerbyStoreSqlExecutionSmoke'
     args layout.buildDirectory.dir('legacy-derby-store-execution-smoke/db').get().asFile.absolutePath
     workingDir = layout.buildDirectory.dir('legacy-derby-store-execution-smoke').get().asFile
@@ -676,7 +693,7 @@ tasks.register('verifyLegacyDerbyStoreRuntimePackaging') {
             throw new GradleException("derby.jar is missing legacy Derby store runtime entries after B6n:\n" + missing.join('\n'))
         }
 
-        if (runtimeJarNames.contains('delosdb-storage-derby.jar')) {
+        if (delosdbLegacyStoreRuntimeJarNames().contains('delosdb-storage-derby.jar')) {
             throw new GradleException('B7 compatibility runtime must not require delosdb-storage-derby.jar in runtimeJarNames')
         }
 
@@ -700,14 +717,14 @@ tasks.register('compileLegacyDerbyStoreRuntimePackagingSmoke', JavaCompile) {
     targetCompatibility = javaRelease.toString()
     options.release = javaRelease
     options.encoding = 'UTF-8'
-    classpath = runtimeJars()
+    classpath = delosdbLegacyStoreRuntimeJars()
 }
 
 tasks.register('legacyDerbyStoreRuntimePackagingSmoke', JavaExec) {
     dependsOn 'compileLegacyDerbyStoreRuntimePackagingSmoke', 'verifyLegacyDerbyStoreRuntimePackaging'
     group = 'verification'
     description = 'Boots the heap provider from the assembled compatibility jars without delosdb-storage-derby.jar on the classpath.'
-    classpath = files(legacyDerbyStoreRuntimePackagingSmokeClassesDir, runtimeJars())
+    classpath = files(legacyDerbyStoreRuntimePackagingSmokeClassesDir, delosdbLegacyStoreRuntimeJars())
     mainClass = 'delosdb.smoke.LegacyDerbyStoreRuntimePackagingSmoke'
     args layout.buildDirectory.dir('legacy-derby-store-runtime-packaging-smoke/db').get().asFile.absolutePath
     workingDir = layout.buildDirectory.dir('legacy-derby-store-runtime-packaging-smoke').get().asFile
@@ -9603,7 +9620,7 @@ derby.jar contains required store runtime entries: ${missing.isEmpty() ? 'YES' :
 missing required entries: ${missing.isEmpty() ? 'none' : missing.join(', ')}
 delosdb-storage-derby.jar exists: ${storageJar.isFile() ? 'YES' : 'NO'}
 delosdb-storage-derby.jar store entries observed: ${storageStoreEntries.size()}
-runtimeJars() includes delosdb-storage-derby.jar: ${runtimeJarNames.contains('delosdb-storage-derby.jar') ? 'YES' : 'NO'}
+runtimeJars() includes delosdb-storage-derby.jar: ${delosdbLegacyStoreRuntimeJarNames().contains('delosdb-storage-derby.jar') ? 'YES' : 'NO'}
 
 Required derby.jar entries checked
 ----------------------------------
@@ -9638,7 +9655,7 @@ tasks.register('verifyLegacyDerbyStoreB7RuntimePackaging') {
         if (!missing.isEmpty()) {
             throw new GradleException('B7 expected derby.jar to contain inherited Derby store runtime entries; missing:\n' + missing.join('\n'))
         }
-        if (runtimeJarNames.contains('delosdb-storage-derby.jar')) {
+        if (delosdbLegacyStoreRuntimeJarNames().contains('delosdb-storage-derby.jar')) {
             throw new GradleException('B7 expected runtimeJars() compatibility path not to require delosdb-storage-derby.jar')
         }
         if (!delosdbB6nDerbyJarPackagesCompiledStorageOutput()) {
