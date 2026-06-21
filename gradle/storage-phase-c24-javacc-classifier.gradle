@@ -82,7 +82,6 @@ ext.delosdbStoragePhaseC24Proof = {
     }
 
     delosdbStoragePhaseC24RequireTokens(errors, bridge, [
-            'private static final Pattern SELECT_WHERE_EQUALS',
             'private static final String ROUTE_CLASSIFIER_REGEX = "regex"',
             'private static final String ROUTE_CLASSIFIER_JAVACC_QUERY_TREE = "javacc-query-tree"',
             'lastRouteClassifierForTesting()',
@@ -92,8 +91,6 @@ ext.delosdbStoragePhaseC24Proof = {
             'Optional<PlannedRoute> javaCcRoute = routeStatementWithJavaCcQueryTree(normalizedSql)',
             'lastRouteClassifier = ROUTE_CLASSIFIER_JAVACC_QUERY_TREE',
             'lastRouteClassifier = ROUTE_CLASSIFIER_REGEX',
-            'Matcher selectWhere = SELECT_WHERE_EQUALS.matcher(normalizedSql)',
-            'return PlannedRoute.selectWhereEquals(selectWhere.group(1), selectWhere.group(2), selectWhere.group(3))',
             'tableAccess.scan('
     ], 'VersionedStorageSqlBridge C24 parser-first routing with regex fallback')
 
@@ -144,7 +141,7 @@ ext.delosdbStoragePhaseC24Proof = {
     lines << '  dev/storage-phase-c24-javacc-classifier-smoke/src/main/java/delosdb/smoke/StoragePhaseC24JavaCcClassifierSmoke.java'
     lines << ''
     lines << 'Next step:'
-    lines << '  C25 may delete one regex route only after this QueryTreeNode replacement route is green.'
+    lines << '  C25 may delete the exact SELECT equality regex route because this QueryTreeNode replacement route is green.'
     lines << ''
     if (errors.isEmpty()) {
         lines << 'Result: PASS'

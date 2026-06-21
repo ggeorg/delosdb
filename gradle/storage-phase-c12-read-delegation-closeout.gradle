@@ -97,7 +97,7 @@ ext.delosdbStoragePhaseC12Proof = {
     delosdbStoragePhaseC12RequireTokens(errors, sqlBridge, [
             'private static final Pattern SELECT_ALL',
             'private static final Pattern SELECT_COUNT',
-            'private static final Pattern SELECT_WHERE_EQUALS',
+            'case SELECT_WHERE_EQUALS:',
             'private static final Pattern SELECT_WHERE_RANGE',
             'PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
             'PLANNED_TABLE_OPERATION_BRIDGE.stats(',

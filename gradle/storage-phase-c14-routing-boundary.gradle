@@ -133,12 +133,12 @@ ext.delosdbStoragePhaseC14Proof = {
                     'DELETE_WHERE_EQUALS.matcher(normalizedSql)',
                     'SELECT_WHERE_BETWEEN.matcher(normalizedSql)',
                     'SELECT_WHERE_RANGE.matcher(normalizedSql)',
-                    'SELECT_WHERE_EQUALS.matcher(normalizedSql)',
+                    'DelosVersionedStorageQueryTreeClassifier.selectWhereEquals(normalizedSql)',
                     'SELECT_ALL.matcher(normalizedSql)',
                     'SELECT_COUNT.matcher(normalizedSql)'
             ].each { token ->
                 if (!routeBody.contains(token)) {
-                    errors << "routeStatement must own SQL pattern dispatch token: ${token}"
+                    errors << "routeStatement must own SQL dispatch token: ${token}"
                 }
             }
             [

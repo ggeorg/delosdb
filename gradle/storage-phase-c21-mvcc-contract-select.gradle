@@ -83,7 +83,7 @@ ext.delosdbStoragePhaseC21Proof = {
     ], 'C21 MVCC table-access adapter')
 
     delosdbStoragePhaseC21RequireTokens(errors, sqlBridge, [
-            'private static final Pattern SELECT_WHERE_EQUALS',
+            'DelosVersionedStorageQueryTreeClassifier.selectWhereEquals(normalizedSql)',
             'private static PlannedRoute routeStatement(String normalizedSql)',
             'EngineMvccTableAccess tableAccess = table.tableAccess()',
             'DelosPredicate.equalsTo(',
@@ -118,8 +118,8 @@ ext.delosdbStoragePhaseC21Proof = {
 
     delosdbStoragePhaseC21RequireTokens(errors, smokeSource, [
             'verifyAdapterFilterPushdownDirectly',
-            'verifySqlSelectWhereEqualsUsesContractAdapter',
-            'VersionedStorageSqlBridge.tryExecute(sql, this, true, Connection.TRANSACTION_READ_COMMITTED)',
+            'verifyJdbcSelectWhereEqualsUsesContractAdapter',
+            'SmokeUtils.loadEmbeddedDriver()',
             'SELECT * FROM ',
             'WHERE id = 2',
             'EngineMvccTableAccess',
@@ -239,7 +239,7 @@ tasks.register('compileStoragePhaseC21MvccContractSelectSmoke', JavaCompile) {
     dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
     group = 'verification'
     description = 'Compiles the Phase C21 MVCC contract SELECT smoke test.'
-    source = files('dev/storage-phase-c21-mvcc-contract-select-smoke/src/main/java')
+    source = files('dev/storage-phase-c21-mvcc-contract-select-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
     destinationDirectory = delosdbStoragePhaseC21SmokeClassesDir
     sourceCompatibility = javaRelease.toString()
     targetCompatibility = javaRelease.toString()

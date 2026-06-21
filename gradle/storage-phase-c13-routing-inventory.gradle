@@ -50,7 +50,7 @@ ext.delosdbStoragePhaseC13Proof = {
             'private static final Pattern CREATE_INDEX',
             'private static final Pattern SELECT_ALL',
             'private static final Pattern SELECT_COUNT',
-            'private static final Pattern SELECT_WHERE_EQUALS',
+            'case SELECT_WHERE_EQUALS:',
             'private static final Pattern SELECT_WHERE_RANGE',
             'private static final Pattern SELECT_WHERE_BETWEEN',
             'private static final Pattern UPDATE_WHERE_EQUALS',

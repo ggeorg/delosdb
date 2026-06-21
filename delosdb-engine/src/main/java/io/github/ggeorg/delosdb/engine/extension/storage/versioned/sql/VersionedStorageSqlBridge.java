@@ -65,7 +65,7 @@ import java.util.regex.Pattern;
  * SELECT * FROM name ORDER BY indexed_column [ASC|DESC]
  * SELECT COUNT(*) FROM name
  * CREATE INDEX idx_name ON name(column_name)
- * SELECT * FROM name WHERE column_name = 'literal'
+ * SELECT * FROM name WHERE column_name = 'literal' (classified by Derby JavaCC / QueryTreeNode)
  * SELECT * FROM name WHERE column_name >= 'literal'
  * SELECT * FROM name WHERE column_name BETWEEN 'a' AND 'z'
  * UPDATE name SET column_name = 'new' WHERE indexed_column = 'old'
@@ -96,8 +96,6 @@ public final class VersionedStorageSqlBridge {
             "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)(?:\\s+order\\s+by\\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s+(asc|desc))?)?$");
     private static final Pattern SELECT_COUNT = Pattern.compile(
             "(?is)^select\\s+count\\s*\\(\\s*\\*\\s*\\)\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)$");
-    private static final Pattern SELECT_WHERE_EQUALS = Pattern.compile(
-            "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)$");
     private static final Pattern SELECT_WHERE_RANGE = Pattern.compile(
             "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(>=|<=|>|<)\\s*(.+?)$");
     private static final Pattern SELECT_WHERE_BETWEEN = Pattern.compile(
@@ -583,12 +581,6 @@ public final class VersionedStorageSqlBridge {
                     selectRange.group(2),
                     selectRange.group(3),
                     selectRange.group(4));
-        }
-
-        Matcher selectWhere = SELECT_WHERE_EQUALS.matcher(normalizedSql);
-        if (selectWhere.matches()) {
-            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
-            return PlannedRoute.selectWhereEquals(selectWhere.group(1), selectWhere.group(2), selectWhere.group(3));
         }
 
         Matcher selectAll = SELECT_ALL.matcher(normalizedSql);

@@ -16,6 +16,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.DelosMvccStorageProvider;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -39,7 +40,7 @@ public final class StoragePhaseC21MvccContractSelectSmoke {
 
     public static void main(String[] args) throws Exception {
         verifyAdapterFilterPushdownDirectly();
-        verifySqlSelectWhereEqualsUsesContractAdapter();
+        verifyJdbcSelectWhereEqualsUsesContractAdapter();
         System.out.println("storage_phase_c21_mvcc_contract_select: PASS");
     }
 
@@ -104,27 +105,33 @@ public final class StoragePhaseC21MvccContractSelectSmoke {
                 "adapter equality scan should use provider-owned index when available");
     }
 
-    private static void verifySqlSelectWhereEqualsUsesContractAdapter() throws SQLException {
-        SqlBridgePlan plan = new SqlBridgePlan("C21_CONTRACT_SELECT");
-        requireUpdateCount(plan.execute("CREATE TABLE " + plan.tableName()
-                + " (id INT, value VARCHAR(40)) USING delos_mvcc"), 0L, "create table");
-        requireUpdateCount(plan.execute("CREATE INDEX C21_CONTRACT_SELECT_ID_IDX ON "
-                + plan.tableName() + "(id)"), 0L, "create index");
-        requireUpdateCount(plan.execute("INSERT INTO " + plan.tableName()
-                + " VALUES (1, 'alpha')"), 1L, "insert alpha");
-        requireUpdateCount(plan.execute("INSERT INTO " + plan.tableName()
-                + " VALUES (2, 'bravo')"), 1L, "insert bravo");
+    private static void verifyJdbcSelectWhereEqualsUsesContractAdapter() throws Exception {
+        SmokeUtils.loadEmbeddedDriver();
+        try (Connection connection = SmokeUtils.connect("storage-phase-c21-mvcc-contract-select-db", true);
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("CREATE TABLE C21_CONTRACT_SELECT (id INT, value VARCHAR(40)) USING delos_mvcc");
+            statement.executeUpdate("CREATE INDEX C21_CONTRACT_SELECT_ID_IDX ON C21_CONTRACT_SELECT(id)");
+            statement.executeUpdate("INSERT INTO C21_CONTRACT_SELECT VALUES (1, 'alpha')");
+            statement.executeUpdate("INSERT INTO C21_CONTRACT_SELECT VALUES (2, 'bravo')");
 
-        VersionedStorageSqlResult result = plan.execute("SELECT * FROM " + plan.tableName() + " WHERE id = 2");
-        requireSingleRow(result, 2, "bravo");
-        VersionedStorageAccessPath accessPath = VersionedStorageSqlBridge.lastAccessPath()
-                .orElseThrow(() -> new IllegalStateException("SQL equality SELECT did not expose access path"));
-        require("select-where".equals(accessPath.operation()),
-                "SQL equality SELECT should still report select-where operation");
-        require(VersionedStorageAccessPath.INDEX_SCAN.equals(accessPath.selectedAccessMethod()),
-                "SQL equality SELECT should use the MVCC contract adapter and provider-owned index");
-        require("C21_CONTRACT_SELECT_ID_IDX".equalsIgnoreCase(accessPath.selectedIndex()),
-                "SQL equality SELECT should report the provider-owned index selected by the adapter");
+            try (ResultSet rows = statement.executeQuery("SELECT * FROM C21_CONTRACT_SELECT WHERE id = 2")) {
+                require(rows.next(), "SQL equality SELECT should return one row");
+                require(rows.getInt(1) == 2, "SQL equality SELECT should return id=2");
+                require("bravo".equals(rows.getString(2)), "SQL equality SELECT should return bravo");
+                require(!rows.next(), "SQL equality SELECT should return exactly one row");
+            }
+
+            VersionedStorageAccessPath accessPath = VersionedStorageSqlBridge.lastAccessPath()
+                    .orElseThrow(() -> new IllegalStateException("SQL equality SELECT did not expose access path"));
+            require("select-where".equals(accessPath.operation()),
+                    "SQL equality SELECT should still report select-where operation");
+            require(VersionedStorageAccessPath.INDEX_SCAN.equals(accessPath.selectedAccessMethod()),
+                    "SQL equality SELECT should use the MVCC contract adapter and provider-owned index");
+            require("C21_CONTRACT_SELECT_ID_IDX".equalsIgnoreCase(accessPath.selectedIndex()),
+                    "SQL equality SELECT should report the provider-owned index selected by the adapter");
+        } finally {
+            SmokeUtils.shutdown("storage-phase-c21-mvcc-contract-select-db");
+        }
     }
 
     private static void requireUpdateCount(
@@ -169,9 +176,4 @@ public final class StoragePhaseC21MvccContractSelectSmoke {
         }
     }
 
-    private record SqlBridgePlan(String tableName) {
-        private VersionedStorageSqlResult execute(String sql) throws SQLException {
-            return VersionedStorageSqlBridge.tryExecute(sql, this, true, Connection.TRANSACTION_READ_COMMITTED);
-        }
-    }
 }
