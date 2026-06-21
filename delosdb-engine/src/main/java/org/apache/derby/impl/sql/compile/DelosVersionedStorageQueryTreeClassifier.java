@@ -42,7 +42,7 @@ public final class DelosVersionedStorageQueryTreeClassifier {
     }
 
     public static Optional<SelectWhereEqualsRoute> selectWhereEquals(String sql) {
-        LanguageConnectionContext lcc = (LanguageConnectionContext) ContextService.getContext(
+        LanguageConnectionContext lcc = (LanguageConnectionContext) ContextService.getContextOrNull(
                 LanguageConnectionContext.CONTEXT_ID);
         if (lcc == null) {
             return Optional.empty();
