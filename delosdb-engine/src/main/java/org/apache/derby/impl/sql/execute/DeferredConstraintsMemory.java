@@ -46,6 +46,7 @@ import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.types.SQLRef;
@@ -308,6 +309,16 @@ final public class DeferredConstraintsMemory
         }
     }
 
+
+    private static DataValueDescriptor[] dataValueArray(Object value)
+    {
+        if (value instanceof DataValueDescriptor[] dataValues)
+        {
+            return dataValues;
+        }
+        return NoPutResultSetImpl.toDataValueArray((StoreDataValue[]) value);
+    }
+
     /**
      * Class hierarchy carrying the information we need to validate
      * some deferred constraint. For unique and primary key constraints, we
@@ -398,7 +409,7 @@ final public class DeferredConstraintsMemory
 
             while (e.hasMoreElements()) {
                 final DataValueDescriptor[] key =
-                        (DataValueDescriptor[])e.nextElement();
+                        dataValueArray(e.nextElement());
 
                 // FIXME: This is not very efficient: we could sort the rows in
                 // the hash table, and then check all rows using a single scan.
@@ -759,7 +770,7 @@ final public class DeferredConstraintsMemory
 
             while (e.hasMoreElements()) {
                 final DataValueDescriptor[] key =
-                        (DataValueDescriptor[])e.nextElement();
+                        dataValueArray(e.nextElement());
 
                 // FIXME: This is not very efficient: we could sort the rows in
                 // the hash table, and then check all rows using a single scan.

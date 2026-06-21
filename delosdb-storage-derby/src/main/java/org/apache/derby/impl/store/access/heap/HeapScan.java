@@ -35,6 +35,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
@@ -114,7 +115,8 @@ class HeapScan
     {
         if (rowloc_array[index] == null)
         {
-            rowloc_array[index] = new HeapRowLocation(pos.current_rh);
+            rowloc_array[index] = rowLocationForArray(
+                rowloc_array, new HeapRowLocation(pos.current_rh));
         }
         else
         {
@@ -134,6 +136,19 @@ class HeapScan
         return new HeapRowLocation( pos.current_rh );
     }
 
+    private static StoreRowLocation rowLocationForArray(
+    StoreRowLocation[]      rowloc_array,
+    StoreRowLocation        rowLocation)
+    {
+        Class<?> componentType = rowloc_array.getClass().getComponentType();
+        if (componentType == null || componentType.isInstance(rowLocation))
+        {
+            return rowLocation;
+        }
+
+        return StoreTypeUtil.newRowLocation(rowLocation);
+    }
+
     protected void setRowLocationArray(
     StoreRowLocation[]      rowloc_array,
     int             index,
@@ -142,7 +157,8 @@ class HeapScan
     {
         if (rowloc_array[index] == null)
         {
-            rowloc_array[index] = new HeapRowLocation(rh);
+            rowloc_array[index] = rowLocationForArray(
+                rowloc_array, new HeapRowLocation(rh));
         }
         else
         {

@@ -73,6 +73,12 @@ public final class EngineStoreTypeSupport implements StoreTypeSupport
     }
 
     @Override
+    public StoreRowLocation newRowLocation(Object storeRowLocation)
+    {
+        return EngineStoreRowLocationBridge.requireEngineRowLocation(storeRowLocation);
+    }
+
+    @Override
     public StoreDataValue cloneHolder(Object value)
     {
         return dataValue(value).cloneHolder();

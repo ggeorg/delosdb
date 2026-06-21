@@ -61,6 +61,11 @@ public final class StoreTypeUtil
         return StoreTypeSupportRegistry.support().newUserType(value);
     }
 
+    public static StoreRowLocation newRowLocation(Object storeRowLocation)
+    {
+        return StoreTypeSupportRegistry.support().newRowLocation(storeRowLocation);
+    }
+
     public static StoreDataValue cloneHolder(Object value)
     {
         if (value instanceof StoreValueOperations operations)

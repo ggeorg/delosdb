@@ -48,6 +48,8 @@ public interface StoreTypeSupport
 
     StoreDataValue newUserType(Object value);
 
+    StoreRowLocation newRowLocation(Object storeRowLocation);
+
     StoreDataValue cloneHolder(Object value);
 
     StoreDataValue cloneValue(Object value, boolean forceMaterialization)
