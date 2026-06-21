@@ -77,11 +77,13 @@ ext.delosdbStoragePhaseC13Proof = {
             }
         }
         [
-                'PLANNED_TABLE_OPERATION_BRIDGE.createTable(',
-                'PLANNED_TABLE_OPERATION_BRIDGE.openTable('
+                'provider.createTable(metadata)',
+                'provider.openTable(metadata)',
+                'cachedProvider.createTable(',
+                'cachedProvider.openTable('
         ].each { token ->
             if (bridgeText.contains(token)) {
-                errors << "VersionedStorageSqlBridge must not call ${token}; the SQL bridge currently uses resolved-table operations only"
+                errors << "VersionedStorageSqlBridge must not call ${token} directly after C13; later delegation must go through VersionedStorageExecutionBridge"
             }
         }
     }
@@ -177,8 +179,8 @@ ext.delosdbStoragePhaseC13Proof = {
     lines << '  CREATE TABLE, INSERT VALUES, CREATE INDEX, SELECT *, SELECT COUNT, SELECT WHERE, SELECT RANGE, SELECT BETWEEN, UPDATE WHERE, DELETE WHERE.'
     lines << ''
     lines << 'Allowed temporary direct work after C13:'
-    lines << '  provider-local table creation remains inside the SQL bridge because page-backed provider configuration is still bridge-owned.'
-    lines << '  index operations remain outside VersionedStorageExecutionBridge until their own proof exists.'
+    lines << '  resolved-table CREATE TABLE delegation may already be present in later slices, but direct provider.createTable/openTable calls are not allowed.'
+    lines << '  index operations may still be bridge-owned until their own proof exists.'
     lines << ''
     lines << 'Not done in C13:'
     lines << '  no regex routing is removed.'
