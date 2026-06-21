@@ -7,6 +7,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.TxView;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexStats;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
@@ -27,8 +28,8 @@ import java.util.Optional;
  * keep the upcoming SQL/JDBC bridge from calling provider implementations
  * directly. The first supported operation set now covers table create/open,
  * insert, read, update, delete, scan, stats, and the first provider-owned
- * index creation proof. WAL and broader optimizer costing remain outside this
- * bridge until their own proofs exist.</p>
+ * index creation plus index lookup/statistics proof. WAL and broader optimizer
+ * costing remain outside this bridge until their own proofs exist.</p>
  */
 @InternalApi
 public final class VersionedStorageExecutionBridge {
@@ -123,6 +124,74 @@ public final class VersionedStorageExecutionBridge {
                 requireView(buildView));
     }
 
+    public <K, V> VersionedIndexStats indexStats(VersionedIndex<K, V> index, Object indexKey, TxView view) {
+        return requireIndex(index).stats(indexKey, requireView(view));
+    }
+
+    public <K, V> List<VersionedRow<K, V>> lookup(VersionedIndex<K, V> index, Object indexKey, TxView view) {
+        return materialize(requireIndex(index).lookup(indexKey, requireView(view)));
+    }
+
+    public <K, V> VersionedIndexStats indexStatsRange(
+            VersionedIndex<K, V> index,
+            Object lowerBound,
+            boolean lowerInclusive,
+            Object upperBound,
+            boolean upperInclusive,
+            TxView view) {
+        return requireIndex(index).statsRange(
+                lowerBound,
+                lowerInclusive,
+                upperBound,
+                upperInclusive,
+                requireView(view));
+    }
+
+    public <K, V> List<VersionedRow<K, V>> lookupRange(
+            VersionedIndex<K, V> index,
+            Object lowerBound,
+            boolean lowerInclusive,
+            Object upperBound,
+            boolean upperInclusive,
+            TxView view) {
+        return materialize(requireIndex(index).lookupRange(
+                lowerBound,
+                lowerInclusive,
+                upperBound,
+                upperInclusive,
+                requireView(view)));
+    }
+
+    public <K, V> List<VersionedRow<K, V>> lookupRange(
+            VersionedIndex<K, V> index,
+            Object lowerBound,
+            boolean lowerInclusive,
+            Object upperBound,
+            boolean upperInclusive,
+            long maxRows,
+            TxView view) {
+        if (maxRows < 0) {
+            throw new IllegalArgumentException("maxRows must be non-negative");
+        }
+        return materialize(requireIndex(index).lookupRange(
+                lowerBound,
+                lowerInclusive,
+                upperBound,
+                upperInclusive,
+                maxRows,
+                requireView(view)));
+    }
+
+    private static <K, V> List<VersionedRow<K, V>> materialize(VersionedScan<K, V> scan) {
+        List<VersionedRow<K, V>> rows = new ArrayList<>();
+        try (VersionedScan<K, V> versionedScan = Objects.requireNonNull(scan, "scan")) {
+            while (versionedScan.next()) {
+                rows.add(versionedScan.row());
+            }
+        }
+        return List.copyOf(rows);
+    }
+
     private VersionedStorageProvider provider(String providerName) {
         if (resolver == null) {
             throw new IllegalStateException(PROVIDER_LOOKUP_UNAVAILABLE);
@@ -157,6 +226,10 @@ public final class VersionedStorageExecutionBridge {
 
     private static <K, V> VersionedTable<K, V> requireTable(VersionedTable<K, V> table) {
         return Objects.requireNonNull(table, "table");
+    }
+
+    private static <K, V> VersionedIndex<K, V> requireIndex(VersionedIndex<K, V> index) {
+        return Objects.requireNonNull(index, "index");
     }
 
     private static <K> K requireKey(K key) {

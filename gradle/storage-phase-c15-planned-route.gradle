@@ -72,11 +72,11 @@ ext.delosdbStoragePhaseC15Proof = {
 
     delosdbStoragePhaseC15RequireTokens(errors, smokeSource, [
             'StoragePhaseC15PlannedRouteSmoke',
-            'VersionedStorageSqlBridge.executePlannedRouteForTesting(',
-            '"CREATE_TABLE"',
-            '"INSERT_VALUES"',
-            '"SELECT_ALL"',
-            '"SELECT_COUNT"',
+            'VersionedStorageSqlBridge.executePlannedRoute(',
+            'PlannedRoute.createTable',
+            'PlannedRoute.insertValues',
+            'PlannedRoute.selectAll',
+            'PlannedRoute.selectCount',
             'requireRows',
             'requireCount'
     ], 'Phase C15 planned route smoke')
@@ -100,14 +100,14 @@ ext.delosdbStoragePhaseC15Proof = {
     }
 
     delosdbStoragePhaseC15RequireTokens(errors, sqlBridge, [
-            'private enum RoutedStatementType',
-            'private record RoutedStatement(',
-            'private static RoutedStatement routeStatement(String normalizedSql)',
-            'private static VersionedStorageSqlResult executeRoutedStatement(',
-            'static VersionedStorageSqlResult executePlannedRouteForTesting(',
-            'new RoutedStatement(RoutedStatementType.valueOf(routedStatementType), groups)',
-            'RoutedStatement routedStatement = routeStatement(normalizedSql);',
-            'return executeRoutedStatement(',
+            'enum RoutedStatementType',
+            'static record PlannedRoute(',
+            'private static PlannedRoute routeStatement(String normalizedSql)',
+            'private static VersionedStorageSqlResult executePlannedRouteInternal(',
+            'static VersionedStorageSqlResult executePlannedRoute(',
+            'Objects.requireNonNull(plannedRoute, "plannedRoute")',
+            'PlannedRoute plannedRoute = routeStatement(normalizedSql);',
+            'return executePlannedRouteInternal(',
             'VersionedStorageExecutionBridge.resolvedTableOperations()',
             'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
             'PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
@@ -118,9 +118,9 @@ ext.delosdbStoragePhaseC15Proof = {
 
     if (sqlBridge.exists()) {
         def bridgeText = sqlBridge.text
-        def plannedStart = bridgeText.indexOf('static VersionedStorageSqlResult executePlannedRouteForTesting(')
-        def routeStart = bridgeText.indexOf('private static RoutedStatement routeStatement(String normalizedSql)')
-        def executeStart = bridgeText.indexOf('private static VersionedStorageSqlResult executeRoutedStatement(')
+        def plannedStart = bridgeText.indexOf('static VersionedStorageSqlResult executePlannedRoute(')
+        def routeStart = bridgeText.indexOf('private static PlannedRoute routeStatement(String normalizedSql)')
+        def executeStart = bridgeText.indexOf('private static VersionedStorageSqlResult executePlannedRouteInternal(')
         if (plannedStart < 0) {
             errors << 'VersionedStorageSqlBridge must expose a package-private planned route entry for C15 smoke only'
         }
@@ -135,12 +135,12 @@ ext.delosdbStoragePhaseC15Proof = {
                     errors << "C15 planned route entry must not perform SQL regex routing token: ${token}"
                 }
             }
-            if (!plannedBody.contains('executeRoutedStatement(')) {
+            if (!plannedBody.contains('executePlannedRouteInternal(')) {
                 errors << 'C15 planned route entry must enter the routed-statement execution boundary directly'
             }
         }
         if (routeStart < 0 || executeStart < 0 || executeStart < routeStart) {
-            errors << 'C15 must preserve the C14 routeStatement -> executeRoutedStatement boundary'
+            errors << 'C15 must preserve the C14 routeStatement -> executePlannedRouteInternal boundary'
         }
         [
                 'table.table().insert(',
@@ -151,14 +151,6 @@ ext.delosdbStoragePhaseC15Proof = {
         ].each { token ->
             if (bridgeText.contains(token)) {
                 errors << "VersionedStorageSqlBridge must not call ${token} directly after C15"
-            }
-        }
-        [
-                'PLANNED_TABLE_OPERATION_BRIDGE.createTable(',
-                'PLANNED_TABLE_OPERATION_BRIDGE.openTable('
-        ].each { token ->
-            if (bridgeText.contains(token)) {
-                errors << "VersionedStorageSqlBridge must not call ${token}; the SQL bridge currently uses resolved-table operations only"
             }
         }
     }
@@ -245,8 +237,8 @@ ext.delosdbStoragePhaseC15Proof = {
     lines << '  VersionedStorageSqlBridge remains the SQL regex router for normal JDBC traffic.'
     lines << ''
     lines << 'Expected boundary:'
-    lines << '  SQL route:     tryExecute -> routeStatement -> executeRoutedStatement.'
-    lines << '  planned route: executePlannedRouteForTesting -> executeRoutedStatement.'
+    lines << '  SQL route:     tryExecute -> routeStatement -> executePlannedRouteInternal.'
+    lines << '  planned route: executePlannedRoute -> executePlannedRouteInternal.'
     lines << ''
     lines << 'Not done in C15:'
     lines << '  no regex routing is removed.'

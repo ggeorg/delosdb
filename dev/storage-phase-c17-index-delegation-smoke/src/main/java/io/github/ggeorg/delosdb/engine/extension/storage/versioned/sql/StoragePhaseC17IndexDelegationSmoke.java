@@ -19,19 +19,19 @@ public final class StoragePhaseC17IndexDelegationSmoke {
 
     public static void main(String[] args) throws Exception {
         RouteOwner owner = new RouteOwner();
-        requireUpdateCount(execute("CREATE_TABLE", groups(TABLE_NAME, "id INT, value VARCHAR(40)"), owner),
+        requireUpdateCount(execute(VersionedStorageSqlBridge.PlannedRoute.createTable(TABLE_NAME, "id INT, value VARCHAR(40)"), owner),
                 0L,
                 "planned create table");
-        requireUpdateCount(execute("CREATE_INDEX", groups(INDEX_NAME, TABLE_NAME, "value"), owner),
+        requireUpdateCount(execute(VersionedStorageSqlBridge.PlannedRoute.createIndex(INDEX_NAME, TABLE_NAME, "value"), owner),
                 0L,
                 "planned create index");
-        requireUpdateCount(execute("INSERT_VALUES", groups(TABLE_NAME, "1, 'bravo'"), owner),
+        requireUpdateCount(execute(VersionedStorageSqlBridge.PlannedRoute.insertValues(TABLE_NAME, "1, 'bravo'"), owner),
                 1L,
                 "planned insert bravo");
-        requireUpdateCount(execute("INSERT_VALUES", groups(TABLE_NAME, "2, 'alpha'"), owner),
+        requireUpdateCount(execute(VersionedStorageSqlBridge.PlannedRoute.insertValues(TABLE_NAME, "2, 'alpha'"), owner),
                 1L,
                 "planned insert alpha");
-        requireRows(execute("SELECT_ALL", groups(TABLE_NAME, "value", "ASC"), owner), List.of("alpha", "bravo"));
+        requireRows(execute(VersionedStorageSqlBridge.PlannedRoute.selectAll(TABLE_NAME, "value", "ASC"), owner), List.of("alpha", "bravo"));
         requireIndexAccessPath(INDEX_NAME);
 
         System.out.println("storage_phase_c17_index_delegation table=" + TABLE_NAME + " index=" + INDEX_NAME);
@@ -39,23 +39,13 @@ public final class StoragePhaseC17IndexDelegationSmoke {
     }
 
     private static VersionedStorageSqlResult execute(
-            String routeType,
-            List<String> groups,
+            VersionedStorageSqlBridge.PlannedRoute plannedRoute,
             Object owner) throws SQLException {
-        return VersionedStorageSqlBridge.executePlannedRouteForTesting(
-                routeType,
-                groups,
+        return VersionedStorageSqlBridge.executePlannedRoute(
+                plannedRoute,
                 owner,
                 true,
                 Connection.TRANSACTION_READ_COMMITTED);
-    }
-
-    private static List<String> groups(String... values) {
-        List<String> groups = new ArrayList<>();
-        for (String value : values) {
-            groups.add(value);
-        }
-        return groups;
     }
 
     private static void requireUpdateCount(

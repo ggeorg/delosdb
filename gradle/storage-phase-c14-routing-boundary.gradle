@@ -86,13 +86,12 @@ ext.delosdbStoragePhaseC14Proof = {
     ], 'Phase C14 routing boundary smoke')
 
     delosdbStoragePhaseC14RequireTokens(errors, sqlBridge, [
-            'private enum RoutedStatementType',
-            'private record RoutedStatement(',
-            'private static RoutedStatement routeStatement(String normalizedSql)',
-            'private static RoutedStatement route(',
-            'private static VersionedStorageSqlResult executeRoutedStatement(',
-            'RoutedStatement routedStatement = routeStatement(normalizedSql);',
-            'return executeRoutedStatement(',
+            'enum RoutedStatementType',
+            'static record PlannedRoute(',
+            'private static PlannedRoute routeStatement(String normalizedSql)',
+            'private static VersionedStorageSqlResult executePlannedRouteInternal(',
+            'PlannedRoute plannedRoute = routeStatement(normalizedSql);',
+            'return executePlannedRoute(',
             'case CREATE_TABLE:',
             'case INSERT_VALUES:',
             'case CREATE_INDEX:',
@@ -113,8 +112,8 @@ ext.delosdbStoragePhaseC14Proof = {
 
     if (sqlBridge.exists()) {
         def bridgeText = sqlBridge.text
-        def routeStart = bridgeText.indexOf('private static RoutedStatement routeStatement(String normalizedSql)')
-        def executeStart = bridgeText.indexOf('private static VersionedStorageSqlResult executeRoutedStatement(')
+        def routeStart = bridgeText.indexOf('private static PlannedRoute routeStatement(String normalizedSql)')
+        def executeStart = bridgeText.indexOf('private static VersionedStorageSqlResult executePlannedRouteInternal(')
         if (routeStart < 0 || executeStart < 0 || executeStart < routeStart) {
             errors << 'VersionedStorageSqlBridge must isolate routing before routed-statement execution'
         }
@@ -143,15 +142,15 @@ ext.delosdbStoragePhaseC14Proof = {
                 }
             }
             [
-                    'createTable(',
-                    'insertValues(',
-                    'createIndex(',
-                    'updateWhereEquals(',
-                    'deleteWhereEquals(',
-                    'selectWhereRange(',
-                    'selectWhereEquals(',
-                    'selectAll(',
-                    'selectCount('
+                    'return createTable(',
+                    'return insertValues(',
+                    'return createIndex(',
+                    'return updateWhereEquals(',
+                    'return deleteWhereEquals(',
+                    'return selectWhereRange(',
+                    'return selectWhereEquals(',
+                    'return selectAll(',
+                    'return selectCount('
             ].each { token ->
                 if (routeBody.contains(token)) {
                     errors << "routeStatement must classify only and not execute ${token}"
@@ -167,14 +166,6 @@ ext.delosdbStoragePhaseC14Proof = {
         ].each { token ->
             if (bridgeText.contains(token)) {
                 errors << "VersionedStorageSqlBridge must not call ${token} directly after C14"
-            }
-        }
-        [
-                'PLANNED_TABLE_OPERATION_BRIDGE.createTable(',
-                'PLANNED_TABLE_OPERATION_BRIDGE.openTable('
-        ].each { token ->
-            if (bridgeText.contains(token)) {
-                errors << "VersionedStorageSqlBridge must not call ${token}; the SQL bridge currently uses resolved-table operations only"
             }
         }
     }
@@ -258,9 +249,9 @@ ext.delosdbStoragePhaseC14Proof = {
     lines << '  keep regex routing temporary, but isolate statement classification from routed-statement execution.'
     lines << ''
     lines << 'Expected boundary:'
-    lines << '  tryExecute -> routeStatement -> executeRoutedStatement.'
+    lines << '  tryExecute -> routeStatement -> executePlannedRoute -> executePlannedRouteInternal.'
     lines << '  routeStatement owns Pattern/Matcher dispatch only.'
-    lines << '  executeRoutedStatement resolves tables and calls the existing statement handlers.'
+    lines << '  executePlannedRouteInternal resolves tables and calls the existing statement handlers.'
     lines << ''
     lines << 'Not done in C14:'
     lines << '  no regex routing is removed.'

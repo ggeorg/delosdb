@@ -8,7 +8,6 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexStats;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow;
-import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
@@ -108,7 +107,7 @@ public final class VersionedStorageSqlBridge {
     private VersionedStorageSqlBridge() {
     }
 
-    private enum RoutedStatementType {
+    enum RoutedStatementType {
         CREATE_TABLE,
         INSERT_VALUES,
         CREATE_INDEX,
@@ -121,14 +120,227 @@ public final class VersionedStorageSqlBridge {
         SELECT_COUNT
     }
 
-    private record RoutedStatement(RoutedStatementType type, List<String> groups) {
-        private RoutedStatement {
+    static record PlannedRoute(
+            RoutedStatementType type,
+            String tableName,
+            String columnDefinitions,
+            String values,
+            String indexName,
+            String indexColumnName,
+            String setColumnName,
+            String setValue,
+            String predicateColumnName,
+            String predicateValue,
+            String operator,
+            String lowerValue,
+            String upperValue,
+            String orderColumnName,
+            String orderDirection) {
+        PlannedRoute {
             type = Objects.requireNonNull(type, "type");
-            groups = java.util.Collections.unmodifiableList(new ArrayList<>(groups));
         }
 
-        private String group(int index) {
-            return groups.get(index - 1);
+        static PlannedRoute createTable(String tableName, String columnDefinitions) {
+            return new PlannedRoute(
+                    RoutedStatementType.CREATE_TABLE,
+                    tableName,
+                    columnDefinitions,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+        }
+
+        static PlannedRoute insertValues(String tableName, String values) {
+            return new PlannedRoute(
+                    RoutedStatementType.INSERT_VALUES,
+                    tableName,
+                    null,
+                    values,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+        }
+
+        static PlannedRoute createIndex(String indexName, String tableName, String indexColumnName) {
+            return new PlannedRoute(
+                    RoutedStatementType.CREATE_INDEX,
+                    tableName,
+                    null,
+                    null,
+                    indexName,
+                    indexColumnName,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+        }
+
+        static PlannedRoute updateWhereEquals(
+                String tableName,
+                String setColumnName,
+                String setValue,
+                String predicateColumnName,
+                String predicateValue) {
+            return new PlannedRoute(
+                    RoutedStatementType.UPDATE_WHERE_EQUALS,
+                    tableName,
+                    null,
+                    null,
+                    null,
+                    null,
+                    setColumnName,
+                    setValue,
+                    predicateColumnName,
+                    predicateValue,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+        }
+
+        static PlannedRoute deleteWhereEquals(String tableName, String predicateColumnName, String predicateValue) {
+            return new PlannedRoute(
+                    RoutedStatementType.DELETE_WHERE_EQUALS,
+                    tableName,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    predicateColumnName,
+                    predicateValue,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+        }
+
+        static PlannedRoute selectWhereBetween(
+                String tableName,
+                String predicateColumnName,
+                String lowerValue,
+                String upperValue) {
+            return new PlannedRoute(
+                    RoutedStatementType.SELECT_WHERE_BETWEEN,
+                    tableName,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    predicateColumnName,
+                    null,
+                    "between",
+                    lowerValue,
+                    upperValue,
+                    null,
+                    null);
+        }
+
+        static PlannedRoute selectWhereRange(
+                String tableName,
+                String predicateColumnName,
+                String operator,
+                String lowerValue) {
+            return new PlannedRoute(
+                    RoutedStatementType.SELECT_WHERE_RANGE,
+                    tableName,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    predicateColumnName,
+                    null,
+                    operator,
+                    lowerValue,
+                    null,
+                    null,
+                    null);
+        }
+
+        static PlannedRoute selectWhereEquals(String tableName, String predicateColumnName, String predicateValue) {
+            return new PlannedRoute(
+                    RoutedStatementType.SELECT_WHERE_EQUALS,
+                    tableName,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    predicateColumnName,
+                    predicateValue,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+        }
+
+        static PlannedRoute selectAll(String tableName, String orderColumnName, String orderDirection) {
+            return new PlannedRoute(
+                    RoutedStatementType.SELECT_ALL,
+                    tableName,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    orderColumnName,
+                    orderDirection);
+        }
+
+        static PlannedRoute selectCount(String tableName) {
+            return new PlannedRoute(
+                    RoutedStatementType.SELECT_COUNT,
+                    tableName,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
         }
     }
 
@@ -249,12 +461,12 @@ public final class VersionedStorageSqlBridge {
             int transactionIsolation) throws SQLException {
         try {
             String normalizedSql = stripTerminator(sql);
-            RoutedStatement routedStatement = routeStatement(normalizedSql);
-            if (routedStatement == null) {
+            PlannedRoute plannedRoute = routeStatement(normalizedSql);
+            if (plannedRoute == null) {
                 return null;
             }
-            return executeRoutedStatement(
-                    routedStatement,
+            return executePlannedRoute(
+                    plannedRoute,
                     transactionOwner,
                     autoCommit,
                     transactionIsolation);
@@ -263,125 +475,124 @@ public final class VersionedStorageSqlBridge {
         }
     }
 
-    static VersionedStorageSqlResult executePlannedRouteForTesting(
-            String routedStatementType,
-            List<String> groups,
+    static VersionedStorageSqlResult executePlannedRoute(
+            PlannedRoute plannedRoute,
             Object transactionOwner,
             boolean autoCommit,
             int transactionIsolation) throws SQLException {
-        Objects.requireNonNull(routedStatementType, "routedStatementType");
-        Objects.requireNonNull(groups, "groups");
         try {
-            return executeRoutedStatement(
-                    new RoutedStatement(RoutedStatementType.valueOf(routedStatementType), groups),
+            return executePlannedRouteInternal(
+                    Objects.requireNonNull(plannedRoute, "plannedRoute"),
                     transactionOwner,
                     autoCommit,
                     transactionIsolation);
         } catch (IllegalArgumentException e) {
             throw sqlException("X0MV5", "Unsupported planned delos_mvcc statement route: "
-                    + routedStatementType, e);
+                    + plannedRoute, e);
         }
     }
 
-    private static RoutedStatement routeStatement(String normalizedSql) throws SQLException {
+    private static PlannedRoute routeStatement(String normalizedSql) throws SQLException {
         Matcher create = CREATE_TABLE.matcher(normalizedSql);
         if (create.matches()) {
             if (shouldHandleCreateTable(create.group(3))) {
-                return route(RoutedStatementType.CREATE_TABLE, create, 2);
+                return PlannedRoute.createTable(create.group(1), create.group(2));
             }
             return null;
         }
 
         Matcher insert = INSERT_VALUES.matcher(normalizedSql);
         if (insert.matches()) {
-            return route(RoutedStatementType.INSERT_VALUES, insert, 2);
+            return PlannedRoute.insertValues(insert.group(1), insert.group(2));
         }
 
         Matcher createIndex = CREATE_INDEX.matcher(normalizedSql);
         if (createIndex.matches()) {
-            return route(RoutedStatementType.CREATE_INDEX, createIndex, 3);
+            return PlannedRoute.createIndex(createIndex.group(1), createIndex.group(2), createIndex.group(3));
         }
 
         Matcher updateWhere = UPDATE_WHERE_EQUALS.matcher(normalizedSql);
         if (updateWhere.matches()) {
-            return route(RoutedStatementType.UPDATE_WHERE_EQUALS, updateWhere, 5);
+            return PlannedRoute.updateWhereEquals(
+                    updateWhere.group(1),
+                    updateWhere.group(2),
+                    updateWhere.group(3),
+                    updateWhere.group(4),
+                    updateWhere.group(5));
         }
 
         Matcher deleteWhere = DELETE_WHERE_EQUALS.matcher(normalizedSql);
         if (deleteWhere.matches()) {
-            return route(RoutedStatementType.DELETE_WHERE_EQUALS, deleteWhere, 3);
+            return PlannedRoute.deleteWhereEquals(deleteWhere.group(1), deleteWhere.group(2), deleteWhere.group(3));
         }
 
         Matcher selectBetween = SELECT_WHERE_BETWEEN.matcher(normalizedSql);
         if (selectBetween.matches()) {
-            return route(RoutedStatementType.SELECT_WHERE_BETWEEN, selectBetween, 4);
+            return PlannedRoute.selectWhereBetween(
+                    selectBetween.group(1),
+                    selectBetween.group(2),
+                    selectBetween.group(3),
+                    selectBetween.group(4));
         }
 
         Matcher selectRange = SELECT_WHERE_RANGE.matcher(normalizedSql);
         if (selectRange.matches()) {
-            return route(RoutedStatementType.SELECT_WHERE_RANGE, selectRange, 4);
+            return PlannedRoute.selectWhereRange(
+                    selectRange.group(1),
+                    selectRange.group(2),
+                    selectRange.group(3),
+                    selectRange.group(4));
         }
 
         Matcher selectWhere = SELECT_WHERE_EQUALS.matcher(normalizedSql);
         if (selectWhere.matches()) {
-            return route(RoutedStatementType.SELECT_WHERE_EQUALS, selectWhere, 3);
+            return PlannedRoute.selectWhereEquals(selectWhere.group(1), selectWhere.group(2), selectWhere.group(3));
         }
 
         Matcher selectAll = SELECT_ALL.matcher(normalizedSql);
         if (selectAll.matches()) {
-            return route(RoutedStatementType.SELECT_ALL, selectAll, 3);
+            return PlannedRoute.selectAll(selectAll.group(1), selectAll.group(2), selectAll.group(3));
         }
 
         Matcher selectCount = SELECT_COUNT.matcher(normalizedSql);
         if (selectCount.matches()) {
-            return route(RoutedStatementType.SELECT_COUNT, selectCount, 1);
+            return PlannedRoute.selectCount(selectCount.group(1));
         }
 
         return null;
     }
 
-    private static RoutedStatement route(
-            RoutedStatementType type,
-            Matcher matcher,
-            int groupCount) {
-        List<String> groups = new ArrayList<>(groupCount);
-        for (int index = 1; index <= groupCount; index++) {
-            groups.add(matcher.group(index));
-        }
-        return new RoutedStatement(type, groups);
-    }
-
-    private static VersionedStorageSqlResult executeRoutedStatement(
-            RoutedStatement routedStatement,
+    private static VersionedStorageSqlResult executePlannedRouteInternal(
+            PlannedRoute plannedRoute,
             Object transactionOwner,
             boolean autoCommit,
             int transactionIsolation) throws SQLException {
-        switch (routedStatement.type()) {
+        switch (plannedRoute.type()) {
             case CREATE_TABLE:
-                return createTable(routedStatement.group(1), routedStatement.group(2));
+                return createTable(plannedRoute.tableName(), plannedRoute.columnDefinitions());
             case INSERT_VALUES: {
-                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                Optional<TableDefinition> table = findTable(plannedRoute.tableName());
                 if (table.isPresent()) {
-                    return insertValues(table.get(), routedStatement.group(2), transactionOwner, autoCommit, transactionIsolation);
+                    return insertValues(table.get(), plannedRoute.values(), transactionOwner, autoCommit, transactionIsolation);
                 }
                 return null;
             }
             case CREATE_INDEX: {
-                Optional<TableDefinition> table = findTable(routedStatement.group(2));
+                Optional<TableDefinition> table = findTable(plannedRoute.tableName());
                 if (table.isPresent()) {
-                    return createIndex(table.get(), routedStatement.group(1), routedStatement.group(3));
+                    return createIndex(table.get(), plannedRoute.indexName(), plannedRoute.indexColumnName());
                 }
                 return null;
             }
             case UPDATE_WHERE_EQUALS: {
-                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                Optional<TableDefinition> table = findTable(plannedRoute.tableName());
                 if (table.isPresent()) {
                     return updateWhereEquals(
                             table.get(),
-                            routedStatement.group(2),
-                            routedStatement.group(3),
-                            routedStatement.group(4),
-                            routedStatement.group(5),
+                            plannedRoute.setColumnName(),
+                            plannedRoute.setValue(),
+                            plannedRoute.orderColumnName(),
+                            plannedRoute.orderDirection(),
                             transactionOwner,
                             autoCommit,
                             transactionIsolation);
@@ -389,12 +600,12 @@ public final class VersionedStorageSqlBridge {
                 return null;
             }
             case DELETE_WHERE_EQUALS: {
-                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                Optional<TableDefinition> table = findTable(plannedRoute.tableName());
                 if (table.isPresent()) {
                     return deleteWhereEquals(
                             table.get(),
-                            routedStatement.group(2),
-                            routedStatement.group(3),
+                            plannedRoute.predicateColumnName(),
+                            plannedRoute.predicateValue(),
                             transactionOwner,
                             autoCommit,
                             transactionIsolation);
@@ -402,14 +613,14 @@ public final class VersionedStorageSqlBridge {
                 return null;
             }
             case SELECT_WHERE_BETWEEN: {
-                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                Optional<TableDefinition> table = findTable(plannedRoute.tableName());
                 if (table.isPresent()) {
                     return selectWhereRange(
                             table.get(),
-                            routedStatement.group(2),
-                            "between",
-                            routedStatement.group(3),
-                            routedStatement.group(4),
+                            plannedRoute.predicateColumnName(),
+                            plannedRoute.operator(),
+                            plannedRoute.lowerValue(),
+                            plannedRoute.upperValue(),
                             transactionOwner,
                             autoCommit,
                             transactionIsolation);
@@ -417,13 +628,13 @@ public final class VersionedStorageSqlBridge {
                 return null;
             }
             case SELECT_WHERE_RANGE: {
-                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                Optional<TableDefinition> table = findTable(plannedRoute.tableName());
                 if (table.isPresent()) {
                     return selectWhereRange(
                             table.get(),
-                            routedStatement.group(2),
-                            routedStatement.group(3),
-                            routedStatement.group(4),
+                            plannedRoute.predicateColumnName(),
+                            plannedRoute.operator(),
+                            plannedRoute.lowerValue(),
                             null,
                             transactionOwner,
                             autoCommit,
@@ -432,12 +643,12 @@ public final class VersionedStorageSqlBridge {
                 return null;
             }
             case SELECT_WHERE_EQUALS: {
-                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                Optional<TableDefinition> table = findTable(plannedRoute.tableName());
                 if (table.isPresent()) {
                     return selectWhereEquals(
                             table.get(),
-                            routedStatement.group(2),
-                            routedStatement.group(3),
+                            plannedRoute.predicateColumnName(),
+                            plannedRoute.predicateValue(),
                             transactionOwner,
                             autoCommit,
                             transactionIsolation);
@@ -445,12 +656,12 @@ public final class VersionedStorageSqlBridge {
                 return null;
             }
             case SELECT_ALL: {
-                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                Optional<TableDefinition> table = findTable(plannedRoute.tableName());
                 if (table.isPresent()) {
                     return selectAll(
                             table.get(),
-                            routedStatement.group(2),
-                            routedStatement.group(3),
+                            plannedRoute.orderColumnName(),
+                            plannedRoute.orderDirection(),
                             transactionOwner,
                             autoCommit,
                             transactionIsolation);
@@ -458,14 +669,14 @@ public final class VersionedStorageSqlBridge {
                 return null;
             }
             case SELECT_COUNT: {
-                Optional<TableDefinition> table = findTable(routedStatement.group(1));
+                Optional<TableDefinition> table = findTable(plannedRoute.tableName());
                 if (table.isPresent()) {
                     return selectCount(table.get(), transactionOwner, autoCommit, transactionIsolation);
                 }
                 return null;
             }
             default:
-                throw new IllegalStateException("Unhandled routed delos_mvcc statement: " + routedStatement.type());
+                throw new IllegalStateException("Unhandled routed delos_mvcc statement: " + plannedRoute.type());
         }
     }
 
@@ -600,7 +811,8 @@ public final class VersionedStorageSqlBridge {
             Optional<IndexDefinition> indexDefinition) throws SQLException {
         if (indexDefinition.isPresent()) {
             IndexDefinition index = indexDefinition.get();
-            VersionedIndexStats indexStats = index.index().statsRange(
+            VersionedIndexStats indexStats = PLANNED_TABLE_OPERATION_BRIDGE.indexStatsRange(
+                    index.index(),
                     range.lowerBound(),
                     range.lowerInclusive(),
                     range.upperBound(),
@@ -608,7 +820,8 @@ public final class VersionedStorageSqlBridge {
                     statementTx.context().currentView());
             long indexLookupCost = indexStats.estimatedLookupCost();
             if (indexLookupCost <= tableScanCost) {
-                List<List<Object>> rows = valuesFrom(index.index().lookupRange(
+                List<List<Object>> rows = valuesFrom(PLANNED_TABLE_OPERATION_BRIDGE.lookupRange(
+                        index.index(),
                         range.lowerBound(),
                         range.lowerInclusive(),
                         range.upperBound(),
@@ -713,10 +926,16 @@ public final class VersionedStorageSqlBridge {
             Optional<IndexDefinition> indexDefinition) throws SQLException {
         if (indexDefinition.isPresent()) {
             IndexDefinition index = indexDefinition.get();
-            VersionedIndexStats indexStats = index.index().stats(predicateValue, statementTx.context().currentView());
+            VersionedIndexStats indexStats = PLANNED_TABLE_OPERATION_BRIDGE.indexStats(
+                    index.index(),
+                    predicateValue,
+                    statementTx.context().currentView());
             long indexLookupCost = indexStats.estimatedLookupCost();
             if (table.isUniqueLookupColumn(columnIndex) || indexLookupCost <= tableScanCost) {
-                List<List<Object>> rows = valuesFrom(index.index().lookup(predicateValue, statementTx.context().currentView()));
+                List<List<Object>> rows = valuesFrom(PLANNED_TABLE_OPERATION_BRIDGE.lookup(
+                        index.index(),
+                        predicateValue,
+                        statementTx.context().currentView()));
                 VersionedStorageAccessPath accessPath = new VersionedStorageAccessPath(
                         table.metadata().qualifiedName(),
                         "select-where",
@@ -767,12 +986,10 @@ public final class VersionedStorageSqlBridge {
         return new AccessPathSelection(rows, accessPath);
     }
 
-    private static List<List<Object>> valuesFrom(VersionedScan<Long, List<Object>> scan) {
+    private static List<List<Object>> valuesFrom(List<VersionedRow<Long, List<Object>>> indexedRows) {
         List<List<Object>> rows = new ArrayList<>();
-        try (scan) {
-            while (scan.next()) {
-                rows.add(scan.row().value());
-            }
+        for (VersionedRow<Long, List<Object>> row : indexedRows) {
+            rows.add(row.value());
         }
         return rows;
     }
@@ -948,8 +1165,20 @@ public final class VersionedStorageSqlBridge {
         Optional<IndexDefinition> indexDefinition = table.indexDefinitionForColumn(orderColumnIndex);
         if (indexDefinition.isPresent()) {
             IndexDefinition index = indexDefinition.get();
-            VersionedIndexStats indexStats = index.index().statsRange(null, true, null, true, statementTx.context().currentView());
-            List<List<Object>> rows = valuesFrom(index.index().lookupRange(null, true, null, true, statementTx.context().currentView()));
+            VersionedIndexStats indexStats = PLANNED_TABLE_OPERATION_BRIDGE.indexStatsRange(
+                    index.index(),
+                    null,
+                    true,
+                    null,
+                    true,
+                    statementTx.context().currentView());
+            List<List<Object>> rows = valuesFrom(PLANNED_TABLE_OPERATION_BRIDGE.lookupRange(
+                    index.index(),
+                    null,
+                    true,
+                    null,
+                    true,
+                    statementTx.context().currentView()));
             if (descending) {
                 java.util.Collections.reverse(rows);
             }
@@ -1548,13 +1777,7 @@ public final class VersionedStorageSqlBridge {
                 Object indexKey,
                 TxContext context) throws SQLException {
             VersionedIndex<Long, List<Object>> index = indexForColumn(columnIndex);
-            List<VersionedRow<Long, List<Object>>> rows = new ArrayList<>();
-            try (VersionedScan<Long, List<Object>> scan = index.lookup(indexKey, context.currentView())) {
-                while (scan.next()) {
-                    rows.add(scan.row());
-                }
-            }
-            return rows;
+            return PLANNED_TABLE_OPERATION_BRIDGE.lookup(index, indexKey, context.currentView());
         }
 
         private int columnIndex(String columnName) throws SQLException {

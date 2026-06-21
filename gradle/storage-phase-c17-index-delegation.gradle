@@ -71,11 +71,11 @@ ext.delosdbStoragePhaseC17Proof = {
 
     delosdbStoragePhaseC17RequireTokens(errors, smokeSource, [
             'StoragePhaseC17IndexDelegationSmoke',
-            'VersionedStorageSqlBridge.executePlannedRouteForTesting(',
-            '"CREATE_TABLE"',
-            '"CREATE_INDEX"',
-            '"INSERT_VALUES"',
-            '"SELECT_ALL"',
+            'VersionedStorageSqlBridge.executePlannedRoute(',
+            'PlannedRoute.createTable',
+            'PlannedRoute.createIndex',
+            'PlannedRoute.insertValues',
+            'PlannedRoute.selectAll',
             'VersionedStorageSqlBridge.lastAccessPath()',
             'VersionedStorageAccessPath.INDEX_SCAN',
             'requireIndexAccessPath'
@@ -122,8 +122,8 @@ ext.delosdbStoragePhaseC17Proof = {
             'VersionedIndex<Long, List<Object>> index = PLANNED_TABLE_OPERATION_BRIDGE.createIndex(',
             'row -> row.get(columnIndex)',
             'buildContext.currentView()',
-            'static VersionedStorageSqlResult executePlannedRouteForTesting(',
-            'return executeRoutedStatement(',
+            'static VersionedStorageSqlResult executePlannedRoute(',
+            'return executePlannedRouteInternal(',
             'PLANNED_TABLE_OPERATION_BRIDGE.createTable(',
             'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
             'PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
@@ -148,10 +148,10 @@ ext.delosdbStoragePhaseC17Proof = {
                 errors << "VersionedStorageSqlBridge must not call ${token} directly after C17"
             }
         }
-        def routeStart = bridgeText.indexOf('private static RoutedStatement routeStatement(String normalizedSql)')
-        def executeStart = bridgeText.indexOf('private static VersionedStorageSqlResult executeRoutedStatement(')
+        def routeStart = bridgeText.indexOf('private static PlannedRoute routeStatement(String normalizedSql)')
+        def executeStart = bridgeText.indexOf('private static VersionedStorageSqlResult executePlannedRouteInternal(')
         if (routeStart < 0 || executeStart < 0 || executeStart < routeStart) {
-            errors << 'C17 must preserve the C14/C15 routeStatement -> executeRoutedStatement boundary'
+            errors << 'C17 must preserve the C14/C15 routeStatement -> executePlannedRouteInternal boundary'
         }
         if (!bridgeText.contains('Pattern.compile(')) {
             errors << 'C17 must not pretend regex routing is retired; routing replacement is a later slice'
@@ -230,7 +230,7 @@ ext.delosdbStoragePhaseC17Proof = {
     lines << '  VersionedStorageSqlBridge remains the SQL regex router for normal JDBC traffic.'
     lines << ''
     lines << 'Expected boundary:'
-    lines << '  CREATE INDEX route -> executeRoutedStatement -> TableDefinition.createIndex -> VersionedStorageExecutionBridge.createIndex(table, metadata, extractor, view).'
+    lines << '  CREATE INDEX route -> executePlannedRouteInternal -> TableDefinition.createIndex -> VersionedStorageExecutionBridge.createIndex(table, metadata, extractor, view).'
     lines << ''
     lines << 'Not done in C17:'
     lines << '  no regex routing is removed.'
