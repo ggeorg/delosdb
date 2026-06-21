@@ -727,7 +727,7 @@ public final class VersionedStorageSqlBridge {
             for (VersionedRow<Long, List<Object>> row : rows) {
                 List<Object> replacement = new ArrayList<>(row.value());
                 replacement.set(setColumnIndex, newValue);
-                table.table().update(row.key(), List.copyOf(replacement), statementTx.context());
+                PLANNED_TABLE_OPERATION_BRIDGE.update(table.table(), row.key(), List.copyOf(replacement), statementTx.context());
             }
             finishStatementTransaction(statementTx);
             return VersionedStorageSqlResult.updateCount(rows.size());
