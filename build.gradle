@@ -12555,9 +12555,6 @@ tasks.register('verifyLegacyDerbyStoreB9StaticAnalysis') {
     }
 }
 
-tasks.named('verifyLegacyDerbyStoreB9StaticAnalysis') {
-    mustRunBefore 'verifyLegacyDerbyStoreB8Closeout'
-}
 
 tasks.register('legacyDerbyStorePhaseBCloseoutReport') {
     group = 'Verification'
