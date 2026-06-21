@@ -216,7 +216,17 @@ public class DiskHashtable
             {
                 if (nativeRow == source)
                 {
-                    nativeRow = source.clone();
+                    // Do not clone the caller's runtime array class here.
+                    // Some engine-side rows are concrete DataValueDescriptor
+                    // arrays whose row-location slot is typed by the engine
+                    // compatibility adapter.  A shallow clone preserves that
+                    // concrete array type and rejects the unwrapped
+                    // HeapRowLocation with ArrayStoreException.  The disk
+                    // hash table is store-owned, so use a neutral store-value
+                    // array when any row-location value has to cross the
+                    // boundary.
+                    nativeRow = StoreTypeUtil.newValueArray(source.length);
+                    System.arraycopy(source, 0, nativeRow, 0, source.length);
                 }
                 nativeRow[i] = nativeValue;
             }

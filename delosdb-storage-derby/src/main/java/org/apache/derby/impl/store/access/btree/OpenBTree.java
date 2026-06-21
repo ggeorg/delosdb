@@ -37,6 +37,7 @@ import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 
@@ -516,7 +517,8 @@ public class OpenBTree
             		continue;
                 // Compare class's rather than format id's to pick up 
                 // different problems with wrong collation implementation.
-				if (!row[i].getClass().equals(template[i].getClass()))
+				if (!row[i].getClass().equals(template[i].getClass())
+                        && !equivalentRowLocationClasses(row[i], template[i]))
                 {
                     SanityManager.THROWASSERT(
                         "type of inserted column[" + i + "] = " + 
@@ -526,6 +528,20 @@ public class OpenBTree
                 }
             }
         }
+    }
+
+
+    private static boolean equivalentRowLocationClasses(
+            StoreDataValue rowValue,
+            StoreDataValue templateValue)
+    {
+        if (rowValue instanceof StoreRowLocation rowLocation
+                && templateValue instanceof StoreRowLocation templateRowLocation)
+        {
+            return rowLocation.unwrapStoreRowLocation().getClass().equals(
+                    templateRowLocation.unwrapStoreRowLocation().getClass());
+        }
+        return false;
     }
 
     /**
