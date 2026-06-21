@@ -98,7 +98,7 @@ ext.delosdbStoragePhaseC10Proof = {
 
     delosdbStoragePhaseC10RequireTokens(errors, executionBridge, [
             'public <K, V> void update(',
-            'requireTable(table).update(requireKey(key), requireTransaction(transaction));',
+            'requireTable(table).update(requireKey(key), requireValue(value), requireTransaction(transaction));',
             'public <K, V> Optional<V> read(',
             'return requireTable(table).read(requireKey(key), requireView(view));'
     ], 'VersionedStorageExecutionBridge direct update contract')
@@ -147,10 +147,10 @@ ext.delosdbStoragePhaseC10Proof = {
                 'VersionedStorageSqlBridge',
                 'Pattern.compile',
                 'Matcher',
-                'update ',
-                'select ',
-                'insert into',
-                'create table'
+                'UPDATE ',
+                'SELECT ',
+                'INSERT INTO ',
+                'CREATE TABLE '
         ]))
     }
 
