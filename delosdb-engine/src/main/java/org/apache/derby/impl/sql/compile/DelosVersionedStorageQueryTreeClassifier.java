@@ -23,7 +23,9 @@ package org.apache.derby.impl.sql.compile;
 import org.apache.derby.iapi.services.context.ContextService;
 import org.apache.derby.iapi.sql.compile.CompilerContext;
 import org.apache.derby.iapi.sql.compile.Visitable;
+import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
+import org.apache.derby.iapi.sql.conn.StatementContext;
 import org.apache.derby.shared.common.error.StandardException;
 
 import java.util.Optional;
@@ -48,14 +50,24 @@ public final class DelosVersionedStorageQueryTreeClassifier {
             return Optional.empty();
         }
 
-        CompilerContext compilerContext = lcc.pushCompilerContext();
+        StatementContext statementContext = null;
+        CompilerContext compilerContext = null;
         try {
+            if (lcc.getStatementDepth() == 0 || lcc.getStatementContext() == null) {
+                statementContext = lcc.pushStatementContext(true, true, sql, null, false, 0L);
+            }
+            compilerContext = lcc.pushCompilerContext();
             Visitable parsed = compilerContext.getParser().parseStatement(sql);
             return classifySelectWhereEquals(sql, parsed);
         } catch (StandardException e) {
             return Optional.empty();
         } finally {
-            lcc.popCompilerContext(compilerContext);
+            if (compilerContext != null) {
+                lcc.popCompilerContext(compilerContext);
+            }
+            if (statementContext != null) {
+                lcc.popStatementContext(statementContext, null);
+            }
         }
     }
 
@@ -98,7 +110,9 @@ public final class DelosVersionedStorageQueryTreeClassifier {
             return Optional.empty();
         }
 
-        String literalSql = sqlSlice(sql, pair.literal()).orElse(null);
+        String literalSql = sqlSlice(sql, pair.literal())
+                .or(() -> constantSqlLiteral(pair.literal()))
+                .orElse(null);
         if (literalSql == null || literalSql.isBlank()) {
             return Optional.empty();
         }
@@ -149,6 +163,23 @@ public final class DelosVersionedStorageQueryTreeClassifier {
         String qualifierSchema = qualifier.getSchemaName();
         String tableSchema = tableName.getSchemaName();
         return qualifierSchema == null || tableSchema == null || qualifierSchema.equalsIgnoreCase(tableSchema);
+    }
+
+
+    private static Optional<String> constantSqlLiteral(ConstantNode literal) {
+        try {
+            DataValueDescriptor value = literal.getValue();
+            if (value == null || value.isNull()) {
+                return Optional.of("NULL");
+            }
+            String text = value.getString();
+            if (literal instanceof CharConstantNode) {
+                return Optional.of("'" + text.replace("'", "''") + "'");
+            }
+            return Optional.of(text);
+        } catch (StandardException e) {
+            return Optional.empty();
+        }
     }
 
     private static Optional<String> sqlSlice(String sql, QueryTreeNode node) {
