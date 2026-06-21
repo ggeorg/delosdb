@@ -3311,8 +3311,8 @@ def delosdbDs10JarEntries = { File jarFile ->
 
 tasks.register('verifyLegacyDerbyStoreRuntimePackaging') {
     group = 'verification'
-    description = 'Verifies derby.jar still contains the relocated legacy Derby store runtime classes after DS8/DS9.'
-    dependsOn ':delosdb-engine:derbyJar', ':delosdb-storage-derby:legacyDerbyStorageJar', 'verifyLegacyDerbyStoreBoundary'
+    description = 'Verifies derby.jar still contains the relocated legacy Derby store runtime classes after B6n.'
+    dependsOn ':delosdb-engine:derbyJar', ':delosdb-storage-derby:compileLegacyDerbyStorage', 'verifyLegacyDerbyStoreBoundary'
     doLast {
         def derbyJar = layout.buildDirectory.file('libs/derby.jar').get().asFile
         if (!derbyJar.isFile()) {
@@ -3322,22 +3322,18 @@ tasks.register('verifyLegacyDerbyStoreRuntimePackaging') {
         def derbyEntries = delosdbDs10JarEntries(derbyJar)
         def missing = legacyDerbyStoreRuntimeRequiredEntries.findAll { !derbyEntries.contains(it) }
         if (!missing.isEmpty()) {
-            throw new GradleException("derby.jar is missing legacy Derby store runtime entries after DS9:\n" + missing.join('\n'))
+            throw new GradleException("derby.jar is missing legacy Derby store runtime entries after B6n:\n" + missing.join('\n'))
         }
 
-        def storageJar = layout.buildDirectory.file('libs/delosdb-storage-derby.jar').get().asFile
-        if (storageJar.isFile()) {
-            def storageEntries = delosdbDs10JarEntries(storageJar)
-            def duplicatedRuntimeStoreEntries = storageEntries.findAll { entry ->
-                entry.startsWith('org/apache/derby/iapi/store/') || entry.startsWith('org/apache/derby/impl/store/')
-            }
-            if (!duplicatedRuntimeStoreEntries.isEmpty()) {
-                throw new GradleException('DS10 keeps compatibility packaging in derby.jar; delosdb-storage-derby.jar must not also carry runtime store packages yet. Duplicates include:\n'
-                        + duplicatedRuntimeStoreEntries.take(20).join('\n'))
-            }
+        if (runtimeJarNames.contains('delosdb-storage-derby.jar')) {
+            throw new GradleException('B7 compatibility runtime must not require delosdb-storage-derby.jar in runtimeJarNames')
         }
 
-        logger.lifecycle('Verified DS10 compatibility packaging: derby.jar carries legacy Derby store runtime classes; no separate storage jar is required yet')
+        // After B6n, delosdb-storage-derby is a real compiled storage module and
+        // its own jar may carry the store classes. The compatibility invariant is
+        // narrower: existing jar-based users still get the inherited store from
+        // derby.jar, and runtimeJars() does not require the storage jar.
+        logger.lifecycle('Verified B7 compatibility packaging: derby.jar carries legacy Derby store runtime classes without requiring delosdb-storage-derby.jar')
     }
 }
 
@@ -3383,15 +3379,16 @@ tasks.register('legacyDerbyStoreRuntimePackagingReport') {
 
 Status
 ------
-DS8/DS9 moved legacy Derby store source ownership under delosdb-storage-derby.
-DS10 keeps runtime compatibility packaging unchanged.
+B6n moved legacy Derby store compile ownership under delosdb-storage-derby.
+B7 keeps runtime compatibility packaging unchanged for existing jar-based users.
 
 Compatibility decision
 ----------------------
 derby.jar still includes the inherited Derby store runtime classes.
 Existing jar-based users do not need to manually add delosdb-storage-derby.jar yet.
-The delosdb-storage-derby source module is the source-ownership home for the store,
-but the compatibility runtime remains derby.jar-first until a later explicit packaging decision.
+delosdb-storage-derby is now the compiled store module; its jar may exist for
+module ownership, but runtimeJars() remains derby.jar-first until a later
+explicit packaging decision.
 
 Required derby.jar entries checked
 ----------------------------------
@@ -12211,4 +12208,199 @@ tasks.register('verifyLegacyDerbyStoreB6oCloseout') {
 
 tasks.named('verifyLegacyDerbyStoreBoundary') {
     dependsOn 'verifyLegacyDerbyStoreB6oCloseout'
+}
+
+
+// -----------------------------------------------------------------------------
+// B7 — Runtime packaging proof after real store compilation
+// -----------------------------------------------------------------------------
+// B6 closed compile ownership. B7 proves the compatibility runtime still works:
+// derby.jar contains the inherited store classes even though those classes are
+// now compiled by delosdb-storage-derby, and the jar-based smoke path does not
+// require delosdb-storage-derby.jar on the runtime classpath.
+
+tasks.register('legacyDerbyStoreB7RuntimePackagingReport') {
+    group = 'Verification'
+    description = 'B7: writes the runtime packaging proof report after real Derby store compilation.'
+    dependsOn 'verifyLegacyDerbyStoreRuntimePackaging'
+    dependsOn 'legacyDerbyStoreRuntimePackagingSmoke'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b7-runtime-packaging.txt'))
+    doLast {
+        def derbyJar = layout.buildDirectory.file('libs/derby.jar').get().asFile
+        def storageJar = layout.buildDirectory.file('libs/delosdb-storage-derby.jar').get().asFile
+        def derbyEntries = derbyJar.isFile() ? delosdbDs10JarEntries(derbyJar) : [] as Set
+        def storageEntries = storageJar.isFile() ? delosdbDs10JarEntries(storageJar) : [] as Set
+        def missing = legacyDerbyStoreRuntimeRequiredEntries.findAll { !derbyEntries.contains(it) }
+        def storageStoreEntries = storageEntries.findAll { entry ->
+            entry.startsWith('org/apache/derby/iapi/store/') || entry.startsWith('org/apache/derby/impl/store/')
+        }
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-b7-runtime-packaging.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = """DelosDB B7 runtime packaging proof
+===================================
+
+Purpose
+-------
+B7 proves the post-B6 runtime compatibility decision: the inherited Derby store
+is compiled by delosdb-storage-derby, but existing jar-based users still receive
+store runtime classes from derby.jar.
+
+Packaging state
+---------------
+derby.jar exists: ${derbyJar.isFile() ? 'YES' : 'NO'}
+derby.jar contains required store runtime entries: ${missing.isEmpty() ? 'YES' : 'NO'}
+missing required entries: ${missing.isEmpty() ? 'none' : missing.join(', ')}
+delosdb-storage-derby.jar exists: ${storageJar.isFile() ? 'YES' : 'NO'}
+delosdb-storage-derby.jar store entries observed: ${storageStoreEntries.size()}
+runtimeJars() includes delosdb-storage-derby.jar: ${runtimeJarNames.contains('delosdb-storage-derby.jar') ? 'YES' : 'NO'}
+
+Required derby.jar entries checked
+----------------------------------
+${legacyDerbyStoreRuntimeRequiredEntries.join('\n')}
+
+Smoke coverage
+--------------
+legacyDerbyStoreRuntimePackagingSmoke runs with runtimeJars() only. It does not
+put delosdb-storage-derby.jar on the runtime classpath.
+
+Decision
+--------
+B7 is closed when derby.jar carries the inherited store runtime classes and the
+jar-based compatibility smoke passes without requiring delosdb-storage-derby.jar.
+"""
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB7RuntimePackaging') {
+    group = 'Verification'
+    description = 'B7: verifies runtime packaging after real Derby store compilation.'
+    dependsOn 'legacyDerbyStoreB7RuntimePackagingReport'
+    dependsOn 'legacyDerbyStoreRuntimePackagingProof'
+    doLast {
+        def derbyJar = layout.buildDirectory.file('libs/derby.jar').get().asFile
+        if (!derbyJar.isFile()) {
+            throw new GradleException('B7 expected derby.jar to exist after :delosdb-engine:derbyJar')
+        }
+        def derbyEntries = delosdbDs10JarEntries(derbyJar)
+        def missing = legacyDerbyStoreRuntimeRequiredEntries.findAll { !derbyEntries.contains(it) }
+        if (!missing.isEmpty()) {
+            throw new GradleException('B7 expected derby.jar to contain inherited Derby store runtime entries; missing:\n' + missing.join('\n'))
+        }
+        if (runtimeJarNames.contains('delosdb-storage-derby.jar')) {
+            throw new GradleException('B7 expected runtimeJars() compatibility path not to require delosdb-storage-derby.jar')
+        }
+        if (!delosdbB6nDerbyJarPackagesCompiledStorageOutput()) {
+            throw new GradleException('B7 expected derby.jar packaging to include compiled delosdb-storage-derby output')
+        }
+        logger.lifecycle('Verified B7 runtime packaging after real Derby store compilation')
+    }
+}
+
+// -----------------------------------------------------------------------------
+// B8 — Real Derby storage module boundary closeout
+// -----------------------------------------------------------------------------
+// B8 is the Phase-B done gate for Issue 1. It composes the B6 compile-owner
+// closeout with the B7 runtime packaging proof and the existing compatibility
+// suites. Phase C must not start until this task is green.
+
+tasks.register('legacyDerbyStoreB8CloseoutReport') {
+    group = 'Verification'
+    description = 'B8: writes the real Derby storage module boundary closeout report.'
+    dependsOn 'verifyLegacyDerbyStoreB6oCloseout'
+    dependsOn 'verifyLegacyDerbyStoreB7RuntimePackaging'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/legacy-store-b8-closeout.txt'))
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        def engineDirectHits = delosdbB6nEngineDirectStoreSourceCompileHits()
+        def report = layout.buildDirectory.file('reports/delosdb/legacy-store-b8-closeout.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = """DelosDB B8 real Derby storage module boundary closeout
+=======================================================
+
+Issue 1 result
+--------------
+delosdb-storage-derby owns real store source compilation: ${delosdbB6nStorageCompilesRealStoreSources() ? 'YES' : 'NO'}
+delosdb-storage-derby compiles without delosdb-engine output: ${delosdbB6nStorageDependsOnEngineOutput() ? 'NO' : 'YES'}
+delosdb-engine compiles relocated store source directly: ${engineDirectHits.isEmpty() ? 'NO' : 'YES'}
+delosdb-engine consumes compiled storage output: ${delosdbB6nEngineConsumesCompiledStorageOutput() ? 'YES' : 'NO'}
+derby.jar packages compiled storage output: ${delosdbB6nDerbyJarPackagesCompiledStorageOutput() ? 'YES' : 'NO'}
+
+Type seam result
+----------------
+direct relocated-store org.apache.derby.iapi.types imports: ${directTypeImports.size()}
+remaining relocated-store inherited type refs: ${fqRefs.size()}
+
+Runtime result
+--------------
+derby.jar compatibility packaging verified by: verifyLegacyDerbyStoreB7RuntimePackaging
+jar runtime smoke verified by: legacyDerbyStoreRuntimePackagingSmoke
+
+B8 gate
+-------
+verifyLegacyDerbyStoreB8Closeout aggregates:
+  verifyLegacyDerbyStoreB6oCloseout
+  verifyLegacyDerbyStoreB7RuntimePackaging
+  verifyLegacyDerbyStoreBoundary
+  :delosdb-storage-derby:check
+  :delosdb-engine:derbyJar
+  legacyDerbyStoreRuntimePackagingProof
+  mvccSqlCompatibilityCandidate
+  mvccSqlBridgeHistoryPrunedProof
+  :delosdb-tests:runDerbyLangSuite
+
+Decision
+--------
+B8 closes Phase B Issue 1: the inherited Derby heap/raw/access/WAL store is a
+real compiled storage module and the compatibility runtime remains stable.
+Phase C can start after this gate is green.
+"""
+        logger.lifecycle("Wrote ${report}")
+    }
+}
+
+tasks.register('verifyLegacyDerbyStoreB8Closeout') {
+    group = 'Verification'
+    description = 'B8: verifies the real Derby storage module boundary is closed.'
+    dependsOn 'verifyLegacyDerbyStoreB6oCloseout',
+            'verifyLegacyDerbyStoreB7RuntimePackaging',
+            'verifyLegacyDerbyStoreBoundary',
+            ':delosdb-storage-derby:check',
+            ':delosdb-engine:derbyJar',
+            'legacyDerbyStoreRuntimePackagingProof',
+            'mvccSqlCompatibilityCandidate',
+            'mvccSqlBridgeHistoryPrunedProof',
+            ':delosdb-tests:runDerbyLangSuite',
+            'legacyDerbyStoreB8CloseoutReport'
+    doLast {
+        def directTypeImports = delosdbB6cDirectTypeImports()
+        if (!directTypeImports.isEmpty()) {
+            throw new GradleException('B8 expected direct relocated-store org.apache.derby.iapi.types imports to be zero; found:\n' +
+                    directTypeImports.collect { "${it.source}: ${it.line}" }.join('\n'))
+        }
+        def fqRefs = delosdbB6cFullyQualifiedTypeRefs()
+        if (!fqRefs.isEmpty()) {
+            throw new GradleException('B8 expected remaining relocated-store inherited type refs to be zero; found:\n' +
+                    fqRefs.collect { "${it.source}:${it.line}: ${it.text}" }.join('\n'))
+        }
+        def engineDirectHits = delosdbB6nEngineDirectStoreSourceCompileHits()
+        if (!engineDirectHits.isEmpty()) {
+            throw new GradleException('B8 expected delosdb-engine direct relocated-store source compilation to be gone; found markers:\n' +
+                    engineDirectHits.collect { "  - ${it}" }.join('\n'))
+        }
+        if (!delosdbB6nStorageCompilesRealStoreSources()) {
+            throw new GradleException('B8 expected delosdb-storage-derby to own real store source compilation')
+        }
+        if (delosdbB6nStorageDependsOnEngineOutput()) {
+            throw new GradleException('B8 expected delosdb-storage-derby to compile without delosdb-engine output')
+        }
+        if (!delosdbB6nEngineConsumesCompiledStorageOutput()) {
+            throw new GradleException('B8 expected delosdb-engine to consume compiled delosdb-storage-derby output')
+        }
+        if (!delosdbB6nDerbyJarPackagesCompiledStorageOutput()) {
+            throw new GradleException('B8 expected derby.jar packaging to include compiled delosdb-storage-derby output')
+        }
+        logger.lifecycle('Verified B8 closeout; real Derby storage module boundary and runtime packaging are closed')
+    }
 }
