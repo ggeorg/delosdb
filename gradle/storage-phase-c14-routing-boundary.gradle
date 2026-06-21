@@ -106,8 +106,8 @@ ext.delosdbStoragePhaseC14Proof = {
             'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
             'PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
             'PLANNED_TABLE_OPERATION_BRIDGE.stats(',
-            'PLANNED_TABLE_OPERATION_BRIDGE.delete(',
-            'PLANNED_TABLE_OPERATION_BRIDGE.update('
+            'tableAccess.delete(',
+            'tableAccess.update('
     ], 'VersionedStorageSqlBridge routing boundary')
 
     if (sqlBridge.exists()) {

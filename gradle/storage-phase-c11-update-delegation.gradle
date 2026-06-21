@@ -98,7 +98,7 @@ ext.delosdbStoragePhaseC11Proof = {
     delosdbStoragePhaseC11RequireTokens(errors, sqlBridge, [
             'private static final Pattern UPDATE_WHERE_EQUALS',
             'return updateWhereEquals(',
-            'PLANNED_TABLE_OPERATION_BRIDGE.update(table.table(), row.key(), List.copyOf(replacement), statementTx.context());',
+            'tableAccess.update(',
             'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
             'PLANNED_TABLE_OPERATION_BRIDGE.scanAll('
     ], 'VersionedStorageSqlBridge UPDATE operation delegation')
@@ -202,7 +202,7 @@ ext.delosdbStoragePhaseC11Proof = {
     lines << ''
     lines << 'Boundary checked:'
     lines << '  old direct call removed: table.table().update(row.key(), List.copyOf(replacement), statementTx.context())'
-    lines << '  new planned call used: PLANNED_TABLE_OPERATION_BRIDGE.update(table.table(), row.key(), List.copyOf(replacement), statementTx.context())'
+    lines << '  C23 superseded path: tableAccess.update(accessContext, row identity, replacement row)'
     lines << ''
     lines << 'Not done in C11:'
     lines << '  UPDATE regex routing is intentionally not removed yet; that belongs to a later routing-retirement slice.'

@@ -101,7 +101,7 @@ ext.delosdbStoragePhaseC9Proof = {
             'case DELETE_WHERE_EQUALS:',
             'plannedRoute.predicateColumnName()',
             'plannedRoute.predicateValue()',
-            'PLANNED_TABLE_OPERATION_BRIDGE.delete(table.table(), row.key(), statementTx.context());',
+            'tableAccess.delete(accessContext, requireMutationRowIdentity(row))',
             'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
             'PLANNED_TABLE_OPERATION_BRIDGE.scanAll('
     ], 'VersionedStorageSqlBridge DELETE operation delegation')
@@ -205,7 +205,7 @@ ext.delosdbStoragePhaseC9Proof = {
     lines << ''
     lines << 'Boundary checked:'
     lines << '  old direct call removed: table.table().delete(row.key(), statementTx.context())'
-    lines << '  new planned call used: PLANNED_TABLE_OPERATION_BRIDGE.delete(table.table(), row.key(), statementTx.context())'
+    lines << '  C23 superseded path: tableAccess.delete(accessContext, requireMutationRowIdentity(row))'
     lines << ''
     lines << 'Not done in C9:'
     lines << '  DELETE regex routing is intentionally not removed yet; that belongs to a later routing-retirement slice.'

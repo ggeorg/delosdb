@@ -19,7 +19,9 @@ import org.apache.derby.iapi.store.types.DelosAccessContext;
 import org.apache.derby.iapi.store.types.DelosPredicate;
 import org.apache.derby.iapi.store.types.DelosProjection;
 import org.apache.derby.iapi.store.types.DelosRow;
+import org.apache.derby.iapi.store.types.DelosRowIdentity;
 import org.apache.derby.iapi.store.types.DelosScan;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.DelosTableIdentity;
 import org.apache.derby.iapi.store.types.DelosTableShape;
 
@@ -1114,14 +1116,26 @@ public final class VersionedStorageSqlBridge {
         Object whereValue = table.columns().get(whereColumnIndex).parseValue(rawWhereValue.trim());
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
-            List<VersionedRow<Long, List<Object>>> rows = table.indexedRows(whereColumnIndex, whereValue, statementTx.context());
-            for (VersionedRow<Long, List<Object>> row : rows) {
-                List<Object> replacement = new ArrayList<>(row.value());
-                replacement.set(setColumnIndex, newValue);
-                PLANNED_TABLE_OPERATION_BRIDGE.update(table.table(), row.key(), List.copyOf(replacement), statementTx.context());
+            EngineMvccTableAccess tableAccess = table.tableAccess();
+            DelosAccessContext accessContext = delosAccessContext(statementTx);
+            List<DelosRow> rows = scanRowsForMutationIdentity(
+                    table,
+                    tableAccess,
+                    accessContext,
+                    table.columns().get(whereColumnIndex).name(),
+                    whereValue);
+            long affectedRows = 0L;
+            for (DelosRow row : rows) {
+                DelosRowIdentity rowIdentity = requireMutationRowIdentity(row);
+                List<StoreDataValue> replacement = new ArrayList<>(row.values());
+                replacement.set(setColumnIndex, EngineMvccTableAccess.value(newValue));
+                affectedRows += tableAccess.update(
+                        accessContext,
+                        rowIdentity,
+                        DelosRow.withoutIdentity(List.copyOf(replacement))).affectedRows();
             }
             finishStatementTransaction(statementTx);
-            return VersionedStorageSqlResult.updateCount(rows.size());
+            return VersionedStorageSqlResult.updateCount(affectedRows);
         } catch (RuntimeException | SQLException e) {
             throw failStatementTransactionAndTranslate(transactionOwner, statementTx, e);
         }
@@ -1138,15 +1152,72 @@ public final class VersionedStorageSqlBridge {
         Object whereValue = table.columns().get(whereColumnIndex).parseValue(rawWhereValue.trim());
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
-            List<VersionedRow<Long, List<Object>>> rows = table.indexedRows(whereColumnIndex, whereValue, statementTx.context());
-            for (VersionedRow<Long, List<Object>> row : rows) {
-                PLANNED_TABLE_OPERATION_BRIDGE.delete(table.table(), row.key(), statementTx.context());
+            EngineMvccTableAccess tableAccess = table.tableAccess();
+            DelosAccessContext accessContext = delosAccessContext(statementTx);
+            List<DelosRow> rows = scanRowsForMutationIdentity(
+                    table,
+                    tableAccess,
+                    accessContext,
+                    table.columns().get(whereColumnIndex).name(),
+                    whereValue);
+            long affectedRows = 0L;
+            for (DelosRow row : rows) {
+                affectedRows += tableAccess.delete(accessContext, requireMutationRowIdentity(row)).affectedRows();
             }
             finishStatementTransaction(statementTx);
-            return VersionedStorageSqlResult.updateCount(rows.size());
+            return VersionedStorageSqlResult.updateCount(affectedRows);
         } catch (RuntimeException | SQLException e) {
             throw failStatementTransactionAndTranslate(transactionOwner, statementTx, e);
         }
+    }
+
+    private static List<DelosRow> scanRowsForMutationIdentity(
+            TableDefinition table,
+            EngineMvccTableAccess tableAccess,
+            DelosAccessContext accessContext,
+            String whereColumnName,
+            Object whereValue) throws SQLException {
+        List<DelosPredicate> mutableFilters = new ArrayList<>();
+        mutableFilters.add(DelosPredicate.equalsTo(whereColumnName, EngineMvccTableAccess.value(whereValue)));
+        List<DelosRow> rows = materializeContractRowsWithIdentity(
+                tableAccess.scan(accessContext, mutableFilters, DelosProjection.all()));
+        if (!mutableFilters.isEmpty()) {
+            rows = applyLeftoverPredicatesToContractRows(table, rows, mutableFilters);
+        }
+        return rows;
+    }
+
+    private static List<DelosRow> materializeContractRowsWithIdentity(DelosScan scan) {
+        List<DelosRow> rows = new ArrayList<>();
+        try (DelosScan contractScan = scan) {
+            while (contractScan.next()) {
+                rows.add(contractScan.row());
+            }
+        }
+        return List.copyOf(rows);
+    }
+
+    private static List<DelosRow> applyLeftoverPredicatesToContractRows(
+            TableDefinition table,
+            List<DelosRow> rows,
+            List<DelosPredicate> leftoverPredicates) throws SQLException {
+        List<DelosRow> filteredRows = new ArrayList<>(rows);
+        for (DelosPredicate predicate : leftoverPredicates) {
+            if (predicate.operator() != org.apache.derby.iapi.store.types.DelosPredicateOperator.EQUAL
+                    || predicate.operands().size() != 1) {
+                throw sqlException("0A000", "Unsupported leftover delos_mvcc mutation predicate above table access: " + predicate);
+            }
+            int columnIndex = table.columnIndex(predicate.columnName());
+            Object expected = EngineMvccTableAccess.nativeValue(predicate.operands().get(0));
+            filteredRows.removeIf(row -> !Objects.equals(expected,
+                    EngineMvccTableAccess.nativeValue(row.values().get(columnIndex))));
+        }
+        return List.copyOf(filteredRows);
+    }
+
+    private static DelosRowIdentity requireMutationRowIdentity(DelosRow row) {
+        return row.rowIdentity().orElseThrow(() -> new IllegalStateException(
+                "delos_mvcc mutation scan returned a row without provider-native identity"));
     }
 
     private static VersionedStorageSqlResult selectAll(
@@ -1842,13 +1913,6 @@ public final class VersionedStorageSqlBridge {
             return reopened;
         }
 
-        private List<VersionedRow<Long, List<Object>>> indexedRows(
-                int columnIndex,
-                Object indexKey,
-                TxContext context) throws SQLException {
-            VersionedIndex<Long, List<Object>> index = indexForColumn(columnIndex);
-            return PLANNED_TABLE_OPERATION_BRIDGE.lookup(index, indexKey, context.currentView());
-        }
 
         private int columnIndex(String columnName) throws SQLException {
             String normalized = columnName.trim().toUpperCase(Locale.ROOT);

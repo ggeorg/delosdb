@@ -144,8 +144,8 @@ ext.delosdbStoragePhaseC19Proof = {
             'PLANNED_TABLE_OPERATION_BRIDGE.lookup(',
             'PLANNED_TABLE_OPERATION_BRIDGE.indexStatsRange(',
             'PLANNED_TABLE_OPERATION_BRIDGE.lookupRange(',
-            'PLANNED_TABLE_OPERATION_BRIDGE.delete(',
-            'PLANNED_TABLE_OPERATION_BRIDGE.update('
+            'tableAccess.delete(',
+            'tableAccess.update('
     ], 'VersionedStorageSqlBridge post-C19 routing/delegation state')
 
     if (sqlBridge.exists()) {

@@ -70,8 +70,8 @@ ext.delosdbStoragePhaseC18Proof = {
             'PLANNED_TABLE_OPERATION_BRIDGE.createIndex(',
             'PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
             'PLANNED_TABLE_OPERATION_BRIDGE.stats(',
-            'PLANNED_TABLE_OPERATION_BRIDGE.delete(',
-            'PLANNED_TABLE_OPERATION_BRIDGE.update('
+            'tableAccess.delete(',
+            'tableAccess.update('
     ], 'VersionedStorageSqlBridge post-C17 delegation state')
 
     if (sqlBridge.exists()) {

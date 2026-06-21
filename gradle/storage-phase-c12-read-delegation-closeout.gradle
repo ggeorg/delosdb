@@ -103,8 +103,8 @@ ext.delosdbStoragePhaseC12Proof = {
             'PLANNED_TABLE_OPERATION_BRIDGE.stats(',
             'for (VersionedRow<Long, List<Object>> visibleRow : PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
             'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
-            'PLANNED_TABLE_OPERATION_BRIDGE.delete(',
-            'PLANNED_TABLE_OPERATION_BRIDGE.update('
+            'tableAccess.delete(',
+            'tableAccess.update('
     ], 'VersionedStorageSqlBridge read delegation closeout')
 
     if (sqlBridge.exists()) {
