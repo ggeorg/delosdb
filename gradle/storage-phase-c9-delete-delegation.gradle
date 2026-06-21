@@ -97,7 +97,10 @@ ext.delosdbStoragePhaseC9Proof = {
 
     delosdbStoragePhaseC9RequireTokens(errors, sqlBridge, [
             'private static final Pattern DELETE_WHERE_EQUALS',
-            'return deleteWhereEquals(table.get(), deleteWhere.group(2), deleteWhere.group(3), transactionOwner, autoCommit, transactionIsolation);',
+            'return PlannedRoute.deleteWhereEquals(deleteWhere.group(1), deleteWhere.group(2), deleteWhere.group(3));',
+            'case DELETE_WHERE_EQUALS:',
+            'plannedRoute.predicateColumnName()',
+            'plannedRoute.predicateValue()',
             'PLANNED_TABLE_OPERATION_BRIDGE.delete(table.table(), row.key(), statementTx.context());',
             'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
             'PLANNED_TABLE_OPERATION_BRIDGE.scanAll('
