@@ -859,11 +859,10 @@ public final class VersionedStorageSqlBridge {
             TableDefinition table,
             StatementTransaction statementTx) {
         List<List<Object>> rows = new ArrayList<>();
-        try (VersionedScan<Long, List<Object>> scan = table.table().openScan(statementTx.context().currentView())) {
-            while (scan.next()) {
-                VersionedRow<Long, List<Object>> row = scan.row();
-                rows.add(row.value());
-            }
+        for (VersionedRow<Long, List<Object>> row : PLANNED_TABLE_OPERATION_BRIDGE.scanAll(
+                table.table(),
+                statementTx.context().currentView())) {
+            rows.add(row.value());
         }
         return rows;
     }

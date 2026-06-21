@@ -1,0 +1,289 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C7 SELECT bridge shrink proof.
+//
+// This is intentionally one tiny bridge-reduction step after C6. It proves the
+// simple SELECT-all table-scan branch inside the quarantined VersionedStorageSqlBridge
+// delegates provider scanning through VersionedStorageExecutionBridge, while the
+// bridge still owns temporary SQL regex routing until planned Derby execution replaces it.
+
+ext.delosdbStoragePhaseC7ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC7ReportFile =
+        ext.delosdbStoragePhaseC7ReportDir.map { it.file('storage-phase-c7-select-bridge-shrink.txt') }
+ext.delosdbStoragePhaseC7SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c7-select-bridge-shrink-smoke')
+
+ext.delosdbStoragePhaseC7RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC7RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC7RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC7ForbiddenSourceHits = { Collection<File> sourceFiles, Collection<String> tokens ->
+    sourceFiles.collectMany { sourceFile ->
+        def text = sourceFile.text
+        tokens.findAll { token -> text.contains(token) }.collect { token ->
+            "${delosdbStoragePhaseC7RelPath(sourceFile)} contains forbidden token ${token}"
+        }
+    }.sort()
+}
+
+ext.delosdbStoragePhaseC7JavaFiles = { String projectPath ->
+    def sourceRoot = file("${projectPath}/src/main/java")
+    if (!sourceRoot.exists()) {
+        return [] as Set<File>
+    }
+    fileTree(sourceRoot).matching { include '**/*.java' }.files as Set<File>
+}
+
+ext.delosdbStoragePhaseC7ModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseC7RuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseC7Classpath = {
+    files(
+            delosdbStoragePhaseC7SmokeClassesDir,
+            delosdbStoragePhaseC7ModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseC7ModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseC7ModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseC7RuntimeJars())
+}
+
+ext.delosdbStoragePhaseC7Between = { String text, String start, String end ->
+    int startIndex = text.indexOf(start)
+    if (startIndex < 0) {
+        return ''
+    }
+    int endIndex = text.indexOf(end, startIndex + start.length())
+    if (endIndex < 0) {
+        return text.substring(startIndex)
+    }
+    return text.substring(startIndex, endIndex)
+}
+
+ext.delosdbStoragePhaseC7Proof = {
+    def errors = []
+    def lines = []
+
+    def smokeSource = file('dev/storage-phase-c7-select-bridge-shrink-smoke/src/main/java/delosdb/smoke/StoragePhaseC7SelectBridgeShrinkSmoke.java')
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def executionBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/execution/VersionedStorageExecutionBridge.java')
+    def embedStatement = file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedStatement.java')
+    def heapProvider = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/LegacyDerbyHeapStorageProvider.java')
+    def mvccProvider = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java')
+    def storelessRoot = file('delosdb-storeless/src/main/java')
+
+    delosdbStoragePhaseC7RequireTokens(errors, smokeSource, [
+            'SqlBridgePlan',
+            'VersionedStorageSqlBridge.tryExecute(sql, this, true)',
+            'CREATE TABLE ',
+            'USING delos_mvcc',
+            'INSERT INTO ',
+            'SELECT * FROM ',
+            'requireRows'
+    ], 'Phase C7 SELECT bridge shrink smoke')
+
+    delosdbStoragePhaseC7RequireTokens(errors, sqlBridge, [
+            'import io.github.ggeorg.delosdb.engine.extension.storage.versioned.execution.VersionedStorageExecutionBridge;',
+            'private static final VersionedStorageExecutionBridge PLANNED_TABLE_OPERATION_BRIDGE',
+            'for (VersionedRow<Long, List<Object>> row : PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',
+            'private static final Pattern SELECT_ALL',
+            'Minimal SQL/JDBC bridge for the experimental'
+    ], 'VersionedStorageSqlBridge planned SELECT scan delegation')
+
+    if (sqlBridge.exists()) {
+        def text = sqlBridge.text
+        def scanAllRowsBody = delosdbStoragePhaseC7Between(text,
+                'private static List<List<Object>> scanAllRows(',
+                'private static void sortRows(')
+        if (scanAllRowsBody.isEmpty()) {
+            errors << 'VersionedStorageSqlBridge scanAllRows method was not found'
+        } else {
+            if (!scanAllRowsBody.contains('PLANNED_TABLE_OPERATION_BRIDGE.scanAll(')) {
+                errors << 'VersionedStorageSqlBridge scanAllRows must delegate through VersionedStorageExecutionBridge.scanAll after C7'
+            }
+            if (scanAllRowsBody.contains('table.table().openScan(')) {
+                errors << 'VersionedStorageSqlBridge scanAllRows must not open VersionedTable scans directly after C7'
+            }
+        }
+    }
+
+    delosdbStoragePhaseC7RequireTokens(errors, executionBridge, [
+            'public <K, V> List<VersionedRow<K, V>> scanAll(',
+            'try (VersionedScan<K, V> scan = requireTable(table).openScan(requireView(view)))'
+    ], 'VersionedStorageExecutionBridge scan operation')
+
+    delosdbStoragePhaseC7RequireTokens(errors, embedStatement, [
+            'VersionedStorageSqlBridge.tryExecute('
+    ], 'current transitional EmbedStatement bridge hook')
+
+    delosdbStoragePhaseC7RequireTokens(errors, heapProvider, [
+            'implements StorageProvider',
+            'StorageCapabilities'
+    ], 'Derby heap provider remains metadata path')
+
+    delosdbStoragePhaseC7RequireTokens(errors, mvccProvider, [
+            'implements VersionedStorageProvider',
+            'public VersionedTransactionCoordinator transactionCoordinator()',
+            'public synchronized <K, V> VersionedTable<K, V> openTable('
+    ], 'MVCC provider remains versioned operational path')
+
+    if (!storelessRoot.exists()) {
+        errors << 'missing storeless source root: delosdb-storeless/src/main/java'
+    } else {
+        def storelessProviderHits = fileTree(storelessRoot).matching { include '**/*.java' }.files.findAll { sourceFile ->
+            def text = sourceFile.text
+            text.contains('implements StorageProvider') || text.contains('implements VersionedStorageProvider')
+        }.collect { delosdbStoragePhaseC7RelPath(it) }.sort()
+        if (!storelessProviderHits.isEmpty()) {
+            errors << 'storeless must remain a no-store negative proof, not a provider: ' + storelessProviderHits
+        }
+    }
+
+    if (smokeSource.exists()) {
+        errors.addAll(delosdbStoragePhaseC7ForbiddenSourceHits([smokeSource], [
+                'DriverManager',
+                'Connection',
+                'Statement',
+                'Pattern.compile',
+                'Matcher'
+        ]))
+    }
+
+    def engineStoreSourceRoot = file('delosdb-engine/src/main/java/org/apache/derby/impl/store')
+    if (engineStoreSourceRoot.exists()) {
+        errors << 'Phase C7 must not add engine-side org/apache/derby/impl/store sources: '
+                + delosdbStoragePhaseC7RelPath(engineStoreSourceRoot)
+    }
+
+    def thirdIslandNames = [
+            'DelosStorageEngine.java',
+            'DelosTableAccess.java',
+            'DelosScan.java',
+            'DelosMutationAccess.java',
+            'TableAccessProfile.java',
+            'StorageExecutionProfile.java',
+            'StorelessStorageProvider.java',
+            'StorelessVersionedStorageProvider.java'
+    ] as Set
+    def thirdIslandFiles = fileTree(rootProject.projectDir).matching {
+        include '**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+        exclude '**/.idea/**'
+        exclude '**/__MACOSX/**'
+    }.files.findAll { thirdIslandNames.contains(it.name) }
+            .collect { delosdbStoragePhaseC7RelPath(it) }.sort()
+    if (!thirdIslandFiles.isEmpty()) {
+        errors << 'Phase C7 must not introduce the third SPI/profile island while shrinking the SQL bridge: '
+                + thirdIslandFiles
+    }
+
+    def allEngineVersionedFiles = delosdbStoragePhaseC7JavaFiles('delosdb-engine').findAll { sourceFile ->
+        delosdbStoragePhaseC7RelPath(sourceFile).contains('/versioned/')
+    }
+    def sqlRegexOwners = allEngineVersionedFiles.findAll { sourceFile ->
+        sourceFile.name != 'VersionedStorageSqlBridge.java' && sourceFile.text.contains('Pattern.compile(')
+    }.collect { delosdbStoragePhaseC7RelPath(it) }.sort()
+    if (!sqlRegexOwners.isEmpty()) {
+        errors << 'C7 SELECT bridge shrink must not add SQL regex owners outside VersionedStorageSqlBridge: '
+                + sqlRegexOwners
+    }
+
+    lines << 'DelosDB Storage Phase C7 SELECT Bridge Shrink Proof'
+    lines << '===================================================='
+    lines << ''
+    lines << 'C7 mechanic:'
+    lines << '  shrink exactly one proven bridge path: simple SQL SELECT table scan now delegates provider scanning through VersionedStorageExecutionBridge.'
+    lines << ''
+    lines << 'Preserved behavior:'
+    lines << '  SQL bridge still owns temporary regex statement routing.'
+    lines << '  C6 INSERT delegation remains the mutation path used by the smoke setup.'
+    lines << '  SELECT row materialization is preserved by the smoke.'
+    lines << '  Derby heap execution remains untouched.'
+    lines << ''
+    lines << 'Boundary checked:'
+    lines << '  old direct scan removed from scanAllRows: table.table().openScan(...)'
+    lines << '  new planned scan used: PLANNED_TABLE_OPERATION_BRIDGE.scanAll(table.table(), view)'
+    lines << ''
+    lines << 'Next step:'
+    lines << '  only after this remains green, choose one small DELETE or UPDATE planned-path proof.'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC7SelectBridgeShrinkReport') {
+    group = 'verification'
+    description = 'Writes the Phase C7 SELECT bridge shrink proof report.'
+    dependsOn 'verifyStoragePhaseC6SqlBridgeShrink'
+    outputs.file(delosdbStoragePhaseC7ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC7Proof()
+        def outputFile = delosdbStoragePhaseC7ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C7 SELECT bridge shrink proof failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC7SelectBridgeShrinkSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C7 SELECT bridge shrink smoke test.'
+    source = files('dev/storage-phase-c7-select-bridge-shrink-smoke/src/main/java')
+    destinationDirectory = delosdbStoragePhaseC7SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC7Classpath()
+}
+
+tasks.register('storagePhaseC7SelectBridgeShrinkSmoke', JavaExec) {
+    dependsOn 'compileStoragePhaseC7SelectBridgeShrinkSmoke'
+    group = 'verification'
+    description = 'Runs the Phase C7 SELECT bridge shrink smoke test.'
+    classpath = delosdbStoragePhaseC7Classpath()
+    mainClass = 'delosdb.smoke.StoragePhaseC7SelectBridgeShrinkSmoke'
+}
+
+tasks.register('verifyStoragePhaseC7SelectBridgeShrink') {
+    group = 'verification'
+    description = 'Verifies the Phase C7 SELECT bridge shrink proof.'
+    dependsOn 'storagePhaseC7SelectBridgeShrinkReport', 'storagePhaseC7SelectBridgeShrinkSmoke'
+    doLast {
+        println 'Verified Phase C7 SELECT bridge shrink; next step must stay one tiny planned path at a time'
+    }
+}
