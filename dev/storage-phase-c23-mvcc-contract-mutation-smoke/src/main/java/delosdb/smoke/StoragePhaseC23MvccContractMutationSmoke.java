@@ -16,6 +16,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.DelosMvccStorageProvider;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -139,10 +140,7 @@ public final class StoragePhaseC23MvccContractMutationSmoke {
                 + " (id INT, value VARCHAR(40)) USING delos_mvcc"), 0L, "create table");
         requireUpdateCount(plan.execute("CREATE INDEX C23_CONTRACT_MUTATION_ID_IDX ON "
                 + plan.tableName() + "(id)"), 0L, "create index");
-        requireUpdateCount(plan.execute("INSERT INTO " + plan.tableName()
-                + " VALUES (1, 'alpha')"), 1L, "insert alpha");
-        requireUpdateCount(plan.execute("INSERT INTO " + plan.tableName()
-                + " VALUES (2, 'bravo')"), 1L, "insert bravo");
+        insertFixtureRowsThroughDerbyParser(plan.tableName());
 
         requireUpdateCount(plan.execute("UPDATE " + plan.tableName()
                 + " SET value = 'bravo-updated' WHERE id = 2"), 1L, "contract update");
@@ -151,6 +149,26 @@ public final class StoragePhaseC23MvccContractMutationSmoke {
 
         VersionedStorageSqlResult finalRows = plan.execute("SELECT * FROM " + plan.tableName());
         requireSingleRow(finalRows, 2, "bravo-updated");
+    }
+
+    private static void insertFixtureRowsThroughDerbyParser(String tableName) throws SQLException {
+        String databasePath = "storage-phase-c23-mvcc-contract-mutation-db";
+        try {
+            SmokeUtils.loadEmbeddedDriver();
+            try (Connection connection = SmokeUtils.connect(databasePath, true);
+                 Statement statement = connection.createStatement()) {
+                require(statement.executeUpdate("INSERT INTO " + tableName
+                                + " VALUES (1, 'alpha')") == 1,
+                        "insert alpha should be handled through Derby parser after INSERT regex deletion");
+                require(statement.executeUpdate("INSERT INTO " + tableName
+                                + " VALUES (2, 'bravo')") == 1,
+                        "insert bravo should be handled through Derby parser after INSERT regex deletion");
+            }
+        } catch (ClassNotFoundException e) {
+            throw new SQLException("Unable to load embedded Derby driver for C23 fixture inserts", e);
+        } finally {
+            SmokeUtils.shutdown(databasePath);
+        }
     }
 
     private static void requireUpdateCount(

@@ -219,7 +219,7 @@ tasks.register('compileStoragePhaseC23MvccContractMutationSmoke', JavaCompile) {
     dependsOn 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
     group = 'verification'
     description = 'Compiles the Phase C23 MVCC contract mutation smoke test.'
-    source = files('dev/storage-phase-c23-mvcc-contract-mutation-smoke/src/main/java')
+    source = files('dev/storage-phase-c23-mvcc-contract-mutation-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
     destinationDirectory = delosdbStoragePhaseC23SmokeClassesDir
     sourceCompatibility = javaRelease.toString()
     targetCompatibility = javaRelease.toString()
