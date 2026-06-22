@@ -67,6 +67,7 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
     private final GeneratedMethod checkGM;
     private final DelosTableScanResultSet nativeScanSource;
     private final DelosTableScanProviderLookup.Result providerLookup;
+    private final int baseColumnCount;
     private long rowCount;
 
     private DelosUpdateResultSet(
@@ -75,7 +76,8 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
             GeneratedMethod checkGM,
             Activation activation,
             DelosTableScanResultSet nativeScanSource,
-            DelosTableScanProviderLookup.Result providerLookup)
+            DelosTableScanProviderLookup.Result providerLookup,
+            int baseColumnCount)
     {
         super(activation);
         this.source = source;
@@ -83,6 +85,7 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
         this.checkGM = checkGM;
         this.nativeScanSource = nativeScanSource;
         this.providerLookup = providerLookup;
+        this.baseColumnCount = baseColumnCount;
     }
 
     static Optional<ResultSet> createIfEnabled(
@@ -130,7 +133,8 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
                 checkGM,
                 activation,
                 nativeScan.get(),
-                lookup.get()));
+                lookup.get(),
+                targetTable.getNumberOfColumns()));
     }
 
     @Override
@@ -155,7 +159,7 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
             while ((row = source.getNextRowCore()) != null) {
                 evaluateGenerationClauses(generationClauses, activation, source, row, true);
                 DelosRowIdentity rowIdentity = nativeScanSource.currentDelosRowIdentityForNativeMutation();
-                rowCount += nativeAccess.update(rowIdentity, replacementNativeValues(row));
+                rowCount += nativeAccess.update(rowIdentity, replacementNativeValues(row, baseColumnCount));
             }
             nativeAccess.close();
             nativeAccess = null;
@@ -226,17 +230,33 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
         }
     }
 
-    private static List<Object> replacementNativeValues(ExecRow row) throws StandardException
+    private static List<Object> replacementNativeValues(ExecRow row, int baseColumnCount) throws StandardException
     {
         int resultWidth = row.nColumns();
-        if (resultWidth < 3 || resultWidth % 2 == 0) {
+        if (baseColumnCount <= 0) {
             throw StandardException.plainWrapException(new IllegalStateException(
-                    "F7 native UPDATE expected before columns, after columns, and RowLocation; result width="
-                            + resultWidth));
+                    "F7 native UPDATE could not resolve a positive base-column count"));
         }
-        int numberOfBaseColumns = (resultWidth - 1) / 2;
-        List<Object> values = new ArrayList<>(numberOfBaseColumns);
-        for (int column = numberOfBaseColumns + 1; column <= numberOfBaseColumns * 2; column++) {
+
+        int firstReplacementColumn;
+        if (resultWidth == baseColumnCount + 1) {
+            // Simple generated UPDATE sources may expose the after-image plus RowLocation only.
+            firstReplacementColumn = 1;
+        } else if (resultWidth == (baseColumnCount * 2) + 1) {
+            // Derby's full UPDATE convention is before-image, after-image, RowLocation.
+            firstReplacementColumn = baseColumnCount + 1;
+        } else if (resultWidth > baseColumnCount) {
+            // Keep the seam defensive for compact source rows: the replacement image is the
+            // base-column-sized slice immediately before the trailing RowLocation column.
+            firstReplacementColumn = resultWidth - baseColumnCount;
+        } else {
+            throw StandardException.plainWrapException(new IllegalStateException(
+                    "F7 native UPDATE source row is too narrow for replacement extraction; result width="
+                            + resultWidth + ", base columns=" + baseColumnCount));
+        }
+
+        List<Object> values = new ArrayList<>(baseColumnCount);
+        for (int column = firstReplacementColumn; column < firstReplacementColumn + baseColumnCount; column++) {
             DataValueDescriptor value = row.getColumn(column);
             values.add(value == null ? null : value.getObject());
         }

@@ -49,6 +49,7 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.Orderable;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.impl.services.storetypes.EngineMvccTableAccess;
+import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
@@ -87,6 +88,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     private VersionedStorageSqlBridge.NativeExecutionTableAccess nativeAccess;
     private DelosScan scan;
     private DelosRow currentDelosRow;
+    private final RowLocation syntheticMutationRowLocation = EngineStoreRowLocationBridge.newEngineRowLocation();
 
     private DelosTableScanResultSet(
             TableScanResultSetParameters params,
@@ -249,7 +251,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     @Override
     public RowLocation getRowLocation() throws StandardException
     {
-        return null;
+        return syntheticMutationRowLocation;
     }
 
     @Override
