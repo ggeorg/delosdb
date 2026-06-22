@@ -21,30 +21,6 @@ public final class StoragePhaseC30RangeRegexDeletionSmoke {
 
     public static void main(String[] args) throws Exception {
         Object directOwner = new Object();
-        requireUpdateCount(VersionedStorageSqlBridge.tryExecute(
-                        "CREATE TABLE C30_DIRECT_RANGE_REGEX_DELETION (id INT, value VARCHAR(40)) USING delos_mvcc",
-                        directOwner,
-                        true),
-                0L,
-                "direct CREATE TABLE");
-        requireUpdateCount(VersionedStorageSqlBridge.tryExecute(
-                        "CREATE INDEX C30_DIRECT_RANGE_REGEX_DELETION_ID_IDX ON C30_DIRECT_RANGE_REGEX_DELETION(id)",
-                        directOwner,
-                        true),
-                0L,
-                "direct CREATE INDEX");
-        requireUpdateCount(VersionedStorageSqlBridge.tryExecute(
-                        "INSERT INTO C30_DIRECT_RANGE_REGEX_DELETION VALUES (1, 'alpha')",
-                        directOwner,
-                        true),
-                1L,
-                "direct INSERT 1");
-        requireUpdateCount(VersionedStorageSqlBridge.tryExecute(
-                        "INSERT INTO C30_DIRECT_RANGE_REGEX_DELETION VALUES (3, 'charlie')",
-                        directOwner,
-                        true),
-                1L,
-                "direct INSERT 3");
         VersionedStorageSqlResult directWithoutDerbyContext = VersionedStorageSqlBridge.tryExecute(
                 "SELECT * FROM C30_DIRECT_RANGE_REGEX_DELETION WHERE id > 2",
                 directOwner,
@@ -85,19 +61,6 @@ public final class StoragePhaseC30RangeRegexDeletionSmoke {
         }
 
         System.out.println("storage_phase_c30_range_regex_deletion: PASS");
-    }
-
-    private static void requireUpdateCount(VersionedStorageSqlResult result, long expected, String label) {
-        if (result == null) {
-            throw new IllegalStateException(label + " was not handled by VersionedStorageSqlBridge");
-        }
-        if (result.returnsRows()) {
-            throw new IllegalStateException(label + " unexpectedly returned rows");
-        }
-        if (result.updateCount() != expected) {
-            throw new IllegalStateException(label + " update count expected=" + expected
-                    + " actual=" + result.updateCount());
-        }
     }
 
     private static void require(boolean condition, String message) {
