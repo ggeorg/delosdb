@@ -793,6 +793,7 @@ public class GenericResultSetFactory implements ResultSetFactory
 									double optimizerEstimatedCost)
 			throws StandardException
 	{
+                DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         return new HashScanResultSet(
                 hashScanParameters(
                         activation,
@@ -849,6 +850,7 @@ public class GenericResultSetFactory implements ResultSetFactory
 									double optimizerEstimatedCost)
 			throws StandardException
 	{
+                DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         return new DistinctScanResultSet(
                 distinctScanParameters(
                         activation,
@@ -958,6 +960,7 @@ public class GenericResultSetFactory implements ResultSetFactory
                                     double optimizerEstimatedCost)
             throws StandardException
     {
+                DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         return new ValidateCheckConstraintResultSet(
                 tableScanParameters(
                         activation,
@@ -1028,6 +1031,7 @@ public class GenericResultSetFactory implements ResultSetFactory
 		//Because of that, we can not continue to disable the prefetching for RR and Serializable, since it causes
 		//severe performance degradation - bug 5953.    
 
+		        DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
 		return new BulkTableScanResultSet(
                 tableScanParameters(
                         activation,
@@ -1100,6 +1104,7 @@ public class GenericResultSetFactory implements ResultSetFactory
 									double optimizerEstimatedCost)
 			throws StandardException
 	{
+		        DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
 		return new MultiProbeTableScanResultSet(
                 tableScanParameters(
                         activation,
@@ -1555,6 +1560,7 @@ public class GenericResultSetFactory implements ResultSetFactory
 		double 				optimizerEstimatedCost
 	) throws StandardException
 	{
+                DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         return new LastIndexKeyResultSet(
                 new LastIndexKeyResultSetParameters(
                         activation,
@@ -1610,6 +1616,7 @@ public class GenericResultSetFactory implements ResultSetFactory
 									int rltItem)
 			throws StandardException
 	{
+        DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         StaticCompiledOpenConglomInfo scoci = (StaticCompiledOpenConglomInfo)(activation.getPreparedStatement().
 						getSavedObject(scociItem));
 		return new DependentResultSet(
