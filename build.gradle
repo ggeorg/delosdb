@@ -2714,6 +2714,7 @@ apply from: file('gradle/storage-phase-f5-native-insert.gradle')
 apply from: file('gradle/storage-phase-f6-native-delete-equality.gradle')
 apply from: file('gradle/storage-phase-f7-native-update-equality.gradle')
 apply from: file('gradle/storage-phase-f8-bridge-bypass.gradle')
+apply from: file('gradle/storage-phase-f-consolidation.gradle')
 
 
 // Phase F2.2: storage-phase smoke compiles put compiled module directories on

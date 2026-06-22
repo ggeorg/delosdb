@@ -161,8 +161,9 @@ ext.delosdbStoragePhaseF7Proof = {
     ], 'Phase F plan after F7')
     delosdbStoragePhaseF7RequireTokens(errors, roadmap, [
             'F7 landed',
-            'Next: F8 — bridge bypass'
-    ], 'ROADMAP after F7')
+            'F8 landed',
+            'Next: G1 — native remaining range predicates'
+    ], 'ROADMAP after F7 and completed Phase F')
     delosdbStoragePhaseF7RequireTokens(errors, cleanupScript, [
             'storage-phase-f7-native-update-equality-db'
     ], 'F7 smoke DB cleanup entry')

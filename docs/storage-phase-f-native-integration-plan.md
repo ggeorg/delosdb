@@ -10,6 +10,7 @@ activation execution.
 
 ```text
 C27-C37 are closed.
+F0/F1a through F8 are closed.
 
 Existing useful pieces:
 - DelosTableAccess capability interfaces
@@ -18,10 +19,14 @@ Existing useful pieces:
 - EngineHeapTableAccessProof
 - QueryTreeNode classifiers for SELECT comparison, INSERT, DELETE, UPDATE
 - controlled deletion of equality / INSERT / DELETE / UPDATE regex routes
+- provider identity persisted in SYSTABLES.STORAGEPROVIDER
+- provider-aware GenericResultSetFactory branch points for scan/insert/delete/update
+- DelosTableScanResultSet, DelosInsertResultSet, DelosDeleteResultSet, DelosUpdateResultSet
+- F8 native mode bypasses bridge interception globally at EmbedStatement
 
 Still transitional:
-- EmbedStatement still calls VersionedStorageSqlBridge.tryExecute(...)
-- CREATE TABLE / CREATE INDEX and selected read routes still have regex fallback
+- VersionedStorageSqlBridge remains compatibility/test scaffolding only
+- CREATE TABLE / CREATE INDEX and selected read fallback routes remain until Phase G/G6
 ```
 
 ## Final clean target
@@ -274,6 +279,14 @@ Acceptance:
 Covered native paths pass when VersionedStorageSqlBridge.tryExecute(...) is not
 called from EmbedStatement.
 ```
+
+## Phase F closeout
+
+Phase F is complete after F8. The native Derby execution path now covers the core
+MVCC lifecycle: SELECT equality, INSERT, DELETE equality, UPDATE equality, and
+bridge bypass for native mode. Future production MVCC SQL work should extend
+`DelosTableScanResultSet`/native result sets and should not add bridge-only SQL
+routes.
 
 ## Later phases
 
