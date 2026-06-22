@@ -83,7 +83,7 @@ ext.delosdbStoragePhaseC21Proof = {
     ], 'C21 MVCC table-access adapter')
 
     delosdbStoragePhaseC21RequireTokens(errors, sqlBridge, [
-            'DelosVersionedStorageQueryTreeClassifier.selectWhereEquals(normalizedSql)',
+            'DelosVersionedStorageQueryTreeClassifier.selectWhereComparison(normalizedSql)',
             'private static PlannedRoute routeStatement(String normalizedSql)',
             'EngineMvccTableAccess tableAccess = table.tableAccess()',
             'DelosPredicate.equalsTo(',
@@ -98,7 +98,7 @@ ext.delosdbStoragePhaseC21Proof = {
     if (sqlBridge.exists()) {
         def bridgeText = sqlBridge.text
         if (!bridgeText.contains('Pattern.compile(')) {
-            errors << 'C21 must not delete regex routing; Pattern.compile must remain until C24/C25 replacement exists'
+            errors << 'C21 historical guard expects remaining bridge regex fallbacks to exist while later phases retire individual routes'
         }
         def routeStart = bridgeText.indexOf('private static PlannedRoute routeStatement(String normalizedSql)')
         def selectStart = bridgeText.indexOf('private static VersionedStorageSqlResult selectWhereEquals(')
@@ -195,8 +195,8 @@ ext.delosdbStoragePhaseC21Proof = {
     lines << ''
     lines << 'Boundaries preserved:'
     lines << '  VersionedStorageSqlBridge remains the temporary SQL interception point.'
-    lines << '  routeStatement(...) still uses the existing regex classifier.'
-    lines << '  no regex route is deleted.'
+    lines << '  routeStatement(...) now enters the current QueryTreeNode comparison classifier before remaining fallbacks.'
+    lines << '  C21 itself did not delete a regex route; later phases retired matching routes.'
     lines << '  Derby heap execution remains untouched.'
     lines << '  storeless remains a no-store/base-only constraint.'
     lines << ''
