@@ -97,7 +97,7 @@ ext.delosdbStoragePhaseF4Proof = {
             'NATIVE_SELECT_EQUALITY_PROPERTY',
             'createIfEnabled(TableScanResultSetParameters params)',
             'equalityPredicates(TableDescriptor tableDescriptor)',
-            'Qualifier.getColumnId',
+            'qualifier.getColumnId()',
             'tableDescriptor.getColumnDescriptor(qualifier.getColumnId() + 1)',
             'qualifier.getOrderable()',
             'DelosPredicate.equalsTo',
