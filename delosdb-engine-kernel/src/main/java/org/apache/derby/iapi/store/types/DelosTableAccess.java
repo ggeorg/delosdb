@@ -43,6 +43,9 @@ public interface DelosTableAccess {
     /**
      * Semantic guarantees advertised by the concrete table access object.
      *
+     * <p>These semantic guarantees are deliberately separate from structural
+     * capabilities such as scan, index, and mutation method surfaces.</p>
+     *
      * <p>The default is intentionally empty so a base-only/no-store profile can
      * implement the identity/shape contract without promising physical access
      * or transactional behavior.</p>
