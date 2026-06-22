@@ -28,6 +28,8 @@ import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.conn.StatementContext;
 import org.apache.derby.shared.common.error.StandardException;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -53,6 +55,14 @@ public final class DelosVersionedStorageQueryTreeClassifier {
     }
 
     public static Optional<SelectWhereComparisonRoute> selectWhereComparison(String sql) {
+        return parseStatement(sql).flatMap(parsed -> classifySelectWhereComparison(sql, parsed));
+    }
+
+    public static Optional<InsertValuesRoute> insertValues(String sql) {
+        return parseStatement(sql).flatMap(parsed -> classifyInsertValues(sql, parsed));
+    }
+
+    private static Optional<Visitable> parseStatement(String sql) {
         LanguageConnectionContext lcc = (LanguageConnectionContext) ContextService.getContextOrNull(
                 LanguageConnectionContext.CONTEXT_ID);
         if (lcc == null) {
@@ -66,8 +76,7 @@ public final class DelosVersionedStorageQueryTreeClassifier {
                 statementContext = lcc.pushStatementContext(true, true, sql, null, false, 0L);
             }
             compilerContext = lcc.pushCompilerContext();
-            Visitable parsed = compilerContext.getParser().parseStatement(sql);
-            return classifySelectWhereComparison(sql, parsed);
+            return Optional.of(compilerContext.getParser().parseStatement(sql));
         } catch (StandardException e) {
             return Optional.empty();
         } finally {
@@ -126,6 +135,45 @@ public final class DelosVersionedStorageQueryTreeClassifier {
                 pair.column().getColumnName(),
                 pair.operator(),
                 literalSql));
+    }
+
+    static Optional<InsertValuesRoute> classifyInsertValues(String sql, Visitable parsed) {
+        if (!(parsed instanceof InsertNode insert)) {
+            return Optional.empty();
+        }
+        if (insert.targetTableName == null) {
+            return Optional.empty();
+        }
+        if (privateFieldValue(insert, "targetColumnList") != null) {
+            return Optional.empty();
+        }
+        ResultSetNode source = insert.getResultSetNode();
+        if (!(source instanceof RowResultSetNode row)) {
+            return Optional.empty();
+        }
+        ResultColumnList resultColumns = row.getResultColumns();
+        if (resultColumns == null || resultColumns.size() == 0) {
+            return Optional.empty();
+        }
+
+        List<String> values = new ArrayList<>(resultColumns.size());
+        for (int index = 0; index < resultColumns.size(); index++) {
+            ResultColumn resultColumn = resultColumns.elementAt(index);
+            if (!(resultColumn.getExpression() instanceof ConstantNode literal)) {
+                return Optional.empty();
+            }
+            String literalSql = sqlSlice(sql, literal)
+                    .or(() -> constantSqlLiteral(literal))
+                    .orElse(null);
+            if (literalSql == null || literalSql.isBlank()) {
+                return Optional.empty();
+            }
+            values.add(literalSql);
+        }
+
+        return Optional.of(new InsertValuesRoute(
+                insert.targetTableName.getFullTableName(),
+                String.join(", ", values)));
     }
 
     private static boolean cursorHasUnsupportedClauses(CursorNode cursor) {
@@ -229,6 +277,17 @@ public final class DelosVersionedStorageQueryTreeClassifier {
     }
 
     private record ColumnLiteralComparison(ColumnReference column, ConstantNode literal, String operator) {
+    }
+
+    public record InsertValuesRoute(String tableName, String values) {
+        public InsertValuesRoute {
+            if (tableName == null || tableName.isBlank()) {
+                throw new IllegalArgumentException("tableName must not be blank");
+            }
+            if (values == null || values.isBlank()) {
+                throw new IllegalArgumentException("values must not be blank");
+            }
+        }
     }
 
     public record SelectWhereComparisonRoute(String tableName, String columnName, String operator, String rawValue) {

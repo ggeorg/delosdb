@@ -721,23 +721,27 @@ public final class VersionedStorageSqlBridge {
 
     private static Optional<PlannedRoute> routeStatementWithJavaCcQueryTree(String normalizedSql) {
         String trimmed = normalizedSql.stripLeading();
-        if (!trimmed.regionMatches(true, 0, "SELECT", 0, "SELECT".length())) {
-            return Optional.empty();
-        }
-        return DelosVersionedStorageQueryTreeClassifier.selectWhereComparison(normalizedSql)
-                .map(route -> {
-                    if ("=".equals(route.operator())) {
-                        return PlannedRoute.selectWhereEquals(
+        if (trimmed.regionMatches(true, 0, "SELECT", 0, "SELECT".length())) {
+            return DelosVersionedStorageQueryTreeClassifier.selectWhereComparison(normalizedSql)
+                    .map(route -> {
+                        if ("=".equals(route.operator())) {
+                            return PlannedRoute.selectWhereEquals(
+                                    route.tableName(),
+                                    route.columnName(),
+                                    route.rawValue());
+                        }
+                        return PlannedRoute.selectWhereRange(
                                 route.tableName(),
                                 route.columnName(),
+                                route.operator(),
                                 route.rawValue());
-                    }
-                    return PlannedRoute.selectWhereRange(
-                            route.tableName(),
-                            route.columnName(),
-                            route.operator(),
-                            route.rawValue());
-                });
+                    });
+        }
+        if (trimmed.regionMatches(true, 0, "INSERT", 0, "INSERT".length())) {
+            return DelosVersionedStorageQueryTreeClassifier.insertValues(normalizedSql)
+                    .map(route -> PlannedRoute.insertValues(route.tableName(), route.values()));
+        }
+        return Optional.empty();
     }
 
 
