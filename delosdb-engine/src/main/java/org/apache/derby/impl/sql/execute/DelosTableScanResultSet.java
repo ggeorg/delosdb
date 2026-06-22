@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Optional;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
+import org.apache.derby.iapi.sql.execute.CursorResultSet;
 import org.apache.derby.iapi.sql.execute.ExecPreparedStatement;
 import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.sql.execute.ExecRowBuilder;
@@ -45,6 +46,7 @@ import org.apache.derby.iapi.store.types.DelosScan;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.Orderable;
+import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.impl.services.storetypes.EngineMvccTableAccess;
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -64,6 +66,7 @@ import org.apache.derby.shared.common.error.StandardException;
  * </pre>
  */
 final class DelosTableScanResultSet extends NoPutResultSetImpl
+        implements CursorResultSet
 {
     static final String SKELETON_BRANCH_PROPERTY =
             "delosdb.storage.phaseF32.delosTableScanSkeleton";
@@ -236,6 +239,18 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     public int getScanIsolationLevel()
     {
         return params.isolationLevel;
+    }
+
+    @Override
+    public RowLocation getRowLocation() throws StandardException
+    {
+        return null;
+    }
+
+    @Override
+    public ExecRow getCurrentRow() throws StandardException
+    {
+        return currentRow;
     }
 
     String tableNameForTesting()
