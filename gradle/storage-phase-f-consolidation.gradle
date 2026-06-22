@@ -148,7 +148,7 @@ ext.delosdbStoragePhaseFConsolidationProof = {
     ], 'DelosInsertResultSet native insert seam')
     delosdbStoragePhaseFConsolidationRequireTokens(errors, deleteRs, [
             'EngineMvccTableAccess.delete(',
-            'currentDelosRowIdentityForNativeMutation()'
+            'row.rowIdentity().orElseThrow('
     ], 'DelosDeleteResultSet native delete seam')
     delosdbStoragePhaseFConsolidationRequireTokens(errors, updateRs, [
             'EngineMvccTableAccess.update(',
