@@ -158,8 +158,10 @@ still emit the existing `getTableScanResultSet(...)` call,
 `DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(...)`, and ordinary
 execution still returns Derby `TableScanResultSet`.
 
-F3.2 — DelosTableScanResultSet skeleton. This is the first step that may return
-a Delos-specific result set for `delos_mvcc` tables.
+F3.2 landed: DelosTableScanResultSet skeleton. This is the first step that may return
+a Delos-specific result set for `delos_mvcc` tables. The branch is property-gated
+and the skeleton fails loudly at open time; F4 replaces the sentinel with real
+MVCC scan materialization.
 
 F3 acceptance after F3.2:
 

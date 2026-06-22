@@ -904,33 +904,35 @@ public class GenericResultSetFactory implements ResultSetFactory
 			throws StandardException
 	{
         DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
-		return new TableScanResultSet(
-                tableScanParameters(
-                        activation,
-                        conglomId,
-                        scociItem,
-                        resultRowTemplate,
-                        resultSetNumber,
-                        startKeyGetter,
-                        startSearchOperator,
-                        stopKeyGetter,
-                        stopSearchOperator,
-                        sameStartStopPosition,
-                        qualifiers,
-                        tableName,
-                        userSuppliedOptimizerOverrides,
-                        indexName,
-                        isConstraint,
-                        forUpdate,
-                        colRefItem,
-                        indexColItem,
-                        lockMode,
-                        tableLocked,
-                        isolationLevel,
-                        TableScanResultSetParameters.NON_BULK_ROWS_PER_READ,
-                        oneRowScan,
-                        optimizerEstimatedRowCount,
-                        optimizerEstimatedCost));
+        TableScanResultSetParameters params = tableScanParameters(
+                activation,
+                conglomId,
+                scociItem,
+                resultRowTemplate,
+                resultSetNumber,
+                startKeyGetter,
+                startSearchOperator,
+                stopKeyGetter,
+                stopSearchOperator,
+                sameStartStopPosition,
+                qualifiers,
+                tableName,
+                userSuppliedOptimizerOverrides,
+                indexName,
+                isConstraint,
+                forUpdate,
+                colRefItem,
+                indexColItem,
+                lockMode,
+                tableLocked,
+                isolationLevel,
+                TableScanResultSetParameters.NON_BULK_ROWS_PER_READ,
+                oneRowScan,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost);
+        NoPutResultSet delosTableScan = DelosTableScanResultSet.createIfEnabled(params).orElse(null);
+        if (delosTableScan != null) { return delosTableScan; }
+        return new TableScanResultSet(params);
 	}
 
     public NoPutResultSet getValidateCheckConstraintResultSet(
@@ -1024,43 +1026,43 @@ public class GenericResultSetFactory implements ResultSetFactory
 									double optimizerEstimatedCost)
 			throws StandardException
 	{
-		//Prior to Cloudscape 10.0 release, holdability was false by default. Programmers had to explicitly
-		//set the holdability to true using JDBC apis. Since holdability was not true by default, we chose to disable the
-		//prefetching for RR and Serializable when holdability was explicitly set to true. 
-		//But starting Cloudscape 10.0 release, in order to be DB2 compatible, holdability is set to true by default.
-		//Because of that, we can not continue to disable the prefetching for RR and Serializable, since it causes
-		//severe performance degradation - bug 5953.    
+        //Prior to Cloudscape 10.0 release, holdability was false by default. Programmers had to explicitly
+        //set the holdability to true using JDBC apis. Since holdability was not true by default, we chose to disable the
+        //prefetching for RR and Serializable when holdability was explicitly set to true.
+        //But starting Cloudscape 10.0 release, in order to be DB2 compatible, holdability is set to true by default.
+        //Because of that, we can not continue to disable the prefetching for RR and Serializable, since it causes
+        //severe performance degradation - bug 5953.
 
-		        DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
-		return new BulkTableScanResultSet(
-                tableScanParameters(
-                        activation,
-                        conglomId,
-                        scociItem,
-                        resultRowTemplate,
-                        resultSetNumber,
-                        startKeyGetter,
-                        startSearchOperator,
-                        stopKeyGetter,
-                        stopSearchOperator,
-                        sameStartStopPosition,
-                        qualifiers,
-                        tableName,
-                        userSuppliedOptimizerOverrides,
-                        indexName,
-                        isConstraint,
-                        forUpdate,
-                        colRefItem,
-                        indexColItem,
-                        lockMode,
-                        tableLocked,
-                        isolationLevel,
-                        rowsPerRead,
-                        oneRowScan,
-                        optimizerEstimatedRowCount,
-                        optimizerEstimatedCost),
+        DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
+        TableScanResultSetParameters params = tableScanParameters(
+                activation,
+                conglomId,
+                scociItem,
+                resultRowTemplate,
+                resultSetNumber,
+                startKeyGetter,
+                startSearchOperator,
+                stopKeyGetter,
+                stopSearchOperator,
+                sameStartStopPosition,
+                qualifiers,
+                tableName,
+                userSuppliedOptimizerOverrides,
+                indexName,
+                isConstraint,
+                forUpdate,
+                colRefItem,
+                indexColItem,
+                lockMode,
+                tableLocked,
+                isolationLevel,
                 rowsPerRead,
-                disableForHoldable);
+                oneRowScan,
+                optimizerEstimatedRowCount,
+                optimizerEstimatedCost);
+        NoPutResultSet delosTableScan = DelosTableScanResultSet.createIfEnabled(params).orElse(null);
+        if (delosTableScan != null) { return delosTableScan; }
+        return new BulkTableScanResultSet(params, rowsPerRead, disableForHoldable);
 	}
 
 	/**

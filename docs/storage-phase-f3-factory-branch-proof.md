@@ -21,8 +21,8 @@ The proof keeps the hard inherited compiler surfaces untouched:
 no FromBaseTable.generate() change
 no AsmJava change
 no ResultSetFactory method-shape change
-no getDelosTableScanResultSet method yet
-no DelosTableScanResultSet yet
+no getDelosTableScanResultSet method
+F3.2 may add a DelosTableScanResultSet skeleton without changing this F3.1 bytecode-shape proof
 ```
 
 ## Why this is intentionally narrow
@@ -50,8 +50,9 @@ The observed table is F3_FACTORY_BRANCH_MVCC.
 VersionedStorageSqlBridge was not invoked.
 ```
 
-## Next step
+## Follow-up
 
-F3.2 replaces the proof-only observation with a real branch that returns a
-`DelosTableScanResultSet` skeleton for `delos_mvcc` tables while default heap
-tables continue returning Derby `TableScanResultSet`.
+F3.2 adds a property-gated `DelosTableScanResultSet` skeleton branch for
+`delos_mvcc` tables while default heap tables continue returning Derby scan
+result sets.  F4 replaces that skeleton sentinel with real MVCC scan
+materialization.

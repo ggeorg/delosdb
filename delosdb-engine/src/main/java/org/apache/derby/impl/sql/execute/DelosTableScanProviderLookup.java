@@ -56,6 +56,18 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_PROBE_PROPERTY =
             "delosdb.storage.phaseF3.tableScanBranchProbe";
 
+    /**
+     * Test/proof gate for Phase F3.2.  When enabled, a non-default provider
+     * table scan returns the DelosTableScanResultSet skeleton instead of the
+     * normal Derby heap scan.  Production execution keeps this disabled until
+     * F4 implements real MVCC row materialization.
+     */
+    public static final String FACTORY_SKELETON_BRANCH_PROPERTY =
+            DelosTableScanResultSet.SKELETON_BRANCH_PROPERTY;
+
+    public static final String FACTORY_SKELETON_REACHED_MESSAGE =
+            DelosTableScanResultSet.SKELETON_REACHED_MESSAGE;
+
     private static final AtomicReference<Result> LAST_FACTORY_LOOKUP = new AtomicReference<>();
     private static final AtomicReference<Result> LAST_NON_DEFAULT_FACTORY_LOOKUP = new AtomicReference<>();
     private static final AtomicInteger FACTORY_LOOKUP_COUNT = new AtomicInteger();

@@ -262,10 +262,9 @@ F0  — freeze bridge expansion and clean generated smoke DB artifacts
 F1a — parser-owned provider syntax confirmation smoke only
 F2.1 landed — persist storageProviderName across restart via nullable SYSTABLES.STORAGEPROVIDER
 F2.2 landed — add DelosTableScanProviderLookup for ResultSetFactory metadata lookup preparation
-Next: F3.1 landed — provider-aware ResultSetFactory branch proof
-F3.2 — DelosTableScanResultSet skeleton
-F3   — provider-aware ResultSetFactory / DelosTableScanResultSet proof
-F4  — native MVCC SELECT equality through generated activation/result-set path
+F3.1 landed — provider-aware ResultSetFactory branch proof
+F3.2 landed — DelosTableScanResultSet skeleton
+Next: F4 — native MVCC SELECT equality through generated activation/result-set path
 F5  — native INSERT
 F6  — native DELETE equality
 F7  — native UPDATE equality
