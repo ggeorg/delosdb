@@ -10,7 +10,8 @@ import java.util.Objects;
 
 /**
  * Phase C35 proof: UPDATE equality can be classified through Derby JavaCC /
- * QueryTreeNode. The direct UPDATE regex route remains as fallback until C36.
+ * QueryTreeNode. Later phases may delete the direct UPDATE regex route after
+ * this parser-classifier proof remains green.
  */
 public final class StoragePhaseC35JavaCcUpdateClassifierSmoke {
     private StoragePhaseC35JavaCcUpdateClassifierSmoke() {

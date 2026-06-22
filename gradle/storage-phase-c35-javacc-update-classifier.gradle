@@ -2,7 +2,7 @@ import org.gradle.api.tasks.compile.JavaCompile
 
 // Phase C35 JavaCC UPDATE equality classifier.
 // C35 adds a Derby JavaCC / QueryTreeNode route for UPDATE table SET column = literal WHERE column = literal.
-// The direct UPDATE regex route remains fallback until C36.
+// Later phases may delete the direct UPDATE regex fallback after this proof.
 
 ext.delosdbStoragePhaseC35ReportDir = layout.buildDirectory.dir('reports/delosdb')
 ext.delosdbStoragePhaseC35ReportFile =
@@ -85,13 +85,6 @@ ext.delosdbStoragePhaseC35Proof = {
             'case UPDATE_WHERE_EQUALS:',
             'private static VersionedStorageSqlResult updateWhereEquals('
     ], 'C35 bridge JavaCC UPDATE route')
-    if (sqlBridge.exists()) {
-        def bridgeText = sqlBridge.text
-        if (!bridgeText.contains('UPDATE_WHERE_EQUALS.matcher(normalizedSql)')) {
-            errors << 'C35 must keep the direct UPDATE regex fallback until C36 deletes it'
-        }
-    }
-
     delosdbStoragePhaseC35RequireTokens(errors, smokeSource, [
             'StoragePhaseC35JavaCcUpdateClassifierSmoke',
             'UPDATE C35_JAVACC_UPDATE SET value = \'parser\' WHERE id = 2',
@@ -117,10 +110,10 @@ ext.delosdbStoragePhaseC35Proof = {
     lines << ''
     lines << 'C35 mechanic:'
     lines << '  Add a Derby JavaCC / QueryTreeNode route for UPDATE table SET column = literal WHERE column = literal.'
-    lines << '  Keep the direct UPDATE regex route as fallback until C36, but prove C35 through the Derby JDBC/parser path.'
+    lines << '  Prove C35 through the Derby JDBC/parser path so a later phase can delete the direct UPDATE regex route.'
     lines << ''
     lines << 'Boundaries preserved:'
-    lines << '  No UPDATE regex deletion.'
+    lines << '  C35 itself does not require a direct UPDATE regex fallback after C36.'
     lines << '  No function-call predicates or expression model.'
     lines << '  No guarantee/capability checks inside the JavaCC classifier.'
     lines << ''

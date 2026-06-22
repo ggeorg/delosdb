@@ -96,7 +96,6 @@ ext.delosdbStoragePhaseC11Proof = {
     ], 'Phase C11 SQL UPDATE delegation smoke')
 
     delosdbStoragePhaseC11RequireTokens(errors, sqlBridge, [
-            'private static final Pattern UPDATE_WHERE_EQUALS',
             'return updateWhereEquals(',
             'tableAccess.update(',
             'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
@@ -193,10 +192,10 @@ ext.delosdbStoragePhaseC11Proof = {
     lines << '================================================='
     lines << ''
     lines << 'C11 mechanic:'
-    lines << '  keep the temporary SQL UPDATE regex router, but delegate the actual UPDATE mutation through VersionedStorageExecutionBridge.'
+    lines << '  originally proved SQL UPDATE delegation; later phases may remove the direct regex router after QueryTreeNode replacement.'
     lines << ''
     lines << 'Preserved behavior:'
-    lines << '  SQL bridge still owns temporary regex statement routing.'
+    lines << '  SQL bridge still owns the transitional routing boundary, now with JavaCC routes replacing retired regex routes.'
     lines << '  UPDATE update count and post-update SELECT visibility are preserved by the smoke.'
     lines << '  Derby heap execution remains untouched.'
     lines << ''
@@ -205,7 +204,7 @@ ext.delosdbStoragePhaseC11Proof = {
     lines << '  C23 superseded path: tableAccess.update(accessContext, row identity, replacement row)'
     lines << ''
     lines << 'Not done in C11:'
-    lines << '  UPDATE regex routing is intentionally not removed yet; that belongs to a later routing-retirement slice.'
+    lines << '  Later phases may retire UPDATE regex routing after a QueryTreeNode replacement is proven.'
     lines << ''
     lines << 'Proof smoke:'
     lines << '  dev/storage-phase-c11-update-delegation-smoke/src/main/java/delosdb/smoke/StoragePhaseC11UpdateDelegationSmoke.java'

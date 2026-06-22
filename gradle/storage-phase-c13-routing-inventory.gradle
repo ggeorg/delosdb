@@ -52,8 +52,6 @@ ext.delosdbStoragePhaseC13Proof = {
             'case SELECT_WHERE_EQUALS:',
             'private static final Pattern SELECT_WHERE_RANGE',
             'private static final Pattern SELECT_WHERE_BETWEEN',
-            'private static final Pattern UPDATE_WHERE_EQUALS',
-            'private static final Pattern DELETE_WHERE_EQUALS',
             'VersionedStorageExecutionBridge.resolvedTableOperations()',
             'PLANNED_TABLE_OPERATION_BRIDGE.insert(',
             'PLANNED_TABLE_OPERATION_BRIDGE.scanAll(',

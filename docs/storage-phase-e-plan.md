@@ -87,3 +87,8 @@ write-conflict validation only.
 - No `POINT_IN_TIME_RECOVERY`.
 - No guarantee/capability checks inside the JavaCC classifier.
 - No E3 or E4 implementation in C27/C28.
+
+
+## C36 update
+
+C36 deletes the UPDATE equality regex route after C35 proved the matching Derby JavaCC / QueryTreeNode classifier. UPDATE remains supported through parser-classified planned routes and the C23 row-identity mutation path.
