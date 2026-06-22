@@ -67,6 +67,7 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
     private final GeneratedMethod checkGM;
     private final DelosTableScanResultSet nativeScanSource;
     private final DelosTableScanProviderLookup.Result providerLookup;
+    private final UpdateConstantAction constants;
     private final int baseColumnCount;
     private long rowCount;
 
@@ -77,6 +78,7 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
             Activation activation,
             DelosTableScanResultSet nativeScanSource,
             DelosTableScanProviderLookup.Result providerLookup,
+            UpdateConstantAction constants,
             int baseColumnCount)
     {
         super(activation);
@@ -85,6 +87,7 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
         this.checkGM = checkGM;
         this.nativeScanSource = nativeScanSource;
         this.providerLookup = providerLookup;
+        this.constants = constants;
         this.baseColumnCount = baseColumnCount;
     }
 
@@ -134,6 +137,7 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
                 activation,
                 nativeScan.get(),
                 lookup.get(),
+                constants,
                 targetTable.getNumberOfColumns()));
     }
 
