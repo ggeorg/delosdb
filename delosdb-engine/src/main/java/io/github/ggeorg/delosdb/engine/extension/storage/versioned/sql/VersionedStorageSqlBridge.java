@@ -733,6 +733,15 @@ public final class VersionedStorageSqlBridge {
                             route.columnName(),
                             route.rawValue()));
         }
+        if (trimmed.regionMatches(true, 0, "UPDATE", 0, "UPDATE".length())) {
+            return DelosVersionedStorageQueryTreeClassifier.updateWhereEquals(normalizedSql)
+                    .map(route -> PlannedRoute.updateWhereEquals(
+                            route.tableName(),
+                            route.setColumnName(),
+                            route.setRawValue(),
+                            route.predicateColumnName(),
+                            route.predicateRawValue()));
+        }
         return Optional.empty();
     }
 

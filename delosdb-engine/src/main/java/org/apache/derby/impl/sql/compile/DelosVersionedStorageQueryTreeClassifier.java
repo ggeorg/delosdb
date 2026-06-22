@@ -66,6 +66,10 @@ public final class DelosVersionedStorageQueryTreeClassifier {
         return parseStatement(sql).flatMap(parsed -> classifyDeleteWhereEquals(sql, parsed));
     }
 
+    public static Optional<UpdateWhereEqualsRoute> updateWhereEquals(String sql) {
+        return parseStatement(sql).flatMap(parsed -> classifyUpdateWhereEquals(sql, parsed));
+    }
+
     private static Optional<Visitable> parseStatement(String sql) {
         LanguageConnectionContext lcc = (LanguageConnectionContext) ContextService.getContextOrNull(
                 LanguageConnectionContext.CONTEXT_ID);
@@ -227,6 +231,73 @@ public final class DelosVersionedStorageQueryTreeClassifier {
                 literalSql));
     }
 
+    static Optional<UpdateWhereEqualsRoute> classifyUpdateWhereEquals(String sql, Visitable parsed) {
+        if (!(parsed instanceof UpdateNode update)) {
+            return Optional.empty();
+        }
+        if (update.targetTableName == null) {
+            return Optional.empty();
+        }
+        if (!(update.getResultSetNode() instanceof SelectNode select)) {
+            return Optional.empty();
+        }
+        if (select.groupByList != null || select.havingClause != null || select.windows != null) {
+            return Optional.empty();
+        }
+        if (select.fromList == null || select.fromList.size() != 1) {
+            return Optional.empty();
+        }
+        if (!(select.fromList.elementAt(0) instanceof FromBaseTable fromBaseTable)) {
+            return Optional.empty();
+        }
+        if (!update.targetTableName.getFullTableName().equalsIgnoreCase(fromBaseTable.tableName.getFullTableName())) {
+            return Optional.empty();
+        }
+        ResultColumnList setColumns = select.getResultColumns();
+        if (setColumns == null || setColumns.size() != 1) {
+            return Optional.empty();
+        }
+        ResultColumn setColumn = setColumns.elementAt(0);
+        String setColumnName = setColumn.getName();
+        if (setColumnName == null || setColumnName.isBlank()) {
+            return Optional.empty();
+        }
+        if (!(setColumn.getExpression() instanceof ConstantNode setLiteral)) {
+            return Optional.empty();
+        }
+        if (!(select.whereClause instanceof BinaryRelationalOperatorNode comparison)) {
+            return Optional.empty();
+        }
+
+        ColumnLiteralComparison pair = columnLiteralComparison(comparison).orElse(null);
+        if (pair == null || !"=".equals(pair.operator())) {
+            return Optional.empty();
+        }
+        if (!columnQualifiesSingleFromTable(pair.column(), fromBaseTable.tableName)) {
+            return Optional.empty();
+        }
+
+        String setLiteralSql = sqlSlice(sql, setLiteral)
+                .or(() -> constantSqlLiteral(setLiteral))
+                .orElse(null);
+        String predicateLiteralSql = sqlSlice(sql, pair.literal())
+                .or(() -> constantSqlLiteral(pair.literal()))
+                .orElse(null);
+        if (setLiteralSql == null || setLiteralSql.isBlank()) {
+            return Optional.empty();
+        }
+        if (predicateLiteralSql == null || predicateLiteralSql.isBlank()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new UpdateWhereEqualsRoute(
+                update.targetTableName.getFullTableName(),
+                setColumnName,
+                setLiteralSql,
+                pair.column().getColumnName(),
+                predicateLiteralSql));
+    }
+
     private static boolean cursorHasUnsupportedClauses(CursorNode cursor) {
         return privateFieldValue(cursor, "orderByList") != null
                 || privateFieldValue(cursor, "offset") != null
@@ -328,6 +399,31 @@ public final class DelosVersionedStorageQueryTreeClassifier {
     }
 
     private record ColumnLiteralComparison(ColumnReference column, ConstantNode literal, String operator) {
+    }
+
+    public record UpdateWhereEqualsRoute(
+            String tableName,
+            String setColumnName,
+            String setRawValue,
+            String predicateColumnName,
+            String predicateRawValue) {
+        public UpdateWhereEqualsRoute {
+            if (tableName == null || tableName.isBlank()) {
+                throw new IllegalArgumentException("tableName must not be blank");
+            }
+            if (setColumnName == null || setColumnName.isBlank()) {
+                throw new IllegalArgumentException("setColumnName must not be blank");
+            }
+            if (setRawValue == null || setRawValue.isBlank()) {
+                throw new IllegalArgumentException("setRawValue must not be blank");
+            }
+            if (predicateColumnName == null || predicateColumnName.isBlank()) {
+                throw new IllegalArgumentException("predicateColumnName must not be blank");
+            }
+            if (predicateRawValue == null || predicateRawValue.isBlank()) {
+                throw new IllegalArgumentException("predicateRawValue must not be blank");
+            }
+        }
     }
 
     public record InsertValuesRoute(String tableName, String values) {
