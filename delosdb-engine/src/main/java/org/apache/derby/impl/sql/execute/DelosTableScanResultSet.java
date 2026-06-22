@@ -334,12 +334,32 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         for (int column = 1; column <= columnCount; column++) {
             DataValueDescriptor target = resultRow.getColumn(column);
             Object nativeValue = EngineMvccTableAccess.nativeValue(delosRow.values().get(column - 1));
-            if (nativeValue == null) {
-                target.setToNull();
-            } else {
-                target.setValue(nativeValue);
-            }
+            setDerbyValue(target, nativeValue);
         }
+    }
+
+    private static void setDerbyValue(DataValueDescriptor target, Object nativeValue)
+            throws StandardException
+    {
+        if (nativeValue == null) {
+            target.setToNull();
+            return;
+        }
+        if (nativeValue instanceof Integer integer) {
+            target.setValue(integer.intValue());
+            return;
+        }
+        if (nativeValue instanceof Long longValue) {
+            target.setValue(longValue.longValue());
+            return;
+        }
+        if (nativeValue instanceof String string) {
+            target.setValue(string);
+            return;
+        }
+        throw StandardException.plainWrapException(new IllegalArgumentException(
+                "Unsupported native delos_mvcc value for Derby materialization: "
+                        + nativeValue.getClass().getName()));
     }
 
     private static void requireSnapshotIsolation(EngineMvccTableAccess tableAccess) throws StandardException
