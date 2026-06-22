@@ -1,0 +1,194 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C30 first range-regex deletion.
+// C29 proved SELECT > through Derby JavaCC / QueryTreeNode. C30 removes that
+// exact direct-regex branch while keeping the remaining range regex fallback.
+
+ext.delosdbStoragePhaseC30ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC30ReportFile =
+        ext.delosdbStoragePhaseC30ReportDir.map { it.file('storage-phase-c30-range-regex-deletion.txt') }
+ext.delosdbStoragePhaseC30SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c30-range-regex-deletion-smoke')
+
+ext.delosdbStoragePhaseC30RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC30RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC30RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC30ModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseC30RuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseC30Classpath = {
+    files(
+            delosdbStoragePhaseC30SmokeClassesDir,
+            delosdbStoragePhaseC30ModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseC30ModuleClassDir(':delosdb-engine-kernel', 'io.github.ggeorg.delosdb.engine.kernel'),
+            delosdbStoragePhaseC30ModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseC30ModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseC30RuntimeJars())
+}
+
+ext.delosdbStoragePhaseC30Proof = {
+    def errors = []
+    def lines = []
+
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def classifier = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/DelosVersionedStorageQueryTreeClassifier.java')
+    def smokeSource = file('dev/storage-phase-c30-range-regex-deletion-smoke/src/main/java/delosdb/smoke/StoragePhaseC30RangeRegexDeletionSmoke.java')
+    def phaseEPlan = file('docs/storage-phase-e-plan.md')
+
+    delosdbStoragePhaseC30RequireTokens(errors, sqlBridge, [
+            'private static final Pattern SELECT_WHERE_RANGE',
+            '(>=|<=|<)',
+            'SELECT_WHERE_RANGE.matcher(normalizedSql)',
+            'DelosVersionedStorageQueryTreeClassifier.selectWhereComparison(normalizedSql)',
+            'PlannedRoute.selectWhereRange('
+    ], 'VersionedStorageSqlBridge C30 remaining range fallback and JavaCC route')
+    if (sqlBridge.exists()) {
+        def bridgeText = sqlBridge.text
+        if (bridgeText.contains('(>=|<=|>|<)')) {
+            errors << 'C30 must remove the direct regex branch for SELECT > range predicates'
+        }
+        def rangePatternIndex = bridgeText.indexOf('private static final Pattern SELECT_WHERE_RANGE')
+        if (rangePatternIndex >= 0) {
+            def rangePattern = bridgeText.substring(rangePatternIndex, Math.min(bridgeText.length(), rangePatternIndex + 320))
+            if (rangePattern.contains('|>|')) {
+                errors << 'SELECT_WHERE_RANGE regex fallback must not include the standalone > operator after C30'
+            }
+            if (!rangePattern.contains('>=|<=|<')) {
+                errors << 'SELECT_WHERE_RANGE fallback should keep the other range regex operators until their own replacements are deleted'
+            }
+        } else {
+            errors << 'C30 expected SELECT_WHERE_RANGE fallback to remain for non-deleted range forms'
+        }
+    }
+
+    delosdbStoragePhaseC30RequireTokens(errors, classifier, [
+            'BinaryRelationalOperatorNode.K_GREATER_THAN',
+            'selectWhereComparison(String sql)',
+            'return Optional.of(new SelectWhereComparisonRoute('
+    ], 'C30 JavaCC greater-than classifier replacement')
+    if (classifier.exists()) {
+        def classifierText = classifier.text
+        ['Pattern.compile(', '.matcher(', 'DelosTableGuarantee', 'guarantees()'].each { token ->
+            if (classifierText.contains(token)) {
+                errors << "C30 classifier must remain parser-tree only and must not include token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC30RequireTokens(errors, smokeSource, [
+            'StoragePhaseC30RangeRegexDeletionSmoke',
+            'SELECT * FROM C30_RANGE_REGEX_DELETION WHERE id > 2',
+            'direct bridge SELECT > without Derby parser context must not be handled by a regex fallback',
+            'javacc-query-tree',
+            'select-range',
+            'VersionedStorageAccessPath.INDEX_SCAN',
+            'storage_phase_c30_range_regex_deletion: PASS'
+    ], 'C30 range regex deletion smoke')
+    if (smokeSource.exists()) {
+        def smokeText = smokeSource.text
+        ['Pattern.compile(', '.matcher(', 'FunctionCall', 'RexNode'].each { token ->
+            if (smokeText.contains(token)) {
+                errors << "C30 smoke must not add regex or expression-model token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC30RequireTokens(errors, phaseEPlan, [
+            'C30 — delete one matching range regex',
+            'C31 — JavaCC INSERT classifier'
+    ], 'Phase E/D sequence plan document')
+
+    lines << 'DelosDB Storage Phase C30 Range Regex Deletion'
+    lines << '================================================'
+    lines << ''
+    lines << 'C30 mechanic:'
+    lines << '  Delete the standalone SELECT > range regex branch after C29 proved the Derby QueryTreeNode replacement.'
+    lines << '  Keep the remaining SELECT range regex fallback forms for later one-by-one deletion.'
+    lines << ''
+    lines << 'Boundaries preserved:'
+    lines << '  No new JavaCC classifier family beyond C29 range SELECT.'
+    lines << '  No INSERT/UPDATE/DELETE classifier work.'
+    lines << '  No function-call predicates or expression model.'
+    lines << '  No guarantee/capability checks inside the JavaCC classifier.'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC30RangeRegexDeletionReport') {
+    group = 'verification'
+    description = 'Writes the Phase C30 range regex deletion report.'
+    dependsOn 'verifyStoragePhaseC29JavaCcRangeClassifier'
+    outputs.file(delosdbStoragePhaseC30ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC30Proof()
+        def outputFile = delosdbStoragePhaseC30ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C30 range regex deletion failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC30RangeRegexDeletionSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C30 range regex deletion smoke test.'
+    source = files('dev/storage-phase-c30-range-regex-deletion-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseC30SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC30Classpath()
+}
+
+tasks.register('storagePhaseC30RangeRegexDeletionSmoke', JavaExec) {
+    dependsOn 'storagePhaseC30RangeRegexDeletionReport', 'compileStoragePhaseC30RangeRegexDeletionSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase C30 range regex deletion smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseC30RangeRegexDeletionSmoke'
+    classpath = delosdbStoragePhaseC30Classpath()
+}
+
+tasks.register('verifyStoragePhaseC30RangeRegexDeletion') {
+    group = 'verification'
+    description = 'Verifies Phase C30 first range regex deletion.'
+    dependsOn 'storagePhaseC30RangeRegexDeletionReport', 'storagePhaseC30RangeRegexDeletionSmoke'
+    doLast {
+        println 'Verified Phase C30 range regex deletion; next step is C31 JavaCC INSERT classifier'
+    }
+}

@@ -99,7 +99,7 @@ public final class VersionedStorageSqlBridge {
     private static final Pattern SELECT_COUNT = Pattern.compile(
             "(?is)^select\\s+count\\s*\\(\\s*\\*\\s*\\)\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)$");
     private static final Pattern SELECT_WHERE_RANGE = Pattern.compile(
-            "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(>=|<=|>|<)\\s*(.+?)$");
+            "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(>=|<=|<)\\s*(.+?)$");
     private static final Pattern SELECT_WHERE_BETWEEN = Pattern.compile(
             "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s+between\\s+(.+?)\\s+and\\s+(.+?)$");
     private static final Pattern UPDATE_WHERE_EQUALS = Pattern.compile(

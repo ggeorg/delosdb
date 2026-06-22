@@ -47,6 +47,8 @@ beyond `NOT_EQUAL` are part of C28.
 - C35 — JavaCC UPDATE equality classifier
 - C36 — delete UPDATE regex
 
+C30 deletes only the standalone `>` range regex branch; the remaining range regex forms stay as fallback until their own parser replacements are retired.
+
 ## E3 — Cost estimation, deferred
 
 Cost estimation should use a separate optional surface such as
