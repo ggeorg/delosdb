@@ -45,7 +45,8 @@ beyond `NOT_EQUAL` are part of C28.
 - C33 — JavaCC DELETE equality classifier — done in this slice
 - C34 — delete DELETE regex — done in this slice
 - C35 — JavaCC UPDATE equality classifier — done in this slice
-- C36 — delete UPDATE regex
+- C36 — delete UPDATE regex — done in this slice
+- C37 — route-retirement closeout and regex inventory
 
 C30 deletes only the standalone `>` range regex branch; the remaining range regex forms stay as fallback until their own parser replacements are retired.
 
@@ -53,7 +54,7 @@ C32 deletes only the direct `INSERT INTO ... VALUES (...)` regex branch; INSERT 
 
 C33 adds the Derby JavaCC / QueryTreeNode classifier for `DELETE FROM ... WHERE column = literal`.  C34 deletes the matching direct DELETE regex branch; DELETE remains supported through Derby JavaCC / QueryTreeNode classification in JDBC/parser context.
 
-C35 adds the Derby JavaCC / QueryTreeNode classifier for `UPDATE ... SET column = literal WHERE column = literal`.  The direct UPDATE regex branch remains as fallback until C36.
+C35 adds the Derby JavaCC / QueryTreeNode classifier for `UPDATE ... SET column = literal WHERE column = literal`.  C36 deletes the matching direct UPDATE regex branch; UPDATE remains supported through Derby JavaCC / QueryTreeNode classification in JDBC/parser context.
 
 ## E3 — Cost estimation, deferred
 
@@ -92,3 +93,11 @@ write-conflict validation only.
 ## C36 update
 
 C36 deletes the UPDATE equality regex route after C35 proved the matching Derby JavaCC / QueryTreeNode classifier. UPDATE remains supported through parser-classified planned routes and the C23 row-identity mutation path.
+
+## C37 closeout
+
+C37 is non-behavioral. It records and verifies the C27-C36 state: guarantee
+honesty, caller-side NOT_EQUAL leftover filtering, parser-classified SELECT
+range / INSERT / DELETE / UPDATE routes, and the exact regex routes already
+retired. Remaining regex routes stay as explicit temporary fallbacks until each
+has its own QueryTreeNode replacement and deletion proof.

@@ -68,10 +68,11 @@ import java.util.regex.Pattern;
  * SELECT COUNT(*) FROM name
  * CREATE INDEX idx_name ON name(column_name)
  * SELECT * FROM name WHERE column_name = 'literal' (classified by Derby JavaCC / QueryTreeNode)
- * SELECT * FROM name WHERE column_name >= 'literal'
- * SELECT * FROM name WHERE column_name BETWEEN 'a' AND 'z'
- * UPDATE name SET column_name = 'new' WHERE indexed_column = 'old'
- * DELETE FROM name WHERE indexed_column = 'old'
+ * SELECT * FROM name WHERE column_name > 'literal' (classified by Derby JavaCC / QueryTreeNode)
+ * SELECT * FROM name WHERE column_name >= 'literal' (JavaCC first; regex fallback remains)
+ * SELECT * FROM name WHERE column_name BETWEEN 'a' AND 'z' (regex fallback remains)
+ * UPDATE name SET column_name = 'new' WHERE indexed_column = 'old' (classified by Derby JavaCC / QueryTreeNode)
+ * DELETE FROM name WHERE indexed_column = 'old' (classified by Derby JavaCC / QueryTreeNode)
  * </pre>
  *
  * <p>Auto-commit statements commit through the provider-local transaction coordinator.

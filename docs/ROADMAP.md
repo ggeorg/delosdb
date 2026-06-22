@@ -213,6 +213,32 @@ Detailed closeout notes live in:
 docs/storage-phase-c19-c25-closeout.md
 ```
 
+## Closed lane: storage Phase C guarantee and regex-retirement slice
+
+The C27--C36 storage slice is closed by `verifyStoragePhaseC37RouteRetirementCloseout`.
+
+Result:
+
+```text
+C27 — guarantee honesty, separate from structural capabilities
+C28 — caller-side NOT_EQUAL leftover-predicate evaluation
+C29 — JavaCC / QueryTreeNode range SELECT classifier
+C30 — delete standalone > range regex
+C31 — JavaCC / QueryTreeNode INSERT VALUES classifier
+C32 — delete INSERT VALUES regex
+C33 — JavaCC / QueryTreeNode DELETE equality classifier
+C34 — delete DELETE equality regex
+C35 — JavaCC / QueryTreeNode UPDATE equality classifier
+C36 — delete UPDATE equality regex
+C37 — route-retirement closeout and remaining-regex inventory
+```
+
+Detailed closeout notes live in:
+
+```text
+docs/storage-phase-c27-c36-closeout.md
+```
+
 ## Research-friendly constraint
 
 DelosDB should be friendly to database-systems research and university teaching,
