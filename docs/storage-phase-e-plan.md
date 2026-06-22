@@ -43,7 +43,7 @@ beyond `NOT_EQUAL` are part of C28.
 - C31 — JavaCC INSERT classifier — done
 - C32 — delete INSERT regex — done in this slice
 - C33 — JavaCC DELETE equality classifier — done in this slice
-- C34 — delete DELETE regex
+- C34 — delete DELETE regex — done in this slice
 - C35 — JavaCC UPDATE equality classifier
 - C36 — delete UPDATE regex
 
@@ -51,7 +51,7 @@ C30 deletes only the standalone `>` range regex branch; the remaining range rege
 
 C32 deletes only the direct `INSERT INTO ... VALUES (...)` regex branch; INSERT remains supported through Derby JavaCC / QueryTreeNode classification in JDBC/parser context.
 
-C33 adds the Derby JavaCC / QueryTreeNode classifier for `DELETE FROM ... WHERE column = literal`.  The direct DELETE regex fallback remains until C34.
+C33 adds the Derby JavaCC / QueryTreeNode classifier for `DELETE FROM ... WHERE column = literal`.  C34 deletes the matching direct DELETE regex branch; DELETE remains supported through Derby JavaCC / QueryTreeNode classification in JDBC/parser context.
 
 ## E3 — Cost estimation, deferred
 

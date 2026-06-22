@@ -144,8 +144,7 @@ public final class StoragePhaseC23MvccContractMutationSmoke {
 
         requireUpdateCount(plan.execute("UPDATE " + plan.tableName()
                 + " SET value = 'bravo-updated' WHERE id = 2"), 1L, "contract update");
-        requireUpdateCount(plan.execute("DELETE FROM " + plan.tableName()
-                + " WHERE id = 1"), 1L, "contract delete");
+        deleteFixtureRowThroughDerbyParser(plan.tableName());
 
         VersionedStorageSqlResult finalRows = plan.execute("SELECT * FROM " + plan.tableName());
         requireSingleRow(finalRows, 2, "bravo-updated");
@@ -166,6 +165,23 @@ public final class StoragePhaseC23MvccContractMutationSmoke {
             }
         } catch (ClassNotFoundException e) {
             throw new SQLException("Unable to load embedded Derby driver for C23 fixture inserts", e);
+        } finally {
+            SmokeUtils.shutdown(databasePath);
+        }
+    }
+
+    private static void deleteFixtureRowThroughDerbyParser(String tableName) throws SQLException {
+        String databasePath = "storage-phase-c23-mvcc-contract-mutation-db";
+        try {
+            SmokeUtils.loadEmbeddedDriver();
+            try (Connection connection = SmokeUtils.connect(databasePath, true);
+                 Statement statement = connection.createStatement()) {
+                require(statement.executeUpdate("DELETE FROM " + tableName
+                                + " WHERE id = 1") == 1,
+                        "delete id=1 should be handled through Derby parser after DELETE regex deletion");
+            }
+        } catch (ClassNotFoundException e) {
+            throw new SQLException("Unable to load embedded Derby driver for C23 fixture delete", e);
         } finally {
             SmokeUtils.shutdown(databasePath);
         }

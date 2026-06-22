@@ -102,8 +102,6 @@ public final class VersionedStorageSqlBridge {
             "(?is)^select\\s+\\*\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s+between\\s+(.+?)\\s+and\\s+(.+?)$");
     private static final Pattern UPDATE_WHERE_EQUALS = Pattern.compile(
             "(?is)^update\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+set\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)$");
-    private static final Pattern DELETE_WHERE_EQUALS = Pattern.compile(
-            "(?is)^delete\\s+from\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+where\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*(.+?)$");
 
     private static final Object LOCK = new Object();
     private static final Map<VersionedTableMetadata, TableDefinition> TABLES = new HashMap<>();
@@ -550,12 +548,6 @@ public final class VersionedStorageSqlBridge {
                     updateWhere.group(3),
                     updateWhere.group(4),
                     updateWhere.group(5));
-        }
-
-        Matcher deleteWhere = DELETE_WHERE_EQUALS.matcher(normalizedSql);
-        if (deleteWhere.matches()) {
-            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
-            return PlannedRoute.deleteWhereEquals(deleteWhere.group(1), deleteWhere.group(2), deleteWhere.group(3));
         }
 
         Matcher selectBetween = SELECT_WHERE_BETWEEN.matcher(normalizedSql);

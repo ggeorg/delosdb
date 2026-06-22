@@ -61,7 +61,6 @@ ext.delosdbStoragePhaseC23Proof = {
 
     delosdbStoragePhaseC23RequireTokens(errors, sqlBridge, [
             'private static final Pattern UPDATE_WHERE_EQUALS',
-            'private static final Pattern DELETE_WHERE_EQUALS',
             'return PlannedRoute.updateWhereEquals(',
             'return PlannedRoute.deleteWhereEquals(',
             'private static VersionedStorageSqlResult updateWhereEquals(',
@@ -81,7 +80,7 @@ ext.delosdbStoragePhaseC23Proof = {
     if (sqlBridge.exists()) {
         def bridgeText = sqlBridge.text
         if (!bridgeText.contains('Pattern.compile(')) {
-            errors << 'C23 must not delete regex routing; Pattern.compile must remain until C24/C25 replacement exists'
+            errors << 'C23 still expects at least one temporary regex route to remain until all QueryTreeNode replacements are complete'
         }
         def updateStart = bridgeText.indexOf('private static VersionedStorageSqlResult updateWhereEquals(')
         def deleteStart = bridgeText.indexOf('private static VersionedStorageSqlResult deleteWhereEquals(')
@@ -131,6 +130,8 @@ ext.delosdbStoragePhaseC23Proof = {
             'DELETE FROM ',
             'WHERE id = 2',
             'WHERE id = 1',
+            'deleteFixtureRowThroughDerbyParser',
+            'delete id=1 should be handled through Derby parser after DELETE regex deletion',
             'VersionedStorageSqlBridge.tryExecute(sql, this, true, Connection.TRANSACTION_READ_COMMITTED)'
     ], 'C23 MVCC contract mutation smoke')
 

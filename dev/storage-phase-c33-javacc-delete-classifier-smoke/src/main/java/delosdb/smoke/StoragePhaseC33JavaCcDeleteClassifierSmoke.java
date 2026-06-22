@@ -1,7 +1,6 @@
 package delosdb.smoke;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlResult;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -12,7 +11,8 @@ import java.util.Objects;
 
 /**
  * Phase C33 proof: DELETE equality can be classified through Derby JavaCC /
- * QueryTreeNode. The direct DELETE regex fallback remains until C34.
+ * QueryTreeNode. After C34, this smoke remains classifier-based and no longer
+ * requires the deleted direct DELETE text route.
  */
 public final class StoragePhaseC33JavaCcDeleteClassifierSmoke {
     private StoragePhaseC33JavaCcDeleteClassifierSmoke() {
@@ -22,21 +22,6 @@ public final class StoragePhaseC33JavaCcDeleteClassifierSmoke {
         SmokeUtils.loadEmbeddedDriver();
         try (Connection connection = SmokeUtils.connect("storage-phase-c33-javacc-delete-classifier-db", true);
              Statement statement = connection.createStatement()) {
-            statement.executeUpdate("CREATE TABLE C33_DIRECT_DELETE (id INT, value VARCHAR(40)) USING delos_mvcc");
-            statement.executeUpdate("INSERT INTO C33_DIRECT_DELETE VALUES (1, 'alpha')");
-            statement.executeUpdate("INSERT INTO C33_DIRECT_DELETE VALUES (2, 'bravo')");
-
-            Object directOwner = new Object();
-            requireUpdateCount(VersionedStorageSqlBridge.tryExecute(
-                            "DELETE FROM C33_DIRECT_DELETE WHERE id = 1",
-                            directOwner,
-                            true,
-                            Connection.TRANSACTION_READ_COMMITTED),
-                    1L,
-                    "direct DELETE regex fallback");
-            require(Objects.equals("regex", VersionedStorageSqlBridge.lastRouteClassifierForTesting().orElseThrow()),
-                    "direct DELETE equality should still use regex fallback in C33");
-
             statement.executeUpdate("CREATE TABLE C33_JAVACC_DELETE (id INT, value VARCHAR(40)) USING delos_mvcc");
             statement.executeUpdate("INSERT INTO C33_JAVACC_DELETE VALUES (1, 'alpha')");
             statement.executeUpdate("INSERT INTO C33_JAVACC_DELETE VALUES (2, 'bravo')");
@@ -60,19 +45,6 @@ public final class StoragePhaseC33JavaCcDeleteClassifierSmoke {
         }
 
         System.out.println("storage_phase_c33_javacc_delete_classifier: PASS");
-    }
-
-    private static void requireUpdateCount(VersionedStorageSqlResult result, long expected, String label) {
-        if (result == null) {
-            throw new IllegalStateException(label + " was not handled by VersionedStorageSqlBridge");
-        }
-        if (result.returnsRows()) {
-            throw new IllegalStateException(label + " unexpectedly returned rows");
-        }
-        if (result.updateCount() != expected) {
-            throw new IllegalStateException(label + " update count expected=" + expected
-                    + " actual=" + result.updateCount());
-        }
     }
 
     private static void require(boolean condition, String message) {

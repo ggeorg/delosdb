@@ -1,0 +1,215 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C34 DELETE regex deletion.
+// C34 deletes the direct regex route for DELETE FROM table WHERE column = literal only after
+// C33 proved the equivalent Derby JavaCC / QueryTreeNode route.
+
+ext.delosdbStoragePhaseC34ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC34ReportFile =
+        ext.delosdbStoragePhaseC34ReportDir.map { it.file('storage-phase-c34-delete-regex-deletion.txt') }
+ext.delosdbStoragePhaseC34SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c34-delete-regex-deletion-smoke')
+
+ext.delosdbStoragePhaseC34RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC34RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC34RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC34ModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseC34RuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseC34Classpath = {
+    files(
+            delosdbStoragePhaseC34SmokeClassesDir,
+            delosdbStoragePhaseC34ModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseC34ModuleClassDir(':delosdb-engine-kernel', 'io.github.ggeorg.delosdb.engine.kernel'),
+            delosdbStoragePhaseC34ModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseC34ModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseC34RuntimeJars())
+}
+
+ext.delosdbStoragePhaseC34Proof = {
+    def errors = []
+    def lines = []
+
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def classifier = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/DelosVersionedStorageQueryTreeClassifier.java')
+    def c23SmokeSource = file('dev/storage-phase-c23-mvcc-contract-mutation-smoke/src/main/java/delosdb/smoke/StoragePhaseC23MvccContractMutationSmoke.java')
+    def c33SmokeSource = file('dev/storage-phase-c33-javacc-delete-classifier-smoke/src/main/java/delosdb/smoke/StoragePhaseC33JavaCcDeleteClassifierSmoke.java')
+    def smokeSource = file('dev/storage-phase-c34-delete-regex-deletion-smoke/src/main/java/delosdb/smoke/StoragePhaseC34DeleteRegexDeletionSmoke.java')
+    def cleanupScript = file('scripts/delete-stale-storage-smoke-dbs.sh')
+
+    delosdbStoragePhaseC34RequireTokens(errors, classifier, [
+            'deleteWhereEquals(String sql)',
+            'classifyDeleteWhereEquals(String sql, Visitable parsed)',
+            'parsed instanceof DeleteNode delete',
+            'return Optional.of(new DeleteWhereEqualsRoute(',
+            'public record DeleteWhereEqualsRoute(String tableName, String columnName, String rawValue)'
+    ], 'C34 JavaCC DELETE classifier replacement')
+    if (classifier.exists()) {
+        def classifierText = classifier.text
+        ['Pattern.compile(', '.matcher(', 'DelosTableGuarantee', 'guarantees()', 'FunctionCall', 'RexNode'].each { token ->
+            if (classifierText.contains(token)) {
+                errors << "C34 classifier must remain parser-tree only and must not include token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC34RequireTokens(errors, sqlBridge, [
+            'DelosVersionedStorageQueryTreeClassifier.deleteWhereEquals(normalizedSql)',
+            'PlannedRoute.deleteWhereEquals(',
+            'case DELETE_WHERE_EQUALS:',
+            'return deleteWhereEquals(table.get(), plannedRoute.predicateColumnName(), plannedRoute.predicateValue(), transactionOwner, autoCommit, transactionIsolation);'
+    ], 'C34 bridge JavaCC DELETE route')
+    if (sqlBridge.exists()) {
+        def bridgeText = sqlBridge.text
+        [
+                'private static final Pattern DELETE_WHERE_EQUALS',
+                'DELETE_WHERE_EQUALS.matcher(normalizedSql)',
+                'delete\\s+from\\s+',
+                'delete\\\\s+from\\\\s+'
+        ].each { token ->
+            if (bridgeText.contains(token)) {
+                errors << "C34 must delete DELETE regex token from VersionedStorageSqlBridge: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC34RequireTokens(errors, c23SmokeSource, [
+            'deleteFixtureRowThroughDerbyParser',
+            'delete id=1 should be handled through Derby parser after DELETE regex deletion',
+            'verifySqlUpdateAndDeleteUseContractMutationPath'
+    ], 'C23 smoke remains valid after DELETE regex deletion')
+    if (c23SmokeSource.exists()) {
+        def c23SmokeText = c23SmokeSource.text
+        if (c23SmokeText.contains('plan.execute("DELETE FROM " + plan.tableName()')) {
+            errors << 'C23 smoke must not require the deleted direct DELETE regex fallback after C34'
+        }
+    }
+
+    delosdbStoragePhaseC34RequireTokens(errors, c33SmokeSource, [
+            'StoragePhaseC33JavaCcDeleteClassifierSmoke',
+            'DELETE equality route should be classified by Derby JavaCC / QueryTreeNode',
+            'javacc-query-tree',
+            'storage_phase_c33_javacc_delete_classifier: PASS'
+    ], 'C33 smoke remains classifier-based after C34')
+    if (c33SmokeSource.exists()) {
+        def c33SmokeText = c33SmokeSource.text
+        if (c33SmokeText.contains('regex fallback')) {
+            errors << 'C33 smoke must not require the deleted direct DELETE regex fallback after C34'
+        }
+    }
+
+    delosdbStoragePhaseC34RequireTokens(errors, smokeSource, [
+            'StoragePhaseC34DeleteRegexDeletionSmoke',
+            'direct bridge DELETE equality without Derby parser context must not be handled by a regex fallback',
+            'DELETE FROM C34_DIRECT_DELETE WHERE id = 1',
+            'DELETE FROM C34_DELETE_REGEX_DELETION WHERE id = 2',
+            'DELETE equality route must use Derby JavaCC / QueryTreeNode after regex deletion',
+            'javacc-query-tree',
+            'storage_phase_c34_delete_regex_deletion: PASS'
+    ], 'C34 DELETE regex deletion smoke')
+    if (smokeSource.exists()) {
+        def smokeText = smokeSource.text
+        ['Pattern.compile(', '.matcher(', 'FunctionCall', 'RexNode'].each { token ->
+            if (smokeText.contains(token)) {
+                errors << "C34 smoke must not add regex or expression-model token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC34RequireTokens(errors, cleanupScript, [
+            'storage-phase-c34-delete-regex-deletion-db'
+    ], 'C34 cleanup script smoke DB entry')
+
+    lines << 'DelosDB Storage Phase C34 DELETE Regex Deletion'
+    lines << '================================================'
+    lines << ''
+    lines << 'C34 mechanic:'
+    lines << '  Delete the direct regex route for DELETE FROM table WHERE column = literal.'
+    lines << '  Keep DELETE execution through the already-proven Derby JavaCC / QueryTreeNode route.'
+    lines << ''
+    lines << 'Boundaries preserved:'
+    lines << '  No UPDATE classifier work.'
+    lines << '  No function-call predicates or expression model.'
+    lines << '  No guarantee/capability checks inside the JavaCC classifier.'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC34DeleteRegexDeletionReport') {
+    group = 'verification'
+    description = 'Writes the Phase C34 DELETE regex deletion report.'
+    dependsOn 'verifyStoragePhaseC33JavaCcDeleteClassifier'
+    outputs.file(delosdbStoragePhaseC34ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC34Proof()
+        def outputFile = delosdbStoragePhaseC34ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C34 DELETE regex deletion failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC34DeleteRegexDeletionSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C34 DELETE regex deletion smoke test.'
+    source = files('dev/storage-phase-c34-delete-regex-deletion-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseC34SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC34Classpath()
+}
+
+tasks.register('storagePhaseC34DeleteRegexDeletionSmoke', JavaExec) {
+    dependsOn 'storagePhaseC34DeleteRegexDeletionReport', 'compileStoragePhaseC34DeleteRegexDeletionSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase C34 DELETE regex deletion smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseC34DeleteRegexDeletionSmoke'
+    classpath = delosdbStoragePhaseC34Classpath()
+}
+
+tasks.register('verifyStoragePhaseC34DeleteRegexDeletion') {
+    group = 'verification'
+    description = 'Verifies Phase C34 DELETE regex deletion.'
+    dependsOn 'storagePhaseC34DeleteRegexDeletionReport', 'storagePhaseC34DeleteRegexDeletionSmoke'
+    doLast {
+        println 'Verified Phase C34 DELETE regex deletion; next step is C35 UPDATE equality classifier'
+    }
+}

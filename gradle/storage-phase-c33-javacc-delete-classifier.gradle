@@ -2,7 +2,7 @@ import org.gradle.api.tasks.compile.JavaCompile
 
 // Phase C33 JavaCC DELETE equality classifier.
 // C33 adds a Derby JavaCC / QueryTreeNode route for DELETE FROM table WHERE column = literal.
-// The direct DELETE regex fallback remains until C34.
+// After C34, this classifier proof remains valid without the deleted direct DELETE text route.
 
 ext.delosdbStoragePhaseC33ReportDir = layout.buildDirectory.dir('reports/delosdb')
 ext.delosdbStoragePhaseC33ReportFile =
@@ -80,13 +80,12 @@ ext.delosdbStoragePhaseC33Proof = {
     delosdbStoragePhaseC33RequireTokens(errors, sqlBridge, [
             'DelosVersionedStorageQueryTreeClassifier.deleteWhereEquals(normalizedSql)',
             'PlannedRoute.deleteWhereEquals(',
-            'DELETE_WHERE_EQUALS.matcher(normalizedSql)'
-    ], 'C33 bridge JavaCC DELETE route plus regex fallback')
+            'case DELETE_WHERE_EQUALS:',
+            'private static VersionedStorageSqlResult deleteWhereEquals('
+    ], 'C33 bridge JavaCC DELETE route')
 
     delosdbStoragePhaseC33RequireTokens(errors, smokeSource, [
             'StoragePhaseC33JavaCcDeleteClassifierSmoke',
-            'DELETE FROM C33_DIRECT_DELETE WHERE id = 1',
-            'direct DELETE equality should still use regex fallback in C33',
             'DELETE FROM C33_JAVACC_DELETE WHERE id = 2',
             'DELETE equality route should be classified by Derby JavaCC / QueryTreeNode',
             'javacc-query-tree',
@@ -110,11 +109,11 @@ ext.delosdbStoragePhaseC33Proof = {
     lines << ''
     lines << 'C33 mechanic:'
     lines << '  Add a Derby JavaCC / QueryTreeNode route for DELETE FROM table WHERE column = literal.'
-    lines << '  Keep the direct DELETE regex fallback until C34 deletes it after this proof is green.'
+    lines << '  After C34, this proof remains classifier-based without the deleted direct DELETE text route.'
     lines << ''
     lines << 'Boundaries preserved:'
     lines << '  No UPDATE classifier work.'
-    lines << '  No DELETE regex deletion in C33.'
+    lines << '  No UPDATE classifier work.'
     lines << '  No function-call predicates or expression model.'
     lines << '  No guarantee/capability checks inside the JavaCC classifier.'
     lines << ''
