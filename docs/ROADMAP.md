@@ -239,6 +239,48 @@ Detailed closeout notes live in:
 docs/storage-phase-c27-c36-closeout.md
 ```
 
+
+## Active lane: storage Phase F native Derby execution integration
+
+Phase F is the clean-design correction after the bridge-retirement slice.  C37
+is the last bridge-expansion closeout.  New MVCC SQL work must move behind Derby
+catalog metadata, `ResultSetFactory`, and generated activation execution instead
+of expanding `VersionedStorageSqlBridge`.
+
+Important correction:
+
+```text
+F1 grammar work is already done.
+sqlgrammar.jj has storageProviderClause().
+CreateTableNode and TableDescriptor already carry storageProviderName in memory.
+```
+
+Active sequence:
+
+```text
+F0  — freeze bridge expansion and clean generated smoke DB artifacts
+F1a — parser-owned provider syntax confirmation smoke only
+F2  — persist storageProviderName across restart, likely through a nullable SYSTABLES column
+F3  — provider-aware ResultSetFactory / DelosTableScanResultSet proof
+F4  — native MVCC SELECT equality through generated activation/result-set path
+F5  — native INSERT
+F6  — native DELETE equality
+F7  — native UPDATE equality
+F8  — bridge bypass for native mode, compatibility bridge explicit only
+```
+
+F3/F4 are the hard frontier: generated activations currently emit
+`getTableScanResultSet(...)`; the preferred proof keeps that bytecode shape and
+branches inside `GenericResultSetFactory` using the passed `tableName` plus the
+activation's `LanguageConnectionContext` to resolve `TableDescriptor` and its
+`storageProviderName`.
+
+Detailed plan lives in:
+
+```text
+docs/storage-phase-f-native-integration-plan.md
+```
+
 ## Research-friendly constraint
 
 DelosDB should be friendly to database-systems research and university teaching,

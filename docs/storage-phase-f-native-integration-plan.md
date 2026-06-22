@@ -1,0 +1,228 @@
+# Storage Phase F — Native Derby Execution Integration
+
+Phase F is the clean-design correction after the C27-C37 bridge-retirement
+slice.  The bridge proved useful semantics and contracts, but the target design
+is no longer to polish `VersionedStorageSqlBridge`.  The target is to move
+`delos_mvcc` behind Derby catalog metadata, `ResultSetFactory`, and generated
+activation execution.
+
+## Current verified state
+
+```text
+C27-C37 are closed.
+
+Existing useful pieces:
+- DelosTableAccess capability interfaces
+- DelosTableGuarantee, separate from structural DelosTableCapability
+- EngineMvccTableAccess
+- EngineHeapTableAccessProof
+- QueryTreeNode classifiers for SELECT comparison, INSERT, DELETE, UPDATE
+- controlled deletion of equality / INSERT / DELETE / UPDATE regex routes
+
+Still transitional:
+- EmbedStatement still calls VersionedStorageSqlBridge.tryExecute(...)
+- CREATE TABLE / CREATE INDEX and selected read routes still have regex fallback
+```
+
+## Final clean target
+
+```text
+SQL
+  -> Derby JavaCC parser
+  -> Derby binder / catalog metadata
+  -> Derby optimizer
+  -> generated activation
+  -> ResultSetFactory / Delos runtime result set
+  -> DelosTableAccess / EngineMvccTableAccess
+```
+
+No new bridge-only SQL routes are allowed in Phase F.  No new `Pattern.matches`
+or `Pattern.compile` route may be added to `VersionedStorageSqlBridge`.
+
+## F0 — freeze and cleanup
+
+F0 is housekeeping and boundary-setting.
+
+```text
+- Mark VersionedStorageSqlBridge as transitional scaffolding.
+- Keep C37 as the final bridge-expansion closeout.
+- Clean root-level storage smoke databases.
+- Ensure future storage-phase-*-db directories are ignored.
+- Remove already-tracked generated smoke database files from version control
+  once using the IDE/Git index workflow; do not keep those binaries in commits.
+```
+
+F0 does not add behavior and does not delete another route.
+
+## F1a — parser-owned provider syntax confirmation
+
+The former F1 implementation step is skipped because the source already has the
+necessary grammar path:
+
+```text
+sqlgrammar.jj:
+  storageProviderClause()
+
+CreateTableNode:
+  storageProviderName
+
+TableDescriptor:
+  storageProviderName
+```
+
+F1a is only a confirmation smoke: preparing `CREATE TABLE ... USING delos_mvcc`
+must go through Derby's real parser/prepare path, not through bridge execution.
+
+## F2 — persist provider identity in catalog
+
+This is the first real architecture step.
+
+Problem:
+
+```text
+TableDescriptor.storageProviderName exists in memory, but provider identity is
+not persisted and therefore does not survive database restart.
+```
+
+Default design:
+
+```text
+Add a nullable provider-name column to SYSTABLES unless inspection exposes a
+hard catalog-version blocker.
+```
+
+Reason:
+
+```text
+A side table looks safer but forces every descriptor reconstruction path to
+remember a second lookup and introduces consistency problems.  A nullable
+SYSTABLES column is invasive but bounded to the catalog row-factory path.
+```
+
+F2 acceptance:
+
+```text
+CREATE TABLE ... USING delos_mvcc
+shutdown / reopen
+descriptor still has storageProviderName = delos_mvcc
+heap/default tables reconstruct with null/default provider
+unknown provider fails with a Derby-style SQL error
+```
+
+## F3 — provider-aware ResultSetFactory proof
+
+F3 is the real compiler/executor frontier.  A weak proof that ASM can call a
+helper is not enough.
+
+The workable branch point is:
+
+```text
+GenericResultSetFactory.getTableScanResultSet(..., tableName, activation, ...)
+```
+
+`tableName` is passed as a `String`, and `activation` gives access to the
+`LanguageConnectionContext`.  From there, the `DataDictionary` can resolve the
+`TableDescriptor`, including `storageProviderName`, using the normal cached
+catalog descriptor path.
+
+Preferred F3 design:
+
+```text
+generated activation still emits getTableScanResultSet(...)
+GenericResultSetFactory checks table descriptor provider
+if provider == delos_mvcc:
+  return DelosTableScanResultSet skeleton
+else:
+  return normal Derby TableScanResultSet
+```
+
+F3 acceptance:
+
+```text
+No EmbedStatement bridge for the proof path.
+No regex.
+No PlannedRoute.
+Generated activation reaches a Delos result set through the existing
+ResultSetFactory call shape.
+```
+
+## F4 — native MVCC SELECT equality
+
+Target:
+
+```sql
+SELECT * FROM APP.T WHERE ID = 1
+```
+
+The hard translation is bounded and explicit:
+
+```text
+Qualifier[][]
+  -> Qualifier.getColumnId() ordinal
+  -> TableDescriptor.getColumnDescriptor(int) resolves column name
+  -> Qualifier.getOrderable() returns StoreDataValue
+  -> existing store-type bridge unwraps StoreDataValue into a DelosPredicate value
+```
+
+F4 acceptance:
+
+```text
+SELECT equality does not call VersionedStorageSqlBridge.tryExecute(...).
+No regex.
+No PlannedRoute.
+DelosTableScanResultSet calls EngineMvccTableAccess.scan(...).
+Rows are materialized into Derby result rows.
+```
+
+## F5-F7 — native DML
+
+```text
+F5 — native INSERT:
+  generated execution builds DelosRow and calls insert(...)
+
+F6 — native DELETE equality:
+  scan -> DelosRowIdentity -> delete(...)
+
+F7 — native UPDATE equality:
+  scan -> DelosRowIdentity -> replacement DelosRow -> update(...)
+```
+
+The C23 row-identity discipline remains the rule: mutation uses row identities
+produced by scan, never identity re-derived from SQL text.
+
+## F8 — bridge bypass strategy
+
+The old idea of disabling the bridge per metadata-backed table at the
+`EmbedStatement` pre-parse interception point is wrong: before parse/bind, the
+bridge cannot know which table metadata is referenced without doing its own
+parser/catalog work.
+
+Correct F8:
+
+```text
+Native mode bypasses bridge interception globally for normal execution.
+Compatibility/test mode can keep the old bridge explicitly enabled.
+```
+
+Acceptance:
+
+```text
+Covered native paths pass when VersionedStorageSqlBridge.tryExecute(...) is not
+called from EmbedStatement.
+```
+
+## Later phases
+
+```text
+G — remaining native SQL coverage and bridge retirement
+H — optional DelosCostableTableAccess and cost integration
+I — mutation concurrency primitive; choose Option A or Option B before code
+```
+
+## Revised timeline
+
+```text
+Core clean native path: 8-12 weeks
+Broad bridge retirement + cost + Option A: 14-20 weeks
+Real row reservation / locking Option B: 18-26 weeks
+```

@@ -51,12 +51,16 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Minimal SQL/JDBC bridge for the experimental {@code delos_mvcc} provider.
+ * Transitional SQL/JDBC bridge for the experimental {@code delos_mvcc} provider.
  *
- * <p>This is deliberately tiny and quarantined. It exists to prove the first
- * user-visible Phase 4 behavior while the normal Derby-compatible compiler,
- * heap store, indexes, WAL, and optimizer remain untouched. Supported SQL is
- * intentionally narrow:</p>
+ * <p>This bridge is scaffolding, not the target architecture. Phase C/D/E used
+ * it to prove MVCC semantics, table-access contracts, QueryTreeNode
+ * classification, and controlled regex deletion. Phase F freezes this bridge:
+ * do not add new bridge-only SQL routes or new regex routes. New Delos/MVCC SQL
+ * work must move behind Derby catalog metadata, ResultSetFactory, and generated
+ * activation execution.</p>
+ *
+ * <p>The remaining supported SQL is intentionally narrow and temporary:</p>
  *
  * <pre>
  * CREATE TABLE name (id INT, value VARCHAR(40)) USING delos_mvcc
