@@ -18,6 +18,7 @@ import org.apache.derby.impl.services.storetypes.EngineMvccTableAccess;
 import org.apache.derby.impl.sql.compile.DelosVersionedStorageQueryTreeClassifier;
 import org.apache.derby.iapi.store.types.DelosAccessContext;
 import org.apache.derby.iapi.store.types.DelosPredicate;
+import org.apache.derby.iapi.store.types.DelosPredicateOperator;
 import org.apache.derby.iapi.store.types.DelosProjection;
 import org.apache.derby.iapi.store.types.DelosRow;
 import org.apache.derby.iapi.store.types.DelosRowIdentity;
@@ -1001,15 +1002,40 @@ public final class VersionedStorageSqlBridge {
             TableDefinition table,
             List<List<Object>> rows,
             List<DelosPredicate> leftoverPredicates) throws SQLException {
-        List<List<Object>> filteredRows = new ArrayList<>(rows);
-        for (DelosPredicate predicate : leftoverPredicates) {
-            if (predicate.operator() != org.apache.derby.iapi.store.types.DelosPredicateOperator.EQUAL
-                    || predicate.operands().size() != 1) {
-                throw sqlException("0A000", "Unsupported leftover delos_mvcc predicate above table access: " + predicate);
-            }
-            int columnIndex = table.columnIndex(predicate.columnName());
+        return applyLeftoverPredicatesByColumnNames(
+                table.columnNames(),
+                rows,
+                leftoverPredicates,
+                "Unsupported leftover delos_mvcc predicate above table access: ");
+    }
+
+    /**
+     * C28 test-only hook for proving caller-side leftover predicate evaluation
+     * without adding another SQL classifier shape.
+     */
+    public static List<List<Object>> applyLeftoverPredicatesForTesting(
+            List<String> columnNames,
+            List<List<Object>> rows,
+            List<DelosPredicate> leftoverPredicates) throws SQLException {
+        return applyLeftoverPredicatesByColumnNames(
+                columnNames,
+                rows,
+                leftoverPredicates,
+                "Unsupported leftover delos_mvcc predicate above table access: ");
+    }
+
+    private static List<List<Object>> applyLeftoverPredicatesByColumnNames(
+            List<String> columnNames,
+            List<List<Object>> rows,
+            List<DelosPredicate> leftoverPredicates,
+            String unsupportedMessagePrefix) throws SQLException {
+        Objects.requireNonNull(columnNames, "columnNames");
+        List<List<Object>> filteredRows = new ArrayList<>(Objects.requireNonNull(rows, "rows"));
+        for (DelosPredicate predicate : Objects.requireNonNull(leftoverPredicates, "leftoverPredicates")) {
+            requireSupportedLeftoverPredicate(predicate, unsupportedMessagePrefix);
+            int columnIndex = columnIndex(columnNames, predicate.columnName());
             Object expected = EngineMvccTableAccess.nativeValue(predicate.operands().get(0));
-            filteredRows.removeIf(row -> !Objects.equals(expected, row.get(columnIndex)));
+            filteredRows.removeIf(row -> !leftoverPredicateMatches(predicate.operator(), expected, row.get(columnIndex)));
         }
         return List.copyOf(filteredRows);
     }
@@ -1252,18 +1278,77 @@ public final class VersionedStorageSqlBridge {
             TableDefinition table,
             List<DelosRow> rows,
             List<DelosPredicate> leftoverPredicates) throws SQLException {
-        List<DelosRow> filteredRows = new ArrayList<>(rows);
-        for (DelosPredicate predicate : leftoverPredicates) {
-            if (predicate.operator() != org.apache.derby.iapi.store.types.DelosPredicateOperator.EQUAL
-                    || predicate.operands().size() != 1) {
-                throw sqlException("0A000", "Unsupported leftover delos_mvcc mutation predicate above table access: " + predicate);
-            }
-            int columnIndex = table.columnIndex(predicate.columnName());
+        return applyLeftoverPredicatesToContractRowsByColumnNames(
+                table.columnNames(),
+                rows,
+                leftoverPredicates,
+                "Unsupported leftover delos_mvcc mutation predicate above table access: ");
+    }
+
+    /**
+     * C28 test-only hook for proving caller-side leftover predicate evaluation
+     * on contract rows without routing another SQL shape through the classifier.
+     */
+    public static List<DelosRow> applyLeftoverPredicatesToContractRowsForTesting(
+            List<String> columnNames,
+            List<DelosRow> rows,
+            List<DelosPredicate> leftoverPredicates) throws SQLException {
+        return applyLeftoverPredicatesToContractRowsByColumnNames(
+                columnNames,
+                rows,
+                leftoverPredicates,
+                "Unsupported leftover delos_mvcc mutation predicate above table access: ");
+    }
+
+    private static List<DelosRow> applyLeftoverPredicatesToContractRowsByColumnNames(
+            List<String> columnNames,
+            List<DelosRow> rows,
+            List<DelosPredicate> leftoverPredicates,
+            String unsupportedMessagePrefix) throws SQLException {
+        Objects.requireNonNull(columnNames, "columnNames");
+        List<DelosRow> filteredRows = new ArrayList<>(Objects.requireNonNull(rows, "rows"));
+        for (DelosPredicate predicate : Objects.requireNonNull(leftoverPredicates, "leftoverPredicates")) {
+            requireSupportedLeftoverPredicate(predicate, unsupportedMessagePrefix);
+            int columnIndex = columnIndex(columnNames, predicate.columnName());
             Object expected = EngineMvccTableAccess.nativeValue(predicate.operands().get(0));
-            filteredRows.removeIf(row -> !Objects.equals(expected,
+            filteredRows.removeIf(row -> !leftoverPredicateMatches(
+                    predicate.operator(),
+                    expected,
                     EngineMvccTableAccess.nativeValue(row.values().get(columnIndex))));
         }
         return List.copyOf(filteredRows);
+    }
+
+    private static void requireSupportedLeftoverPredicate(
+            DelosPredicate predicate,
+            String unsupportedMessagePrefix) throws SQLException {
+        Objects.requireNonNull(predicate, "predicate");
+        if ((predicate.operator() != DelosPredicateOperator.EQUAL
+                && predicate.operator() != DelosPredicateOperator.NOT_EQUAL)
+                || predicate.operands().size() != 1) {
+            throw sqlException("0A000", unsupportedMessagePrefix + predicate);
+        }
+    }
+
+    private static boolean leftoverPredicateMatches(
+            DelosPredicateOperator operator,
+            Object expected,
+            Object actual) {
+        return switch (operator) {
+            case EQUAL -> Objects.equals(expected, actual);
+            case NOT_EQUAL -> !Objects.equals(expected, actual);
+            default -> throw new IllegalArgumentException("Unsupported leftover delos_mvcc predicate operator: " + operator);
+        };
+    }
+
+    private static int columnIndex(List<String> columnNames, String columnName) throws SQLException {
+        String normalized = Objects.requireNonNull(columnName, "columnName").trim().toUpperCase(Locale.ROOT);
+        for (int i = 0; i < columnNames.size(); i++) {
+            if (Objects.requireNonNull(columnNames.get(i), "columnName entry").trim().toUpperCase(Locale.ROOT).equals(normalized)) {
+                return i;
+            }
+        }
+        throw sqlException("42X04", "Column not found in delos_mvcc leftover predicate: " + columnName);
     }
 
     private static DelosRowIdentity requireMutationRowIdentity(DelosRow row) {
@@ -1871,6 +1956,14 @@ public final class VersionedStorageSqlBridge {
 
         private List<ColumnDefinition> columns() {
             return columns;
+        }
+
+        private List<String> columnNames() {
+            List<String> names = new ArrayList<>(columns.size());
+            for (ColumnDefinition column : columns) {
+                names.add(column.name());
+            }
+            return List.copyOf(names);
         }
 
         private VersionedTable<Long, List<Object>> table() {

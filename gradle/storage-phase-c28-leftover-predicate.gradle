@@ -1,0 +1,221 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C28 leftover-predicate evaluation.
+// C21 already proves that EngineMvccTableAccess removes pushed equality
+// predicates and leaves NOT_EQUAL in the mutable filter list. C28 proves the
+// caller side evaluates that leftover NOT_EQUAL above the adapter.
+
+ext.delosdbStoragePhaseC28ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC28ReportFile =
+        ext.delosdbStoragePhaseC28ReportDir.map { it.file('storage-phase-c28-leftover-predicate.txt') }
+ext.delosdbStoragePhaseC28SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c28-leftover-predicate-smoke')
+
+ext.delosdbStoragePhaseC28RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC28RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC28RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC28ModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseC28RuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseC28Classpath = {
+    files(
+            delosdbStoragePhaseC28SmokeClassesDir,
+            delosdbStoragePhaseC28ModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseC28ModuleClassDir(':delosdb-engine-kernel', 'io.github.ggeorg.delosdb.engine.kernel'),
+            delosdbStoragePhaseC28ModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseC28ModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseC28RuntimeJars())
+}
+
+ext.delosdbStoragePhaseC28Proof = {
+    def errors = []
+    def lines = []
+
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def adapter = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineMvccTableAccess.java')
+    def smokeSource = file('dev/storage-phase-c28-leftover-predicate-smoke/src/main/java/delosdb/smoke/StoragePhaseC28LeftoverPredicateSmoke.java')
+    def classifier = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/DelosVersionedStorageQueryTreeClassifier.java')
+    def phaseEPlan = file('docs/storage-phase-e-plan.md')
+
+    delosdbStoragePhaseC28RequireTokens(errors, sqlBridge, [
+            'applyLeftoverPredicates(',
+            'applyLeftoverPredicatesToContractRows(',
+            'DelosPredicateOperator.NOT_EQUAL',
+            'case NOT_EQUAL -> !Objects.equals(expected, actual)',
+            'requireSupportedLeftoverPredicate(',
+            'applyLeftoverPredicatesForTesting(',
+            'applyLeftoverPredicatesToContractRowsForTesting('
+    ], 'VersionedStorageSqlBridge C28 leftover predicate evaluator')
+
+    if (sqlBridge.exists()) {
+        def bridgeText = sqlBridge.text
+        def leftoverStart = bridgeText.indexOf('private static List<List<Object>> applyLeftoverPredicates(')
+        if (leftoverStart >= 0) {
+            def leftoverText = bridgeText.substring(leftoverStart, Math.min(bridgeText.length(), leftoverStart + 5000))
+            if (!leftoverText.contains('DelosPredicateOperator.NOT_EQUAL')) {
+                errors << 'applyLeftoverPredicates must support NOT_EQUAL in addition to EQUAL'
+            }
+            ['FUNCTION', 'FunctionCall', 'RexNode'].each { token ->
+                if (leftoverText.contains(token)) {
+                    errors << "C28 must not introduce function/expression-model predicate token: ${token}"
+                }
+            }
+        } else {
+            errors << 'missing applyLeftoverPredicates method in VersionedStorageSqlBridge'
+        }
+        if (bridgeText.contains('POINT_IN_TIME_RECOVERY') || bridgeText.contains('DURABLE_WAL')) {
+            errors << 'C28 must not reintroduce unearned guarantee names in the bridge'
+        }
+    }
+
+    delosdbStoragePhaseC28RequireTokens(errors, adapter, [
+            'findPushedEquality(mutableFilters)',
+            'mutableFilters.remove(equality.predicate())',
+            'DelosPredicateOperator.EQUAL'
+    ], 'EngineMvccTableAccess equality pushdown')
+    if (adapter.exists() && adapter.text.contains('DelosPredicateOperator.NOT_EQUAL')
+            && adapter.text.contains('mutableFilters.remove')) {
+        // The adapter may import the enum, but it must not remove NOT_EQUAL as a pushed predicate in C28.
+        def adapterText = adapter.text
+        def equalityStart = adapterText.indexOf('private Optional<PushedEquality> findPushedEquality')
+        if (equalityStart >= 0) {
+            def equalityText = adapterText.substring(equalityStart, Math.min(adapterText.length(), equalityStart + 1000))
+            if (equalityText.contains('NOT_EQUAL')) {
+                errors << 'EngineMvccTableAccess must not push NOT_EQUAL in C28; NOT_EQUAL is caller-side leftover work'
+            }
+        }
+    }
+
+    delosdbStoragePhaseC28RequireTokens(errors, smokeSource, [
+            'StoragePhaseC28LeftoverPredicateSmoke',
+            'GROUP_ID',
+            'DelosPredicateOperator.NOT_EQUAL',
+            'mutableFilters.size() == 1',
+            'applyLeftoverPredicatesForTesting',
+            'applyLeftoverPredicatesToContractRowsForTesting',
+            'caller-side NOT_EQUAL filtering must leave exactly one native row',
+            'caller-side NOT_EQUAL filtering must leave exactly one contract row',
+            'storage_phase_c28_leftover_predicate: PASS'
+    ], 'C28 leftover predicate smoke')
+
+    if (smokeSource.exists()) {
+        def smokeText = smokeSource.text
+        ['Pattern.compile(', '.matcher(', 'FunctionCall', 'RexNode'].each { token ->
+            if (smokeText.contains(token)) {
+                errors << "C28 smoke must not add regex or expression-model predicate token: ${token}"
+            }
+        }
+    }
+
+    if (classifier.exists()) {
+        def classifierText = classifier.text
+        ['guarantees()', 'DelosTableGuarantee', 'applyLeftoverPredicates'].each { token ->
+            if (classifierText.contains(token)) {
+                errors << "C28 must not move guarantee or leftover-evaluation policy into the JavaCC classifier: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC28RequireTokens(errors, phaseEPlan, [
+            'C28 — Leftover-predicate evaluation',
+            '`NOT_EQUAL` as a caller-side leftover predicate',
+            'No function-call predicates',
+            'no new predicate operators'
+    ], 'Phase E C28 plan document')
+
+    lines << 'DelosDB Storage Phase C28 Leftover Predicate Evaluation'
+    lines << '======================================================'
+    lines << ''
+    lines << 'C28 mechanic:'
+    lines << '  Keep equality pushdown in EngineMvccTableAccess, leave NOT_EQUAL above access, and evaluate NOT_EQUAL in VersionedStorageSqlBridge caller-side leftover filtering.'
+    lines << ''
+    lines << 'Boundaries preserved:'
+    lines << '  No new JavaCC classifier route.'
+    lines << '  No regex restoration or deletion.'
+    lines << '  No function-call predicates or expression model.'
+    lines << '  No E3 cost surface and no E4 concurrency primitive.'
+    lines << ''
+    lines << 'Proof smoke:'
+    lines << '  dev/storage-phase-c28-leftover-predicate-smoke/src/main/java/delosdb/smoke/StoragePhaseC28LeftoverPredicateSmoke.java'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC28LeftoverPredicateReport') {
+    group = 'verification'
+    description = 'Writes the Phase C28 leftover-predicate evaluation report.'
+    dependsOn 'verifyStoragePhaseC27GuaranteeHonesty'
+    outputs.file(delosdbStoragePhaseC28ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC28Proof()
+        def outputFile = delosdbStoragePhaseC28ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C28 leftover-predicate evaluation failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC28LeftoverPredicateSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C28 leftover-predicate smoke test.'
+    source = files('dev/storage-phase-c28-leftover-predicate-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseC28SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC28Classpath()
+}
+
+tasks.register('storagePhaseC28LeftoverPredicateSmoke', JavaExec) {
+    dependsOn 'compileStoragePhaseC28LeftoverPredicateSmoke', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase C28 leftover-predicate smoke test.'
+    classpath = delosdbStoragePhaseC28Classpath()
+    mainClass = 'delosdb.smoke.StoragePhaseC28LeftoverPredicateSmoke'
+}
+
+tasks.register('verifyStoragePhaseC28LeftoverPredicate') {
+    group = 'verification'
+    description = 'Verifies the Phase C28 caller-side leftover-predicate evaluation proof.'
+    dependsOn 'storagePhaseC28LeftoverPredicateReport', 'storagePhaseC28LeftoverPredicateSmoke'
+    doLast {
+        println 'Verified Phase C28 leftover-predicate evaluation; next step is C29 JavaCC range SELECT classifier'
+    }
+}
