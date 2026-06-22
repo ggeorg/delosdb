@@ -6,6 +6,7 @@ import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.Statement;
 
 /**
  * Phase F4 proof: a prepared Derby SELECT equality reaches the native
@@ -47,16 +48,24 @@ public final class StoragePhaseF4NativeSelectEqualitySmoke {
                             + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
 
-        require(VersionedStorageSqlBridge.tryExecute(
-                "CREATE TABLE APP." + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc") != null,
-                "Expected provider-owned MVCC table setup to use the existing transitional setup path");
-        require(VersionedStorageSqlBridge.tryExecute(
-                "INSERT INTO APP." + TABLE_NAME + " VALUES (1, 'alpha')") != null,
-                "Expected provider-owned MVCC row setup for id=1");
-        require(VersionedStorageSqlBridge.tryExecute(
-                "INSERT INTO APP." + TABLE_NAME + " VALUES (2, 'bravo')") != null,
-                "Expected provider-owned MVCC row setup for id=2");
+        seedProviderOwnedMvccRowsThroughTransitionalJdbcBridge();
         VersionedStorageSqlBridge.resetRouteClassifierForTesting();
+    }
+
+
+    private static void seedProviderOwnedMvccRowsThroughTransitionalJdbcBridge() throws Exception {
+        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false);
+             Statement statement = connection.createStatement()) {
+            require(statement.executeUpdate(
+                    "CREATE TABLE APP." + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc") == 0,
+                    "Expected provider-owned MVCC table setup to use the existing transitional JDBC bridge path");
+            require(statement.executeUpdate(
+                    "INSERT INTO APP." + TABLE_NAME + " VALUES (1, 'alpha')") == 1,
+                    "Expected provider-owned MVCC row setup for id=1");
+            require(statement.executeUpdate(
+                    "INSERT INTO APP." + TABLE_NAME + " VALUES (2, 'bravo')") == 1,
+                    "Expected provider-owned MVCC row setup for id=2");
+        }
     }
 
     private static void proveNativeSelectEqualityAfterRestart() throws Exception {
