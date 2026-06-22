@@ -23,6 +23,7 @@ import org.apache.derby.iapi.store.types.DelosRow;
 import org.apache.derby.iapi.store.types.DelosRowIdentity;
 import org.apache.derby.iapi.store.types.DelosScan;
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.DelosTableGuarantee;
 import org.apache.derby.iapi.store.types.DelosTableIdentity;
 import org.apache.derby.iapi.store.types.DelosTableShape;
 
@@ -938,6 +939,7 @@ public final class VersionedStorageSqlBridge {
         StatementTransaction statementTx = beginStatementTransaction(table, transactionOwner, autoCommit, transactionIsolation);
         try {
             EngineMvccTableAccess tableAccess = table.tableAccess();
+            requireTableGuarantee(tableAccess, DelosTableGuarantee.SNAPSHOT_ISOLATION, "SELECT equality");
             List<DelosPredicate> pushedFilters = new ArrayList<>();
             pushedFilters.add(DelosPredicate.equalsTo(
                     table.columns().get(columnIndex).name(),
@@ -970,6 +972,16 @@ public final class VersionedStorageSqlBridge {
                 .put(EngineMvccTableAccess.TX_CONTEXT_KEY, statementTx.context())
                 .put(EngineMvccTableAccess.TX_VIEW_KEY, statementTx.context().currentView())
                 .build();
+    }
+
+    private static void requireTableGuarantee(
+            EngineMvccTableAccess tableAccess,
+            DelosTableGuarantee guarantee,
+            String operation) throws SQLException {
+        if (!tableAccess.guarantees().contains(guarantee)) {
+            throw sqlException("0A000", operation + " requires table-access guarantee " + guarantee
+                    + " from provider " + tableAccess.identity().providerName());
+        }
     }
 
     private static List<List<Object>> materializeContractRows(DelosScan scan) {

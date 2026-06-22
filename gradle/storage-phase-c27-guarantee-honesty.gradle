@@ -1,0 +1,245 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C27 guarantee honesty.
+// Capabilities remain structural method surfaces. Guarantees are semantic
+// promises and are checked at the execution boundary, never inside the JavaCC
+// classifier.
+
+ext.delosdbStoragePhaseC27ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC27ReportFile =
+        ext.delosdbStoragePhaseC27ReportDir.map { it.file('storage-phase-c27-guarantee-honesty.txt') }
+ext.delosdbStoragePhaseC27SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c27-guarantee-honesty-smoke')
+
+ext.delosdbStoragePhaseC27RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC27RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC27RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC27ModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseC27RuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseC27Classpath = {
+    files(
+            delosdbStoragePhaseC27SmokeClassesDir,
+            delosdbStoragePhaseC27ModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseC27ModuleClassDir(':delosdb-engine-kernel', 'io.github.ggeorg.delosdb.engine.kernel'),
+            delosdbStoragePhaseC27ModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseC27ModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseC27RuntimeJars())
+}
+
+ext.delosdbStoragePhaseC27Proof = {
+    def errors = []
+    def lines = []
+
+    def kernelTypesRoot = file('delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types')
+    def tableAccess = file("${kernelTypesRoot}/DelosTableAccess.java")
+    def capability = file("${kernelTypesRoot}/DelosTableCapability.java")
+    def guarantee = file("${kernelTypesRoot}/DelosTableGuarantee.java")
+    def mvccAdapter = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineMvccTableAccess.java')
+    def heapProof = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineHeapTableAccessProof.java')
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def classifier = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/DelosVersionedStorageQueryTreeClassifier.java')
+    def smokeSource = file('dev/storage-phase-c27-guarantee-honesty-smoke/src/main/java/delosdb/smoke/StoragePhaseC27GuaranteeHonestySmoke.java')
+    def phaseEPlan = file('docs/storage-phase-e-plan.md')
+
+    delosdbStoragePhaseC27RequireTokens(errors, capability, [
+            'FILTERABLE',
+            'INDEXABLE',
+            'MUTABLE',
+            'PROJECTABLE'
+    ], 'structural DelosTableCapability enum')
+    if (capability.exists()) {
+        def capabilityText = capability.text
+        ['ROW_LOCKING', 'DURABLE_RECOVERY_LOG', 'SNAPSHOT_ISOLATION', 'POINT_IN_TIME_RECOVERY', 'DURABLE_WAL'].each { token ->
+            if (capabilityText.contains(token)) {
+                errors << "DelosTableCapability must remain structural and must not contain guarantee token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC27RequireTokens(errors, guarantee, [
+            'public enum DelosTableGuarantee',
+            'ROW_LOCKING',
+            'DURABLE_RECOVERY_LOG',
+            'SNAPSHOT_ISOLATION'
+    ], 'semantic DelosTableGuarantee enum')
+    if (guarantee.exists()) {
+        def guaranteeText = guarantee.text
+        ['POINT_IN_TIME_RECOVERY', 'DURABLE_WAL'].each { token ->
+            if (guaranteeText.contains(token)) {
+                errors << "DelosTableGuarantee must not overclaim unproven guarantee token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC27RequireTokens(errors, tableAccess, [
+            'DelosTableCapabilities capabilities()',
+            'default Set<DelosTableGuarantee> guarantees()',
+            'return Set.of()',
+            'semantic guarantees'
+    ], 'DelosTableAccess guarantee method')
+
+    delosdbStoragePhaseC27RequireTokens(errors, mvccAdapter, [
+            'public Set<DelosTableGuarantee> guarantees()',
+            'DelosTableGuarantee.SNAPSHOT_ISOLATION',
+            'DelosTableGuarantee.DURABLE_RECOVERY_LOG'
+    ], 'MVCC guarantee declaration')
+    if (mvccAdapter.exists() && mvccAdapter.text.contains('DelosTableGuarantee.ROW_LOCKING')) {
+        errors << 'EngineMvccTableAccess must not claim ROW_LOCKING before a real lock/reservation primitive exists'
+    }
+
+    delosdbStoragePhaseC27RequireTokens(errors, heapProof, [
+            'public Set<DelosTableGuarantee> guarantees()',
+            'DelosTableGuarantee.ROW_LOCKING',
+            'DelosTableGuarantee.DURABLE_RECOVERY_LOG'
+    ], 'heap proof guarantee declaration')
+    if (heapProof.exists() && heapProof.text.contains('DelosTableGuarantee.SNAPSHOT_ISOLATION')) {
+        errors << 'EngineHeapTableAccessProof must not claim SNAPSHOT_ISOLATION'
+    }
+
+    delosdbStoragePhaseC27RequireTokens(errors, sqlBridge, [
+            'requireTableGuarantee(tableAccess, DelosTableGuarantee.SNAPSHOT_ISOLATION, "SELECT equality")',
+            'private static void requireTableGuarantee(',
+            'tableAccess.guarantees().contains(guarantee)',
+            'operation + " requires table-access guarantee " + guarantee'
+    ], 'VersionedStorageSqlBridge execution-boundary guarantee consumer')
+
+    if (classifier.exists()) {
+        def classifierText = classifier.text
+        ['guarantees()', 'DelosTableGuarantee', 'DelosTableCapability'].each { token ->
+            if (classifierText.contains(token)) {
+                errors << "DelosVersionedStorageQueryTreeClassifier must stay classification-only and must not check: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC27RequireTokens(errors, smokeSource, [
+            'StorelessBaseOnlyAccess implements DelosTableAccess',
+            'storeless.guarantees().isEmpty()',
+            'mvcc.guarantees().contains(DelosTableGuarantee.SNAPSHOT_ISOLATION)',
+            'mvcc.guarantees().contains(DelosTableGuarantee.DURABLE_RECOVERY_LOG)',
+            '!mvcc.guarantees().contains(DelosTableGuarantee.ROW_LOCKING)',
+            'heap.guarantees().contains(DelosTableGuarantee.ROW_LOCKING)',
+            'heap.guarantees().contains(DelosTableGuarantee.DURABLE_RECOVERY_LOG)',
+            '!heap.guarantees().contains(DelosTableGuarantee.SNAPSHOT_ISOLATION)',
+            'verifySqlExecutionStillCrossesGuaranteedMvccPath'
+    ], 'C27 guarantee honesty smoke')
+
+    delosdbStoragePhaseC27RequireTokens(errors, phaseEPlan, [
+            'C27 — Guarantee honesty',
+            'C28 — Leftover-predicate evaluation',
+            'E3 — Cost estimation',
+            'E4 — Mutation concurrency primitive',
+            'No new SPI module',
+            'No `DURABLE_WAL`',
+            'No `POINT_IN_TIME_RECOVERY`'
+    ], 'Phase E plan document')
+
+    def forbiddenFiles = fileTree(rootProject.projectDir).matching {
+        include '**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+        exclude '**/.idea/**'
+        exclude '**/__MACOSX/**'
+    }.files.findAll { sourceFile ->
+        sourceFile.path.replace(File.separator, '/').contains('/io/github/ggeorg/delosdb/spi/storage/access/')
+    }.collect { delosdbStoragePhaseC27RelPath(it) }.sort()
+    if (!forbiddenFiles.isEmpty()) {
+        errors << 'C27 must not introduce a new spi.storage.access module/package: ' + forbiddenFiles
+    }
+
+    lines << 'DelosDB Storage Phase C27 Guarantee Honesty'
+    lines << '==========================================='
+    lines << ''
+    lines << 'C27 mechanic:'
+    lines << '  Keep DelosTableCapability structural and add a separate DelosTableGuarantee semantic enum.'
+    lines << '  Expose DelosTableAccess.guarantees() with a default empty set.'
+    lines << '  MVCC declares SNAPSHOT_ISOLATION and DURABLE_RECOVERY_LOG; heap declares ROW_LOCKING and DURABLE_RECOVERY_LOG proof-only.'
+    lines << '  VersionedStorageSqlBridge performs one real execution-boundary guarantee check; the JavaCC classifier remains classification-only.'
+    lines << ''
+    lines << 'Deferred:'
+    lines << '  Cost estimation remains E3.'
+    lines << '  Mutation concurrency primitive remains E4.'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC27GuaranteeHonestyReport') {
+    group = 'verification'
+    description = 'Writes the Phase C27 guarantee honesty report.'
+    dependsOn 'verifyStoragePhaseC26Consolidation'
+    outputs.file(delosdbStoragePhaseC27ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC27Proof()
+        def outputFile = delosdbStoragePhaseC27ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C27 guarantee honesty failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC27GuaranteeHonestySmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C27 guarantee honesty smoke test.'
+    source = files('dev/storage-phase-c27-guarantee-honesty-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseC27SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC27Classpath()
+}
+
+tasks.register('storagePhaseC27GuaranteeHonestySmoke', JavaExec) {
+    dependsOn 'compileStoragePhaseC27GuaranteeHonestySmoke', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase C27 guarantee honesty smoke test.'
+    classpath = delosdbStoragePhaseC27Classpath()
+    mainClass = 'delosdb.smoke.StoragePhaseC27GuaranteeHonestySmoke'
+}
+
+tasks.register('verifyStoragePhaseC27GuaranteeHonesty') {
+    group = 'verification'
+    description = 'Verifies the Phase C27 guarantee honesty proof.'
+    dependsOn 'storagePhaseC27GuaranteeHonestyReport', 'storagePhaseC27GuaranteeHonestySmoke'
+    doLast {
+        println 'Verified Phase C27 guarantee honesty; next step is C28 leftover-predicate evaluation'
+    }
+}

@@ -39,6 +39,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import org.apache.derby.iapi.store.types.DelosAccessContext;
 import org.apache.derby.iapi.store.types.DelosContextKey;
@@ -56,6 +57,7 @@ import org.apache.derby.iapi.store.types.DelosRow;
 import org.apache.derby.iapi.store.types.DelosRowIdentity;
 import org.apache.derby.iapi.store.types.DelosScan;
 import org.apache.derby.iapi.store.types.DelosTableCapabilities;
+import org.apache.derby.iapi.store.types.DelosTableGuarantee;
 import org.apache.derby.iapi.store.types.DelosTableCapability;
 import org.apache.derby.iapi.store.types.DelosTableIdentity;
 import org.apache.derby.iapi.store.types.DelosTableShape;
@@ -127,6 +129,13 @@ public final class EngineMvccTableAccess
                 DelosTableCapability.PROJECTABLE,
                 DelosTableCapability.INDEXABLE,
                 DelosTableCapability.MUTABLE);
+    }
+
+    @Override
+    public Set<DelosTableGuarantee> guarantees() {
+        return Set.of(
+                DelosTableGuarantee.SNAPSHOT_ISOLATION,
+                DelosTableGuarantee.DURABLE_RECOVERY_LOG);
     }
 
     @Override

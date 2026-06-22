@@ -20,6 +20,8 @@
  */
 package org.apache.derby.iapi.store.types;
 
+import java.util.Set;
+
 /**
  * Store-neutral table identity and shape contract.
  *
@@ -37,4 +39,15 @@ public interface DelosTableAccess {
 
     /** Capabilities advertised by the concrete table access object. */
     DelosTableCapabilities capabilities();
+
+    /**
+     * Semantic guarantees advertised by the concrete table access object.
+     *
+     * <p>The default is intentionally empty so a base-only/no-store profile can
+     * implement the identity/shape contract without promising physical access
+     * or transactional behavior.</p>
+     */
+    default Set<DelosTableGuarantee> guarantees() {
+        return Set.of();
+    }
 }

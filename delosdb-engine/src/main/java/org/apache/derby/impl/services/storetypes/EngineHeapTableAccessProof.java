@@ -22,6 +22,7 @@ package org.apache.derby.impl.services.storetypes;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
@@ -46,6 +47,7 @@ import org.apache.derby.iapi.store.types.DelosRowIdentity;
 import org.apache.derby.iapi.store.types.DelosScan;
 import org.apache.derby.iapi.store.types.DelosTableCapabilities;
 import org.apache.derby.iapi.store.types.DelosTableCapability;
+import org.apache.derby.iapi.store.types.DelosTableGuarantee;
 import org.apache.derby.iapi.store.types.DelosTableIdentity;
 import org.apache.derby.iapi.store.types.DelosTableShape;
 import org.apache.derby.iapi.store.types.StoreDataValue;
@@ -116,6 +118,13 @@ public final class EngineHeapTableAccessProof
                 DelosTableCapability.PROJECTABLE,
                 DelosTableCapability.INDEXABLE,
                 DelosTableCapability.MUTABLE);
+    }
+
+    @Override
+    public Set<DelosTableGuarantee> guarantees() {
+        return Set.of(
+                DelosTableGuarantee.ROW_LOCKING,
+                DelosTableGuarantee.DURABLE_RECOVERY_LOG);
     }
 
     @Override
