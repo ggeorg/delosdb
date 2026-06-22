@@ -1,8 +1,8 @@
 import org.gradle.api.tasks.compile.JavaCompile
 
 // Phase C31 JavaCC INSERT classifier.
-// C31 adds a Derby JavaCC / QueryTreeNode route for INSERT INTO table VALUES (...)
-// while keeping the existing INSERT regex fallback. No regex is deleted here.
+// C31 adds a Derby JavaCC / QueryTreeNode route for INSERT INTO table VALUES (...).
+// Later phases may delete the direct regex fallback after this proof is green.
 
 ext.delosdbStoragePhaseC31ReportDir = layout.buildDirectory.dir('reports/delosdb')
 ext.delosdbStoragePhaseC31ReportFile =
@@ -79,21 +79,12 @@ ext.delosdbStoragePhaseC31Proof = {
     }
 
     delosdbStoragePhaseC31RequireTokens(errors, sqlBridge, [
-            'private static final Pattern INSERT_VALUES',
-            'INSERT_VALUES.matcher(normalizedSql)',
             'DelosVersionedStorageQueryTreeClassifier.insertValues(normalizedSql)',
             'PlannedRoute.insertValues(route.tableName(), route.values())'
-    ], 'C31 bridge JavaCC INSERT route plus regex fallback')
-    if (sqlBridge.exists()) {
-        def bridgeText = sqlBridge.text
-        if (!bridgeText.contains('INSERT_VALUES.matcher(normalizedSql)')) {
-            errors << 'C31 must keep INSERT regex fallback until C32 deletes it after this proof is green'
-        }
-    }
+    ], 'C31 bridge JavaCC INSERT route')
 
     delosdbStoragePhaseC31RequireTokens(errors, smokeSource, [
             'StoragePhaseC31JavaCcInsertClassifierSmoke',
-            'direct bridge INSERT without Derby parser context should keep using regex fallback in C31',
             'INSERT INTO C31_JAVACC_INSERT VALUES (1, \'alpha\')',
             'INSERT VALUES route should be classified by Derby JavaCC / QueryTreeNode',
             'javacc-query-tree',
@@ -117,10 +108,10 @@ ext.delosdbStoragePhaseC31Proof = {
     lines << ''
     lines << 'C31 mechanic:'
     lines << '  Add a Derby JavaCC / QueryTreeNode route for INSERT INTO table VALUES (...).'
-    lines << '  Keep the existing INSERT regex fallback for direct bridge paths without Derby parser context.'
+    lines << '  This proof stays valid after C32 removes the direct INSERT regex fallback.'
     lines << ''
     lines << 'Boundaries preserved:'
-    lines << '  No INSERT regex deletion; that belongs to C32.'
+    lines << '  C31 itself adds classification only; regex deletion is verified separately by C32.'
     lines << '  No UPDATE/DELETE classifier work.'
     lines << '  No function-call predicates or expression model.'
     lines << '  No guarantee/capability checks inside the JavaCC classifier.'

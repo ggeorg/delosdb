@@ -62,7 +62,7 @@ import java.util.regex.Pattern;
  * CREATE TABLE name (id INT, value VARCHAR(40)) USING delos_mvcc
  * CREATE TABLE name (id INT, value VARCHAR(40))
  *     -- only when -Ddelosdb.storage.defaultProvider=delos_mvcc is set
- * INSERT INTO name VALUES (1, 'alpha')
+ * INSERT INTO name VALUES (1, 'alpha') (classified by Derby JavaCC / QueryTreeNode)
  * SELECT * FROM name
  * SELECT * FROM name ORDER BY indexed_column [ASC|DESC]
  * SELECT COUNT(*) FROM name
@@ -90,8 +90,6 @@ public final class VersionedStorageSqlBridge {
 
     private static final Pattern CREATE_TABLE = Pattern.compile(
             "(?is)^create\\s+table\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s*\\((.*)\\)(?:\\s+using\\s+([a-zA-Z_][a-zA-Z0-9_]*))?$");
-    private static final Pattern INSERT_VALUES = Pattern.compile(
-            "(?is)^insert\\s+into\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s+values\\s*\\((.*)\\)$");
     private static final Pattern CREATE_INDEX = Pattern.compile(
             "(?is)^create\\s+index\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s+on\\s+([a-zA-Z_][a-zA-Z0-9_.$]*)\\s*\\(\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\)$");
     private static final Pattern SELECT_ALL = Pattern.compile(
@@ -536,11 +534,6 @@ public final class VersionedStorageSqlBridge {
             return null;
         }
 
-        Matcher insert = INSERT_VALUES.matcher(normalizedSql);
-        if (insert.matches()) {
-            lastRouteClassifier = ROUTE_CLASSIFIER_REGEX;
-            return PlannedRoute.insertValues(insert.group(1), insert.group(2));
-        }
 
         Matcher createIndex = CREATE_INDEX.matcher(normalizedSql);
         if (createIndex.matches()) {

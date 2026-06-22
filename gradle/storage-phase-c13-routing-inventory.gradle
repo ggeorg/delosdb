@@ -46,7 +46,6 @@ ext.delosdbStoragePhaseC13Proof = {
 
     delosdbStoragePhaseC13RequireTokens(errors, sqlBridge, [
             'private static final Pattern CREATE_TABLE',
-            'private static final Pattern INSERT_VALUES',
             'private static final Pattern CREATE_INDEX',
             'private static final Pattern SELECT_ALL',
             'private static final Pattern SELECT_COUNT',

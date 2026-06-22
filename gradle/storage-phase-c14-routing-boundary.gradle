@@ -127,13 +127,13 @@ ext.delosdbStoragePhaseC14Proof = {
             def routeBody = bridgeText.substring(routeStart, executeStart)
             [
                     'CREATE_TABLE.matcher(normalizedSql)',
-                    'INSERT_VALUES.matcher(normalizedSql)',
+                    'DelosVersionedStorageQueryTreeClassifier.insertValues(normalizedSql)',
                     'CREATE_INDEX.matcher(normalizedSql)',
                     'UPDATE_WHERE_EQUALS.matcher(normalizedSql)',
                     'DELETE_WHERE_EQUALS.matcher(normalizedSql)',
                     'SELECT_WHERE_BETWEEN.matcher(normalizedSql)',
                     'SELECT_WHERE_RANGE.matcher(normalizedSql)',
-                    'DelosVersionedStorageQueryTreeClassifier.selectWhereEquals(normalizedSql)',
+                    'DelosVersionedStorageQueryTreeClassifier.selectWhereComparison(normalizedSql)',
                     'SELECT_ALL.matcher(normalizedSql)',
                     'SELECT_COUNT.matcher(normalizedSql)'
             ].each { token ->

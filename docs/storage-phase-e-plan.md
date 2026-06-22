@@ -38,16 +38,18 @@ beyond `NOT_EQUAL` are part of C28.
 
 ## D resumes after C28
 
-- C29 — JavaCC range SELECT classifier
-- C30 — delete one matching range regex
-- C31 — JavaCC INSERT classifier
-- C32 — delete INSERT regex
+- C29 — JavaCC range SELECT classifier — done
+- C30 — delete one matching range regex — done
+- C31 — JavaCC INSERT classifier — done
+- C32 — delete INSERT regex — done in this slice
 - C33 — JavaCC DELETE equality classifier
 - C34 — delete DELETE regex
 - C35 — JavaCC UPDATE equality classifier
 - C36 — delete UPDATE regex
 
 C30 deletes only the standalone `>` range regex branch; the remaining range regex forms stay as fallback until their own parser replacements are retired.
+
+C32 deletes only the direct `INSERT INTO ... VALUES (...)` regex branch; INSERT remains supported through Derby JavaCC / QueryTreeNode classification in JDBC/parser context.
 
 ## E3 — Cost estimation, deferred
 

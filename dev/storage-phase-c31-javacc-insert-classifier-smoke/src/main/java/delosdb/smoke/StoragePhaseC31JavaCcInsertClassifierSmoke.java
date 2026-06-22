@@ -1,7 +1,6 @@
 package delosdb.smoke;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlResult;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -12,30 +11,14 @@ import java.util.Objects;
 
 /**
  * Phase C31 proof: INSERT VALUES can be classified through Derby JavaCC /
- * QueryTreeNode while the existing regex INSERT fallback remains available.
+ * QueryTreeNode. Later phases may remove the direct regex fallback, so this
+ * proof is intentionally grounded in the Derby JDBC/parser path.
  */
 public final class StoragePhaseC31JavaCcInsertClassifierSmoke {
     private StoragePhaseC31JavaCcInsertClassifierSmoke() {
     }
 
     public static void main(String[] args) throws Exception {
-        Object directOwner = new Object();
-        requireUpdateCount(VersionedStorageSqlBridge.tryExecute(
-                        "CREATE TABLE C31_DIRECT_INSERT_CLASSIFIER (id INT, value VARCHAR(40)) USING delos_mvcc",
-                        directOwner,
-                        true),
-                0L,
-                "direct CREATE TABLE");
-        requireUpdateCount(VersionedStorageSqlBridge.tryExecute(
-                        "INSERT INTO C31_DIRECT_INSERT_CLASSIFIER VALUES (1, 'alpha')",
-                        directOwner,
-                        true,
-                        Connection.TRANSACTION_READ_COMMITTED),
-                1L,
-                "direct INSERT fallback");
-        require(Objects.equals("regex", VersionedStorageSqlBridge.lastRouteClassifierForTesting().orElseThrow()),
-                "direct bridge INSERT without Derby parser context should keep using regex fallback in C31");
-
         SmokeUtils.loadEmbeddedDriver();
         try (Connection connection = SmokeUtils.connect("storage-phase-c31-javacc-insert-classifier-db", true);
              Statement statement = connection.createStatement()) {
@@ -64,19 +47,6 @@ public final class StoragePhaseC31JavaCcInsertClassifierSmoke {
         }
 
         System.out.println("storage_phase_c31_javacc_insert_classifier: PASS");
-    }
-
-    private static void requireUpdateCount(VersionedStorageSqlResult result, long expected, String label) {
-        if (result == null) {
-            throw new IllegalStateException(label + " was not handled by VersionedStorageSqlBridge");
-        }
-        if (result.returnsRows()) {
-            throw new IllegalStateException(label + " unexpectedly returned rows");
-        }
-        if (result.updateCount() != expected) {
-            throw new IllegalStateException(label + " update count expected=" + expected
-                    + " actual=" + result.updateCount());
-        }
     }
 
     private static void require(boolean condition, String message) {

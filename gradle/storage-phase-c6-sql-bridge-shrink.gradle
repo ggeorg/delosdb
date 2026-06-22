@@ -95,7 +95,6 @@ ext.delosdbStoragePhaseC6Proof = {
             'import io.github.ggeorg.delosdb.engine.extension.storage.versioned.execution.VersionedStorageExecutionBridge;',
             'private static final VersionedStorageExecutionBridge PLANNED_TABLE_OPERATION_BRIDGE',
             'PLANNED_TABLE_OPERATION_BRIDGE.insert(table.table(), rowKey, values, statementTx.context());',
-            'private static final Pattern INSERT_VALUES',
             'Minimal SQL/JDBC bridge for the experimental'
     ], 'VersionedStorageSqlBridge planned INSERT delegation')
 
