@@ -75,6 +75,10 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_NATIVE_SELECT_REACHED_MESSAGE =
             DelosTableScanResultSet.NATIVE_SELECT_REACHED_MESSAGE;
 
+    /** Test/proof gate for Phase F5 native INSERT mutation. */
+    public static final String FACTORY_NATIVE_INSERT_PROPERTY =
+            DelosInsertResultSet.NATIVE_INSERT_PROPERTY;
+
     private static final AtomicReference<Result> LAST_FACTORY_LOOKUP = new AtomicReference<>();
     private static final AtomicReference<Result> LAST_NON_DEFAULT_FACTORY_LOOKUP = new AtomicReference<>();
     private static final AtomicInteger FACTORY_LOOKUP_COUNT = new AtomicInteger();

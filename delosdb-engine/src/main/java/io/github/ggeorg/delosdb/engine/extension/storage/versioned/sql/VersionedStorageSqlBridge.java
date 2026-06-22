@@ -434,21 +434,25 @@ public final class VersionedStorageSqlBridge {
                 true,
                 Connection.TRANSACTION_READ_COMMITTED);
         return Optional.of(new NativeExecutionTableAccess(
+                table,
                 table.tableAccess(),
                 delosAccessContext(statementTx),
                 statementTx));
     }
 
     public static final class NativeExecutionTableAccess implements AutoCloseable {
+        private final TableDefinition table;
         private final EngineMvccTableAccess tableAccess;
         private final DelosAccessContext context;
         private final StatementTransaction statementTx;
         private boolean closed;
 
         private NativeExecutionTableAccess(
+                TableDefinition table,
                 EngineMvccTableAccess tableAccess,
                 DelosAccessContext context,
                 StatementTransaction statementTx) {
+            this.table = Objects.requireNonNull(table, "table");
             this.tableAccess = Objects.requireNonNull(tableAccess, "tableAccess");
             this.context = Objects.requireNonNull(context, "context");
             this.statementTx = Objects.requireNonNull(statementTx, "statementTx");
@@ -460,6 +464,23 @@ public final class VersionedStorageSqlBridge {
 
         public DelosAccessContext context() {
             return context;
+        }
+
+        public long insert(List<Object> nativeValues) throws SQLException {
+            Objects.requireNonNull(nativeValues, "nativeValues");
+            if (nativeValues.size() != table.columns().size()) {
+                throw sqlException("42802", "INSERT value count does not match delos_mvcc table column count");
+            }
+            long rowKey = table.nextRowKey();
+            table.reserveUniqueKeys(nativeValues, rowKey, statementTx.context());
+            List<StoreDataValue> values = new ArrayList<>(nativeValues.size());
+            for (Object value : nativeValues) {
+                values.add(EngineMvccTableAccess.value(value));
+            }
+            tableAccess.insert(
+                    context,
+                    DelosRow.withIdentity(new NativeExecutionRowIdentity(rowKey), values));
+            return 1L;
         }
 
         @Override
@@ -477,6 +498,13 @@ public final class VersionedStorageSqlBridge {
             }
             closed = true;
             VersionedStorageSqlBridge.abort(statementTx);
+        }
+    }
+
+    private record NativeExecutionRowIdentity(Object nativeIdentity) implements DelosRowIdentity {
+        @Override
+        public String providerName() {
+            return PROVIDER_NAME;
         }
     }
 

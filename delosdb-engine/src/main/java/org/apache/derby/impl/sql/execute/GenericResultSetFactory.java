@@ -251,14 +251,17 @@ public class GenericResultSetFactory implements ResultSetFactory
 		Activation activation = source.getActivation();
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
 
-        return new InsertResultSet(new InsertResultSetParameters(
+        InsertResultSetParameters params = new InsertResultSetParameters(
                 source,
                 generationClauses,
                 checkGM,
                 fullTemplate,
                 schemaName,
                 tableName,
-                activation));
+                activation);
+        ResultSet delosInsert = DelosInsertResultSet.createIfEnabled(params).orElse(null);
+        if (delosInsert != null) { return delosInsert; }
+        return new InsertResultSet(params);
 	}
 
 	/**

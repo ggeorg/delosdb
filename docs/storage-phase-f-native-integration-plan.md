@@ -209,6 +209,14 @@ Rows are materialized into Derby result rows.
 
 ## F5-F7 — native DML
 
+F5 landed: native INSERT through the generated `getInsertResultSet(...)` path.
+`GenericResultSetFactory` branches by provider metadata under the F5 proof
+property, `DelosInsertResultSet` consumes Derby source `ExecRow` values, and the
+native table-access seam builds a `DelosRow` and calls
+`EngineMvccTableAccess.insert(...)`. The prepared INSERT proof asserts that
+`VersionedStorageSqlBridge.tryExecute(...)` is not called for the native INSERT
+path.
+
 ```text
 F5 — native INSERT:
   generated execution builds DelosRow and calls insert(...)

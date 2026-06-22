@@ -158,7 +158,7 @@ ext.delosdbStoragePhaseF4Proof = {
     ], 'Phase F plan after F4')
     delosdbStoragePhaseF4RequireTokens(errors, roadmap, [
             'F4 landed',
-            'Next: F5 — native INSERT'
+            'F5 landed'
     ], 'ROADMAP after F4')
     delosdbStoragePhaseF4RequireTokens(errors, cleanupScript, [
             'storage-phase-f4-native-select-equality-db'
