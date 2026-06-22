@@ -980,7 +980,7 @@ public final class VersionedStorageSqlBridge {
             String operation) throws SQLException {
         if (!tableAccess.guarantees().contains(guarantee)) {
             throw sqlException("0A000", operation + " requires table-access guarantee " + guarantee
-                    + " from provider " + tableAccess.identity().providerName());
+                    + " for table " + tableAccess.identity().qualifiedName());
         }
     }
 
