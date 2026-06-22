@@ -141,8 +141,9 @@ ext.delosdbStoragePhaseF22Proof = {
     delosdbStoragePhaseF22RequireTokens(errors, roadmap, [
             'F2.2 landed',
             'DelosTableScanProviderLookup',
-            'F3 — provider-aware ResultSetFactory proof'
-    ], 'ROADMAP after F2.2')
+            'F3.1 landed',
+            'F3.2 landed'
+    ], 'ROADMAP after F2.2/F3')
     delosdbStoragePhaseF22RequireTokens(errors, cleanupScript, [
             'storage-phase-f2-resultset-lookup-db'
     ], 'F2.2 smoke DB cleanup entry')
@@ -159,8 +160,8 @@ ext.delosdbStoragePhaseF22Proof = {
     lines << '  Missing tables return Optional.empty().' 
     lines << '  GenericResultSetFactory does not branch in F2.2; that is reserved for F3.'
     lines << ''
-    lines << 'Next step:'
-    lines << '  F3 adds the provider-aware ResultSetFactory branch and a DelosTableScanResultSet skeleton.'
+    lines << 'Current follow-up:'
+    lines << '  F3.1/F3.2 may already have landed; this guard now accepts the post-F3 ROADMAP wording while preserving the F2.2 lookup proof.'
     lines << ''
     if (errors.isEmpty()) {
         lines << 'Result: PASS'
