@@ -95,7 +95,8 @@ public final class StoragePhaseC27GuaranteeHonestySmoke {
                     "guaranteed SELECT should still use the contract equality path");
             require(VersionedStorageAccessPath.INDEX_SCAN.equals(accessPath.selectedAccessMethod()),
                     "guaranteed SELECT should still use the provider-owned index path");
-            require("javacc-query-tree".equals(VersionedStorageSqlBridge.lastRouteClassifierForTesting()),
+            require("javacc-query-tree".equals(
+                            VersionedStorageSqlBridge.lastRouteClassifierForTesting().orElseThrow()),
                     "guaranteed SELECT should still be classified by Derby JavaCC / QueryTreeNode");
         } finally {
             SmokeUtils.shutdown("storage-phase-c27-guarantee-honesty-db");
