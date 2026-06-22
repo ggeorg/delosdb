@@ -62,7 +62,6 @@ ext.delosdbStoragePhaseC23Proof = {
     delosdbStoragePhaseC23RequireTokens(errors, sqlBridge, [
             'private static final Pattern UPDATE_WHERE_EQUALS',
             'return PlannedRoute.updateWhereEquals(',
-            'return PlannedRoute.deleteWhereEquals(',
             'private static VersionedStorageSqlResult updateWhereEquals(',
             'private static VersionedStorageSqlResult deleteWhereEquals(',
             'EngineMvccTableAccess tableAccess = table.tableAccess()',
@@ -176,8 +175,8 @@ ext.delosdbStoragePhaseC23Proof = {
     lines << ''
     lines << 'Boundaries preserved:'
     lines << '  VersionedStorageSqlBridge remains the temporary SQL interception point.'
-    lines << '  routeStatement(...) still uses the existing regex classifier.'
-    lines << '  no regex route is deleted.'
+    lines << '  routeStatement(...) still uses remaining temporary classifier fallbacks where later phases have not replaced them.'
+    lines << '  later phases may delete regex routes after QueryTreeNode replacements; C23 only requires the mutation execution path to remain contract-based.'
     lines << '  Derby heap execution remains untouched.'
     lines << '  storeless remains a no-store/base-only constraint.'
     lines << ''
