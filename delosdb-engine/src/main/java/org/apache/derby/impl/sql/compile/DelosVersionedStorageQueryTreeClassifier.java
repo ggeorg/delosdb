@@ -62,6 +62,10 @@ public final class DelosVersionedStorageQueryTreeClassifier {
         return parseStatement(sql).flatMap(parsed -> classifyInsertValues(sql, parsed));
     }
 
+    public static Optional<DeleteWhereEqualsRoute> deleteWhereEquals(String sql) {
+        return parseStatement(sql).flatMap(parsed -> classifyDeleteWhereEquals(sql, parsed));
+    }
+
     private static Optional<Visitable> parseStatement(String sql) {
         LanguageConnectionContext lcc = (LanguageConnectionContext) ContextService.getContextOrNull(
                 LanguageConnectionContext.CONTEXT_ID);
@@ -176,6 +180,53 @@ public final class DelosVersionedStorageQueryTreeClassifier {
                 String.join(", ", values)));
     }
 
+    static Optional<DeleteWhereEqualsRoute> classifyDeleteWhereEquals(String sql, Visitable parsed) {
+        if (!(parsed instanceof DeleteNode delete)) {
+            return Optional.empty();
+        }
+        if (delete.targetTableName == null) {
+            return Optional.empty();
+        }
+        if (!(delete.getResultSetNode() instanceof SelectNode select)) {
+            return Optional.empty();
+        }
+        if (select.groupByList != null || select.havingClause != null || select.windows != null) {
+            return Optional.empty();
+        }
+        if (select.fromList == null || select.fromList.size() != 1) {
+            return Optional.empty();
+        }
+        if (!(select.fromList.elementAt(0) instanceof FromBaseTable fromBaseTable)) {
+            return Optional.empty();
+        }
+        if (!delete.targetTableName.getFullTableName().equalsIgnoreCase(fromBaseTable.tableName.getFullTableName())) {
+            return Optional.empty();
+        }
+        if (!(select.whereClause instanceof BinaryRelationalOperatorNode comparison)) {
+            return Optional.empty();
+        }
+
+        ColumnLiteralComparison pair = columnLiteralComparison(comparison).orElse(null);
+        if (pair == null || !"=".equals(pair.operator())) {
+            return Optional.empty();
+        }
+        if (!columnQualifiesSingleFromTable(pair.column(), fromBaseTable.tableName)) {
+            return Optional.empty();
+        }
+
+        String literalSql = sqlSlice(sql, pair.literal())
+                .or(() -> constantSqlLiteral(pair.literal()))
+                .orElse(null);
+        if (literalSql == null || literalSql.isBlank()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new DeleteWhereEqualsRoute(
+                delete.targetTableName.getFullTableName(),
+                pair.column().getColumnName(),
+                literalSql));
+    }
+
     private static boolean cursorHasUnsupportedClauses(CursorNode cursor) {
         return privateFieldValue(cursor, "orderByList") != null
                 || privateFieldValue(cursor, "offset") != null
@@ -286,6 +337,20 @@ public final class DelosVersionedStorageQueryTreeClassifier {
             }
             if (values == null || values.isBlank()) {
                 throw new IllegalArgumentException("values must not be blank");
+            }
+        }
+    }
+
+    public record DeleteWhereEqualsRoute(String tableName, String columnName, String rawValue) {
+        public DeleteWhereEqualsRoute {
+            if (tableName == null || tableName.isBlank()) {
+                throw new IllegalArgumentException("tableName must not be blank");
+            }
+            if (columnName == null || columnName.isBlank()) {
+                throw new IllegalArgumentException("columnName must not be blank");
+            }
+            if (rawValue == null || rawValue.isBlank()) {
+                throw new IllegalArgumentException("rawValue must not be blank");
             }
         }
     }

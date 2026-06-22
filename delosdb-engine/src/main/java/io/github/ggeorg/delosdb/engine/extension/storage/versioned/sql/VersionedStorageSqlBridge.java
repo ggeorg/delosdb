@@ -734,6 +734,13 @@ public final class VersionedStorageSqlBridge {
             return DelosVersionedStorageQueryTreeClassifier.insertValues(normalizedSql)
                     .map(route -> PlannedRoute.insertValues(route.tableName(), route.values()));
         }
+        if (trimmed.regionMatches(true, 0, "DELETE", 0, "DELETE".length())) {
+            return DelosVersionedStorageQueryTreeClassifier.deleteWhereEquals(normalizedSql)
+                    .map(route -> PlannedRoute.deleteWhereEquals(
+                            route.tableName(),
+                            route.columnName(),
+                            route.rawValue()));
+        }
         return Optional.empty();
     }
 

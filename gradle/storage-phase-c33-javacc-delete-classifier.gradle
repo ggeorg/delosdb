@@ -1,0 +1,178 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
+// Phase C33 JavaCC DELETE equality classifier.
+// C33 adds a Derby JavaCC / QueryTreeNode route for DELETE FROM table WHERE column = literal.
+// The direct DELETE regex fallback remains until C34.
+
+ext.delosdbStoragePhaseC33ReportDir = layout.buildDirectory.dir('reports/delosdb')
+ext.delosdbStoragePhaseC33ReportFile =
+        ext.delosdbStoragePhaseC33ReportDir.map { it.file('storage-phase-c33-javacc-delete-classifier.txt') }
+ext.delosdbStoragePhaseC33SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c33-javacc-delete-classifier-smoke')
+
+ext.delosdbStoragePhaseC33RelPath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separator, '/')
+}
+
+ext.delosdbStoragePhaseC33RequireTokens = { List<String> errors, File sourceFile, Collection<String> tokens, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseC33RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = tokens.findAll { token -> !text.contains(token) }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected tokens: ${missing.join(', ')}"
+    }
+}
+
+ext.delosdbStoragePhaseC33ModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseC33RuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseC33Classpath = {
+    files(
+            delosdbStoragePhaseC33SmokeClassesDir,
+            delosdbStoragePhaseC33ModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseC33ModuleClassDir(':delosdb-engine-kernel', 'io.github.ggeorg.delosdb.engine.kernel'),
+            delosdbStoragePhaseC33ModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseC33ModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseC33RuntimeJars())
+}
+
+ext.delosdbStoragePhaseC33Proof = {
+    def errors = []
+    def lines = []
+
+    def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java')
+    def classifier = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/DelosVersionedStorageQueryTreeClassifier.java')
+    def smokeSource = file('dev/storage-phase-c33-javacc-delete-classifier-smoke/src/main/java/delosdb/smoke/StoragePhaseC33JavaCcDeleteClassifierSmoke.java')
+    def cleanupScript = file('scripts/delete-stale-storage-smoke-dbs.sh')
+
+    delosdbStoragePhaseC33RequireTokens(errors, classifier, [
+            'deleteWhereEquals(String sql)',
+            'classifyDeleteWhereEquals(String sql, Visitable parsed)',
+            'parsed instanceof DeleteNode delete',
+            'delete.getResultSetNode() instanceof SelectNode select',
+            'select.whereClause instanceof BinaryRelationalOperatorNode comparison',
+            '!"=".equals(pair.operator())',
+            'return Optional.of(new DeleteWhereEqualsRoute(',
+            'public record DeleteWhereEqualsRoute(String tableName, String columnName, String rawValue)'
+    ], 'C33 JavaCC DELETE equality classifier')
+    if (classifier.exists()) {
+        def classifierText = classifier.text
+        ['Pattern.compile(', '.matcher(', 'DelosTableGuarantee', 'guarantees()', 'FunctionCall', 'RexNode'].each { token ->
+            if (classifierText.contains(token)) {
+                errors << "C33 classifier must remain parser-tree only and must not include token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC33RequireTokens(errors, sqlBridge, [
+            'DelosVersionedStorageQueryTreeClassifier.deleteWhereEquals(normalizedSql)',
+            'PlannedRoute.deleteWhereEquals(',
+            'DELETE_WHERE_EQUALS.matcher(normalizedSql)'
+    ], 'C33 bridge JavaCC DELETE route plus regex fallback')
+
+    delosdbStoragePhaseC33RequireTokens(errors, smokeSource, [
+            'StoragePhaseC33JavaCcDeleteClassifierSmoke',
+            'DELETE FROM C33_DIRECT_DELETE WHERE id = 1',
+            'direct DELETE equality should still use regex fallback in C33',
+            'DELETE FROM C33_JAVACC_DELETE WHERE id = 2',
+            'DELETE equality route should be classified by Derby JavaCC / QueryTreeNode',
+            'javacc-query-tree',
+            'storage_phase_c33_javacc_delete_classifier: PASS'
+    ], 'C33 JavaCC DELETE classifier smoke')
+    if (smokeSource.exists()) {
+        def smokeText = smokeSource.text
+        ['Pattern.compile(', '.matcher(', 'FunctionCall', 'RexNode'].each { token ->
+            if (smokeText.contains(token)) {
+                errors << "C33 smoke must not add regex or expression-model token: ${token}"
+            }
+        }
+    }
+
+    delosdbStoragePhaseC33RequireTokens(errors, cleanupScript, [
+            'storage-phase-c33-javacc-delete-classifier-db'
+    ], 'C33 cleanup script smoke DB entry')
+
+    lines << 'DelosDB Storage Phase C33 JavaCC DELETE Equality Classifier'
+    lines << '========================================================='
+    lines << ''
+    lines << 'C33 mechanic:'
+    lines << '  Add a Derby JavaCC / QueryTreeNode route for DELETE FROM table WHERE column = literal.'
+    lines << '  Keep the direct DELETE regex fallback until C34 deletes it after this proof is green.'
+    lines << ''
+    lines << 'Boundaries preserved:'
+    lines << '  No UPDATE classifier work.'
+    lines << '  No DELETE regex deletion in C33.'
+    lines << '  No function-call predicates or expression model.'
+    lines << '  No guarantee/capability checks inside the JavaCC classifier.'
+    lines << ''
+    if (errors.isEmpty()) {
+        lines << 'Result: PASS'
+    } else {
+        lines << 'Result: FAIL'
+        lines << ''
+        lines << 'Errors:'
+        errors.each { lines << "  - ${it}" }
+    }
+
+    [errors: errors, lines: lines]
+}
+
+tasks.register('storagePhaseC33JavaCcDeleteClassifierReport') {
+    group = 'verification'
+    description = 'Writes the Phase C33 JavaCC DELETE equality classifier report.'
+    dependsOn 'verifyStoragePhaseC32InsertRegexDeletion'
+    outputs.file(delosdbStoragePhaseC33ReportFile)
+    doLast {
+        def result = delosdbStoragePhaseC33Proof()
+        def outputFile = delosdbStoragePhaseC33ReportFile.get().asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = result.lines.join(System.lineSeparator()) + System.lineSeparator()
+        println "Wrote ${outputFile}"
+        if (!result.errors.isEmpty()) {
+            throw new GradleException("Phase C33 JavaCC DELETE equality classifier failed; see ${outputFile}")
+        }
+    }
+}
+
+tasks.register('compileStoragePhaseC33JavaCcDeleteClassifierSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase C33 JavaCC DELETE equality classifier smoke test.'
+    source = files('dev/storage-phase-c33-javacc-delete-classifier-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseC33SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseC33Classpath()
+}
+
+tasks.register('storagePhaseC33JavaCcDeleteClassifierSmoke', JavaExec) {
+    dependsOn 'storagePhaseC33JavaCcDeleteClassifierReport', 'compileStoragePhaseC33JavaCcDeleteClassifierSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase C33 JavaCC DELETE equality classifier smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseC33JavaCcDeleteClassifierSmoke'
+    classpath = delosdbStoragePhaseC33Classpath()
+}
+
+tasks.register('verifyStoragePhaseC33JavaCcDeleteClassifier') {
+    group = 'verification'
+    description = 'Verifies Phase C33 JavaCC DELETE equality classifier.'
+    dependsOn 'storagePhaseC33JavaCcDeleteClassifierReport', 'storagePhaseC33JavaCcDeleteClassifierSmoke'
+    doLast {
+        println 'Verified Phase C33 JavaCC DELETE equality classifier; next step is C34 DELETE regex deletion'
+    }
+}
