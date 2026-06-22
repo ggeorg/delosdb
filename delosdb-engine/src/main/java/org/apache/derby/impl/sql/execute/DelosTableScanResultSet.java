@@ -248,6 +248,50 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         return providerLookup.storageProviderName();
     }
 
+
+    DelosTableScanProviderLookup.Result providerLookupForMutation()
+    {
+        return providerLookup;
+    }
+
+    List<DelosPredicate> equalityPredicatesForNativeMutation()
+            throws StandardException
+    {
+        return equalityPredicates(tableDescriptor());
+    }
+
+    static Optional<DelosTableScanResultSet> findIn(NoPutResultSet resultSet)
+    {
+        if (resultSet == null) {
+            return Optional.empty();
+        }
+        if (resultSet instanceof DelosTableScanResultSet delosTableScan) {
+            return Optional.of(delosTableScan);
+        }
+        if (resultSet instanceof ProjectRestrictResultSet projectRestrict) {
+            return findIn(projectRestrict.source);
+        }
+        if (resultSet instanceof NormalizeResultSet normalize) {
+            return findIn(normalize.source);
+        }
+        if (resultSet instanceof RowCountResultSet rowCount) {
+            return findIn(rowCount.source);
+        }
+        if (resultSet instanceof ScrollInsensitiveResultSet scrollInsensitive) {
+            return findIn(scrollInsensitive.source);
+        }
+        if (resultSet instanceof MaterializedResultSet materialized) {
+            return findIn(materialized.source);
+        }
+        if (resultSet instanceof SortResultSet sort) {
+            return findIn(sort.source);
+        }
+        if (resultSet instanceof IndexRowToBaseRowResultSet indexToBase) {
+            return findIn(indexToBase.source);
+        }
+        return Optional.empty();
+    }
+
     private TableDescriptor tableDescriptor() throws StandardException
     {
         LanguageConnectionContext lcc = params.activation.getLanguageConnectionContext();

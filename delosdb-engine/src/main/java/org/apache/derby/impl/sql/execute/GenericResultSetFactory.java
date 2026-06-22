@@ -299,6 +299,8 @@ public class GenericResultSetFactory implements ResultSetFactory
 	{
 		Activation activation = source.getActivation();
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
+        ResultSet delosDelete = DelosDeleteResultSet.createIfEnabled(source, activation).orElse(null);
+        if (delosDelete != null) { return delosDelete; }
 		return new DeleteResultSet(source, activation );
 	}
 

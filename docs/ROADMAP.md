@@ -266,8 +266,8 @@ F3.1 landed — provider-aware ResultSetFactory branch proof
 F3.2 landed — DelosTableScanResultSet skeleton
 F4 landed — native MVCC SELECT equality through generated activation/result-set path
 F5 landed — native INSERT through provider-owned table access
-Next: F6 — native DELETE equality
-F6  — native DELETE equality
+F6 landed — native DELETE equality through provider-owned row identity delete
+Next: F7 — native UPDATE equality
 F7  — native UPDATE equality
 F8  — bridge bypass for native mode, compatibility bridge explicit only
 ```

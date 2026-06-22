@@ -17,6 +17,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictExce
 import org.apache.derby.impl.services.storetypes.EngineMvccTableAccess;
 import org.apache.derby.impl.sql.compile.DelosVersionedStorageQueryTreeClassifier;
 import org.apache.derby.iapi.store.types.DelosAccessContext;
+import org.apache.derby.iapi.store.types.DelosMutationResult;
 import org.apache.derby.iapi.store.types.DelosPredicate;
 import org.apache.derby.iapi.store.types.DelosPredicateOperator;
 import org.apache.derby.iapi.store.types.DelosProjection;
@@ -481,6 +482,12 @@ public final class VersionedStorageSqlBridge {
                     context,
                     DelosRow.withIdentity(new NativeExecutionRowIdentity(rowKey), values));
             return 1L;
+        }
+
+        public long delete(DelosRowIdentity rowIdentity) throws SQLException {
+            Objects.requireNonNull(rowIdentity, "rowIdentity");
+            DelosMutationResult result = tableAccess.delete(context, rowIdentity);
+            return result.affectedRows();
         }
 
         @Override

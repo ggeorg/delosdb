@@ -79,6 +79,10 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_NATIVE_INSERT_PROPERTY =
             DelosInsertResultSet.NATIVE_INSERT_PROPERTY;
 
+    /** Test/proof gate for Phase F6 native DELETE equality mutation. */
+    public static final String FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY =
+            DelosDeleteResultSet.NATIVE_DELETE_EQUALITY_PROPERTY;
+
     private static final AtomicReference<Result> LAST_FACTORY_LOOKUP = new AtomicReference<>();
     private static final AtomicReference<Result> LAST_NON_DEFAULT_FACTORY_LOOKUP = new AtomicReference<>();
     private static final AtomicInteger FACTORY_LOOKUP_COUNT = new AtomicInteger();

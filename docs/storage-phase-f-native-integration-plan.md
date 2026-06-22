@@ -217,6 +217,14 @@ native table-access seam builds a `DelosRow` and calls
 `VersionedStorageSqlBridge.tryExecute(...)` is not called for the native INSERT
 path.
 
+F6 landed: native DELETE equality through the generated
+`getDeleteResultSet(...)` path. `GenericResultSetFactory` branches by provider
+metadata under the F6 proof property, `DelosDeleteResultSet` reuses the native
+`DelosTableScanResultSet` equality predicate extraction, scans to
+`DelosRowIdentity`, and calls `EngineMvccTableAccess.delete(...)`. The prepared
+DELETE proof asserts that `VersionedStorageSqlBridge.tryExecute(...)` is not
+called for the native DELETE path.
+
 ```text
 F5 — native INSERT:
   generated execution builds DelosRow and calls insert(...)
