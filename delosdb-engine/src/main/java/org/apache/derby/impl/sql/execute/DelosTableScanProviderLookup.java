@@ -24,6 +24,8 @@ package org.apache.derby.impl.sql.execute;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
@@ -46,8 +48,63 @@ import org.apache.derby.shared.common.error.StandardException;
  */
 public final class DelosTableScanProviderLookup
 {
+    /**
+     * Test/proof gate for Phase F3.1.  Production execution keeps the provider
+     * lookup branch inert until F3.2 replaces the observation with a real
+     * Delos-backed result set branch.
+     */
+    public static final String FACTORY_PROBE_PROPERTY =
+            "delosdb.storage.phaseF3.tableScanBranchProbe";
+
+    private static final AtomicReference<Result> LAST_FACTORY_LOOKUP = new AtomicReference<>();
+    private static final AtomicReference<Result> LAST_NON_DEFAULT_FACTORY_LOOKUP = new AtomicReference<>();
+    private static final AtomicInteger FACTORY_LOOKUP_COUNT = new AtomicInteger();
+
     private DelosTableScanProviderLookup()
     {
+    }
+
+
+    /**
+     * Phase F3.1 proof hook used from GenericResultSetFactory.  It deliberately
+     * observes the exact future native table-scan branch point without changing
+     * the returned Derby result set yet.
+     */
+    public static void observeFactoryLookupIfEnabled(Activation activation, String tableName)
+            throws StandardException
+    {
+        if (!Boolean.getBoolean(FACTORY_PROBE_PROPERTY)) { return; }
+        Optional<Result> resolved = find(activation, tableName);
+        if (resolved.isEmpty()) { return; }
+
+        Result result = resolved.get();
+        FACTORY_LOOKUP_COUNT.incrementAndGet();
+        LAST_FACTORY_LOOKUP.set(result);
+        if (!result.isDefaultStorageProvider()) {
+            LAST_NON_DEFAULT_FACTORY_LOOKUP.set(result);
+        }
+    }
+
+    public static void resetFactoryLookupForTesting()
+    {
+        FACTORY_LOOKUP_COUNT.set(0);
+        LAST_FACTORY_LOOKUP.set(null);
+        LAST_NON_DEFAULT_FACTORY_LOOKUP.set(null);
+    }
+
+    public static int factoryLookupCountForTesting()
+    {
+        return FACTORY_LOOKUP_COUNT.get();
+    }
+
+    public static Optional<Result> lastFactoryLookupForTesting()
+    {
+        return Optional.ofNullable(LAST_FACTORY_LOOKUP.get());
+    }
+
+    public static Optional<Result> lastNonDefaultFactoryLookupForTesting()
+    {
+        return Optional.ofNullable(LAST_NON_DEFAULT_FACTORY_LOOKUP.get());
     }
 
     public static Optional<Result> find(Activation activation, String tableName)

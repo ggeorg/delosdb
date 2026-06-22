@@ -150,7 +150,18 @@ else:
   return normal Derby TableScanResultSet
 ```
 
-F3 acceptance:
+F3 is split into two steps because the inherited code-generation seam is sensitive.
+
+F3.1 landed: provider-aware ResultSetFactory branch proof. Generated activations
+still emit the existing `getTableScanResultSet(...)` call,
+`GenericResultSetFactory` observes provider metadata through
+`DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(...)`, and ordinary
+execution still returns Derby `TableScanResultSet`.
+
+F3.2 — DelosTableScanResultSet skeleton. This is the first step that may return
+a Delos-specific result set for `delos_mvcc` tables.
+
+F3 acceptance after F3.2:
 
 ```text
 No EmbedStatement bridge for the proof path.

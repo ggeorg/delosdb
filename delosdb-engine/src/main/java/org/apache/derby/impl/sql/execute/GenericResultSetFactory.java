@@ -901,6 +901,7 @@ public class GenericResultSetFactory implements ResultSetFactory
 									double optimizerEstimatedCost)
 			throws StandardException
 	{
+        DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
 		return new TableScanResultSet(
                 tableScanParameters(
                         activation,
