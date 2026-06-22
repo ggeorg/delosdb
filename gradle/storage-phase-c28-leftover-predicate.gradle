@@ -73,9 +73,11 @@ ext.delosdbStoragePhaseC28Proof = {
     if (sqlBridge.exists()) {
         def bridgeText = sqlBridge.text
         def leftoverStart = bridgeText.indexOf('private static List<List<Object>> applyLeftoverPredicates(')
-        if (leftoverStart >= 0) {
-            def leftoverText = bridgeText.substring(leftoverStart, Math.min(bridgeText.length(), leftoverStart + 5000))
-            if (!leftoverText.contains('DelosPredicateOperator.NOT_EQUAL')) {
+        def matcherStart = bridgeText.indexOf('private static boolean leftoverPredicateMatches(')
+        if (leftoverStart >= 0 && matcherStart >= 0) {
+            def leftoverText = bridgeText.substring(leftoverStart, Math.min(bridgeText.length(), matcherStart + 1500))
+            def matcherText = bridgeText.substring(matcherStart, Math.min(bridgeText.length(), matcherStart + 1500))
+            if (!matcherText.contains('case NOT_EQUAL -> !Objects.equals(expected, actual)')) {
                 errors << 'applyLeftoverPredicates must support NOT_EQUAL in addition to EQUAL'
             }
             ['FUNCTION', 'FunctionCall', 'RexNode'].each { token ->
@@ -84,7 +86,7 @@ ext.delosdbStoragePhaseC28Proof = {
                 }
             }
         } else {
-            errors << 'missing applyLeftoverPredicates method in VersionedStorageSqlBridge'
+            errors << 'missing applyLeftoverPredicates or leftoverPredicateMatches method in VersionedStorageSqlBridge'
         }
         if (bridgeText.contains('POINT_IN_TIME_RECOVERY') || bridgeText.contains('DURABLE_WAL')) {
             errors << 'C28 must not reintroduce unearned guarantee names in the bridge'
