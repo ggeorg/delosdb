@@ -25,6 +25,24 @@ ext.delosdbStoragePhaseF2RequireTokens = { List<String> errors, File sourceFile,
     }
 }
 
+
+ext.delosdbStoragePhaseF2RequirePatterns = { List<String> errors, File sourceFile, Map<String, String> patterns, String label ->
+    if (!sourceFile.exists()) {
+        errors << "missing ${label}: ${delosdbStoragePhaseF2RelPath(sourceFile)}"
+        return
+    }
+    def text = sourceFile.text
+    def missing = []
+    patterns.each { description, regex ->
+        if (!(text =~ regex).find()) {
+            missing << description
+        }
+    }
+    if (!missing.isEmpty()) {
+        errors << "${label} is missing expected patterns: ${missing.join(', ')}"
+    }
+}
+
 ext.delosdbStoragePhaseF2ModuleClassDir = { String projectPath, String moduleName ->
     project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
 }
@@ -78,17 +96,17 @@ ext.delosdbStoragePhaseF2Proof = {
         }
     }
 
-    delosdbStoragePhaseF2RequireTokens(errors, sysTables, [
-            'SYSTABLES_COLUMN_COUNT = 6',
-            'SYSTABLES_STORAGEPROVIDER = 6',
-            'row.setColumn(SYSTABLES_STORAGEPROVIDER, new SQLVarchar(storageProviderName))',
-            'storageProviderName = providerNameForCatalog(descriptor.getStorageProviderName())',
-            'storageProviderName = col == null ? null : col.getString()',
-            'ddg.newTableDescriptor(',
-            'lockGranularity.charAt(0), storageProviderName',
-            'providerNameForCatalog(String storageProviderName)',
-            'TableDescriptor.DEFAULT_STORAGE_PROVIDER_NAME.equals(storageProviderName)',
-            'SystemColumnImpl.getIdentifierColumn("STORAGEPROVIDER", true)'
+    delosdbStoragePhaseF2RequirePatterns(errors, sysTables, [
+            'SYSTABLES column count is six': ~/SYSTABLES_COLUMN_COUNT\s*=\s*6/,
+            'SYSTABLES storage provider column ordinal is six': ~/SYSTABLES_STORAGEPROVIDER\s*=\s*6/,
+            'provider name is written as nullable SQLVarchar': ~/row\.setColumn\(SYSTABLES_STORAGEPROVIDER,\s*new SQLVarchar\(storageProviderName\)\)/,
+            'descriptor provider is normalized for catalog storage': ~/storageProviderName\s*=\s*providerNameForCatalog\(descriptor\.getStorageProviderName\(\)\)/,
+            'provider name is read back from the catalog row': ~/storageProviderName\s*=\s*col\s*==\s*null\s*\?\s*null\s*:\s*col\.getString\(\)/,
+            'descriptor reconstruction calls DataDescriptorGenerator.newTableDescriptor': ~/ddg\.newTableDescriptor\(/,
+            'descriptor reconstruction passes storage provider name': ~/lockGranularity\.charAt\(0\),\s*storageProviderName/,
+            'catalog helper exists': ~/providerNameForCatalog\(String storageProviderName\)/,
+            'default provider is stored as catalog null': ~/TableDescriptor\.DEFAULT_STORAGE_PROVIDER_NAME\.equals\(storageProviderName\)/,
+            'STORAGEPROVIDER catalog column exists': ~/SystemColumnImpl\.getIdentifierColumn\("STORAGEPROVIDER",\s*true\)/
     ], 'SYSTABLES provider-name persistence')
     delosdbStoragePhaseF2RequireTokens(errors, tableDescriptor, [
             'public static final String DEFAULT_STORAGE_PROVIDER_NAME = "heap"',
