@@ -1,17 +1,25 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.TableStorageMetadataResolver;
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
-import io.github.ggeorg.delosdb.spi.storage.TableStorageMetadata;
+import org.apache.derby.iapi.services.context.ContextManager;
+import org.apache.derby.iapi.services.context.ContextService;
+import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
+import org.apache.derby.iapi.sql.dictionary.DataDictionary;
+import org.apache.derby.iapi.sql.dictionary.SchemaDescriptor;
+import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
+import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.impl.jdbc.EmbedConnection;
+import org.apache.derby.shared.common.error.StandardException;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Locale;
 
 /**
  * Phase F2.1 proof: storageProviderName is no longer only in memory during
- * CREATE TABLE.  It is written to SYSTABLES and read back through Derby's
+ * CREATE TABLE. It is written to SYSTABLES and read back through Derby's
  * descriptor reconstruction after database restart.
  */
 public final class StoragePhaseF2ProviderCatalogSmoke {
@@ -93,11 +101,45 @@ public final class StoragePhaseF2ProviderCatalogSmoke {
     }
 
     private static void assertDescriptorProvider(Connection connection, String tableName, String expected)
-            throws Exception {
-        TableStorageMetadata metadata = TableStorageMetadataResolver.resolve(connection, "APP", tableName);
-        require(expected.equals(metadata.providerName()),
-                "Expected descriptor provider " + expected + " for APP." + tableName
-                        + " but was " + metadata.providerName());
+            throws SQLException, StandardException {
+        String actual = descriptorStorageProvider(connection, "APP", tableName);
+        require(expected.equals(actual),
+                "Expected descriptor provider " + expected + " for APP." + tableName + " but was " + actual);
+    }
+
+    private static String descriptorStorageProvider(Connection connection, String schemaName, String tableName)
+            throws SQLException, StandardException {
+        if (!(connection instanceof EmbedConnection embedConnection)) {
+            throw new IllegalArgumentException(
+                    "F2 descriptor readback proof requires an embedded Derby connection");
+        }
+
+        LanguageConnectionContext lcc = embedConnection.getLanguageConnection();
+        ContextManager contextManager = lcc.getContextManager();
+        ContextService contextService = ContextService.getFactory();
+        boolean contextSet = false;
+        try {
+            contextService.setCurrentContextManager(contextManager);
+            contextSet = true;
+            DataDictionary dataDictionary = lcc.getDataDictionary();
+            TransactionController transactionController = lcc.getTransactionExecute();
+            SchemaDescriptor schema = dataDictionary.getSchemaDescriptor(
+                    normalizeIdentifier(schemaName), transactionController, true);
+            TableDescriptor table = dataDictionary.getTableDescriptor(
+                    normalizeIdentifier(tableName), schema, transactionController);
+            if (table == null) {
+                throw new IllegalArgumentException("Table not found: " + schema.getSchemaName() + "." + tableName);
+            }
+            return table.getStorageProviderName();
+        } finally {
+            if (contextSet) {
+                contextService.resetCurrentContextManager(contextManager);
+            }
+        }
+    }
+
+    private static String normalizeIdentifier(String identifier) {
+        return identifier.trim().toUpperCase(Locale.ROOT);
     }
 
     private static void require(boolean condition, String message) {
