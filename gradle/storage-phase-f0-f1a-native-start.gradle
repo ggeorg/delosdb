@@ -152,7 +152,7 @@ ext.delosdbStoragePhaseF0F1aProof = {
     delosdbStoragePhaseF0F1aRequireTokens(errors, roadmap, [
             'Active lane: storage Phase F native Derby execution integration',
             'F1 grammar work is already done',
-            'F2.1 — persist storageProviderName across restart via nullable SYSTABLES.STORAGEPROVIDER',
+            'F2.1 landed — persist storageProviderName across restart via nullable SYSTABLES.STORAGEPROVIDER',
             'provider-aware ResultSetFactory'
     ], 'ROADMAP Phase F update')
     delosdbStoragePhaseF0F1aRequireTokens(errors, gitignore, [
@@ -179,11 +179,11 @@ ext.delosdbStoragePhaseF0F1aProof = {
     lines << 'Verified facts:'
     lines << '  sqlgrammar.jj already has storageProviderClause().' 
     lines << '  CreateTableNode and TableDescriptor already carry storageProviderName in memory.'
-    lines << '  F2.1 has started catalog persistence by adding SYSTABLES.STORAGEPROVIDER.'
+    lines << '  F2.1 landed: catalog persistence stores SYSTABLES.STORAGEPROVIDER.'
     lines << '  VersionedStorageSqlBridge is transitional scaffolding, not the Phase F target.'
     lines << ''
     lines << 'Next real architecture step:'
-    lines << '  Continue F2 provider-name catalog persistence toward native ResultSetFactory integration.'
+    lines << '  Continue native ResultSetFactory integration toward DelosTableScanResultSet execution.'
     lines << ''
     if (errors.isEmpty()) {
         lines << 'Result: PASS'
@@ -240,6 +240,6 @@ tasks.register('verifyStoragePhaseF0F1aNativeStart') {
     description = 'Verifies Phase F0/F1a native integration start.'
     dependsOn 'storagePhaseF0F1aNativeStartReport', 'storagePhaseF1aProviderSyntaxSmoke'
     doLast {
-        println 'Verified Phase F0/F1a native integration start; next step is F2 provider catalog persistence'
+        println 'Verified Phase F0/F1a native integration start; next step is native ResultSetFactory integration'
     }
 }
