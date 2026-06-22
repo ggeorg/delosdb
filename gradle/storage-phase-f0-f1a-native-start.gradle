@@ -136,7 +136,7 @@ ext.delosdbStoragePhaseF0F1aProof = {
             'Phase F is the clean-design correction',
             'F1a — parser-owned provider syntax confirmation',
             'F2 — persist provider identity in catalog',
-            'Add a nullable provider-name column to SYSTABLES',
+            'Add nullable SYSTABLES.STORAGEPROVIDER as column 6',
             'F3 — provider-aware ResultSetFactory proof',
             'GenericResultSetFactory.getTableScanResultSet',
             'Qualifier.getColumnId() ordinal',
@@ -152,7 +152,7 @@ ext.delosdbStoragePhaseF0F1aProof = {
     delosdbStoragePhaseF0F1aRequireTokens(errors, roadmap, [
             'Active lane: storage Phase F native Derby execution integration',
             'F1 grammar work is already done',
-            'F2  — persist storageProviderName across restart',
+            'F2.1 — persist storageProviderName across restart via nullable SYSTABLES.STORAGEPROVIDER',
             'provider-aware ResultSetFactory'
     ], 'ROADMAP Phase F update')
     delosdbStoragePhaseF0F1aRequireTokens(errors, gitignore, [
