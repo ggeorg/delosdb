@@ -146,12 +146,13 @@ ext.delosdbStoragePhaseF31Proof = {
     delosdbStoragePhaseF31RequireTokens(errors, planDoc, [
             'F3.1 landed',
             'provider-aware ResultSetFactory branch proof',
-            'F3.2 — DelosTableScanResultSet skeleton'
-    ], 'Phase F plan after F3.1')
+            'F3.2 landed',
+            'DelosTableScanResultSet skeleton'
+    ], 'Phase F plan after F3.1/F3.2')
     delosdbStoragePhaseF31RequireTokens(errors, roadmap, [
             'F3.1 landed',
-            'F3.2 — DelosTableScanResultSet skeleton'
-    ], 'ROADMAP after F3.1')
+            'F3.2 landed'
+    ], 'ROADMAP after F3.1/F3.2')
     delosdbStoragePhaseF31RequireTokens(errors, cleanupScript, [
             'storage-phase-f3-factory-branch-db'
     ], 'F3.1 smoke DB cleanup entry')
