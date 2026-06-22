@@ -490,6 +490,23 @@ public final class VersionedStorageSqlBridge {
             return result.affectedRows();
         }
 
+        public long update(DelosRowIdentity rowIdentity, List<Object> nativeValues) throws SQLException {
+            Objects.requireNonNull(rowIdentity, "rowIdentity");
+            Objects.requireNonNull(nativeValues, "nativeValues");
+            if (nativeValues.size() != table.columns().size()) {
+                throw sqlException("42802", "UPDATE replacement value count does not match delos_mvcc table column count");
+            }
+            List<StoreDataValue> values = new ArrayList<>(nativeValues.size());
+            for (Object value : nativeValues) {
+                values.add(EngineMvccTableAccess.value(value));
+            }
+            DelosMutationResult result = tableAccess.update(
+                    context,
+                    rowIdentity,
+                    DelosRow.withoutIdentity(List.copyOf(values)));
+            return result.affectedRows();
+        }
+
         @Override
         public void close() throws SQLException {
             if (closed) {

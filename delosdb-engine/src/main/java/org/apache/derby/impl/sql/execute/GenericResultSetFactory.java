@@ -359,6 +359,9 @@ public class GenericResultSetFactory implements ResultSetFactory
 			SanityManager.ASSERT(getAuthorizer(activation) != null, "Authorizer is null");
 		}
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
+        ResultSet delosUpdate = DelosUpdateResultSet.createIfEnabled(
+                source, generationClauses, checkGM, activation).orElse(null);
+        if (delosUpdate != null) { return delosUpdate; }
 		return new UpdateResultSet(UpdateResultSetParameters.normal(
                 source, generationClauses, checkGM, activation));
 	}

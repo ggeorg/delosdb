@@ -42,6 +42,7 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.types.DelosPredicate;
 import org.apache.derby.iapi.store.types.DelosProjection;
 import org.apache.derby.iapi.store.types.DelosRow;
+import org.apache.derby.iapi.store.types.DelosRowIdentity;
 import org.apache.derby.iapi.store.types.DelosScan;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.types.DataValueDescriptor;
@@ -85,6 +86,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     private final boolean nativeSelectEquality;
     private VersionedStorageSqlBridge.NativeExecutionTableAccess nativeAccess;
     private DelosScan scan;
+    private DelosRow currentDelosRow;
 
     private DelosTableScanResultSet(
             TableScanResultSetParameters params,
@@ -175,13 +177,15 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 return null;
             }
             if (!scan.next()) {
+                currentDelosRow = null;
                 clearCurrentRow();
                 finished = true;
                 return null;
             }
 
             ExecRow row = newResultRow();
-            materialize(scan.row(), row);
+            currentDelosRow = scan.row();
+            materialize(currentDelosRow, row);
             rowsSeen++;
             setCurrentRow(row);
             return row;
@@ -219,6 +223,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                     nativeAccess = null;
                 }
             }
+            currentDelosRow = null;
             clearCurrentRow();
             super.close();
         } finally {
@@ -273,6 +278,16 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             throws StandardException
     {
         return equalityPredicates(tableDescriptor());
+    }
+
+    DelosRowIdentity currentDelosRowIdentityForNativeMutation() throws StandardException
+    {
+        if (currentDelosRow == null) {
+            throw StandardException.plainWrapException(new IllegalStateException(
+                    "No current delos_mvcc row identity is available for native mutation"));
+        }
+        return currentDelosRow.rowIdentity().orElseThrow(() ->
+                new IllegalStateException("Native delos_mvcc scan row has no DelosRowIdentity"));
     }
 
     static Optional<DelosTableScanResultSet> findIn(NoPutResultSet resultSet)

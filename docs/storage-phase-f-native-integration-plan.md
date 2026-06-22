@@ -225,6 +225,14 @@ metadata under the F6 proof property, `DelosDeleteResultSet` reuses the native
 DELETE proof asserts that `VersionedStorageSqlBridge.tryExecute(...)` is not
 called for the native DELETE path.
 
+F7 landed: native UPDATE equality through the generated
+`getUpdateResultSet(...)` path. `GenericResultSetFactory` branches by provider
+metadata under the F7 proof property, `DelosUpdateResultSet` lets Derby compute
+the replacement source row, carries the current `DelosRowIdentity` from
+`DelosTableScanResultSet`, and calls `EngineMvccTableAccess.update(...)`. The
+prepared UPDATE proof asserts that `VersionedStorageSqlBridge.tryExecute(...)`
+is not called for the native UPDATE path.
+
 ```text
 F5 — native INSERT:
   generated execution builds DelosRow and calls insert(...)
