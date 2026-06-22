@@ -130,7 +130,8 @@ ext.delosdbStoragePhaseF2Proof = {
             'CREATE TABLE " + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc',
             'SELECT STORAGEPROVIDER FROM SYS.SYSTABLES WHERE TABLENAME = ?',
             'descriptorStorageProvider(connection, "APP", tableName)',
-            'dataDictionary.getTableDescriptor(normalizeIdentifier(tableName), schema, transactionController)',
+            'dataDictionary.getTableDescriptor(',
+            'normalizeIdentifier(tableName), schema, transactionController',
             'SmokeUtils.shutdown(DATABASE_PATH)',
             'storage_phase_f2_provider_catalog: PASS'
     ], 'F2 restart persistence smoke')
