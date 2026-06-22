@@ -401,6 +401,85 @@ public final class VersionedStorageSqlBridge {
                 : Optional.of(classifier);
     }
 
+    /** Test-only reset used to prove a following native execution path did not call tryExecute(...). */
+    public static void resetRouteClassifierForTesting() {
+        lastRouteClassifier = ROUTE_CLASSIFIER_UNHANDLED;
+    }
+
+    /**
+     * Opens the existing provider-owned table-access object for the native
+     * ResultSetFactory path. This is deliberately not a SQL route and does not
+     * parse or execute SQL; it is the temporary F4 seam between Derby generated
+     * execution and the already-proven table-access contract while F5-F7 move
+     * DML off the bridge.
+     */
+    public static Optional<NativeExecutionTableAccess> openNativeExecutionTableAccess(
+            String schemaName,
+            String tableName) throws SQLException {
+        Objects.requireNonNull(schemaName, "schemaName");
+        Objects.requireNonNull(tableName, "tableName");
+        TableDefinition table;
+        synchronized (LOCK) {
+            table = TABLES.get(new VersionedTableMetadata(
+                    schemaName.trim().toUpperCase(Locale.ROOT),
+                    tableName.trim().toUpperCase(Locale.ROOT)));
+        }
+        if (table == null) {
+            return Optional.empty();
+        }
+
+        StatementTransaction statementTx = beginStatementTransaction(
+                table,
+                NativeExecutionTableAccess.class,
+                true,
+                Connection.TRANSACTION_READ_COMMITTED);
+        return Optional.of(new NativeExecutionTableAccess(
+                table.tableAccess(),
+                delosAccessContext(statementTx),
+                statementTx));
+    }
+
+    public static final class NativeExecutionTableAccess implements AutoCloseable {
+        private final EngineMvccTableAccess tableAccess;
+        private final DelosAccessContext context;
+        private final StatementTransaction statementTx;
+        private boolean closed;
+
+        private NativeExecutionTableAccess(
+                EngineMvccTableAccess tableAccess,
+                DelosAccessContext context,
+                StatementTransaction statementTx) {
+            this.tableAccess = Objects.requireNonNull(tableAccess, "tableAccess");
+            this.context = Objects.requireNonNull(context, "context");
+            this.statementTx = Objects.requireNonNull(statementTx, "statementTx");
+        }
+
+        public EngineMvccTableAccess tableAccess() {
+            return tableAccess;
+        }
+
+        public DelosAccessContext context() {
+            return context;
+        }
+
+        @Override
+        public void close() throws SQLException {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            finishStatementTransaction(statementTx);
+        }
+
+        public void abort() throws SQLException {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            VersionedStorageSqlBridge.abort(statementTx);
+        }
+    }
+
     /**
      * Configures the experimental SQL bridge to use the page-backed delos_mvcc
      * provider storage. This is intentionally internal and exists for the

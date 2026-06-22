@@ -264,7 +264,8 @@ F2.1 landed — persist storageProviderName across restart via nullable SYSTABLE
 F2.2 landed — add DelosTableScanProviderLookup for ResultSetFactory metadata lookup preparation
 F3.1 landed — provider-aware ResultSetFactory branch proof
 F3.2 landed — DelosTableScanResultSet skeleton
-Next: F4 — native MVCC SELECT equality through generated activation/result-set path
+F4 landed — native MVCC SELECT equality through generated activation/result-set path
+Next: F5 — native INSERT through provider-owned table access
 F5  — native INSERT
 F6  — native DELETE equality
 F7  — native UPDATE equality

@@ -191,6 +191,12 @@ Qualifier[][]
   -> existing store-type bridge unwraps StoreDataValue into a DelosPredicate value
 ```
 
+F4 landed: native MVCC SELECT equality through the generated table-scan
+result-set path. The proof translates `Qualifier[][]` equality to a
+`DelosPredicate`, calls `EngineMvccTableAccess.scan(...)`, materializes returned
+Delos rows into Derby `ExecRow` output, and asserts the prepared SELECT path did
+not call `VersionedStorageSqlBridge.tryExecute(...)`.
+
 F4 acceptance:
 
 ```text

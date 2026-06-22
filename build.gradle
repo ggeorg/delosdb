@@ -2709,6 +2709,7 @@ apply from: file('gradle/storage-phase-f2-provider-catalog-persistence.gradle')
 apply from: file('gradle/storage-phase-f2-resultset-metadata-lookup.gradle')
 apply from: file('gradle/storage-phase-f3-factory-branch-proof.gradle')
 apply from: file('gradle/storage-phase-f3-delos-table-scan-skeleton.gradle')
+apply from: file('gradle/storage-phase-f4-native-select-equality.gradle')
 
 
 // Phase F2.2: storage-phase smoke compiles put compiled module directories on

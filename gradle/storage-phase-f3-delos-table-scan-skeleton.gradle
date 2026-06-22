@@ -154,7 +154,7 @@ ext.delosdbStoragePhaseF32Proof = {
     ], 'Phase F plan after F3.2')
     delosdbStoragePhaseF32RequireTokens(errors, roadmap, [
             'F3.2 landed',
-            'Next: F4 — native MVCC SELECT equality'
+            'F4 landed — native MVCC SELECT equality'
     ], 'ROADMAP after F3.2')
     delosdbStoragePhaseF32RequireTokens(errors, cleanupScript, [
             'storage-phase-f3-delos-table-scan-skeleton-db'
