@@ -80,7 +80,9 @@ ext.delosdbStoragePhaseC34Proof = {
             'DelosVersionedStorageQueryTreeClassifier.deleteWhereEquals(normalizedSql)',
             'PlannedRoute.deleteWhereEquals(',
             'case DELETE_WHERE_EQUALS:',
-            'return deleteWhereEquals(table.get(), plannedRoute.predicateColumnName(), plannedRoute.predicateValue(), transactionOwner, autoCommit, transactionIsolation);'
+            'return deleteWhereEquals(',
+            'plannedRoute.predicateColumnName()',
+            'plannedRoute.predicateValue()'
     ], 'C34 bridge JavaCC DELETE route')
     if (sqlBridge.exists()) {
         def bridgeText = sqlBridge.text
