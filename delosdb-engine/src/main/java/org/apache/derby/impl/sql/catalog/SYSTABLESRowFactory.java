@@ -61,13 +61,14 @@ class SYSTABLESRowFactory extends CatalogRowFactory
 {
 	private static final String		TABLENAME_STRING = "SYSTABLES";
 
-	protected static final int		SYSTABLES_COLUMN_COUNT = 5;
+	protected static final int		SYSTABLES_COLUMN_COUNT = 6;
 	/* Column #s for systables (1 based) */
 	protected static final int		SYSTABLES_TABLEID = 1;
 	protected static final int		SYSTABLES_TABLENAME = 2;
 	protected static final int		SYSTABLES_TABLETYPE = 3;
 	protected static final int		SYSTABLES_SCHEMAID = 4;
 	protected static final int		SYSTABLES_LOCKGRANULARITY = 5;
+	protected static final int		SYSTABLES_STORAGEPROVIDER = 6;
 
 	protected static final int		SYSTABLES_INDEX1_ID = 0;
 	protected static final int		SYSTABLES_INDEX1_TABLENAME = 1;
@@ -127,6 +128,7 @@ class SYSTABLESRowFactory extends CatalogRowFactory
 		int	   					tabIType;
 		ExecRow        			row;
 		String					lockGranularity = null;
+		String                  storageProviderName = null;
 		String					tableID = null;
 		String					schemaID = null;
 		String					tableName = null;
@@ -190,6 +192,7 @@ class SYSTABLESRowFactory extends CatalogRowFactory
 			char[] lockGChar = new char[1];
 			lockGChar[0] = descriptor.getLockGranularity();
 			lockGranularity = new String(lockGChar);
+            storageProviderName = providerNameForCatalog(descriptor.getStorageProviderName());
 		}
 
 		/* Insert info into systables */
@@ -215,6 +218,9 @@ class SYSTABLESRowFactory extends CatalogRowFactory
 
 		/* 5th column is LOCKGRANULARITY (char(1)) */
 		row.setColumn(SYSTABLES_LOCKGRANULARITY, new SQLChar(lockGranularity));
+
+        /* 6th column is STORAGEPROVIDER (nullable varchar(128)). */
+        row.setColumn(SYSTABLES_STORAGEPROVIDER, new SQLVarchar(storageProviderName));
 
 		return row;
 	}
@@ -323,7 +329,9 @@ class SYSTABLESRowFactory extends CatalogRowFactory
 					throws StandardException
 	{
 		if (SanityManager.DEBUG)
-		SanityManager.ASSERT(row.nColumns() == SYSTABLES_COLUMN_COUNT, "Wrong number of columns for a SYSTABLES row");
+        {
+            SanityManager.ASSERT(row.nColumns() == SYSTABLES_COLUMN_COUNT, "Wrong number of columns for a SYSTABLES row");
+        }
 
 		DataDescriptorGenerator ddg = dd.getDataDescriptorGenerator();
 
@@ -331,6 +339,7 @@ class SYSTABLESRowFactory extends CatalogRowFactory
 		String	schemaUUIDString; 
 		int		tableTypeEnum;
 		String	lockGranularity;
+        String  storageProviderName;
 		String	tableName, tableType;
 		DataValueDescriptor	col;
 		UUID		tableUUID;
@@ -390,11 +399,27 @@ class SYSTABLESRowFactory extends CatalogRowFactory
 			SanityManager.ASSERT(lockGranularity.length() == 1, "Fifth column type incorrect");
 		}
 
+        /* 6th column is STORAGEPROVIDER (nullable varchar(128)). */
+        col = row.getColumn(SYSTABLES_STORAGEPROVIDER);
+        storageProviderName = col == null ? null : col.getString();
+
 		// RESOLVE - Deal with lock granularity
-		tabDesc = ddg.newTableDescriptor(tableName, schema, tableTypeEnum, lockGranularity.charAt(0));
+		tabDesc = ddg.newTableDescriptor(
+                tableName, schema, tableTypeEnum, lockGranularity.charAt(0), storageProviderName);
 		tabDesc.setUUID(tableUUID);
 		return tabDesc;
 	}
+
+
+    private static String providerNameForCatalog(String storageProviderName)
+    {
+        if (storageProviderName == null
+                || TableDescriptor.DEFAULT_STORAGE_PROVIDER_NAME.equals(storageProviderName))
+        {
+            return null;
+        }
+        return storageProviderName;
+    }
 
 	/**
 	 *	Get the table name out of this SYSTABLES row
@@ -430,6 +455,7 @@ class SYSTABLESRowFactory extends CatalogRowFactory
             SystemColumnImpl.getIndicatorColumn("TABLETYPE"),
             SystemColumnImpl.getUUIDColumn("SCHEMAID", false),
             SystemColumnImpl.getIndicatorColumn("LOCKGRANULARITY"),
+            SystemColumnImpl.getIdentifierColumn("STORAGEPROVIDER", true),
         };
 	}
 

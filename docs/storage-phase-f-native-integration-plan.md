@@ -75,6 +75,8 @@ must go through Derby's real parser/prepare path, not through bridge execution.
 
 ## F2 — persist provider identity in catalog
 
+F2.1 landed the first catalog-persistence step: `SYSTABLES.STORAGEPROVIDER` is now a nullable sixth column, non-default providers are written to it, and descriptor reconstruction reads it back after database restart.
+
 This is the first real architecture step.
 
 Problem:
@@ -84,11 +86,11 @@ TableDescriptor.storageProviderName exists in memory, but provider identity is
 not persisted and therefore does not survive database restart.
 ```
 
-Default design:
+Chosen F2.1 design:
 
 ```text
-Add a nullable provider-name column to SYSTABLES unless inspection exposes a
-hard catalog-version blocker.
+Add nullable SYSTABLES.STORAGEPROVIDER as column 6.
+Persist only non-default providers; null reconstructs as TableDescriptor.DEFAULT_STORAGE_PROVIDER_NAME.
 ```
 
 Reason:
@@ -99,14 +101,22 @@ remember a second lookup and introduces consistency problems.  A nullable
 SYSTABLES column is invasive but bounded to the catalog row-factory path.
 ```
 
-F2 acceptance:
+F2.1 acceptance:
 
 ```text
-CREATE TABLE ... USING delos_mvcc
+CREATE TABLE ... USING delos_mvcc through Derby prepare/constant-action path
+SYSTABLES.STORAGEPROVIDER = delos_mvcc
 shutdown / reopen
 descriptor still has storageProviderName = delos_mvcc
-heap/default tables reconstruct with null/default provider
-unknown provider fails with a Derby-style SQL error
+default heap tables store null and reconstruct as heap
+```
+
+Remaining F2.2 work:
+
+```text
+Harden provider validation at bind/CREATE boundaries.
+Prepare the metadata lookup shape needed by F3: tableName + activation -> DataDictionary -> TableDescriptor.storageProviderName.
+Do not start ResultSetFactory branching until F2.2 is green.
 ```
 
 ## F3 — provider-aware ResultSetFactory proof

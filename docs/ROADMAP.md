@@ -260,8 +260,9 @@ Active sequence:
 ```text
 F0  — freeze bridge expansion and clean generated smoke DB artifacts
 F1a — parser-owned provider syntax confirmation smoke only
-F2  — persist storageProviderName across restart, likely through a nullable SYSTABLES column
-F3  — provider-aware ResultSetFactory / DelosTableScanResultSet proof
+F2.1 — persist storageProviderName across restart via nullable SYSTABLES.STORAGEPROVIDER
+F2.2 — harden provider validation and prepare ResultSetFactory metadata lookup
+F3   — provider-aware ResultSetFactory / DelosTableScanResultSet proof
 F4  — native MVCC SELECT equality through generated activation/result-set path
 F5  — native INSERT
 F6  — native DELETE equality
