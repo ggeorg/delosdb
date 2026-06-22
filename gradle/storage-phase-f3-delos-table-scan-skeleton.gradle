@@ -101,7 +101,7 @@ ext.delosdbStoragePhaseF32Proof = {
             'createIfEnabled(TableScanResultSetParameters params)',
             'DelosTableScanProviderLookup.find(params.activation, params.tableName)',
             'lookup.isEmpty() || lookup.get().isDefaultStorageProvider()',
-            'return Optional.of(new DelosTableScanResultSet(params, lookup.get()))',
+            'return Optional.of(new DelosTableScanResultSet(',
             'public void openCore() throws StandardException',
             'UnsupportedOperationException(SKELETON_REACHED_MESSAGE)',
             'F4 must implement real MVCC scan materialization'
