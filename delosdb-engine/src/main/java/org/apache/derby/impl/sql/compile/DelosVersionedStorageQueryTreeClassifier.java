@@ -44,6 +44,15 @@ public final class DelosVersionedStorageQueryTreeClassifier {
     }
 
     public static Optional<SelectWhereEqualsRoute> selectWhereEquals(String sql) {
+        return selectWhereComparison(sql)
+                .filter(route -> "=".equals(route.operator()))
+                .map(route -> new SelectWhereEqualsRoute(
+                        route.tableName(),
+                        route.columnName(),
+                        route.rawValue()));
+    }
+
+    public static Optional<SelectWhereComparisonRoute> selectWhereComparison(String sql) {
         LanguageConnectionContext lcc = (LanguageConnectionContext) ContextService.getContextOrNull(
                 LanguageConnectionContext.CONTEXT_ID);
         if (lcc == null) {
@@ -58,7 +67,7 @@ public final class DelosVersionedStorageQueryTreeClassifier {
             }
             compilerContext = lcc.pushCompilerContext();
             Visitable parsed = compilerContext.getParser().parseStatement(sql);
-            return classifySelectWhereEquals(sql, parsed);
+            return classifySelectWhereComparison(sql, parsed);
         } catch (StandardException e) {
             return Optional.empty();
         } finally {
@@ -71,7 +80,7 @@ public final class DelosVersionedStorageQueryTreeClassifier {
         }
     }
 
-    static Optional<SelectWhereEqualsRoute> classifySelectWhereEquals(String sql, Visitable parsed) {
+    static Optional<SelectWhereComparisonRoute> classifySelectWhereComparison(String sql, Visitable parsed) {
         if (!(parsed instanceof CursorNode cursor)) {
             return Optional.empty();
         }
@@ -96,13 +105,8 @@ public final class DelosVersionedStorageQueryTreeClassifier {
         if (!(select.whereClause instanceof BinaryRelationalOperatorNode comparison)) {
             return Optional.empty();
         }
-        if (comparison.kind != BinaryRelationalOperatorNode.K_EQUALS || !"=".equals(comparison.operator)) {
-            return Optional.empty();
-        }
 
-        ColumnLiteralPair pair = columnLiteralPair(comparison.leftOperand, comparison.rightOperand)
-                .or(() -> columnLiteralPair(comparison.rightOperand, comparison.leftOperand))
-                .orElse(null);
+        ColumnLiteralComparison pair = columnLiteralComparison(comparison).orElse(null);
         if (pair == null) {
             return Optional.empty();
         }
@@ -117,9 +121,10 @@ public final class DelosVersionedStorageQueryTreeClassifier {
             return Optional.empty();
         }
 
-        return Optional.of(new SelectWhereEqualsRoute(
+        return Optional.of(new SelectWhereComparisonRoute(
                 fromBaseTable.tableName.getFullTableName(),
                 pair.column().getColumnName(),
+                pair.operator(),
                 literalSql));
     }
 
@@ -145,11 +150,43 @@ public final class DelosVersionedStorageQueryTreeClassifier {
                 && resultColumns.elementAt(0) instanceof AllResultColumn;
     }
 
-    private static Optional<ColumnLiteralPair> columnLiteralPair(ValueNode possibleColumn, ValueNode possibleLiteral) {
-        if (possibleColumn instanceof ColumnReference column && possibleLiteral instanceof ConstantNode literal) {
-            return Optional.of(new ColumnLiteralPair(column, literal));
+    private static Optional<ColumnLiteralComparison> columnLiteralComparison(BinaryRelationalOperatorNode comparison) {
+        Optional<String> operator = comparisonOperator(comparison.kind);
+        if (operator.isEmpty()) {
+            return Optional.empty();
+        }
+        if (comparison.leftOperand instanceof ColumnReference column
+                && comparison.rightOperand instanceof ConstantNode literal) {
+            return Optional.of(new ColumnLiteralComparison(column, literal, operator.get()));
+        }
+        if (comparison.rightOperand instanceof ColumnReference column
+                && comparison.leftOperand instanceof ConstantNode literal) {
+            return invertComparisonOperator(operator.get())
+                    .map(invertedOperator -> new ColumnLiteralComparison(column, literal, invertedOperator));
         }
         return Optional.empty();
+    }
+
+    private static Optional<String> comparisonOperator(int kind) {
+        return switch (kind) {
+            case BinaryRelationalOperatorNode.K_EQUALS -> Optional.of("=");
+            case BinaryRelationalOperatorNode.K_GREATER_EQUALS -> Optional.of(">=");
+            case BinaryRelationalOperatorNode.K_GREATER_THAN -> Optional.of(">");
+            case BinaryRelationalOperatorNode.K_LESS_EQUALS -> Optional.of("<=");
+            case BinaryRelationalOperatorNode.K_LESS_THAN -> Optional.of("<");
+            default -> Optional.empty();
+        };
+    }
+
+    private static Optional<String> invertComparisonOperator(String operator) {
+        return switch (operator) {
+            case "=" -> Optional.of("=");
+            case ">=" -> Optional.of("<=");
+            case ">" -> Optional.of("<");
+            case "<=" -> Optional.of(">=");
+            case "<" -> Optional.of(">");
+            default -> Optional.empty();
+        };
     }
 
     private static boolean columnQualifiesSingleFromTable(ColumnReference column, TableName tableName) {
@@ -191,7 +228,24 @@ public final class DelosVersionedStorageQueryTreeClassifier {
         return Optional.of(sql.substring(begin, end + 1).trim());
     }
 
-    private record ColumnLiteralPair(ColumnReference column, ConstantNode literal) {
+    private record ColumnLiteralComparison(ColumnReference column, ConstantNode literal, String operator) {
+    }
+
+    public record SelectWhereComparisonRoute(String tableName, String columnName, String operator, String rawValue) {
+        public SelectWhereComparisonRoute {
+            if (tableName == null || tableName.isBlank()) {
+                throw new IllegalArgumentException("tableName must not be blank");
+            }
+            if (columnName == null || columnName.isBlank()) {
+                throw new IllegalArgumentException("columnName must not be blank");
+            }
+            if (operator == null || operator.isBlank()) {
+                throw new IllegalArgumentException("operator must not be blank");
+            }
+            if (rawValue == null || rawValue.isBlank()) {
+                throw new IllegalArgumentException("rawValue must not be blank");
+            }
+        }
     }
 
     public record SelectWhereEqualsRoute(String tableName, String columnName, String rawValue) {

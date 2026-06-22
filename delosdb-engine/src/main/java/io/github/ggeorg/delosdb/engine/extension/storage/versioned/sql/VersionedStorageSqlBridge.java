@@ -724,11 +724,20 @@ public final class VersionedStorageSqlBridge {
         if (!trimmed.regionMatches(true, 0, "SELECT", 0, "SELECT".length())) {
             return Optional.empty();
         }
-        return DelosVersionedStorageQueryTreeClassifier.selectWhereEquals(normalizedSql)
-                .map(route -> PlannedRoute.selectWhereEquals(
-                        route.tableName(),
-                        route.columnName(),
-                        route.rawValue()));
+        return DelosVersionedStorageQueryTreeClassifier.selectWhereComparison(normalizedSql)
+                .map(route -> {
+                    if ("=".equals(route.operator())) {
+                        return PlannedRoute.selectWhereEquals(
+                                route.tableName(),
+                                route.columnName(),
+                                route.rawValue());
+                    }
+                    return PlannedRoute.selectWhereRange(
+                            route.tableName(),
+                            route.columnName(),
+                            route.operator(),
+                            route.rawValue());
+                });
     }
 
 

@@ -60,15 +60,15 @@ ext.delosdbStoragePhaseC24Proof = {
     delosdbStoragePhaseC24RequireTokens(errors, classifier, [
             'compilerContext = lcc.pushCompilerContext()',
             'compilerContext.getParser().parseStatement(sql)',
-            'classifySelectWhereEquals(sql, parsed)',
+            'classifySelectWhereComparison(sql, parsed)',
             'parsed instanceof CursorNode cursor',
             'cursor.getResultSetNode() instanceof SelectNode select',
             'select.fromList.elementAt(0) instanceof FromBaseTable fromBaseTable',
             'select.whereClause instanceof BinaryRelationalOperatorNode comparison',
-            'comparison.kind != BinaryRelationalOperatorNode.K_EQUALS',
+            'comparisonOperator(comparison.kind)',
             'ColumnReference column',
             'ConstantNode literal',
-            'new SelectWhereEqualsRoute(',
+            'new SelectWhereComparisonRoute(',
             'sql.substring(begin, end + 1).trim()'
     ], 'C24 Derby JavaCC / QueryTreeNode classifier')
 
@@ -86,7 +86,7 @@ ext.delosdbStoragePhaseC24Proof = {
             'private static final String ROUTE_CLASSIFIER_JAVACC_QUERY_TREE = "javacc-query-tree"',
             'lastRouteClassifierForTesting()',
             'private static Optional<PlannedRoute> routeStatementWithJavaCcQueryTree(String normalizedSql)',
-            'DelosVersionedStorageQueryTreeClassifier.selectWhereEquals(normalizedSql)',
+            'DelosVersionedStorageQueryTreeClassifier.selectWhereComparison(normalizedSql)',
             'PlannedRoute.selectWhereEquals(',
             'Optional<PlannedRoute> javaCcRoute = routeStatementWithJavaCcQueryTree(normalizedSql)',
             'lastRouteClassifier = ROUTE_CLASSIFIER_JAVACC_QUERY_TREE',

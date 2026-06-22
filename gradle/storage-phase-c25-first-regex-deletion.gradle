@@ -59,18 +59,18 @@ ext.delosdbStoragePhaseC25Proof = {
 
     delosdbStoragePhaseC25RequireTokens(errors, classifier, [
             'compilerContext.getParser().parseStatement(sql)',
-            'classifySelectWhereEquals(sql, parsed)',
+            'classifySelectWhereComparison(sql, parsed)',
             'parsed instanceof CursorNode cursor',
             'select.whereClause instanceof BinaryRelationalOperatorNode comparison',
-            'comparison.kind != BinaryRelationalOperatorNode.K_EQUALS',
+            'comparisonOperator(comparison.kind)',
             'ColumnReference column',
             'ConstantNode literal',
-            'new SelectWhereEqualsRoute('
+            'new SelectWhereComparisonRoute('
     ], 'C25 JavaCC / QueryTreeNode replacement classifier')
 
     delosdbStoragePhaseC25RequireTokens(errors, bridge, [
             'private static Optional<PlannedRoute> routeStatementWithJavaCcQueryTree(String normalizedSql)',
-            'DelosVersionedStorageQueryTreeClassifier.selectWhereEquals(normalizedSql)',
+            'DelosVersionedStorageQueryTreeClassifier.selectWhereComparison(normalizedSql)',
             'PlannedRoute.selectWhereEquals(',
             'case SELECT_WHERE_EQUALS:',
             'tableAccess.scan(',

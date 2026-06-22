@@ -145,7 +145,7 @@ ext.delosdbStoragePhaseC26Proof = {
 
     delosdbStoragePhaseC26RequireTokens(errors, bridge, [
             'Optional<PlannedRoute> javaCcRoute = routeStatementWithJavaCcQueryTree(normalizedSql)',
-            'DelosVersionedStorageQueryTreeClassifier.selectWhereEquals(normalizedSql)',
+            'DelosVersionedStorageQueryTreeClassifier.selectWhereComparison(normalizedSql)',
             'ROUTE_CLASSIFIER_JAVACC_QUERY_TREE',
             'private static final Pattern SELECT_WHERE_RANGE',
             'private static final Pattern SELECT_WHERE_BETWEEN',
