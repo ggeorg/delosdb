@@ -144,7 +144,7 @@ ext.delosdbStoragePhaseF5Proof = {
             'GenericResultSetFactory.getInsertResultSet(...)',
             'DelosInsertResultSet',
             'EngineMvccTableAccess.insert(...)',
-            'no bridge route expansion'
+            'does not add any new bridge SQL route or regex route'
     ], 'F5 document')
     delosdbStoragePhaseF5RequireTokens(errors, planDoc, [
             'F5 landed',
