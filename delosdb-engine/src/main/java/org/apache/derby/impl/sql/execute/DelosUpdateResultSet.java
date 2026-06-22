@@ -159,7 +159,11 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
             while ((row = source.getNextRowCore()) != null) {
                 evaluateGenerationClauses(generationClauses, activation, source, row, true);
                 DelosRowIdentity rowIdentity = nativeScanSource.currentDelosRowIdentityForNativeMutation();
-                rowCount += nativeAccess.update(rowIdentity, replacementNativeValues(row, baseColumnCount));
+                rowCount += nativeAccess.update(rowIdentity, replacementNativeValues(
+                        row,
+                        baseColumnCount,
+                        constants,
+                        nativeScanSource.currentDelosNativeValuesForNativeMutation()));
             }
             nativeAccess.close();
             nativeAccess = null;
@@ -230,24 +234,52 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
         }
     }
 
-    private static List<Object> replacementNativeValues(ExecRow row, int baseColumnCount) throws StandardException
+    private static List<Object> replacementNativeValues(
+            ExecRow row,
+            int baseColumnCount,
+            UpdateConstantAction constants,
+            List<Object> currentNativeValues) throws StandardException
     {
         int resultWidth = row.nColumns();
         if (baseColumnCount <= 0) {
             throw StandardException.plainWrapException(new IllegalStateException(
                     "F7 native UPDATE could not resolve a positive base-column count"));
         }
+        if (currentNativeValues.size() != baseColumnCount) {
+            throw StandardException.plainWrapException(new IllegalStateException(
+                    "F7 native UPDATE current row value count does not match delos_mvcc table column count; current="
+                            + currentNativeValues.size() + ", base columns=" + baseColumnCount));
+        }
 
+        int[] changedColumnIds = constants.changedColumnIds;
+        if (changedColumnIds == null || changedColumnIds.length == 0) {
+            return replacementNativeValuesFromFullAfterImage(row, baseColumnCount);
+        }
+
+        List<Object> replacement = new ArrayList<>(currentNativeValues);
+        int firstChangedValueColumn = firstChangedValueColumn(row, baseColumnCount, changedColumnIds.length);
+        for (int changedIndex = 0; changedIndex < changedColumnIds.length; changedIndex++) {
+            int baseColumnId = changedColumnIds[changedIndex];
+            if (baseColumnId < 1 || baseColumnId > baseColumnCount) {
+                throw StandardException.plainWrapException(new IllegalStateException(
+                        "F7 native UPDATE changed column id is outside base row: " + baseColumnId));
+            }
+            DataValueDescriptor value = row.getColumn(firstChangedValueColumn + changedIndex);
+            replacement.set(baseColumnId - 1, value == null ? null : value.getObject());
+        }
+        return List.copyOf(replacement);
+    }
+
+    private static List<Object> replacementNativeValuesFromFullAfterImage(ExecRow row, int baseColumnCount)
+            throws StandardException
+    {
+        int resultWidth = row.nColumns();
         int firstReplacementColumn;
         if (resultWidth == baseColumnCount + 1) {
-            // Simple generated UPDATE sources may expose the after-image plus RowLocation only.
             firstReplacementColumn = 1;
         } else if (resultWidth == (baseColumnCount * 2) + 1) {
-            // Derby's full UPDATE convention is before-image, after-image, RowLocation.
             firstReplacementColumn = baseColumnCount + 1;
         } else if (resultWidth > baseColumnCount) {
-            // Keep the seam defensive for compact source rows: the replacement image is the
-            // base-column-sized slice immediately before the trailing RowLocation column.
             firstReplacementColumn = resultWidth - baseColumnCount;
         } else {
             throw StandardException.plainWrapException(new IllegalStateException(
@@ -261,6 +293,31 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
             values.add(value == null ? null : value.getObject());
         }
         return List.copyOf(values);
+    }
+
+    private static int firstChangedValueColumn(ExecRow row, int baseColumnCount, int changedColumnCount)
+            throws StandardException
+    {
+        int resultWidth = row.nColumns();
+        int rowLocationColumn = resultWidth;
+        if (changedColumnCount <= 0 || resultWidth < changedColumnCount + 1) {
+            throw StandardException.plainWrapException(new IllegalStateException(
+                    "F7 native UPDATE source row is too narrow for changed-column extraction; result width="
+                            + resultWidth + ", changed columns=" + changedColumnCount));
+        }
+        if (resultWidth == (changedColumnCount * 2) + 1) {
+            // Compact Derby UPDATE source: old changed-column values, new changed-column values, RowLocation.
+            return changedColumnCount + 1;
+        }
+        if (resultWidth == baseColumnCount + changedColumnCount + 1) {
+            // Full current row, changed-column after-image, RowLocation.
+            return baseColumnCount + 1;
+        }
+        if (resultWidth == (baseColumnCount * 2) + 1) {
+            // Full before-image, full after-image, RowLocation.
+            return baseColumnCount + 1;
+        }
+        return rowLocationColumn - changedColumnCount;
     }
 
     private static void abortNativeAccess(

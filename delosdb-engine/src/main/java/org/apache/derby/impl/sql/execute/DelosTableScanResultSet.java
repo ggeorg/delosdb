@@ -292,6 +292,19 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 new IllegalStateException("Native delos_mvcc scan row has no DelosRowIdentity"));
     }
 
+    List<Object> currentDelosNativeValuesForNativeMutation() throws StandardException
+    {
+        if (currentDelosRow == null) {
+            throw StandardException.plainWrapException(new IllegalStateException(
+                    "No current delos_mvcc row values are available for native mutation"));
+        }
+        List<Object> nativeValues = new ArrayList<>(currentDelosRow.values().size());
+        for (StoreDataValue value : currentDelosRow.values()) {
+            nativeValues.add(EngineMvccTableAccess.nativeValue(value));
+        }
+        return List.copyOf(nativeValues);
+    }
+
     static Optional<DelosTableScanResultSet> findIn(NoPutResultSet resultSet)
     {
         if (resultSet == null) {

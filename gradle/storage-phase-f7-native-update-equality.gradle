@@ -98,7 +98,8 @@ ext.delosdbStoragePhaseF7Proof = {
             'createIfEnabled(',
             'DelosTableScanResultSet.findIn(source)',
             'currentDelosRowIdentityForNativeMutation()',
-            'replacementNativeValues(row)',
+            'currentDelosNativeValuesForNativeMutation()',
+            'replacementNativeValues(',
             'VersionedStorageSqlBridge.openNativeExecutionTableAccess',
             'nativeAccess.update(rowIdentity',
             'modifiedRowCount()'
@@ -106,6 +107,7 @@ ext.delosdbStoragePhaseF7Proof = {
     delosdbStoragePhaseF7RequireTokens(errors, delosScan, [
             'currentDelosRow',
             'currentDelosRowIdentityForNativeMutation()',
+            'currentDelosNativeValuesForNativeMutation()',
             'providerLookupForMutation()',
             'static Optional<DelosTableScanResultSet> findIn(NoPutResultSet resultSet)'
     ], 'DelosTableScanResultSet F7 mutation identity seam')
