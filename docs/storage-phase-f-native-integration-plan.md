@@ -261,6 +261,13 @@ Native mode bypasses bridge interception globally for normal execution.
 Compatibility/test mode can keep the old bridge explicitly enabled.
 ```
 
+F8 landed: `EmbedStatement` gates the pre-parse
+`VersionedStorageSqlBridge.tryExecute(...)` hook behind
+`VersionedStorageSqlBridge.isInterceptionEnabled()`. In short,
+native mode bypasses bridge interception globally; compatibility/test mode can keep the old bridge explicitly
+available during the transition. The proof does not inspect `TableDescriptor`
+before parse and does not add per-table pre-parse metadata lookup.
+
 Acceptance:
 
 ```text
@@ -271,6 +278,7 @@ called from EmbedStatement.
 ## Later phases
 
 ```text
+G1 — native remaining range predicates
 G — remaining native SQL coverage and bridge retirement
 H — optional DelosCostableTableAccess and cost integration
 I — mutation concurrency primitive; choose Option A or Option B before code

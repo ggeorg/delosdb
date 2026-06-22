@@ -88,6 +88,9 @@ import java.util.regex.Pattern;
 @InternalApi
 public final class VersionedStorageSqlBridge {
     private static final String PROVIDER_NAME = "delos_mvcc";
+    public static final String NATIVE_EXECUTION_MODE_PROPERTY = "delosdb.storage.nativeMode";
+    public static final String BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY =
+            "delosdb.storage.sqlBridge.compatibility";
     private static final String DEFAULT_STORAGE_PROVIDER_PROPERTY = "delosdb.storage.defaultProvider";
     private static final String DEFAULT_SCHEMA = "APP";
     private static final String ROUTE_CLASSIFIER_UNHANDLED = "unhandled";
@@ -366,6 +369,21 @@ public final class VersionedStorageSqlBridge {
      */
     public static VersionedStorageSqlResult tryExecute(String sql) throws SQLException {
         return tryExecute(sql, VersionedStorageSqlBridge.class, true);
+    }
+
+    /**
+     * Controls the pre-parse EmbedStatement bridge hook. Native mode bypasses
+     * the hook globally because provider metadata cannot be known cheaply before
+     * Derby parses and binds the statement. The compatibility property preserves
+     * the old bridge for legacy smoke tests during the Phase F transition.
+     */
+    public static boolean isInterceptionEnabled() {
+        if (Boolean.getBoolean(NATIVE_EXECUTION_MODE_PROPERTY)) {
+            return false;
+        }
+        return Boolean.parseBoolean(System.getProperty(
+                BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY,
+                "true"));
     }
 
     /**

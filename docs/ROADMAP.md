@@ -268,8 +268,8 @@ F4 landed — native MVCC SELECT equality through generated activation/result-se
 F5 landed — native INSERT through provider-owned table access
 F6 landed — native DELETE equality through provider-owned row identity delete
 F7 landed — native UPDATE equality through provider-owned row identity update
-Next: F8 — bridge bypass for native mode, compatibility bridge explicit only
-F8  — bridge bypass for native mode, compatibility bridge explicit only
+F8 landed — bridge bypass for native mode, compatibility bridge explicit only
+Next: G1 — native remaining range predicates
 ```
 
 F3/F4 are the hard frontier: generated activations currently emit

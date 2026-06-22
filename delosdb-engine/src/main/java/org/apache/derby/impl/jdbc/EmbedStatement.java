@@ -665,28 +665,30 @@ public class EmbedStatement extends ConnectionChild
 		SQLText = sql;		
 
 		try {
-			VersionedStorageSqlResult versionedStorageResult =
-					VersionedStorageSqlBridge.tryExecute(
+			if (VersionedStorageSqlBridge.isInterceptionEnabled()) {
+				VersionedStorageSqlResult versionedStorageResult =
+						VersionedStorageSqlBridge.tryExecute(
 								sql,
 								getEmbedConnection(),
 								getEmbedConnection().getAutoCommit(),
 								getEmbedConnection().getTransactionIsolation());
-			if (versionedStorageResult != null) {
-				if (versionedStorageResult.returnsRows()) {
-					if (executeUpdate) {
-						throw newSQLException(SQLState.LANG_INVALID_CALL_TO_EXECUTE_UPDATE);
+				if (versionedStorageResult != null) {
+					if (versionedStorageResult.returnsRows()) {
+						if (executeUpdate) {
+							throw newSQLException(SQLState.LANG_INVALID_CALL_TO_EXECUTE_UPDATE);
+						}
+						versionedStorageResults = versionedStorageResult.resultSet();
+						updateCount = -1L;
+						return true;
 					}
-					versionedStorageResults = versionedStorageResult.resultSet();
-					updateCount = -1L;
-					return true;
-				}
 
-				if (executeQuery) {
-					throw newSQLException(SQLState.LANG_INVALID_CALL_TO_EXECUTE_QUERY);
+					if (executeQuery) {
+						throw newSQLException(SQLState.LANG_INVALID_CALL_TO_EXECUTE_QUERY);
+					}
+					versionedStorageResults = null;
+					updateCount = versionedStorageResult.updateCount();
+					return false;
 				}
-				versionedStorageResults = null;
-				updateCount = versionedStorageResult.updateCount();
-				return false;
 			}
 			Activation activation;
 			try {
