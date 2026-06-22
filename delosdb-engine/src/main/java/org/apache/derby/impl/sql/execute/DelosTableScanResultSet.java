@@ -96,6 +96,12 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     }
 
     @Override
+    public long getTimeSpent(int type)
+    {
+        return constructorTime + openTime + nextTime + closeTime;
+    }
+
+    @Override
     public int getScanIsolationLevel()
     {
         return params.isolationLevel;
