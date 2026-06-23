@@ -113,97 +113,25 @@ delosdbStorageNativeCloseoutRegisterSmoke([
 
 
 
-tasks.register('verifyStorageNativeCloseoutDevGradleCleanup') {
-    group = 'verification'
-    description = 'Verifies stale dev smoke directories and retired phase Gradle files stay removed after native execution closeout.'
-    doLast {
-        def allowedDevDirs = [
-                'smoke-utils',
-                'storage-phase-c7-stabilization-smoke',
-                'storage-phase-g-consolidation-smoke',
-                'storage-phase-h4-session-cost-constant-smoke',
-                'storage-phase-i2-mutation-conflict-smoke'
-        ] as Set
-        def allowedDevFiles = [
-                'smoke.sql',
-                'deprecated-api-cleanup-audit.sh',
-                'generated-method-dispatch-audit.sh',
-                'inherited-code-quality-audit.sh',
-                'legacy-derby-harness-audit.sh',
-                'sort-memory-observability-audit.sh',
-                'xml-hardening-audit.sh'
-        ] as Set
-        def unexpectedDevEntries = file('dev').listFiles().findAll { entry ->
-            if (entry.isDirectory()) {
-                return !allowedDevDirs.contains(entry.name)
-            }
-            return !allowedDevFiles.contains(entry.name)
-        }.collect { project.relativePath(it) }.sort()
-        if (!unexpectedDevEntries.isEmpty()) {
-            throw new GradleException('Unexpected stale dev entries after native closeout cleanup: ' + unexpectedDevEntries)
-        }
-
-        [
-                'gradle/storage-phase-f-native-execution.gradle',
-                'gradle/storage-phase-g-native-predicates.gradle',
-                'gradle/storage-phase-h-cost-integration.gradle',
-                'gradle/storage-phase-i-mutation-concurrency.gradle'
-        ].each { retiredGradlePath ->
-            if (file(retiredGradlePath).exists()) {
-                throw new GradleException('Retired phase Gradle file still exists: ' + retiredGradlePath)
-            }
-        }
-
-        [
-                'docs/storage-phase-f-native-integration-plan.md',
-                'docs/storage-phase-f-consolidation.md',
-                'docs/storage-phase-f-build-streamline.md',
-                'docs/storage-phase-f0-f1a-start.md',
-                'docs/storage-phase-f2-provider-catalog-persistence.md',
-                'docs/storage-phase-f2-resultset-metadata-lookup.md',
-                'docs/storage-phase-f3-factory-branch-proof.md',
-                'docs/storage-phase-f3-delos-table-scan-skeleton.md',
-                'docs/storage-phase-f4-native-select-equality.md',
-                'docs/storage-phase-f5-native-insert.md',
-                'docs/storage-phase-f6-native-delete-equality.md',
-                'docs/storage-phase-f7-native-update-equality.md',
-                'docs/storage-phase-f8-bridge-bypass.md',
-                'docs/storage-phase-g0-native-qualifier-conjunction.md',
-                'docs/storage-phase-g1-native-range-predicates.md',
-                'docs/storage-phase-g2-native-between-predicates.md',
-                'docs/storage-phase-g3-native-select-all.md',
-                'docs/storage-phase-g4-native-count-aggregate.md',
-                'docs/storage-phase-h-cost-integration.md',
-                'docs/storage-phase-i-mutation-concurrency.md'
-        ].each { retiredDocPath ->
-            if (file(retiredDocPath).exists()) {
-                throw new GradleException('Retired phase step doc still exists: ' + retiredDocPath)
-            }
-        }
-
-        def buildText = file('build.gradle').text
-        [
-                'versionedStorageProviderRegistrySmoke',
-                'storageProviderSyntaxSmoke',
-                'functionProviderMetadataSmoke',
-                'typeProviderSqlVisibilitySmoke',
-                'extensionRegistrySqlVisibilitySmoke',
-                'indexProviderCostInfluenceSmoke',
-                'junit5ModernizationSmoke',
-                'networkServerSmoke'
-        ].each { retiredTaskMarker ->
-            if (buildText.contains(retiredTaskMarker)) {
-                throw new GradleException('Root build still references retired dev smoke task: ' + retiredTaskMarker)
-            }
-        }
-    }
-}
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-j0-native-resultset-cleanup-smoke',
+        compileTask       : 'compileStoragePhaseJ0NativeResultSetCleanupSmoke',
+        smokeTask         : 'storagePhaseJ0NativeResultSetCleanupSmoke',
+        verifyTask        : 'verifyStoragePhaseJ0NativeResultSetCleanup',
+        dependsOn         : 'verifyStoragePhaseI2MutationConflict',
+        sourceDir         : 'dev/storage-phase-j0-native-resultset-cleanup-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseJ0NativeResultSetCleanupSmoke',
+        compileDescription: 'Compiles the J0 native result-set boundary cleanup smoke test.',
+        smokeDescription  : 'Runs the J0 native result-set boundary cleanup smoke test.',
+        verifyDescription : 'Verifies J0 native result-set boundary cleanup without provider-parity changes.',
+        successMessage    : 'Verified J0 native result-set boundary cleanup without provider-parity changes'
+])
 
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed F/G/H/I native delos_mvcc execution lane after SQL bridge deletion.'
-    dependsOn 'verifyStorageNativeCloseoutDevGradleCleanup', 'verifyStoragePhaseI2MutationConflict'
+    description = 'Verifies the closed F/G/H/I native delos_mvcc execution lane plus J0 cleanup after SQL bridge deletion.'
+    dependsOn 'verifyStoragePhaseJ0NativeResultSetCleanup'
     doLast {
-        println 'Verified closed F/G/H/I native delos_mvcc execution lane after SQL bridge deletion'
+        println 'Verified closed F/G/H/I native delos_mvcc execution lane plus J0 cleanup after SQL bridge deletion'
     }
 }

@@ -28,12 +28,8 @@ import java.util.Optional;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 import org.apache.derby.iapi.sql.ResultSet;
-import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
-import org.apache.derby.iapi.sql.dictionary.DataDictionary;
-import org.apache.derby.iapi.sql.dictionary.SchemaDescriptor;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.sql.execute.ExecRow;
-import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.shared.common.error.StandardException;
@@ -82,7 +78,7 @@ final class DelosInsertResultSet extends NoRowsResultSetImpl
         Optional<DelosTableScanProviderLookup.Result> lookup =
                 DelosTableScanProviderLookup.find(
                         params.activation,
-                        qualifiedName(params.schemaName, params.tableName));
+                        DelosNativeResultSetSupport.qualifiedName(params.schemaName, params.tableName));
         if (lookup.isEmpty() || lookup.get().isDefaultStorageProvider()) {
             return Optional.empty();
         }
@@ -100,10 +96,12 @@ final class DelosInsertResultSet extends NoRowsResultSetImpl
         try {
             params.source.openCore();
             sourceOpen = true;
-            nativeAccess = DelosNativeTableRegistry.openNativeExecutionTableAccess(tableDescriptor())
-                    .orElseThrow(() -> StandardException.plainWrapException(
-                            new IllegalStateException("No delos_mvcc native table access registered for "
-                                    + providerLookup.schemaName() + "." + providerLookup.tableName())));
+            TableDescriptor tableDescriptor = DelosNativeResultSetSupport.tableDescriptor(
+                    params.activation,
+                    providerLookup.schemaName(),
+                    providerLookup.tableName(),
+                    "Delos native insert");
+            nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(tableDescriptor, providerLookup);
 
             ExecRow row;
             while ((row = params.source.getNextRowCore()) != null) {
@@ -112,13 +110,13 @@ final class DelosInsertResultSet extends NoRowsResultSetImpl
             nativeAccess.close();
             nativeAccess = null;
         } catch (SQLException e) {
-            abortNativeAccess(nativeAccess, e);
+            DelosNativeResultSetSupport.abortNativeAccess(nativeAccess, e);
             throw StandardException.plainWrapException(e);
         } catch (RuntimeException e) {
-            abortNativeAccess(nativeAccess, e);
+            DelosNativeResultSetSupport.abortNativeAccess(nativeAccess, e);
             throw StandardException.plainWrapException(e);
         } catch (StandardException e) {
-            abortNativeAccess(nativeAccess, e);
+            DelosNativeResultSetSupport.abortNativeAccess(nativeAccess, e);
             throw e;
         } finally {
             if (sourceOpen) {
@@ -157,27 +155,6 @@ final class DelosInsertResultSet extends NoRowsResultSetImpl
     }
 
 
-    private TableDescriptor tableDescriptor() throws StandardException
-    {
-        LanguageConnectionContext lcc = params.activation.getLanguageConnectionContext();
-        DataDictionary dataDictionary = lcc.getDataDictionary();
-        TransactionController transactionController = lcc.getTransactionExecute();
-        SchemaDescriptor schema = dataDictionary.getSchemaDescriptor(
-                providerLookup.schemaName(),
-                transactionController,
-                true);
-        TableDescriptor table = dataDictionary.getTableDescriptor(
-                providerLookup.tableName(),
-                schema,
-                transactionController);
-        if (table == null) {
-            throw StandardException.plainWrapException(new IllegalStateException(
-                    "No TableDescriptor for Delos native insert: "
-                            + providerLookup.schemaName() + "." + providerLookup.tableName()));
-        }
-        return table;
-    }
-
     private static List<Object> nativeValues(ExecRow row) throws StandardException
     {
         List<Object> values = new ArrayList<>(row.nColumns());
@@ -186,27 +163,5 @@ final class DelosInsertResultSet extends NoRowsResultSetImpl
             values.add(value == null ? null : value.getObject());
         }
         return List.copyOf(values);
-    }
-
-    private static void abortNativeAccess(
-            DelosNativeTableRegistry.NativeExecutionTableAccess nativeAccess,
-            Throwable failure)
-    {
-        if (nativeAccess == null) {
-            return;
-        }
-        try {
-            nativeAccess.abort();
-        } catch (SQLException abortFailure) {
-            failure.addSuppressed(abortFailure);
-        }
-    }
-
-    private static String qualifiedName(String schemaName, String tableName)
-    {
-        if (schemaName == null || schemaName.isBlank()) {
-            return tableName;
-        }
-        return schemaName + "." + tableName;
     }
 }

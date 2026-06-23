@@ -33,7 +33,10 @@ import java.util.Objects;
  *
  * <p>Phase I2 deliberately does not claim row locks or reservation ownership.
  * It only makes the already-existing MVCC conflict signal observable through
- * Derby's transaction-conflict SQLState for native UPDATE/DELETE execution.</p>
+ * Derby's transaction-conflict SQLState for native UPDATE/DELETE execution.
+ * SQLState 40001 is the SQL standard serialization-failure surface used here
+ * for a native MVCC write/write conflict; it is not proof of a true deadlock
+ * detector result.</p>
  */
 final class DelosMutationConflictMapper {
     private DelosMutationConflictMapper() {

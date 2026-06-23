@@ -34,29 +34,24 @@ public record DelosMutationPreparation(
         DelosRowIdentity rowIdentity,
         boolean mutable,
         boolean prepared,
-        boolean lockAcquired,
         String message) {
     public DelosMutationPreparation {
         rowIdentity = Objects.requireNonNull(rowIdentity, "rowIdentity");
         message = message == null ? "" : message;
-        if (lockAcquired) {
-            throw new IllegalArgumentException(
-                    "DelosMutationPreparation Option A cannot claim a lock acquisition");
-        }
         if (prepared && !mutable) {
             throw new IllegalArgumentException("prepared mutations must also be mutable");
         }
     }
 
     public static DelosMutationPreparation mutable(DelosRowIdentity rowIdentity, String message) {
-        return new DelosMutationPreparation(rowIdentity, true, false, false, message);
+        return new DelosMutationPreparation(rowIdentity, true, false, message);
     }
 
     public static DelosMutationPreparation prepared(DelosRowIdentity rowIdentity, String message) {
-        return new DelosMutationPreparation(rowIdentity, true, true, false, message);
+        return new DelosMutationPreparation(rowIdentity, true, true, message);
     }
 
     public static DelosMutationPreparation notMutable(DelosRowIdentity rowIdentity, String message) {
-        return new DelosMutationPreparation(rowIdentity, false, false, false, message);
+        return new DelosMutationPreparation(rowIdentity, false, false, message);
     }
 }

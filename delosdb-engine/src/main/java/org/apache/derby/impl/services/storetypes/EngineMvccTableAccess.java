@@ -275,7 +275,7 @@ public final class EngineMvccTableAccess
         }
         return DelosMutationPreparation.prepared(
                 rowIdentity,
-                "delos_mvcc mutation prepared by optimistic row-identity validation; no lock acquired");
+                "delos_mvcc mutation prepared by optimistic row-identity validation");
     }
 
     @Override
@@ -443,9 +443,6 @@ public final class EngineMvccTableAccess
         if (!preparation.prepared()) {
             throw new IllegalStateException("delos_mvcc row identity is not prepared for mutation: "
                     + preparation.message());
-        }
-        if (preparation.lockAcquired()) {
-            throw new IllegalStateException("Phase I Option A must not acquire or claim row locks");
         }
     }
 

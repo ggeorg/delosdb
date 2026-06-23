@@ -15,6 +15,7 @@ Phase G — native predicate/index coverage and bridge fallback retirement: comp
 Post-G — native table registry extraction and restart/reopen proof: complete
 Phase H — cost observation/cost constant proofs: complete
 Phase I Option A — optimistic mutation preparation and conflict mapping: complete
+J0 native result-set boundary cleanup: complete after the J0 closeout smoke is green
 ```
 
 ## Bridge deletion boundary
@@ -43,23 +44,16 @@ retired archaeology. They are removed by the closeout cleanup script instead of
 being kept as active tests.
 
 
-## Dev / Gradle closeout cleanup
+## J0 native result-set boundary cleanup
 
-After bridge deletion, the active verification surface is intentionally compact:
+J0 is a no-new-capability consolidation pass.  It keeps the bridge deleted and
+does not decide the provider-parity fork.  It adds an executable proof for a
+normal multi-predicate AND qualifier shape (`ID = 1 AND KIND = 'x'`), extracts
+shared native result-set boundary helpers, removes dead lock-acquisition state
+from `DelosMutationPreparation`, and documents that 40001 conflict mapping is a
+write/write serialization-conflict surface rather than deadlock detection.
 
-```text
-dev/storage-phase-c7-stabilization-smoke
-dev/storage-phase-g-consolidation-smoke
-dev/storage-phase-h4-session-cost-constant-smoke
-dev/storage-phase-i2-mutation-conflict-smoke
-dev/smoke-utils
-
-gradle/delosdb-permanent-storage-guards.gradle
-gradle/storage-derby-boundary-guards.gradle
-gradle/storage-native-execution-closeout.gradle
-gradle/storage-spi-truth-map.gradle
-```
-
-Historical phase-step smoke directories and retired phase Gradle files should
-not be reintroduced.  New work should create a new lane with its own compact
-proof surface rather than rebuilding the old F/G/H/I smoke ladder.
+The native registry restart/reopen path remains intentionally lightweight:
+`DelosNativeTableRegistry` can reconstruct native table definitions from Derby
+catalog metadata.  A later recovery-integrity phase should distinguish first-time
+registration from a catalog/provider mismatch where provider storage is missing.

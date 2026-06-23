@@ -32,13 +32,9 @@ import org.apache.derby.iapi.sql.execute.ExecPreparedStatement;
 import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.sql.execute.ExecRowBuilder;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
-import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.dictionary.ColumnDescriptor;
-import org.apache.derby.iapi.sql.dictionary.DataDictionary;
-import org.apache.derby.iapi.sql.dictionary.SchemaDescriptor;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.store.access.Qualifier;
-import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.types.DelosPredicate;
 import org.apache.derby.iapi.store.types.DelosPredicateOperator;
 import org.apache.derby.iapi.store.types.DelosProjection;
@@ -164,10 +160,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
 
             TableDescriptor tableDescriptor = tableDescriptor();
             List<DelosPredicate> filters = scanPredicates(tableDescriptor, nativeSelectAll);
-            nativeAccess = DelosNativeTableRegistry.openNativeExecutionTableAccess(tableDescriptor())
-                    .orElseThrow(() -> StandardException.plainWrapException(
-                            new IllegalStateException("No delos_mvcc native table access registered for "
-                                    + providerLookup.schemaName() + "." + providerLookup.tableName())));
+            nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(tableDescriptor, providerLookup);
             requireSnapshotIsolation(nativeAccess.tableAccess());
             scan = nativeAccess.tableAccess().scan(
                     nativeAccess.context(),
@@ -364,23 +357,11 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
 
     private TableDescriptor tableDescriptor() throws StandardException
     {
-        LanguageConnectionContext lcc = params.activation.getLanguageConnectionContext();
-        DataDictionary dataDictionary = lcc.getDataDictionary();
-        TransactionController transactionController = lcc.getTransactionExecute();
-        SchemaDescriptor schema = dataDictionary.getSchemaDescriptor(
+        return DelosNativeResultSetSupport.tableDescriptor(
+                params.activation,
                 providerLookup.schemaName(),
-                transactionController,
-                true);
-        TableDescriptor table = dataDictionary.getTableDescriptor(
                 providerLookup.tableName(),
-                schema,
-                transactionController);
-        if (table == null) {
-            throw StandardException.plainWrapException(new IllegalStateException(
-                    "No TableDescriptor for Delos table scan: "
-                            + providerLookup.schemaName() + "." + providerLookup.tableName()));
-        }
-        return table;
+                "Delos table scan");
     }
 
     private List<DelosPredicate> equalityPredicates(TableDescriptor tableDescriptor)
@@ -490,9 +471,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             return;
         }
         try {
-            nativeAccess.abort();
-        } catch (SQLException abortFailure) {
-            failure.addSuppressed(abortFailure);
+            DelosNativeResultSetSupport.abortNativeAccess(nativeAccess, failure);
         } finally {
             nativeAccess = null;
             scan = null;

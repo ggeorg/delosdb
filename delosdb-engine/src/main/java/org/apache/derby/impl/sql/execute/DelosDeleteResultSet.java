@@ -29,8 +29,6 @@ import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNati
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictException;
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.ResultSet;
-import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
-import org.apache.derby.iapi.sql.dictionary.DataDictionary;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
 import org.apache.derby.iapi.store.types.DelosPredicate;
@@ -93,14 +91,14 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
             return Optional.empty();
         }
 
-        TableDescriptor targetTable = targetTableDescriptor(activation, constants);
+        TableDescriptor targetTable = DelosNativeResultSetSupport.tableDescriptor(activation, constants.targetUUID);
         if (targetTable == null) {
             return Optional.empty();
         }
         Optional<DelosTableScanProviderLookup.Result> lookup =
                 DelosTableScanProviderLookup.find(
                         activation.getLanguageConnectionContext(),
-                        qualifiedName(targetTable));
+                        DelosNativeResultSetSupport.qualifiedName(targetTable));
         if (lookup.isEmpty() || lookup.get().isDefaultStorageProvider()) {
             return Optional.empty();
         }
@@ -128,10 +126,9 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
         DelosScan scan = null;
         try {
             List<DelosPredicate> predicates = nativeScanSource.equalityPredicatesForNativeMutation();
-            nativeAccess = DelosNativeTableRegistry.openNativeExecutionTableAccess(nativeScanSource.tableDescriptorForNativeRegistry())
-                    .orElseThrow(() -> StandardException.plainWrapException(
-                            new IllegalStateException("No delos_mvcc native table access registered for "
-                                    + providerLookup.schemaName() + "." + providerLookup.tableName())));
+            nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(
+                    nativeScanSource.tableDescriptorForNativeRegistry(),
+                    providerLookup);
             scan = nativeAccess.tableAccess().scan(
                     nativeAccess.context(),
                     predicates,
@@ -147,19 +144,19 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
             nativeAccess.close();
             nativeAccess = null;
         } catch (VersionedWriteConflictException e) {
-            abortNativeAccess(nativeAccess, e);
+            DelosNativeResultSetSupport.abortNativeAccess(nativeAccess, e);
             throw DelosMutationConflictMapper.transactionConflict(
                     e,
                     "DELETE",
                     providerLookup.schemaName() + "." + providerLookup.tableName());
         } catch (SQLException e) {
-            abortNativeAccess(nativeAccess, e);
+            DelosNativeResultSetSupport.abortNativeAccess(nativeAccess, e);
             throw StandardException.plainWrapException(e);
         } catch (RuntimeException e) {
-            abortNativeAccess(nativeAccess, e);
+            DelosNativeResultSetSupport.abortNativeAccess(nativeAccess, e);
             throw StandardException.plainWrapException(e);
         } catch (StandardException e) {
-            abortNativeAccess(nativeAccess, e);
+            DelosNativeResultSetSupport.abortNativeAccess(nativeAccess, e);
             throw e;
         } finally {
             if (scan != null) {
@@ -197,15 +194,6 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
         return providerLookup.storageProviderName();
     }
 
-    private static TableDescriptor targetTableDescriptor(
-            Activation activation,
-            DeleteConstantAction constants) throws StandardException
-    {
-        LanguageConnectionContext lcc = activation.getLanguageConnectionContext();
-        DataDictionary dataDictionary = lcc.getDataDictionary();
-        return dataDictionary.getTableDescriptor(constants.targetUUID);
-    }
-
     private static void rejectUnsupportedDerbyDeleteFeatures(DeleteConstantAction constants)
             throws StandardException
     {
@@ -213,24 +201,5 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
             throw StandardException.plainWrapException(new UnsupportedOperationException(
                     "F6 native MVCC DELETE equality does not support deferred deletes, triggers, or FK checks yet"));
         }
-    }
-
-    private static void abortNativeAccess(
-            DelosNativeTableRegistry.NativeExecutionTableAccess nativeAccess,
-            Throwable failure)
-    {
-        if (nativeAccess == null) {
-            return;
-        }
-        try {
-            nativeAccess.abort();
-        } catch (SQLException abortFailure) {
-            failure.addSuppressed(abortFailure);
-        }
-    }
-
-    private static String qualifiedName(TableDescriptor tableDescriptor)
-    {
-        return tableDescriptor.getSchemaName() + "." + tableDescriptor.getName();
     }
 }
