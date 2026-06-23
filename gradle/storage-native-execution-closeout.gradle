@@ -157,11 +157,27 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified K1 heap live-provider feasibility without activating heap routing'
 ])
 
+
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-l4-mvcc-optimizer-cost-consumption-smoke',
+        compileTask       : 'compileStoragePhaseL4MvccOptimizerCostConsumptionSmoke',
+        smokeTask         : 'storagePhaseL4MvccOptimizerCostConsumptionSmoke',
+        verifyTask        : 'verifyStoragePhaseL4MvccOptimizerCostConsumption',
+        dependsOn         : 'verifyStoragePhaseK1HeapLiveProviderFeasibility',
+        sourceDir         : 'dev/storage-phase-l4-mvcc-optimizer-cost-consumption-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseL4MvccOptimizerCostConsumptionSmoke',
+        compileDescription: 'Compiles the L4 delos_mvcc optimizer cost-consumption smoke test.',
+        smokeDescription  : 'Runs the L4 delos_mvcc optimizer cost-consumption smoke test.',
+        verifyDescription : 'Verifies L4 delos_mvcc provider cost consumption without heap activation.',
+        successMessage    : 'Verified L4 delos_mvcc provider cost consumption without heap activation'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane through K1 heap live-provider feasibility.'
-    dependsOn 'verifyStoragePhaseK1HeapLiveProviderFeasibility'
+    description = 'Verifies the closed native delos_mvcc execution lane through L4 optimizer cost consumption.'
+    dependsOn 'verifyStoragePhaseL4MvccOptimizerCostConsumption'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane through K1 heap live-provider feasibility'
+        println 'Verified closed native delos_mvcc execution lane through L4 optimizer cost consumption'
     }
 }

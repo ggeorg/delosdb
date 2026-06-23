@@ -42,13 +42,22 @@ import java.util.concurrent.atomic.AtomicReference;
  * Derby has already selected normal metadata and store-cost paths.  It maps a
  * catalog-backed {@code delos_mvcc} {@link TableDescriptor} to
  * {@link DelosCostableTableAccess#estimateTableCost} and records the provider
- * estimate next to Derby's current cost estimate.  It does not mutate Derby's
- * {@link CostEstimate}; optimizer consumption remains deferred to later H
- * work.</p>
+ * estimate next to Derby's current cost estimate. L4 keeps the old diagnostic
+ * behavior as the default, but adds an explicit delos_mvcc-only gate that can
+ * replace Derby's current {@link CostEstimate} with the provider estimate before
+ * {@link FromBaseTable#estimateCost} returns it to the optimizer.</p>
  */
 public final class DelosNativeTableCostLookup {
     public static final String NATIVE_TABLE_COST_PROBE_PROPERTY =
             "delosdb.storage.phase.h2.nativeTableCostProbe";
+
+    /**
+     * L4 proof gate: when enabled for a delos_mvcc table, the provider cost
+     * estimate replaces Derby's current optimizer CostEstimate at the existing
+     * FromBaseTable.estimateCost boundary. The default remains diagnostic-only.
+     */
+    public static final String NATIVE_TABLE_COST_CONSUMPTION_PROPERTY =
+            "delosdb.storage.phase.l4.nativeOptimizerCostConsumption";
 
     private static final String PROVIDER_NAME = "delos_mvcc";
     private static final AtomicReference<Result> LAST_LOOKUP = new AtomicReference<>();
@@ -60,10 +69,12 @@ public final class DelosNativeTableCostLookup {
     public static Optional<Result> observeIfEnabled(
             TableDescriptor tableDescriptor,
             CostEstimate derbyCostEstimate) throws StandardException {
-        if (!Boolean.getBoolean(NATIVE_TABLE_COST_PROBE_PROPERTY)) {
+        boolean diagnosticEnabled = Boolean.getBoolean(NATIVE_TABLE_COST_PROBE_PROPERTY);
+        boolean consumptionEnabled = Boolean.getBoolean(NATIVE_TABLE_COST_CONSUMPTION_PROPERTY);
+        if (!diagnosticEnabled && !consumptionEnabled) {
             return Optional.empty();
         }
-        Optional<Result> result = estimate(tableDescriptor, derbyCostEstimate);
+        Optional<Result> result = estimate(tableDescriptor, derbyCostEstimate, consumptionEnabled);
         result.ifPresent(value -> {
             LOOKUP_COUNT.incrementAndGet();
             LAST_LOOKUP.set(value);
@@ -86,7 +97,8 @@ public final class DelosNativeTableCostLookup {
 
     private static Optional<Result> estimate(
             TableDescriptor tableDescriptor,
-            CostEstimate derbyCostEstimate) throws StandardException {
+            CostEstimate derbyCostEstimate,
+            boolean consumptionEnabled) throws StandardException {
         if (tableDescriptor == null || !isDelosMvcc(tableDescriptor.getStorageProviderName())) {
             return Optional.empty();
         }
@@ -100,6 +112,23 @@ public final class DelosNativeTableCostLookup {
             double derbyCost = derbyCostEstimate == null ? 0.0d : derbyCostEstimate.getEstimatedCost();
             double derbyRows = derbyCostEstimate == null ? 0.0d : derbyCostEstimate.rowCount();
             double derbySingleScanRows = derbyCostEstimate == null ? 0.0d : derbyCostEstimate.singleScanRowCount();
+
+            boolean consumed = false;
+            if (consumptionEnabled
+                    && derbyCostEstimate != null
+                    && safeToConsume(providerEstimate)) {
+                double providerCost = Math.max(1.0d, providerEstimate.estimatedFullScanCost());
+                double providerRows = providerEstimate.visibleRowCount();
+                derbyCostEstimate.setCost(providerCost, providerRows, providerRows);
+                consumed = true;
+            }
+
+            double optimizerCost = derbyCostEstimate == null ? derbyCost : derbyCostEstimate.getEstimatedCost();
+            double optimizerRows = derbyCostEstimate == null ? derbyRows : derbyCostEstimate.rowCount();
+            double optimizerSingleScanRows = derbyCostEstimate == null
+                    ? derbySingleScanRows
+                    : derbyCostEstimate.singleScanRowCount();
+
             return Optional.of(new Result(
                     tableDescriptor.getSchemaName(),
                     tableDescriptor.getName(),
@@ -112,7 +141,10 @@ public final class DelosNativeTableCostLookup {
                     derbyCost,
                     derbyRows,
                     derbySingleScanRows,
-                    false));
+                    optimizerCost,
+                    optimizerRows,
+                    optimizerSingleScanRows,
+                    consumed));
         } catch (SQLException | RuntimeException e) {
             throw StandardException.plainWrapException(e);
         }
@@ -120,6 +152,12 @@ public final class DelosNativeTableCostLookup {
 
     private static boolean isDelosMvcc(String providerName) {
         return PROVIDER_NAME.equals(normalizeProvider(providerName));
+    }
+
+    private static boolean safeToConsume(DelosTableCostEstimate providerEstimate) {
+        return providerEstimate != null
+                && providerEstimate.estimatedFullScanCost() > 0L
+                && providerEstimate.visibleRowCount() >= 0L;
     }
 
     private static String normalizeProvider(String providerName) {
@@ -142,6 +180,9 @@ public final class DelosNativeTableCostLookup {
             double derbyEstimatedCost,
             double derbyRowCount,
             double derbySingleScanRowCount,
+            double optimizerEstimatedCost,
+            double optimizerRowCount,
+            double optimizerSingleScanRowCount,
             boolean consumedByDerbyOptimizer) {
         public Result {
             Objects.requireNonNull(schemaName, "schemaName");
@@ -151,7 +192,10 @@ public final class DelosNativeTableCostLookup {
                     || visibleRowCount < 0L
                     || physicalVersionCount < 0L
                     || deadVersionEstimate < 0L
-                    || estimatedFullScanCost < 0L) {
+                    || estimatedFullScanCost < 0L
+                    || optimizerEstimatedCost < 0.0d
+                    || optimizerRowCount < 0.0d
+                    || optimizerSingleScanRowCount < 0.0d) {
                 throw new IllegalArgumentException("native table cost values must be non-negative");
             }
         }
