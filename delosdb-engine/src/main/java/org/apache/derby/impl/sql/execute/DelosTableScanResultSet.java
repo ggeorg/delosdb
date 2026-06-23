@@ -508,6 +508,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         int columnCount = Math.min(resultRow.nColumns(), delosRow.values().size());
         for (int column = 1; column <= columnCount; column++) {
             DataValueDescriptor target = resultRow.getColumn(column);
+            if (target == null) {
+                continue;
+            }
             Object nativeValue = EngineMvccTableAccess.nativeValue(delosRow.values().get(column - 1));
             setDerbyValue(target, nativeValue);
         }
