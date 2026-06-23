@@ -341,11 +341,28 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified N1.1 heap mutation context shape without routing heap mutations'
 ])
 
+
+
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-n12-heap-rowchanger-insert-proof-smoke',
+        compileTask       : 'compileStoragePhaseN12HeapRowChangerInsertProofSmoke',
+        smokeTask         : 'storagePhaseN12HeapRowChangerInsertProofSmoke',
+        verifyTask        : 'verifyStoragePhaseN12HeapRowChangerInsertProof',
+        dependsOn         : 'verifyStoragePhaseN11HeapMutationContextShape',
+        sourceDir         : 'dev/storage-phase-n12-heap-rowchanger-insert-proof-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseN12HeapRowChangerInsertProofSmoke',
+        compileDescription: 'Compiles the N1.2 direct RowChanger-backed heap INSERT proof smoke test.',
+        smokeDescription  : 'Runs the N1.2 direct RowChanger-backed heap INSERT proof smoke test.',
+        verifyDescription : 'Verifies N1.2 direct heap INSERT proof without heap mutation SQL routing.',
+        successMessage    : 'Verified N1.2 direct RowChanger-backed heap INSERT without heap mutation SQL routing'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane and heap provider-parity route through N1.1.'
-    dependsOn 'verifyStoragePhaseN11HeapMutationContextShape'
+    description = 'Verifies the closed native delos_mvcc execution lane and heap provider-parity route through N1.2.'
+    dependsOn 'verifyStoragePhaseN12HeapRowChangerInsertProof'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N1.1'
+        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N1.2'
     }
 }
