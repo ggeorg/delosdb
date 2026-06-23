@@ -1,5 +1,7 @@
 package delosdb.smoke;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -91,14 +93,19 @@ public final class StoragePhaseN12HeapRowChangerInsertProofSmoke {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true);
              Statement statement = connection.createStatement()) {
             connection.setAutoCommit(false);
-            require(statement.executeUpdate(
-                    "CREATE TABLE APP." + TABLE + " (id INT, value VARCHAR(32))") == 0,
-                    "Expected ordinary heap table creation to stay Derby-owned");
-            connection.commit();
+            try {
+                require(statement.executeUpdate(
+                        "CREATE TABLE APP." + TABLE + " (id INT, value VARCHAR(32))") == 0,
+                        "Expected ordinary heap table creation to stay Derby-owned");
+                connection.commit();
 
-            RowLocation rowLocation = insertHeapRowDirectly(connection, "APP", TABLE, 12, "rowchanger-direct");
-            require(rowLocation != null, "Expected direct RowChanger INSERT to return a RowLocation proof token");
-            connection.commit();
+                RowLocation rowLocation = insertHeapRowDirectly(connection, "APP", TABLE, 12, "rowchanger-direct");
+                require(rowLocation != null, "Expected direct RowChanger INSERT to return a RowLocation proof token");
+                connection.commit();
+            } catch (Exception e) {
+                rollbackQuietly(connection);
+                throw e;
+            }
         }
 
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false);
@@ -122,43 +129,81 @@ public final class StoragePhaseN12HeapRowChangerInsertProofSmoke {
             int id,
             String value) throws Exception {
         EmbedConnection embedConnection = (EmbedConnection) connection;
-        LanguageConnectionContext lcc = embedConnection.getLanguageConnection();
-        TransactionController tc = lcc.getTransactionExecute();
-        DataDictionary dd = lcc.getDataDictionary();
-        SchemaDescriptor schema = dd.getSchemaDescriptor(schemaName, tc, true);
-        TableDescriptor table = dd.getTableDescriptor(tableName, schema, tc);
-        require(table != null, "Expected table descriptor for " + schemaName + "." + tableName);
-
-        long heapConglom = table.getHeapConglomerateId();
-        StaticCompiledOpenConglomInfo heapSCOCI = tc.getStaticCompiledConglomInfo(heapConglom);
-        DynamicCompiledOpenConglomInfo heapDCOCI = tc.getDynamicCompiledConglomInfo(heapConglom);
-        ExecutionFactory executionFactory = lcc.getLanguageConnectionFactory().getExecutionFactory();
-
-        ExecRow row = executionFactory.getValueRow(table.getNumberOfColumns());
-        row.setColumn(1, new SQLInteger(id));
-        row.setColumn(2, value == null ? new SQLVarchar() : new SQLVarchar(value));
-
-        RowChanger rowChanger = executionFactory.getRowChanger(
-                heapConglom,
-                heapSCOCI,
-                heapDCOCI,
-                new org.apache.derby.iapi.sql.dictionary.IndexRowGenerator[0],
-                new long[0],
-                new StaticCompiledOpenConglomInfo[0],
-                new DynamicCompiledOpenConglomInfo[0],
-                0,
-                tc,
-                null,
-                null,
-                null);
-        rowChanger.setIndexNames(new String[0]);
-        rowChanger.open(TransactionController.MODE_RECORD);
+        setupEmbedContextStack(embedConnection);
         try {
-            RowLocation rowLocation = rowChanger.insertRow(row, true);
-            rowChanger.finish();
-            return rowLocation;
+            LanguageConnectionContext lcc = embedConnection.getLanguageConnection();
+            TransactionController tc = lcc.getTransactionExecute();
+            DataDictionary dd = lcc.getDataDictionary();
+            SchemaDescriptor schema = dd.getSchemaDescriptor(schemaName, tc, true);
+            TableDescriptor table = dd.getTableDescriptor(tableName, schema, tc);
+            require(table != null, "Expected table descriptor for " + schemaName + "." + tableName);
+
+            long heapConglom = table.getHeapConglomerateId();
+            StaticCompiledOpenConglomInfo heapSCOCI = tc.getStaticCompiledConglomInfo(heapConglom);
+            DynamicCompiledOpenConglomInfo heapDCOCI = tc.getDynamicCompiledConglomInfo(heapConglom);
+            ExecutionFactory executionFactory = lcc.getLanguageConnectionFactory().getExecutionFactory();
+
+            ExecRow row = executionFactory.getValueRow(table.getNumberOfColumns());
+            row.setColumn(1, new SQLInteger(id));
+            row.setColumn(2, value == null ? new SQLVarchar() : new SQLVarchar(value));
+
+            RowChanger rowChanger = executionFactory.getRowChanger(
+                    heapConglom,
+                    heapSCOCI,
+                    heapDCOCI,
+                    new org.apache.derby.iapi.sql.dictionary.IndexRowGenerator[0],
+                    new long[0],
+                    new StaticCompiledOpenConglomInfo[0],
+                    new DynamicCompiledOpenConglomInfo[0],
+                    0,
+                    tc,
+                    null,
+                    null,
+                    null);
+            rowChanger.setIndexNames(new String[0]);
+            rowChanger.open(TransactionController.MODE_RECORD);
+            try {
+                RowLocation rowLocation = rowChanger.insertRow(row, true);
+                rowChanger.finish();
+                return rowLocation;
+            } finally {
+                rowChanger.close();
+            }
         } finally {
-            rowChanger.close();
+            restoreEmbedContextStack(embedConnection);
+        }
+    }
+
+    private static void setupEmbedContextStack(EmbedConnection connection) throws Exception {
+        invokeEmbedContextMethod(connection, "setupContextStack");
+    }
+
+    private static void restoreEmbedContextStack(EmbedConnection connection) throws Exception {
+        invokeEmbedContextMethod(connection, "restoreContextStack");
+    }
+
+    private static void invokeEmbedContextMethod(EmbedConnection connection, String methodName) throws Exception {
+        Method method = EmbedConnection.class.getDeclaredMethod(methodName);
+        method.setAccessible(true);
+        try {
+            method.invoke(connection);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof Exception exception) {
+                throw exception;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new RuntimeException(cause);
+        }
+    }
+
+    private static void rollbackQuietly(Connection connection) {
+        try {
+            connection.rollback();
+        } catch (SQLException ignored) {
+            // Preserve the original proof failure.
         }
     }
 
