@@ -87,6 +87,10 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_NATIVE_SELECT_ALL_PROPERTY =
             DelosTableScanResultSet.NATIVE_SELECT_ALL_PROPERTY;
 
+    /** Test/proof gate for Phase G4 native SELECT COUNT(*) aggregation. */
+    public static final String FACTORY_NATIVE_COUNT_AGGREGATE_PROPERTY =
+            DelosTableScanResultSet.NATIVE_COUNT_AGGREGATE_PROPERTY;
+
     /** Test/proof gate for Phase F5 native INSERT mutation. */
     public static final String FACTORY_NATIVE_INSERT_PROPERTY =
             DelosInsertResultSet.NATIVE_INSERT_PROPERTY;

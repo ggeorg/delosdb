@@ -156,3 +156,36 @@ tasks.register('verifyStoragePhaseG3NativeSelectAll') {
         println 'Verified Phase G3 native SELECT * full scan; next step is G4 native SELECT COUNT(*)'
     }
 }
+
+ext.delosdbStoragePhaseG4NativeCountAggregateClassesDir =
+        layout.buildDirectory.dir('classes/storage-phase-g4-native-count-aggregate-smoke')
+
+tasks.register('compileStoragePhaseG4NativeCountAggregateSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase G4 native SELECT COUNT(*) aggregate smoke test.'
+    source = files('dev/storage-phase-g4-native-count-aggregate-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseG4NativeCountAggregateClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG4NativeCountAggregateClassesDir)
+}
+
+tasks.register('storagePhaseG4NativeCountAggregateSmoke', JavaExec) {
+    dependsOn 'verifyStoragePhaseG3NativeSelectAll', 'compileStoragePhaseG4NativeCountAggregateSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase G4 native SELECT COUNT(*) aggregate smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseG4NativeCountAggregateSmoke'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG4NativeCountAggregateClassesDir)
+}
+
+tasks.register('verifyStoragePhaseG4NativeCountAggregate') {
+    group = 'verification'
+    description = 'Verifies native SELECT COUNT(*) through Derby scalar aggregate over Delos rows.'
+    dependsOn 'storagePhaseG4NativeCountAggregateSmoke'
+    doLast {
+        println 'Verified Phase G4 native SELECT COUNT(*) aggregate; next step is G5 native CREATE INDEX metadata integration'
+    }
+}

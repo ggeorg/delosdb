@@ -86,6 +86,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static final String NATIVE_SELECT_ALL_PROPERTY =
             "delosdb.storage.phaseG3.nativeSelectAll";
 
+    static final String NATIVE_COUNT_AGGREGATE_PROPERTY =
+            "delosdb.storage.phaseG4.nativeCountAggregate";
+
     static final String SKELETON_REACHED_MESSAGE =
             "DelosTableScanResultSet skeleton reached; F4 must implement real MVCC scan materialization";
 
@@ -121,7 +124,8 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static Optional<NoPutResultSet> createIfEnabled(TableScanResultSetParameters params)
             throws StandardException
     {
-        boolean nativeSelectAllEnabled = Boolean.getBoolean(NATIVE_SELECT_ALL_PROPERTY);
+        boolean nativeSelectAllEnabled = Boolean.getBoolean(NATIVE_SELECT_ALL_PROPERTY)
+                || Boolean.getBoolean(NATIVE_COUNT_AGGREGATE_PROPERTY);
         boolean nativePredicateScanEnabled = nativeSelectAllEnabled
                 || Boolean.getBoolean(NATIVE_SELECT_EQUALITY_PROPERTY)
                 || Boolean.getBoolean(NATIVE_RANGE_PREDICATES_PROPERTY)

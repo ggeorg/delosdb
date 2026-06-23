@@ -274,7 +274,8 @@ G0 landed — native Qualifier[][] conjunction cleanup before range predicates
 G1 landed — native remaining range predicates: >, >=, <, <=
 G2 landed — native BETWEEN predicate coverage
 G3 landed — native SELECT * full scan
-Next: G4 — native SELECT COUNT(*)
+G4 landed — native SELECT COUNT(*) through Derby scalar aggregate over Delos rows
+Next: G5 — native CREATE INDEX provider metadata integration
 ```
 
 F3/F4 are the hard frontier: generated activations currently emit
@@ -337,10 +338,21 @@ WHERE qualifier. The native scan passes an empty predicate list to
 `EngineMvccTableAccess.scan(...)`, which performs a full visible-row scan and
 materializes all rows back into Derby `ExecRow` instances.
 
-Next verified slice:
+Current verified aggregate slice:
 
 ```text
 G4 — native SELECT COUNT(*)
+```
+
+G4 keeps aggregation in Derby.  `DelosTableScanResultSet` supplies native
+provider-backed source rows, and Derby's existing scalar aggregate consumes
+those rows to produce the `COUNT(*)` result.  There is no Delos-specific count
+shortcut and no bridge route expansion.
+
+Next verified slice:
+
+```text
+G5 — native CREATE INDEX provider metadata integration
 ```
 
 ## Research-friendly constraint
