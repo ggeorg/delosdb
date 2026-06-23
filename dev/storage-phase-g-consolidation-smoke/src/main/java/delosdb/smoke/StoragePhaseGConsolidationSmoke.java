@@ -21,6 +21,7 @@ import java.util.List;
 public final class StoragePhaseGConsolidationSmoke {
     private static final String DATABASE_PATH = "storage-phase-g-consolidation-db";
     private static final String TABLE_NAME = "G_CONSOLIDATION";
+    private static final String STALE_COMPATIBILITY_PROPERTY = "delosdb.storage.sqlBridge.compatibility";
 
     private StoragePhaseGConsolidationSmoke() {
     }
@@ -48,7 +49,7 @@ public final class StoragePhaseGConsolidationSmoke {
         require(!VersionedStorageSqlBridge.isInterceptionEnabled(),
                 "Bridge interception must be disabled by default after G6");
 
-        System.setProperty(VersionedStorageSqlBridge.BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY, "true");
+        System.setProperty(STALE_COMPATIBILITY_PROPERTY, "true");
         require(!VersionedStorageSqlBridge.isInterceptionEnabled(),
                 "Compatibility property must not re-enable bridge interception after G6");
 
@@ -137,7 +138,7 @@ public final class StoragePhaseGConsolidationSmoke {
 
     private static void clearProofProperties() {
         System.clearProperty(VersionedStorageSqlBridge.NATIVE_EXECUTION_MODE_PROPERTY);
-        System.clearProperty(VersionedStorageSqlBridge.BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY);
+        System.clearProperty(STALE_COMPATIBILITY_PROPERTY);
         System.clearProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY);
         System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
         System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY);

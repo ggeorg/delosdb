@@ -12,12 +12,13 @@ import java.sql.Statement;
  * Phase G6 proof: supported delos_mvcc SQL no longer depends on the
  * VersionedStorageSqlBridge pre-parse fallback. Plain Statement CREATE TABLE
  * and prepared native INSERT/SELECT flow through Derby-native metadata and
- * ResultSetFactory seams, while the old compatibility property cannot re-enable
+ * ResultSetFactory seams, while the stale soft-G6 compatibility property cannot re-enable
  * EmbedStatement interception.
  */
 public final class StoragePhaseG6BridgeRetirementSmoke {
     private static final String DATABASE_PATH = "storage-phase-g6-bridge-retirement-db";
     private static final String TABLE_NAME = "G6_BRIDGE_RETIREMENT";
+    private static final String STALE_COMPATIBILITY_PROPERTY = "delosdb.storage.sqlBridge.compatibility";
 
     private StoragePhaseG6BridgeRetirementSmoke() {
     }
@@ -30,7 +31,7 @@ public final class StoragePhaseG6BridgeRetirementSmoke {
             proveSupportedNativeSqlDoesNotNeedBridgeSetup();
         } finally {
             System.clearProperty(VersionedStorageSqlBridge.NATIVE_EXECUTION_MODE_PROPERTY);
-            System.clearProperty(VersionedStorageSqlBridge.BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY);
+            System.clearProperty(STALE_COMPATIBILITY_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY);
@@ -43,18 +44,18 @@ public final class StoragePhaseG6BridgeRetirementSmoke {
 
     private static void proveBridgeInterceptionRetired() {
         System.clearProperty(VersionedStorageSqlBridge.NATIVE_EXECUTION_MODE_PROPERTY);
-        System.clearProperty(VersionedStorageSqlBridge.BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY);
+        System.clearProperty(STALE_COMPATIBILITY_PROPERTY);
         require(!VersionedStorageSqlBridge.isInterceptionEnabled(),
                 "G6 requires VersionedStorageSqlBridge interception to be disabled by default");
 
-        System.setProperty(VersionedStorageSqlBridge.BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY, "true");
+        System.setProperty(STALE_COMPATIBILITY_PROPERTY, "true");
         require(!VersionedStorageSqlBridge.isInterceptionEnabled(),
                 "G6 must not allow compatibility opt-in to re-enable SQL fallback");
     }
 
     private static void proveSupportedNativeSqlDoesNotNeedBridgeSetup() throws Exception {
         VersionedStorageSqlBridge.resetRouteClassifierForTesting();
-        System.setProperty(VersionedStorageSqlBridge.BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY, "true");
+        System.setProperty(STALE_COMPATIBILITY_PROPERTY, "true");
         System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY, "true");

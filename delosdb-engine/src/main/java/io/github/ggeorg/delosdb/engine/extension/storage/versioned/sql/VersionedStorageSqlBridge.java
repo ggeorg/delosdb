@@ -89,8 +89,6 @@ import java.util.regex.Pattern;
 public final class VersionedStorageSqlBridge {
     private static final String PROVIDER_NAME = "delos_mvcc";
     public static final String NATIVE_EXECUTION_MODE_PROPERTY = "delosdb.storage.nativeMode";
-    public static final String BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY =
-            "delosdb.storage.sqlBridge.compatibility";
     private static final String DEFAULT_STORAGE_PROVIDER_PROPERTY = "delosdb.storage.defaultProvider";
     private static final String DEFAULT_SCHEMA = "APP";
     private static final String ROUTE_CLASSIFIER_UNHANDLED = "unhandled";
@@ -376,7 +374,8 @@ public final class VersionedStorageSqlBridge {
      * bridge as an automatic SQL fallback: normal Derby execution must own
      * provider-backed SQL through parser/binder/catalog metadata and native
      * ResultSetFactory seams. The direct bridge APIs remain as legacy scaffolding,
-     * but no system property may re-enable the EmbedStatement interception path.
+     * but the old compatibility property is no longer a production API and cannot
+     * re-enable the EmbedStatement interception path.
      */
     public static boolean isInterceptionEnabled() {
         return false;

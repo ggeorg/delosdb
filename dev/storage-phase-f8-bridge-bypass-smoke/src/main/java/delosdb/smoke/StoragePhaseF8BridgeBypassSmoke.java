@@ -8,11 +8,12 @@ import java.sql.Statement;
 /**
  * Phase F8/G6 proof: the transitional VersionedStorageSqlBridge pre-parse hook
  * is retired as an automatic SQL fallback. Native Derby execution owns
- * CREATE TABLE ... USING delos_mvcc even for plain Statement execution, and no
- * compatibility property may re-enable EmbedStatement interception.
+ * CREATE TABLE ... USING delos_mvcc even for plain Statement execution, and the stale
+ * compatibility property may not re-enable EmbedStatement interception.
  */
 public final class StoragePhaseF8BridgeBypassSmoke {
     private static final String DATABASE_PATH = "storage-phase-f8-bridge-bypass-db";
+    private static final String STALE_COMPATIBILITY_PROPERTY = "delosdb.storage.sqlBridge.compatibility";
 
     private StoragePhaseF8BridgeBypassSmoke() {
     }
@@ -25,7 +26,7 @@ public final class StoragePhaseF8BridgeBypassSmoke {
             provePlainStatementCreateTableUsesNativeDerbyPath();
         } finally {
             System.clearProperty(VersionedStorageSqlBridge.NATIVE_EXECUTION_MODE_PROPERTY);
-            System.clearProperty(VersionedStorageSqlBridge.BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY);
+            System.clearProperty(STALE_COMPATIBILITY_PROPERTY);
             VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
@@ -35,11 +36,11 @@ public final class StoragePhaseF8BridgeBypassSmoke {
 
     private static void proveBridgeInterceptionCannotBeEnabledByProperty() {
         System.clearProperty(VersionedStorageSqlBridge.NATIVE_EXECUTION_MODE_PROPERTY);
-        System.clearProperty(VersionedStorageSqlBridge.BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY);
+        System.clearProperty(STALE_COMPATIBILITY_PROPERTY);
         require(!VersionedStorageSqlBridge.isInterceptionEnabled(),
                 "G6 requires EmbedStatement bridge interception to be disabled by default");
 
-        System.setProperty(VersionedStorageSqlBridge.BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY, "true");
+        System.setProperty(STALE_COMPATIBILITY_PROPERTY, "true");
         require(!VersionedStorageSqlBridge.isInterceptionEnabled(),
                 "G6 must not allow the old compatibility property to re-enable bridge fallback");
 
@@ -50,7 +51,7 @@ public final class StoragePhaseF8BridgeBypassSmoke {
 
     private static void provePlainStatementCreateTableUsesNativeDerbyPath() throws Exception {
         System.clearProperty(VersionedStorageSqlBridge.NATIVE_EXECUTION_MODE_PROPERTY);
-        System.setProperty(VersionedStorageSqlBridge.BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY, "true");
+        System.setProperty(STALE_COMPATIBILITY_PROPERTY, "true");
         VersionedStorageSqlBridge.resetRouteClassifierForTesting();
 
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true);

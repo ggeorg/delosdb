@@ -25,7 +25,7 @@ Current invariants:
 
 ```text
 - No normal execution mode enables VersionedStorageSqlBridge interception.
-- delosdb.storage.sqlBridge.compatibility must not re-enable interception.
+- No Phase F/G Gradle task may set the retired `delosdb.storage.sqlBridge.compatibility` property.
 - Native Phase F/G smokes create and populate provider tables through Derby paths.
 - CREATE TABLE ... USING delos_mvcc registers provider storage from Derby metadata.
 - INSERT / DELETE / UPDATE / SELECT use native provider-aware result-set seams.
