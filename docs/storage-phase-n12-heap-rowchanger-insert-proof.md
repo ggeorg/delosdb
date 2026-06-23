@@ -14,7 +14,7 @@ The safe result after N1.2 is:
 ```text
 Direct RowChanger-backed heap INSERT is feasible as a proof.
 Heap SQL INSERT must remain Derby-owned.
-Do not start N2 yet.
+Do **not** start N2 yet.
 ```
 
 ## Proof shape
@@ -62,7 +62,7 @@ SQL INSERT behavior unchanged.
 
 ## Next safe step
 
-The next safe step is still not N2. The safer sequence is:
+The next safe step is still **not** N2. The safer sequence is:
 
 ```text
 N1.3 — direct RowChanger-backed heap DELETE / UPDATE proof, not SQL-routed
