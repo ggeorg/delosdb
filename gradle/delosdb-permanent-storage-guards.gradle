@@ -66,6 +66,8 @@ apply from: file('gradle/storage-phase-f-native-execution.gradle')
 
 apply from: file('gradle/storage-phase-g-native-predicates.gradle')
 
+apply from: file('gradle/storage-phase-h-cost-integration.gradle')
+
 tasks.register('verifyDelosDbPermanentStorageGuards') {
     group = 'verification'
     description = 'Verifies permanent DelosDB storage boundaries and closed-phase executable storage smokes through Phase G.'

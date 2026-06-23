@@ -42,6 +42,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.apache.derby.iapi.store.types.DelosAccessContext;
+import org.apache.derby.iapi.store.types.DelosCostableTableAccess;
 import org.apache.derby.iapi.store.types.DelosContextKey;
 import org.apache.derby.iapi.store.types.DelosFilterableTableAccess;
 import org.apache.derby.iapi.store.types.DelosIndexAccess;
@@ -57,6 +58,7 @@ import org.apache.derby.iapi.store.types.DelosRow;
 import org.apache.derby.iapi.store.types.DelosRowIdentity;
 import org.apache.derby.iapi.store.types.DelosScan;
 import org.apache.derby.iapi.store.types.DelosTableCapabilities;
+import org.apache.derby.iapi.store.types.DelosTableCostEstimate;
 import org.apache.derby.iapi.store.types.DelosTableGuarantee;
 import org.apache.derby.iapi.store.types.DelosTableCapability;
 import org.apache.derby.iapi.store.types.DelosTableIdentity;
@@ -75,7 +77,10 @@ import org.apache.derby.shared.common.error.StandardException;
  * the existing MVCC provider.</p>
  */
 public final class EngineMvccTableAccess
-        implements DelosFilterableTableAccess, DelosIndexableTableAccess, DelosMutableTableAccess {
+        implements DelosFilterableTableAccess,
+        DelosIndexableTableAccess,
+        DelosMutableTableAccess,
+        DelosCostableTableAccess {
     public static final String PROVIDER_NAME = "delos_mvcc";
 
     public static final DelosContextKey<TxContext> TX_CONTEXT_KEY =
@@ -128,7 +133,8 @@ public final class EngineMvccTableAccess
                 DelosTableCapability.FILTERABLE,
                 DelosTableCapability.PROJECTABLE,
                 DelosTableCapability.INDEXABLE,
-                DelosTableCapability.MUTABLE);
+                DelosTableCapability.MUTABLE,
+                DelosTableCapability.COSTABLE);
     }
 
     @Override
@@ -136,6 +142,18 @@ public final class EngineMvccTableAccess
         return Set.of(
                 DelosTableGuarantee.SNAPSHOT_ISOLATION,
                 DelosTableGuarantee.DURABLE_RECOVERY_LOG);
+    }
+
+    @Override
+    public DelosTableCostEstimate estimateTableCost(DelosAccessContext context) {
+        requirePhysicalAccess(context);
+        VersionedTableStats tableStats = executionBridge.stats(table, txView(context));
+        return new DelosTableCostEstimate(
+                tableStats.logicalRowCount(),
+                tableStats.visibleRowCount(),
+                tableStats.physicalVersionCount(),
+                tableStats.deadVersionEstimate(),
+                estimateTableScanCost(tableStats));
     }
 
     @Override

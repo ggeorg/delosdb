@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.iapi.store.types.DelosTableCapability
+   Derby - Class org.apache.derby.iapi.store.types.DelosTableCostEstimate
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -20,11 +20,20 @@
  */
 package org.apache.derby.iapi.store.types;
 
-/** Advertised physical capabilities.  Capability methods live on sibling interfaces. */
-public enum DelosTableCapability {
-    FILTERABLE,
-    INDEXABLE,
-    MUTABLE,
-    PROJECTABLE,
-    COSTABLE
+/** Store-neutral table statistics and coarse cost estimate for H-phase proofs. */
+public record DelosTableCostEstimate(
+        long logicalRowCount,
+        long visibleRowCount,
+        long physicalVersionCount,
+        long deadVersionEstimate,
+        long estimatedFullScanCost) {
+    public DelosTableCostEstimate {
+        if (logicalRowCount < 0
+                || visibleRowCount < 0
+                || physicalVersionCount < 0
+                || deadVersionEstimate < 0
+                || estimatedFullScanCost < 0) {
+            throw new IllegalArgumentException("Delos table cost estimate values must be non-negative");
+        }
+    }
 }

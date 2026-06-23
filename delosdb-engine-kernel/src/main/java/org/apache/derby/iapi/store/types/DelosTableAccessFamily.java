@@ -25,5 +25,6 @@ public enum DelosTableAccessFamily {
     BASE,
     FILTERABLE,
     INDEXABLE,
-    MUTABLE
+    MUTABLE,
+    COSTABLE
 }
