@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
 import java.sql.Connection;
@@ -32,7 +31,6 @@ public final class StoragePhaseG0NativeQualifierConjunctionSmoke {
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
 
@@ -45,9 +43,6 @@ public final class StoragePhaseG0NativeQualifierConjunctionSmoke {
                     "CREATE TABLE " + TABLE_NAME + " (id INT, kind VARCHAR(16), value VARCHAR(32)) USING delos_mvcc")) {
                 statement.executeUpdate();
             }
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "G0 catalog setup must use Derby prepare/constant-action path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
 
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
@@ -56,10 +51,6 @@ public final class StoragePhaseG0NativeQualifierConjunctionSmoke {
             insert(connection, 1, "other", "wrong-kind", "same-id leftover-filter row");
             insert(connection, 2, "target", "wrong-id", "different-id row");
         }
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "G0 native INSERT setup must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
     }
 
     private static void insert(Connection connection, int id, String kind, String value, String label) throws Exception {
@@ -71,7 +62,6 @@ public final class StoragePhaseG0NativeQualifierConjunctionSmoke {
     private static void proveNativeSelectAndConjunctionFiltering() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY, "true");
 
@@ -99,15 +89,11 @@ public final class StoragePhaseG0NativeQualifierConjunctionSmoke {
 
             require(DelosTableScanProviderLookup.factoryLookupCountForTesting() > 0,
                     "Expected GenericResultSetFactory probe to observe the native G0 table scan");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "G0 prepared SELECT conjunction proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 
     private static void proveNativeOrGroupStillRejected() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY, "true");
 
             try (PreparedStatement statement = connection.prepareStatement(
@@ -123,9 +109,6 @@ public final class StoragePhaseG0NativeQualifierConjunctionSmoke {
                         "Expected native OR-shaped predicate to remain unsupported, but was: " + expected);
             }
 
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "G0 OR rejection proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 

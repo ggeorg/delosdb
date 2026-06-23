@@ -54,7 +54,6 @@ import org.apache.derby.iapi.store.access.XATransactionController;
 import org.apache.derby.iapi.store.replication.master.MasterFactory;
 import org.apache.derby.iapi.store.replication.slave.SlaveFactory;
 import java.io.IOException;
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 
 
 /* can't import due to name overlap:
@@ -1918,7 +1917,6 @@ public class EmbedConnection implements EngineConnection
 			try
 			{
 		    	getTR().commit();
-                VersionedStorageSqlBridge.commit(this);
 		    	clearLOBMapping();
                 InterruptStatus.restoreIntrFlagIfSeen(privilegedGetLCC());
 			}
@@ -1956,7 +1954,6 @@ public class EmbedConnection implements EngineConnection
 			try
 			{
 		    	getTR().rollback();
-                VersionedStorageSqlBridge.rollback(this);
 		    	clearLOBMapping();
                 InterruptStatus.restoreIntrFlagIfSeen(privilegedGetLCC());
 			} catch (Throwable t) {
@@ -2026,8 +2023,7 @@ public class EmbedConnection implements EngineConnection
 						setupContextStack();
 						try {
 							tr.rollback();
-                            VersionedStorageSqlBridge.rollback(this);
-                            InterruptStatus.
+                                        InterruptStatus.
                                     restoreIntrFlagIfSeen(tr.getLcc());
 							
 							// Let go of lcc reference so it can be GC'ed after

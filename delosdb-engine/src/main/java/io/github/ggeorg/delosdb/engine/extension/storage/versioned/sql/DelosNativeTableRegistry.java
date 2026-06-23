@@ -38,9 +38,9 @@ import java.util.Optional;
  *
  * <p>This is not a SQL router.  It is the catalog-to-provider boundary used
  * after Derby has parsed, bound, and selected a {@code delos_mvcc} table via
- * {@link TableDescriptor} metadata.  G-post extracted this state from
- * {@link VersionedStorageSqlBridge} so bridge retirement does not leave the
- * native ResultSet path coupled to a retired pre-parse SQL fallback.</p>
+ * {@link TableDescriptor} metadata.  G-post extracted this state away from the retired SQL bridge so
+ * native ResultSet execution is coupled only to Derby catalog metadata and
+ * provider-owned storage.</p>
  */
 @InternalApi
 public final class DelosNativeTableRegistry {

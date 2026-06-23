@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
 import java.sql.Connection;
@@ -32,7 +31,6 @@ public final class StoragePhaseG1NativeRangePredicatesSmoke {
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_RANGE_PREDICATES_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
 
@@ -45,9 +43,6 @@ public final class StoragePhaseG1NativeRangePredicatesSmoke {
                     "CREATE TABLE " + TABLE_NAME + " (id INT, kind VARCHAR(16), value VARCHAR(32)) USING delos_mvcc")) {
                 statement.executeUpdate();
             }
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "G1 catalog setup must use Derby prepare/constant-action path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
 
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
@@ -57,10 +52,6 @@ public final class StoragePhaseG1NativeRangePredicatesSmoke {
             insert(connection, 3, "odd", "three");
             insert(connection, 4, "even", "four");
         }
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "G1 native INSERT setup must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
     }
 
     private static void insert(Connection connection, int id, String kind, String value) throws Exception {
@@ -72,7 +63,6 @@ public final class StoragePhaseG1NativeRangePredicatesSmoke {
     private static void proveNativeRangePredicates() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_RANGE_PREDICATES_PROPERTY, "true");
 
@@ -83,15 +73,11 @@ public final class StoragePhaseG1NativeRangePredicatesSmoke {
 
             require(DelosTableScanProviderLookup.factoryLookupCountForTesting() > 0,
                     "Expected GenericResultSetFactory probe to observe native G1 table scans");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "G1 prepared range SELECT proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 
     private static void proveNativeRangeAndEqualityConjunction() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_RANGE_PREDICATES_PROPERTY, "true");
 
             try (PreparedStatement statement = connection.prepareStatement(
@@ -105,9 +91,6 @@ public final class StoragePhaseG1NativeRangePredicatesSmoke {
                 }
             }
 
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "G1 range+equality conjunction proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 

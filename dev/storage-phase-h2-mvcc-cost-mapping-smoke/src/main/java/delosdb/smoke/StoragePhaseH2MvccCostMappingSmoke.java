@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.compile.DelosNativeTableCostLookup;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
@@ -28,7 +27,6 @@ public final class StoragePhaseH2MvccCostMappingSmoke {
         } finally {
             clearProofProperties();
             DelosNativeTableCostLookup.resetForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
@@ -38,7 +36,6 @@ public final class StoragePhaseH2MvccCostMappingSmoke {
     private static void proveMvccStatsReachNativeCostPath() throws Exception {
         clearProofProperties();
         DelosNativeTableCostLookup.resetForTesting();
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
         DelosTableScanProviderLookup.resetFactoryLookupForTesting();
 
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
@@ -91,9 +88,6 @@ public final class StoragePhaseH2MvccCostMappingSmoke {
         require(Double.isFinite(result.derbyRowCount()) && result.derbyRowCount() >= 0.0d,
                 "Expected finite non-negative Derby row count but was " + result.derbyRowCount());
 
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "H2 cost mapping proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
     }
 
     private static int countRows(Connection connection, String sql) throws Exception {

@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
 import java.sql.Connection;
@@ -30,7 +29,6 @@ public final class StoragePhaseF5NativeInsertSmoke {
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
 
@@ -43,18 +41,13 @@ public final class StoragePhaseF5NativeInsertSmoke {
                     "CREATE TABLE " + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc")) {
                 statement.executeUpdate();
             }
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F5 catalog/provider setup must use Derby prepare/constant-action path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
 
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
     }
 
     private static void proveNativeInsertAndReadBack() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY, "true");
@@ -67,9 +60,6 @@ public final class StoragePhaseF5NativeInsertSmoke {
                         "Expected native MVCC INSERT to report one affected row");
             }
 
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F5 prepared INSERT proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
 
             try (PreparedStatement select = connection.prepareStatement(
                     "SELECT * FROM APP." + TABLE_NAME + " WHERE id = ?")) {
@@ -82,9 +72,6 @@ public final class StoragePhaseF5NativeInsertSmoke {
                 }
             }
 
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F5 readback SELECT must also stay off VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 

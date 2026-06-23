@@ -39,7 +39,7 @@ import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
  * executes from a {@link TableDescriptor}.  This helper records, under an
  * explicit proof property, the storage-provider identity read from that table
  * descriptor.  It does not parse SQL text and it does not call the transitional
- * {@code VersionedStorageSqlBridge} SQL router.</p>
+ * retired SQL bridge/router.</p>
  */
 public final class DelosCreateIndexProviderLookup
 {

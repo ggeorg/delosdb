@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
 import java.sql.Connection;
@@ -33,7 +32,6 @@ public final class StoragePhaseG2NativeBetweenPredicatesSmoke {
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_BETWEEN_PREDICATES_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
 
@@ -46,9 +44,6 @@ public final class StoragePhaseG2NativeBetweenPredicatesSmoke {
                     "CREATE TABLE " + TABLE_NAME + " (id INT, kind VARCHAR(16), value VARCHAR(32)) USING delos_mvcc")) {
                 statement.executeUpdate();
             }
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "G2 catalog setup must use Derby prepare/constant-action path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
 
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
@@ -59,10 +54,6 @@ public final class StoragePhaseG2NativeBetweenPredicatesSmoke {
             insert(connection, 4, "even", "four");
             insert(connection, 5, "odd", "five");
         }
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "G2 native INSERT setup must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
     }
 
     private static void insert(Connection connection, int id, String kind, String value) throws Exception {
@@ -74,7 +65,6 @@ public final class StoragePhaseG2NativeBetweenPredicatesSmoke {
     private static void proveNativeBetweenPredicates() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_BETWEEN_PREDICATES_PROPERTY, "true");
 
@@ -84,15 +74,11 @@ public final class StoragePhaseG2NativeBetweenPredicatesSmoke {
 
             require(DelosTableScanProviderLookup.factoryLookupCountForTesting() > 0,
                     "Expected GenericResultSetFactory probe to observe native G2 BETWEEN table scans");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "G2 prepared BETWEEN SELECT proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 
     private static void proveNativeBetweenAndEqualityConjunction() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_BETWEEN_PREDICATES_PROPERTY, "true");
 
             try (PreparedStatement statement = connection.prepareStatement(
@@ -107,9 +93,6 @@ public final class StoragePhaseG2NativeBetweenPredicatesSmoke {
                 }
             }
 
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "G2 BETWEEN+equality conjunction proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 

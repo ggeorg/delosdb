@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.iapi.store.access.DelosStoreCostTuning;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.impl.sql.compile.DelosHeapCostProofLookup;
@@ -35,7 +34,6 @@ public final class StoragePhaseH4SessionCostConstantSmoke {
             DelosStoreCostTuning.resetForTesting();
             DelosHeapCostProofLookup.resetForTesting();
             DelosNativeTableCostLookup.resetForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
@@ -46,7 +44,6 @@ public final class StoragePhaseH4SessionCostConstantSmoke {
         DelosStoreCostTuning.resetForTesting();
         DelosHeapCostProofLookup.resetForTesting();
         DelosNativeTableCostLookup.resetForTesting();
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
         DelosTableScanProviderLookup.resetFactoryLookupForTesting();
 
         try (Connection tuned = SmokeUtils.connect(DATABASE_PATH, true);
@@ -87,9 +84,6 @@ public final class StoragePhaseH4SessionCostConstantSmoke {
 
         require(DelosNativeTableCostLookup.lookupCountForTesting() == 0,
                 "H4 heap/store cost proof must not use MVCC native cost lookup");
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "H4 must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
     }
 
     private static void setSessionUncachedRowFetchCost(Connection connection, double cost) throws Exception {

@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
 import java.sql.Connection;
@@ -42,9 +41,6 @@ public final class StoragePhaseF3DelosTableScanSkeletonSmoke {
                     "CREATE TABLE " + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc");
             executePrepared(connection,
                     "INSERT INTO " + TABLE_NAME + " VALUES (1, 'alpha')");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F3.2 setup must use Derby prepared execution, not the transitional bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 
@@ -68,9 +64,6 @@ public final class StoragePhaseF3DelosTableScanSkeletonSmoke {
                     "Expected GenericResultSetFactory probe to observe the table scan before returning the skeleton");
             require(DelosTableScanProviderLookup.lastNonDefaultFactoryLookupForTesting().isPresent(),
                     "Expected non-default provider lookup before returning DelosTableScanResultSet skeleton");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F3.2 native prepared SELECT must not invoke the transitional bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 

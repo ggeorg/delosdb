@@ -250,7 +250,7 @@ tasks.register('storagePhaseG6BridgeRetirementSmoke', JavaExec) {
 
 tasks.register('verifyStoragePhaseG6BridgeRetirement') {
     group = 'verification'
-    description = 'Verifies supported delos_mvcc native SQL no longer depends on VersionedStorageSqlBridge fallback routing.'
+    description = 'Verifies supported delos_mvcc native SQL no longer depends on retired SQL bridge fallback routing.'
     dependsOn 'storagePhaseG6BridgeRetirementSmoke'
     doLast {
         println 'Verified Phase G6 bridge fallback retirement; supported native delos_mvcc SQL uses Derby metadata paths without SQL bridge routing'

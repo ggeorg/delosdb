@@ -1,7 +1,6 @@
 package delosdb.smoke;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.context.ContextService;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
@@ -44,7 +43,6 @@ public final class StoragePhaseI1MutationPreparationSmoke {
             proveMutationPreparationPrimitive();
         } finally {
             clearProofProperties();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
@@ -119,9 +117,6 @@ public final class StoragePhaseI1MutationPreparationSmoke {
             }
         }
 
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "I1 mutation preparation proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
     }
 
     private static DelosRowIdentity rowIdentityForId(TableDescriptor table, int id)

@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.catalog.IndexDescriptor;
 import org.apache.derby.impl.sql.execute.DelosCreateIndexProviderLookup;
 
@@ -32,7 +31,6 @@ public final class StoragePhaseG5NativeCreateIndexSmoke {
         } finally {
             System.clearProperty(DelosCreateIndexProviderLookup.NATIVE_CREATE_INDEX_PROPERTY);
             DelosCreateIndexProviderLookup.resetForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
 
@@ -41,22 +39,17 @@ public final class StoragePhaseG5NativeCreateIndexSmoke {
 
     private static void createProviderCatalogTable() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true)) {
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             try (PreparedStatement statement = connection.prepareStatement(
                     "CREATE TABLE APP." + TABLE_NAME + " (ID INT, NAME VARCHAR(32)) USING delos_mvcc")) {
                 require(statement.executeUpdate() == 0,
                         "Expected Derby catalog CREATE TABLE to report update count 0");
             }
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "G5 catalog setup must use Derby prepare/constant-action path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 
     private static void proveNativeCreateIndexProviderLookup() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
             DelosCreateIndexProviderLookup.resetForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             System.setProperty(DelosCreateIndexProviderLookup.NATIVE_CREATE_INDEX_PROPERTY, "true");
 
             try (PreparedStatement statement = connection.prepareStatement(
@@ -65,9 +58,6 @@ public final class StoragePhaseG5NativeCreateIndexSmoke {
                         "Expected native Derby CREATE INDEX to report update count 0");
             }
 
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "G5 CREATE INDEX proof path must not call the SQL bridge route: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
             require(DelosCreateIndexProviderLookup.lookupCountForTesting() == 1,
                     "Expected exactly one G5 CREATE INDEX provider lookup, got "
                             + DelosCreateIndexProviderLookup.lookupCountForTesting());

@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.context.ContextService;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
@@ -47,17 +46,12 @@ public final class StoragePhaseF2ProviderCatalogSmoke {
 
     private static void createTablesThroughDerbyPrepareExecute() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true)) {
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F2 should start with no bridge route classifier in this JVM");
 
             executePrepared(connection,
                     "CREATE TABLE " + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc");
             executePrepared(connection,
                     "CREATE TABLE " + DEFAULT_TABLE_NAME + " (id INT, value VARCHAR(32))");
 
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F2 CREATE TABLE proof must execute through Derby prepare/constant-action path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
 
             assertCatalogProvider(connection, TABLE_NAME, PROVIDER_NAME);
             assertCatalogProvider(connection, DEFAULT_TABLE_NAME, null);

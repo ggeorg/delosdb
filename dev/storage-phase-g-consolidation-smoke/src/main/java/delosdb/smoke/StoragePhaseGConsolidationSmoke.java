@@ -1,7 +1,6 @@
 package delosdb.smoke;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
 import java.nio.file.Files;
@@ -14,14 +13,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Phase G consolidation proof: after G6, the supported delos_mvcc native path
- * must stay independent of the old SQL bridge fallback.  This smoke combines a
- * small executable native lifecycle check with source/build cleanup guards for
- * the soft-G6 compatibility-mode archaeology.
+ * Phase G/F-I closeout proof: supported delos_mvcc execution is now Derby-native.
+ * The retired SQL bridge class, JDBC interception hook, and soft-G6 compatibility
+ * wiring must be absent from the active production/build surface.
  */
 public final class StoragePhaseGConsolidationSmoke {
     private static final String DATABASE_PATH = "storage-phase-g-consolidation-db";
     private static final String TABLE_NAME = "G_CONSOLIDATION";
+    private static final String BRIDGE_CLASS_PATH =
+            "delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java";
+    private static final String BRIDGE_RESULT_PATH =
+            "delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlResult.java";
     private static final String STALE_COMPATIBILITY_PROPERTY = "delosdb.storage.sqlBridge.compatibility";
 
     private StoragePhaseGConsolidationSmoke() {
@@ -31,14 +33,13 @@ public final class StoragePhaseGConsolidationSmoke {
         SmokeUtils.loadEmbeddedDriver();
 
         try {
-            proveBridgeInterceptionCannotBeEnabled();
+            proveBridgeClassAndJdbcHookAreGone();
             proveNoCompatibilityModeWiringInGradle();
             proveNoSoftG6Archaeology();
-            proveNoNativeExecutionDependencyOnSqlBridge();
-            proveNativeLifecycleWithoutBridgeFallback();
+            proveNoNativeExecutionDependencyOnBridgeClassName();
+            proveNativeLifecycleAfterBridgeDeletion();
         } finally {
             clearProofProperties();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
@@ -46,25 +47,36 @@ public final class StoragePhaseGConsolidationSmoke {
         System.out.println("storage_phase_g_consolidation: PASS");
     }
 
-    private static void proveBridgeInterceptionCannotBeEnabled() {
-        clearProofProperties();
-        require(!VersionedStorageSqlBridge.isInterceptionEnabled(),
-                "Bridge interception must be disabled by default after G6");
+    private static void proveBridgeClassAndJdbcHookAreGone() throws Exception {
+        List<String> violations = new ArrayList<>();
+        Path bridgeClass = Path.of(BRIDGE_CLASS_PATH);
+        if (Files.exists(bridgeClass)) {
+            violations.add("retired SQL bridge source still exists: " + bridgeClass);
+        }
+        Path bridgeResult = Path.of(BRIDGE_RESULT_PATH);
+        if (Files.exists(bridgeResult)) {
+            violations.add("retired SQL bridge result wrapper still exists: " + bridgeResult);
+        }
 
-        System.setProperty(STALE_COMPATIBILITY_PROPERTY, "true");
-        require(!VersionedStorageSqlBridge.isInterceptionEnabled(),
-                "Compatibility property must not re-enable bridge interception after G6");
-
-        System.setProperty(VersionedStorageSqlBridge.NATIVE_EXECUTION_MODE_PROPERTY, "true");
-        require(!VersionedStorageSqlBridge.isInterceptionEnabled(),
-                "Native-mode property must not change bridge interception after G6");
+        assertSourceDoesNotContain(
+                Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedStatement.java"),
+                List.of("VersionedStorageSqlBridge", "VersionedStorageSqlResult", "isInterceptionEnabled()", "tryExecute("),
+                violations);
+        assertSourceDoesNotContain(
+                Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedConnection.java"),
+                List.of("VersionedStorageSqlBridge.commit", "VersionedStorageSqlBridge.rollback"),
+                violations);
+        require(violations.isEmpty(), String.join("; ", violations));
     }
 
     private static void proveNoCompatibilityModeWiringInGradle() throws Exception {
         List<Path> gradleFiles = List.of(
                 Path.of("gradle/storage-phase-f-native-execution.gradle"),
                 Path.of("gradle/storage-phase-g-native-predicates.gradle"),
-                Path.of("gradle/delosdb-permanent-storage-guards.gradle"));
+                Path.of("gradle/storage-phase-h-cost-integration.gradle"),
+                Path.of("gradle/storage-phase-i-mutation-concurrency.gradle"),
+                Path.of("gradle/delosdb-permanent-storage-guards.gradle"),
+                Path.of("build.gradle"));
         List<String> violations = new ArrayList<>();
         for (Path gradleFile : gradleFiles) {
             if (!Files.exists(gradleFile)) {
@@ -72,11 +84,12 @@ public final class StoragePhaseGConsolidationSmoke {
                 continue;
             }
             String text = Files.readString(gradleFile);
-            if (text.contains("delosdb.storage.sqlBridge.compatibility")
+            if (text.contains(STALE_COMPATIBILITY_PROPERTY)
                     || text.contains("BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY")
                     || text.contains("BridgeReduction")
-                    || text.contains("bridge-reduction")) {
-                violations.add("stale bridge-compatibility wiring in " + gradleFile);
+                    || text.contains("bridge-reduction")
+                    || text.contains("VersionedStorageSqlBridge")) {
+                violations.add("stale bridge/compatibility wiring in " + gradleFile);
             }
         }
         require(violations.isEmpty(), String.join("; ", violations));
@@ -85,7 +98,8 @@ public final class StoragePhaseGConsolidationSmoke {
     private static void proveNoSoftG6Archaeology() {
         List<Path> stalePaths = List.of(
                 Path.of("dev/storage-phase-g6-bridge-reduction-smoke"),
-                Path.of("storage-phase-g6-bridge-reduction-db"));
+                Path.of("storage-phase-g6-bridge-reduction-db"),
+                Path.of("scripts/cleanup-storage-phase-g6-soft-bridge-reduction.sh"));
         List<String> present = new ArrayList<>();
         for (Path stalePath : stalePaths) {
             if (Files.exists(stalePath)) {
@@ -95,53 +109,34 @@ public final class StoragePhaseGConsolidationSmoke {
         require(present.isEmpty(), "stale soft-G6 bridge-reduction artifacts remain: " + present);
     }
 
-
-    private static void proveNoNativeExecutionDependencyOnSqlBridge() throws Exception {
+    private static void proveNoNativeExecutionDependencyOnBridgeClassName() throws Exception {
         List<Path> nativeExecutionFiles = List.of(
                 Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateTableConstantAction.java"),
                 Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosTableScanResultSet.java"),
                 Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosInsertResultSet.java"),
                 Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosDeleteResultSet.java"),
-                Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosUpdateResultSet.java"));
+                Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosUpdateResultSet.java"),
+                Path.of("delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/DelosNativeTableRegistry.java"));
         List<String> violations = new ArrayList<>();
         for (Path sourceFile : nativeExecutionFiles) {
-            if (!Files.exists(sourceFile)) {
-                violations.add("missing expected native execution source: " + sourceFile);
-                continue;
-            }
-            String text = Files.readString(sourceFile);
-            if (text.contains("VersionedStorageSqlBridge")) {
-                violations.add("native execution source still depends on retired SQL bridge: " + sourceFile);
-            }
-        }
-        String bridgeText = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java"));
-        if (bridgeText.contains("registerNativeExecutionTable")
-                || bridgeText.contains("openNativeExecutionTableAccess")
-                || bridgeText.contains("NativeExecutionTableAccess")) {
-            violations.add("retired SQL bridge still exposes native execution registry API");
+            assertSourceDoesNotContain(sourceFile, List.of("VersionedStorageSqlBridge"), violations);
         }
         require(violations.isEmpty(), String.join("; ", violations));
     }
 
-    private static void proveNativeLifecycleWithoutBridgeFallback() throws Exception {
+    private static void proveNativeLifecycleAfterBridgeDeletion() throws Exception {
         clearProofProperties();
         System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY, "true");
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
         DelosTableScanProviderLookup.resetFactoryLookupForTesting();
 
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true);
              Statement statement = connection.createStatement()) {
             require(statement.executeUpdate(
                     "CREATE TABLE APP." + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc") == 0,
-                    "Expected native CREATE TABLE USING delos_mvcc to run without bridge fallback");
+                    "Expected native CREATE TABLE USING delos_mvcc to run after bridge deletion");
         }
-
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "CREATE TABLE must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
 
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
             require(SmokeUtils.executePreparedUpdate(connection,
@@ -163,11 +158,23 @@ public final class StoragePhaseGConsolidationSmoke {
 
         require(DelosTableScanProviderLookup.factoryLookupCountForTesting() > 0,
                 "Expected ResultSetFactory provider lookup during G consolidation SELECT");
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "Native INSERT/SELECT must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
     }
 
+    private static void assertSourceDoesNotContain(
+            Path sourceFile,
+            List<String> forbiddenMarkers,
+            List<String> violations) throws Exception {
+        if (!Files.exists(sourceFile)) {
+            violations.add("missing expected source: " + sourceFile);
+            return;
+        }
+        String text = Files.readString(sourceFile);
+        for (String marker : forbiddenMarkers) {
+            if (text.contains(marker)) {
+                violations.add(sourceFile + " still contains stale marker: " + marker);
+            }
+        }
+    }
 
     private static void requireNativeRow(Connection connection, int expectedId, String expectedValue, String label) throws Exception {
         try (PreparedStatement select = connection.prepareStatement(
@@ -183,7 +190,6 @@ public final class StoragePhaseGConsolidationSmoke {
     }
 
     private static void clearProofProperties() {
-        System.clearProperty(VersionedStorageSqlBridge.NATIVE_EXECUTION_MODE_PROPERTY);
         System.clearProperty(STALE_COMPATIBILITY_PROPERTY);
         System.clearProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY);
         System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);

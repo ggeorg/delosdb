@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.compile.DelosHeapCostProofLookup;
 import org.apache.derby.impl.sql.compile.DelosNativeTableCostLookup;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
@@ -31,7 +30,6 @@ public final class StoragePhaseH3HeapCostProofSmoke {
             clearProofProperties();
             DelosHeapCostProofLookup.resetForTesting();
             DelosNativeTableCostLookup.resetForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
@@ -42,7 +40,6 @@ public final class StoragePhaseH3HeapCostProofSmoke {
         clearProofProperties();
         DelosHeapCostProofLookup.resetForTesting();
         DelosNativeTableCostLookup.resetForTesting();
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
         DelosTableScanProviderLookup.resetFactoryLookupForTesting();
 
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true);
@@ -95,9 +92,6 @@ public final class StoragePhaseH3HeapCostProofSmoke {
                 "Expected finite non-negative Derby cost but was " + result.derbyEstimatedCost());
         require(DelosNativeTableCostLookup.lookupCountForTesting() == 0,
                 "H3 heap proof must not use MVCC native cost lookup");
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "H3 heap proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
     }
 
     private static int countRows(Connection connection, String sql, int id) throws Exception {

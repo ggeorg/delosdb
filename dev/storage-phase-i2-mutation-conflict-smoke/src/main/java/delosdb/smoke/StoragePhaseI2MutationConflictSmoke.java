@@ -1,7 +1,6 @@
 package delosdb.smoke;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.context.ContextService;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
@@ -43,7 +42,6 @@ public final class StoragePhaseI2MutationConflictSmoke {
             proveNativeMutationConflictMapping();
         } finally {
             clearProofProperties();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
@@ -76,9 +74,6 @@ public final class StoragePhaseI2MutationConflictSmoke {
             proveDeleteConflictMapping(table, deleteIdentity);
         }
 
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "I2 mutation conflict proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
     }
 
     private static void proveUpdateConflictMapping(

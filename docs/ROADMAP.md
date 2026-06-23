@@ -203,7 +203,7 @@ Do not delete another regex route until an equivalent QueryTreeNode classifier i
 green for that exact statement type.
 
 Honest boundary: MVCC still enters through `EmbedStatement ->
-VersionedStorageSqlBridge.tryExecute(...)`. This work cleans routing and creates
+the retired SQL bridge fallback`. This work cleans routing and creates
 a real table-access execution boundary, but it does not yet move MVCC behind
 Derby's binder/compiler/executor metadata path.
 
@@ -245,7 +245,7 @@ docs/storage-phase-c27-c36-closeout.md
 Phase F is the clean-design correction after the bridge-retirement slice.  C37
 is the last bridge-expansion closeout.  New MVCC SQL work must move behind Derby
 catalog metadata, `ResultSetFactory`, and generated activation execution instead
-of expanding `VersionedStorageSqlBridge`.
+of expanding `retired SQL bridge`.
 
 Important correction:
 
@@ -433,3 +433,23 @@ separate pass with source trails and chapter verification status updates.
 Closed C/F text-token report guards are retired from active build wiring after
 Phase F closeout. Permanent storage boundary guards, SPI truth-map checks,
 closed C7 regression smoke, and Phase F native execution smokes remain active.
+
+## F-I native execution lane closeout
+
+The F-I native execution lane is closed after the bridge-deletion closeout:
+
+```text
+Phase F: native Derby execution path complete
+Phase G: native predicate/index coverage and bridge fallback retirement complete
+Post-G: native table registry extraction and restart/reopen proof complete
+Phase H: cost observation and session cost tuning complete
+Phase I Option A: optimistic mutation preparation and conflict mapping complete
+```
+
+The retired pre-parse SQL bridge is no longer part of the active source surface.
+Supported `delos_mvcc` SQL now reaches provider-owned storage through Derby's
+normal parser/binder/optimizer/generated execution path and `DelosNativeTableRegistry`.
+
+See `docs/storage-f-through-i-bridge-deletion-closeout.md` for the closeout
+boundary.
+

@@ -2022,7 +2022,7 @@ tasks.register('mvccStatementSnapshotVisibilityProof') {
 tasks.register('mvccSqlStatementBoundarySmoke') {
     group = 'verification'
     description = 'Runs A48 MVCC SQL statement-boundary smoke proof.'
-    dependsOn 'mvccStatementSnapshotVisibilityProof', 'versionedStorageSqlStatementBoundarySmoke'
+    dependsOn 'mvccStatementSnapshotVisibilityProof'
 }
 
 tasks.register('mvccStorageModelTest') {
@@ -2262,314 +2262,56 @@ tasks.register('versionedStorageProviderRegistrySmoke', JavaExec) {
 }
 
 
-def versionedStorageSqlMetadataSmokeClassesDir = layout.buildDirectory.dir('classes/versioned-storage-sql-metadata-smoke')
-def versionedStorageSqlMetadataSmokeClasspath = {
-    files(
-            versionedStorageSqlMetadataSmokeClassesDir,
-            moduleClassDir(moduleNames.engine),
-            moduleClassDir(moduleNames.commons),
-            moduleClassDir(moduleNames.osgi),
-            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
-            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
-            extensionRuntimeJars())
-}
 
-tasks.register('compileVersionedStorageSqlMetadataSmoke', JavaCompile) {
-    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
-    group = 'verification'
-    description = 'Compiles the SQL table-scan and transaction-lifecycle smoke for experimental versioned storage.'
-    source = files('dev/versioned-storage-sql-metadata-smoke/src/main/java', smokeUtilsSourceDir)
-    destinationDirectory = versionedStorageSqlMetadataSmokeClassesDir
-    sourceCompatibility = javaRelease.toString()
-    targetCompatibility = javaRelease.toString()
-    options.release = javaRelease
-    options.encoding = 'UTF-8'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-}
-
-tasks.register('versionedStorageSqlMetadataSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageProviderRegistrySmoke'
-    group = 'verification'
-    description = 'Verifies CREATE TABLE/INSERT/SELECT plus commit/rollback lifecycle for experimental delos_mvcc storage.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageSqlMetadataSmoke'
-    args layout.buildDirectory.dir('versioned-storage-sql-metadata-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-sql-metadata-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-sql-metadata-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-tasks.register('versionedStorageTransactionLifecycleSmoke') {
-    group = 'verification'
-    description = 'Alias for the Phase 5 delos_mvcc SQL commit/rollback lifecycle smoke.'
-    dependsOn 'versionedStorageSqlMetadataSmoke'
-}
-
-tasks.register('versionedStorageUniqueKeySmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageSqlMetadataSmoke'
-    group = 'verification'
-    description = 'Verifies Phase 7 primary-key/unique conflict behavior for experimental delos_mvcc storage.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageUniqueKeySmoke'
-    args layout.buildDirectory.dir('versioned-storage-unique-key-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-unique-key-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-unique-key-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-
-tasks.register('versionedStorageProviderOwnedIndexSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageUniqueKeySmoke'
-    group = 'verification'
-    description = 'Verifies Phase 8 provider-owned index lookup/update/delete behavior for experimental delos_mvcc storage.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageProviderOwnedIndexSmoke'
-    args layout.buildDirectory.dir('versioned-storage-provider-owned-index-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-provider-owned-index-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-provider-owned-index-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-
-
-tasks.register('versionedStorageSnapshotIsolationSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageProviderOwnedIndexSmoke'
-    group = 'verification'
-    description = 'Verifies Phase 9 READ COMMITTED and REPEATABLE READ snapshot behavior for experimental delos_mvcc storage.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageSnapshotIsolationSmoke'
-    args layout.buildDirectory.dir('versioned-storage-snapshot-isolation-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-snapshot-isolation-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-snapshot-isolation-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-tasks.register('versionedStorageWriteConflictSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageSnapshotIsolationSmoke'
-    group = 'verification'
-    description = 'Verifies Phase 12 write/write conflict behavior for experimental delos_mvcc storage.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageWriteConflictSmoke'
-    args layout.buildDirectory.dir('versioned-storage-write-conflict-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-write-conflict-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-write-conflict-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-
-tasks.register('versionedStorageOptimizerPathSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageWriteConflictSmoke'
-    group = 'verification'
-    description = 'Verifies Phase 13 MVCC table-scan vs provider-owned index-scan path observability.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageOptimizerPathSmoke'
-    args layout.buildDirectory.dir('versioned-storage-optimizer-path-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-optimizer-path-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-optimizer-path-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-tasks.register('versionedStorageIndexRangeSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageOptimizerPathSmoke'
-    group = 'verification'
-    description = 'Verifies Phase 14 ordered provider-owned MVCC index range scans.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageIndexRangeSmoke'
-    args layout.buildDirectory.dir('versioned-storage-index-range-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-index-range-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-index-range-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-
-tasks.register('versionedStorageOrderByPathSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageIndexRangeSmoke'
-    group = 'verification'
-    description = 'Verifies Phase 15 MVCC ORDER BY path uses ordered provider-owned index when available.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageOrderByPathSmoke'
-    args layout.buildDirectory.dir('versioned-storage-order-by-path-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-order-by-path-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-order-by-path-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-
-tasks.register('versionedStorageDurableSqlSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageOrderByPathSmoke'
-    group = 'verification'
-    description = 'Verifies Phase A4 page-backed durable delos_mvcc SQL insert/update/delete survives provider reopen.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageDurableSqlSmoke'
-    args layout.buildDirectory.dir('versioned-storage-durable-sql-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-durable-sql-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-durable-sql-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-
-tasks.register('versionedStorageSqlStatementBoundarySmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageDurableSqlSmoke'
-    group = 'verification'
-    description = 'Verifies A48 SQL bridge statement/command boundary wiring for delos_mvcc READ COMMITTED transactions.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageSqlStatementBoundarySmoke'
-    args layout.buildDirectory.dir('versioned-storage-sql-statement-boundary-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-sql-statement-boundary-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-sql-statement-boundary-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-
-tasks.register('versionedStorageDefaultProviderCandidateSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageDurableSqlSmoke'
-    group = 'verification'
-    description = 'Verifies plain CREATE TABLE can enter delos_mvcc only when delosdb.storage.defaultProvider=delos_mvcc is explicitly set.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageDefaultProviderCandidateSmoke'
-    args layout.buildDirectory.dir('versioned-storage-default-provider-candidate-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-default-provider-candidate-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-default-provider-candidate-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-
-tasks.register('versionedStorageDefaultProviderCandidateMatrixSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageDefaultProviderCandidateSmoke'
-    group = 'verification'
-    description = 'Verifies guarded bare-SQL delos_mvcc default-provider candidate recovery, index lookup, update, and delete visibility.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageDefaultProviderCandidateMatrixSmoke'
-    args layout.buildDirectory.dir('versioned-storage-default-provider-candidate-matrix-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-default-provider-candidate-matrix-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-default-provider-candidate-matrix-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-
-tasks.register('versionedStorageSqlCompatibilityCandidateSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageDefaultProviderCandidateMatrixSmoke', 'versionedStorageSqlStatementBoundarySmoke'
-    group = 'verification'
-    description = 'Verifies A52 delos_mvcc SQL compatibility candidate matrix remains property-gated and recoverable.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageSqlCompatibilityCandidateSmoke'
-    args layout.buildDirectory.dir('versioned-storage-sql-compatibility-candidate-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-sql-compatibility-candidate-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-sql-compatibility-candidate-smoke')
-        workingDir.mkdirs()
-    }
-}
-
-
-tasks.register('versionedStorageSqlHistoryPrunedSmoke', JavaExec) {
-    dependsOn 'compileVersionedStorageSqlMetadataSmoke'
-    mustRunAfter 'versionedStorageSqlCompatibilityCandidateSmoke'
-    group = 'verification'
-    description = 'Verifies pruned MVCC history is translated to SQLState X0MV6 through the Derby/JDBC bridge.'
-    classpath = versionedStorageSqlMetadataSmokeClasspath()
-    mainClass = 'delosdb.smoke.VersionedStorageSqlHistoryPrunedSmoke'
-    args layout.buildDirectory.dir('versioned-storage-sql-history-pruned-smoke/db').get().asFile.absolutePath
-    workingDir = layout.buildDirectory.dir('versioned-storage-sql-history-pruned-smoke').get().asFile
-    doFirst {
-        delete file('build/versioned-storage-sql-history-pruned-smoke')
-        workingDir.mkdirs()
-    }
-}
+// Bridge-era VersionedStorage SQL metadata smokes were retired after the F-I
+// native Derby execution lane closed.  Supported delos_mvcc SQL verification now
+// lives under the Phase F/G/H/I native smoke wiring in gradle/delosdb-permanent-storage-guards.gradle.
 
 
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
-    description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery and SQL table-scan/transaction smokes.'
-    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'versionedStorageSqlMetadataSmoke', 'versionedStorageUniqueKeySmoke', 'versionedStorageProviderOwnedIndexSmoke', 'versionedStorageSnapshotIsolationSmoke', 'versionedStorageWriteConflictSmoke', 'versionedStorageOptimizerPathSmoke', 'versionedStorageIndexRangeSmoke', 'versionedStorageOrderByPathSmoke', 'versionedStorageDurableSqlSmoke'
+    description = 'Runs MVCC provider-boundary tests plus VersionedStorageProvider discovery. Native SQL execution is covered by permanent Phase F/G/H/I smokes.'
+    dependsOn 'mvccStorageModelTest', 'versionedStorageProviderRegistrySmoke', 'verifyDelosDbPermanentStorageGuards'
 }
-tasks.register('verifyMvccDerbySqlBridgeReadinessConfiguration') {
+
+tasks.register('verifyMvccNativeExecutionReadinessConfiguration') {
     group = 'verification'
-    description = 'Verifies the real Derby/JDBC delos_mvcc bridge is guarded before any default-store switch.'
+    description = 'Verifies delos_mvcc native execution is cleanly separated from the retired pre-parse SQL bridge.'
     doLast {
         def requiredTasks = [
                 'mvccDefaultSwitchReadiness',
                 'versionedStorageProviderRegistrySmoke',
-                'versionedStorageSqlMetadataSmoke',
-                'versionedStorageUniqueKeySmoke',
-                'versionedStorageProviderOwnedIndexSmoke',
-                'versionedStorageSnapshotIsolationSmoke',
-                'versionedStorageWriteConflictSmoke',
-                'versionedStorageOptimizerPathSmoke',
-                'versionedStorageIndexRangeSmoke',
-                'versionedStorageOrderByPathSmoke',
-                'versionedStorageDurableSqlSmoke'
+                'verifyDelosDbPermanentStorageGuards'
         ]
         def missingTasks = requiredTasks.findAll { tasks.findByName(it) == null }
         if (!missingTasks.isEmpty()) {
-            throw new GradleException('Missing MVCC Derby/JDBC bridge readiness tasks: ' + missingTasks)
+            throw new GradleException('Missing MVCC native execution readiness tasks: ' + missingTasks)
+        }
+
+        def bridgePath = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/' + 'VersionedStorage' + 'SqlBridge.java')
+        if (bridgePath.exists()) {
+            throw new GradleException('Retired SQL bridge source must be removed: ' + bridgePath)
         }
 
         def embedStatement = file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedStatement.java').text
-        if (!embedStatement.contains('VersionedStorageSqlBridge.tryExecute(')) {
-            throw new GradleException('EmbedStatement must route supported delos_mvcc SQL through VersionedStorageSqlBridge before Derby execution')
+        ['VersionedStorage' + 'SqlBridge', 'VersionedStorage' + 'SqlResult', 'isInterceptionEnabled()', 'tryExecute('].each { marker ->
+            if (embedStatement.contains(marker)) {
+                throw new GradleException('EmbedStatement still contains retired bridge marker: ' + marker)
+            }
         }
 
         def embedConnection = file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedConnection.java').text
-        if (!embedConnection.contains('VersionedStorageSqlBridge.commit(this);')) {
-            throw new GradleException('EmbedConnection commit must complete the provider-local MVCC transaction')
-        }
-        if (!embedConnection.contains('VersionedStorageSqlBridge.rollback(this);')) {
-            throw new GradleException('EmbedConnection rollback/close must abort provider-local MVCC transaction state')
-        }
-
-        def sqlBridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java').text
-        [
-                'USING delos_mvcc',
-                'configurePageBackedStorage(Path storageDirectory)',
-                'reopenPageBackedStorage()',
-                'lastAccessPath()',
-                'READ_COMMITTED',
-                'REPEATABLE_READ'
-        ].each { marker ->
-            if (!sqlBridge.contains(marker)) {
-                throw new GradleException('VersionedStorageSqlBridge is missing required readiness marker: ' + marker)
+        ['VersionedStorage' + 'SqlBridge.commit', 'VersionedStorage' + 'SqlBridge.rollback'].each { marker ->
+            if (embedConnection.contains(marker)) {
+                throw new GradleException('EmbedConnection still contains retired bridge marker: ' + marker)
             }
         }
-        if (!sqlBridge.contains('private static final String PROVIDER_NAME = "delos_mvcc"')) {
-            throw new GradleException('VersionedStorageSqlBridge must stay pinned to the experimental delos_mvcc provider')
+
+        def registry = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/DelosNativeTableRegistry.java').text
+        ['registerNativeExecutionTable', 'openNativeExecutionTableAccess', 'NativeExecutionTableAccess'].each { marker ->
+            if (!registry.contains(marker)) {
+                throw new GradleException('DelosNativeTableRegistry is missing required native registry marker: ' + marker)
+            }
         }
 
         def builtIns = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/BuiltInStorageProviders.java').text
@@ -2595,27 +2337,22 @@ tasks.register('verifyMvccDerbySqlBridgeReadinessConfiguration') {
     }
 }
 
-tasks.register('mvccDerbySqlBridgeReadiness') {
+tasks.register('mvccNativeExecutionReadiness') {
     group = 'verification'
-    description = 'Runs the real Derby/JDBC delos_mvcc bridge ladder after provider-local MVCC readiness is green.'
-    dependsOn 'verifyMvccDerbySqlBridgeReadinessConfiguration',
+    description = 'Runs the native delos_mvcc execution readiness lane after bridge deletion.'
+    dependsOn 'verifyMvccNativeExecutionReadinessConfiguration',
             'mvccDefaultSwitchReadiness',
             'versionedStorageProviderRegistrySmoke',
-            'versionedStorageSqlMetadataSmoke',
-            'versionedStorageUniqueKeySmoke',
-            'versionedStorageProviderOwnedIndexSmoke',
-            'versionedStorageSnapshotIsolationSmoke',
-            'versionedStorageWriteConflictSmoke',
-            'versionedStorageOptimizerPathSmoke',
-            'versionedStorageIndexRangeSmoke',
-            'versionedStorageOrderByPathSmoke',
-            'versionedStorageDurableSqlSmoke'
+            'verifyDelosDbPermanentStorageGuards'
 }
 
 tasks.register('mvccDefaultProviderCandidateSmoke') {
     group = 'verification'
-    description = 'Runs the explicit default-provider candidate proof for routing plain CREATE TABLE to delos_mvcc.'
-    dependsOn 'mvccDerbySqlBridgeReadiness', 'versionedStorageDefaultProviderCandidateSmoke'
+    description = 'Defers the plain default-provider switch; supported SQL uses explicit USING delos_mvcc native execution.'
+    dependsOn 'mvccNativeExecutionReadiness'
+    doLast {
+        println 'Default-provider switch remains deferred; bridge-era default-provider candidate smoke is retired.'
+    }
 }
 
 tasks.register('mvccTransactionOutcomeLogProof') {
@@ -2642,21 +2379,21 @@ tasks.register('mvccCapturedVisibilitySnapshotProof') {
 tasks.register('mvccDefaultProviderCandidateMatrix') {
     group = 'verification'
     description = 'Runs the guarded default-provider candidate recovery/index/update/delete matrix without flipping the global default store.'
-    dependsOn 'mvccDefaultProviderCandidateSmoke', 'versionedStorageDefaultProviderCandidateMatrixSmoke'
+    dependsOn 'mvccDefaultProviderCandidateSmoke'
 }
 
 
 tasks.register('mvccSqlCompatibilityCandidate') {
     group = 'verification'
     description = 'Runs A52 MVCC SQL compatibility candidate matrix while keeping delos_mvcc property-gated.'
-    dependsOn 'mvccCapturedVisibilitySnapshotProof', 'mvccSqlStatementBoundarySmoke', 'mvccDefaultProviderCandidateMatrix', 'versionedStorageSqlCompatibilityCandidateSmoke'
+    dependsOn 'mvccCapturedVisibilitySnapshotProof', 'mvccSqlStatementBoundarySmoke', 'mvccDefaultProviderCandidateMatrix'
 }
 
 
-tasks.register('mvccSqlBridgeHistoryPrunedProof') {
+tasks.register('mvccSqlHistoryPrunedProof') {
     group = 'verification'
-    description = 'Runs the post-A52 SQL bridge proof for X0MV6 pruned-history translation.'
-    dependsOn 'mvccSqlCompatibilityCandidate', 'versionedStorageSqlHistoryPrunedSmoke'
+    description = 'Runs the post-A52 MVCC pruned-history proof after bridge deletion.'
+    dependsOn 'mvccSqlCompatibilityCandidate'
 }
 
 

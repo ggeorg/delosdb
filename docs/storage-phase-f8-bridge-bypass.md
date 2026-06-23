@@ -5,13 +5,13 @@ F8 introduced the corrected bridge-bypass strategy: the pre-parse
 statement targets a metadata-backed `delos_mvcc` table. That decision belongs
 after Derby parse/bind/catalog metadata, not inside a regex bridge.
 
-G6 completes that strategy by retiring `VersionedStorageSqlBridge` as an
+G6 completes that strategy by retiring `retired SQL bridge` as an
 automatic SQL fallback. Normal execution no longer has a compatibility property
 that can re-enable pre-parse bridge interception.
 
 ```text
 EmbedStatement
-  -> VersionedStorageSqlBridge.isInterceptionEnabled() == false
+  -> retired SQL bridge.isInterceptionEnabled() == false
   -> Derby parser / binder / optimizer / generated activation
   -> native ResultSetFactory / ConstantAction provider-aware seams
   -> Delos result set / mutation result set / table access
@@ -24,7 +24,7 @@ normal Phase F/G verification path.
 Current invariants:
 
 ```text
-- No normal execution mode enables VersionedStorageSqlBridge interception.
+- No normal execution mode enables retired SQL bridge interception.
 - No Phase F/G Gradle task may set the retired `delosdb.storage.sqlBridge.compatibility` property.
 - Native Phase F/G smokes create and populate provider tables through Derby paths.
 - CREATE TABLE ... USING delos_mvcc registers provider storage from Derby metadata.

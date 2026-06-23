@@ -1,12 +1,10 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.util.Optional;
 
 /**
  * Phase F3.1 proof: the generated Derby table-scan path reaches
@@ -43,9 +41,6 @@ public final class StoragePhaseF3FactoryBranchSmoke {
                     "CREATE TABLE " + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc");
             executePrepared(connection,
                     "INSERT INTO " + TABLE_NAME + " VALUES (1, 'alpha')");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F3.1 setup must use Derby prepared execution, not the transitional bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 
@@ -80,9 +75,6 @@ public final class StoragePhaseF3FactoryBranchSmoke {
                     "Expected factory branch table " + TABLE_NAME + " but was " + result.tableName());
             require(result.isProvider(PROVIDER_NAME),
                     "Expected factory branch observation to identify delos_mvcc provider");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F3.1 native prepared SELECT must not invoke the transitional bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 

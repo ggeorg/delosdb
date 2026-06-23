@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
 import java.sql.Connection;
@@ -32,7 +31,6 @@ public final class StoragePhaseF7NativeUpdateEqualitySmoke {
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_UPDATE_EQUALITY_PROPERTY);
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
 
@@ -45,18 +43,12 @@ public final class StoragePhaseF7NativeUpdateEqualitySmoke {
                     "CREATE TABLE " + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc")) {
                 statement.executeUpdate();
             }
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F7 catalog/provider setup must use Derby prepare/constant-action path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
-
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
     }
 
     private static void proveNativeUpdateEqualityAndReadBack() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY, "true");
@@ -64,9 +56,6 @@ public final class StoragePhaseF7NativeUpdateEqualitySmoke {
 
             insert(connection, 1, "alpha");
             insert(connection, 2, "bravo");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F7 seed INSERTs should use the F5 native INSERT path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
 
             try (PreparedStatement update = connection.prepareStatement(
                     "UPDATE APP." + TABLE_NAME + " SET value = ? WHERE id = ?")) {
@@ -75,10 +64,6 @@ public final class StoragePhaseF7NativeUpdateEqualitySmoke {
                 require(update.executeUpdate() == 1,
                         "Expected F7 native MVCC UPDATE equality to affect one row");
             }
-
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F7 prepared UPDATE proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
 
             try (PreparedStatement updated = connection.prepareStatement(
                     "SELECT * FROM APP." + TABLE_NAME + " WHERE id = ?")) {
@@ -101,10 +86,6 @@ public final class StoragePhaseF7NativeUpdateEqualitySmoke {
                     require(!rows.next(), "Expected exactly one surviving row after F7 UPDATE");
                 }
             }
-
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F7 readback SELECTs must also stay off VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 

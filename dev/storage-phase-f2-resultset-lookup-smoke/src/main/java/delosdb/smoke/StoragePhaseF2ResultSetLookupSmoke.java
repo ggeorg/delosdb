@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.context.ContextService;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
@@ -10,7 +9,6 @@ import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.util.Optional;
 
 /**
  * Phase F2.2 proof: the future ResultSetFactory branch can resolve persisted
@@ -47,9 +45,6 @@ public final class StoragePhaseF2ResultSetLookupSmoke {
                     "CREATE TABLE " + MVCC_TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc");
             executePrepared(connection,
                     "CREATE TABLE " + HEAP_TABLE_NAME + " (id INT, value VARCHAR(32))");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F2.2 metadata setup must use Derby prepare/constant-action path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 
@@ -59,9 +54,6 @@ public final class StoragePhaseF2ResultSetLookupSmoke {
             assertProvider(connection, MVCC_TABLE_NAME, PROVIDER_NAME, false);
             assertProvider(connection, "APP." + HEAP_TABLE_NAME, "heap", true);
             assertMissing(connection, "APP.F2_RESULTSET_LOOKUP_MISSING");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F2.2 metadata lookup proof must not invoke bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 

@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
 import java.sql.Connection;
@@ -10,7 +9,7 @@ import java.sql.Statement;
 
 /**
  * Phase G6 proof: supported delos_mvcc SQL no longer depends on the
- * VersionedStorageSqlBridge pre-parse fallback. Plain Statement CREATE TABLE
+ * retired SQL bridge pre-parse fallback. Plain Statement CREATE TABLE
  * and prepared native INSERT/SELECT flow through Derby-native metadata and
  * ResultSetFactory seams, while the stale soft-G6 compatibility property cannot re-enable
  * EmbedStatement interception.
@@ -30,12 +29,10 @@ public final class StoragePhaseG6BridgeRetirementSmoke {
             proveBridgeInterceptionRetired();
             proveSupportedNativeSqlDoesNotNeedBridgeSetup();
         } finally {
-            System.clearProperty(VersionedStorageSqlBridge.NATIVE_EXECUTION_MODE_PROPERTY);
             System.clearProperty(STALE_COMPATIBILITY_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY);
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
 
@@ -43,18 +40,12 @@ public final class StoragePhaseG6BridgeRetirementSmoke {
     }
 
     private static void proveBridgeInterceptionRetired() {
-        System.clearProperty(VersionedStorageSqlBridge.NATIVE_EXECUTION_MODE_PROPERTY);
         System.clearProperty(STALE_COMPATIBILITY_PROPERTY);
-        require(!VersionedStorageSqlBridge.isInterceptionEnabled(),
-                "G6 requires VersionedStorageSqlBridge interception to be disabled by default");
 
         System.setProperty(STALE_COMPATIBILITY_PROPERTY, "true");
-        require(!VersionedStorageSqlBridge.isInterceptionEnabled(),
-                "G6 must not allow compatibility opt-in to re-enable SQL fallback");
     }
 
     private static void proveSupportedNativeSqlDoesNotNeedBridgeSetup() throws Exception {
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
         System.setProperty(STALE_COMPATIBILITY_PROPERTY, "true");
         System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
@@ -67,9 +58,6 @@ public final class StoragePhaseG6BridgeRetirementSmoke {
                     "Expected native Derby CREATE TABLE to register provider-owned delos_mvcc storage");
         }
 
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "G6 CREATE TABLE must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
 
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
             require(SmokeUtils.executePreparedUpdate(connection,
@@ -90,9 +78,6 @@ public final class StoragePhaseG6BridgeRetirementSmoke {
 
         require(DelosTableScanProviderLookup.factoryLookupCountForTesting() > 0,
                 "Expected ResultSetFactory provider lookup during G6 native SELECT");
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "G6 native INSERT/SELECT must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
     }
 
     private static void require(boolean condition, String message) {

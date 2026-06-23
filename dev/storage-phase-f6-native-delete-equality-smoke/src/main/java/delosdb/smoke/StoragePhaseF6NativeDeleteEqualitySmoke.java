@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
 import java.sql.Connection;
@@ -31,7 +30,6 @@ public final class StoragePhaseF6NativeDeleteEqualitySmoke {
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY);
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
 
@@ -44,18 +42,13 @@ public final class StoragePhaseF6NativeDeleteEqualitySmoke {
                     "CREATE TABLE " + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc")) {
                 statement.executeUpdate();
             }
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F6 catalog/provider setup must use Derby prepare/constant-action path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
 
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
     }
 
     private static void proveNativeDeleteEqualityAndReadBack() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY, "true");
@@ -63,9 +56,6 @@ public final class StoragePhaseF6NativeDeleteEqualitySmoke {
 
             insert(connection, 1, "alpha");
             insert(connection, 2, "bravo");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F6 seed INSERTs should use the F5 native INSERT path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
 
             try (PreparedStatement delete = connection.prepareStatement(
                     "DELETE FROM APP." + TABLE_NAME + " WHERE id = ?")) {
@@ -74,9 +64,6 @@ public final class StoragePhaseF6NativeDeleteEqualitySmoke {
                         "Expected F6 native MVCC DELETE equality to affect one row");
             }
 
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F6 prepared DELETE proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
 
             try (PreparedStatement deleted = connection.prepareStatement(
                     "SELECT * FROM APP." + TABLE_NAME + " WHERE id = ?")) {
@@ -97,9 +84,6 @@ public final class StoragePhaseF6NativeDeleteEqualitySmoke {
                 }
             }
 
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F6 readback SELECTs must also stay off VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 

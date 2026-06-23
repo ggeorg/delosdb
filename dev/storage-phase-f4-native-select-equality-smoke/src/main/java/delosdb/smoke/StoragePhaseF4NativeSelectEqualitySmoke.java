@@ -1,6 +1,5 @@
 package delosdb.smoke;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
 import java.sql.Connection;
@@ -32,7 +31,6 @@ public final class StoragePhaseF4NativeSelectEqualitySmoke {
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_SKELETON_BRANCH_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
 
@@ -43,13 +41,9 @@ public final class StoragePhaseF4NativeSelectEqualitySmoke {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true)) {
             executePrepared(connection,
                     "CREATE TABLE " + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F4 catalog setup must use Derby prepare/constant-action path, not bridge: "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
 
         seedProviderOwnedMvccRowsThroughNativeInsert();
-        VersionedStorageSqlBridge.resetRouteClassifierForTesting();
     }
 
 
@@ -63,15 +57,11 @@ public final class StoragePhaseF4NativeSelectEqualitySmoke {
                     "INSERT INTO APP." + TABLE_NAME + " VALUES (?, ?)", 2, "bravo") == 1,
                     "Expected native MVCC row setup for id=2");
         }
-        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                "F4 native INSERT setup must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
     }
 
     private static void proveNativeSelectEqualityAfterRestart() throws Exception {
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
             DelosTableScanProviderLookup.resetFactoryLookupForTesting();
-            VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
             System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY, "true");
 
@@ -91,9 +81,6 @@ public final class StoragePhaseF4NativeSelectEqualitySmoke {
                     "Expected GenericResultSetFactory probe to observe the native table scan");
             require(DelosTableScanProviderLookup.lastNonDefaultFactoryLookupForTesting().isPresent(),
                     "Expected non-default provider lookup before native DelosTableScanResultSet execution");
-            require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F4 prepared SELECT proof must not invoke VersionedStorageSqlBridge.tryExecute(...): "
-                            + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
     }
 
