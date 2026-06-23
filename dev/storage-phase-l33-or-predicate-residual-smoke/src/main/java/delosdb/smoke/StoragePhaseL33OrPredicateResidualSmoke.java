@@ -64,9 +64,10 @@ public final class StoragePhaseL33OrPredicateResidualSmoke {
 
         String predicateOperator = Files.readString(Path.of(
                 "delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/DelosPredicateOperator.java"));
-        require(!predicateOperator.contains(" OR"),
+        List<String> predicateOperatorConstants = enumConstants(predicateOperator);
+        require(!predicateOperatorConstants.contains("OR"),
                 "L3.3 must not add a fake generic Delos OR predicate operator");
-        require(!predicateOperator.contains("DISJUNCTION"),
+        require(!predicateOperatorConstants.contains("DISJUNCTION"),
                 "L3.3 must not add a fake generic Delos disjunction contract");
     }
 
@@ -162,6 +163,49 @@ public final class StoragePhaseL33OrPredicateResidualSmoke {
         }
         Collections.sort(ids);
         return ids;
+    }
+
+    private static List<String> enumConstants(String enumSource) {
+        String sourceWithoutComments = enumSource
+                .replaceAll("(?s)/\\*.*?\\*/", "")
+                .replaceAll("(?m)//.*$", "");
+        int openBrace = sourceWithoutComments.indexOf('{');
+        int close = sourceWithoutComments.indexOf(';', openBrace);
+        if (close < 0) {
+            close = sourceWithoutComments.indexOf('}', openBrace);
+        }
+        require(openBrace >= 0 && close > openBrace,
+                "Expected DelosPredicateOperator enum constants to be parseable");
+
+        List<String> constants = new ArrayList<>();
+        String body = sourceWithoutComments.substring(openBrace + 1, close);
+        for (String rawConstant : body.split(",")) {
+            String constant = rawConstant.trim();
+            if (constant.isEmpty()) {
+                continue;
+            }
+            int constructorStart = constant.indexOf('(');
+            if (constructorStart >= 0) {
+                constant = constant.substring(0, constructorStart).trim();
+            }
+            int whitespace = firstWhitespace(constant);
+            if (whitespace >= 0) {
+                constant = constant.substring(0, whitespace).trim();
+            }
+            if (!constant.isEmpty()) {
+                constants.add(constant);
+            }
+        }
+        return constants;
+    }
+
+    private static int firstWhitespace(String value) {
+        for (int index = 0; index < value.length(); index++) {
+            if (Character.isWhitespace(value.charAt(index))) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private static void clearProofProperties() {
