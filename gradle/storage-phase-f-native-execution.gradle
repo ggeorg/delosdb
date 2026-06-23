@@ -55,7 +55,7 @@ ext.delosdbStoragePhaseFNativeExecutionRegisterSmoke = { Map<String, Object> spe
         description = (String) spec.verifyDescription
         dependsOn spec.smokeTask
         doLast {
-            println (String) spec.successMessage
+            println((String) spec.successMessage)
         }
     }
 }
