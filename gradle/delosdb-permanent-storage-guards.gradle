@@ -1,8 +1,6 @@
 // Permanent DelosDB storage verification wiring.
-//
-// This file is the active storage guard surface after Phase F closeout.
-// It keeps permanent architectural checks and executable smokes, while closed
-// C/F phase text-token report guards are retired as historical scaffolding.
+// Keep durable architectural checks plus compact closed-lane executable smokes.
+// Historical per-step F/G/H/I Gradle files and dev smoke ladders are retired after bridge deletion.
 
 apply from: file('gradle/storage-derby-boundary-guards.gradle')
 apply from: file('gradle/storage-spi-truth-map.gradle')
@@ -62,19 +60,16 @@ tasks.register('verifyStoragePhaseC7Stabilization') {
     }
 }
 
-apply from: file('gradle/storage-phase-f-native-execution.gradle')
-
-apply from: file('gradle/storage-phase-g-native-predicates.gradle')
-
-apply from: file('gradle/storage-phase-h-cost-integration.gradle')
-
-apply from: file('gradle/storage-phase-i-mutation-concurrency.gradle')
+apply from: file('gradle/storage-native-execution-closeout.gradle')
 
 tasks.register('verifyDelosDbPermanentStorageGuards') {
     group = 'verification'
-    description = 'Verifies permanent DelosDB storage boundaries and closed-phase executable storage smokes through Phase I2.'
-    dependsOn 'verifyStorageDerbyBoundary', 'verifyStorageSpiTruthMap', 'storagePhaseC7StabilizationSmoke', 'verifyStoragePhaseFConsolidation', 'verifyStoragePhaseGConsolidation', 'verifyStoragePhaseI2MutationConflict'
+    description = 'Verifies permanent DelosDB storage boundaries and compact native execution closeout through Phase I Option A.'
+    dependsOn 'verifyStorageDerbyBoundary',
+            'verifyStorageSpiTruthMap',
+            'storagePhaseC7StabilizationSmoke',
+            'verifyStorageNativeExecutionCloseout'
     doLast {
-        println 'Verified permanent DelosDB storage guards and closed-phase executable smokes through Phase I2'
+        println 'Verified permanent DelosDB storage guards and compact native execution closeout through Phase I Option A'
     }
 }

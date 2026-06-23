@@ -41,3 +41,25 @@ table.
 The bridge-era C-phase and `versioned-storage-sql-metadata-smoke` sources are
 retired archaeology. They are removed by the closeout cleanup script instead of
 being kept as active tests.
+
+
+## Dev / Gradle closeout cleanup
+
+After bridge deletion, the active verification surface is intentionally compact:
+
+```text
+dev/storage-phase-c7-stabilization-smoke
+dev/storage-phase-g-consolidation-smoke
+dev/storage-phase-h4-session-cost-constant-smoke
+dev/storage-phase-i2-mutation-conflict-smoke
+dev/smoke-utils
+
+gradle/delosdb-permanent-storage-guards.gradle
+gradle/storage-derby-boundary-guards.gradle
+gradle/storage-native-execution-closeout.gradle
+gradle/storage-spi-truth-map.gradle
+```
+
+Historical phase-step smoke directories and retired phase Gradle files should
+not be reintroduced.  New work should create a new lane with its own compact
+proof surface rather than rebuilding the old F/G/H/I smoke ladder.

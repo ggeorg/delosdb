@@ -35,7 +35,8 @@ public final class StoragePhaseGConsolidationSmoke {
         try {
             proveBridgeClassAndJdbcHookAreGone();
             proveNoCompatibilityModeWiringInGradle();
-            proveNoSoftG6Archaeology();
+            proveOldPhaseGradleFilesAreGone();
+            proveStaleDevScaffoldingIsGone();
             proveNoNativeExecutionDependencyOnBridgeClassName();
             proveNativeLifecycleAfterBridgeDeletion();
         } finally {
@@ -71,10 +72,7 @@ public final class StoragePhaseGConsolidationSmoke {
 
     private static void proveNoCompatibilityModeWiringInGradle() throws Exception {
         List<Path> gradleFiles = List.of(
-                Path.of("gradle/storage-phase-f-native-execution.gradle"),
-                Path.of("gradle/storage-phase-g-native-predicates.gradle"),
-                Path.of("gradle/storage-phase-h-cost-integration.gradle"),
-                Path.of("gradle/storage-phase-i-mutation-concurrency.gradle"),
+                Path.of("gradle/storage-native-execution-closeout.gradle"),
                 Path.of("gradle/delosdb-permanent-storage-guards.gradle"),
                 Path.of("build.gradle"));
         List<String> violations = new ArrayList<>();
@@ -95,9 +93,46 @@ public final class StoragePhaseGConsolidationSmoke {
         require(violations.isEmpty(), String.join("; ", violations));
     }
 
-    private static void proveNoSoftG6Archaeology() {
+    private static void proveOldPhaseGradleFilesAreGone() {
+        List<Path> retiredGradleFiles = List.of(
+                Path.of("gradle/storage-phase-f-native-execution.gradle"),
+                Path.of("gradle/storage-phase-g-native-predicates.gradle"),
+                Path.of("gradle/storage-phase-h-cost-integration.gradle"),
+                Path.of("gradle/storage-phase-i-mutation-concurrency.gradle"));
+        List<String> present = new ArrayList<>();
+        for (Path retiredGradleFile : retiredGradleFiles) {
+            if (Files.exists(retiredGradleFile)) {
+                present.add(retiredGradleFile.toString());
+            }
+        }
+        require(present.isEmpty(), "retired per-phase Gradle files remain: " + present);
+    }
+
+    private static void proveStaleDevScaffoldingIsGone() {
         List<Path> stalePaths = List.of(
+                Path.of("dev/storage-phase-f1a-provider-syntax-smoke"),
+                Path.of("dev/storage-phase-f2-provider-catalog-smoke"),
+                Path.of("dev/storage-phase-f2-resultset-lookup-smoke"),
+                Path.of("dev/storage-phase-f3-factory-branch-smoke"),
+                Path.of("dev/storage-phase-f3-delos-table-scan-skeleton-smoke"),
+                Path.of("dev/storage-phase-f4-native-select-equality-smoke"),
+                Path.of("dev/storage-phase-f5-native-insert-smoke"),
+                Path.of("dev/storage-phase-f6-native-delete-equality-smoke"),
+                Path.of("dev/storage-phase-f7-native-update-equality-smoke"),
+                Path.of("dev/storage-phase-f8-bridge-bypass-smoke"),
+                Path.of("dev/storage-phase-g0-native-qualifier-conjunction-smoke"),
+                Path.of("dev/storage-phase-g1-native-range-predicates-smoke"),
+                Path.of("dev/storage-phase-g2-native-between-predicates-smoke"),
+                Path.of("dev/storage-phase-g3-native-select-all-smoke"),
+                Path.of("dev/storage-phase-g4-native-count-aggregate-smoke"),
+                Path.of("dev/storage-phase-g5-native-create-index-smoke"),
+                Path.of("dev/storage-phase-g6-bridge-retirement-smoke"),
                 Path.of("dev/storage-phase-g6-bridge-reduction-smoke"),
+                Path.of("dev/storage-phase-h1-costable-table-access-smoke"),
+                Path.of("dev/storage-phase-h2-mvcc-cost-mapping-smoke"),
+                Path.of("dev/storage-phase-h3-heap-cost-proof-smoke"),
+                Path.of("dev/storage-phase-i1-mutation-preparation-smoke"),
+                Path.of("dev/versioned-storage-execution-bridge-smoke"),
                 Path.of("storage-phase-g6-bridge-reduction-db"),
                 Path.of("scripts/cleanup-storage-phase-g6-soft-bridge-reduction.sh"));
         List<String> present = new ArrayList<>();
@@ -106,7 +141,7 @@ public final class StoragePhaseGConsolidationSmoke {
                 present.add(stalePath.toString());
             }
         }
-        require(present.isEmpty(), "stale soft-G6 bridge-reduction artifacts remain: " + present);
+        require(present.isEmpty(), "stale per-step dev/bridge scaffolding remains: " + present);
     }
 
     private static void proveNoNativeExecutionDependencyOnBridgeClassName() throws Exception {
