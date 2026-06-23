@@ -57,3 +57,36 @@ tasks.register('verifyStoragePhaseG0NativeQualifierConjunction') {
         println 'Verified Phase G0 native Qualifier conjunction handling; next step is G1 native remaining range predicates'
     }
 }
+
+ext.delosdbStoragePhaseG1NativeRangeClassesDir =
+        layout.buildDirectory.dir('classes/storage-phase-g1-native-range-predicates-smoke')
+
+tasks.register('compileStoragePhaseG1NativeRangePredicatesSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase G1 native range predicates smoke test.'
+    source = files('dev/storage-phase-g1-native-range-predicates-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseG1NativeRangeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG1NativeRangeClassesDir)
+}
+
+tasks.register('storagePhaseG1NativeRangePredicatesSmoke', JavaExec) {
+    dependsOn 'verifyStoragePhaseG0NativeQualifierConjunction', 'compileStoragePhaseG1NativeRangePredicatesSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase G1 native range predicates smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseG1NativeRangePredicatesSmoke'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG1NativeRangeClassesDir)
+}
+
+tasks.register('verifyStoragePhaseG1NativeRangePredicates') {
+    group = 'verification'
+    description = 'Verifies native >, >=, <, <= predicates through DelosTableScanResultSet.'
+    dependsOn 'storagePhaseG1NativeRangePredicatesSmoke'
+    doLast {
+        println 'Verified Phase G1 native range predicates; next step is G2 native BETWEEN'
+    }
+}

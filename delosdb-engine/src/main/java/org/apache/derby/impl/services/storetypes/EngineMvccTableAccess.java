@@ -291,15 +291,14 @@ public final class EngineMvccTableAccess
             List<DelosPredicate> filters) {
         List<VersionedRow<Long, List<Object>>> filteredRows = new ArrayList<>(rows);
         for (DelosPredicate predicate : filters) {
-            if (predicate.operator() != DelosPredicateOperator.EQUAL || predicate.operands().size() != 1) {
+            if (predicate.operands().size() != 1) {
                 throw new IllegalArgumentException("Unsupported delos_mvcc native scan leftover predicate: " + predicate);
             }
             int columnIndex = columnIndexOrNegative(predicate.columnName());
             if (columnIndex < 0) {
                 throw new IllegalArgumentException("Unknown delos_mvcc predicate column: " + predicate.columnName());
             }
-            Object expected = nativeValue(predicate.operands().get(0));
-            filteredRows.removeIf(row -> !Objects.equals(expected, row.value().get(columnIndex)));
+            filteredRows.removeIf(row -> !predicateMatches(predicate, row.value().get(columnIndex)));
         }
         return List.copyOf(filteredRows);
     }
@@ -312,6 +311,32 @@ public final class EngineMvccTableAccess
             }
         }
         return rows;
+    }
+
+    private static boolean predicateMatches(DelosPredicate predicate, Object actual) {
+        Object expected = nativeValue(predicate.operands().get(0));
+        return switch (predicate.operator()) {
+            case EQUAL -> Objects.equals(expected, actual);
+            case NOT_EQUAL -> !Objects.equals(expected, actual);
+            case LESS_THAN -> actual != null && expected != null && compareNative(actual, expected) < 0;
+            case LESS_THAN_OR_EQUAL -> actual != null && expected != null && compareNative(actual, expected) <= 0;
+            case GREATER_THAN -> actual != null && expected != null && compareNative(actual, expected) > 0;
+            case GREATER_THAN_OR_EQUAL -> actual != null && expected != null && compareNative(actual, expected) >= 0;
+            default -> throw new IllegalArgumentException(
+                    "Unsupported delos_mvcc native scan predicate operator: " + predicate.operator());
+        };
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static int compareNative(Object actual, Object expected) {
+        if (actual instanceof Number actualNumber && expected instanceof Number expectedNumber) {
+            return Long.compare(actualNumber.longValue(), expectedNumber.longValue());
+        }
+        if (actual instanceof Comparable comparable && actual.getClass().isInstance(expected)) {
+            return comparable.compareTo(expected);
+        }
+        throw new IllegalArgumentException("Cannot compare delos_mvcc native values "
+                + actual.getClass().getName() + " and " + expected.getClass().getName());
     }
 
     private List<DelosRow> project(List<VersionedRow<Long, List<Object>>> rows, DelosProjection projection) {

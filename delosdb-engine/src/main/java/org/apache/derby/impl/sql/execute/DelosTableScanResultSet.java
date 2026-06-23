@@ -40,6 +40,7 @@ import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.types.DelosPredicate;
+import org.apache.derby.iapi.store.types.DelosPredicateOperator;
 import org.apache.derby.iapi.store.types.DelosProjection;
 import org.apache.derby.iapi.store.types.DelosRow;
 import org.apache.derby.iapi.store.types.DelosRowIdentity;
@@ -76,6 +77,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static final String NATIVE_SELECT_EQUALITY_PROPERTY =
             "delosdb.storage.phaseF4.nativeMvccSelectEquality";
 
+    static final String NATIVE_RANGE_PREDICATES_PROPERTY =
+            "delosdb.storage.phaseG1.nativeRangePredicates";
+
     static final String SKELETON_REACHED_MESSAGE =
             "DelosTableScanResultSet skeleton reached; F4 must implement real MVCC scan materialization";
 
@@ -108,9 +112,10 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static Optional<NoPutResultSet> createIfEnabled(TableScanResultSetParameters params)
             throws StandardException
     {
-        boolean nativeSelectEqualityEnabled = Boolean.getBoolean(NATIVE_SELECT_EQUALITY_PROPERTY);
+        boolean nativePredicateScanEnabled = Boolean.getBoolean(NATIVE_SELECT_EQUALITY_PROPERTY)
+                || Boolean.getBoolean(NATIVE_RANGE_PREDICATES_PROPERTY);
         boolean skeletonEnabled = Boolean.getBoolean(SKELETON_BRANCH_PROPERTY);
-        if (!nativeSelectEqualityEnabled && !skeletonEnabled) {
+        if (!nativePredicateScanEnabled && !skeletonEnabled) {
             return Optional.empty();
         }
 
@@ -123,7 +128,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         return Optional.of(new DelosTableScanResultSet(
                 params,
                 lookup.get(),
-                nativeSelectEqualityEnabled));
+                nativePredicateScanEnabled));
     }
 
     @Override
@@ -141,7 +146,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             }
 
             TableDescriptor tableDescriptor = tableDescriptor();
-            List<DelosPredicate> filters = equalityPredicates(tableDescriptor);
+            List<DelosPredicate> filters = scanPredicates(tableDescriptor);
             nativeAccess = VersionedStorageSqlBridge.openNativeExecutionTableAccess(
                             providerLookup.schemaName(),
                             providerLookup.tableName())
@@ -361,8 +366,20 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     private List<DelosPredicate> equalityPredicates(TableDescriptor tableDescriptor)
             throws StandardException
     {
+        return predicates(tableDescriptor, false);
+    }
+
+    private List<DelosPredicate> scanPredicates(TableDescriptor tableDescriptor)
+            throws StandardException
+    {
+        return predicates(tableDescriptor, true);
+    }
+
+    private List<DelosPredicate> predicates(TableDescriptor tableDescriptor, boolean allowRangePredicates)
+            throws StandardException
+    {
         if (params.qualifiers == null || params.qualifiers.length == 0) {
-            throw unsupported("F4 native MVCC scan requires an equality qualifier");
+            throw unsupported("Native delos_mvcc scan requires at least one pushed qualifier");
         }
 
         List<DelosPredicate> filters = new ArrayList<>();
@@ -372,26 +389,61 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 continue;
             }
             if (term > 0 && termQualifiers.length > 1) {
-                throw unsupported("F4 native MVCC scan does not support OR qualifier groups yet");
+                throw unsupported("Native delos_mvcc scan does not support OR qualifier groups yet");
             }
             for (Qualifier qualifier : termQualifiers) {
-                if (qualifier.getOperator() != Orderable.ORDER_OP_EQUALS
-                        || qualifier.negateCompareResult()) {
-                    throw unsupported("F4 native MVCC scan only supports non-negated equality qualifiers");
-                }
+                DelosPredicateOperator operator = predicateOperator(qualifier, allowRangePredicates);
                 ColumnDescriptor column = tableDescriptor.getColumnDescriptor(qualifier.getColumnId() + 1);
                 if (column == null) {
-                    throw unsupported("F4 native MVCC scan could not resolve qualifier column ordinal "
+                    throw unsupported("Native delos_mvcc scan could not resolve qualifier column ordinal "
                             + qualifier.getColumnId());
                 }
                 StoreDataValue orderable = qualifier.getOrderable();
-                filters.add(DelosPredicate.equalsTo(column.getColumnName(), orderable));
+                if (operator == DelosPredicateOperator.EQUAL) {
+                    filters.add(DelosPredicate.equalsTo(column.getColumnName(), orderable));
+                } else {
+                    filters.add(DelosPredicate.range(column.getColumnName(), operator, orderable));
+                }
             }
         }
         if (filters.isEmpty()) {
-            throw unsupported("F4 native MVCC scan requires at least one equality qualifier");
+            throw unsupported("Native delos_mvcc scan requires at least one pushed qualifier");
         }
         return filters;
+    }
+
+    private static DelosPredicateOperator predicateOperator(Qualifier qualifier, boolean allowRangePredicates)
+            throws StandardException
+    {
+        if (qualifier.negateCompareResult()) {
+            throw unsupported("Native delos_mvcc scan does not support negated qualifiers yet");
+        }
+        return switch (qualifier.getOperator()) {
+            case Orderable.ORDER_OP_EQUALS -> DelosPredicateOperator.EQUAL;
+            case Orderable.ORDER_OP_LESSTHAN -> {
+                if (!allowRangePredicates) { throw unsupportedMutationRange(); }
+                yield DelosPredicateOperator.LESS_THAN;
+            }
+            case Orderable.ORDER_OP_LESSOREQUALS -> {
+                if (!allowRangePredicates) { throw unsupportedMutationRange(); }
+                yield DelosPredicateOperator.LESS_THAN_OR_EQUAL;
+            }
+            case Orderable.ORDER_OP_GREATERTHAN -> {
+                if (!allowRangePredicates) { throw unsupportedMutationRange(); }
+                yield DelosPredicateOperator.GREATER_THAN;
+            }
+            case Orderable.ORDER_OP_GREATEROREQUALS -> {
+                if (!allowRangePredicates) { throw unsupportedMutationRange(); }
+                yield DelosPredicateOperator.GREATER_THAN_OR_EQUAL;
+            }
+            default -> throw unsupported("Native delos_mvcc scan does not support Derby qualifier operator "
+                    + qualifier.getOperator());
+        };
+    }
+
+    private static StandardException unsupportedMutationRange()
+    {
+        return unsupported("Native delos_mvcc mutation scan only supports equality qualifiers");
     }
 
 

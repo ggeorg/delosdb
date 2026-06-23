@@ -75,6 +75,10 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_NATIVE_SELECT_REACHED_MESSAGE =
             DelosTableScanResultSet.NATIVE_SELECT_REACHED_MESSAGE;
 
+    /** Test/proof gate for Phase G1 native range predicates. */
+    public static final String FACTORY_NATIVE_RANGE_PREDICATES_PROPERTY =
+            DelosTableScanResultSet.NATIVE_RANGE_PREDICATES_PROPERTY;
+
     /** Test/proof gate for Phase F5 native INSERT mutation. */
     public static final String FACTORY_NATIVE_INSERT_PROPERTY =
             DelosInsertResultSet.NATIVE_INSERT_PROPERTY;
