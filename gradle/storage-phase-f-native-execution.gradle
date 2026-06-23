@@ -65,7 +65,7 @@ delosdbStoragePhaseFNativeExecutionRegisterSmoke([
         compileTask       : 'compileStoragePhaseF1aProviderSyntaxSmoke',
         smokeTask         : 'storagePhaseF1aProviderSyntaxSmoke',
         verifyTask        : 'verifyStoragePhaseF0F1aNativeStart',
-        dependsOn         : 'verifyStoragePhaseC37RouteRetirementCloseout',
+        dependsOn         : 'storagePhaseC7StabilizationSmoke',
         sourceDir         : 'dev/storage-phase-f1a-provider-syntax-smoke/src/main/java',
         mainClass         : 'delosdb.smoke.StoragePhaseF1aProviderSyntaxSmoke',
         compileDescription: 'Compiles the Phase F1a provider syntax parser smoke test.',

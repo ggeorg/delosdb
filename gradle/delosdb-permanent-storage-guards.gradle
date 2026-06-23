@@ -1,0 +1,74 @@
+// Permanent DelosDB storage verification wiring.
+//
+// This file is the active storage guard surface after Phase F closeout.
+// It keeps permanent architectural checks and executable smokes, while closed
+// C/F phase text-token report guards are retired as historical scaffolding.
+
+apply from: file('gradle/storage-derby-boundary-guards.gradle')
+apply from: file('gradle/storage-spi-truth-map.gradle')
+
+ext.delosdbClosedPhaseRegressionModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbClosedPhaseRegressionRuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbClosedPhaseC7SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-c7-stabilization-smoke')
+
+ext.delosdbClosedPhaseC7SmokeClasspath = {
+    files(
+            delosdbClosedPhaseC7SmokeClassesDir,
+            delosdbClosedPhaseRegressionModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbClosedPhaseRegressionModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbClosedPhaseRegressionModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbClosedPhaseRegressionRuntimeJars())
+}
+
+tasks.register('compileStoragePhaseC7StabilizationSmoke', JavaCompile) {
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the closed Phase C7 stabilization smoke test.'
+    source = files('dev/storage-phase-c7-stabilization-smoke/src/main/java')
+    destinationDirectory = delosdbClosedPhaseC7SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbClosedPhaseC7SmokeClasspath()
+}
+
+tasks.register('storagePhaseC7StabilizationSmoke', JavaExec) {
+    dependsOn 'compileStoragePhaseC7StabilizationSmoke'
+    group = 'verification'
+    description = 'Runs the closed Phase C7 stabilization regression smoke test.'
+    classpath = delosdbClosedPhaseC7SmokeClasspath()
+    mainClass = 'delosdb.smoke.StoragePhaseC7StabilizationSmoke'
+}
+
+tasks.register('verifyStoragePhaseC7Stabilization') {
+    group = 'verification'
+    description = 'Verifies the closed Phase C7 stabilization regression smoke.'
+    dependsOn 'storagePhaseC7StabilizationSmoke'
+    doLast {
+        println 'Verified Phase C7 stabilization regression smoke'
+    }
+}
+
+apply from: file('gradle/storage-phase-f-native-execution.gradle')
+
+tasks.register('verifyDelosDbPermanentStorageGuards') {
+    group = 'verification'
+    description = 'Verifies permanent DelosDB storage boundaries and closed-phase executable storage smokes.'
+    dependsOn 'verifyStorageDerbyBoundary', 'verifyStorageSpiTruthMap', 'storagePhaseC7StabilizationSmoke', 'verifyStoragePhaseFConsolidation'
+    doLast {
+        println 'Verified permanent DelosDB storage guards and closed-phase executable smokes'
+    }
+}

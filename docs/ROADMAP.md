@@ -374,3 +374,9 @@ the pre-MVCC source-mapping phase and contains obsolete guidance.
 
 Do not update the book as part of MVCC roadmap cleanup. Book changes require a
 separate pass with source trails and chapter verification status updates.
+
+## Build verification cleanup
+
+Closed C/F text-token report guards are retired from active build wiring after
+Phase F closeout. Permanent storage boundary guards, SPI truth-map checks,
+closed C7 regression smoke, and Phase F native execution smokes remain active.
