@@ -220,6 +220,39 @@ tasks.register('verifyStoragePhaseG5NativeCreateIndex') {
     description = 'Verifies native CREATE INDEX resolves delos_mvcc table provider metadata from TableDescriptor without bridge routing.'
     dependsOn 'storagePhaseG5NativeCreateIndexSmoke'
     doLast {
-        println 'Verified Phase G5 native CREATE INDEX metadata integration; next step is G6 bridge reduction'
+        println 'Verified Phase G5 native CREATE INDEX metadata integration; next step is G6 bridge fallback retirement'
+    }
+}
+
+ext.delosdbStoragePhaseG6BridgeRetirementClassesDir =
+        layout.buildDirectory.dir('classes/storage-phase-g6-bridge-retirement-smoke')
+
+tasks.register('compileStoragePhaseG6BridgeRetirementSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase G6 bridge-retirement smoke test.'
+    source = files('dev/storage-phase-g6-bridge-retirement-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseG6BridgeRetirementClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG6BridgeRetirementClassesDir)
+}
+
+tasks.register('storagePhaseG6BridgeRetirementSmoke', JavaExec) {
+    dependsOn 'verifyStoragePhaseG5NativeCreateIndex', 'compileStoragePhaseG6BridgeRetirementSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase G6 bridge-retirement smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseG6BridgeRetirementSmoke'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG6BridgeRetirementClassesDir)
+}
+
+tasks.register('verifyStoragePhaseG6BridgeRetirement') {
+    group = 'verification'
+    description = 'Verifies supported delos_mvcc native SQL no longer depends on VersionedStorageSqlBridge fallback routing.'
+    dependsOn 'storagePhaseG6BridgeRetirementSmoke'
+    doLast {
+        println 'Verified Phase G6 bridge fallback retirement; supported native delos_mvcc SQL uses Derby metadata paths without SQL bridge routing'
     }
 }

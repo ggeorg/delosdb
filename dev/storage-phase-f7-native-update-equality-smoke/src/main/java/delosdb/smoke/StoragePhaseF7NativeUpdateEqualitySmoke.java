@@ -6,7 +6,6 @@ import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 
 /**
  * Phase F7 proof: a prepared Derby UPDATE equality reaches the native
@@ -47,16 +46,10 @@ public final class StoragePhaseF7NativeUpdateEqualitySmoke {
                 statement.executeUpdate();
             }
             require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
-                    "F7 catalog setup must use Derby prepare/constant-action path, not bridge: "
+                    "F7 catalog/provider setup must use Derby prepare/constant-action path, not bridge: "
                             + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
 
-        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false);
-             Statement statement = connection.createStatement()) {
-            require(statement.executeUpdate(
-                    "CREATE TABLE APP." + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc") == 0,
-                    "Expected provider-owned MVCC table setup through existing transitional bridge path");
-        }
         VersionedStorageSqlBridge.resetRouteClassifierForTesting();
     }
 

@@ -372,18 +372,14 @@ public final class VersionedStorageSqlBridge {
     }
 
     /**
-     * Controls the pre-parse EmbedStatement bridge hook. Native mode bypasses
-     * the hook globally because provider metadata cannot be known cheaply before
-     * Derby parses and binds the statement. The compatibility property preserves
-     * the old bridge for legacy smoke tests during the Phase F transition.
+     * Controls the pre-parse EmbedStatement bridge hook. Phase G6 retires the
+     * bridge as an automatic SQL fallback: normal Derby execution must own
+     * provider-backed SQL through parser/binder/catalog metadata and native
+     * ResultSetFactory seams. The direct bridge APIs remain as legacy scaffolding,
+     * but no system property may re-enable the EmbedStatement interception path.
      */
     public static boolean isInterceptionEnabled() {
-        if (Boolean.getBoolean(NATIVE_EXECUTION_MODE_PROPERTY)) {
-            return false;
-        }
-        return Boolean.parseBoolean(System.getProperty(
-                BRIDGE_INTERCEPTION_COMPATIBILITY_PROPERTY,
-                "true"));
+        return false;
     }
 
     /**
@@ -426,11 +422,55 @@ public final class VersionedStorageSqlBridge {
     }
 
     /**
+     * Registers provider-owned table storage from Derby's native CREATE TABLE
+     * constant-action path. This is deliberately not a SQL route: Derby has
+     * already parsed, bound, and persisted the table descriptor before calling
+     * this seam.
+     */
+    public static void registerNativeExecutionTable(
+            String schemaName,
+            String tableName,
+            List<String> columnNames,
+            List<String> typeNames) throws SQLException {
+        Objects.requireNonNull(schemaName, "schemaName");
+        Objects.requireNonNull(tableName, "tableName");
+        Objects.requireNonNull(columnNames, "columnNames");
+        Objects.requireNonNull(typeNames, "typeNames");
+        if (columnNames.size() != typeNames.size()) {
+            throw sqlException("X0MV6", "Native delos_mvcc table registration column metadata mismatch for "
+                    + schemaName + "." + tableName + ": " + columnNames.size() + " names but "
+                    + typeNames.size() + " type names");
+        }
+        if (columnNames.isEmpty()) {
+            throw sqlException("42X14", "CREATE TABLE USING delos_mvcc requires at least one column");
+        }
+
+        VersionedTableMetadata metadata = new VersionedTableMetadata(
+                schemaName.trim().toUpperCase(Locale.ROOT),
+                tableName.trim().toUpperCase(Locale.ROOT));
+        List<ColumnDefinition> columns = new ArrayList<>(columnNames.size());
+        for (int i = 0; i < columnNames.size(); i++) {
+            columns.add(ColumnDefinition.parse(columnNames.get(i), typeNames.get(i)));
+        }
+
+        synchronized (LOCK) {
+            if (TABLES.containsKey(metadata)) {
+                throw sqlException("X0Y32", "Versioned storage table already exists: "
+                        + metadata.qualifiedName());
+            }
+
+            VersionedStorageProvider provider = provider();
+            VersionedTable<Long, List<Object>> table =
+                    PLANNED_TABLE_OPERATION_BRIDGE.createTable(provider, metadata);
+            TABLES.put(metadata, new TableDefinition(metadata, columns, table, provider.transactionCoordinator()));
+        }
+    }
+
+    /**
      * Opens the existing provider-owned table-access object for the native
      * ResultSetFactory path. This is deliberately not a SQL route and does not
-     * parse or execute SQL; it is the temporary F4 seam between Derby generated
-     * execution and the already-proven table-access contract while F5-F7 move
-     * DML off the bridge.
+     * parse or execute SQL; it is the temporary native execution seam between
+     * Derby generated execution and the already-proven table-access contract.
      */
     public static Optional<NativeExecutionTableAccess> openNativeExecutionTableAccess(
             String schemaName,

@@ -48,6 +48,9 @@ ext.delosdbStoragePhaseFNativeExecutionRegisterSmoke = { Map<String, Object> spe
         description = (String) spec.smokeDescription
         mainClass = (String) spec.mainClass
         classpath = delosdbStoragePhaseFNativeExecutionClasspath(classesDir)
+        // Closed Phase F smokes may still use the transitional bridge as
+        // explicit compatibility/test scaffolding for provider-owned setup.
+        systemProperty 'delosdb.storage.sqlBridge.compatibility', 'true'
     }
 
     tasks.register((String) spec.verifyTask) {

@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.sql.execute;
 
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.iapi.sql.execute.ConstantAction;
 import org.apache.derby.iapi.store.access.TransactionController;
 
@@ -56,6 +57,10 @@ import org.apache.derby.catalog.UUID;
 
 import org.apache.derby.catalog.types.DefaultInfoImpl;
 
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 
 /**
@@ -404,6 +409,8 @@ class CreateTableConstantAction extends DDLConstantAction
 			lcc.addDeclaredGlobalTempTable(td);
 		}
 
+        registerNativeDelosTableIfNeeded(sd, td);
+
 		// Indicate that the CREATE TABLE statement itself depends on the
 		// table it is creating. Normally such statement dependencies are
 		// added during compilation, but here we have a bootstrapping issue
@@ -414,6 +421,39 @@ class CreateTableConstantAction extends DDLConstantAction
 			activation.getPreparedStatement(), td, lcc.getContextManager());
 
 	}
+
+    private void registerNativeDelosTableIfNeeded(SchemaDescriptor schemaDescriptor, TableDescriptor tableDescriptor)
+            throws StandardException
+    {
+        if (tableType != TableDescriptor.BASE_TABLE_TYPE) {
+            return;
+        }
+        if (storageProviderName == null
+                || !"delos_mvcc".equals(storageProviderName.trim().toLowerCase(Locale.ROOT))) {
+            return;
+        }
+
+        List<String> columnNames = new ArrayList<String>(columnInfo.length);
+        List<String> typeNames = new ArrayList<String>(columnInfo.length);
+        for (int ix = 0; ix < columnInfo.length; ix++)
+        {
+            columnNames.add(columnInfo[ix].name);
+            typeNames.add(columnInfo[ix].dataType.getFullSQLTypeName());
+        }
+
+        try
+        {
+            VersionedStorageSqlBridge.registerNativeExecutionTable(
+                    schemaDescriptor.getSchemaName(),
+                    tableDescriptor.getName(),
+                    columnNames,
+                    typeNames);
+        }
+        catch (SQLException e)
+        {
+            throw StandardException.plainWrapException(e);
+        }
+    }
 
     /** Create a sequence generator for an identity column */
     public  static CreateSequenceConstantAction    makeCSCA

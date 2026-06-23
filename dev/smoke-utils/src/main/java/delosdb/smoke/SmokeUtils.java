@@ -2,6 +2,7 @@ package delosdb.smoke;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -48,6 +49,26 @@ public final class SmokeUtils {
     public static void assertEquals(Object expected, Object actual, String label) {
         if (!java.util.Objects.equals(expected, actual)) {
             throw new AssertionError(label + " expected <" + expected + "> but was <" + actual + ">");
+        }
+    }
+
+
+    public static int executePreparedUpdate(Connection connection, String sql, Object... values) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < values.length; i++) {
+                Object value = values[i];
+                int parameterIndex = i + 1;
+                if (value instanceof Integer integer) {
+                    statement.setInt(parameterIndex, integer.intValue());
+                } else if (value instanceof String string) {
+                    statement.setString(parameterIndex, string);
+                } else if (value == null) {
+                    statement.setObject(parameterIndex, null);
+                } else {
+                    statement.setObject(parameterIndex, value);
+                }
+            }
+            return statement.executeUpdate();
         }
     }
 

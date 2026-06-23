@@ -6,7 +6,6 @@ import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 
 /**
  * Phase F4 proof: a prepared Derby SELECT equality reaches the native
@@ -32,6 +31,7 @@ public final class StoragePhaseF4NativeSelectEqualitySmoke {
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_SKELETON_BRANCH_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY);
+            System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
             VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
@@ -48,24 +48,24 @@ public final class StoragePhaseF4NativeSelectEqualitySmoke {
                             + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
 
-        seedProviderOwnedMvccRowsThroughTransitionalJdbcBridge();
+        seedProviderOwnedMvccRowsThroughNativeInsert();
         VersionedStorageSqlBridge.resetRouteClassifierForTesting();
     }
 
 
-    private static void seedProviderOwnedMvccRowsThroughTransitionalJdbcBridge() throws Exception {
-        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false);
-             Statement statement = connection.createStatement()) {
-            require(statement.executeUpdate(
-                    "CREATE TABLE APP." + TABLE_NAME + " (id INT, value VARCHAR(32)) USING delos_mvcc") == 0,
-                    "Expected provider-owned MVCC table setup to use the existing transitional JDBC bridge path");
-            require(statement.executeUpdate(
-                    "INSERT INTO APP." + TABLE_NAME + " VALUES (1, 'alpha')") == 1,
-                    "Expected provider-owned MVCC row setup for id=1");
-            require(statement.executeUpdate(
-                    "INSERT INTO APP." + TABLE_NAME + " VALUES (2, 'bravo')") == 1,
-                    "Expected provider-owned MVCC row setup for id=2");
+    private static void seedProviderOwnedMvccRowsThroughNativeInsert() throws Exception {
+        System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
+        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
+            require(SmokeUtils.executePreparedUpdate(connection,
+                    "INSERT INTO APP." + TABLE_NAME + " VALUES (?, ?)", 1, "alpha") == 1,
+                    "Expected native MVCC row setup for id=1");
+            require(SmokeUtils.executePreparedUpdate(connection,
+                    "INSERT INTO APP." + TABLE_NAME + " VALUES (?, ?)", 2, "bravo") == 1,
+                    "Expected native MVCC row setup for id=2");
         }
+        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
+                "F4 native INSERT setup must not invoke VersionedStorageSqlBridge.tryExecute(...): "
+                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
     }
 
     private static void proveNativeSelectEqualityAfterRestart() throws Exception {

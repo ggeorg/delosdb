@@ -6,7 +6,6 @@ import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,6 +32,7 @@ public final class StoragePhaseG2NativeBetweenPredicatesSmoke {
         } finally {
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY);
             System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_BETWEEN_PREDICATES_PROPERTY);
+            System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
             VersionedStorageSqlBridge.resetRouteClassifierForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
@@ -51,24 +51,24 @@ public final class StoragePhaseG2NativeBetweenPredicatesSmoke {
                             + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         }
 
-        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false);
-             Statement statement = connection.createStatement()) {
-            require(statement.executeUpdate(
-                    "CREATE TABLE APP." + TABLE_NAME + " (id INT, kind VARCHAR(16), value VARCHAR(32)) USING delos_mvcc") == 0,
-                    "Expected provider-owned MVCC table setup through existing transitional bridge path");
-            insert(statement, 1, "odd", "one");
-            insert(statement, 2, "even", "two");
-            insert(statement, 3, "odd", "three");
-            insert(statement, 4, "even", "four");
-            insert(statement, 5, "odd", "five");
+        System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
+        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
+            insert(connection, 1, "odd", "one");
+            insert(connection, 2, "even", "two");
+            insert(connection, 3, "odd", "three");
+            insert(connection, 4, "even", "four");
+            insert(connection, 5, "odd", "five");
         }
+        require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
+                "G2 native INSERT setup must not invoke VersionedStorageSqlBridge.tryExecute(...): "
+                        + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
         VersionedStorageSqlBridge.resetRouteClassifierForTesting();
     }
 
-    private static void insert(Statement statement, int id, String kind, String value) throws Exception {
-        require(statement.executeUpdate("INSERT INTO APP." + TABLE_NAME
-                        + " VALUES (" + id + ", '" + kind + "', '" + value + "')") == 1,
-                "Expected provider-owned MVCC row setup for id=" + id);
+    private static void insert(Connection connection, int id, String kind, String value) throws Exception {
+        require(SmokeUtils.executePreparedUpdate(connection,
+                        "INSERT INTO APP." + TABLE_NAME + " VALUES (?, ?, ?)", id, kind, value) == 1,
+                "Expected native MVCC row setup for id=" + id);
     }
 
     private static void proveNativeBetweenPredicates() throws Exception {
