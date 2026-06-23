@@ -189,3 +189,37 @@ tasks.register('verifyStoragePhaseG4NativeCountAggregate') {
         println 'Verified Phase G4 native SELECT COUNT(*) aggregate; next step is G5 native CREATE INDEX metadata integration'
     }
 }
+
+
+ext.delosdbStoragePhaseG5NativeCreateIndexClassesDir =
+        layout.buildDirectory.dir('classes/storage-phase-g5-native-create-index-smoke')
+
+tasks.register('compileStoragePhaseG5NativeCreateIndexSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase G5 native CREATE INDEX smoke test.'
+    source = files('dev/storage-phase-g5-native-create-index-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseG5NativeCreateIndexClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG5NativeCreateIndexClassesDir)
+}
+
+tasks.register('storagePhaseG5NativeCreateIndexSmoke', JavaExec) {
+    dependsOn 'verifyStoragePhaseG4NativeCountAggregate', 'compileStoragePhaseG5NativeCreateIndexSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase G5 native CREATE INDEX smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseG5NativeCreateIndexSmoke'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG5NativeCreateIndexClassesDir)
+}
+
+tasks.register('verifyStoragePhaseG5NativeCreateIndex') {
+    group = 'verification'
+    description = 'Verifies native CREATE INDEX resolves delos_mvcc table provider metadata from TableDescriptor without bridge routing.'
+    dependsOn 'storagePhaseG5NativeCreateIndexSmoke'
+    doLast {
+        println 'Verified Phase G5 native CREATE INDEX metadata integration; next step is G6 bridge reduction'
+    }
+}

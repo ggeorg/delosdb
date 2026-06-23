@@ -486,6 +486,13 @@ class CreateIndexConstantAction extends IndexConstantAction
 				maxBaseColumnPosition = baseColumnPositions[i];
 		}
 
+        DelosCreateIndexProviderLookup.observeIfEnabled(
+                td,
+                indexName,
+                columnNames,
+                baseColumnPositions,
+                indexProviderName);
+
 		/* The code below tries to determine if the index that we're about
 		 * to create can "share" a conglomerate with an existing index.
 		 * If so, we will use a single physical conglomerate--namely, the
