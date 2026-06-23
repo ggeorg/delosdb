@@ -250,11 +250,26 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified L3.5 ORDER BY coverage without provider ordered-scan pushdown or heap activation'
 ])
 
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-l1-mvcc-row-reservation-smoke',
+        compileTask       : 'compileStoragePhaseL1MvccRowReservationSmoke',
+        smokeTask         : 'storagePhaseL1MvccRowReservationSmoke',
+        verifyTask        : 'verifyStoragePhaseL1MvccRowReservation',
+        dependsOn         : 'verifyStoragePhaseL35OrderByResidual',
+        sourceDir         : 'dev/storage-phase-l1-mvcc-row-reservation-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseL1MvccRowReservationSmoke',
+        compileDescription: 'Compiles the L1 delos_mvcc row-reservation smoke test.',
+        smokeDescription  : 'Runs the L1 delos_mvcc row-reservation smoke test.',
+        verifyDescription : 'Verifies L1 MVCC-specific row reservation without generic heap lock API.',
+        successMessage    : 'Verified L1 MVCC-specific row reservation without generic heap lock API'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane through L3.5 ORDER BY residual-sort coverage.'
-    dependsOn 'verifyStoragePhaseL35OrderByResidual'
+    description = 'Verifies the closed native delos_mvcc execution lane through L1 MVCC row-reservation coverage.'
+    dependsOn 'verifyStoragePhaseL1MvccRowReservation'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane through L3.5 ORDER BY residual-sort coverage'
+        println 'Verified closed native delos_mvcc execution lane through L1 MVCC row-reservation coverage'
     }
 }

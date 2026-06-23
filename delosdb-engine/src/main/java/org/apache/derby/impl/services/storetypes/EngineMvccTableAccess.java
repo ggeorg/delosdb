@@ -29,6 +29,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexStats;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableStats;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictException;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -41,6 +42,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import org.apache.derby.iapi.store.types.DelosAccessContext;
 import org.apache.derby.iapi.store.types.DelosCostableTableAccess;
@@ -51,7 +54,8 @@ import org.apache.derby.iapi.store.types.DelosIndexStats;
 import org.apache.derby.iapi.store.types.DelosIndexableTableAccess;
 import org.apache.derby.iapi.store.types.DelosMutationPreparation;
 import org.apache.derby.iapi.store.types.DelosMutationResult;
-import org.apache.derby.iapi.store.types.DelosMutableTableAccess;
+import org.apache.derby.iapi.store.types.DelosMvccMutationReservation;
+import org.apache.derby.iapi.store.types.DelosMvccReservableTableAccess;
 import org.apache.derby.iapi.store.types.DelosPredicate;
 import org.apache.derby.iapi.store.types.DelosPredicateOperator;
 import org.apache.derby.iapi.store.types.DelosProjection;
@@ -81,7 +85,7 @@ import org.apache.derby.shared.common.error.StandardException;
 public final class EngineMvccTableAccess
         implements DelosFilterableTableAccess,
         DelosIndexableTableAccess,
-        DelosMutableTableAccess,
+        DelosMvccReservableTableAccess,
         DelosCostableTableAccess {
     public static final String PROVIDER_NAME = "delos_mvcc";
 
@@ -90,6 +94,9 @@ public final class EngineMvccTableAccess
 
     public static final DelosContextKey<TxView> TX_VIEW_KEY =
             DelosContextKey.of("delosdb.mvcc.tx.view", TxView.class);
+
+    private static final ConcurrentMap<MutationReservationKey, DelosMvccMutationReservation> MUTATION_RESERVATIONS =
+            new ConcurrentHashMap<>();
 
     private final DelosTableIdentity identity;
     private final DelosTableShape rowShape;
@@ -267,16 +274,53 @@ public final class EngineMvccTableAccess
     }
 
     @Override
-    public DelosMutationPreparation prepareMutation(
+    public DelosMvccMutationReservation reserveMutation(
             DelosAccessContext context,
             DelosRowIdentity rowIdentity) {
         DelosMutationPreparation validation = validateMutable(context, rowIdentity);
+        TxContext tx = context.require(TX_CONTEXT_KEY);
         if (!validation.mutable()) {
-            return validation;
+            return DelosMvccMutationReservation.notReserved(
+                    rowIdentity,
+                    tx.transactionId(),
+                    validation.message());
+        }
+
+        long rowKey = requireNativeRowKey(rowIdentity);
+        MutationReservationKey key = new MutationReservationKey(identity, rowKey);
+        DelosMvccMutationReservation reservation = DelosMvccMutationReservation.reserved(
+                rowIdentity,
+                tx.transactionId(),
+                "delos_mvcc row reserved for mutation by transaction " + tx.transactionId());
+        DelosMvccMutationReservation existing = MUTATION_RESERVATIONS.putIfAbsent(key, reservation);
+        if (existing == null || existing.transactionId() == tx.transactionId()) {
+            return existing == null ? reservation : existing;
+        }
+        throw new VersionedWriteConflictException("delos_mvcc row " + rowKey
+                + " is reserved for mutation by active transaction " + existing.transactionId()
+                + "; requester transaction " + tx.transactionId());
+    }
+
+    @Override
+    public void completeMutationReservations(
+            DelosAccessContext context,
+            boolean committed) {
+        requirePhysicalAccess(context);
+        long transactionId = context.require(TX_CONTEXT_KEY).transactionId();
+        MUTATION_RESERVATIONS.entrySet().removeIf(entry -> entry.getValue().transactionId() == transactionId);
+    }
+
+    @Override
+    public DelosMutationPreparation prepareMutation(
+            DelosAccessContext context,
+            DelosRowIdentity rowIdentity) {
+        DelosMvccMutationReservation reservation = reserveMutation(context, rowIdentity);
+        if (!reservation.reserved()) {
+            return DelosMutationPreparation.notMutable(rowIdentity, reservation.message());
         }
         return DelosMutationPreparation.prepared(
                 rowIdentity,
-                "delos_mvcc mutation prepared by optimistic row-identity validation");
+                reservation.message());
     }
 
     @Override
@@ -502,6 +546,12 @@ public final class EngineMvccTableAccess
             String columnName,
             int columnIndex,
             Object value) {
+    }
+
+    private record MutationReservationKey(DelosTableIdentity tableIdentity, long rowKey) {
+        private MutationReservationKey {
+            Objects.requireNonNull(tableIdentity, "tableIdentity");
+        }
     }
 
     public record IndexBinding(

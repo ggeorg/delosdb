@@ -205,7 +205,13 @@ public final class DelosNativeTableRegistry {
                 return;
             }
             closed = true;
-            finishStatementTransaction(statementTx, table);
+            boolean committed = false;
+            try {
+                finishStatementTransaction(statementTx, table);
+                committed = true;
+            } finally {
+                tableAccess.completeMutationReservations(context, committed);
+            }
         }
 
         public void abort() throws SQLException {
@@ -213,7 +219,11 @@ public final class DelosNativeTableRegistry {
                 return;
             }
             closed = true;
-            DelosNativeTableRegistry.abort(statementTx, table);
+            try {
+                DelosNativeTableRegistry.abort(statementTx, table);
+            } finally {
+                tableAccess.completeMutationReservations(context, false);
+            }
         }
     }
 
