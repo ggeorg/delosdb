@@ -68,9 +68,9 @@ apply from: file('gradle/storage-phase-g-native-predicates.gradle')
 
 tasks.register('verifyDelosDbPermanentStorageGuards') {
     group = 'verification'
-    description = 'Verifies permanent DelosDB storage boundaries and closed-phase executable storage smokes.'
-    dependsOn 'verifyStorageDerbyBoundary', 'verifyStorageSpiTruthMap', 'storagePhaseC7StabilizationSmoke', 'verifyStoragePhaseFConsolidation'
+    description = 'Verifies permanent DelosDB storage boundaries and closed-phase executable storage smokes through Phase G.'
+    dependsOn 'verifyStorageDerbyBoundary', 'verifyStorageSpiTruthMap', 'storagePhaseC7StabilizationSmoke', 'verifyStoragePhaseFConsolidation', 'verifyStoragePhaseGConsolidation'
     doLast {
-        println 'Verified permanent DelosDB storage guards and closed-phase executable smokes'
+        println 'Verified permanent DelosDB storage guards and closed-phase executable smokes through Phase G'
     }
 }

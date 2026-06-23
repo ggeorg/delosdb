@@ -256,3 +256,36 @@ tasks.register('verifyStoragePhaseG6BridgeRetirement') {
         println 'Verified Phase G6 bridge fallback retirement; supported native delos_mvcc SQL uses Derby metadata paths without SQL bridge routing'
     }
 }
+
+ext.delosdbStoragePhaseGConsolidationClassesDir =
+        layout.buildDirectory.dir('classes/storage-phase-g-consolidation-smoke')
+
+tasks.register('compileStoragePhaseGConsolidationSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase G consolidation guard smoke test.'
+    source = files('dev/storage-phase-g-consolidation-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseGConsolidationClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseGConsolidationClassesDir)
+}
+
+tasks.register('storagePhaseGConsolidationSmoke', JavaExec) {
+    dependsOn 'verifyStoragePhaseG6BridgeRetirement', 'compileStoragePhaseGConsolidationSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase G consolidation guard smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseGConsolidationSmoke'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseGConsolidationClassesDir)
+}
+
+tasks.register('verifyStoragePhaseGConsolidation') {
+    group = 'verification'
+    description = 'Verifies Phase G is consolidated: no bridge fallback wiring, no soft-G6 archaeology, native lifecycle still works.'
+    dependsOn 'storagePhaseGConsolidationSmoke'
+    doLast {
+        println 'Verified Phase G consolidation; bridge fallback retirement remains enforced and native delos_mvcc lifecycle still works'
+    }
+}
