@@ -14,6 +14,11 @@ without losing Derby compatibility by accident.
 
 ## Current rule
 
+The F-I native `delos_mvcc` execution lane and J0 cleanup are closed. K0 is the
+provider-parity truth gate: it proves the current state before choosing whether
+heap becomes a live Delos provider or remains Derby-native plus proof-only Delos
+adapters.
+
 The A44--A52 MVCC semantic-correctness sprint is closed. Choose the next lane
 explicitly before starting new work.
 
@@ -376,3 +381,13 @@ normal parser/binder/optimizer/generated execution path and `DelosNativeTableReg
 See `docs/storage-f-through-i-bridge-deletion-closeout.md` for the closeout
 boundary.
 
+
+
+## Open lane: provider-parity fork
+
+K0 records the current truth before the next major decision.  The detailed fork
+notes live in:
+
+```text
+docs/storage-phase-k-provider-parity-fork.md
+```

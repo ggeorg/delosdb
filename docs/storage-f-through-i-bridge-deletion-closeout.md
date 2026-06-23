@@ -57,3 +57,12 @@ The native registry restart/reopen path remains intentionally lightweight:
 `DelosNativeTableRegistry` can reconstruct native table definitions from Derby
 catalog metadata.  A later recovery-integrity phase should distinguish first-time
 registration from a catalog/provider mismatch where provider storage is missing.
+
+
+## K0 provider-parity fork truth gate
+
+K0 is the first post-J0 step and does not choose the next provider architecture.
+It records and proves the current state: `delos_mvcc` is the only live Delos
+native execution provider, while ordinary heap SQL remains on Derby's inherited
+heap path and `EngineHeapTableAccessProof` remains proof-only.  The next phase
+must choose either provider parity or single-provider honesty explicitly.

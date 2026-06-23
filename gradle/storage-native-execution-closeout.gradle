@@ -127,11 +127,26 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified J0 native result-set boundary cleanup without provider-parity changes'
 ])
 
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-k0-provider-parity-fork-smoke',
+        compileTask       : 'compileStoragePhaseK0ProviderParityForkSmoke',
+        smokeTask         : 'storagePhaseK0ProviderParityForkSmoke',
+        verifyTask        : 'verifyStoragePhaseK0ProviderParityFork',
+        dependsOn         : 'verifyStoragePhaseJ0NativeResultSetCleanup',
+        sourceDir         : 'dev/storage-phase-k0-provider-parity-fork-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseK0ProviderParityForkSmoke',
+        compileDescription: 'Compiles the K0 provider-parity fork truth smoke test.',
+        smokeDescription  : 'Runs the K0 provider-parity fork truth smoke test.',
+        verifyDescription : 'Verifies current heap/MVCC provider truth before choosing provider parity.',
+        successMessage    : 'Verified current heap/MVCC provider truth before choosing provider parity'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed F/G/H/I native delos_mvcc execution lane plus J0 cleanup after SQL bridge deletion.'
-    dependsOn 'verifyStoragePhaseJ0NativeResultSetCleanup'
+    description = 'Verifies the closed native delos_mvcc execution lane through K0 provider-parity fork truth.'
+    dependsOn 'verifyStoragePhaseK0ProviderParityFork'
     doLast {
-        println 'Verified closed F/G/H/I native delos_mvcc execution lane plus J0 cleanup after SQL bridge deletion'
+        println 'Verified closed native delos_mvcc execution lane through K0 provider-parity fork truth'
     }
 }
