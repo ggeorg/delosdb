@@ -79,3 +79,17 @@ __MACOSX/
 /tools/release/
 /tools/javadoc/
 /tools/testing/
+
+# Generic local/generated outputs not owned by DelosDB source
+/out/
+**/out/
+/target/
+**/target/
+*.class
+hs_err_pid*.log
+replay_pid*.log
+
+# Non-storage smoke databases that may be created by legacy/dev smoke tasks
+/modernization-smoke-db
+/modernization-smoke-db/
+/modernization-smoke-db/**
