@@ -34,9 +34,30 @@ VersionedStorageSqlBridge.tryExecute(...) is not called
 
 ## H2 — MVCC cost mapping into native cost path
 
-H2 should map `VersionedStorageExecutionBridge.stats(...)` into the native cost
-path that will later feed Derby costing.  It should still avoid broad optimizer
-rewrites.
+H2 maps provider-backed MVCC table statistics into Derby's native table-cost
+observation point without consuming or replacing Derby optimizer estimates.
+
+The seam is deliberately diagnostic-only:
+
+```text
+FromBaseTable.estimateCost(...)
+  -> DelosNativeTableCostLookup.observeIfEnabled(...)
+  -> DelosNativeTableRegistry.openNativeExecutionTableAccess(TableDescriptor)
+  -> DelosCostableTableAccess.estimateTableCost(...)
+  -> VersionedStorageExecutionBridge.stats(...)
+```
+
+Acceptance:
+
+```text
+CREATE TABLE APP.H2_COST_MAPPING (...) USING delos_mvcc
+INSERT rows through native Derby execution
+prepare/execute native SELECT *
+DelosNativeTableCostLookup records MVCC logical/visible/physical/dead-version stats
+recorded provider cost remains diagnostic-only
+Derby CostEstimate is not mutated
+VersionedStorageSqlBridge.tryExecute(...) is not called
+```
 
 ## H3 — heap proof-only cost mapping
 

@@ -2059,6 +2059,7 @@ class FromBaseTable extends FromTable
 								   baseTableRestrictionList);
 
         applyIndexProviderCostBridge(cd, costEst);
+        DelosNativeTableCostLookup.observeIfEnabled(tableDescriptor, costEst);
         return costEst;
 	}
 

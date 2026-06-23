@@ -1,5 +1,7 @@
 // Storage Phase H cost integration verification.
-// H1 introduces the costable table-access seam only; Derby optimizer costing is not changed here.
+// H1 introduces the costable table-access seam only.
+// H2 maps MVCC provider stats into the native Derby cost path as a diagnostic-only result.
+// Derby optimizer cost consumption remains deferred.
 
 ext.delosdbStoragePhaseHCostIntegrationModuleClassDir = { String projectPath, String moduleName ->
     project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
@@ -57,3 +59,37 @@ tasks.register('verifyStoragePhaseH1CostableTableAccess') {
         println 'Verified Phase H1 costable table-access seam; next step is H2 MVCC cost mapping into the native cost path'
     }
 }
+
+ext.delosdbStoragePhaseH2MvccCostMappingClassesDir =
+        layout.buildDirectory.dir('classes/storage-phase-h2-mvcc-cost-mapping-smoke')
+
+tasks.register('compileStoragePhaseH2MvccCostMappingSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase H2 MVCC native cost mapping smoke test.'
+    source = files('dev/storage-phase-h2-mvcc-cost-mapping-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseH2MvccCostMappingClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseHCostIntegrationClasspath(delosdbStoragePhaseH2MvccCostMappingClassesDir)
+}
+
+tasks.register('storagePhaseH2MvccCostMappingSmoke', JavaExec) {
+    dependsOn 'verifyStoragePhaseH1CostableTableAccess', 'compileStoragePhaseH2MvccCostMappingSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase H2 MVCC native cost mapping smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseH2MvccCostMappingSmoke'
+    classpath = delosdbStoragePhaseHCostIntegrationClasspath(delosdbStoragePhaseH2MvccCostMappingClassesDir)
+}
+
+tasks.register('verifyStoragePhaseH2MvccCostMapping') {
+    group = 'verification'
+    description = 'Verifies MVCC provider stats are mapped into the native Derby cost path without optimizer consumption.'
+    dependsOn 'storagePhaseH2MvccCostMappingSmoke'
+    doLast {
+        println 'Verified Phase H2 MVCC native cost mapping; next step is H3 heap proof-only cost mapping'
+    }
+}
+
