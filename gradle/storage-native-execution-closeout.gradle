@@ -173,11 +173,27 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified L4 delos_mvcc provider cost consumption without heap activation'
 ])
 
+
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-l31-native-null-predicates-smoke',
+        compileTask       : 'compileStoragePhaseL31NativeNullPredicatesSmoke',
+        smokeTask         : 'storagePhaseL31NativeNullPredicatesSmoke',
+        verifyTask        : 'verifyStoragePhaseL31NativeNullPredicates',
+        dependsOn         : 'verifyStoragePhaseL4MvccOptimizerCostConsumption',
+        sourceDir         : 'dev/storage-phase-l31-native-null-predicates-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseL31NativeNullPredicatesSmoke',
+        compileDescription: 'Compiles the L3.1 delos_mvcc native NULL-predicate smoke test.',
+        smokeDescription  : 'Runs the L3.1 delos_mvcc native NULL-predicate smoke test.',
+        verifyDescription : 'Verifies L3.1 native IS NULL / IS NOT NULL predicates without heap activation.',
+        successMessage    : 'Verified L3.1 native IS NULL / IS NOT NULL predicates without heap activation'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane through L4 optimizer cost consumption.'
-    dependsOn 'verifyStoragePhaseL4MvccOptimizerCostConsumption'
+    description = 'Verifies the closed native delos_mvcc execution lane through L3.1 NULL predicates.'
+    dependsOn 'verifyStoragePhaseL31NativeNullPredicates'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane through L4 optimizer cost consumption'
+        println 'Verified closed native delos_mvcc execution lane through L3.1 NULL predicates'
     }
 }

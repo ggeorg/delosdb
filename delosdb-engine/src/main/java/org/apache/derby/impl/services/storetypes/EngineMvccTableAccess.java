@@ -322,13 +322,17 @@ public final class EngineMvccTableAccess
     private Optional<PushedEquality> findPushedEquality(List<DelosPredicate> mutableFilters) {
         for (DelosPredicate predicate : mutableFilters) {
             if (predicate.operator() == DelosPredicateOperator.EQUAL && predicate.operands().size() == 1) {
+                Object nativePredicateValue = nativeValue(predicate.operands().get(0));
+                if (nativePredicateValue == null) {
+                    continue;
+                }
                 int columnIndex = columnIndexOrNegative(predicate.columnName());
                 if (columnIndex >= 0) {
                     return Optional.of(new PushedEquality(
                             predicate,
                             rowShape.columns().get(columnIndex).name(),
                             columnIndex,
-                            nativeValue(predicate.operands().get(0))));
+                            nativePredicateValue));
                 }
             }
         }
@@ -340,7 +344,7 @@ public final class EngineMvccTableAccess
             List<DelosPredicate> filters) {
         List<VersionedRow<Long, List<Object>>> filteredRows = new ArrayList<>(rows);
         for (DelosPredicate predicate : filters) {
-            if (predicate.operands().size() != 1) {
+            if (!hasSupportedOperandShape(predicate)) {
                 throw new IllegalArgumentException("Unsupported delos_mvcc native scan leftover predicate: " + predicate);
             }
             int columnIndex = columnIndexOrNegative(predicate.columnName());
@@ -350,6 +354,13 @@ public final class EngineMvccTableAccess
             filteredRows.removeIf(row -> !predicateMatches(predicate, row.value().get(columnIndex)));
         }
         return List.copyOf(filteredRows);
+    }
+
+    private static boolean hasSupportedOperandShape(DelosPredicate predicate) {
+        return switch (predicate.operator()) {
+            case IS_NULL, IS_NOT_NULL -> predicate.operands().isEmpty();
+            default -> predicate.operands().size() == 1;
+        };
     }
 
     private List<VersionedRow<Long, List<Object>>> scanAllWhere(int columnIndex, Object predicateValue, TxView view) {
@@ -363,10 +374,16 @@ public final class EngineMvccTableAccess
     }
 
     private static boolean predicateMatches(DelosPredicate predicate, Object actual) {
+        if (predicate.operator() == DelosPredicateOperator.IS_NULL) {
+            return actual == null;
+        }
+        if (predicate.operator() == DelosPredicateOperator.IS_NOT_NULL) {
+            return actual != null;
+        }
         Object expected = nativeValue(predicate.operands().get(0));
         return switch (predicate.operator()) {
-            case EQUAL -> Objects.equals(expected, actual);
-            case NOT_EQUAL -> !Objects.equals(expected, actual);
+            case EQUAL -> expected != null && Objects.equals(expected, actual);
+            case NOT_EQUAL -> actual != null && expected != null && !Objects.equals(expected, actual);
             case LESS_THAN -> actual != null && expected != null && compareNative(actual, expected) < 0;
             case LESS_THAN_OR_EQUAL -> actual != null && expected != null && compareNative(actual, expected) <= 0;
             case GREATER_THAN -> actual != null && expected != null && compareNative(actual, expected) > 0;

@@ -1,0 +1,171 @@
+package delosdb.smoke;
+
+import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * L3.1 proof: delos_mvcc SELECT supports native IS NULL / IS NOT NULL
+ * predicates explicitly, without changing heap routing or mutation behavior.
+ */
+public final class StoragePhaseL31NativeNullPredicatesSmoke {
+    private static final String DATABASE_PATH = "storage-phase-l31-native-null-predicates-db";
+    private static final String MVCC_TABLE = "L31_NULLS_MVCC";
+    private static final String HEAP_TABLE = "L31_NULLS_HEAP";
+
+    private StoragePhaseL31NativeNullPredicatesSmoke() {
+    }
+
+    public static void main(String[] args) throws Exception {
+        SmokeUtils.loadEmbeddedDriver();
+
+        try {
+            proveSourceShape();
+            proveNativeNullPredicates();
+            proveHeapStillDefaultRoute();
+        } finally {
+            clearProofProperties();
+            DelosTableScanProviderLookup.resetFactoryLookupForTesting();
+            SmokeUtils.shutdown(DATABASE_PATH);
+        }
+
+        System.out.println("storage_phase_l31_native_null_predicates: PASS");
+    }
+
+    private static void proveSourceShape() throws Exception {
+        String scanResultSet = Files.readString(Path.of(
+                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosTableScanResultSet.java"));
+        require(scanResultSet.contains("NATIVE_NULL_PREDICATES_PROPERTY"),
+                "Expected a separate L3.1 native null-predicate proof property");
+        require(scanResultSet.contains("isDerbyIsNullQualifier"),
+                "Expected Derby IS NULL qualifier recognition to be explicit");
+        require(scanResultSet.contains("DelosPredicate.isNull"),
+                "Expected DelosTableScanResultSet to produce explicit IS_NULL predicates");
+        require(scanResultSet.contains("DelosPredicate.isNotNull"),
+                "Expected DelosTableScanResultSet to produce explicit IS_NOT_NULL predicates");
+
+        String mvccAccess = Files.readString(Path.of(
+                "delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineMvccTableAccess.java"));
+        require(mvccAccess.contains("DelosPredicateOperator.IS_NULL"),
+                "Expected MVCC table access to evaluate IS_NULL explicitly");
+        require(mvccAccess.contains("DelosPredicateOperator.IS_NOT_NULL"),
+                "Expected MVCC table access to evaluate IS_NOT_NULL explicitly");
+        require(mvccAccess.contains("expected != null && Objects.equals(expected, actual)"),
+                "Expected EQUAL NULL not to masquerade as IS NULL");
+        require(!scanResultSet.contains("EngineHeapTableAccessLive"),
+                "L3.1 must not introduce live heap Delos routing");
+    }
+
+    private static void proveNativeNullPredicates() throws Exception {
+        clearProofProperties();
+        System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
+        System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY, "true");
+        System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_RANGE_PREDICATES_PROPERTY, "true");
+        System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_NULL_PREDICATES_PROPERTY, "true");
+        DelosTableScanProviderLookup.resetFactoryLookupForTesting();
+
+        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true);
+             Statement statement = connection.createStatement()) {
+            require(statement.executeUpdate(
+                    "CREATE TABLE APP." + MVCC_TABLE + " (id INT, label VARCHAR(32)) USING delos_mvcc") == 0,
+                    "Expected native CREATE TABLE USING delos_mvcc");
+            insertRow(connection, 1, "one");
+            insertRow(connection, 2, null);
+            insertRow(connection, 3, "three");
+            insertRow(connection, 4, null);
+
+            require(List.of(2, 4).equals(ids(connection,
+                    "SELECT id FROM APP." + MVCC_TABLE + " WHERE label IS NULL")),
+                    "Expected native IS NULL to return only NULL rows");
+            require(List.of(1, 3).equals(ids(connection,
+                    "SELECT id FROM APP." + MVCC_TABLE + " WHERE label IS NOT NULL")),
+                    "Expected native IS NOT NULL to return only non-NULL rows");
+            require(List.of(4).equals(ids(connection,
+                    "SELECT id FROM APP." + MVCC_TABLE + " WHERE label IS NULL AND id >= 3")),
+                    "Expected native IS NULL to compose with existing range predicates");
+            require(ids(connection,
+                    "SELECT id FROM APP." + MVCC_TABLE + " WHERE label = CAST(NULL AS VARCHAR(32))").isEmpty(),
+                    "Expected EQUAL NULL to remain SQL UNKNOWN, not IS NULL");
+        }
+
+        require(DelosTableScanProviderLookup.factoryLookupCountForTesting() > 0,
+                "Expected ResultSetFactory provider lookup during L3.1 native SELECT");
+        require(DelosTableScanProviderLookup.lastNonDefaultFactoryLookupForTesting()
+                        .filter(result -> result.isProvider("delos_mvcc"))
+                        .isPresent(),
+                "Expected L3.1 native predicates to stay on delos_mvcc provider route");
+    }
+
+    private static void proveHeapStillDefaultRoute() throws Exception {
+        clearProofProperties();
+        System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
+        System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_NULL_PREDICATES_PROPERTY, "true");
+        DelosTableScanProviderLookup.resetFactoryLookupForTesting();
+
+        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false);
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("CREATE TABLE APP." + HEAP_TABLE + " (id INT, label VARCHAR(32))");
+            statement.executeUpdate("INSERT INTO APP." + HEAP_TABLE + " VALUES (10, NULL)");
+            statement.executeUpdate("INSERT INTO APP." + HEAP_TABLE + " VALUES (11, 'eleven')");
+            require(List.of(10).equals(ids(connection,
+                    "SELECT id FROM APP." + HEAP_TABLE + " WHERE label IS NULL")),
+                    "Expected heap IS NULL to continue through Derby-native route");
+        }
+
+        require(DelosTableScanProviderLookup.lastFactoryLookupForTesting()
+                        .filter(DelosTableScanProviderLookup.Result::isDefaultStorageProvider)
+                        .isPresent(),
+                "Expected heap SELECT to remain default-provider route under L3.1 property");
+        require(DelosTableScanProviderLookup.lastNonDefaultFactoryLookupForTesting().isEmpty(),
+                "L3.1 must not route heap SELECT through non-default Delos provider access");
+    }
+
+    private static void insertRow(Connection connection, int id, String label) throws Exception {
+        try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO APP." + MVCC_TABLE + " VALUES (?, ?)")) {
+            insert.setInt(1, id);
+            if (label == null) {
+                insert.setNull(2, java.sql.Types.VARCHAR);
+            } else {
+                insert.setString(2, label);
+            }
+            require(insert.executeUpdate() == 1, "Expected one inserted delos_mvcc row");
+        }
+    }
+
+    private static List<Integer> ids(Connection connection, String sql) throws Exception {
+        List<Integer> ids = new ArrayList<>();
+        try (Statement statement = connection.createStatement();
+             ResultSet rows = statement.executeQuery(sql)) {
+            while (rows.next()) {
+                ids.add(rows.getInt(1));
+            }
+        }
+        Collections.sort(ids);
+        return ids;
+    }
+
+    private static void clearProofProperties() {
+        System.clearProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY);
+        System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
+        System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY);
+        System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_RANGE_PREDICATES_PROPERTY);
+        System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_BETWEEN_PREDICATES_PROPERTY);
+        System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_NULL_PREDICATES_PROPERTY);
+        System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_ALL_PROPERTY);
+    }
+
+    private static void require(boolean condition, String message) {
+        if (!condition) {
+            throw new IllegalStateException(message);
+        }
+    }
+}

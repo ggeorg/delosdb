@@ -79,6 +79,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static final String NATIVE_BETWEEN_PREDICATES_PROPERTY =
             "delosdb.storage.phaseG2.nativeBetweenPredicates";
 
+    static final String NATIVE_NULL_PREDICATES_PROPERTY =
+            "delosdb.storage.phaseL31.nativeNullPredicates";
+
     static final String NATIVE_SELECT_ALL_PROPERTY =
             "delosdb.storage.phaseG3.nativeSelectAll";
 
@@ -125,7 +128,8 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         boolean nativePredicateScanEnabled = nativeSelectAllEnabled
                 || Boolean.getBoolean(NATIVE_SELECT_EQUALITY_PROPERTY)
                 || Boolean.getBoolean(NATIVE_RANGE_PREDICATES_PROPERTY)
-                || Boolean.getBoolean(NATIVE_BETWEEN_PREDICATES_PROPERTY);
+                || Boolean.getBoolean(NATIVE_BETWEEN_PREDICATES_PROPERTY)
+                || Boolean.getBoolean(NATIVE_NULL_PREDICATES_PROPERTY);
         boolean skeletonEnabled = Boolean.getBoolean(SKELETON_BRANCH_PROPERTY);
         if (!nativePredicateScanEnabled && !skeletonEnabled) {
             return Optional.empty();
@@ -405,14 +409,18 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 throw unsupported("Native delos_mvcc scan does not support OR qualifier groups yet");
             }
             for (Qualifier qualifier : termQualifiers) {
-                DelosPredicateOperator operator = predicateOperator(qualifier, allowRangePredicates);
+                StoreDataValue orderable = qualifier.getOrderable();
+                DelosPredicateOperator operator = predicateOperator(qualifier, orderable, allowRangePredicates);
                 ColumnDescriptor column = tableDescriptor.getColumnDescriptor(qualifier.getColumnId() + 1);
                 if (column == null) {
                     throw unsupported("Native delos_mvcc scan could not resolve qualifier column ordinal "
                             + qualifier.getColumnId());
                 }
-                StoreDataValue orderable = qualifier.getOrderable();
-                if (operator == DelosPredicateOperator.EQUAL) {
+                if (operator == DelosPredicateOperator.IS_NULL) {
+                    filters.add(DelosPredicate.isNull(column.getColumnName()));
+                } else if (operator == DelosPredicateOperator.IS_NOT_NULL) {
+                    filters.add(DelosPredicate.isNotNull(column.getColumnName()));
+                } else if (operator == DelosPredicateOperator.EQUAL) {
                     filters.add(DelosPredicate.equalsTo(column.getColumnName(), orderable));
                 } else {
                     filters.add(DelosPredicate.range(column.getColumnName(), operator, orderable));
@@ -425,18 +433,26 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         return List.copyOf(filters);
     }
 
-    private static DelosPredicateOperator predicateOperator(Qualifier qualifier, boolean allowRangePredicates)
+    private static DelosPredicateOperator predicateOperator(
+            Qualifier qualifier,
+            StoreDataValue orderable,
+            boolean allowRangePredicates)
             throws StandardException
     {
-        DelosPredicateOperator operator = switch (qualifier.getOperator()) {
-            case Orderable.ORDER_OP_EQUALS -> DelosPredicateOperator.EQUAL;
-            case Orderable.ORDER_OP_LESSTHAN -> DelosPredicateOperator.LESS_THAN;
-            case Orderable.ORDER_OP_LESSOREQUALS -> DelosPredicateOperator.LESS_THAN_OR_EQUAL;
-            case Orderable.ORDER_OP_GREATERTHAN -> DelosPredicateOperator.GREATER_THAN;
-            case Orderable.ORDER_OP_GREATEROREQUALS -> DelosPredicateOperator.GREATER_THAN_OR_EQUAL;
-            default -> throw unsupported("Native delos_mvcc scan does not support Derby qualifier operator "
-                    + qualifier.getOperator());
-        };
+        DelosPredicateOperator operator;
+        if (isDerbyIsNullQualifier(qualifier, orderable)) {
+            operator = DelosPredicateOperator.IS_NULL;
+        } else {
+            operator = switch (qualifier.getOperator()) {
+                case Orderable.ORDER_OP_EQUALS -> DelosPredicateOperator.EQUAL;
+                case Orderable.ORDER_OP_LESSTHAN -> DelosPredicateOperator.LESS_THAN;
+                case Orderable.ORDER_OP_LESSOREQUALS -> DelosPredicateOperator.LESS_THAN_OR_EQUAL;
+                case Orderable.ORDER_OP_GREATERTHAN -> DelosPredicateOperator.GREATER_THAN;
+                case Orderable.ORDER_OP_GREATEROREQUALS -> DelosPredicateOperator.GREATER_THAN_OR_EQUAL;
+                default -> throw unsupported("Native delos_mvcc scan does not support Derby qualifier operator "
+                        + qualifier.getOperator());
+            };
+        }
         if (qualifier.negateCompareResult()) {
             operator = negatedOperator(operator);
         }
@@ -444,6 +460,14 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             throw unsupportedMutationRange();
         }
         return operator;
+    }
+
+    private static boolean isDerbyIsNullQualifier(Qualifier qualifier, StoreDataValue orderable)
+    {
+        return qualifier.getOperator() == Orderable.ORDER_OP_EQUALS
+                && qualifier.getOrderedNulls()
+                && orderable instanceof DataValueDescriptor dataValue
+                && dataValue.isNull();
     }
 
     private static DelosPredicateOperator negatedOperator(DelosPredicateOperator operator)
@@ -454,6 +478,8 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             case LESS_THAN_OR_EQUAL -> DelosPredicateOperator.GREATER_THAN;
             case GREATER_THAN -> DelosPredicateOperator.LESS_THAN_OR_EQUAL;
             case GREATER_THAN_OR_EQUAL -> DelosPredicateOperator.LESS_THAN;
+            case IS_NULL -> DelosPredicateOperator.IS_NOT_NULL;
+            case IS_NOT_NULL -> DelosPredicateOperator.IS_NULL;
             default -> throw new IllegalArgumentException(
                     "Native delos_mvcc scan cannot negate predicate operator " + operator);
         };

@@ -45,4 +45,12 @@ public record DelosPredicate(String columnName,
                                        StoreDataValue boundaryValue) {
         return new DelosPredicate(columnName, operator, List.of(boundaryValue));
     }
+
+    public static DelosPredicate isNull(String columnName) {
+        return new DelosPredicate(columnName, DelosPredicateOperator.IS_NULL, List.of());
+    }
+
+    public static DelosPredicate isNotNull(String columnName) {
+        return new DelosPredicate(columnName, DelosPredicateOperator.IS_NOT_NULL, List.of());
+    }
 }
