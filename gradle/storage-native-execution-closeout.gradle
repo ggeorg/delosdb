@@ -189,11 +189,27 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified L3.1 native IS NULL / IS NOT NULL predicates without heap activation'
 ])
 
+
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-l32-in-list-residual-coverage-smoke',
+        compileTask       : 'compileStoragePhaseL32InListResidualCoverageSmoke',
+        smokeTask         : 'storagePhaseL32InListResidualCoverageSmoke',
+        verifyTask        : 'verifyStoragePhaseL32InListResidualCoverage',
+        dependsOn         : 'verifyStoragePhaseL31NativeNullPredicates',
+        sourceDir         : 'dev/storage-phase-l32-in-list-residual-coverage-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseL32InListResidualCoverageSmoke',
+        compileDescription: 'Compiles the L3.2 delos_mvcc IN-list residual coverage smoke test.',
+        smokeDescription  : 'Runs the L3.2 delos_mvcc IN-list residual coverage smoke test.',
+        verifyDescription : 'Verifies L3.2 IN-list SQL coverage through native scan plus Derby residual restriction.',
+        successMessage    : 'Verified L3.2 IN-list coverage without fake Delos IN_LIST or heap activation'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane through L3.1 NULL predicates.'
-    dependsOn 'verifyStoragePhaseL31NativeNullPredicates'
+    description = 'Verifies the closed native delos_mvcc execution lane through L3.2 IN-list coverage.'
+    dependsOn 'verifyStoragePhaseL32InListResidualCoverage'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane through L3.1 NULL predicates'
+        println 'Verified closed native delos_mvcc execution lane through L3.2 IN-list coverage'
     }
 }
