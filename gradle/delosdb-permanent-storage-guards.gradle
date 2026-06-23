@@ -64,12 +64,12 @@ apply from: file('gradle/storage-native-execution-closeout.gradle')
 
 tasks.register('verifyDelosDbPermanentStorageGuards') {
     group = 'verification'
-    description = 'Verifies permanent DelosDB storage boundaries and closed native execution lane through M3 heap SELECT live-route coverage.'
+    description = 'Verifies permanent DelosDB storage boundaries and closed native execution lane through N1 heap mutation mapping coverage.'
     dependsOn 'verifyStorageDerbyBoundary',
             'verifyStorageSpiTruthMap',
             'storagePhaseC7StabilizationSmoke',
             'verifyStorageNativeExecutionCloseout'
     doLast {
-        println 'Verified permanent DelosDB storage guards and closed native execution lane through M3 heap SELECT live-route coverage'
+        println 'Verified permanent DelosDB storage guards and closed native execution lane through N1 heap mutation mapping coverage'
     }
 }

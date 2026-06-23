@@ -311,11 +311,26 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified M3 heap SELECT live route without heap mutation or locking parity'
 ])
 
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-n1-heap-mutation-mapping-proof-smoke',
+        compileTask       : 'compileStoragePhaseN1HeapMutationMappingProofSmoke',
+        smokeTask         : 'storagePhaseN1HeapMutationMappingProofSmoke',
+        verifyTask        : 'verifyStoragePhaseN1HeapMutationMappingProof',
+        dependsOn         : 'verifyStoragePhaseM3HeapSelectLiveRoute',
+        sourceDir         : 'dev/storage-phase-n1-heap-mutation-mapping-proof-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseN1HeapMutationMappingProofSmoke',
+        compileDescription: 'Compiles the N1 heap mutation mapping proof smoke test.',
+        smokeDescription  : 'Runs the N1 heap mutation mapping proof smoke test.',
+        verifyDescription : 'Verifies N1 heap mutation mapping without starting heap mutation routing.',
+        successMessage    : 'Verified N1 heap mutation mapping without starting heap mutation routing'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane and heap SELECT live route through M3.'
-    dependsOn 'verifyStoragePhaseM3HeapSelectLiveRoute'
+    description = 'Verifies the closed native delos_mvcc execution lane and heap provider-parity route through N1.'
+    dependsOn 'verifyStoragePhaseN1HeapMutationMappingProof'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane and heap SELECT live route through M3'
+        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N1'
     }
 }
