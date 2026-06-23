@@ -56,8 +56,8 @@ import org.apache.derby.shared.common.error.StandardException;
  *
  * <p>This result set is the first heap SQL read path that crosses a Delos table
  * access object.  It is deliberately narrow: default-provider heap only,
- * read-only base scans only, no index-name scans, no keyed start/stop scan
- * routing, no mutations, no row reservation, no locking abstraction, and no
+ * read-only base scans only, no index-name scans, no explicit keyed start/stop
+ * getters, no mutations, no row reservation, no locking abstraction, and no
  * native registry registration.  Unsupported shapes fall back to Derby's
  * ordinary {@link TableScanResultSet} / {@link BulkTableScanResultSet} paths.</p>
  */
@@ -108,8 +108,7 @@ final class DelosHeapLiveTableScanResultSet extends TableScanResultSet {
                 && !hasIndexName(params.indexName)
                 && params.indexColItem == -1
                 && params.startKeyGetter == null
-                && params.stopKeyGetter == null
-                && !params.sameStartStopPosition;
+                && params.stopKeyGetter == null;
     }
 
     private static boolean hasIndexName(String indexName) {
