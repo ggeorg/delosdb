@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Optional;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictException;
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.ResultSet;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
@@ -145,6 +146,12 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
             scan = null;
             nativeAccess.close();
             nativeAccess = null;
+        } catch (VersionedWriteConflictException e) {
+            abortNativeAccess(nativeAccess, e);
+            throw DelosMutationConflictMapper.transactionConflict(
+                    e,
+                    "DELETE",
+                    providerLookup.schemaName() + "." + providerLookup.tableName());
         } catch (SQLException e) {
             abortNativeAccess(nativeAccess, e);
             throw StandardException.plainWrapException(e);

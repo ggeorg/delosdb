@@ -68,11 +68,13 @@ apply from: file('gradle/storage-phase-g-native-predicates.gradle')
 
 apply from: file('gradle/storage-phase-h-cost-integration.gradle')
 
+apply from: file('gradle/storage-phase-i-mutation-concurrency.gradle')
+
 tasks.register('verifyDelosDbPermanentStorageGuards') {
     group = 'verification'
-    description = 'Verifies permanent DelosDB storage boundaries and closed-phase executable storage smokes through Phase H.'
-    dependsOn 'verifyStorageDerbyBoundary', 'verifyStorageSpiTruthMap', 'storagePhaseC7StabilizationSmoke', 'verifyStoragePhaseFConsolidation', 'verifyStoragePhaseGConsolidation', 'verifyStoragePhaseH4SessionCostConstant'
+    description = 'Verifies permanent DelosDB storage boundaries and closed-phase executable storage smokes through Phase I2.'
+    dependsOn 'verifyStorageDerbyBoundary', 'verifyStorageSpiTruthMap', 'storagePhaseC7StabilizationSmoke', 'verifyStoragePhaseFConsolidation', 'verifyStoragePhaseGConsolidation', 'verifyStoragePhaseI2MutationConflict'
     doLast {
-        println 'Verified permanent DelosDB storage guards and closed-phase executable smokes through Phase H'
+        println 'Verified permanent DelosDB storage guards and closed-phase executable smokes through Phase I2'
     }
 }

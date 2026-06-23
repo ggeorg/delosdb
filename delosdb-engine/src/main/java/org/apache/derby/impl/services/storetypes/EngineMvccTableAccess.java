@@ -48,6 +48,7 @@ import org.apache.derby.iapi.store.types.DelosFilterableTableAccess;
 import org.apache.derby.iapi.store.types.DelosIndexAccess;
 import org.apache.derby.iapi.store.types.DelosIndexStats;
 import org.apache.derby.iapi.store.types.DelosIndexableTableAccess;
+import org.apache.derby.iapi.store.types.DelosMutationPreparation;
 import org.apache.derby.iapi.store.types.DelosMutationResult;
 import org.apache.derby.iapi.store.types.DelosMutableTableAccess;
 import org.apache.derby.iapi.store.types.DelosPredicate;
@@ -249,11 +250,40 @@ public final class EngineMvccTableAccess
     }
 
     @Override
+    public DelosMutationPreparation validateMutable(
+            DelosAccessContext context,
+            DelosRowIdentity rowIdentity) {
+        requirePhysicalAccess(context);
+        long rowKey = requireNativeRowKey(rowIdentity);
+        if (executionBridge.read(table, rowKey, txView(context)).isEmpty()) {
+            return DelosMutationPreparation.notMutable(
+                    rowIdentity,
+                    "delos_mvcc row identity is not visible in the current mutation view");
+        }
+        return DelosMutationPreparation.mutable(
+                rowIdentity,
+                "delos_mvcc row identity is visible in the current mutation view");
+    }
+
+    @Override
+    public DelosMutationPreparation prepareMutation(
+            DelosAccessContext context,
+            DelosRowIdentity rowIdentity) {
+        DelosMutationPreparation validation = validateMutable(context, rowIdentity);
+        if (!validation.mutable()) {
+            return validation;
+        }
+        return DelosMutationPreparation.prepared(
+                rowIdentity,
+                "delos_mvcc mutation prepared by optimistic row-identity validation; no lock acquired");
+    }
+
+    @Override
     public DelosMutationResult update(
             DelosAccessContext context,
             DelosRowIdentity rowIdentity,
             DelosRow replacement) {
-        requirePhysicalAccess(context);
+        requirePreparedMutation(context, rowIdentity);
         TxContext tx = context.require(TX_CONTEXT_KEY);
         executionBridge.update(table, requireNativeRowKey(rowIdentity), nativeValues(replacement), tx);
         return DelosMutationResult.affected(1);
@@ -261,7 +291,7 @@ public final class EngineMvccTableAccess
 
     @Override
     public DelosMutationResult delete(DelosAccessContext context, DelosRowIdentity rowIdentity) {
-        requirePhysicalAccess(context);
+        requirePreparedMutation(context, rowIdentity);
         TxContext tx = context.require(TX_CONTEXT_KEY);
         executionBridge.delete(table, requireNativeRowKey(rowIdentity), tx);
         return DelosMutationResult.affected(1);
@@ -403,6 +433,19 @@ public final class EngineMvccTableAccess
     private static void requirePhysicalAccess(DelosAccessContext context) {
         if (!Objects.requireNonNull(context, "context").physicalAccessAllowed()) {
             throw new IllegalStateException("Physical delos_mvcc table access is not allowed by context");
+        }
+    }
+
+    private void requirePreparedMutation(
+            DelosAccessContext context,
+            DelosRowIdentity rowIdentity) {
+        DelosMutationPreparation preparation = prepareMutation(context, rowIdentity);
+        if (!preparation.prepared()) {
+            throw new IllegalStateException("delos_mvcc row identity is not prepared for mutation: "
+                    + preparation.message());
+        }
+        if (preparation.lockAcquired()) {
+            throw new IllegalStateException("Phase I Option A must not acquire or claim row locks");
         }
     }
 

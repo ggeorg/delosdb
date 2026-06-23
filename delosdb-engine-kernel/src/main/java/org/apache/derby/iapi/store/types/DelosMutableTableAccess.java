@@ -20,6 +20,8 @@
  */
 package org.apache.derby.iapi.store.types;
 
+import java.util.Objects;
+
 /**
  * Optional table access capability for transaction-aware row mutation.
  *
@@ -28,6 +30,46 @@ package org.apache.derby.iapi.store.types;
  * and does not require identities to compare across providers.</p>
  */
 public interface DelosMutableTableAccess extends DelosTableAccess {
+    /**
+     * Validate whether a row identity is mutable in the supplied context.
+     *
+     * <p>This is the Phase I Option A primitive: it is optimistic validation,
+     * not a lock or reservation.  Providers that cannot validate more deeply
+     * may conservatively report the identity as mutable after checking only
+     * the common physical-access and identity preconditions.</p>
+     */
+    default DelosMutationPreparation validateMutable(
+            DelosAccessContext context,
+            DelosRowIdentity rowIdentity) {
+        requireMutablePreconditions(context, rowIdentity);
+        return DelosMutationPreparation.mutable(rowIdentity, "row identity accepted by default validation");
+    }
+
+    /**
+     * Prepare a row-identity mutation without claiming a lock acquisition.
+     *
+     * <p>The default implementation delegates to {@link #validateMutable} and
+     * marks the result as prepared only if validation succeeded.</p>
+     */
+    default DelosMutationPreparation prepareMutation(
+            DelosAccessContext context,
+            DelosRowIdentity rowIdentity) {
+        DelosMutationPreparation validation = validateMutable(context, rowIdentity);
+        if (!validation.mutable()) {
+            return validation;
+        }
+        return DelosMutationPreparation.prepared(rowIdentity, validation.message());
+    }
+
+    private static void requireMutablePreconditions(
+            DelosAccessContext context,
+            DelosRowIdentity rowIdentity) {
+        if (!Objects.requireNonNull(context, "context").physicalAccessAllowed()) {
+            throw new IllegalStateException("Physical table mutation access is not allowed by context");
+        }
+        Objects.requireNonNull(rowIdentity, "rowIdentity");
+    }
+
     DelosMutationResult insert(DelosAccessContext context, DelosRow row);
 
     DelosMutationResult update(DelosAccessContext context,

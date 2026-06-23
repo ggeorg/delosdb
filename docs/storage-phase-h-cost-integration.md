@@ -121,3 +121,9 @@ VersionedStorageSqlBridge.tryExecute(...) is not called
 
 Phase H is closed after H4.  Broader provider-specific optimizer decisions and
 operator-selection changes are deferred to the next phase.
+
+## Phase I handoff
+
+After H4, the next active work is Phase I mutation concurrency.  I1 chooses
+Option A from the deferred E4 plan: optimistic row-identity validation and
+preparation, not row locking or reservation ownership.

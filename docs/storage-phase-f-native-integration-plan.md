@@ -294,7 +294,7 @@ routes.
 G1 — native remaining range predicates
 G — remaining native SQL coverage and bridge retirement
 H — optional DelosCostableTableAccess and cost integration
-I — mutation concurrency primitive; choose Option A or Option B before code
+I — mutation concurrency primitive; I1 chooses Option A optimistic row-identity validation before any real locking Option B
 ```
 
 ## Revised timeline
