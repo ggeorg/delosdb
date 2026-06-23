@@ -2060,6 +2060,7 @@ class FromBaseTable extends FromTable
 
         applyIndexProviderCostBridge(cd, costEst);
         DelosNativeTableCostLookup.observeIfEnabled(tableDescriptor, costEst);
+        DelosHeapCostProofLookup.observeIfEnabled(tableDescriptor, costEst);
         return costEst;
 	}
 

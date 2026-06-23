@@ -61,8 +61,32 @@ VersionedStorageSqlBridge.tryExecute(...) is not called
 
 ## H3 — heap proof-only cost mapping
 
-Heap mapping remains proof-only until live heap SQL is routed through the Delos
-table-access contracts.
+H3 maps inherited Derby heap cost data into the same `DelosTableCostEstimate`
+shape through `EngineHeapTableAccessProof`.  This is intentionally proof-only:
+heap SQL still runs through Derby heap execution, and Derby optimizer estimates
+are not replaced.
+
+The seam is diagnostic-only:
+
+```text
+FromBaseTable.estimateCost(...)
+  -> DelosHeapCostProofLookup.observeIfEnabled(...)
+  -> EngineHeapTableAccessProof.estimateTableCost(...)
+  -> DelosTableCostEstimate
+```
+
+Acceptance:
+
+```text
+CREATE TABLE APP.H3_HEAP_COST_PROOF (...) -- no USING clause
+INSERT rows through normal Derby heap execution
+prepare/execute heap SELECT
+DelosHeapCostProofLookup records heap proof-only cost mapping
+heap proof adapter advertises COSTABLE
+recorded heap cost remains proof-only
+Derby CostEstimate is not mutated
+VersionedStorageSqlBridge.tryExecute(...) is not called
+```
 
 ## H4 — session-tunable Derby cost constant
 

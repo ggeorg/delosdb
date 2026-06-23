@@ -33,6 +33,7 @@ import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.types.DelosAccessContext;
 import org.apache.derby.iapi.store.types.DelosContextKey;
+import org.apache.derby.iapi.store.types.DelosCostableTableAccess;
 import org.apache.derby.iapi.store.types.DelosFilterableTableAccess;
 import org.apache.derby.iapi.store.types.DelosIndexAccess;
 import org.apache.derby.iapi.store.types.DelosIndexStats;
@@ -46,6 +47,7 @@ import org.apache.derby.iapi.store.types.DelosRow;
 import org.apache.derby.iapi.store.types.DelosRowIdentity;
 import org.apache.derby.iapi.store.types.DelosScan;
 import org.apache.derby.iapi.store.types.DelosTableCapabilities;
+import org.apache.derby.iapi.store.types.DelosTableCostEstimate;
 import org.apache.derby.iapi.store.types.DelosTableCapability;
 import org.apache.derby.iapi.store.types.DelosTableGuarantee;
 import org.apache.derby.iapi.store.types.DelosTableIdentity;
@@ -67,7 +69,7 @@ import org.apache.derby.shared.common.error.StandardException;
  * {@link StoreRowLocation}, Derby lock levels, and Derby isolation levels.</p>
  */
 public final class EngineHeapTableAccessProof
-        implements DelosFilterableTableAccess, DelosIndexableTableAccess, DelosMutableTableAccess {
+        implements DelosFilterableTableAccess, DelosIndexableTableAccess, DelosMutableTableAccess, DelosCostableTableAccess {
     public static final String PROVIDER_NAME = "heap";
 
     public static final DelosContextKey<TransactionController> TRANSACTION_CONTROLLER_KEY =
@@ -92,6 +94,10 @@ public final class EngineHeapTableAccessProof
             DelosContextKey.of("delosdb.heap.staticCompiledInfo", StaticCompiledOpenConglomInfo.class);
     public static final DelosContextKey<DynamicCompiledOpenConglomInfo> DYNAMIC_COMPILED_INFO_KEY =
             DelosContextKey.of("delosdb.heap.dynamicCompiledInfo", DynamicCompiledOpenConglomInfo.class);
+    public static final DelosContextKey<Long> ESTIMATED_ROW_COUNT_KEY =
+            DelosContextKey.of("delosdb.heap.estimatedRowCount", Long.class);
+    public static final DelosContextKey<Double> ESTIMATED_SCAN_COST_KEY =
+            DelosContextKey.of("delosdb.heap.estimatedScanCost", Double.class);
 
     private final DelosTableIdentity identity;
     private final DelosTableShape rowShape;
@@ -117,7 +123,8 @@ public final class EngineHeapTableAccessProof
                 DelosTableCapability.FILTERABLE,
                 DelosTableCapability.PROJECTABLE,
                 DelosTableCapability.INDEXABLE,
-                DelosTableCapability.MUTABLE);
+                DelosTableCapability.MUTABLE,
+                DelosTableCapability.COSTABLE);
     }
 
     @Override
@@ -125,6 +132,20 @@ public final class EngineHeapTableAccessProof
         return Set.of(
                 DelosTableGuarantee.ROW_LOCKING,
                 DelosTableGuarantee.DURABLE_RECOVERY_LOG);
+    }
+
+
+    @Override
+    public DelosTableCostEstimate estimateTableCost(DelosAccessContext context) {
+        requirePhysicalAccess(context);
+        long rowCount = nonNegative(context.find(ESTIMATED_ROW_COUNT_KEY).orElse(0L));
+        long scanCost = Math.max(1L, Math.round(nonNegative(context.find(ESTIMATED_SCAN_COST_KEY).orElse((double) rowCount))));
+        return new DelosTableCostEstimate(
+                rowCount,
+                rowCount,
+                rowCount,
+                0L,
+                scanCost);
     }
 
     @Override
@@ -285,6 +306,14 @@ public final class EngineHeapTableAccessProof
                 ConglomerateController.LOCK_UPD,
                 true,
                 0);
+    }
+
+    private static long nonNegative(long value) {
+        return Math.max(0L, value);
+    }
+
+    private static double nonNegative(double value) {
+        return Double.isFinite(value) && value > 0.0d ? value : 0.0d;
     }
 
     private static void requirePhysicalAccess(DelosAccessContext context) {

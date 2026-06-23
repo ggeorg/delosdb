@@ -93,3 +93,36 @@ tasks.register('verifyStoragePhaseH2MvccCostMapping') {
     }
 }
 
+
+ext.delosdbStoragePhaseH3HeapCostProofClassesDir =
+        layout.buildDirectory.dir('classes/storage-phase-h3-heap-cost-proof-smoke')
+
+tasks.register('compileStoragePhaseH3HeapCostProofSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase H3 heap proof-only cost mapping smoke test.'
+    source = files('dev/storage-phase-h3-heap-cost-proof-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseH3HeapCostProofClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseHCostIntegrationClasspath(delosdbStoragePhaseH3HeapCostProofClassesDir)
+}
+
+tasks.register('storagePhaseH3HeapCostProofSmoke', JavaExec) {
+    dependsOn 'verifyStoragePhaseH2MvccCostMapping', 'compileStoragePhaseH3HeapCostProofSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase H3 heap proof-only cost mapping smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseH3HeapCostProofSmoke'
+    classpath = delosdbStoragePhaseHCostIntegrationClasspath(delosdbStoragePhaseH3HeapCostProofClassesDir)
+}
+
+tasks.register('verifyStoragePhaseH3HeapCostProof') {
+    group = 'verification'
+    description = 'Verifies inherited Derby heap cost data maps through the proof-only heap table-access cost surface without optimizer consumption.'
+    dependsOn 'storagePhaseH3HeapCostProofSmoke'
+    doLast {
+        println 'Verified Phase H3 heap proof-only cost mapping; next step is H4 session-tunable Derby cost constant'
+    }
+}
