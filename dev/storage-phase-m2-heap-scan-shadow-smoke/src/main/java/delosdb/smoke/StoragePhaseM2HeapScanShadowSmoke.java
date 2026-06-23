@@ -71,6 +71,11 @@ public final class StoragePhaseM2HeapScanShadowSmoke {
         require(factorySource.indexOf("DelosHeapScanShadowResultSet.createIfEnabled(params)")
                         < factorySource.indexOf("return new TableScanResultSet(params)"),
                 "Expected heap shadow branch to fall back to ordinary TableScanResultSet");
+        int bulkStart = factorySource.indexOf("getBulkTableScanResultSet");
+        int bulkShadow = factorySource.indexOf("DelosHeapScanShadowResultSet.createIfEnabled(params)", bulkStart);
+        int bulkFallback = factorySource.indexOf("return new BulkTableScanResultSet(params, rowsPerRead, disableForHoldable)", bulkStart);
+        require(bulkStart >= 0 && bulkShadow > bulkStart && bulkShadow < bulkFallback,
+                "Expected heap shadow branch in the bulk table-scan factory path before BulkTableScanResultSet fallback");
 
         Path shadow = Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapScanShadowResultSet.java");
