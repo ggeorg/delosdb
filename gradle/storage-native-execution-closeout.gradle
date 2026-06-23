@@ -326,11 +326,26 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified N1 heap mutation mapping without starting heap mutation routing'
 ])
 
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-n11-heap-mutation-context-shape-smoke',
+        compileTask       : 'compileStoragePhaseN11HeapMutationContextShapeSmoke',
+        smokeTask         : 'storagePhaseN11HeapMutationContextShapeSmoke',
+        verifyTask        : 'verifyStoragePhaseN11HeapMutationContextShape',
+        dependsOn         : 'verifyStoragePhaseN1HeapMutationMappingProof',
+        sourceDir         : 'dev/storage-phase-n11-heap-mutation-context-shape-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseN11HeapMutationContextShapeSmoke',
+        compileDescription: 'Compiles the N1.1 heap mutation context-shape smoke test.',
+        smokeDescription  : 'Runs the N1.1 heap mutation context-shape smoke test.',
+        verifyDescription : 'Verifies N1.1 heap mutation context shape without routing heap mutations.',
+        successMessage    : 'Verified N1.1 heap mutation context shape without routing heap mutations'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane and heap provider-parity route through N1.'
-    dependsOn 'verifyStoragePhaseN1HeapMutationMappingProof'
+    description = 'Verifies the closed native delos_mvcc execution lane and heap provider-parity route through N1.1.'
+    dependsOn 'verifyStoragePhaseN11HeapMutationContextShape'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N1'
+        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N1.1'
     }
 }
