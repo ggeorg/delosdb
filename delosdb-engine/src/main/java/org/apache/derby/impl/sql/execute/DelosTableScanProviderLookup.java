@@ -99,6 +99,10 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_NATIVE_ORDER_BY_RESIDUAL_PROPERTY =
             DelosTableScanResultSet.NATIVE_ORDER_BY_RESIDUAL_PROPERTY;
 
+    /** Test/proof gate for Phase M2 heap scan shadow branch. */
+    public static final String FACTORY_HEAP_SCAN_SHADOW_PROPERTY =
+            DelosHeapScanShadowResultSet.HEAP_SCAN_SHADOW_PROPERTY;
+
     /** Test/proof gate for Phase G3 native SELECT * full scans. */
     public static final String FACTORY_NATIVE_SELECT_ALL_PROPERTY =
             DelosTableScanResultSet.NATIVE_SELECT_ALL_PROPERTY;
@@ -168,6 +172,21 @@ public final class DelosTableScanProviderLookup
     public static Optional<Result> lastNonDefaultFactoryLookupForTesting()
     {
         return Optional.ofNullable(LAST_NON_DEFAULT_FACTORY_LOOKUP.get());
+    }
+
+    public static void resetHeapScanShadowForTesting()
+    {
+        DelosHeapScanShadowResultSet.resetForTesting();
+    }
+
+    public static int heapScanShadowBranchCountForTesting()
+    {
+        return DelosHeapScanShadowResultSet.shadowBranchCountForTesting();
+    }
+
+    public static Optional<Result> lastHeapScanShadowLookupForTesting()
+    {
+        return DelosHeapScanShadowResultSet.lastShadowLookupForTesting();
     }
 
     public static Optional<Result> find(Activation activation, String tableName)

@@ -255,6 +255,7 @@ public final class StoragePhaseK1HeapLiveProviderFeasibilitySmoke {
         System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_INSERT_PROPERTY);
         System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY);
         System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_UPDATE_EQUALITY_PROPERTY);
+        System.clearProperty(DelosTableScanProviderLookup.FACTORY_HEAP_SCAN_SHADOW_PROPERTY);
     }
 
     private static String readSource(Path sourceFile) throws Exception {

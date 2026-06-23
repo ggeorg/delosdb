@@ -280,11 +280,26 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified M1 heap scan candidate without SQL routing or heap activation'
 ])
 
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-m2-heap-scan-shadow-smoke',
+        compileTask       : 'compileStoragePhaseM2HeapScanShadowSmoke',
+        smokeTask         : 'storagePhaseM2HeapScanShadowSmoke',
+        verifyTask        : 'verifyStoragePhaseM2HeapScanShadow',
+        dependsOn         : 'verifyStoragePhaseM1HeapScanCandidate',
+        sourceDir         : 'dev/storage-phase-m2-heap-scan-shadow-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseM2HeapScanShadowSmoke',
+        compileDescription: 'Compiles the M2 property-gated heap scan shadow smoke test.',
+        smokeDescription  : 'Runs the M2 property-gated heap scan shadow smoke test.',
+        verifyDescription : 'Verifies M2 heap scan shadow branch without default behavior or heap provider activation.',
+        successMessage    : 'Verified M2 heap scan shadow branch without default behavior or heap provider activation'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane and isolated heap scan candidate through M1.'
-    dependsOn 'verifyStoragePhaseM1HeapScanCandidate'
+    description = 'Verifies the closed native delos_mvcc execution lane and heap scan shadow branch through M2.'
+    dependsOn 'verifyStoragePhaseM2HeapScanShadow'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane and isolated heap scan candidate through M1'
+        println 'Verified closed native delos_mvcc execution lane and heap scan shadow branch through M2'
     }
 }
