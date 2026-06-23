@@ -141,16 +141,17 @@ public final class EngineMvccTableAccess
     @Override
     public DelosScan scan(
             DelosAccessContext context,
-            List<DelosPredicate> mutableFilters,
+            List<DelosPredicate> filters,
             DelosProjection projection) {
         requirePhysicalAccess(context);
-        Objects.requireNonNull(mutableFilters, "mutableFilters");
+        Objects.requireNonNull(filters, "filters");
         Objects.requireNonNull(projection, "projection");
+        List<DelosPredicate> remainingFilters = new ArrayList<>(filters);
         TxView view = txView(context);
         VersionedTableStats tableStats = executionBridge.stats(table, view);
         long tableScanCost = estimateTableScanCost(tableStats);
 
-        Optional<PushedEquality> pushedEquality = findPushedEquality(mutableFilters);
+        Optional<PushedEquality> pushedEquality = findPushedEquality(remainingFilters);
         List<VersionedRow<Long, List<Object>>> visibleRows;
         String predicateColumnName = "";
         String indexName = "";
@@ -182,14 +183,14 @@ public final class EngineMvccTableAccess
                 visibleRows = scanAllWhere(equality.columnIndex(), equality.value(), view);
                 visibleMatchCount = visibleRows.size();
             }
-            mutableFilters.remove(equality.predicate());
+            remainingFilters.remove(equality.predicate());
         } else {
             visibleRows = executionBridge.scanAll(table, view);
             visibleMatchCount = visibleRows.size();
         }
 
-        if (!mutableFilters.isEmpty()) {
-            visibleRows = applyRemainingFilters(visibleRows, mutableFilters);
+        if (!remainingFilters.isEmpty()) {
+            visibleRows = applyRemainingFilters(visibleRows, remainingFilters);
             visibleMatchCount = visibleRows.size();
         }
 
