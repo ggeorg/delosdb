@@ -142,11 +142,26 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified current heap/MVCC provider truth before choosing provider parity'
 ])
 
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-k1-heap-live-provider-feasibility-smoke',
+        compileTask       : 'compileStoragePhaseK1HeapLiveProviderFeasibilitySmoke',
+        smokeTask         : 'storagePhaseK1HeapLiveProviderFeasibilitySmoke',
+        verifyTask        : 'verifyStoragePhaseK1HeapLiveProviderFeasibility',
+        dependsOn         : 'verifyStoragePhaseK0ProviderParityFork',
+        sourceDir         : 'dev/storage-phase-k1-heap-live-provider-feasibility-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseK1HeapLiveProviderFeasibilitySmoke',
+        compileDescription: 'Compiles the K1 heap live-provider feasibility gate smoke test.',
+        smokeDescription  : 'Runs the K1 heap live-provider feasibility gate smoke test.',
+        verifyDescription : 'Verifies K1 heap live-provider feasibility without activating heap routing.',
+        successMessage    : 'Verified K1 heap live-provider feasibility without activating heap routing'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane through K0 provider-parity fork truth.'
-    dependsOn 'verifyStoragePhaseK0ProviderParityFork'
+    description = 'Verifies the closed native delos_mvcc execution lane through K1 heap live-provider feasibility.'
+    dependsOn 'verifyStoragePhaseK1HeapLiveProviderFeasibility'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane through K0 provider-parity fork truth'
+        println 'Verified closed native delos_mvcc execution lane through K1 heap live-provider feasibility'
     }
 }
