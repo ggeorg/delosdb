@@ -91,6 +91,10 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_NATIVE_OR_PREDICATES_PROPERTY =
             DelosTableScanResultSet.NATIVE_OR_PREDICATES_PROPERTY;
 
+    /** Test/proof gate for Phase L3.4 native projection-variant coverage. */
+    public static final String FACTORY_NATIVE_PROJECTION_VARIANTS_PROPERTY =
+            DelosTableScanResultSet.NATIVE_PROJECTION_VARIANTS_PROPERTY;
+
     /** Test/proof gate for Phase G3 native SELECT * full scans. */
     public static final String FACTORY_NATIVE_SELECT_ALL_PROPERTY =
             DelosTableScanResultSet.NATIVE_SELECT_ALL_PROPERTY;

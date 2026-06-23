@@ -220,11 +220,26 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified L3.3 OR-predicate coverage without fake Delos OR contract or heap activation'
 ])
 
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-l34-projection-variants-smoke',
+        compileTask       : 'compileStoragePhaseL34ProjectionVariantsSmoke',
+        smokeTask         : 'storagePhaseL34ProjectionVariantsSmoke',
+        verifyTask        : 'verifyStoragePhaseL34ProjectionVariants',
+        dependsOn         : 'verifyStoragePhaseL33OrPredicateResidual',
+        sourceDir         : 'dev/storage-phase-l34-projection-variants-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseL34ProjectionVariantsSmoke',
+        compileDescription: 'Compiles the L3.4 delos_mvcc projection-variant smoke test.',
+        smokeDescription  : 'Runs the L3.4 delos_mvcc projection-variant smoke test.',
+        verifyDescription : 'Verifies L3.4 projection variants without provider projection pushdown or heap activation.',
+        successMessage    : 'Verified L3.4 projection variants without provider projection pushdown or heap activation'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane through L3.3 OR-predicate coverage.'
-    dependsOn 'verifyStoragePhaseL33OrPredicateResidual'
+    description = 'Verifies the closed native delos_mvcc execution lane through L3.4 projection-variant coverage.'
+    dependsOn 'verifyStoragePhaseL34ProjectionVariants'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane through L3.3 OR-predicate coverage'
+        println 'Verified closed native delos_mvcc execution lane through L3.4 projection-variant coverage'
     }
 }

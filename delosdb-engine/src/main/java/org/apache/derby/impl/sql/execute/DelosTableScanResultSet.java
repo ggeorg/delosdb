@@ -27,6 +27,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Objects;
 
+import org.apache.derby.iapi.services.io.FormatableBitSet;
+
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 import org.apache.derby.iapi.sql.execute.CursorResultSet;
 import org.apache.derby.iapi.sql.execute.ExecPreparedStatement;
@@ -86,6 +88,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static final String NATIVE_OR_PREDICATES_PROPERTY =
             "delosdb.storage.phaseL33.nativeOrPredicateResidual";
 
+    static final String NATIVE_PROJECTION_VARIANTS_PROPERTY =
+            "delosdb.storage.phaseL34.nativeProjectionVariants";
+
     static final String NATIVE_SELECT_ALL_PROPERTY =
             "delosdb.storage.phaseG3.nativeSelectAll";
 
@@ -103,6 +108,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     private final boolean nativeSelectEquality;
     private final boolean nativeSelectAll;
     private final boolean nativeOrPredicateResidual;
+    private FormatableBitSet accessedCols;
     private DelosNativeTableRegistry.NativeExecutionTableAccess nativeAccess;
     private DelosScan scan;
     private TableDescriptor scanTableDescriptor;
@@ -134,8 +140,11 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         boolean nativeSelectAllEnabled = Boolean.getBoolean(NATIVE_SELECT_ALL_PROPERTY)
                 || Boolean.getBoolean(NATIVE_COUNT_AGGREGATE_PROPERTY);
         boolean nativeOrPredicateEnabled = Boolean.getBoolean(NATIVE_OR_PREDICATES_PROPERTY);
-        boolean nativePredicateScanEnabled = nativeSelectAllEnabled
+        boolean nativeProjectionVariantsEnabled = Boolean.getBoolean(NATIVE_PROJECTION_VARIANTS_PROPERTY);
+        boolean nativeFullScanEnabled = nativeSelectAllEnabled
                 || nativeOrPredicateEnabled
+                || nativeProjectionVariantsEnabled;
+        boolean nativePredicateScanEnabled = nativeFullScanEnabled
                 || Boolean.getBoolean(NATIVE_SELECT_EQUALITY_PROPERTY)
                 || Boolean.getBoolean(NATIVE_RANGE_PREDICATES_PROPERTY)
                 || Boolean.getBoolean(NATIVE_BETWEEN_PREDICATES_PROPERTY)
@@ -155,7 +164,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 params,
                 lookup.get(),
                 nativePredicateScanEnabled,
-                nativeSelectAllEnabled || nativeOrPredicateEnabled,
+                nativeFullScanEnabled,
                 nativeOrPredicateEnabled));
     }
 
@@ -175,6 +184,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
 
             TableDescriptor tableDescriptor = tableDescriptor();
             scanTableDescriptor = tableDescriptor;
+            accessedCols = accessedColumnsForNativeScan();
             List<DelosPredicate> filters = scanPredicates(tableDescriptor, nativeSelectAll);
             nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(tableDescriptor, providerLookup);
             requireSnapshotIsolation(nativeAccess.tableAccess());
@@ -213,8 +223,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                     continue;
                 }
 
-                ExecRow row = newResultRow();
-                materialize(currentDelosRow, row);
+                ExecRow candidate = newResultRow();
+                materializeBaseRow(currentDelosRow, candidate);
+                ExecRow row = compactNativeRow(candidate);
                 rowsSeen++;
                 setCurrentRow(row);
                 return row;
@@ -259,6 +270,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 }
             }
             scanTableDescriptor = null;
+            accessedCols = null;
             currentDelosRow = null;
             clearCurrentRow();
             super.close();
@@ -607,6 +619,19 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         }
     }
 
+    private FormatableBitSet accessedColumnsForNativeScan() throws StandardException
+    {
+        ExecPreparedStatement preparedStatement = params.activation.getPreparedStatement();
+        return params.colRefItem != -1
+                ? (FormatableBitSet) preparedStatement.getSavedObject(params.colRefItem)
+                : null;
+    }
+
+    private ExecRow compactNativeRow(ExecRow candidate) throws StandardException
+    {
+        return getCompactRow(candidate, accessedCols, false);
+    }
+
     private ExecRow newResultRow() throws StandardException
     {
         ExecPreparedStatement preparedStatement = params.activation.getPreparedStatement();
@@ -614,11 +639,11 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         return builder.build(params.activation.getExecutionFactory());
     }
 
-    private void materialize(DelosRow delosRow, ExecRow resultRow) throws StandardException
+    private void materializeBaseRow(DelosRow delosRow, ExecRow baseRow) throws StandardException
     {
-        int columnCount = Math.min(resultRow.nColumns(), delosRow.values().size());
+        int columnCount = Math.min(baseRow.nColumns(), delosRow.values().size());
         for (int column = 1; column <= columnCount; column++) {
-            DataValueDescriptor target = resultRow.getColumn(column);
+            DataValueDescriptor target = baseRow.getColumn(column);
             if (target == null) {
                 continue;
             }
