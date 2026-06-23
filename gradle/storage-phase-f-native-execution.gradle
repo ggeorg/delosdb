@@ -1,0 +1,210 @@
+// Streamlined Storage Phase F native execution verification.
+// Phase F is closed; keep executable smoke coverage and remove brittle
+// per-step text-token report guards.
+
+ext.delosdbStoragePhaseFNativeExecutionModuleClassDir = { String projectPath, String moduleName ->
+    project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
+}
+
+ext.delosdbStoragePhaseFNativeExecutionRuntimeJars = {
+    def runtimeJarsValue = rootProject.ext.delosdbRuntimeJars
+    if (runtimeJarsValue instanceof Closure) {
+        return runtimeJarsValue.call()
+    }
+    files(runtimeJarsValue ?: [])
+}
+
+ext.delosdbStoragePhaseFNativeExecutionClasspath = { Object smokeClassesDir ->
+    files(
+            smokeClassesDir,
+            delosdbStoragePhaseFNativeExecutionModuleClassDir(':delosdb-engine', 'org.apache.derby.engine'),
+            delosdbStoragePhaseFNativeExecutionModuleClassDir(':delosdb-engine-kernel', 'io.github.ggeorg.delosdb.engine.kernel'),
+            delosdbStoragePhaseFNativeExecutionModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
+            delosdbStoragePhaseFNativeExecutionModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
+            project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
+            delosdbStoragePhaseFNativeExecutionRuntimeJars())
+}
+
+ext.delosdbStoragePhaseFNativeExecutionRegisterSmoke = { Map<String, Object> spec ->
+    def classesDir = layout.buildDirectory.dir("classes/${spec.classesDirName}")
+
+    tasks.register((String) spec.compileTask, JavaCompile) {
+        dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+        group = 'verification'
+        description = (String) spec.compileDescription
+        source = files((String) spec.sourceDir, rootProject.ext.delosdbSmokeUtilsSourceDir)
+        destinationDirectory = classesDir
+        sourceCompatibility = javaRelease.toString()
+        targetCompatibility = javaRelease.toString()
+        options.release = javaRelease
+        options.encoding = 'UTF-8'
+        classpath = delosdbStoragePhaseFNativeExecutionClasspath(classesDir)
+    }
+
+    tasks.register((String) spec.smokeTask, JavaExec) {
+        dependsOn spec.dependsOn, spec.compileTask, 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+        group = 'verification'
+        description = (String) spec.smokeDescription
+        mainClass = (String) spec.mainClass
+        classpath = delosdbStoragePhaseFNativeExecutionClasspath(classesDir)
+    }
+
+    tasks.register((String) spec.verifyTask) {
+        group = 'verification'
+        description = (String) spec.verifyDescription
+        dependsOn spec.smokeTask
+        doLast {
+            println (String) spec.successMessage
+        }
+    }
+}
+
+delosdbStoragePhaseFNativeExecutionRegisterSmoke([
+        classesDirName    : 'storage-phase-f1a-provider-syntax-smoke',
+        compileTask       : 'compileStoragePhaseF1aProviderSyntaxSmoke',
+        smokeTask         : 'storagePhaseF1aProviderSyntaxSmoke',
+        verifyTask        : 'verifyStoragePhaseF0F1aNativeStart',
+        dependsOn         : 'verifyStoragePhaseC37RouteRetirementCloseout',
+        sourceDir         : 'dev/storage-phase-f1a-provider-syntax-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseF1aProviderSyntaxSmoke',
+        compileDescription: 'Compiles the Phase F1a provider syntax parser smoke test.',
+        smokeDescription  : 'Runs the Phase F1a provider syntax parser smoke test.',
+        verifyDescription : 'Verifies Phase F0/F1a native integration start.',
+        successMessage    : 'Verified Phase F0/F1a native integration start; next step is native ResultSetFactory integration'
+])
+
+delosdbStoragePhaseFNativeExecutionRegisterSmoke([
+        classesDirName    : 'storage-phase-f2-provider-catalog-smoke',
+        compileTask       : 'compileStoragePhaseF2ProviderCatalogSmoke',
+        smokeTask         : 'storagePhaseF2ProviderCatalogSmoke',
+        verifyTask        : 'verifyStoragePhaseF2ProviderCatalogPersistence',
+        dependsOn         : 'verifyStoragePhaseF0F1aNativeStart',
+        sourceDir         : 'dev/storage-phase-f2-provider-catalog-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseF2ProviderCatalogSmoke',
+        compileDescription: 'Compiles the Phase F2.1 provider catalog persistence smoke test.',
+        smokeDescription  : 'Runs the Phase F2.1 provider catalog persistence smoke test.',
+        verifyDescription : 'Verifies Phase F2.1 provider catalog persistence.',
+        successMessage    : 'Verified Phase F2.1 provider catalog persistence; next step is F2.2 provider validation and ResultSetFactory metadata lookup preparation'
+])
+
+delosdbStoragePhaseFNativeExecutionRegisterSmoke([
+        classesDirName    : 'storage-phase-f2-resultset-lookup-smoke',
+        compileTask       : 'compileStoragePhaseF2ResultSetLookupSmoke',
+        smokeTask         : 'storagePhaseF2ResultSetLookupSmoke',
+        verifyTask        : 'verifyStoragePhaseF2ResultSetMetadataLookup',
+        dependsOn         : 'verifyStoragePhaseF2ProviderCatalogPersistence',
+        sourceDir         : 'dev/storage-phase-f2-resultset-lookup-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseF2ResultSetLookupSmoke',
+        compileDescription: 'Compiles the Phase F2.2 ResultSetFactory metadata lookup smoke test.',
+        smokeDescription  : 'Runs the Phase F2.2 ResultSetFactory metadata lookup smoke test.',
+        verifyDescription : 'Verifies Phase F2.2 ResultSetFactory metadata lookup preparation.',
+        successMessage    : 'Verified Phase F2.2 ResultSetFactory metadata lookup preparation; next step is F3 provider-aware ResultSetFactory branch proof'
+])
+
+delosdbStoragePhaseFNativeExecutionRegisterSmoke([
+        classesDirName    : 'storage-phase-f3-factory-branch-smoke',
+        compileTask       : 'compileStoragePhaseF3FactoryBranchSmoke',
+        smokeTask         : 'storagePhaseF3FactoryBranchSmoke',
+        verifyTask        : 'verifyStoragePhaseF3FactoryBranchProof',
+        dependsOn         : 'verifyStoragePhaseF2ResultSetMetadataLookup',
+        sourceDir         : 'dev/storage-phase-f3-factory-branch-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseF3FactoryBranchSmoke',
+        compileDescription: 'Compiles the Phase F3.1 provider-aware ResultSetFactory branch smoke test.',
+        smokeDescription  : 'Runs the Phase F3.1 provider-aware ResultSetFactory branch smoke test.',
+        verifyDescription : 'Verifies Phase F3.1 provider-aware ResultSetFactory branch proof.',
+        successMessage    : 'Verified Phase F3.1 provider-aware ResultSetFactory branch proof; next step is F3.2 DelosTableScanResultSet skeleton'
+])
+
+delosdbStoragePhaseFNativeExecutionRegisterSmoke([
+        classesDirName    : 'storage-phase-f3-delos-table-scan-skeleton-smoke',
+        compileTask       : 'compileStoragePhaseF3DelosTableScanSkeletonSmoke',
+        smokeTask         : 'storagePhaseF3DelosTableScanSkeletonSmoke',
+        verifyTask        : 'verifyStoragePhaseF3DelosTableScanSkeleton',
+        dependsOn         : 'verifyStoragePhaseF3FactoryBranchProof',
+        sourceDir         : 'dev/storage-phase-f3-delos-table-scan-skeleton-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseF3DelosTableScanSkeletonSmoke',
+        compileDescription: 'Compiles the Phase F3.2 DelosTableScanResultSet skeleton smoke test.',
+        smokeDescription  : 'Runs the Phase F3.2 DelosTableScanResultSet skeleton smoke test.',
+        verifyDescription : 'Verifies Phase F3.2 DelosTableScanResultSet skeleton proof.',
+        successMessage    : 'Verified Phase F3.2 DelosTableScanResultSet skeleton; next step is F4 native MVCC SELECT equality through DelosTableScanResultSet'
+])
+
+delosdbStoragePhaseFNativeExecutionRegisterSmoke([
+        classesDirName    : 'storage-phase-f4-native-select-equality-smoke',
+        compileTask       : 'compileStoragePhaseF4NativeSelectEqualitySmoke',
+        smokeTask         : 'storagePhaseF4NativeSelectEqualitySmoke',
+        verifyTask        : 'verifyStoragePhaseF4NativeSelectEquality',
+        dependsOn         : 'verifyStoragePhaseF3DelosTableScanSkeleton',
+        sourceDir         : 'dev/storage-phase-f4-native-select-equality-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseF4NativeSelectEqualitySmoke',
+        compileDescription: 'Compiles the Phase F4 native MVCC SELECT equality smoke test.',
+        smokeDescription  : 'Runs the Phase F4 native MVCC SELECT equality smoke test.',
+        verifyDescription : 'Verifies Phase F4 native MVCC SELECT equality proof.',
+        successMessage    : 'Verified Phase F4 native MVCC SELECT equality; next step is F5 native INSERT'
+])
+
+delosdbStoragePhaseFNativeExecutionRegisterSmoke([
+        classesDirName    : 'storage-phase-f5-native-insert-smoke',
+        compileTask       : 'compileStoragePhaseF5NativeInsertSmoke',
+        smokeTask         : 'storagePhaseF5NativeInsertSmoke',
+        verifyTask        : 'verifyStoragePhaseF5NativeInsert',
+        dependsOn         : 'verifyStoragePhaseF4NativeSelectEquality',
+        sourceDir         : 'dev/storage-phase-f5-native-insert-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseF5NativeInsertSmoke',
+        compileDescription: 'Compiles the Phase F5 native MVCC INSERT smoke test.',
+        smokeDescription  : 'Runs the Phase F5 native MVCC INSERT smoke test.',
+        verifyDescription : 'Verifies Phase F5 native MVCC INSERT proof.',
+        successMessage    : 'Verified Phase F5 native MVCC INSERT; next step is F6 native DELETE equality'
+])
+
+delosdbStoragePhaseFNativeExecutionRegisterSmoke([
+        classesDirName    : 'storage-phase-f6-native-delete-equality-smoke',
+        compileTask       : 'compileStoragePhaseF6NativeDeleteEqualitySmoke',
+        smokeTask         : 'storagePhaseF6NativeDeleteEqualitySmoke',
+        verifyTask        : 'verifyStoragePhaseF6NativeDeleteEquality',
+        dependsOn         : 'verifyStoragePhaseF5NativeInsert',
+        sourceDir         : 'dev/storage-phase-f6-native-delete-equality-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseF6NativeDeleteEqualitySmoke',
+        compileDescription: 'Compiles the Phase F6 native MVCC DELETE equality smoke test.',
+        smokeDescription  : 'Runs the Phase F6 native MVCC DELETE equality smoke test.',
+        verifyDescription : 'Verifies Phase F6 native MVCC DELETE equality proof.',
+        successMessage    : 'Verified Phase F6 native MVCC DELETE equality; next step is F7 native UPDATE equality'
+])
+
+delosdbStoragePhaseFNativeExecutionRegisterSmoke([
+        classesDirName    : 'storage-phase-f7-native-update-equality-smoke',
+        compileTask       : 'compileStoragePhaseF7NativeUpdateEqualitySmoke',
+        smokeTask         : 'storagePhaseF7NativeUpdateEqualitySmoke',
+        verifyTask        : 'verifyStoragePhaseF7NativeUpdateEquality',
+        dependsOn         : 'verifyStoragePhaseF6NativeDeleteEquality',
+        sourceDir         : 'dev/storage-phase-f7-native-update-equality-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseF7NativeUpdateEqualitySmoke',
+        compileDescription: 'Compiles the Phase F7 native MVCC UPDATE equality smoke test.',
+        smokeDescription  : 'Runs the Phase F7 native MVCC UPDATE equality smoke test.',
+        verifyDescription : 'Verifies Phase F7 native MVCC UPDATE equality proof.',
+        successMessage    : 'Verified Phase F7 native MVCC UPDATE equality; next step is F8 bridge bypass strategy'
+])
+
+delosdbStoragePhaseFNativeExecutionRegisterSmoke([
+        classesDirName    : 'storage-phase-f8-bridge-bypass-smoke',
+        compileTask       : 'compileStoragePhaseF8BridgeBypassSmoke',
+        smokeTask         : 'storagePhaseF8BridgeBypassSmoke',
+        verifyTask        : 'verifyStoragePhaseF8BridgeBypass',
+        dependsOn         : 'verifyStoragePhaseF7NativeUpdateEquality',
+        sourceDir         : 'dev/storage-phase-f8-bridge-bypass-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseF8BridgeBypassSmoke',
+        compileDescription: 'Compiles the Phase F8 bridge-bypass smoke test.',
+        smokeDescription  : 'Runs the Phase F8 bridge-bypass smoke test.',
+        verifyDescription : 'Verifies Phase F8 bridge-bypass proof.',
+        successMessage    : 'Verified Phase F8 bridge bypass; next step is G1 native remaining range predicates'
+])
+
+tasks.register('verifyStoragePhaseFConsolidation') {
+    group = 'verification'
+    description = 'Verifies the streamlined Phase F native Derby execution closeout.'
+    dependsOn 'verifyStoragePhaseF8BridgeBypass'
+    doLast {
+        println 'Verified Phase F consolidation; Phase F is closed and next step is G1 native remaining range predicates'
+    }
+}

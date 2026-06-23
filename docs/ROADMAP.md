@@ -269,6 +269,7 @@ F5 landed — native INSERT through provider-owned table access
 F6 landed — native DELETE equality through provider-owned row identity delete
 F7 landed — native UPDATE equality through provider-owned row identity update
 F8 landed — bridge bypass for native mode, compatibility bridge explicit only
+Phase F build streamline landed — consolidated Phase F Gradle wiring and retired per-step report guards
 Next: G1 — native remaining range predicates
 ```
 

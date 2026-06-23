@@ -50,6 +50,10 @@ scaffolding during the transition.
 Phase F smoke database. The script must stay explicit: no wildcard `rm -rf`
 cleanup patterns.
 
+The Phase F build wiring is also streamlined after closeout. The root build uses
+one consolidated Phase F Gradle script and the retired per-step report-guard
+scripts are removed by `scripts/delete-stale-phase-f-build-guards.sh`.
+
 ## Rules after Phase F
 
 ```text

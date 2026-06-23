@@ -2704,17 +2704,7 @@ apply from: file('gradle/storage-phase-c34-delete-regex-deletion.gradle')
 apply from: file('gradle/storage-phase-c35-javacc-update-classifier.gradle')
 apply from: file('gradle/storage-phase-c36-update-regex-deletion.gradle')
 apply from: file('gradle/storage-phase-c37-route-retirement-closeout.gradle')
-apply from: file('gradle/storage-phase-f0-f1a-native-start.gradle')
-apply from: file('gradle/storage-phase-f2-provider-catalog-persistence.gradle')
-apply from: file('gradle/storage-phase-f2-resultset-metadata-lookup.gradle')
-apply from: file('gradle/storage-phase-f3-factory-branch-proof.gradle')
-apply from: file('gradle/storage-phase-f3-delos-table-scan-skeleton.gradle')
-apply from: file('gradle/storage-phase-f4-native-select-equality.gradle')
-apply from: file('gradle/storage-phase-f5-native-insert.gradle')
-apply from: file('gradle/storage-phase-f6-native-delete-equality.gradle')
-apply from: file('gradle/storage-phase-f7-native-update-equality.gradle')
-apply from: file('gradle/storage-phase-f8-bridge-bypass.gradle')
-apply from: file('gradle/storage-phase-f-consolidation.gradle')
+apply from: file('gradle/storage-phase-f-native-execution.gradle')
 
 
 // Phase F2.2: storage-phase smoke compiles put compiled module directories on
