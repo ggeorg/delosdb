@@ -5,6 +5,7 @@ import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.Optional;
 
 /**
  * Phase F3.1 proof: the generated Derby table-scan path reaches
