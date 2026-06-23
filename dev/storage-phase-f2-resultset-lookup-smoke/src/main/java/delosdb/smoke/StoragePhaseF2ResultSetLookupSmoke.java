@@ -9,6 +9,7 @@ import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.Optional;
 
 /**
  * Phase F2.2 proof: the future ResultSetFactory branch can resolve persisted
