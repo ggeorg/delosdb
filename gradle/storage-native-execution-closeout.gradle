@@ -265,11 +265,26 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified L1 MVCC-specific row reservation without generic heap lock API'
 ])
 
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-m1-heap-scan-candidate-smoke',
+        compileTask       : 'compileStoragePhaseM1HeapScanCandidateSmoke',
+        smokeTask         : 'storagePhaseM1HeapScanCandidateSmoke',
+        verifyTask        : 'verifyStoragePhaseM1HeapScanCandidate',
+        dependsOn         : 'verifyStoragePhaseL1MvccRowReservation',
+        sourceDir         : 'dev/storage-phase-m1-heap-scan-candidate-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseM1HeapScanCandidateSmoke',
+        compileDescription: 'Compiles the M1 isolated heap scan candidate smoke test.',
+        smokeDescription  : 'Runs the M1 isolated heap scan candidate smoke test.',
+        verifyDescription : 'Verifies M1 heap scan candidate without SQL routing or heap activation.',
+        successMessage    : 'Verified M1 heap scan candidate without SQL routing or heap activation'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane through L1 MVCC row-reservation coverage.'
-    dependsOn 'verifyStoragePhaseL1MvccRowReservation'
+    description = 'Verifies the closed native delos_mvcc execution lane and isolated heap scan candidate through M1.'
+    dependsOn 'verifyStoragePhaseM1HeapScanCandidate'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane through L1 MVCC row-reservation coverage'
+        println 'Verified closed native delos_mvcc execution lane and isolated heap scan candidate through M1'
     }
 }

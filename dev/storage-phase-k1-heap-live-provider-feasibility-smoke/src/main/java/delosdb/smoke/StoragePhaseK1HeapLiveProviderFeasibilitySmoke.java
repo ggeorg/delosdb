@@ -11,7 +11,6 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Stream;
 
 /**
  * K1 heap live-provider feasibility gate.
@@ -210,14 +209,9 @@ public final class StoragePhaseK1HeapLiveProviderFeasibilitySmoke {
                 "compileTimeOpenHeapConglomerate",
                 "compileTimeInsertAndFetchHeapRowLocation"));
 
-        try (Stream<Path> storeTypes = Files.list(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes"))) {
-            require(storeTypes.noneMatch(path -> {
-                String fileName = path.getFileName().toString();
-                return fileName.startsWith("EngineHeapTableAccessLive")
-                        || fileName.contains("HeapTableAccessLiveCandidate");
-            }), "Expected no live heap Delos table-access candidate in K1");
-        }
+        // Later M-phase work may add an isolated heap scan candidate class.
+        // K1's closed truth is that heap SQL routing remains Derby-native;
+        // the routing guard below, not this proof adapter check, owns that invariant.
     }
 
     private static void proveNoLiveHeapDelosRoutingHasAppeared() throws Exception {
