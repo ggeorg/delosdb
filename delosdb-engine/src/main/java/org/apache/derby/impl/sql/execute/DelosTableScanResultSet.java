@@ -26,7 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 import org.apache.derby.iapi.sql.execute.CursorResultSet;
 import org.apache.derby.iapi.sql.execute.ExecPreparedStatement;
 import org.apache.derby.iapi.sql.execute.ExecRow;
@@ -99,7 +99,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     private final DelosTableScanProviderLookup.Result providerLookup;
     private final boolean nativeSelectEquality;
     private final boolean nativeSelectAll;
-    private VersionedStorageSqlBridge.NativeExecutionTableAccess nativeAccess;
+    private DelosNativeTableRegistry.NativeExecutionTableAccess nativeAccess;
     private DelosScan scan;
     private DelosRow currentDelosRow;
     private final RowLocation syntheticMutationRowLocation = EngineStoreRowLocationBridge.newEngineRowLocation();
@@ -164,9 +164,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
 
             TableDescriptor tableDescriptor = tableDescriptor();
             List<DelosPredicate> filters = scanPredicates(tableDescriptor, nativeSelectAll);
-            nativeAccess = VersionedStorageSqlBridge.openNativeExecutionTableAccess(
-                            providerLookup.schemaName(),
-                            providerLookup.tableName())
+            nativeAccess = DelosNativeTableRegistry.openNativeExecutionTableAccess(tableDescriptor())
                     .orElseThrow(() -> StandardException.plainWrapException(
                             new IllegalStateException("No delos_mvcc native table access registered for "
                                     + providerLookup.schemaName() + "." + providerLookup.tableName())));
@@ -296,6 +294,11 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     DelosTableScanProviderLookup.Result providerLookupForMutation()
     {
         return providerLookup;
+    }
+
+    TableDescriptor tableDescriptorForNativeRegistry() throws StandardException
+    {
+        return tableDescriptor();
     }
 
     List<DelosPredicate> equalityPredicatesForNativeMutation()

@@ -18,7 +18,7 @@ Derby parser / binder / optimizer
   -> provider-aware catalog lookup
   -> DelosInsertResultSet
   -> source ExecRow values
-  -> VersionedStorageSqlBridge.NativeExecutionTableAccess.insert(...)
+  -> DelosNativeTableRegistry.NativeExecutionTableAccess.insert(...)
   -> DelosRow
   -> EngineMvccTableAccess.insert(...)
 ```

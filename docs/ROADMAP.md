@@ -268,7 +268,7 @@ F4 landed — native MVCC SELECT equality through generated activation/result-se
 F5 landed — native INSERT through provider-owned table access
 F6 landed — native DELETE equality through provider-owned row identity delete
 F7 landed — native UPDATE equality through provider-owned row identity update
-F8 landed — bridge bypass for native mode, compatibility bridge explicit only
+F8 landed — bridge interception retired for native mode; G6 later removed native execution dependence on the SQL bridge fallback
 Phase F build streamline landed — consolidated Phase F Gradle wiring and retired per-step report guards
 G0 landed — native Qualifier[][] conjunction cleanup before range predicates
 G1 landed — native remaining range predicates: >, >=, <, <=

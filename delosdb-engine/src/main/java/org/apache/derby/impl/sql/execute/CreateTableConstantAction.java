@@ -21,7 +21,7 @@
 
 package org.apache.derby.impl.sql.execute;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 import org.apache.derby.iapi.sql.execute.ConstantAction;
 import org.apache.derby.iapi.store.access.TransactionController;
 
@@ -442,7 +442,7 @@ class CreateTableConstantAction extends DDLConstantAction
 
         try
         {
-            VersionedStorageSqlBridge.registerNativeExecutionTable(
+            DelosNativeTableRegistry.registerNativeExecutionTable(
                     schemaDescriptor.getSchemaName(),
                     tableDescriptor.getName(),
                     columnNames,

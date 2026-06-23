@@ -20,7 +20,7 @@ F4      — native SELECT equality through DelosTableScanResultSet
 F5      — native INSERT through DelosInsertResultSet
 F6      — native DELETE equality through DelosDeleteResultSet and DelosRowIdentity
 F7      — native UPDATE equality through DelosUpdateResultSet and DelosRowIdentity
-F8      — bridge bypass for native mode; compatibility bridge explicit only
+F8      — bridge interception retired for native mode; legacy bridge no longer owns native execution registry state
 ```
 
 ## Native Derby execution path now covers
@@ -41,7 +41,7 @@ Bridge interception is globally bypassed in native mode at `EmbedStatement`.
 The bridge is not disabled by doing pre-parse provider metadata lookup. That
 would re-create a parallel parser/catalog path before Derby has parsed the SQL.
 
-`VersionedStorageSqlBridge` remains only as explicit compatibility/test
+`VersionedStorageSqlBridge` no longer owns normal native execution; bridge SQL remains legacy test scaffolding only
 scaffolding during the transition.
 
 ## Cleanup status

@@ -1,5 +1,6 @@
 package delosdb.smoke;
 
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
@@ -33,6 +34,7 @@ public final class StoragePhaseGConsolidationSmoke {
             proveBridgeInterceptionCannotBeEnabled();
             proveNoCompatibilityModeWiringInGradle();
             proveNoSoftG6Archaeology();
+            proveNoNativeExecutionDependencyOnSqlBridge();
             proveNativeLifecycleWithoutBridgeFallback();
         } finally {
             clearProofProperties();
@@ -93,6 +95,35 @@ public final class StoragePhaseGConsolidationSmoke {
         require(present.isEmpty(), "stale soft-G6 bridge-reduction artifacts remain: " + present);
     }
 
+
+    private static void proveNoNativeExecutionDependencyOnSqlBridge() throws Exception {
+        List<Path> nativeExecutionFiles = List.of(
+                Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateTableConstantAction.java"),
+                Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosTableScanResultSet.java"),
+                Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosInsertResultSet.java"),
+                Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosDeleteResultSet.java"),
+                Path.of("delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosUpdateResultSet.java"));
+        List<String> violations = new ArrayList<>();
+        for (Path sourceFile : nativeExecutionFiles) {
+            if (!Files.exists(sourceFile)) {
+                violations.add("missing expected native execution source: " + sourceFile);
+                continue;
+            }
+            String text = Files.readString(sourceFile);
+            if (text.contains("VersionedStorageSqlBridge")) {
+                violations.add("native execution source still depends on retired SQL bridge: " + sourceFile);
+            }
+        }
+        String bridgeText = Files.readString(Path.of(
+                "delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/VersionedStorageSqlBridge.java"));
+        if (bridgeText.contains("registerNativeExecutionTable")
+                || bridgeText.contains("openNativeExecutionTableAccess")
+                || bridgeText.contains("NativeExecutionTableAccess")) {
+            violations.add("retired SQL bridge still exposes native execution registry API");
+        }
+        require(violations.isEmpty(), String.join("; ", violations));
+    }
+
     private static void proveNativeLifecycleWithoutBridgeFallback() throws Exception {
         clearProofProperties();
         System.setProperty(DelosTableScanProviderLookup.FACTORY_PROBE_PROPERTY, "true");
@@ -116,24 +147,39 @@ public final class StoragePhaseGConsolidationSmoke {
             require(SmokeUtils.executePreparedUpdate(connection,
                     "INSERT INTO APP." + TABLE_NAME + " VALUES (?, ?)", 7, "seven") == 1,
                     "Expected native INSERT to use provider storage registered by Derby CREATE TABLE");
-
-            try (PreparedStatement select = connection.prepareStatement(
-                    "SELECT * FROM APP." + TABLE_NAME + " WHERE id = ?")) {
-                select.setInt(1, 7);
-                try (ResultSet rows = select.executeQuery()) {
-                    require(rows.next(), "Expected one native row during G consolidation");
-                    require(rows.getInt(1) == 7, "Unexpected id during G consolidation");
-                    require("seven".equals(rows.getString(2)), "Unexpected value during G consolidation");
-                    require(!rows.next(), "Expected exactly one native row during G consolidation");
-                }
-            }
+            requireNativeRow(connection, 7, "seven", "before registry clear");
         }
+
+        DelosNativeTableRegistry.clearRegisteredTablesForTesting();
+        require(!DelosNativeTableRegistry.hasRegisteredTableForTesting("APP", TABLE_NAME),
+                "Expected G consolidation to clear only the native registry cache");
+        SmokeUtils.shutdown(DATABASE_PATH);
+
+        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false)) {
+            requireNativeRow(connection, 7, "seven", "after Derby shutdown/reopen and registry cache clear");
+        }
+        require(DelosNativeTableRegistry.hasRegisteredTableForTesting("APP", TABLE_NAME),
+                "Expected native registry to be reconstructed from catalog metadata on first access");
 
         require(DelosTableScanProviderLookup.factoryLookupCountForTesting() > 0,
                 "Expected ResultSetFactory provider lookup during G consolidation SELECT");
         require(VersionedStorageSqlBridge.lastRouteClassifierForTesting().isEmpty(),
                 "Native INSERT/SELECT must not invoke VersionedStorageSqlBridge.tryExecute(...): "
                         + VersionedStorageSqlBridge.lastRouteClassifierForTesting());
+    }
+
+
+    private static void requireNativeRow(Connection connection, int expectedId, String expectedValue, String label) throws Exception {
+        try (PreparedStatement select = connection.prepareStatement(
+                "SELECT * FROM APP." + TABLE_NAME + " WHERE id = ?")) {
+            select.setInt(1, expectedId);
+            try (ResultSet rows = select.executeQuery()) {
+                require(rows.next(), "Expected one native row during G consolidation " + label);
+                require(rows.getInt(1) == expectedId, "Unexpected id during G consolidation " + label);
+                require(expectedValue.equals(rows.getString(2)), "Unexpected value during G consolidation " + label);
+                require(!rows.next(), "Expected exactly one native row during G consolidation " + label);
+            }
+        }
     }
 
     private static void clearProofProperties() {

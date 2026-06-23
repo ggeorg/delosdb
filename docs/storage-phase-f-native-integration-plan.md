@@ -25,7 +25,7 @@ Existing useful pieces:
 - F8 native mode bypasses bridge interception globally at EmbedStatement
 
 Still transitional:
-- VersionedStorageSqlBridge remains compatibility/test scaffolding only
+- VersionedStorageSqlBridge remains legacy direct-test scaffolding only; supported native execution uses DelosNativeTableRegistry, not bridge-owned state
 - CREATE TABLE / CREATE INDEX and selected read fallback routes remain until Phase G/G6
 ```
 
@@ -269,7 +269,7 @@ Compatibility/test mode can keep the old bridge explicitly enabled.
 F8 landed: `EmbedStatement` gates the pre-parse
 `VersionedStorageSqlBridge.tryExecute(...)` hook behind
 `VersionedStorageSqlBridge.isInterceptionEnabled()`. In short,
-native mode bypasses bridge interception globally; compatibility/test mode can keep the old bridge explicitly
+native mode bypasses bridge interception globally; after G6/G-post, supported native execution must not depend on the old bridge fallback or bridge-owned native registry state
 available during the transition. The proof does not inspect `TableDescriptor`
 before parse and does not add per-table pre-parse metadata lookup.
 

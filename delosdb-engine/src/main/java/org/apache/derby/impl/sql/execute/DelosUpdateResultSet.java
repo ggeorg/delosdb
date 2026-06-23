@@ -26,7 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.VersionedStorageSqlBridge;
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 import org.apache.derby.iapi.services.loader.GeneratedMethod;
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.ResultSet;
@@ -147,14 +147,12 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
         setup();
         beginTime = getCurrentTimeMillis();
         rowCount = 0L;
-        VersionedStorageSqlBridge.NativeExecutionTableAccess nativeAccess = null;
+        DelosNativeTableRegistry.NativeExecutionTableAccess nativeAccess = null;
         boolean sourceOpen = false;
         try {
             source.openCore();
             sourceOpen = true;
-            nativeAccess = VersionedStorageSqlBridge.openNativeExecutionTableAccess(
-                            providerLookup.schemaName(),
-                            providerLookup.tableName())
+            nativeAccess = DelosNativeTableRegistry.openNativeExecutionTableAccess(nativeScanSource.tableDescriptorForNativeRegistry())
                     .orElseThrow(() -> StandardException.plainWrapException(
                             new IllegalStateException("No delos_mvcc native table access registered for "
                                     + providerLookup.schemaName() + "." + providerLookup.tableName())));
@@ -325,7 +323,7 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
     }
 
     private static void abortNativeAccess(
-            VersionedStorageSqlBridge.NativeExecutionTableAccess nativeAccess,
+            DelosNativeTableRegistry.NativeExecutionTableAccess nativeAccess,
             Throwable failure)
     {
         if (nativeAccess == null) {
