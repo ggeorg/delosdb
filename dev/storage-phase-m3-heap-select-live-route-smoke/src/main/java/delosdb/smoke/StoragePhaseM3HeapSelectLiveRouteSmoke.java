@@ -113,7 +113,8 @@ public final class StoragePhaseM3HeapSelectLiveRouteSmoke {
                 "holdScanOpen(context)",
                 "TransactionController#openScan",
                 "TransactionController#openCompiledScan",
-                "ScanController.fetchNext"));
+                "scanController.fetchNext(fetchRow)",
+                "scanController.fetchLocation(rowLocation)"));
         assertSourceContains(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosTableScanProviderLookup.java"), List.of(
                 "FACTORY_HEAP_SELECT_LIVE_ROUTE_PROPERTY",
