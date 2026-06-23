@@ -940,6 +940,8 @@ public class GenericResultSetFactory implements ResultSetFactory
                 optimizerEstimatedCost);
         NoPutResultSet delosTableScan = DelosTableScanResultSet.createIfEnabled(params).orElse(null);
         if (delosTableScan != null) { return delosTableScan; }
+        NoPutResultSet heapLiveScan = DelosHeapLiveTableScanResultSet.createIfEnabled(params).orElse(null);
+        if (heapLiveScan != null) { return heapLiveScan; }
         NoPutResultSet heapShadowScan = DelosHeapScanShadowResultSet.createIfEnabled(params).orElse(null);
         if (heapShadowScan != null) { return heapShadowScan; }
         return new TableScanResultSet(params);
@@ -1072,6 +1074,8 @@ public class GenericResultSetFactory implements ResultSetFactory
                 optimizerEstimatedCost);
         NoPutResultSet delosTableScan = DelosTableScanResultSet.createIfEnabled(params).orElse(null);
         if (delosTableScan != null) { return delosTableScan; }
+        NoPutResultSet heapLiveScan = DelosHeapLiveTableScanResultSet.createIfEnabled(params).orElse(null);
+        if (heapLiveScan != null) { return heapLiveScan; }
         NoPutResultSet heapShadowScan = DelosHeapScanShadowResultSet.createIfEnabled(params).orElse(null);
         if (heapShadowScan != null) { return heapShadowScan; }
         return new BulkTableScanResultSet(params, rowsPerRead, disableForHoldable);

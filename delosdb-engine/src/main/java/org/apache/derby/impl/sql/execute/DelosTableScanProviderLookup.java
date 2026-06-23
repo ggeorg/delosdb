@@ -103,6 +103,10 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_HEAP_SCAN_SHADOW_PROPERTY =
             DelosHeapScanShadowResultSet.HEAP_SCAN_SHADOW_PROPERTY;
 
+    /** Test/proof gate for Phase M3 heap SELECT live route. */
+    public static final String FACTORY_HEAP_SELECT_LIVE_ROUTE_PROPERTY =
+            DelosHeapLiveTableScanResultSet.HEAP_SELECT_LIVE_ROUTE_PROPERTY;
+
     /** Test/proof gate for Phase G3 native SELECT * full scans. */
     public static final String FACTORY_NATIVE_SELECT_ALL_PROPERTY =
             DelosTableScanResultSet.NATIVE_SELECT_ALL_PROPERTY;
@@ -187,6 +191,21 @@ public final class DelosTableScanProviderLookup
     public static Optional<Result> lastHeapScanShadowLookupForTesting()
     {
         return DelosHeapScanShadowResultSet.lastShadowLookupForTesting();
+    }
+
+    public static void resetHeapSelectLiveRouteForTesting()
+    {
+        DelosHeapLiveTableScanResultSet.resetForTesting();
+    }
+
+    public static int heapSelectLiveRouteBranchCountForTesting()
+    {
+        return DelosHeapLiveTableScanResultSet.liveBranchCountForTesting();
+    }
+
+    public static Optional<Result> lastHeapSelectLiveRouteLookupForTesting()
+    {
+        return DelosHeapLiveTableScanResultSet.lastLiveLookupForTesting();
     }
 
     public static Optional<Result> find(Activation activation, String tableName)

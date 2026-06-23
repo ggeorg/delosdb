@@ -295,11 +295,27 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified M2 heap scan shadow branch without default behavior or heap provider activation'
 ])
 
+
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-m3-heap-select-live-route-smoke',
+        compileTask       : 'compileStoragePhaseM3HeapSelectLiveRouteSmoke',
+        smokeTask         : 'storagePhaseM3HeapSelectLiveRouteSmoke',
+        verifyTask        : 'verifyStoragePhaseM3HeapSelectLiveRoute',
+        dependsOn         : 'verifyStoragePhaseM2HeapScanShadow',
+        sourceDir         : 'dev/storage-phase-m3-heap-select-live-route-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseM3HeapSelectLiveRouteSmoke',
+        compileDescription: 'Compiles the M3 heap SELECT live route smoke test.',
+        smokeDescription  : 'Runs the M3 heap SELECT live route smoke test.',
+        verifyDescription : 'Verifies M3 supported-shape heap SELECT live route without heap mutation or locking parity.',
+        successMessage    : 'Verified M3 heap SELECT live route without heap mutation or locking parity'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane and heap scan shadow branch through M2.'
-    dependsOn 'verifyStoragePhaseM2HeapScanShadow'
+    description = 'Verifies the closed native delos_mvcc execution lane and heap SELECT live route through M3.'
+    dependsOn 'verifyStoragePhaseM3HeapSelectLiveRoute'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane and heap scan shadow branch through M2'
+        println 'Verified closed native delos_mvcc execution lane and heap SELECT live route through M3'
     }
 }

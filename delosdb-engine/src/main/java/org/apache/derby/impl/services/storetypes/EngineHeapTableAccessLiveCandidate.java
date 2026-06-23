@@ -51,20 +51,22 @@ import org.apache.derby.shared.common.error.StandardException;
 /**
  * M1 isolated heap scan candidate.
  *
- * <p>This class is deliberately not wired into SQL execution.  Ordinary heap
- * SELECT still routes through {@code TableScanResultSet}; this candidate only
- * proves that a future heap read provider can be shaped around Derby's existing
+ * <p>M1 introduced this class without SQL routing. M3 uses it from a narrow,
+ * property-gated heap SELECT live route for supported read-only base scans.
+ * The candidate remains shaped around Derby's existing
  * {@link TransactionController#openScan} / {@link TransactionController#openCompiledScan}
  * and {@link ScanController} cursor APIs.</p>
  *
- * <p>M1 also deliberately avoids heap mutation, heap locking, row reservation,
- * provider registration, planner routing, and bytecode generation changes.</p>
+ * <p>It still deliberately avoids heap mutation, heap locking, row reservation,
+ * provider registration, planner changes, and bytecode generation changes.</p>
  */
 public final class EngineHeapTableAccessLiveCandidate implements DelosFilterableTableAccess {
     public static final String PROVIDER_NAME = EngineHeapTableAccessProof.PROVIDER_NAME;
 
     public static final DelosContextKey<StoreDataValue[]> ROW_TEMPLATE_KEY =
             DelosContextKey.of("delosdb.heap.rowTemplate", StoreDataValue[].class);
+    public static final DelosContextKey<Boolean> HOLD_SCAN_OPEN_KEY =
+            DelosContextKey.of("delosdb.heap.holdScanOpen", Boolean.class);
 
     private final DelosTableIdentity identity;
     private final DelosTableShape rowShape;
@@ -127,7 +129,7 @@ public final class EngineHeapTableAccessLiveCandidate implements DelosFilterable
         TransactionController tc = context.require(EngineHeapTableAccessProof.TRANSACTION_CONTROLLER_KEY);
         return tc.openScan(
                 context.require(EngineHeapTableAccessProof.CONGLOMERATE_ID_KEY),
-                false,
+                holdScanOpen(context),
                 openMode(context),
                 lockLevel(context),
                 isolationLevel(context),
@@ -142,7 +144,7 @@ public final class EngineHeapTableAccessLiveCandidate implements DelosFilterable
     private ScanController openCompiledHeapScanCandidate(DelosAccessContext context) throws StandardException {
         TransactionController tc = context.require(EngineHeapTableAccessProof.TRANSACTION_CONTROLLER_KEY);
         return tc.openCompiledScan(
-                false,
+                holdScanOpen(context),
                 openMode(context),
                 lockLevel(context),
                 isolationLevel(context),
@@ -162,6 +164,10 @@ public final class EngineHeapTableAccessLiveCandidate implements DelosFilterable
 
     private static Qualifier[][] qualifier(DelosAccessContext context) {
         return context.find(EngineHeapTableAccessProof.QUALIFIER_KEY).orElse(null);
+    }
+
+    private static boolean holdScanOpen(DelosAccessContext context) {
+        return context.find(HOLD_SCAN_OPEN_KEY).orElse(false);
     }
 
     private static int openMode(DelosAccessContext context) {
