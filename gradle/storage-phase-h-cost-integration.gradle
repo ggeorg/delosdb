@@ -1,7 +1,9 @@
 // Storage Phase H cost integration verification.
 // H1 introduces the costable table-access seam only.
 // H2 maps MVCC provider stats into the native Derby cost path as a diagnostic-only result.
-// Derby optimizer cost consumption remains deferred.
+// H3 maps inherited heap cost into the Delos proof surface.
+// H4 makes one inherited Derby store-cost constant session-tunable.
+// Broad provider-specific optimizer cost consumption remains deferred.
 
 ext.delosdbStoragePhaseHCostIntegrationModuleClassDir = { String projectPath, String moduleName ->
     project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
@@ -124,5 +126,42 @@ tasks.register('verifyStoragePhaseH3HeapCostProof') {
     dependsOn 'storagePhaseH3HeapCostProofSmoke'
     doLast {
         println 'Verified Phase H3 heap proof-only cost mapping; next step is H4 session-tunable Derby cost constant'
+    }
+}
+
+ext.delosdbStoragePhaseH4SessionCostConstantClassesDir =
+        layout.buildDirectory.dir('classes/storage-phase-h4-session-cost-constant-smoke')
+
+tasks.register('compileStoragePhaseH4SessionCostConstantSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase H4 session-tunable Derby cost constant smoke test.'
+    source = files('dev/storage-phase-h4-session-cost-constant-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseH4SessionCostConstantClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = files(
+            project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main'),
+            delosdbStoragePhaseHCostIntegrationClasspath(delosdbStoragePhaseH4SessionCostConstantClassesDir))
+}
+
+tasks.register('storagePhaseH4SessionCostConstantSmoke', JavaExec) {
+    dependsOn 'verifyStoragePhaseH3HeapCostProof', 'compileStoragePhaseH4SessionCostConstantSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase H4 session-tunable Derby cost constant smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseH4SessionCostConstantSmoke'
+    classpath = files(
+            project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main'),
+            delosdbStoragePhaseHCostIntegrationClasspath(delosdbStoragePhaseH4SessionCostConstantClassesDir))
+}
+
+tasks.register('verifyStoragePhaseH4SessionCostConstant') {
+    group = 'verification'
+    description = 'Verifies one inherited Derby store-cost constant is session-tunable without SQL bridge routing.'
+    dependsOn 'storagePhaseH4SessionCostConstantSmoke'
+    doLast {
+        println 'Verified Phase H4 session-tunable Derby cost constant; Phase H cost integration is closed'
     }
 }

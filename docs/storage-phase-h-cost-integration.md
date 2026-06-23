@@ -90,5 +90,34 @@ VersionedStorageSqlBridge.tryExecute(...) is not called
 
 ## H4 — session-tunable Derby cost constant
 
-Making one Derby cost constant session-tunable is a separate, labeled optimizer
-/store change.  Do not bundle it into H1.
+H4 makes one inherited Derby store-cost constant session-tunable without adding
+a provider-specific optimizer decision.  The selected constant is Derby's
+`StoreCostController.BASE_UNCACHED_ROW_FETCH_COST`, which heap and btree store
+cost controllers already use when estimating page/cache-miss fetch work.
+
+The seam is intentionally narrow:
+
+```text
+SYSCS_UTIL.SYSCS_SET_DELOSDB_UNCACHED_ROW_FETCH_COST(double)
+  -> current LanguageConnectionContext / StoreExecutionContext
+  -> DelosStoreCostTuning.uncachedRowFetchCost()
+  -> HeapCostController / BTreeCostController existing formulas
+```
+
+`SYSCS_CLEAR_DELOSDB_UNCACHED_ROW_FETCH_COST()` clears the session override
+and restores Derby's default constant for the current connection.  Other
+connections keep their own default or override.
+
+Acceptance:
+
+```text
+normal heap CREATE TABLE / INSERT / SELECT still works
+current SQL session can override BASE_UNCACHED_ROW_FETCH_COST
+a separate SQL session still observes Derby's default constant
+clear procedure restores the default for the tuned session
+existing Derby CostEstimate path remains in place
+VersionedStorageSqlBridge.tryExecute(...) is not called
+```
+
+Phase H is closed after H4.  Broader provider-specific optimizer decisions and
+operator-selection changes are deferred to the next phase.

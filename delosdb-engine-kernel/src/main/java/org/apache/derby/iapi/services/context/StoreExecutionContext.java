@@ -39,4 +39,16 @@ public interface StoreExecutionContext extends Context {
     String getSessionUserId();
 
     String getStatementText();
+
+    /**
+     * Set a session-local override for Derby's uncached row fetch cost.
+     * A non-finite value, such as {@link Double#NaN}, means no override.
+     */
+    void setDelosUncachedRowFetchCostOverride(double cost);
+
+    /**
+     * Return the session-local override for Derby's uncached row fetch cost,
+     * or {@link Double#NaN} when the session uses Derby's default constant.
+     */
+    double getDelosUncachedRowFetchCostOverride();
 }

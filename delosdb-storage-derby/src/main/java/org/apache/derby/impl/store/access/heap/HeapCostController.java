@@ -27,6 +27,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.shared.common.error.StandardException; 
 
+import org.apache.derby.iapi.store.access.DelosStoreCostTuning;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.StoreCostResult;
 
@@ -185,7 +186,7 @@ public class HeapCostController
         if ((access_type & StoreCostController.STORECOST_CLUSTERED) == 0)
         {
             // this is the "base" unit case.
-            ret_cost += (BASE_UNCACHED_ROW_FETCH_COST * num_pages_per_row);
+            ret_cost += (DelosStoreCostTuning.uncachedRowFetchCost() * num_pages_per_row);
         }
         else
         {
@@ -360,7 +361,7 @@ public class HeapCostController
         // group fetch is used, or if qualifiers
 
         // first the base cost of bringing each page in from cache:
-        double cost = (num_pages * BASE_UNCACHED_ROW_FETCH_COST);
+        double cost = (num_pages * DelosStoreCostTuning.uncachedRowFetchCost());
 
         // the cost associated with the number of bytes in each row:
         cost += (estimated_row_count * row_size) * BASE_ROW_PER_BYTECOST;

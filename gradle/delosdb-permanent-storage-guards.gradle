@@ -70,9 +70,9 @@ apply from: file('gradle/storage-phase-h-cost-integration.gradle')
 
 tasks.register('verifyDelosDbPermanentStorageGuards') {
     group = 'verification'
-    description = 'Verifies permanent DelosDB storage boundaries and closed-phase executable storage smokes through Phase G.'
-    dependsOn 'verifyStorageDerbyBoundary', 'verifyStorageSpiTruthMap', 'storagePhaseC7StabilizationSmoke', 'verifyStoragePhaseFConsolidation', 'verifyStoragePhaseGConsolidation'
+    description = 'Verifies permanent DelosDB storage boundaries and closed-phase executable storage smokes through Phase H.'
+    dependsOn 'verifyStorageDerbyBoundary', 'verifyStorageSpiTruthMap', 'storagePhaseC7StabilizationSmoke', 'verifyStoragePhaseFConsolidation', 'verifyStoragePhaseGConsolidation', 'verifyStoragePhaseH4SessionCostConstant'
     doLast {
-        println 'Verified permanent DelosDB storage guards and closed-phase executable smokes through Phase G'
+        println 'Verified permanent DelosDB storage guards and closed-phase executable smokes through Phase H'
     }
 }

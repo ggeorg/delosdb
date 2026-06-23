@@ -32,6 +32,7 @@ import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
 import org.apache.derby.iapi.store.access.conglomerate.LogicalUndo;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 
+import org.apache.derby.iapi.store.access.DelosStoreCostTuning;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.StoreCostController;
@@ -615,7 +616,7 @@ public class BTreeCostController extends OpenBTree
             // the cache.  This is basically the cost of bringing each leaf
             // uncached into the cache and reading the control row off of it.:
             cost += 
-                (num_pages * ret_fraction) * BASE_UNCACHED_ROW_FETCH_COST;
+                (num_pages * ret_fraction) * DelosStoreCostTuning.uncachedRowFetchCost();
 
             // Now some magic to try and figure out the cost of doing a
             // scan along the leaf level of the tree.  Mostly just assume

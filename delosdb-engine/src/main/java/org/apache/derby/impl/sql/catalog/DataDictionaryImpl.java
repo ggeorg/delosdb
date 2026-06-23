@@ -451,6 +451,8 @@ public final class	DataDictionaryImpl
 	private static final String[] sysUtilProceduresWithPublicAccess = { 
 												"SYSCS_SET_RUNTIMESTATISTICS", 
 												"SYSCS_SET_STATISTICS_TIMING", 
+												"SYSCS_SET_DELOSDB_UNCACHED_ROW_FETCH_COST", 
+												"SYSCS_CLEAR_DELOSDB_UNCACHED_ROW_FETCH_COST", 
 												"SYSCS_INPLACE_COMPRESS_TABLE",
 												"SYSCS_COMPRESS_TABLE",
 												"SYSCS_UPDATE_STATISTICS",
@@ -11056,6 +11058,46 @@ public final class	DataDictionaryImpl
                 sysUtilUUID,
                 arg_names,
                 arg_types,
+				0,
+				0,
+                RoutineAliasInfo.CONTAINS_SQL,
+                false,
+                false,
+                (TypeDescriptor) null,
+                newlyCreatedRoutines,
+                tc);
+        }
+
+        // void SYSCS_UTIL.SYSCS_SET_DELOSDB_UNCACHED_ROW_FETCH_COST(double)
+        {
+            // procedure argument names
+            String[] arg_names = {"COST"};
+
+            // procedure argument types
+            TypeDescriptor[] arg_types = {TypeDescriptor.DOUBLE};
+
+            createSystemProcedureOrFunction(
+                "SYSCS_SET_DELOSDB_UNCACHED_ROW_FETCH_COST",
+                sysUtilUUID,
+                arg_names,
+                arg_types,
+				0,
+				0,
+                RoutineAliasInfo.CONTAINS_SQL,
+                false,
+                false,
+                (TypeDescriptor) null,
+                newlyCreatedRoutines,
+                tc);
+        }
+
+        // void SYSCS_UTIL.SYSCS_CLEAR_DELOSDB_UNCACHED_ROW_FETCH_COST()
+        {
+            createSystemProcedureOrFunction(
+                "SYSCS_CLEAR_DELOSDB_UNCACHED_ROW_FETCH_COST",
+                sysUtilUUID,
+                null,
+                null,
 				0,
 				0,
                 RoutineAliasInfo.CONTAINS_SQL,

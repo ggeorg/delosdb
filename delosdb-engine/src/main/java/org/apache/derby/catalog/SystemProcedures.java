@@ -30,6 +30,8 @@ import java.sql.Statement;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+
+import org.apache.derby.iapi.store.access.DelosStoreCostTuning;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -1171,6 +1173,33 @@ public class SystemProcedures  {
 		throws SQLException
     {
 		ConnectionUtil.getCurrentLCC().setStatisticsTiming(enable != 0 ? true : false);
+    }
+
+    /**
+     * H4 proof hook: set a session-local override for Derby's inherited
+     * uncached-row-fetch cost constant.
+     */
+    public static void SYSCS_SET_DELOSDB_UNCACHED_ROW_FETCH_COST(
+    double     cost)
+		throws SQLException
+    {
+        if (!DelosStoreCostTuning.isValidCost(cost)) {
+            throw new SQLException(
+                    "SYSCS_SET_DELOSDB_UNCACHED_ROW_FETCH_COST requires a finite positive cost",
+                    "XJ001");
+        }
+
+		ConnectionUtil.getCurrentLCC().setDelosUncachedRowFetchCostOverride(cost);
+    }
+
+    /**
+     * Clear the H4 session-local override and restore Derby's default
+     * uncached-row-fetch cost constant for the current SQL session.
+     */
+    public static void SYSCS_CLEAR_DELOSDB_UNCACHED_ROW_FETCH_COST()
+		throws SQLException
+    {
+		ConnectionUtil.getCurrentLCC().setDelosUncachedRowFetchCostOverride(Double.NaN);
     }
 
     public static int SYSCS_CHECK_TABLE(

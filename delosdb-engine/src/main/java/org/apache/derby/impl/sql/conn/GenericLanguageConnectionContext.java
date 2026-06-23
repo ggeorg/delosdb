@@ -121,6 +121,7 @@ public class GenericLanguageConnectionContext
     private boolean ddWriteMode;
     private boolean runTimeStatisticsSetting ;
     private boolean statisticsTiming;
+    private double delosUncachedRowFetchCostOverride = Double.NaN;
 
     /**
      * If xplainOnlyMode is set (via SYSCS_SET_XPLAIN_MODE), then the
@@ -2868,6 +2869,18 @@ public class GenericLanguageConnectionContext
     public boolean getStatisticsTiming()
     {
         return statisticsTiming;
+    }
+
+    /** @see org.apache.derby.iapi.services.context.StoreExecutionContext#setDelosUncachedRowFetchCostOverride */
+    public void setDelosUncachedRowFetchCostOverride(double cost)
+    {
+        delosUncachedRowFetchCostOverride = cost;
+    }
+
+    /** @see org.apache.derby.iapi.services.context.StoreExecutionContext#getDelosUncachedRowFetchCostOverride */
+    public double getDelosUncachedRowFetchCostOverride()
+    {
+        return delosUncachedRowFetchCostOverride;
     }
 
     /** @see LanguageConnectionContext#setRunTimeStatisticsObject */
