@@ -46,8 +46,6 @@ import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.depend.DependencyManager;
 
 import org.apache.derby.iapi.types.DataTypeDescriptor;
-import org.apache.derby.iapi.types.TypeId;
-
 import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
@@ -58,6 +56,7 @@ import org.apache.derby.catalog.UUID;
 import org.apache.derby.catalog.types.DefaultInfoImpl;
 
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -438,7 +437,7 @@ class CreateTableConstantAction extends DDLConstantAction
         for (int ix = 0; ix < columnInfo.length; ix++)
         {
             columnNames.add(columnInfo[ix].name);
-            typeNames.add(columnInfo[ix].dataType.getFullSQLTypeName());
+            typeNames.add(nativeDelosTypeName(columnInfo[ix].dataType));
         }
 
         try
@@ -453,6 +452,25 @@ class CreateTableConstantAction extends DDLConstantAction
         {
             throw StandardException.plainWrapException(e);
         }
+    }
+
+    private String nativeDelosTypeName(DataTypeDescriptor dataType)
+            throws StandardException
+    {
+        int jdbcType = dataType.getTypeId().getJDBCTypeId();
+        if (jdbcType == Types.INTEGER) {
+            return "INTEGER";
+        }
+        if (jdbcType == Types.VARCHAR) {
+            return "VARCHAR(" + dataType.getMaximumWidth() + ")";
+        }
+        if (jdbcType == Types.CHAR) {
+            return "CHAR(" + dataType.getMaximumWidth() + ")";
+        }
+
+        throw StandardException.plainWrapException(new SQLException(
+                "Unsupported delos_mvcc column type: " + dataType.getFullSQLTypeName(),
+                "0A000"));
     }
 
     /** Create a sequence generator for an identity column */
