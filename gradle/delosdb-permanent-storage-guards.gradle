@@ -64,6 +64,8 @@ tasks.register('verifyStoragePhaseC7Stabilization') {
 
 apply from: file('gradle/storage-phase-f-native-execution.gradle')
 
+apply from: file('gradle/storage-phase-g-native-predicates.gradle')
+
 tasks.register('verifyDelosDbPermanentStorageGuards') {
     group = 'verification'
     description = 'Verifies permanent DelosDB storage boundaries and closed-phase executable storage smokes.'

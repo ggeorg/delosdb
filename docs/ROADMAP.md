@@ -270,6 +270,7 @@ F6 landed — native DELETE equality through provider-owned row identity delete
 F7 landed — native UPDATE equality through provider-owned row identity update
 F8 landed — bridge bypass for native mode, compatibility bridge explicit only
 Phase F build streamline landed — consolidated Phase F Gradle wiring and retired per-step report guards
+G0 landed — native Qualifier[][] conjunction cleanup before range predicates
 Next: G1 — native remaining range predicates
 ```
 
@@ -291,6 +292,15 @@ docs/storage-phase-f-consolidation.md
 Phase G starts after F8. The bridge is no longer the place for production MVCC
 SQL expansion. New SQL coverage should extend the native Derby execution path
 proved in Phase F.
+
+Current verified cleanup slice:
+
+```text
+G0 — native Qualifier[][] conjunction cleanup
+```
+
+G0 keeps OR groups unsupported, but accepts multiple ANDed equality terms and
+applies remaining equality filters after the first pushed equality candidate.
 
 Next verified slice:
 

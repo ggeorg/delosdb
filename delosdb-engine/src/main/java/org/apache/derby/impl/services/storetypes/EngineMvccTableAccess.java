@@ -188,6 +188,11 @@ public final class EngineMvccTableAccess
             visibleMatchCount = visibleRows.size();
         }
 
+        if (!mutableFilters.isEmpty()) {
+            visibleRows = applyRemainingFilters(visibleRows, mutableFilters);
+            visibleMatchCount = visibleRows.size();
+        }
+
         lastAccessPath = new VersionedStorageAccessPath(
                 identity.qualifiedName(),
                 predicateColumnName.isEmpty() ? "contract-select-all" : "select-where",
@@ -279,6 +284,24 @@ public final class EngineMvccTableAccess
             }
         }
         return Optional.empty();
+    }
+
+    private List<VersionedRow<Long, List<Object>>> applyRemainingFilters(
+            List<VersionedRow<Long, List<Object>>> rows,
+            List<DelosPredicate> filters) {
+        List<VersionedRow<Long, List<Object>>> filteredRows = new ArrayList<>(rows);
+        for (DelosPredicate predicate : filters) {
+            if (predicate.operator() != DelosPredicateOperator.EQUAL || predicate.operands().size() != 1) {
+                throw new IllegalArgumentException("Unsupported delos_mvcc native scan leftover predicate: " + predicate);
+            }
+            int columnIndex = columnIndexOrNegative(predicate.columnName());
+            if (columnIndex < 0) {
+                throw new IllegalArgumentException("Unknown delos_mvcc predicate column: " + predicate.columnName());
+            }
+            Object expected = nativeValue(predicate.operands().get(0));
+            filteredRows.removeIf(row -> !Objects.equals(expected, row.value().get(columnIndex)));
+        }
+        return List.copyOf(filteredRows);
     }
 
     private List<VersionedRow<Long, List<Object>>> scanAllWhere(int columnIndex, Object predicateValue, TxView view) {
