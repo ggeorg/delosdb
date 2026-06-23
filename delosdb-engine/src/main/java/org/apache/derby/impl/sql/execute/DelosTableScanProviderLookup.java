@@ -79,6 +79,10 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_NATIVE_RANGE_PREDICATES_PROPERTY =
             DelosTableScanResultSet.NATIVE_RANGE_PREDICATES_PROPERTY;
 
+    /** Test/proof gate for Phase G2 native BETWEEN predicates. */
+    public static final String FACTORY_NATIVE_BETWEEN_PREDICATES_PROPERTY =
+            DelosTableScanResultSet.NATIVE_BETWEEN_PREDICATES_PROPERTY;
+
     /** Test/proof gate for Phase F5 native INSERT mutation. */
     public static final String FACTORY_NATIVE_INSERT_PROPERTY =
             DelosInsertResultSet.NATIVE_INSERT_PROPERTY;

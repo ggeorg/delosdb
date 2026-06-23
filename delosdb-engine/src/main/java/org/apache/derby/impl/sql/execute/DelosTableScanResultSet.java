@@ -80,6 +80,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static final String NATIVE_RANGE_PREDICATES_PROPERTY =
             "delosdb.storage.phaseG1.nativeRangePredicates";
 
+    static final String NATIVE_BETWEEN_PREDICATES_PROPERTY =
+            "delosdb.storage.phaseG2.nativeBetweenPredicates";
+
     static final String SKELETON_REACHED_MESSAGE =
             "DelosTableScanResultSet skeleton reached; F4 must implement real MVCC scan materialization";
 
@@ -113,7 +116,8 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             throws StandardException
     {
         boolean nativePredicateScanEnabled = Boolean.getBoolean(NATIVE_SELECT_EQUALITY_PROPERTY)
-                || Boolean.getBoolean(NATIVE_RANGE_PREDICATES_PROPERTY);
+                || Boolean.getBoolean(NATIVE_RANGE_PREDICATES_PROPERTY)
+                || Boolean.getBoolean(NATIVE_BETWEEN_PREDICATES_PROPERTY);
         boolean skeletonEnabled = Boolean.getBoolean(SKELETON_BRANCH_PROPERTY);
         if (!nativePredicateScanEnabled && !skeletonEnabled) {
             return Optional.empty();

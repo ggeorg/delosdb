@@ -90,3 +90,36 @@ tasks.register('verifyStoragePhaseG1NativeRangePredicates') {
         println 'Verified Phase G1 native range predicates; next step is G2 native BETWEEN'
     }
 }
+
+ext.delosdbStoragePhaseG2NativeBetweenClassesDir =
+        layout.buildDirectory.dir('classes/storage-phase-g2-native-between-predicates-smoke')
+
+tasks.register('compileStoragePhaseG2NativeBetweenPredicatesSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase G2 native BETWEEN predicates smoke test.'
+    source = files('dev/storage-phase-g2-native-between-predicates-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseG2NativeBetweenClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG2NativeBetweenClassesDir)
+}
+
+tasks.register('storagePhaseG2NativeBetweenPredicatesSmoke', JavaExec) {
+    dependsOn 'verifyStoragePhaseG1NativeRangePredicates', 'compileStoragePhaseG2NativeBetweenPredicatesSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase G2 native BETWEEN predicates smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseG2NativeBetweenPredicatesSmoke'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG2NativeBetweenClassesDir)
+}
+
+tasks.register('verifyStoragePhaseG2NativeBetweenPredicates') {
+    group = 'verification'
+    description = 'Verifies native BETWEEN predicates through DelosTableScanResultSet.'
+    dependsOn 'storagePhaseG2NativeBetweenPredicatesSmoke'
+    doLast {
+        println 'Verified Phase G2 native BETWEEN predicates; next step is G3 native SELECT *'
+    }
+}
