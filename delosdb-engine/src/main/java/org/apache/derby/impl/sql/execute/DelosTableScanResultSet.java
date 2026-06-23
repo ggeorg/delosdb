@@ -91,6 +91,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static final String NATIVE_PROJECTION_VARIANTS_PROPERTY =
             "delosdb.storage.phaseL34.nativeProjectionVariants";
 
+    static final String NATIVE_ORDER_BY_RESIDUAL_PROPERTY =
+            "delosdb.storage.phaseL35.nativeOrderByResidual";
+
     static final String NATIVE_SELECT_ALL_PROPERTY =
             "delosdb.storage.phaseG3.nativeSelectAll";
 
@@ -141,9 +144,11 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 || Boolean.getBoolean(NATIVE_COUNT_AGGREGATE_PROPERTY);
         boolean nativeOrPredicateEnabled = Boolean.getBoolean(NATIVE_OR_PREDICATES_PROPERTY);
         boolean nativeProjectionVariantsEnabled = Boolean.getBoolean(NATIVE_PROJECTION_VARIANTS_PROPERTY);
+        boolean nativeOrderByResidualEnabled = Boolean.getBoolean(NATIVE_ORDER_BY_RESIDUAL_PROPERTY);
         boolean nativeFullScanEnabled = nativeSelectAllEnabled
                 || nativeOrPredicateEnabled
-                || nativeProjectionVariantsEnabled;
+                || nativeProjectionVariantsEnabled
+                || nativeOrderByResidualEnabled;
         boolean nativePredicateScanEnabled = nativeFullScanEnabled
                 || Boolean.getBoolean(NATIVE_SELECT_EQUALITY_PROPERTY)
                 || Boolean.getBoolean(NATIVE_RANGE_PREDICATES_PROPERTY)

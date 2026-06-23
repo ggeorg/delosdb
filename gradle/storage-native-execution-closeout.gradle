@@ -235,11 +235,26 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified L3.4 projection variants without provider projection pushdown or heap activation'
 ])
 
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-l35-order-by-residual-smoke',
+        compileTask       : 'compileStoragePhaseL35OrderByResidualSmoke',
+        smokeTask         : 'storagePhaseL35OrderByResidualSmoke',
+        verifyTask        : 'verifyStoragePhaseL35OrderByResidual',
+        dependsOn         : 'verifyStoragePhaseL34ProjectionVariants',
+        sourceDir         : 'dev/storage-phase-l35-order-by-residual-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseL35OrderByResidualSmoke',
+        compileDescription: 'Compiles the L3.5 delos_mvcc ORDER BY residual-sort smoke test.',
+        smokeDescription  : 'Runs the L3.5 delos_mvcc ORDER BY residual-sort smoke test.',
+        verifyDescription : 'Verifies L3.5 ORDER BY coverage without provider ordered-scan pushdown or heap activation.',
+        successMessage    : 'Verified L3.5 ORDER BY coverage without provider ordered-scan pushdown or heap activation'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane through L3.4 projection-variant coverage.'
-    dependsOn 'verifyStoragePhaseL34ProjectionVariants'
+    description = 'Verifies the closed native delos_mvcc execution lane through L3.5 ORDER BY residual-sort coverage.'
+    dependsOn 'verifyStoragePhaseL35OrderByResidual'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane through L3.4 projection-variant coverage'
+        println 'Verified closed native delos_mvcc execution lane through L3.5 ORDER BY residual-sort coverage'
     }
 }
