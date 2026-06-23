@@ -415,29 +415,34 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     private static DelosPredicateOperator predicateOperator(Qualifier qualifier, boolean allowRangePredicates)
             throws StandardException
     {
-        if (qualifier.negateCompareResult()) {
-            throw unsupported("Native delos_mvcc scan does not support negated qualifiers yet");
-        }
-        return switch (qualifier.getOperator()) {
+        DelosPredicateOperator operator = switch (qualifier.getOperator()) {
             case Orderable.ORDER_OP_EQUALS -> DelosPredicateOperator.EQUAL;
-            case Orderable.ORDER_OP_LESSTHAN -> {
-                if (!allowRangePredicates) { throw unsupportedMutationRange(); }
-                yield DelosPredicateOperator.LESS_THAN;
-            }
-            case Orderable.ORDER_OP_LESSOREQUALS -> {
-                if (!allowRangePredicates) { throw unsupportedMutationRange(); }
-                yield DelosPredicateOperator.LESS_THAN_OR_EQUAL;
-            }
-            case Orderable.ORDER_OP_GREATERTHAN -> {
-                if (!allowRangePredicates) { throw unsupportedMutationRange(); }
-                yield DelosPredicateOperator.GREATER_THAN;
-            }
-            case Orderable.ORDER_OP_GREATEROREQUALS -> {
-                if (!allowRangePredicates) { throw unsupportedMutationRange(); }
-                yield DelosPredicateOperator.GREATER_THAN_OR_EQUAL;
-            }
+            case Orderable.ORDER_OP_LESSTHAN -> DelosPredicateOperator.LESS_THAN;
+            case Orderable.ORDER_OP_LESSOREQUALS -> DelosPredicateOperator.LESS_THAN_OR_EQUAL;
+            case Orderable.ORDER_OP_GREATERTHAN -> DelosPredicateOperator.GREATER_THAN;
+            case Orderable.ORDER_OP_GREATEROREQUALS -> DelosPredicateOperator.GREATER_THAN_OR_EQUAL;
             default -> throw unsupported("Native delos_mvcc scan does not support Derby qualifier operator "
                     + qualifier.getOperator());
+        };
+        if (qualifier.negateCompareResult()) {
+            operator = negatedOperator(operator);
+        }
+        if (!allowRangePredicates && operator != DelosPredicateOperator.EQUAL) {
+            throw unsupportedMutationRange();
+        }
+        return operator;
+    }
+
+    private static DelosPredicateOperator negatedOperator(DelosPredicateOperator operator)
+    {
+        return switch (operator) {
+            case EQUAL -> DelosPredicateOperator.NOT_EQUAL;
+            case LESS_THAN -> DelosPredicateOperator.GREATER_THAN_OR_EQUAL;
+            case LESS_THAN_OR_EQUAL -> DelosPredicateOperator.GREATER_THAN;
+            case GREATER_THAN -> DelosPredicateOperator.LESS_THAN_OR_EQUAL;
+            case GREATER_THAN_OR_EQUAL -> DelosPredicateOperator.LESS_THAN;
+            default -> throw new IllegalArgumentException(
+                    "Native delos_mvcc scan cannot negate predicate operator " + operator);
         };
     }
 
