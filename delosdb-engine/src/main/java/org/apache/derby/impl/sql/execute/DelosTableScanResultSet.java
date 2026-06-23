@@ -83,6 +83,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static final String NATIVE_BETWEEN_PREDICATES_PROPERTY =
             "delosdb.storage.phaseG2.nativeBetweenPredicates";
 
+    static final String NATIVE_SELECT_ALL_PROPERTY =
+            "delosdb.storage.phaseG3.nativeSelectAll";
+
     static final String SKELETON_REACHED_MESSAGE =
             "DelosTableScanResultSet skeleton reached; F4 must implement real MVCC scan materialization";
 
@@ -92,6 +95,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     private final TableScanResultSetParameters params;
     private final DelosTableScanProviderLookup.Result providerLookup;
     private final boolean nativeSelectEquality;
+    private final boolean nativeSelectAll;
     private VersionedStorageSqlBridge.NativeExecutionTableAccess nativeAccess;
     private DelosScan scan;
     private DelosRow currentDelosRow;
@@ -100,7 +104,8 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     private DelosTableScanResultSet(
             TableScanResultSetParameters params,
             DelosTableScanProviderLookup.Result providerLookup,
-            boolean nativeSelectEquality)
+            boolean nativeSelectEquality,
+            boolean nativeSelectAll)
     {
         super(params.activation,
                 params.resultSetNumber,
@@ -109,13 +114,16 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         this.params = params;
         this.providerLookup = providerLookup;
         this.nativeSelectEquality = nativeSelectEquality;
+        this.nativeSelectAll = nativeSelectAll;
         recordConstructorTime();
     }
 
     static Optional<NoPutResultSet> createIfEnabled(TableScanResultSetParameters params)
             throws StandardException
     {
-        boolean nativePredicateScanEnabled = Boolean.getBoolean(NATIVE_SELECT_EQUALITY_PROPERTY)
+        boolean nativeSelectAllEnabled = Boolean.getBoolean(NATIVE_SELECT_ALL_PROPERTY);
+        boolean nativePredicateScanEnabled = nativeSelectAllEnabled
+                || Boolean.getBoolean(NATIVE_SELECT_EQUALITY_PROPERTY)
                 || Boolean.getBoolean(NATIVE_RANGE_PREDICATES_PROPERTY)
                 || Boolean.getBoolean(NATIVE_BETWEEN_PREDICATES_PROPERTY);
         boolean skeletonEnabled = Boolean.getBoolean(SKELETON_BRANCH_PROPERTY);
@@ -132,7 +140,8 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         return Optional.of(new DelosTableScanResultSet(
                 params,
                 lookup.get(),
-                nativePredicateScanEnabled));
+                nativePredicateScanEnabled,
+                nativeSelectAllEnabled));
     }
 
     @Override
@@ -150,7 +159,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             }
 
             TableDescriptor tableDescriptor = tableDescriptor();
-            List<DelosPredicate> filters = scanPredicates(tableDescriptor);
+            List<DelosPredicate> filters = scanPredicates(tableDescriptor, nativeSelectAll);
             nativeAccess = VersionedStorageSqlBridge.openNativeExecutionTableAccess(
                             providerLookup.schemaName(),
                             providerLookup.tableName())
@@ -373,16 +382,28 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         return predicates(tableDescriptor, false);
     }
 
-    private List<DelosPredicate> scanPredicates(TableDescriptor tableDescriptor)
+    private List<DelosPredicate> scanPredicates(TableDescriptor tableDescriptor, boolean allowFullScan)
             throws StandardException
     {
-        return predicates(tableDescriptor, true);
+        return predicates(tableDescriptor, true, allowFullScan);
     }
 
     private List<DelosPredicate> predicates(TableDescriptor tableDescriptor, boolean allowRangePredicates)
             throws StandardException
     {
+        return predicates(tableDescriptor, allowRangePredicates, false);
+    }
+
+    private List<DelosPredicate> predicates(
+            TableDescriptor tableDescriptor,
+            boolean allowRangePredicates,
+            boolean allowFullScan)
+            throws StandardException
+    {
         if (params.qualifiers == null || params.qualifiers.length == 0) {
+            if (allowFullScan) {
+                return List.of();
+            }
             throw unsupported("Native delos_mvcc scan requires at least one pushed qualifier");
         }
 
@@ -410,10 +431,10 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 }
             }
         }
-        if (filters.isEmpty()) {
+        if (filters.isEmpty() && !allowFullScan) {
             throw unsupported("Native delos_mvcc scan requires at least one pushed qualifier");
         }
-        return filters;
+        return List.copyOf(filters);
     }
 
     private static DelosPredicateOperator predicateOperator(Qualifier qualifier, boolean allowRangePredicates)

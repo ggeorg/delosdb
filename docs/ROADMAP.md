@@ -273,7 +273,8 @@ Phase F build streamline landed — consolidated Phase F Gradle wiring and retir
 G0 landed — native Qualifier[][] conjunction cleanup before range predicates
 G1 landed — native remaining range predicates: >, >=, <, <=
 G2 landed — native BETWEEN predicate coverage
-Next: G3 — native SELECT * full scan
+G3 landed — native SELECT * full scan
+Next: G4 — native SELECT COUNT(*)
 ```
 
 F3/F4 are the hard frontier: generated activations currently emit
@@ -325,10 +326,21 @@ G2 proves Derby `BETWEEN` reaches the native Delos scan path.  Derby lowers
 the G1 range predicate machinery rather than adding a new bridge route or regex
 path.
 
-Next verified slice:
+Current verified full-scan slice:
 
 ```text
 G3 — native SELECT * full scan
+```
+
+G3 allows `DelosTableScanResultSet` to run native `SELECT *` without a
+WHERE qualifier. The native scan passes an empty predicate list to
+`EngineMvccTableAccess.scan(...)`, which performs a full visible-row scan and
+materializes all rows back into Derby `ExecRow` instances.
+
+Next verified slice:
+
+```text
+G4 — native SELECT COUNT(*)
 ```
 
 ## Research-friendly constraint

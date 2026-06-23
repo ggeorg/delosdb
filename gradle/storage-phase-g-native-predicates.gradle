@@ -123,3 +123,36 @@ tasks.register('verifyStoragePhaseG2NativeBetweenPredicates') {
         println 'Verified Phase G2 native BETWEEN predicates; next step is G3 native SELECT *'
     }
 }
+
+ext.delosdbStoragePhaseG3NativeSelectAllClassesDir =
+        layout.buildDirectory.dir('classes/storage-phase-g3-native-select-all-smoke')
+
+tasks.register('compileStoragePhaseG3NativeSelectAllSmoke', JavaCompile) {
+    dependsOn 'jars', 'processDerbyResources', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the Phase G3 native SELECT * full scan smoke test.'
+    source = files('dev/storage-phase-g3-native-select-all-smoke/src/main/java', rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = delosdbStoragePhaseG3NativeSelectAllClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG3NativeSelectAllClassesDir)
+}
+
+tasks.register('storagePhaseG3NativeSelectAllSmoke', JavaExec) {
+    dependsOn 'verifyStoragePhaseG2NativeBetweenPredicates', 'compileStoragePhaseG3NativeSelectAllSmoke', 'jars', 'processDerbyResources', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the Phase G3 native SELECT * full scan smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseG3NativeSelectAllSmoke'
+    classpath = delosdbStoragePhaseGNativePredicatesClasspath(delosdbStoragePhaseG3NativeSelectAllClassesDir)
+}
+
+tasks.register('verifyStoragePhaseG3NativeSelectAll') {
+    group = 'verification'
+    description = 'Verifies native SELECT * full scans through DelosTableScanResultSet.'
+    dependsOn 'storagePhaseG3NativeSelectAllSmoke'
+    doLast {
+        println 'Verified Phase G3 native SELECT * full scan; next step is G4 native SELECT COUNT(*)'
+    }
+}
