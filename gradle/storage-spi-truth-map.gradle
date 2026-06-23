@@ -1,9 +1,9 @@
-// Phase C0 storage SPI truth map.
+// Permanent storage SPI truth map.
 //
 // This is intentionally a report/gate, not a new storage facade. It records the
-// storage families that exist after Phase B so Phase C does not accidentally add
-// a third parallel operational SPI beside StorageProvider and
-// VersionedStorageProvider.
+// storage families and accepted native table-access contracts that exist after
+// Phase F so future work does not accidentally add a third parallel operational
+// SPI beside StorageProvider and VersionedStorageProvider.
 
 ext.delosdbStorageSpiTruthReportDir = layout.buildDirectory.dir('reports/delosdb')
 ext.delosdbStorageSpiTruthReportFile =
@@ -44,8 +44,6 @@ ext.delosdbStorageSpiFindFilesContaining = { Collection<File> sourceFiles, Strin
 ext.delosdbStorageSpiFacadeCandidates = {
     def candidateNames = [
             'DelosStorageEngine.java',
-            'DelosTableAccess.java',
-            'DelosScan.java',
             'DelosMutation.java',
             'OperationalStorageProvider.java',
             'OperationalTableAccess.java'
@@ -87,8 +85,8 @@ ext.delosdbStorageSpiTruthMap = {
     def derbyIapiStoreCount = delosdbStorageSpiSourceFiles('delosdb-storage-derby', 'org/apache/derby/iapi/store/**/*.java').size()
     def derbyImplStoreCount = delosdbStorageSpiSourceFiles('delosdb-storage-derby', 'org/apache/derby/impl/store/**/*.java').size()
 
-    lines << 'Phase C0 storage SPI truth map'
-    lines << '=============================='
+    lines << 'Permanent storage SPI truth map'
+    lines << '==============================='
     lines << ''
     lines << 'Existing storage families after Phase B:'
     lines << '  1. StorageProvider — metadata/capability table-storage SPI'
@@ -167,16 +165,17 @@ ext.delosdbStorageSpiTruthMap = {
     lines << 'Third-family facade candidates:'
     lines << "  ${facadeCandidates.isEmpty() ? 'none' : facadeCandidates.join(System.lineSeparator() + '  ')}"
     if (!facadeCandidates.isEmpty()) {
-        errors << 'Phase C0 must not introduce the operational facade yet; found candidate third-family facade files: ' + facadeCandidates.take(10).join(', ')
+        errors << 'Permanent storage guard must not allow a third parallel operational SPI family; found candidate facade files: ' + facadeCandidates.take(10).join(', ')
     }
 
     lines << ''
-    lines << 'C0 conclusion:'
+    lines << 'Permanent conclusion:'
     lines << '  Phase B closed the real Derby storage module boundary.'
+    lines << '  Phase C/F added accepted native table-access contracts under Derby store types.'
     lines << '  Current storage SPI state still has two storage-provider families:'
     lines << '    - StorageProvider: metadata-only heap/table capabilities.'
     lines << '    - VersionedStorageProvider: operational MVCC tables/scans/transactions.'
-    lines << '  Phase C1 must consolidate these deliberately; it must not add a third parallel SPI family.'
+    lines << '  Future work must not add a third parallel operational SPI family.'
     lines << ''
     lines << "result: ${errors.isEmpty() ? 'PASS' : 'FAIL'}"
     if (!errors.isEmpty()) {
@@ -190,7 +189,7 @@ ext.delosdbStorageSpiTruthMap = {
 
 tasks.register('storageSpiTruthMapReport') {
     group = 'verification'
-    description = 'Writes the Phase C0 storage SPI truth-map report.'
+    description = 'Writes the permanent storage SPI truth-map report.'
     outputs.file(delosdbStorageSpiTruthReportFile)
     doLast {
         def result = delosdbStorageSpiTruthMap()
@@ -206,24 +205,24 @@ tasks.register('storageSpiTruthMapReport') {
 
 tasks.register('verifyStorageSpiTruthMap') {
     group = 'verification'
-    description = 'Verifies the Phase C0 storage SPI truth map before Phase C facade work.'
+    description = 'Verifies the permanent storage SPI truth map.'
     dependsOn 'storageSpiTruthMapReport'
     doLast {
-        println 'Verified Phase C0 storage SPI truth map; C1 must consolidate existing storage families instead of adding a third one'
+        println 'Verified permanent storage SPI truth map; no third parallel operational SPI family detected'
     }
 }
 
 tasks.register('verifyStoragePhaseC0TruthMap') {
     group = 'verification'
-    description = 'Verifies Phase B boundary plus the Phase C0 storage SPI truth map.'
+    description = 'Verifies Phase B boundary plus the permanent storage SPI truth map.'
     dependsOn 'verifyStorageDerbyBoundary', 'verifyStorageSpiTruthMap'
     doLast {
-        println 'Verified Phase C0 truth gate; ready for C1 design slice'
+        println 'Verified permanent storage truth gate'
     }
 }
 
 tasks.register('verifyLegacyDerbyStoreC0StorageTruthMap') {
     group = 'verification'
-    description = 'Compatibility alias for the Phase C0 storage SPI truth map.'
+    description = 'Compatibility alias for the permanent storage SPI truth map.'
     dependsOn 'verifyStoragePhaseC0TruthMap'
 }
