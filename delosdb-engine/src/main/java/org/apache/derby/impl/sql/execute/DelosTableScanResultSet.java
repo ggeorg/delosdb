@@ -25,6 +25,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Objects;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 import org.apache.derby.iapi.sql.execute.CursorResultSet;
@@ -82,6 +83,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static final String NATIVE_NULL_PREDICATES_PROPERTY =
             "delosdb.storage.phaseL31.nativeNullPredicates";
 
+    static final String NATIVE_OR_PREDICATES_PROPERTY =
+            "delosdb.storage.phaseL33.nativeOrPredicateResidual";
+
     static final String NATIVE_SELECT_ALL_PROPERTY =
             "delosdb.storage.phaseG3.nativeSelectAll";
 
@@ -98,8 +102,10 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     private final DelosTableScanProviderLookup.Result providerLookup;
     private final boolean nativeSelectEquality;
     private final boolean nativeSelectAll;
+    private final boolean nativeOrPredicateResidual;
     private DelosNativeTableRegistry.NativeExecutionTableAccess nativeAccess;
     private DelosScan scan;
+    private TableDescriptor scanTableDescriptor;
     private DelosRow currentDelosRow;
     private final RowLocation syntheticMutationRowLocation = EngineStoreRowLocationBridge.newEngineRowLocation();
 
@@ -107,7 +113,8 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             TableScanResultSetParameters params,
             DelosTableScanProviderLookup.Result providerLookup,
             boolean nativeSelectEquality,
-            boolean nativeSelectAll)
+            boolean nativeSelectAll,
+            boolean nativeOrPredicateResidual)
     {
         super(params.activation,
                 params.resultSetNumber,
@@ -117,6 +124,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         this.providerLookup = providerLookup;
         this.nativeSelectEquality = nativeSelectEquality;
         this.nativeSelectAll = nativeSelectAll;
+        this.nativeOrPredicateResidual = nativeOrPredicateResidual;
         recordConstructorTime();
     }
 
@@ -125,7 +133,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     {
         boolean nativeSelectAllEnabled = Boolean.getBoolean(NATIVE_SELECT_ALL_PROPERTY)
                 || Boolean.getBoolean(NATIVE_COUNT_AGGREGATE_PROPERTY);
+        boolean nativeOrPredicateEnabled = Boolean.getBoolean(NATIVE_OR_PREDICATES_PROPERTY);
         boolean nativePredicateScanEnabled = nativeSelectAllEnabled
+                || nativeOrPredicateEnabled
                 || Boolean.getBoolean(NATIVE_SELECT_EQUALITY_PROPERTY)
                 || Boolean.getBoolean(NATIVE_RANGE_PREDICATES_PROPERTY)
                 || Boolean.getBoolean(NATIVE_BETWEEN_PREDICATES_PROPERTY)
@@ -145,7 +155,8 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 params,
                 lookup.get(),
                 nativePredicateScanEnabled,
-                nativeSelectAllEnabled));
+                nativeSelectAllEnabled || nativeOrPredicateEnabled,
+                nativeOrPredicateEnabled));
     }
 
     @Override
@@ -163,6 +174,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             }
 
             TableDescriptor tableDescriptor = tableDescriptor();
+            scanTableDescriptor = tableDescriptor;
             List<DelosPredicate> filters = scanPredicates(tableDescriptor, nativeSelectAll);
             nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(tableDescriptor, providerLookup);
             requireSnapshotIsolation(nativeAccess.tableAccess());
@@ -195,19 +207,23 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             if (!isOpen || scan == null) {
                 return null;
             }
-            if (!scan.next()) {
-                currentDelosRow = null;
-                clearCurrentRow();
-                finished = true;
-                return null;
+            while (scan.next()) {
+                currentDelosRow = scan.row();
+                if (!matchesLocalOrQualifierGroups(currentDelosRow)) {
+                    continue;
+                }
+
+                ExecRow row = newResultRow();
+                materialize(currentDelosRow, row);
+                rowsSeen++;
+                setCurrentRow(row);
+                return row;
             }
 
-            ExecRow row = newResultRow();
-            currentDelosRow = scan.row();
-            materialize(currentDelosRow, row);
-            rowsSeen++;
-            setCurrentRow(row);
-            return row;
+            currentDelosRow = null;
+            clearCurrentRow();
+            finished = true;
+            return null;
         } finally {
             nextTime += getElapsedMillis(beginTime);
         }
@@ -242,6 +258,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                     nativeAccess = null;
                 }
             }
+            scanTableDescriptor = null;
             currentDelosRow = null;
             clearCurrentRow();
             super.close();
@@ -406,7 +423,13 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 continue;
             }
             if (term > 0 && termQualifiers.length > 1) {
-                throw unsupported("Native delos_mvcc scan does not support OR qualifier groups yet");
+                if (!nativeOrPredicateResidual) {
+                    throw unsupported("Native delos_mvcc scan does not support OR qualifier groups yet");
+                }
+                continue;
+            }
+            if (term > 0 && nativeOrPredicateResidual) {
+                continue;
             }
             for (Qualifier qualifier : termQualifiers) {
                 StoreDataValue orderable = qualifier.getOrderable();
@@ -483,6 +506,86 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             default -> throw new IllegalArgumentException(
                     "Native delos_mvcc scan cannot negate predicate operator " + operator);
         };
+    }
+
+    private boolean matchesLocalOrQualifierGroups(DelosRow row) throws StandardException
+    {
+        if (!nativeOrPredicateResidual || params.qualifiers == null) {
+            return true;
+        }
+        for (int term = 1; term < params.qualifiers.length; term++) {
+            Qualifier[] termQualifiers = params.qualifiers[term];
+            if (termQualifiers == null || termQualifiers.length == 0) {
+                continue;
+            }
+            boolean matchedGroup = false;
+            for (Qualifier qualifier : termQualifiers) {
+                if (matchesLocalQualifier(row, qualifier)) {
+                    matchedGroup = true;
+                    break;
+                }
+            }
+            if (!matchedGroup) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean matchesLocalQualifier(DelosRow row, Qualifier qualifier)
+            throws StandardException
+    {
+        int columnIndex = qualifier.getColumnId();
+        if (columnIndex < 0 || columnIndex >= row.values().size()) {
+            throw unsupported("Native delos_mvcc OR qualifier references invalid column ordinal "
+                    + columnIndex);
+        }
+        if (scanTableDescriptor != null
+                && scanTableDescriptor.getColumnDescriptor(columnIndex + 1) == null) {
+            throw unsupported("Native delos_mvcc OR qualifier references unresolved column ordinal "
+                    + columnIndex);
+        }
+        StoreDataValue orderable = qualifier.getOrderable();
+        DelosPredicateOperator operator = predicateOperator(qualifier, orderable, true);
+        Object actual = EngineMvccTableAccess.nativeValue(row.values().get(columnIndex));
+        return predicateMatchesNative(operator, actual, orderable);
+    }
+
+    private static boolean predicateMatchesNative(
+            DelosPredicateOperator operator,
+            Object actual,
+            StoreDataValue orderable)
+    {
+        if (operator == DelosPredicateOperator.IS_NULL) {
+            return actual == null;
+        }
+        if (operator == DelosPredicateOperator.IS_NOT_NULL) {
+            return actual != null;
+        }
+        Object expected = EngineMvccTableAccess.nativeValue(orderable);
+        return switch (operator) {
+            case EQUAL -> expected != null && Objects.equals(expected, actual);
+            case NOT_EQUAL -> actual != null && expected != null && !Objects.equals(expected, actual);
+            case LESS_THAN -> actual != null && expected != null && compareNative(actual, expected) < 0;
+            case LESS_THAN_OR_EQUAL -> actual != null && expected != null && compareNative(actual, expected) <= 0;
+            case GREATER_THAN -> actual != null && expected != null && compareNative(actual, expected) > 0;
+            case GREATER_THAN_OR_EQUAL -> actual != null && expected != null && compareNative(actual, expected) >= 0;
+            default -> throw new IllegalArgumentException(
+                    "Unsupported delos_mvcc local OR qualifier operator: " + operator);
+        };
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static int compareNative(Object actual, Object expected)
+    {
+        if (actual instanceof Number actualNumber && expected instanceof Number expectedNumber) {
+            return Long.compare(actualNumber.longValue(), expectedNumber.longValue());
+        }
+        if (actual instanceof Comparable comparable && actual.getClass().isInstance(expected)) {
+            return comparable.compareTo(expected);
+        }
+        throw new IllegalArgumentException("Cannot compare delos_mvcc local OR values "
+                + actual.getClass().getName() + " and " + expected.getClass().getName());
     }
 
     private static StandardException unsupportedMutationRange()

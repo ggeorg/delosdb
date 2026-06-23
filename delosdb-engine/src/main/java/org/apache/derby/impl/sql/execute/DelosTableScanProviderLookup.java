@@ -87,6 +87,10 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_NATIVE_NULL_PREDICATES_PROPERTY =
             DelosTableScanResultSet.NATIVE_NULL_PREDICATES_PROPERTY;
 
+    /** Test/proof gate for Phase L3.3 native OR predicate residual evaluation. */
+    public static final String FACTORY_NATIVE_OR_PREDICATES_PROPERTY =
+            DelosTableScanResultSet.NATIVE_OR_PREDICATES_PROPERTY;
+
     /** Test/proof gate for Phase G3 native SELECT * full scans. */
     public static final String FACTORY_NATIVE_SELECT_ALL_PROPERTY =
             DelosTableScanResultSet.NATIVE_SELECT_ALL_PROPERTY;
