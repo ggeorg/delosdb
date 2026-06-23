@@ -3,6 +3,7 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -84,7 +85,7 @@ public final class DurableMvccSqlRowCodec {
                     + " at position " + i);
             }
         }
-        return List.copyOf(values);
+        return Collections.unmodifiableList(values);
     }
 
     private static void requirePayload(String[] parts, int position) {

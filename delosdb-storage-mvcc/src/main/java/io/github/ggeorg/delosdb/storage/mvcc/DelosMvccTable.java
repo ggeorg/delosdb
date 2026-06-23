@@ -1,6 +1,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -283,7 +284,7 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
 
     private static List<Object> requireDurableSqlRowValue(Object value) {
         if (value instanceof List<?> values) {
-            return List.copyOf(values);
+            return copySqlRowValues(values);
         }
         throw new UnsupportedOperationException("page-backed delos_mvcc SQL storage currently supports List<Object> row values only");
     }
@@ -297,9 +298,15 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
 
     private static List<Object> requireCheckpointValues(Object value) {
         if (value instanceof List<?> values) {
-            return List.copyOf(values);
+            return copySqlRowValues(values);
         }
         throw new UnsupportedOperationException("delos_mvcc checkpoint currently supports List<Object> row values only");
+    }
+
+    private static List<Object> copySqlRowValues(List<?> values) {
+        List<Object> copy = new ArrayList<>(values.size());
+        copy.addAll(values);
+        return Collections.unmodifiableList(copy);
     }
 
     private static String normalizeIndexName(String indexName) {

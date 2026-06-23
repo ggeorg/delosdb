@@ -23,6 +23,7 @@ package org.apache.derby.impl.sql.execute;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -162,6 +163,6 @@ final class DelosInsertResultSet extends NoRowsResultSetImpl
             DataValueDescriptor value = row.getColumn(column);
             values.add(value == null ? null : value.getObject());
         }
-        return List.copyOf(values);
+        return Collections.unmodifiableList(values);
     }
 }

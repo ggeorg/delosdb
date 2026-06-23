@@ -13,6 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -302,7 +303,7 @@ final class DelosMvccStorageLog {
 
     private static List<Object> requireSqlRowValue(Object value) {
         if (value instanceof List<?> rawValues) {
-            return List.copyOf(rawValues);
+            return copySqlRowValues(rawValues);
         }
         throw new UnsupportedOperationException("Durable delos_mvcc recovery currently supports List<Object> row values only");
     }
@@ -324,7 +325,13 @@ final class DelosMvccStorageLog {
         for (String part : parts) {
             values.add(decodeValue(part));
         }
-        return List.copyOf(values);
+        return Collections.unmodifiableList(values);
+    }
+
+    private static List<Object> copySqlRowValues(List<?> values) {
+        List<Object> copy = new ArrayList<>(values.size());
+        copy.addAll(values);
+        return Collections.unmodifiableList(copy);
     }
 
     private static String encodeValue(Object value) {
@@ -411,7 +418,7 @@ final class DelosMvccStorageLog {
     record CheckpointRow(VersionedTableMetadata metadata, long key, List<Object> values) {
         CheckpointRow {
             metadata = Objects.requireNonNull(metadata, "metadata");
-            values = List.copyOf(Objects.requireNonNull(values, "values"));
+            values = copySqlRowValues(Objects.requireNonNull(values, "values"));
         }
     }
 
