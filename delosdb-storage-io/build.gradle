@@ -51,6 +51,16 @@ tasks.register('runDelosPageVolumeContractSmoke', JavaExec) {
     mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeContractSmoke'
 }
 
+
+
+tasks.register('runFileChannelPageVolumeSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Runs the S4 file-backed page volume smoke test.'
+    dependsOn 'compileDelosDbStorageIoTests'
+    classpath = rootProject.files(mainClassDir, testClassDir)
+    mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.FileChannelPageVolumeSmoke'
+}
+
 tasks.register('verifyDelosDbStorageIoBoundary') {
     group = 'verification'
     description = 'Verifies the storage I/O module has no upward dependency on MVCC, engine, Derby, heap, SQL, or provider-dispatch code.'
@@ -124,5 +134,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'compileDelosDbStorageIo', 'verifyDelosDbStorageIoBoundary', 'runDelosPagePrimitiveSmoke', 'runDelosPageVolumeContractSmoke'
+    dependsOn 'compileDelosDbStorageIo', 'verifyDelosDbStorageIoBoundary', 'runDelosPagePrimitiveSmoke', 'runDelosPageVolumeContractSmoke', 'runFileChannelPageVolumeSmoke'
 }
