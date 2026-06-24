@@ -1,6 +1,6 @@
-// Closed native delos_mvcc execution lane verification.
-// F/G/H/I phase-step Gradle files were retired after bridge deletion.
-// Keep only the final executable closeout smokes plus C7 regression.
+// Compact native execution closeout verification.
+// Compensation cleanup after O5: the permanent route verifies the final provider-parity
+// behavior directly instead of re-running every historical milestone smoke.
 
 ext.delosdbStorageNativeCloseoutModuleClassDir = { String projectPath, String moduleName ->
     project(projectPath).layout.buildDirectory.dir("classes/modules/${moduleName}")
@@ -27,514 +27,53 @@ ext.delosdbStorageNativeCloseoutClasspath = { Object smokeClassesDir ->
             delosdbStorageNativeCloseoutRuntimeJars())
 }
 
-ext.delosdbStorageNativeCloseoutRegisterSmoke = { Map<String, Object> spec ->
-    def classesDir = layout.buildDirectory.dir("classes/${spec.classesDirName}")
+def o5SmokeClassesDir = layout.buildDirectory.dir('classes/storage-phase-o5-full-provider-parity-closeout-smoke')
 
-    tasks.register((String) spec.compileTask, JavaCompile) {
-        dependsOn 'jars',
-                'processDerbyResources',
-                ':delosdb-spi:compileDelosDbSpi',
-                ':delosdb-storage-derby:compileLegacyDerbyStorage',
-                ':delosdb-storage-mvcc:delosDbStorageMvccJar'
-        group = 'verification'
-        description = (String) spec.compileDescription
-        source = files((String) spec.sourceDir, rootProject.ext.delosdbSmokeUtilsSourceDir)
-        destinationDirectory = classesDir
-        sourceCompatibility = javaRelease.toString()
-        targetCompatibility = javaRelease.toString()
-        options.release = javaRelease
-        options.encoding = 'UTF-8'
-        classpath = delosdbStorageNativeCloseoutClasspath(classesDir)
-    }
-
-    tasks.register((String) spec.smokeTask, JavaExec) {
-        dependsOn spec.dependsOn,
-                spec.compileTask,
-                'jars',
-                'processDerbyResources',
-                ':delosdb-storage-mvcc:delosDbStorageMvccJar'
-        group = 'verification'
-        description = (String) spec.smokeDescription
-        mainClass = (String) spec.mainClass
-        classpath = delosdbStorageNativeCloseoutClasspath(classesDir)
-    }
-
-    tasks.register((String) spec.verifyTask) {
-        group = 'verification'
-        description = (String) spec.verifyDescription
-        dependsOn spec.smokeTask
-        doLast {
-            println((String) spec.successMessage)
-        }
-    }
+tasks.register('compileStoragePhaseO5FullProviderParityCloseoutSmoke', JavaCompile) {
+    dependsOn 'jars',
+            'processDerbyResources',
+            ':delosdb-spi:compileDelosDbSpi',
+            ':delosdb-storage-derby:compileLegacyDerbyStorage',
+            ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Compiles the O5 full provider-parity closeout smoke test.'
+    source = files(
+            'dev/storage-phase-o5-full-provider-parity-closeout-smoke/src/main/java',
+            rootProject.ext.delosdbSmokeUtilsSourceDir)
+    destinationDirectory = o5SmokeClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    classpath = delosdbStorageNativeCloseoutClasspath(o5SmokeClassesDir)
 }
 
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-g-consolidation-smoke',
-        compileTask       : 'compileStoragePhaseGConsolidationSmoke',
-        smokeTask         : 'storagePhaseGConsolidationSmoke',
-        verifyTask        : 'verifyStoragePhaseGConsolidation',
-        dependsOn         : 'storagePhaseC7StabilizationSmoke',
-        sourceDir         : 'dev/storage-phase-g-consolidation-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseGConsolidationSmoke',
-        compileDescription: 'Compiles the native execution bridge-deletion closeout smoke test.',
-        smokeDescription  : 'Runs the native execution bridge-deletion closeout smoke test.',
-        verifyDescription : 'Verifies bridge deletion and native delos_mvcc lifecycle after F/G closeout.',
-        successMessage    : 'Verified bridge deletion and native delos_mvcc lifecycle after F/G closeout'
-])
+tasks.register('storagePhaseO5FullProviderParityCloseoutSmoke', JavaExec) {
+    dependsOn 'storagePhaseC7StabilizationSmoke',
+            'compileStoragePhaseO5FullProviderParityCloseoutSmoke',
+            'jars',
+            'processDerbyResources',
+            ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    group = 'verification'
+    description = 'Runs the O5 full provider-parity closeout behavior smoke test.'
+    mainClass = 'delosdb.smoke.StoragePhaseO5FullProviderParityCloseoutSmoke'
+    classpath = delosdbStorageNativeCloseoutClasspath(o5SmokeClassesDir)
+}
 
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-h4-session-cost-constant-smoke',
-        compileTask       : 'compileStoragePhaseH4SessionCostConstantSmoke',
-        smokeTask         : 'storagePhaseH4SessionCostConstantSmoke',
-        verifyTask        : 'verifyStoragePhaseH4SessionCostConstant',
-        dependsOn         : 'verifyStoragePhaseGConsolidation',
-        sourceDir         : 'dev/storage-phase-h4-session-cost-constant-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseH4SessionCostConstantSmoke',
-        compileDescription: 'Compiles the closed Phase H cost-tuning closeout smoke test.',
-        smokeDescription  : 'Runs the closed Phase H cost-tuning closeout smoke test.',
-        verifyDescription : 'Verifies closed Phase H cost-tuning behavior.',
-        successMessage    : 'Verified closed Phase H cost-tuning behavior'
-])
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-i2-mutation-conflict-smoke',
-        compileTask       : 'compileStoragePhaseI2MutationConflictSmoke',
-        smokeTask         : 'storagePhaseI2MutationConflictSmoke',
-        verifyTask        : 'verifyStoragePhaseI2MutationConflict',
-        dependsOn         : 'verifyStoragePhaseH4SessionCostConstant',
-        sourceDir         : 'dev/storage-phase-i2-mutation-conflict-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseI2MutationConflictSmoke',
-        compileDescription: 'Compiles the closed Phase I Option-A mutation-conflict closeout smoke test.',
-        smokeDescription  : 'Runs the closed Phase I Option-A mutation-conflict closeout smoke test.',
-        verifyDescription : 'Verifies closed Phase I Option-A mutation-conflict behavior.',
-        successMessage    : 'Verified closed Phase I Option-A mutation-conflict behavior'
-])
-
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-j0-native-resultset-cleanup-smoke',
-        compileTask       : 'compileStoragePhaseJ0NativeResultSetCleanupSmoke',
-        smokeTask         : 'storagePhaseJ0NativeResultSetCleanupSmoke',
-        verifyTask        : 'verifyStoragePhaseJ0NativeResultSetCleanup',
-        dependsOn         : 'verifyStoragePhaseI2MutationConflict',
-        sourceDir         : 'dev/storage-phase-j0-native-resultset-cleanup-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseJ0NativeResultSetCleanupSmoke',
-        compileDescription: 'Compiles the J0 native result-set boundary cleanup smoke test.',
-        smokeDescription  : 'Runs the J0 native result-set boundary cleanup smoke test.',
-        verifyDescription : 'Verifies J0 native result-set boundary cleanup without provider-parity changes.',
-        successMessage    : 'Verified J0 native result-set boundary cleanup without provider-parity changes'
-])
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-k0-provider-parity-fork-smoke',
-        compileTask       : 'compileStoragePhaseK0ProviderParityForkSmoke',
-        smokeTask         : 'storagePhaseK0ProviderParityForkSmoke',
-        verifyTask        : 'verifyStoragePhaseK0ProviderParityFork',
-        dependsOn         : 'verifyStoragePhaseJ0NativeResultSetCleanup',
-        sourceDir         : 'dev/storage-phase-k0-provider-parity-fork-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseK0ProviderParityForkSmoke',
-        compileDescription: 'Compiles the K0 provider-parity fork truth smoke test.',
-        smokeDescription  : 'Runs the K0 provider-parity fork truth smoke test.',
-        verifyDescription : 'Verifies current heap/MVCC provider truth before choosing provider parity.',
-        successMessage    : 'Verified current heap/MVCC provider truth before choosing provider parity'
-])
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-k1-heap-live-provider-feasibility-smoke',
-        compileTask       : 'compileStoragePhaseK1HeapLiveProviderFeasibilitySmoke',
-        smokeTask         : 'storagePhaseK1HeapLiveProviderFeasibilitySmoke',
-        verifyTask        : 'verifyStoragePhaseK1HeapLiveProviderFeasibility',
-        dependsOn         : 'verifyStoragePhaseK0ProviderParityFork',
-        sourceDir         : 'dev/storage-phase-k1-heap-live-provider-feasibility-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseK1HeapLiveProviderFeasibilitySmoke',
-        compileDescription: 'Compiles the K1 heap live-provider feasibility gate smoke test.',
-        smokeDescription  : 'Runs the K1 heap live-provider feasibility gate smoke test.',
-        verifyDescription : 'Verifies K1 heap live-provider feasibility without activating heap routing.',
-        successMessage    : 'Verified K1 heap live-provider feasibility without activating heap routing'
-])
-
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-l4-mvcc-optimizer-cost-consumption-smoke',
-        compileTask       : 'compileStoragePhaseL4MvccOptimizerCostConsumptionSmoke',
-        smokeTask         : 'storagePhaseL4MvccOptimizerCostConsumptionSmoke',
-        verifyTask        : 'verifyStoragePhaseL4MvccOptimizerCostConsumption',
-        dependsOn         : 'verifyStoragePhaseK1HeapLiveProviderFeasibility',
-        sourceDir         : 'dev/storage-phase-l4-mvcc-optimizer-cost-consumption-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseL4MvccOptimizerCostConsumptionSmoke',
-        compileDescription: 'Compiles the L4 delos_mvcc optimizer cost-consumption smoke test.',
-        smokeDescription  : 'Runs the L4 delos_mvcc optimizer cost-consumption smoke test.',
-        verifyDescription : 'Verifies L4 delos_mvcc provider cost consumption without heap activation.',
-        successMessage    : 'Verified L4 delos_mvcc provider cost consumption without heap activation'
-])
-
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-l31-native-null-predicates-smoke',
-        compileTask       : 'compileStoragePhaseL31NativeNullPredicatesSmoke',
-        smokeTask         : 'storagePhaseL31NativeNullPredicatesSmoke',
-        verifyTask        : 'verifyStoragePhaseL31NativeNullPredicates',
-        dependsOn         : 'verifyStoragePhaseL4MvccOptimizerCostConsumption',
-        sourceDir         : 'dev/storage-phase-l31-native-null-predicates-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseL31NativeNullPredicatesSmoke',
-        compileDescription: 'Compiles the L3.1 delos_mvcc native NULL-predicate smoke test.',
-        smokeDescription  : 'Runs the L3.1 delos_mvcc native NULL-predicate smoke test.',
-        verifyDescription : 'Verifies L3.1 native IS NULL / IS NOT NULL predicates without heap activation.',
-        successMessage    : 'Verified L3.1 native IS NULL / IS NOT NULL predicates without heap activation'
-])
-
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-l32-in-list-residual-coverage-smoke',
-        compileTask       : 'compileStoragePhaseL32InListResidualCoverageSmoke',
-        smokeTask         : 'storagePhaseL32InListResidualCoverageSmoke',
-        verifyTask        : 'verifyStoragePhaseL32InListResidualCoverage',
-        dependsOn         : 'verifyStoragePhaseL31NativeNullPredicates',
-        sourceDir         : 'dev/storage-phase-l32-in-list-residual-coverage-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseL32InListResidualCoverageSmoke',
-        compileDescription: 'Compiles the L3.2 delos_mvcc IN-list residual coverage smoke test.',
-        smokeDescription  : 'Runs the L3.2 delos_mvcc IN-list residual coverage smoke test.',
-        verifyDescription : 'Verifies L3.2 IN-list SQL coverage through native scan plus Derby residual restriction.',
-        successMessage    : 'Verified L3.2 IN-list coverage without fake Delos IN_LIST or heap activation'
-])
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-l33-or-predicate-residual-smoke',
-        compileTask       : 'compileStoragePhaseL33OrPredicateResidualSmoke',
-        smokeTask         : 'storagePhaseL33OrPredicateResidualSmoke',
-        verifyTask        : 'verifyStoragePhaseL33OrPredicateResidual',
-        dependsOn         : 'verifyStoragePhaseL32InListResidualCoverage',
-        sourceDir         : 'dev/storage-phase-l33-or-predicate-residual-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseL33OrPredicateResidualSmoke',
-        compileDescription: 'Compiles the L3.3 delos_mvcc OR-predicate residual smoke test.',
-        smokeDescription  : 'Runs the L3.3 delos_mvcc OR-predicate residual smoke test.',
-        verifyDescription : 'Verifies L3.3 OR-predicate coverage without fake Delos OR contract or heap activation.',
-        successMessage    : 'Verified L3.3 OR-predicate coverage without fake Delos OR contract or heap activation'
-])
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-l34-projection-variants-smoke',
-        compileTask       : 'compileStoragePhaseL34ProjectionVariantsSmoke',
-        smokeTask         : 'storagePhaseL34ProjectionVariantsSmoke',
-        verifyTask        : 'verifyStoragePhaseL34ProjectionVariants',
-        dependsOn         : 'verifyStoragePhaseL33OrPredicateResidual',
-        sourceDir         : 'dev/storage-phase-l34-projection-variants-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseL34ProjectionVariantsSmoke',
-        compileDescription: 'Compiles the L3.4 delos_mvcc projection-variant smoke test.',
-        smokeDescription  : 'Runs the L3.4 delos_mvcc projection-variant smoke test.',
-        verifyDescription : 'Verifies L3.4 projection variants without provider projection pushdown or heap activation.',
-        successMessage    : 'Verified L3.4 projection variants without provider projection pushdown or heap activation'
-])
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-l35-order-by-residual-smoke',
-        compileTask       : 'compileStoragePhaseL35OrderByResidualSmoke',
-        smokeTask         : 'storagePhaseL35OrderByResidualSmoke',
-        verifyTask        : 'verifyStoragePhaseL35OrderByResidual',
-        dependsOn         : 'verifyStoragePhaseL34ProjectionVariants',
-        sourceDir         : 'dev/storage-phase-l35-order-by-residual-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseL35OrderByResidualSmoke',
-        compileDescription: 'Compiles the L3.5 delos_mvcc ORDER BY residual-sort smoke test.',
-        smokeDescription  : 'Runs the L3.5 delos_mvcc ORDER BY residual-sort smoke test.',
-        verifyDescription : 'Verifies L3.5 ORDER BY coverage without provider ordered-scan pushdown or heap activation.',
-        successMessage    : 'Verified L3.5 ORDER BY coverage without provider ordered-scan pushdown or heap activation'
-])
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-l1-mvcc-row-reservation-smoke',
-        compileTask       : 'compileStoragePhaseL1MvccRowReservationSmoke',
-        smokeTask         : 'storagePhaseL1MvccRowReservationSmoke',
-        verifyTask        : 'verifyStoragePhaseL1MvccRowReservation',
-        dependsOn         : 'verifyStoragePhaseL35OrderByResidual',
-        sourceDir         : 'dev/storage-phase-l1-mvcc-row-reservation-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseL1MvccRowReservationSmoke',
-        compileDescription: 'Compiles the L1 delos_mvcc row-reservation smoke test.',
-        smokeDescription  : 'Runs the L1 delos_mvcc row-reservation smoke test.',
-        verifyDescription : 'Verifies L1 MVCC-specific row reservation without generic heap lock API.',
-        successMessage    : 'Verified L1 MVCC-specific row reservation without generic heap lock API'
-])
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-m1-heap-scan-candidate-smoke',
-        compileTask       : 'compileStoragePhaseM1HeapScanCandidateSmoke',
-        smokeTask         : 'storagePhaseM1HeapScanCandidateSmoke',
-        verifyTask        : 'verifyStoragePhaseM1HeapScanCandidate',
-        dependsOn         : 'verifyStoragePhaseL1MvccRowReservation',
-        sourceDir         : 'dev/storage-phase-m1-heap-scan-candidate-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseM1HeapScanCandidateSmoke',
-        compileDescription: 'Compiles the M1 isolated heap scan candidate smoke test.',
-        smokeDescription  : 'Runs the M1 isolated heap scan candidate smoke test.',
-        verifyDescription : 'Verifies M1 heap scan candidate without SQL routing or heap activation.',
-        successMessage    : 'Verified M1 heap scan candidate without SQL routing or heap activation'
-])
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-m2-heap-scan-shadow-smoke',
-        compileTask       : 'compileStoragePhaseM2HeapScanShadowSmoke',
-        smokeTask         : 'storagePhaseM2HeapScanShadowSmoke',
-        verifyTask        : 'verifyStoragePhaseM2HeapScanShadow',
-        dependsOn         : 'verifyStoragePhaseM1HeapScanCandidate',
-        sourceDir         : 'dev/storage-phase-m2-heap-scan-shadow-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseM2HeapScanShadowSmoke',
-        compileDescription: 'Compiles the M2 property-gated heap scan shadow smoke test.',
-        smokeDescription  : 'Runs the M2 property-gated heap scan shadow smoke test.',
-        verifyDescription : 'Verifies M2 heap scan shadow branch without default behavior or heap provider activation.',
-        successMessage    : 'Verified M2 heap scan shadow branch without default behavior or heap provider activation'
-])
-
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-m3-heap-select-live-route-smoke',
-        compileTask       : 'compileStoragePhaseM3HeapSelectLiveRouteSmoke',
-        smokeTask         : 'storagePhaseM3HeapSelectLiveRouteSmoke',
-        verifyTask        : 'verifyStoragePhaseM3HeapSelectLiveRoute',
-        dependsOn         : 'verifyStoragePhaseM2HeapScanShadow',
-        sourceDir         : 'dev/storage-phase-m3-heap-select-live-route-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseM3HeapSelectLiveRouteSmoke',
-        compileDescription: 'Compiles the M3 heap SELECT live route smoke test.',
-        smokeDescription  : 'Runs the M3 heap SELECT live route smoke test.',
-        verifyDescription : 'Verifies M3 supported-shape heap SELECT live route without heap mutation or locking parity.',
-        successMessage    : 'Verified M3 heap SELECT live route without heap mutation or locking parity'
-])
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-n1-heap-mutation-mapping-proof-smoke',
-        compileTask       : 'compileStoragePhaseN1HeapMutationMappingProofSmoke',
-        smokeTask         : 'storagePhaseN1HeapMutationMappingProofSmoke',
-        verifyTask        : 'verifyStoragePhaseN1HeapMutationMappingProof',
-        dependsOn         : 'verifyStoragePhaseM3HeapSelectLiveRoute',
-        sourceDir         : 'dev/storage-phase-n1-heap-mutation-mapping-proof-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseN1HeapMutationMappingProofSmoke',
-        compileDescription: 'Compiles the N1 heap mutation mapping proof smoke test.',
-        smokeDescription  : 'Runs the N1 heap mutation mapping proof smoke test.',
-        verifyDescription : 'Verifies N1 heap mutation mapping without starting heap mutation routing.',
-        successMessage    : 'Verified N1 heap mutation mapping without starting heap mutation routing'
-])
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-n11-heap-mutation-context-shape-smoke',
-        compileTask       : 'compileStoragePhaseN11HeapMutationContextShapeSmoke',
-        smokeTask         : 'storagePhaseN11HeapMutationContextShapeSmoke',
-        verifyTask        : 'verifyStoragePhaseN11HeapMutationContextShape',
-        dependsOn         : 'verifyStoragePhaseN1HeapMutationMappingProof',
-        sourceDir         : 'dev/storage-phase-n11-heap-mutation-context-shape-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseN11HeapMutationContextShapeSmoke',
-        compileDescription: 'Compiles the N1.1 heap mutation context-shape smoke test.',
-        smokeDescription  : 'Runs the N1.1 heap mutation context-shape smoke test.',
-        verifyDescription : 'Verifies N1.1 heap mutation context shape without routing heap mutations.',
-        successMessage    : 'Verified N1.1 heap mutation context shape without routing heap mutations'
-])
-
-
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-n12-heap-rowchanger-insert-proof-smoke',
-        compileTask       : 'compileStoragePhaseN12HeapRowChangerInsertProofSmoke',
-        smokeTask         : 'storagePhaseN12HeapRowChangerInsertProofSmoke',
-        verifyTask        : 'verifyStoragePhaseN12HeapRowChangerInsertProof',
-        dependsOn         : 'verifyStoragePhaseN11HeapMutationContextShape',
-        sourceDir         : 'dev/storage-phase-n12-heap-rowchanger-insert-proof-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseN12HeapRowChangerInsertProofSmoke',
-        compileDescription: 'Compiles the N1.2 direct RowChanger-backed heap INSERT proof smoke test.',
-        smokeDescription  : 'Runs the N1.2 direct RowChanger-backed heap INSERT proof smoke test.',
-        verifyDescription : 'Verifies N1.2 direct heap INSERT proof without heap mutation SQL routing.',
-        successMessage    : 'Verified N1.2 direct RowChanger-backed heap INSERT without heap mutation SQL routing'
-])
-
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-n13-heap-rowchanger-delete-update-proof-smoke',
-        compileTask       : 'compileStoragePhaseN13HeapRowChangerDeleteUpdateProofSmoke',
-        smokeTask         : 'storagePhaseN13HeapRowChangerDeleteUpdateProofSmoke',
-        verifyTask        : 'verifyStoragePhaseN13HeapRowChangerDeleteUpdateProof',
-        dependsOn         : 'verifyStoragePhaseN12HeapRowChangerInsertProof',
-        sourceDir         : 'dev/storage-phase-n13-heap-rowchanger-delete-update-proof-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseN13HeapRowChangerDeleteUpdateProofSmoke',
-        compileDescription: 'Compiles the N1.3 direct RowChanger-backed heap DELETE / UPDATE proof smoke test.',
-        smokeDescription  : 'Runs the N1.3 direct RowChanger-backed heap DELETE / UPDATE proof smoke test.',
-        verifyDescription : 'Verifies N1.3 direct heap DELETE / UPDATE proof without heap mutation SQL routing.',
-        successMessage    : 'Verified N1.3 direct RowChanger-backed heap DELETE / UPDATE without heap mutation SQL routing'
-])
-
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-n14-heap-rowchanger-adapter-decision-smoke',
-        compileTask       : 'compileStoragePhaseN14HeapRowChangerAdapterDecisionSmoke',
-        smokeTask         : 'storagePhaseN14HeapRowChangerAdapterDecisionSmoke',
-        verifyTask        : 'verifyStoragePhaseN14HeapRowChangerAdapterDecision',
-        dependsOn         : 'verifyStoragePhaseN13HeapRowChangerDeleteUpdateProof',
-        sourceDir         : 'dev/storage-phase-n14-heap-rowchanger-adapter-decision-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseN14HeapRowChangerAdapterDecisionSmoke',
-        compileDescription: 'Compiles the N1.4 heap RowChanger adapter decision smoke test.',
-        smokeDescription  : 'Runs the N1.4 heap RowChanger adapter decision smoke test.',
-        verifyDescription : 'Verifies N1.4 heap RowChanger adapter decision without heap mutation SQL routing.',
-        successMessage    : 'Verified N1.4 heap RowChanger adapter decision without heap mutation SQL routing'
-])
-
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-n15-heap-rowchanger-adapter-proof-smoke',
-        compileTask       : 'compileStoragePhaseN15HeapRowChangerAdapterProofSmoke',
-        smokeTask         : 'storagePhaseN15HeapRowChangerAdapterProofSmoke',
-        verifyTask        : 'verifyStoragePhaseN15HeapRowChangerAdapterProof',
-        dependsOn         : 'verifyStoragePhaseN14HeapRowChangerAdapterDecision',
-        sourceDir         : 'dev/storage-phase-n15-heap-rowchanger-adapter-proof-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseN15HeapRowChangerAdapterProofSmoke',
-        compileDescription: 'Compiles the N1.5 heap RowChanger adapter proof smoke test.',
-        smokeDescription  : 'Runs the N1.5 heap RowChanger adapter proof smoke test.',
-        verifyDescription : 'Verifies N1.5 heap RowChanger adapter proof without heap mutation SQL routing.',
-        successMessage    : 'Verified N1.5 heap RowChanger adapter proof without heap mutation SQL routing'
-])
-
-
-
-
-// N1.6 was a drift-only decision guard and has been retired.
-// N2 now follows directly after the accepted N1.5 RowChanger adapter proof.
-
+tasks.register('verifyStoragePhaseO5FullProviderParityCloseout') {
+    group = 'verification'
+    description = 'Verifies O5 full provider parity without heap MVCC-locking claims.'
+    dependsOn 'storagePhaseO5FullProviderParityCloseoutSmoke'
+    doLast {
+        println 'Verified O5 full provider parity without heap MVCC-locking claims'
+    }
+}
 
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane and heap provider parity through O5.'
+    description = 'Verifies the closed native execution lane and final O5 provider-parity behavior.'
     dependsOn 'verifyStoragePhaseO5FullProviderParityCloseout'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane and heap provider parity through O5'
+        println 'Verified compact native execution closeout through O5 provider parity'
     }
 }
-
-
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-n2-heap-insert-live-route-smoke',
-        compileTask       : 'compileStoragePhaseN2HeapInsertLiveRouteSmoke',
-        smokeTask         : 'storagePhaseN2HeapInsertLiveRouteSmoke',
-        verifyTask        : 'verifyStoragePhaseN2HeapInsertLiveRoute',
-        dependsOn         : 'verifyStoragePhaseN15HeapRowChangerAdapterProof',
-        sourceDir         : 'dev/storage-phase-n2-heap-insert-live-route-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseN2HeapInsertLiveRouteSmoke',
-        compileDescription: 'Compiles the N2 heap INSERT live-route smoke test.',
-        smokeDescription  : 'Runs the N2 property-gated heap INSERT live-route smoke test.',
-        verifyDescription : 'Verifies N2 heap INSERT live route without heap DELETE/UPDATE or locking parity.',
-        successMessage    : 'Verified N2 heap INSERT live route without heap DELETE/UPDATE or locking parity'
-])
-
-// Additional N2 verifier retained for focused N2 checks. The main closeout now points at O1 behavior.
-tasks.register('verifyStorageNativeExecutionCloseoutThroughN2') {
-    group = 'verification'
-    description = 'Verifies the native delos_mvcc lane and heap provider-parity route through N2 heap INSERT live route.'
-    dependsOn 'verifyStoragePhaseN2HeapInsertLiveRoute'
-    doLast {
-        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N2'
-    }
-}
-
-// N3 deliberately does not depend on the old exact-text history-marker guard chain.
-// It runs the real heap DELETE/UPDATE behavior proof plus normal engine compilation.
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-n3-heap-delete-update-live-route-smoke',
-        compileTask       : 'compileStoragePhaseN3HeapDeleteUpdateLiveRouteSmoke',
-        smokeTask         : 'storagePhaseN3HeapDeleteUpdateLiveRouteSmoke',
-        verifyTask        : 'verifyStoragePhaseN3HeapDeleteUpdateLiveRoute',
-        dependsOn         : 'storagePhaseC7StabilizationSmoke',
-        sourceDir         : 'dev/storage-phase-n3-heap-delete-update-live-route-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseN3HeapDeleteUpdateLiveRouteSmoke',
-        compileDescription: 'Compiles the N3 heap DELETE/UPDATE live-route smoke test.',
-        smokeDescription  : 'Runs the N3 property-gated heap DELETE/UPDATE live-route smoke test.',
-        verifyDescription : 'Verifies N3 heap DELETE/UPDATE live route without heap locking parity.',
-        successMessage    : 'Verified N3 heap DELETE/UPDATE live route without heap locking parity'
-])
-
-// O1 uses behavior proof only. No exact-text history-marker guard chain.
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-o1-heap-provider-parity-gate-smoke',
-        compileTask       : 'compileStoragePhaseO1HeapProviderParityGateSmoke',
-        smokeTask         : 'storagePhaseO1HeapProviderParityGateSmoke',
-        verifyTask        : 'verifyStoragePhaseO1HeapProviderParityGate',
-        dependsOn         : 'verifyStoragePhaseN3HeapDeleteUpdateLiveRoute',
-        sourceDir         : 'dev/storage-phase-o1-heap-provider-parity-gate-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseO1HeapProviderParityGateSmoke',
-        compileDescription: 'Compiles the O1 heap provider-parity gate smoke test.',
-        smokeDescription  : 'Runs the O1 unified heap read/write provider-parity gate smoke test.',
-        verifyDescription : 'Verifies O1 unified heap SELECT/INSERT/UPDATE/DELETE gate without heap locking parity.',
-        successMessage    : 'Verified O1 unified heap provider-parity gate without heap locking parity'
-])
-
-
-// O2 uses behavior proof only. No exact-text history-marker guard chain.
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-o2-heap-provider-facade-smoke',
-        compileTask       : 'compileStoragePhaseO2HeapProviderFacadeSmoke',
-        smokeTask         : 'storagePhaseO2HeapProviderFacadeSmoke',
-        verifyTask        : 'verifyStoragePhaseO2HeapProviderFacade',
-        dependsOn         : 'verifyStoragePhaseO1HeapProviderParityGate',
-        sourceDir         : 'dev/storage-phase-o2-heap-provider-facade-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseO2HeapProviderFacadeSmoke',
-        compileDescription: 'Compiles the O2 heap provider facade smoke test.',
-        smokeDescription  : 'Runs the O2 heap provider facade behavior smoke test.',
-        verifyDescription : 'Verifies O2 heap provider facade without heap locking parity.',
-        successMessage    : 'Verified O2 heap provider facade without heap locking parity'
-])
-
-// O3 uses behavior proof only. No exact-text history-marker guard chain.
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-o3-provider-truth-cleanup-smoke',
-        compileTask       : 'compileStoragePhaseO3ProviderTruthCleanupSmoke',
-        smokeTask         : 'storagePhaseO3ProviderTruthCleanupSmoke',
-        verifyTask        : 'verifyStoragePhaseO3ProviderTruthCleanup',
-        dependsOn         : 'verifyStoragePhaseO2HeapProviderFacade',
-        sourceDir         : 'dev/storage-phase-o3-provider-truth-cleanup-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseO3ProviderTruthCleanupSmoke',
-        compileDescription: 'Compiles the O3 provider truth cleanup smoke test.',
-        smokeDescription  : 'Runs the O3 two-live-provider truth behavior smoke test.',
-        verifyDescription : 'Verifies O3 provider truth without heap locking parity claims.',
-        successMessage    : 'Verified O3 provider truth without heap locking parity claims'
-])
-
-// O4 uses behavior proof only. No exact-text history-marker guard chain.
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-o4-retire-heap-proof-adapter-smoke',
-        compileTask       : 'compileStoragePhaseO4RetireHeapProofAdapterSmoke',
-        smokeTask         : 'storagePhaseO4RetireHeapProofAdapterSmoke',
-        verifyTask        : 'verifyStoragePhaseO4RetireHeapProofAdapter',
-        dependsOn         : 'verifyStoragePhaseO3ProviderTruthCleanup',
-        sourceDir         : 'dev/storage-phase-o4-retire-heap-proof-adapter-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseO4RetireHeapProofAdapterSmoke',
-        compileDescription: 'Compiles the O4 heap proof-adapter retirement smoke test.',
-        smokeDescription  : 'Runs the O4 heap proof-adapter retirement behavior smoke test.',
-        verifyDescription : 'Verifies O4 heap proof-adapter retirement without heap locking parity claims.',
-        successMessage    : 'Verified O4 heap proof-adapter retirement without heap locking parity claims'
-])
-
-// O5 uses behavior proof only. No exact-text history-marker guard chain.
-delosdbStorageNativeCloseoutRegisterSmoke([
-        classesDirName    : 'storage-phase-o5-full-provider-parity-closeout-smoke',
-        compileTask       : 'compileStoragePhaseO5FullProviderParityCloseoutSmoke',
-        smokeTask         : 'storagePhaseO5FullProviderParityCloseoutSmoke',
-        verifyTask        : 'verifyStoragePhaseO5FullProviderParityCloseout',
-        dependsOn         : 'verifyStoragePhaseO4RetireHeapProofAdapter',
-        sourceDir         : 'dev/storage-phase-o5-full-provider-parity-closeout-smoke/src/main/java',
-        mainClass         : 'delosdb.smoke.StoragePhaseO5FullProviderParityCloseoutSmoke',
-        compileDescription: 'Compiles the O5 full provider-parity closeout smoke test.',
-        smokeDescription  : 'Runs the O5 full provider-parity closeout behavior smoke test.',
-        verifyDescription : 'Verifies O5 full provider parity without heap MVCC-locking claims.',
-        successMessage    : 'Verified O5 full provider parity without heap MVCC-locking claims'
-])
