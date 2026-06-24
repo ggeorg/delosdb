@@ -84,6 +84,24 @@ tasks.register('runFaultInjectingPageVolumeSmoke', JavaExec) {
 
 
 
+
+
+tasks.register('runMappedPageVolumeSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Runs the S11 optional mapped page volume smoke test.'
+    dependsOn 'compileDelosDbStorageIoTests'
+    classpath = rootProject.files(mainClassDir, testClassDir)
+    mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.MappedPageVolumeSmoke'
+}
+
+tasks.register('runDelosPageVolumeFactorySmoke', JavaExec) {
+    group = 'verification'
+    description = 'Runs the S12 page-volume factory smoke test.'
+    dependsOn 'compileDelosDbStorageIoTests'
+    classpath = rootProject.files(mainClassDir, testClassDir)
+    mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactorySmoke'
+}
+
 tasks.register('runStoragePhaseS10MemorySegmentGateSmoke', JavaExec) {
     group = 'verification'
     description = 'Runs the S10 MemorySegment migration gate smoke test.'
@@ -202,5 +220,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'compileDelosDbStorageIo', 'verifyDelosDbStorageIoBoundary', 'runDelosPagePrimitiveSmoke', 'runDelosPageVolumeContractSmoke', 'runFileChannelPageVolumeSmoke', 'runOffHeapPageVolumeSmoke', 'runFaultInjectingPageVolumeSmoke', 'runStoragePhaseS10MemorySegmentGateSmoke', 'verifyStoragePhaseS10MemorySegmentGate'
+    dependsOn 'compileDelosDbStorageIo', 'verifyDelosDbStorageIoBoundary', 'runDelosPagePrimitiveSmoke', 'runDelosPageVolumeContractSmoke', 'runFileChannelPageVolumeSmoke', 'runOffHeapPageVolumeSmoke', 'runFaultInjectingPageVolumeSmoke', 'runStoragePhaseS10MemorySegmentGateSmoke', 'runMappedPageVolumeSmoke', 'runDelosPageVolumeFactorySmoke', 'verifyStoragePhaseS10MemorySegmentGate'
 }
