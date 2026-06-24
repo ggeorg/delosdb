@@ -15,11 +15,6 @@ part of the supported DelosDB workflow.
 
 Closed major lane:
 
-- ASM is the production generated-bytecode backend.
-- The old Derby bytecode backend and old classfile writer are quarantined.
-
-Closed major lane:
-
 - MVCC semantic-correctness sprint A44--A52 is green.
 - `delos_mvcc` is guarded and opt-in/property-gated.
 - The normal legacy Derby-compatible heap path remains the default.
@@ -86,8 +81,12 @@ separate post-A52 decision.
 
 ## Build requirements
 
-- JDK 21 or newer
+- JDK 25
 - Gradle Wrapper from this repository
+
+Use `./gradlew`, not a system `gradle` command. The wrapper pins a Gradle runtime compatible with the project baseline.
+
+Generated SQL bytecode is emitted by the ASM backend at the project classfile baseline, not at a machine-dependent runtime level.
 
 ## Main verification gates
 
@@ -95,12 +94,6 @@ separate post-A52 decision.
 ./gradlew build
 ./gradlew derbyRuntimeSmoke
 ./gradlew :delosdb-tests:runDerbyLangSuite
-```
-
-Legacy Derby store extraction gate:
-
-```bash
-./gradlew legacyDerbyStoreModuleExtractionCloseout
 ```
 
 MVCC-focused gates:
@@ -123,8 +116,6 @@ Broader checks:
 
 ```bash
 ./gradlew fullVerification
-./dev/modernization-audit.sh --verify
-./dev/benchmark-baseline.sh
 ```
 
 If a previous Derby suite run was interrupted, start with:

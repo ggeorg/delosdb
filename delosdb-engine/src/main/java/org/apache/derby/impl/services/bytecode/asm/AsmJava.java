@@ -53,13 +53,15 @@ import org.objectweb.asm.Opcodes;
  */
 public final class AsmJava implements JavaFactory {
     /**
-     * ASM emits Java 21 bytecode with frames and generally larger instruction
-     * sequences than the old generated-bytecode writer. Derby's historical 2K statement
+     * ASM emits bytecode at the project classfile baseline with frames and
+     * generally larger instruction sequences than the old generated-bytecode writer. Derby's historical 2K statement
      * heuristic is too loose for large generated constructors such as long
      * IN-list constant initialization. Split much earlier while preserving the
      * MethodBuilder contract: callers only see that the current builder is
      * nearing its safe size.
      */
+    private static final int GENERATED_CLASSFILE_VERSION = Opcodes.V25;
+
     private static final int ASM_STATEMENT_SPLIT_LIMIT = 128;
 
     @Override
@@ -90,7 +92,7 @@ public final class AsmJava implements JavaFactory {
             this.superClass = superClass == null ? "java.lang.Object" : superClass;
             knownSuperClasses.put(internalName, internalName(this.superClass));
             this.classWriter = new DelosAsmClassWriter(knownSuperClasses);
-            classWriter.visit(Opcodes.V21, modifiers, internalName, null, internalName(this.superClass), null);
+            classWriter.visit(GENERATED_CLASSFILE_VERSION, modifiers, internalName, null, internalName(this.superClass), null);
         }
 
         @Override
@@ -171,8 +173,7 @@ public final class AsmJava implements JavaFactory {
             // postConstructor(), not from <init>. On modern classfile versions,
             // writing a non-static final field outside <init> throws
             // IllegalAccessError. The old generated-bytecode path emitted earlier
-            // classfile versions where that pattern was tolerated, but ASM emits
-            // Java 21 classfiles, so non-static
+            // classfile versions where that pattern was tolerated, and ASM now emits the project-baseline classfile version, so non-static
             // generated fields must be mutable.
             return modifiers & ~Modifier.FINAL;
         }

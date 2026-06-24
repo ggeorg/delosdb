@@ -2,12 +2,19 @@
 
 DelosDB is built with the checked-in Gradle Wrapper. The supported developer path is Java 25 through `./gradlew`.
 
-Do not use a system `gradle` command for this repository; it may run an older Gradle runtime and fail on Java 25 class files.
+Do not use a system `gradle` command for this repository; it may run an older Gradle runtime and fail on Java 25 class files. Always use `./gradlew`.
 
 ## Requirements
 
 - JDK 25
 - The checked-in Gradle Wrapper
+
+
+## Generated SQL bytecode baseline
+
+The ASM-backed generated SQL bytecode backend emits class files at the project baseline: JDK 25.
+
+This is fixed to the DelosDB baseline, not inferred dynamically from whatever JVM happens to run the process. That keeps generated activation classes reproducible across developer machines.
 
 ## Main gates
 
