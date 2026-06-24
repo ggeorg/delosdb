@@ -29,7 +29,7 @@ import org.apache.derby.iapi.store.types.DelosTableCapability;
 import org.apache.derby.iapi.store.types.DelosTableCostEstimate;
 import org.apache.derby.iapi.store.types.DelosTableIdentity;
 import org.apache.derby.iapi.store.types.DelosTableShape;
-import org.apache.derby.impl.services.storetypes.EngineHeapTableAccessProof;
+import org.apache.derby.impl.services.storetypes.EngineHeapDerbyAccessSupport;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,13 +40,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * H3 proof-only heap mapping from Derby optimizer cost data to the Delos table
+ * H3 heap cost support mapping from Derby optimizer cost data to the Delos table
  * cost record.
  *
  * <p>Unlike H2, this class does not claim that Derby heap execution is routed
- * through Delos table access.  It constructs the existing proof-only heap
+ * through Delos table access.  It constructs the existing heap Derby support
  * adapter with the catalog table shape and feeds Derby's own {@link CostEstimate}
- * row/cost values through the optional {@link EngineHeapTableAccessProof}
+ * row/cost values through the optional {@link EngineHeapDerbyAccessSupport}
  * cost surface.  The result is diagnostic-only and is not consumed by Derby's
  * optimizer.</p>
  */
@@ -97,18 +97,18 @@ public final class DelosHeapCostProofLookup {
 
         long derbyRows = nonNegativeLong(derbyCostEstimate == null ? 0.0d : derbyCostEstimate.rowCount());
         double derbyCost = nonNegativeDouble(derbyCostEstimate == null ? 0.0d : derbyCostEstimate.getEstimatedCost());
-        EngineHeapTableAccessProof heapProof = new EngineHeapTableAccessProof(
+        EngineHeapDerbyAccessSupport heapSupport = new EngineHeapDerbyAccessSupport(
                 DelosTableIdentity.of(tableDescriptor.getSchemaName(), tableDescriptor.getName()),
                 tableShape(tableDescriptor));
         DelosAccessContext context = DelosAccessContext.builder(true)
-                .put(EngineHeapTableAccessProof.ESTIMATED_ROW_COUNT_KEY, derbyRows)
-                .put(EngineHeapTableAccessProof.ESTIMATED_SCAN_COST_KEY, derbyCost)
+                .put(EngineHeapDerbyAccessSupport.ESTIMATED_ROW_COUNT_KEY, derbyRows)
+                .put(EngineHeapDerbyAccessSupport.ESTIMATED_SCAN_COST_KEY, derbyCost)
                 .build();
-        DelosTableCostEstimate estimate = heapProof.estimateTableCost(context);
+        DelosTableCostEstimate estimate = heapSupport.estimateTableCost(context);
         return Optional.of(new Result(
                 tableDescriptor.getSchemaName(),
                 tableDescriptor.getName(),
-                EngineHeapTableAccessProof.PROVIDER_NAME,
+                EngineHeapDerbyAccessSupport.PROVIDER_NAME,
                 estimate.logicalRowCount(),
                 estimate.visibleRowCount(),
                 estimate.physicalVersionCount(),
@@ -116,7 +116,7 @@ public final class DelosHeapCostProofLookup {
                 estimate.estimatedFullScanCost(),
                 derbyCost,
                 derbyRows,
-                heapProof.capabilities().supports(DelosTableCapability.COSTABLE),
+                heapSupport.capabilities().supports(DelosTableCapability.COSTABLE),
                 false,
                 true));
     }

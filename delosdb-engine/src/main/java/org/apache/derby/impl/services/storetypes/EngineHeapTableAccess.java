@@ -45,7 +45,7 @@ import org.apache.derby.shared.common.error.StandardException;
  * remains Derby-owned.</p>
  */
 public final class EngineHeapTableAccess implements DelosFilterableTableAccess, DelosCostableTableAccess {
-    public static final String PROVIDER_NAME = EngineHeapTableAccessProof.PROVIDER_NAME;
+    public static final String PROVIDER_NAME = EngineHeapDerbyAccessSupport.PROVIDER_NAME;
 
     public static final DelosContextKey<StoreDataValue[]> ROW_TEMPLATE_KEY =
             EngineHeapTableAccessLiveCandidate.ROW_TEMPLATE_KEY;
@@ -89,13 +89,13 @@ public final class EngineHeapTableAccess implements DelosFilterableTableAccess, 
     private final DelosTableIdentity identity;
     private final DelosTableShape rowShape;
     private final EngineHeapTableAccessLiveCandidate scanAccess;
-    private final EngineHeapTableAccessProof costAccess;
+    private final EngineHeapDerbyAccessSupport costAccess;
 
     public EngineHeapTableAccess(DelosTableIdentity identity, DelosTableShape rowShape) {
         this.identity = Objects.requireNonNull(identity, "identity");
         this.rowShape = Objects.requireNonNull(rowShape, "rowShape");
         this.scanAccess = new EngineHeapTableAccessLiveCandidate(identity, rowShape);
-        this.costAccess = new EngineHeapTableAccessProof(identity, rowShape);
+        this.costAccess = new EngineHeapDerbyAccessSupport(identity, rowShape);
     }
 
     @Override
@@ -145,7 +145,7 @@ public final class EngineHeapTableAccess implements DelosFilterableTableAccess, 
         FACADE_MUTATION_ADAPTER_OPEN_COUNT.incrementAndGet();
         return EngineHeapRowChangerMutationAdapter.open(
                 context.require(EXECUTION_FACTORY_KEY),
-                context.require(EngineHeapTableAccessProof.CONGLOMERATE_ID_KEY),
+                context.require(EngineHeapDerbyAccessSupport.CONGLOMERATE_ID_KEY),
                 context.find(HEAP_SCOCI_KEY).orElse(null),
                 context.find(HEAP_DCOCI_KEY).orElse(null),
                 context.find(INDEX_ROW_GENERATORS_KEY).orElse(null),
@@ -153,7 +153,7 @@ public final class EngineHeapTableAccess implements DelosFilterableTableAccess, 
                 context.find(INDEX_SCOCIS_KEY).orElse(null),
                 context.find(INDEX_DCOCIS_KEY).orElse(null),
                 context.find(NUMBER_OF_COLUMNS_KEY).orElse(0),
-                context.require(EngineHeapTableAccessProof.TRANSACTION_CONTROLLER_KEY),
+                context.require(EngineHeapDerbyAccessSupport.TRANSACTION_CONTROLLER_KEY),
                 context.find(CHANGED_COLUMN_IDS_KEY).orElse(null),
                 context.find(BASE_ROW_READ_LIST_KEY).orElse(null),
                 context.find(BASE_ROW_READ_MAP_KEY).orElse(null),

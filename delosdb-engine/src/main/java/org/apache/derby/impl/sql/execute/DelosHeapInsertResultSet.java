@@ -23,7 +23,7 @@ import org.apache.derby.iapi.store.types.DelosTableIdentity;
 import org.apache.derby.iapi.store.types.DelosTableShape;
 import org.apache.derby.impl.services.storetypes.EngineHeapRowChangerMutationAdapter;
 import org.apache.derby.impl.services.storetypes.EngineHeapTableAccess;
-import org.apache.derby.impl.services.storetypes.EngineHeapTableAccessProof;
+import org.apache.derby.impl.services.storetypes.EngineHeapDerbyAccessSupport;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
@@ -155,8 +155,8 @@ final class DelosHeapInsertResultSet extends DMLWriteResultSet {
         DelosAccessContext.Builder builder = DelosAccessContext.builder(true)
                 .put(EngineHeapTableAccess.EXECUTION_FACTORY_KEY,
                         lcc.getLanguageConnectionFactory().getExecutionFactory())
-                .put(EngineHeapTableAccessProof.CONGLOMERATE_ID_KEY, constants.conglomId)
-                .put(EngineHeapTableAccessProof.TRANSACTION_CONTROLLER_KEY,
+                .put(EngineHeapDerbyAccessSupport.CONGLOMERATE_ID_KEY, constants.conglomId)
+                .put(EngineHeapDerbyAccessSupport.TRANSACTION_CONTROLLER_KEY,
                         activation.getTransactionController())
                 .put(EngineHeapTableAccess.NUMBER_OF_COLUMNS_KEY, 0)
                 .put(EngineHeapTableAccess.ACTIVATION_KEY, activation)

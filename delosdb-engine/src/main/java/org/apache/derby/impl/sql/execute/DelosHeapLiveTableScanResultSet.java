@@ -47,7 +47,7 @@ import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.impl.services.storetypes.EngineHeapTableAccess;
-import org.apache.derby.impl.services.storetypes.EngineHeapTableAccessProof;
+import org.apache.derby.impl.services.storetypes.EngineHeapDerbyAccessSupport;
 import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -164,14 +164,14 @@ final class DelosHeapLiveTableScanResultSet extends TableScanResultSet {
 
     private DelosAccessContext heapContext(TransactionController transactionController) {
         return DelosAccessContext.builder(true)
-                .put(EngineHeapTableAccessProof.TRANSACTION_CONTROLLER_KEY, transactionController)
-                .put(EngineHeapTableAccessProof.CONGLOMERATE_ID_KEY, params.conglomId)
-                .put(EngineHeapTableAccessProof.OPEN_MODE_KEY, 0)
-                .put(EngineHeapTableAccessProof.LOCK_LEVEL_KEY, lockMode)
-                .put(EngineHeapTableAccessProof.ISOLATION_LEVEL_KEY, isolationLevel)
-                .put(EngineHeapTableAccessProof.QUALIFIER_KEY, params.qualifiers)
-                .put(EngineHeapTableAccessProof.STATIC_COMPILED_INFO_KEY, params.scoci)
-                .put(EngineHeapTableAccessProof.DYNAMIC_COMPILED_INFO_KEY, dcoci)
+                .put(EngineHeapDerbyAccessSupport.TRANSACTION_CONTROLLER_KEY, transactionController)
+                .put(EngineHeapDerbyAccessSupport.CONGLOMERATE_ID_KEY, params.conglomId)
+                .put(EngineHeapDerbyAccessSupport.OPEN_MODE_KEY, 0)
+                .put(EngineHeapDerbyAccessSupport.LOCK_LEVEL_KEY, lockMode)
+                .put(EngineHeapDerbyAccessSupport.ISOLATION_LEVEL_KEY, isolationLevel)
+                .put(EngineHeapDerbyAccessSupport.QUALIFIER_KEY, params.qualifiers)
+                .put(EngineHeapDerbyAccessSupport.STATIC_COMPILED_INFO_KEY, params.scoci)
+                .put(EngineHeapDerbyAccessSupport.DYNAMIC_COMPILED_INFO_KEY, dcoci)
                 .put(EngineHeapTableAccess.HOLD_SCAN_OPEN_KEY, activation.getResultSetHoldability())
                 .put(EngineHeapTableAccess.ROW_TEMPLATE_KEY, candidate.getRowArray())
                 .build();

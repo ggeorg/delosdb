@@ -508,3 +508,18 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         verifyDescription : 'Verifies O3 provider truth without heap locking parity claims.',
         successMessage    : 'Verified O3 provider truth without heap locking parity claims'
 ])
+
+// O4 uses behavior proof only. No exact-text history-marker guard chain.
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-o4-retire-heap-proof-adapter-smoke',
+        compileTask       : 'compileStoragePhaseO4RetireHeapProofAdapterSmoke',
+        smokeTask         : 'storagePhaseO4RetireHeapProofAdapterSmoke',
+        verifyTask        : 'verifyStoragePhaseO4RetireHeapProofAdapter',
+        dependsOn         : 'verifyStoragePhaseO3ProviderTruthCleanup',
+        sourceDir         : 'dev/storage-phase-o4-retire-heap-proof-adapter-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseO4RetireHeapProofAdapterSmoke',
+        compileDescription: 'Compiles the O4 heap proof-adapter retirement smoke test.',
+        smokeDescription  : 'Runs the O4 heap proof-adapter retirement behavior smoke test.',
+        verifyDescription : 'Verifies O4 heap proof-adapter retirement without heap locking parity claims.',
+        successMessage    : 'Verified O4 heap proof-adapter retirement without heap locking parity claims'
+])

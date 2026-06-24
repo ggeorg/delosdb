@@ -61,7 +61,7 @@ import org.apache.derby.shared.common.error.StandardException;
  * provider registration, planner changes, and bytecode generation changes.</p>
  */
 public final class EngineHeapTableAccessLiveCandidate implements DelosFilterableTableAccess {
-    public static final String PROVIDER_NAME = EngineHeapTableAccessProof.PROVIDER_NAME;
+    public static final String PROVIDER_NAME = EngineHeapDerbyAccessSupport.PROVIDER_NAME;
 
     public static final DelosContextKey<StoreDataValue[]> ROW_TEMPLATE_KEY =
             DelosContextKey.of("delosdb.heap.rowTemplate", StoreDataValue[].class);
@@ -118,52 +118,52 @@ public final class EngineHeapTableAccessLiveCandidate implements DelosFilterable
     }
 
     private ScanController openHeapScanCandidate(DelosAccessContext context) throws StandardException {
-        if (context.find(EngineHeapTableAccessProof.STATIC_COMPILED_INFO_KEY).isPresent()
-                || context.find(EngineHeapTableAccessProof.DYNAMIC_COMPILED_INFO_KEY).isPresent()) {
+        if (context.find(EngineHeapDerbyAccessSupport.STATIC_COMPILED_INFO_KEY).isPresent()
+                || context.find(EngineHeapDerbyAccessSupport.DYNAMIC_COMPILED_INFO_KEY).isPresent()) {
             return openCompiledHeapScanCandidate(context);
         }
         return openUncompiledHeapScanCandidate(context);
     }
 
     private ScanController openUncompiledHeapScanCandidate(DelosAccessContext context) throws StandardException {
-        TransactionController tc = context.require(EngineHeapTableAccessProof.TRANSACTION_CONTROLLER_KEY);
+        TransactionController tc = context.require(EngineHeapDerbyAccessSupport.TRANSACTION_CONTROLLER_KEY);
         return tc.openScan(
-                context.require(EngineHeapTableAccessProof.CONGLOMERATE_ID_KEY),
+                context.require(EngineHeapDerbyAccessSupport.CONGLOMERATE_ID_KEY),
                 holdScanOpen(context),
                 openMode(context),
                 lockLevel(context),
                 isolationLevel(context),
                 scanColumnList(context),
-                context.find(EngineHeapTableAccessProof.START_KEY_VALUE_KEY).orElse(null),
+                context.find(EngineHeapDerbyAccessSupport.START_KEY_VALUE_KEY).orElse(null),
                 ScanController.GE,
                 qualifier(context),
-                context.find(EngineHeapTableAccessProof.STOP_KEY_VALUE_KEY).orElse(null),
+                context.find(EngineHeapDerbyAccessSupport.STOP_KEY_VALUE_KEY).orElse(null),
                 ScanController.GT);
     }
 
     private ScanController openCompiledHeapScanCandidate(DelosAccessContext context) throws StandardException {
-        TransactionController tc = context.require(EngineHeapTableAccessProof.TRANSACTION_CONTROLLER_KEY);
+        TransactionController tc = context.require(EngineHeapDerbyAccessSupport.TRANSACTION_CONTROLLER_KEY);
         return tc.openCompiledScan(
                 holdScanOpen(context),
                 openMode(context),
                 lockLevel(context),
                 isolationLevel(context),
                 scanColumnList(context),
-                context.find(EngineHeapTableAccessProof.START_KEY_VALUE_KEY).orElse(null),
+                context.find(EngineHeapDerbyAccessSupport.START_KEY_VALUE_KEY).orElse(null),
                 ScanController.GE,
                 qualifier(context),
-                context.find(EngineHeapTableAccessProof.STOP_KEY_VALUE_KEY).orElse(null),
+                context.find(EngineHeapDerbyAccessSupport.STOP_KEY_VALUE_KEY).orElse(null),
                 ScanController.GT,
-                context.find(EngineHeapTableAccessProof.STATIC_COMPILED_INFO_KEY).orElse(null),
-                context.find(EngineHeapTableAccessProof.DYNAMIC_COMPILED_INFO_KEY).orElse(null));
+                context.find(EngineHeapDerbyAccessSupport.STATIC_COMPILED_INFO_KEY).orElse(null),
+                context.find(EngineHeapDerbyAccessSupport.DYNAMIC_COMPILED_INFO_KEY).orElse(null));
     }
 
     private static FormatableBitSet scanColumnList(DelosAccessContext context) {
-        return context.find(EngineHeapTableAccessProof.SCAN_COLUMN_LIST_KEY).orElse(null);
+        return context.find(EngineHeapDerbyAccessSupport.SCAN_COLUMN_LIST_KEY).orElse(null);
     }
 
     private static Qualifier[][] qualifier(DelosAccessContext context) {
-        return context.find(EngineHeapTableAccessProof.QUALIFIER_KEY).orElse(null);
+        return context.find(EngineHeapDerbyAccessSupport.QUALIFIER_KEY).orElse(null);
     }
 
     private static boolean holdScanOpen(DelosAccessContext context) {
@@ -171,15 +171,15 @@ public final class EngineHeapTableAccessLiveCandidate implements DelosFilterable
     }
 
     private static int openMode(DelosAccessContext context) {
-        return context.find(EngineHeapTableAccessProof.OPEN_MODE_KEY).orElse(TransactionController.OPENMODE_FORUPDATE);
+        return context.find(EngineHeapDerbyAccessSupport.OPEN_MODE_KEY).orElse(TransactionController.OPENMODE_FORUPDATE);
     }
 
     private static int lockLevel(DelosAccessContext context) {
-        return context.find(EngineHeapTableAccessProof.LOCK_LEVEL_KEY).orElse(TransactionController.MODE_RECORD);
+        return context.find(EngineHeapDerbyAccessSupport.LOCK_LEVEL_KEY).orElse(TransactionController.MODE_RECORD);
     }
 
     private static int isolationLevel(DelosAccessContext context) {
-        return context.find(EngineHeapTableAccessProof.ISOLATION_LEVEL_KEY)
+        return context.find(EngineHeapDerbyAccessSupport.ISOLATION_LEVEL_KEY)
                 .orElse(TransactionController.ISOLATION_READ_COMMITTED);
     }
 
@@ -239,7 +239,7 @@ public final class EngineHeapTableAccessLiveCandidate implements DelosFilterable
                 StoreRowLocation rowLocation = scanController.newRowLocationTemplate();
                 scanController.fetchLocation(rowLocation);
                 currentRow = DelosRow.withIdentity(
-                        EngineHeapTableAccessProof.rowIdentity(rowLocation),
+                        EngineHeapDerbyAccessSupport.rowIdentity(rowLocation),
                         stableRow(fetchRow));
                 return true;
             } catch (StandardException e) {
