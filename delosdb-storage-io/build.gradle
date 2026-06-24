@@ -1,0 +1,92 @@
+plugins {
+    id 'base'
+}
+
+import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = rootProject.version
+group = rootProject.group
+
+def sourceRoot = file('src/main/java')
+def mainClassDir = layout.buildDirectory.dir('classes/main')
+
+tasks.register('compileDelosDbStorageIo', JavaCompile) {
+    source = fileTree(sourceRoot) { include '**/*.java' }
+    destinationDirectory = mainClassDir
+    rootProject.ext.delosdbConfigureJavaCompile(delegate)
+}
+
+tasks.register('verifyDelosDbStorageIoBoundary') {
+    group = 'verification'
+    description = 'Verifies the storage I/O module has no upward dependency on MVCC, engine, Derby, heap, SQL, or provider-dispatch code.'
+
+    doLast {
+        def forbiddenProjectPaths = [
+                ':delosdb-storage-mvcc',
+                ':delosdb-storage-derby',
+                ':delosdb-engine',
+                ':delosdb-engine-kernel',
+                ':delosdb-storeless'
+        ] as Set
+
+        configurations.each { configuration ->
+            configuration.dependencies.withType(ProjectDependency).each { dependency ->
+                def dependencyPath = dependency.dependencyProject.path
+                if (forbiddenProjectPaths.contains(dependencyPath)) {
+                    throw new GradleException("delosdb-storage-io must not depend on ${dependencyPath}")
+                }
+            }
+        }
+
+        def forbiddenSourceTokens = [
+                'io.github.ggeorg.delosdb.storage.mvcc',
+                'org.apache.derby',
+                'DelosStorageDispatch',
+                'EngineHeap'
+        ]
+
+        if (sourceRoot.exists()) {
+            fileTree(sourceRoot) { include '**/*.java' }.each { sourceFile ->
+                def text = sourceFile.getText('UTF-8')
+                forbiddenSourceTokens.each { token ->
+                    if (text.contains(token)) {
+                        throw new GradleException("${sourceFile} contains forbidden storage-io dependency token: ${token}")
+                    }
+                }
+                def packageMatcher = text =~ /(?m)^\s*package\s+([^;]+);/
+                if (packageMatcher.find() && packageMatcher.group(1).contains('.mvcc')) {
+                    throw new GradleException("${sourceFile} uses an MVCC package name inside delosdb-storage-io")
+                }
+            }
+        }
+
+        println 'Verified delosdb-storage-io boundary: no upward MVCC, engine, Derby, heap, SQL, or provider-dispatch dependency'
+    }
+}
+
+tasks.register('classes') {
+    dependsOn 'compileDelosDbStorageIo'
+}
+
+tasks.register('delosDbStorageIoJar', Jar) {
+    dependsOn 'compileDelosDbStorageIo'
+    archiveFileName = 'delosdb-storage-io.jar'
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from mainClassDir
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Storage I/O')
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn 'delosDbStorageIoJar'
+}
+
+tasks.named('check') {
+    dependsOn 'compileDelosDbStorageIo', 'verifyDelosDbStorageIoBoundary'
+}
