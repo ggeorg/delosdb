@@ -6,9 +6,10 @@ import java.util.Arrays;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPage;
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageFile;
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageId;
+import io.github.ggeorg.delosdb.storage.io.page.DelosPage;
+import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
+import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolume;
+import io.github.ggeorg.delosdb.storage.io.volume.FileChannelPageVolume;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -104,15 +105,15 @@ public final class MvccVersionRecordCodecTest {
                         0),
                 "page-backed-alpha".getBytes(StandardCharsets.UTF_8));
 
-        try (MvccPageFile pageFile = MvccPageFile.open(file)) {
-            MvccPage page = pageFile.allocatePage();
+        try (DelosPageVolume pageFile = FileChannelPageVolume.open(file)) {
+            DelosPage page = pageFile.allocatePage(DelosPage.DATA_PAGE_TYPE);
             page.appendRecord(MvccVersionRecordCodec.encode(record));
             pageFile.writePage(page);
             pageFile.force();
         }
 
-        try (MvccPageFile reopened = MvccPageFile.open(file)) {
-            byte[] encoded = reopened.readPage(new MvccPageId(0)).readRecord(0);
+        try (DelosPageVolume reopened = FileChannelPageVolume.open(file)) {
+            byte[] encoded = reopened.readPage(new DelosPageId(0)).readRecord(0);
             assertEquals(record, MvccVersionRecordCodec.decode(encoded));
         }
     }
