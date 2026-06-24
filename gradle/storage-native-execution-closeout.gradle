@@ -415,10 +415,10 @@ delosdbStorageNativeCloseoutRegisterSmoke([
 
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane and heap provider truth through O3.'
-    dependsOn 'verifyStoragePhaseO3ProviderTruthCleanup'
+    description = 'Verifies the closed native delos_mvcc execution lane and heap provider parity through O5.'
+    dependsOn 'verifyStoragePhaseO5FullProviderParityCloseout'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane and heap provider truth through O3'
+        println 'Verified closed native delos_mvcc execution lane and heap provider parity through O5'
     }
 }
 
@@ -522,4 +522,19 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         smokeDescription  : 'Runs the O4 heap proof-adapter retirement behavior smoke test.',
         verifyDescription : 'Verifies O4 heap proof-adapter retirement without heap locking parity claims.',
         successMessage    : 'Verified O4 heap proof-adapter retirement without heap locking parity claims'
+])
+
+// O5 uses behavior proof only. No exact-text history-marker guard chain.
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-o5-full-provider-parity-closeout-smoke',
+        compileTask       : 'compileStoragePhaseO5FullProviderParityCloseoutSmoke',
+        smokeTask         : 'storagePhaseO5FullProviderParityCloseoutSmoke',
+        verifyTask        : 'verifyStoragePhaseO5FullProviderParityCloseout',
+        dependsOn         : 'verifyStoragePhaseO4RetireHeapProofAdapter',
+        sourceDir         : 'dev/storage-phase-o5-full-provider-parity-closeout-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseO5FullProviderParityCloseoutSmoke',
+        compileDescription: 'Compiles the O5 full provider-parity closeout smoke test.',
+        smokeDescription  : 'Runs the O5 full provider-parity closeout behavior smoke test.',
+        verifyDescription : 'Verifies O5 full provider parity without heap MVCC-locking claims.',
+        successMessage    : 'Verified O5 full provider parity without heap MVCC-locking claims'
 ])
