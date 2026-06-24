@@ -2,10 +2,10 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.util.Objects;
 
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageId;
+import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
 
 /** Physical location of one durable MVCC version record inside a page file. */
-public record MvccVersionLocator(MvccPageId pageId, int slotId) {
+public record MvccVersionLocator(DelosPageId pageId, int slotId) {
     public MvccVersionLocator {
         pageId = Objects.requireNonNull(pageId, "pageId");
         if (slotId < 0) {

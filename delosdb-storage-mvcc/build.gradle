@@ -1002,10 +1002,19 @@ tasks.register('runMvccSqlIndexVisibilitySmoke', Test) {
 }
 
 
+tasks.register('runStoragePhaseS6RewriteLifecycleSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Runs the S6 page-backed table rewrite lifecycle smoke against the storage I/O page-volume boundary.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    mainClass = 'io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccRewriteLifecycleSmoke'
+}
+
+
 
 tasks.register('verifyStoragePhaseS5SafeCallerVolumeMigration') {
     group = 'verification'
-    description = 'Verifies S5 migrated only safe MVCC caller code to the storage I/O page-volume contract.'
+    description = 'Verifies S5 migrated the safe MVCC index caller code to the storage I/O page-volume contract.'
     dependsOn 'compileDelosDbStorageMvcc'
 
     doLast {
@@ -1019,12 +1028,52 @@ tasks.register('verifyStoragePhaseS5SafeCallerVolumeMigration') {
                 throw new GradleException("S5 MvccIndexStore must not keep direct ${forbidden} dependency after safe caller migration")
             }
         }
+        println 'Verified S5 safe caller migration: index store uses DelosPageVolume without direct MVCC page-file dependency'
+    }
+}
+
+
+tasks.register('verifyStoragePhaseS6RewriteLifecycleBoundary') {
+    group = 'verification'
+    description = 'Verifies S6 moved the page-backed table store to the storage I/O volume boundary without leaking path() onto DelosPageVolume.'
+    dependsOn 'compileDelosDbStorageMvcc'
+
+    doLast {
         def pageBackedStore = file('src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccTableStore.java')
-        def pageBackedText = pageBackedStore.getText('UTF-8')
-        if (pageBackedText.contains('DelosPageVolume')) {
-            throw new GradleException('S5 must not migrate PageBackedMvccTableStore before the S6 rewrite lifecycle boundary')
+        def text = pageBackedStore.getText('UTF-8')
+        if (!text.contains('DelosPageVolume')) {
+            throw new GradleException('S6 expected PageBackedMvccTableStore to depend on DelosPageVolume')
         }
-        println 'Verified S5 safe caller migration: index store uses DelosPageVolume; rewrite-bound table store remains for S6'
+        if (!text.contains('FileChannelPageVolume.open(path)')) {
+            throw new GradleException('S6 expected PageBackedMvccTableStore to own file-backed volume opening above the raw contract')
+        }
+        ['MvccPageFile', 'io.github.ggeorg.delosdb.storage.mvcc.io.MvccPage;', 'io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageId;'].each { forbidden ->
+            if (text.contains(forbidden)) {
+                throw new GradleException("S6 PageBackedMvccTableStore must not keep direct ${forbidden} dependency after rewrite lifecycle boundary")
+            }
+        }
+        ['pageVolume.path()', '.path()'].each { forbidden ->
+            if (text.contains(forbidden)) {
+                throw new GradleException("S6 must not recover file identity from DelosPageVolume via ${forbidden}")
+            }
+        }
+
+        def locator = file('src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccVersionLocator.java')
+        def locatorText = locator.getText('UTF-8')
+        if (!locatorText.contains('DelosPageId')) {
+            throw new GradleException('S6 expected MvccVersionLocator to carry storage-io-owned DelosPageId')
+        }
+        if (locatorText.contains('MvccPageId')) {
+            throw new GradleException('S6 expected MvccVersionLocator to drop MVCC-owned page id primitive')
+        }
+
+        def volume = project(':delosdb-storage-io').file('src/main/java/io/github/ggeorg/delosdb/storage/io/volume/FileChannelPageVolume.java')
+        def volumeText = volume.getText('UTF-8')
+        if (volumeText.contains('MvccPageFile')) {
+            throw new GradleException('S6 FileChannelPageVolume must not wrap MvccPageFile from the MVCC module')
+        }
+
+        println 'Verified S6 rewrite lifecycle boundary: page-backed table store uses DelosPageVolume without path leakage or upward I/O dependency'
     }
 }
 
@@ -1052,5 +1101,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyStoragePhaseS5SafeCallerVolumeMigration', 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke'
+    dependsOn 'verifyStoragePhaseS5SafeCallerVolumeMigration', 'runStoragePhaseS6RewriteLifecycleSmoke', 'verifyStoragePhaseS6RewriteLifecycleBoundary', 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke'
 }

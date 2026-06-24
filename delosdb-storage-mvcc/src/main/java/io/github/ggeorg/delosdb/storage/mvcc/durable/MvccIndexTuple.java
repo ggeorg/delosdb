@@ -7,7 +7,7 @@ import java.util.Objects;
 
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageId;
+import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
 
 /**
  * Durable index candidate pointing back to versioned heap storage.
@@ -31,7 +31,7 @@ public record MvccIndexTuple(
     private static final String UNKNOWN_INDEX_NAME = "";
     private static final byte[] UNKNOWN_INDEX_KEY = new byte[0];
     private static final MvccVersionLocator UNKNOWN_VERSION_LOCATOR =
-            new MvccVersionLocator(new MvccPageId(0L), 0);
+            new MvccVersionLocator(new DelosPageId(0L), 0);
 
     public MvccIndexTuple {
         indexName = normalizeIndexName(indexName);

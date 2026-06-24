@@ -14,7 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageId;
+import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
 
 final class MvccDurableIndexCandidateTest {
     @TempDir
@@ -27,7 +27,7 @@ final class MvccDurableIndexCandidateTest {
                 "alpha",
                 new MvccRowId(7L),
                 new MvccVersionId(11L),
-                new MvccVersionLocator(new MvccPageId(3L), 2));
+                new MvccVersionLocator(new DelosPageId(3L), 2));
 
         MvccIndexTuple decoded = MvccIndexTupleCodec.decode(MvccIndexTupleCodec.encode(tuple));
 
@@ -35,7 +35,7 @@ final class MvccDurableIndexCandidateTest {
         assertEquals("alpha", decoded.indexKeyAsUtf8());
         assertEquals(new MvccRowId(7L), decoded.rowId());
         assertEquals(new MvccVersionId(11L), decoded.versionId());
-        assertEquals(new MvccVersionLocator(new MvccPageId(3L), 2), decoded.versionLocator());
+        assertEquals(new MvccVersionLocator(new DelosPageId(3L), 2), decoded.versionLocator());
     }
 
     @Test
@@ -114,7 +114,7 @@ final class MvccDurableIndexCandidateTest {
                 "alpha".getBytes(StandardCharsets.UTF_8),
                 new MvccRowId(1L),
                 new MvccVersionId(1L),
-                new MvccVersionLocator(new MvccPageId(0L), 0),
+                new MvccVersionLocator(new DelosPageId(0L), 0),
                 0x40));
     }
 
@@ -126,7 +126,7 @@ final class MvccDurableIndexCandidateTest {
                 key,
                 new MvccRowId(1L),
                 new MvccVersionId(1L),
-                new MvccVersionLocator(new MvccPageId(0L), 0),
+                new MvccVersionLocator(new DelosPageId(0L), 0),
                 0);
         key[0] = 'X';
         assertArrayEquals("alpha".getBytes(StandardCharsets.UTF_8), tuple.indexKey());
@@ -151,6 +151,6 @@ final class MvccDurableIndexCandidateTest {
                 indexKey,
                 new MvccRowId(rowId),
                 new MvccVersionId(versionId),
-                new MvccVersionLocator(new MvccPageId(rowId), (int) (versionId - 1L)));
+                new MvccVersionLocator(new DelosPageId(rowId), (int) (versionId - 1L)));
     }
 }

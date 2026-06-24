@@ -8,24 +8,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import io.github.ggeorg.delosdb.storage.io.page.DelosPage;
+import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
+import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolume;
+import io.github.ggeorg.delosdb.storage.io.volume.FileChannelPageVolume;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordCodec;
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPage;
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageFile;
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageId;
 
 /** Append-only page-backed store for durable MVCC version records. */
 public final class PageBackedMvccTableStore implements AutoCloseable {
     private static final int SLOT_OVERHEAD_BYTES = 12;
 
-    private MvccPageFile pageFile;
+    private final Path path;
+    private DelosPageVolume pageVolume;
 
-    private PageBackedMvccTableStore(MvccPageFile pageFile) {
-        this.pageFile = Objects.requireNonNull(pageFile, "pageFile");
+    private PageBackedMvccTableStore(Path path, DelosPageVolume pageVolume) {
+        this.path = Objects.requireNonNull(path, "path");
+        this.pageVolume = Objects.requireNonNull(pageVolume, "pageVolume");
     }
 
     public static PageBackedMvccTableStore open(Path path) throws IOException {
-        return new PageBackedMvccTableStore(MvccPageFile.open(path));
+        Objects.requireNonNull(path, "path");
+        return new PageBackedMvccTableStore(path, openVolume(path));
     }
 
     public synchronized MvccVersionLocator append(MvccVersionRecord record) throws IOException {
@@ -35,18 +39,18 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             throw new IllegalArgumentException("MVCC version record is too large for one page: " + encoded.length);
         }
 
-        MvccPage page = writablePage(encoded.length);
+        DelosPage page = writablePage(encoded.length);
         int slotId = page.appendRecord(encoded);
-        pageFile.writePage(page);
-        pageFile.force();
+        pageVolume.writePage(page);
+        pageVolume.force();
         return new MvccVersionLocator(page.pageId(), slotId);
     }
 
     public synchronized List<StoredVersionRecord> loadAll() throws IOException {
         List<StoredVersionRecord> records = new ArrayList<>();
-        long count = pageFile.pageCount();
+        long count = pageVolume.pageCount();
         for (long pageNumber = 0; pageNumber < count; pageNumber++) {
-            MvccPage page = pageFile.readPage(new MvccPageId(pageNumber));
+            DelosPage page = pageVolume.readPage(new DelosPageId(pageNumber));
             for (int slot = 0; slot < page.slotCount(); slot++) {
                 byte[] payload = page.readRecord(slot);
                 records.add(new StoredVersionRecord(
@@ -57,10 +61,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return records;
     }
 
-
     public synchronized List<StoredVersionRecord> rewrite(List<MvccVersionRecord> records) throws IOException {
         Objects.requireNonNull(records, "records");
-        Path path = pageFile.path();
         Path rewritePath = path.resolveSibling(path.getFileName() + ".rewrite");
         Files.deleteIfExists(rewritePath);
         try (PageBackedMvccTableStore rewrite = PageBackedMvccTableStore.open(rewritePath)) {
@@ -69,35 +71,39 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             }
         }
 
-        pageFile.close();
+        pageVolume.close();
         Files.move(rewritePath, path, StandardCopyOption.REPLACE_EXISTING);
-        pageFile = MvccPageFile.open(path);
+        pageVolume = openVolume(path);
         return loadAll();
     }
 
     public synchronized long pageCount() throws IOException {
-        return pageFile.pageCount();
+        return pageVolume.pageCount();
     }
 
     @Override
     public synchronized void close() throws IOException {
-        pageFile.close();
+        pageVolume.close();
+    }
+
+    private static DelosPageVolume openVolume(Path path) throws IOException {
+        return FileChannelPageVolume.open(path);
     }
 
     private static int maxSingleRecordBytes() {
-        return MvccPage.empty(new MvccPageId(0L)).freeBytes() - SLOT_OVERHEAD_BYTES;
+        return DelosPage.empty(new DelosPageId(0L)).freeBytes() - SLOT_OVERHEAD_BYTES;
     }
 
-    private MvccPage writablePage(int encodedRecordLength) throws IOException {
-        long count = pageFile.pageCount();
+    private DelosPage writablePage(int encodedRecordLength) throws IOException {
+        long count = pageVolume.pageCount();
         if (count == 0) {
-            return pageFile.allocatePage();
+            return pageVolume.allocatePage(DelosPage.DATA_PAGE_TYPE);
         }
-        MvccPage last = pageFile.readPage(new MvccPageId(count - 1L));
+        DelosPage last = pageVolume.readPage(new DelosPageId(count - 1L));
         if (last.freeBytes() >= encodedRecordLength + SLOT_OVERHEAD_BYTES) {
             return last;
         }
-        return pageFile.allocatePage();
+        return pageVolume.allocatePage(DelosPage.DATA_PAGE_TYPE);
     }
 
     public record StoredVersionRecord(MvccVersionLocator locator, MvccVersionRecord record) {

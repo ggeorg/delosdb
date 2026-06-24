@@ -6,7 +6,7 @@ import java.util.Objects;
 
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageId;
+import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
 
 /** Codec for one durable index-candidate record stored inside an index page slot. */
 final class MvccIndexTupleCodec {
@@ -74,7 +74,7 @@ final class MvccIndexTupleCodec {
                 keyBytes,
                 new MvccRowId(buffer.getLong()),
                 new MvccVersionId(buffer.getLong()),
-                new MvccVersionLocator(new MvccPageId(buffer.getLong()), buffer.getInt()),
+                new MvccVersionLocator(new DelosPageId(buffer.getLong()), buffer.getInt()),
                 buffer.getInt());
         if (buffer.hasRemaining()) {
             throw new IllegalArgumentException("durable MVCC index tuple has trailing bytes: " + buffer.remaining());
@@ -109,7 +109,7 @@ final class MvccIndexTupleCodec {
                 keyBytes,
                 new MvccRowId(buffer.getLong()),
                 new MvccVersionId(buffer.getLong()),
-                new MvccVersionLocator(new MvccPageId(buffer.getLong()), buffer.getInt()),
+                new MvccVersionLocator(new DelosPageId(buffer.getLong()), buffer.getInt()),
                 buffer.getInt());
         if (buffer.hasRemaining()) {
             throw new IllegalArgumentException("durable MVCC index tuple has trailing bytes: " + buffer.remaining());
