@@ -29,7 +29,11 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     public static PageBackedMvccTableStore open(Path path) throws IOException {
         Objects.requireNonNull(path, "path");
-        return new PageBackedMvccTableStore(path, openVolume(path));
+        return open(path, openVolume(path));
+    }
+
+    static PageBackedMvccTableStore open(Path path, DelosPageVolume pageVolume) {
+        return new PageBackedMvccTableStore(path, pageVolume);
     }
 
     public synchronized MvccVersionLocator append(MvccVersionRecord record) throws IOException {

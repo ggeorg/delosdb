@@ -1077,6 +1077,69 @@ tasks.register('verifyStoragePhaseS6RewriteLifecycleBoundary') {
     }
 }
 
+
+tasks.register('runStoragePhaseS9FaultRecoveryProofSmoke', Test) {
+    group = 'verification'
+    description = 'Runs the S9 page-backed recovery proof smoke through FaultInjectingPageVolume.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    include '**/PageBackedMvccFaultRecoverySmoke.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runStoragePhaseS9FaultRecoveryProofSmoke'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runStoragePhaseS9FaultRecoveryProofSmoke'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runStoragePhaseS9FaultRecoveryProofSmoke'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+
+tasks.register('verifyStoragePhaseS9FaultRecoveryProof') {
+    group = 'verification'
+    description = 'Verifies S9 recovery proof uses the storage I/O fault decorator without adding recovery semantics to storage-io.'
+    dependsOn 'compileDelosDbStorageMvcc', ':delosdb-storage-io:verifyDelosDbStorageIoBoundary'
+
+    doLast {
+        def store = file('src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccTableStore.java')
+        def storeText = store.getText('UTF-8')
+        if (!storeText.contains('static PageBackedMvccTableStore open(Path path, DelosPageVolume pageVolume)')) {
+            throw new GradleException('S9 expected PageBackedMvccTableStore to expose a package-private volume-injection seam')
+        }
+        if (storeText.contains('pageVolume.path()')) {
+            throw new GradleException('S9 must keep DelosPageVolume path-free during fault recovery proof')
+        }
+
+        def smoke = file('src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccFaultRecoverySmoke.java')
+        def smokeText = smoke.getText('UTF-8')
+        ['FaultInjectingPageVolume', 'OffHeapPageVolume', 'recoverStrict', 'failOnWrite', 'failOnForce'].each { required ->
+            if (!smokeText.contains(required)) {
+                throw new GradleException("S9 recovery proof smoke is missing required evidence: ${required}")
+            }
+        }
+
+        def faultVolume = project(':delosdb-storage-io').file('src/main/java/io/github/ggeorg/delosdb/storage/io/volume/FaultInjectingPageVolume.java')
+        def faultText = faultVolume.getText('UTF-8')
+        ['io.github.ggeorg.delosdb.storage.mvcc', 'org.apache.derby', 'DelosStorageDispatch', 'EngineHeap'].each { forbidden ->
+            if (faultText.contains(forbidden)) {
+                throw new GradleException("FaultInjectingPageVolume must remain I/O-only and must not import ${forbidden}")
+            }
+        }
+
+        println 'Verified S9 fault recovery proof: page-backed recovery observes I/O faults without moving recovery semantics into storage-io'
+    }
+}
+
+
 tasks.register('classes') {
     dependsOn 'compileDelosDbStorageMvcc'
 }
@@ -1101,5 +1164,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'verifyStoragePhaseS5SafeCallerVolumeMigration', 'runStoragePhaseS6RewriteLifecycleSmoke', 'verifyStoragePhaseS6RewriteLifecycleBoundary', 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke'
+    dependsOn 'verifyStoragePhaseS5SafeCallerVolumeMigration', 'runStoragePhaseS6RewriteLifecycleSmoke', 'verifyStoragePhaseS6RewriteLifecycleBoundary', 'runStoragePhaseS9FaultRecoveryProofSmoke', 'verifyStoragePhaseS9FaultRecoveryProof', 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke'
 }
