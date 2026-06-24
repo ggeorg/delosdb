@@ -212,17 +212,3 @@ tasks.register('verifyStorageSpiTruthMap') {
     }
 }
 
-tasks.register('verifyStoragePhaseC0TruthMap') {
-    group = 'verification'
-    description = 'Verifies Phase B boundary plus the permanent storage SPI truth map.'
-    dependsOn 'verifyStorageDerbyBoundary', 'verifyStorageSpiTruthMap'
-    doLast {
-        println 'Verified permanent storage truth gate'
-    }
-}
-
-tasks.register('verifyLegacyDerbyStoreC0StorageTruthMap') {
-    group = 'verification'
-    description = 'Compatibility alias for the permanent storage SPI truth map.'
-    dependsOn 'verifyStoragePhaseC0TruthMap'
-}

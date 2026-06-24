@@ -12,7 +12,7 @@ for DelosDB MVCC after the A44--A52 correctness sprint.
 DelosDB should become:
 
 ```text
-A Java 21, Derby-compatible database kernel with a real versioned-storage path,
+A Java 25, Derby-compatible database kernel with a real versioned-storage path,
 durable recovery, statement-correct SQL visibility, and small executable proofs
 for every behavior boundary.
 ```
@@ -61,12 +61,7 @@ The transferable decisions are:
 
 ## Completed storage/MVCC lane
 
-The ASM bytecode switch is closed. ASM is the production bytecode compiler and
-the permanent bytecode proof remains:
-
-```bash
-./gradlew generatedBytecodeAsmJvm21Proof
-```
+The ASM bytecode switch is closed. ASM is the production bytecode compiler.
 
 The MVCC lane has advanced from isolated storage proofs to a guarded SQL
 candidate path with semantic correctness gates. Important gates now include:
@@ -169,18 +164,6 @@ benchmark harness beyond small regression sanity.
 A research-facing feature is allowed only when it is attached to the current
 engine proof and makes that proof easier to inspect or reproduce. If it requires
 a new subsystem, it waits.
-
-## Documentation cleanup decision
-
-`docs/MVCC-MISSION.md` is the active MVCC planning/status document.
-
-`docs/postgres-class-storage-concurrency.md` is retained as historical source
-trail because it records how the early PostgreSQL-class storage/concurrency
-campaign reached the MVCC module.
-
-`docs/postgresql-deep-gap-map.md` is stale and should be removed. It belongs to
-the pre-MVCC source-mapping phase and contains obsolete guidance such as “Do not
-implement MVCC yet.”
 
 ## Future lanes
 

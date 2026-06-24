@@ -1,6 +1,6 @@
 # DelosDB
 
-DelosDB is a Java 21, Gradle-only, Derby-compatible database kernel built from
+DelosDB is a Java 25, Gradle-only, Derby-compatible database kernel built from
 the Apache Derby codebase. It preserves Derby's embeddable SQL/JDBC surface while
 modernizing selected internals through small executable proofs.
 
@@ -17,7 +17,6 @@ Closed major lane:
 
 - ASM is the production generated-bytecode backend.
 - The old Derby bytecode backend and old classfile writer are quarantined.
-- Permanent bytecode proof: `generatedBytecodeAsmJvm21Proof`.
 
 Closed major lane:
 
@@ -250,11 +249,7 @@ Root-level Markdown is limited to project-facing essentials:
 
 Maintained technical docs live under `docs/`:
 
-- `docs/MVCC-MISSION.md` — active MVCC mission, A44--A52 closeout, and post-A52 decision point.
-- `docs/BUILDING.md` — build, test, distribution, and Maven Local workflow.
-- `docs/ROADMAP.md` — current product direction and near/future milestones.
-- `docs/modernization-status.md` — current green state and cleanup priority.
+- `docs/MVCC-MISSION.md` — active MVCC/storage boundary notes.
+- `docs/BUILDING.md` — build and verification commands.
 - `docs/DERBY-COMPATIBILITY.md` — Derby compatibility policy.
 - `docs/sql-extensions.md` — supported DelosDB SQL extension surface.
-- `docs/BENCHMARKS.md` — local benchmark baseline.
-- `docs/book/` — source-checked Derby/DelosDB internals manuscript.

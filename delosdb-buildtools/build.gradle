@@ -28,9 +28,7 @@ tasks.register('compileDerbyBuildTools', JavaCompile) {
             'src/main/java/org/apache/derbyBuild/splitmessages.java',
             'src/main/java/org/apache/derbyBuild/EnglishMessagePropertiesGenerator.java',
             'src/main/java/org/apache/derbyBuild/ODBCMetadataGenerator.java',
-            'src/main/java/org/apache/derbyBuild/ClassSizeCrawler.java',
-            'src/main/java/org/apache/derbyBuild/SecureXmlFactoryProbe.java',
-            'src/main/java/org/apache/derby/impl/store/access/sort/SortMemoryPolicyProbe.java'
+            'src/main/java/org/apache/derbyBuild/ClassSizeCrawler.java'
     )
     destinationDirectory = buildToolsClassDir
     sourceCompatibility = rootProject.ext.javaRelease.toString()
