@@ -81,6 +81,54 @@ tasks.register('runFaultInjectingPageVolumeSmoke', JavaExec) {
     mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.FaultInjectingPageVolumeSmoke'
 }
 
+
+
+
+tasks.register('runStoragePhaseS10MemorySegmentGateSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Runs the S10 MemorySegment migration gate smoke test.'
+    dependsOn 'compileDelosDbStorageIoTests'
+    classpath = rootProject.files(mainClassDir, testClassDir)
+    mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.StoragePhaseS10MemorySegmentGateSmoke'
+}
+
+tasks.register('verifyStoragePhaseS10MemorySegmentGate') {
+    group = 'verification'
+    description = 'Verifies S10 keeps MemorySegment migration gated behind an explicit Java/JDK decision.'
+    dependsOn 'runStoragePhaseS10MemorySegmentGateSmoke'
+
+    doLast {
+        def javaRelease = rootProject.ext.javaRelease as int
+        def scannedRoots = [
+                file('src/main/java'),
+                rootProject.file('delosdb-storage-mvcc/src/main/java')
+        ]
+        def forbiddenTokens = [
+                'java.lang.foreign',
+                'MemorySegment',
+                'Arena.of',
+                'Linker.nativeLinker'
+        ]
+
+        scannedRoots.findAll { it.exists() }.each { scannedRoot ->
+            fileTree(scannedRoot) { include '**/*.java' }.each { sourceFile ->
+                def text = sourceFile.getText('UTF-8')
+                forbiddenTokens.each { token ->
+                    if (text.contains(token)) {
+                        throw new GradleException("S10 gate violation: ${sourceFile} contains ${token}; MemorySegment migration must be an explicit later overlay")
+                    }
+                }
+            }
+        }
+
+        if (javaRelease < 22) {
+            println "Verified S10 MemorySegment gate: Java ${javaRelease} baseline keeps MemorySegment migration deferred"
+        } else {
+            println "Verified S10 MemorySegment gate: Java ${javaRelease} baseline can support a future explicit MemorySegment migration overlay"
+        }
+    }
+}
+
 tasks.register('verifyDelosDbStorageIoBoundary') {
     group = 'verification'
     description = 'Verifies the storage I/O module has no upward dependency on MVCC, engine, Derby, heap, SQL, or provider-dispatch code.'
@@ -154,5 +202,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'compileDelosDbStorageIo', 'verifyDelosDbStorageIoBoundary', 'runDelosPagePrimitiveSmoke', 'runDelosPageVolumeContractSmoke', 'runFileChannelPageVolumeSmoke', 'runOffHeapPageVolumeSmoke', 'runFaultInjectingPageVolumeSmoke'
+    dependsOn 'compileDelosDbStorageIo', 'verifyDelosDbStorageIoBoundary', 'runDelosPagePrimitiveSmoke', 'runDelosPageVolumeContractSmoke', 'runFileChannelPageVolumeSmoke', 'runOffHeapPageVolumeSmoke', 'runFaultInjectingPageVolumeSmoke', 'runStoragePhaseS10MemorySegmentGateSmoke', 'verifyStoragePhaseS10MemorySegmentGate'
 }
