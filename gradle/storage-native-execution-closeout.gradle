@@ -471,3 +471,18 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         verifyDescription : 'Verifies N3 heap DELETE/UPDATE live route without heap locking parity.',
         successMessage    : 'Verified N3 heap DELETE/UPDATE live route without heap locking parity'
 ])
+
+// O1 uses behavior proof only. No exact-text history-marker guard chain.
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-o1-heap-provider-parity-gate-smoke',
+        compileTask       : 'compileStoragePhaseO1HeapProviderParityGateSmoke',
+        smokeTask         : 'storagePhaseO1HeapProviderParityGateSmoke',
+        verifyTask        : 'verifyStoragePhaseO1HeapProviderParityGate',
+        dependsOn         : 'verifyStoragePhaseN3HeapDeleteUpdateLiveRoute',
+        sourceDir         : 'dev/storage-phase-o1-heap-provider-parity-gate-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseO1HeapProviderParityGateSmoke',
+        compileDescription: 'Compiles the O1 heap provider-parity gate smoke test.',
+        smokeDescription  : 'Runs the O1 unified heap read/write provider-parity gate smoke test.',
+        verifyDescription : 'Verifies O1 unified heap SELECT/INSERT/UPDATE/DELETE gate without heap locking parity.',
+        successMessage    : 'Verified O1 unified heap provider-parity gate without heap locking parity'
+])

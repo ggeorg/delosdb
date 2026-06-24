@@ -87,7 +87,7 @@ final class DelosHeapLiveTableScanResultSet extends TableScanResultSet {
 
     static Optional<NoPutResultSet> createIfEnabled(TableScanResultSetParameters params)
             throws StandardException {
-        if (!Boolean.getBoolean(HEAP_SELECT_LIVE_ROUTE_PROPERTY)) {
+        if (!DelosTableScanProviderLookup.isHeapSelectLiveRouteEnabled()) {
             return Optional.empty();
         }
         if (!isSupportedHeapReadShape(params)) {

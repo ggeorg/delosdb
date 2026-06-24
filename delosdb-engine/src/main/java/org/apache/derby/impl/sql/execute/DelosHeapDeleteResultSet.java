@@ -50,7 +50,7 @@ final class DelosHeapDeleteResultSet extends DeleteResultSet {
             NoPutResultSet source,
             Activation activation)
             throws StandardException {
-        if (!Boolean.getBoolean(HEAP_DELETE_UPDATE_LIVE_ROUTE_PROPERTY)) {
+        if (!DelosTableScanProviderLookup.isHeapDeleteUpdateLiveRouteEnabled()) {
             return Optional.empty();
         }
         if (source == null || activation == null) {

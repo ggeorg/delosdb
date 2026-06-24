@@ -128,6 +128,10 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_HEAP_DELETE_UPDATE_LIVE_ROUTE_PROPERTY =
             DelosHeapDeleteResultSet.HEAP_DELETE_UPDATE_LIVE_ROUTE_PROPERTY;
 
+    /** Test/proof gate for Phase O1 unified heap read/write provider-parity route. */
+    public static final String FACTORY_HEAP_PROVIDER_PARITY_PROPERTY =
+            "delosdb.storage.phaseO.heapProviderParity";
+
     /** Test/proof gate for Phase F6 native DELETE equality mutation. */
     public static final String FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY =
             DelosDeleteResultSet.NATIVE_DELETE_EQUALITY_PROPERTY;
@@ -256,6 +260,29 @@ public final class DelosTableScanProviderLookup
     public static Optional<Result> lastHeapUpdateLiveRouteLookupForTesting()
     {
         return DelosHeapUpdateResultSet.lastLiveLookupForTesting();
+    }
+
+    static boolean isHeapProviderParityEnabled()
+    {
+        return Boolean.getBoolean(FACTORY_HEAP_PROVIDER_PARITY_PROPERTY);
+    }
+
+    static boolean isHeapSelectLiveRouteEnabled()
+    {
+        return isHeapProviderParityEnabled()
+                || Boolean.getBoolean(FACTORY_HEAP_SELECT_LIVE_ROUTE_PROPERTY);
+    }
+
+    static boolean isHeapInsertLiveRouteEnabled()
+    {
+        return isHeapProviderParityEnabled()
+                || Boolean.getBoolean(FACTORY_HEAP_INSERT_LIVE_ROUTE_PROPERTY);
+    }
+
+    static boolean isHeapDeleteUpdateLiveRouteEnabled()
+    {
+        return isHeapProviderParityEnabled()
+                || Boolean.getBoolean(FACTORY_HEAP_DELETE_UPDATE_LIVE_ROUTE_PROPERTY);
     }
 
     public static Optional<Result> find(Activation activation, String tableName)

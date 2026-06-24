@@ -59,7 +59,7 @@ final class DelosHeapInsertResultSet extends DMLWriteResultSet {
 
     static Optional<ResultSet> createIfEnabled(InsertResultSetParameters params)
             throws StandardException {
-        if (!Boolean.getBoolean(HEAP_INSERT_LIVE_ROUTE_PROPERTY)) {
+        if (!DelosTableScanProviderLookup.isHeapInsertLiveRouteEnabled()) {
             return Optional.empty();
         }
 
@@ -161,17 +161,6 @@ final class DelosHeapInsertResultSet extends DMLWriteResultSet {
     @Override
     public void close() throws StandardException {
         close(constants.underMerge());
-    }
-
-    @Override
-    public void cleanUp() throws StandardException {
-        if (sourceOpen) {
-            try {
-                params.source.close();
-            } finally {
-                sourceOpen = false;
-            }
-        }
     }
 
     static void resetForTesting() {

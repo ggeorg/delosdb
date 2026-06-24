@@ -49,7 +49,7 @@ final class DelosHeapUpdateResultSet extends UpdateResultSet {
             GeneratedMethod checkGM,
             Activation activation)
             throws StandardException {
-        if (!Boolean.getBoolean(DelosHeapDeleteResultSet.HEAP_DELETE_UPDATE_LIVE_ROUTE_PROPERTY)) {
+        if (!DelosTableScanProviderLookup.isHeapDeleteUpdateLiveRouteEnabled()) {
             return Optional.empty();
         }
         if (source == null || activation == null) {
