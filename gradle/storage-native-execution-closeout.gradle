@@ -390,11 +390,27 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified N1.4 heap RowChanger adapter decision without heap mutation SQL routing'
 ])
 
+
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-n15-heap-rowchanger-adapter-proof-smoke',
+        compileTask       : 'compileStoragePhaseN15HeapRowChangerAdapterProofSmoke',
+        smokeTask         : 'storagePhaseN15HeapRowChangerAdapterProofSmoke',
+        verifyTask        : 'verifyStoragePhaseN15HeapRowChangerAdapterProof',
+        dependsOn         : 'verifyStoragePhaseN14HeapRowChangerAdapterDecision',
+        sourceDir         : 'dev/storage-phase-n15-heap-rowchanger-adapter-proof-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseN15HeapRowChangerAdapterProofSmoke',
+        compileDescription: 'Compiles the N1.5 heap RowChanger adapter proof smoke test.',
+        smokeDescription  : 'Runs the N1.5 heap RowChanger adapter proof smoke test.',
+        verifyDescription : 'Verifies N1.5 heap RowChanger adapter proof without heap mutation SQL routing.',
+        successMessage    : 'Verified N1.5 heap RowChanger adapter proof without heap mutation SQL routing'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane and heap provider-parity route through N1.4.'
-    dependsOn 'verifyStoragePhaseN14HeapRowChangerAdapterDecision'
+    description = 'Verifies the closed native delos_mvcc execution lane and heap provider-parity route through N1.5.'
+    dependsOn 'verifyStoragePhaseN15HeapRowChangerAdapterProof'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N1.4'
+        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N1.5'
     }
 }

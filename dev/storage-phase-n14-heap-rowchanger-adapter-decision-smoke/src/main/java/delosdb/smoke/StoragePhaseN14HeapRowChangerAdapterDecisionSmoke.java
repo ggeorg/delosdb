@@ -87,8 +87,22 @@ public final class StoragePhaseN14HeapRowChangerAdapterDecisionSmoke {
     }
 
     private static void proveNoPrematureHeapMutationRouting() throws Exception {
-        assertPathMissing(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineHeapRowChangerMutationAdapter.java"));
+        Path adapterPath = Path.of(
+                "delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineHeapRowChangerMutationAdapter.java");
+        if (Files.exists(adapterPath)) {
+            assertSourceContains(adapterPath, List.of(
+                    "EngineHeapRowChangerMutationAdapter",
+                    "must remain internal-only",
+                    "RowChanger",
+                    "insert(ExecRow row)",
+                    "update(ExecRow oldRow",
+                    "delete(ExecRow row"));
+            assertSourceNotContains(adapterPath, List.of(
+                    "implements DelosMutableTableAccess",
+                    "DelosHeapInsertResultSet",
+                    "DelosHeapDeleteResultSet",
+                    "DelosHeapUpdateResultSet"));
+        }
         assertPathMissing(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineHeapMutableTableAccess.java"));
         assertPathMissing(Path.of(
