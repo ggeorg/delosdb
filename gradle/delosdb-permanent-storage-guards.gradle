@@ -26,12 +26,13 @@ ext.delosdbClosedPhaseC7SmokeClasspath = {
             delosdbClosedPhaseRegressionModuleClassDir(':delosdb-commons', 'org.apache.derby.commons'),
             delosdbClosedPhaseRegressionModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
             project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-io.jar'),
             rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
             delosdbClosedPhaseRegressionRuntimeJars())
 }
 
 tasks.register('compileStoragePhaseC7StabilizationSmoke', JavaCompile) {
-    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+    dependsOn 'jars', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
     group = 'verification'
     description = 'Compiles the closed Phase C7 stabilization smoke test.'
     source = files('dev/storage-phase-c7-stabilization-smoke/src/main/java')

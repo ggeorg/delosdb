@@ -23,6 +23,7 @@ ext.delosdbStorageNativeCloseoutClasspath = { Object smokeClassesDir ->
             delosdbStorageNativeCloseoutModuleClassDir(':delosdb-osgi-stub', 'org.osgi.framework'),
             project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
             project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main'),
+            rootProject.layout.buildDirectory.file('libs/delosdb-storage-io.jar'),
             rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
             delosdbStorageNativeCloseoutRuntimeJars())
 }
@@ -34,6 +35,7 @@ tasks.register('compileStoragePhaseO5FullProviderParityCloseoutSmoke', JavaCompi
             'processDerbyResources',
             ':delosdb-spi:compileDelosDbSpi',
             ':delosdb-storage-derby:compileLegacyDerbyStorage',
+            ':delosdb-storage-io:delosDbStorageIoJar',
             ':delosdb-storage-mvcc:delosDbStorageMvccJar'
     group = 'verification'
     description = 'Compiles the O5 full provider-parity closeout smoke test.'
@@ -53,6 +55,7 @@ tasks.register('storagePhaseO5FullProviderParityCloseoutSmoke', JavaExec) {
             'compileStoragePhaseO5FullProviderParityCloseoutSmoke',
             'jars',
             'processDerbyResources',
+            ':delosdb-storage-io:delosDbStorageIoJar',
             ':delosdb-storage-mvcc:delosDbStorageMvccJar'
     group = 'verification'
     description = 'Runs the O5 full provider-parity closeout behavior smoke test.'

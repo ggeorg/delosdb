@@ -10,9 +10,10 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.function.BiPredicate;
 
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPage;
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageFile;
-import io.github.ggeorg.delosdb.storage.mvcc.io.MvccPageId;
+import io.github.ggeorg.delosdb.storage.io.page.DelosPage;
+import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
+import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolume;
+import io.github.ggeorg.delosdb.storage.io.volume.FileChannelPageVolume;
 
 /**
  * Durable MVCC index-candidate store.
@@ -28,16 +29,16 @@ public final class MvccIndexStore implements AutoCloseable {
     private static final String DEFAULT_INDEX_NAME = "IDX";
 
     private final Path path;
-    private MvccPageFile pageFile;
+    private DelosPageVolume pageVolume;
 
-    private MvccIndexStore(Path path, MvccPageFile pageFile) {
+    private MvccIndexStore(Path path, DelosPageVolume pageVolume) {
         this.path = Objects.requireNonNull(path, "path");
-        this.pageFile = Objects.requireNonNull(pageFile, "pageFile");
+        this.pageVolume = Objects.requireNonNull(pageVolume, "pageVolume");
     }
 
     public static MvccIndexStore open(Path path) throws IOException {
         Objects.requireNonNull(path, "path");
-        MvccIndexStore store = new MvccIndexStore(path, MvccPageFile.open(path));
+        MvccIndexStore store = new MvccIndexStore(path, FileChannelPageVolume.open(path));
         store.readCandidates(); // validate existing durable bytes eagerly
         return store;
     }
@@ -137,7 +138,7 @@ public final class MvccIndexStore implements AutoCloseable {
     }
 
     public synchronized long pageCount() throws IOException {
-        return pageFile.pageCount();
+        return pageVolume.pageCount();
     }
 
     public synchronized PruneResult pruneCandidates(BiPredicate<Object, MvccIndexTuple> keepPredicate)
@@ -156,13 +157,13 @@ public final class MvccIndexStore implements AutoCloseable {
 
     @Override
     public synchronized void close() throws IOException {
-        pageFile.close();
+        pageVolume.close();
     }
 
     private void appendTuple(MvccIndexTuple tuple, Object indexKey) throws IOException {
         byte[] encoded = MvccIndexTupleCodec.encode(indexKey, tuple);
         appendEncoded(encoded);
-        pageFile.force();
+        pageVolume.force();
     }
 
     private void appendEncoded(byte[] encoded) throws IOException {
@@ -170,25 +171,25 @@ public final class MvccIndexStore implements AutoCloseable {
             throw new IllegalArgumentException("durable MVCC index tuple is too large: " + encoded.length);
         }
 
-        long count = pageFile.pageCount();
-        MvccPage page;
+        long count = pageVolume.pageCount();
+        DelosPage page;
         if (count == 0L) {
-            page = pageFile.allocatePage(INDEX_PAGE_TYPE);
+            page = pageVolume.allocatePage(INDEX_PAGE_TYPE);
         } else {
-            page = pageFile.readPage(new MvccPageId(count - 1L));
+            page = pageVolume.readPage(new DelosPageId(count - 1L));
             if (page.pageType() != INDEX_PAGE_TYPE || page.freeBytes() < encoded.length + SLOT_OVERHEAD_BYTES) {
-                page = pageFile.allocatePage(INDEX_PAGE_TYPE);
+                page = pageVolume.allocatePage(INDEX_PAGE_TYPE);
             }
         }
         page.appendRecord(encoded);
-        pageFile.writePage(page);
+        pageVolume.writePage(page);
     }
 
     private List<Candidate> readCandidates() throws IOException {
         List<Candidate> candidates = new ArrayList<>();
-        long count = pageFile.pageCount();
+        long count = pageVolume.pageCount();
         for (long pageNumber = 0; pageNumber < count; pageNumber++) {
-            MvccPage page = pageFile.readPage(new MvccPageId(pageNumber));
+            DelosPage page = pageVolume.readPage(new DelosPageId(pageNumber));
             if (page.pageType() != INDEX_PAGE_TYPE) {
                 throw new IllegalStateException("expected MVCC index page type " + INDEX_PAGE_TYPE
                         + ", got " + page.pageType() + " at page " + pageNumber);
@@ -202,13 +203,13 @@ public final class MvccIndexStore implements AutoCloseable {
     }
 
     private void rewrite(List<Candidate> retained) throws IOException {
-        pageFile.close();
+        pageVolume.close();
         Files.deleteIfExists(path);
-        pageFile = MvccPageFile.open(path);
+        pageVolume = FileChannelPageVolume.open(path);
         for (Candidate candidate : retained) {
             appendEncoded(MvccIndexTupleCodec.encode(candidate.indexKey(), candidate.tuple()));
         }
-        pageFile.force();
+        pageVolume.force();
     }
 
     private static MvccIndexTuple keyedTuple(String indexName, Object indexKey, MvccIndexTuple tuple) {
@@ -301,7 +302,7 @@ public final class MvccIndexStore implements AutoCloseable {
     }
 
     private static int maxPayloadBytes() {
-        return MvccPage.empty(new MvccPageId(0L), INDEX_PAGE_TYPE).freeBytes() - SLOT_OVERHEAD_BYTES;
+        return DelosPage.empty(new DelosPageId(0L), INDEX_PAGE_TYPE).freeBytes() - SLOT_OVERHEAD_BYTES;
     }
 
     private record Candidate(Object indexKey, MvccIndexTuple tuple) {
