@@ -23,7 +23,7 @@ group = 'io.github.ggeorg.delosdb'
 
 ext.delosDbVersion = delosDbVersion
 
-def javaRelease = 21
+def javaRelease = 25
 ext.javaRelease = javaRelease
 def derbyCompatibilityVersion = '10.17.1.0'
 

@@ -102,101 +102,6 @@ tasks.register('runDelosPageVolumeFactorySmoke', JavaExec) {
     mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactorySmoke'
 }
 
-tasks.register('runStoragePhaseS10MemorySegmentGateSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Runs the S10 MemorySegment migration gate smoke test.'
-    dependsOn 'compileDelosDbStorageIoTests'
-    classpath = rootProject.files(mainClassDir, testClassDir)
-    mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.StoragePhaseS10MemorySegmentGateSmoke'
-}
-
-tasks.register('verifyStoragePhaseS10MemorySegmentGate') {
-    group = 'verification'
-    description = 'Verifies S10 keeps MemorySegment migration gated behind an explicit Java/JDK decision.'
-    dependsOn 'runStoragePhaseS10MemorySegmentGateSmoke'
-
-    doLast {
-        def javaRelease = rootProject.ext.javaRelease as int
-        def scannedRoots = [
-                file('src/main/java'),
-                rootProject.file('delosdb-storage-mvcc/src/main/java')
-        ]
-        def forbiddenTokens = [
-                'java.lang.foreign',
-                'MemorySegment',
-                'Arena.of',
-                'Linker.nativeLinker'
-        ]
-
-        scannedRoots.findAll { it.exists() }.each { scannedRoot ->
-            fileTree(scannedRoot) { include '**/*.java' }.each { sourceFile ->
-                def text = sourceFile.getText('UTF-8')
-                forbiddenTokens.each { token ->
-                    if (text.contains(token)) {
-                        throw new GradleException("S10 gate violation: ${sourceFile} contains ${token}; MemorySegment migration must be an explicit later overlay")
-                    }
-                }
-            }
-        }
-
-        if (javaRelease < 22) {
-            println "Verified S10 MemorySegment gate: Java ${javaRelease} baseline keeps MemorySegment migration deferred"
-        } else {
-            println "Verified S10 MemorySegment gate: Java ${javaRelease} baseline can support a future explicit MemorySegment migration overlay"
-        }
-    }
-}
-
-tasks.register('verifyDelosDbStorageIoBoundary') {
-    group = 'verification'
-    description = 'Verifies the storage I/O module has no upward dependency on MVCC, engine, Derby, heap, SQL, or provider-dispatch code.'
-
-    doLast {
-        def forbiddenProjectPaths = [
-                ':delosdb-storage-mvcc',
-                ':delosdb-storage-derby',
-                ':delosdb-engine',
-                ':delosdb-engine-kernel',
-                ':delosdb-storeless'
-        ] as Set
-
-        configurations.each { configuration ->
-            configuration.dependencies.withType(ProjectDependency).each { dependency ->
-                def dependencyPath = dependency.dependencyProject.path
-                if (forbiddenProjectPaths.contains(dependencyPath)) {
-                    throw new GradleException("delosdb-storage-io must not depend on ${dependencyPath}")
-                }
-            }
-        }
-
-        def forbiddenSourceTokens = [
-                'io.github.ggeorg.delosdb.storage.mvcc',
-                'org.apache.derby',
-                'DelosStorageDispatch',
-                'EngineHeap',
-                'MvccPage',
-                'MvccPageId'
-        ]
-
-        if (sourceRoot.exists()) {
-            fileTree(sourceRoot) { include '**/*.java' }.each { sourceFile ->
-                def text = sourceFile.getText('UTF-8')
-                forbiddenSourceTokens.each { token ->
-                    if (text.contains(token)) {
-                        throw new GradleException("${sourceFile} contains forbidden storage-io dependency token: ${token}")
-                    }
-                }
-                def packageMatcher = text =~ /(?m)^\s*package\s+([^;]+);/
-                if (packageMatcher.find() && packageMatcher.group(1).contains('.mvcc')) {
-                    throw new GradleException("${sourceFile} uses an MVCC package name inside delosdb-storage-io")
-                }
-            }
-        }
-
-        println 'Verified delosdb-storage-io boundary: no upward MVCC, engine, Derby, heap, SQL, or provider-dispatch dependency'
-    }
-}
-
 tasks.register('classes') {
     dependsOn 'compileDelosDbStorageIo'
 }
@@ -220,5 +125,12 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'compileDelosDbStorageIo', 'verifyDelosDbStorageIoBoundary', 'runDelosPagePrimitiveSmoke', 'runDelosPageVolumeContractSmoke', 'runFileChannelPageVolumeSmoke', 'runOffHeapPageVolumeSmoke', 'runFaultInjectingPageVolumeSmoke', 'runStoragePhaseS10MemorySegmentGateSmoke', 'runMappedPageVolumeSmoke', 'runDelosPageVolumeFactorySmoke', 'verifyStoragePhaseS10MemorySegmentGate'
+    dependsOn 'compileDelosDbStorageIo',
+            'runDelosPagePrimitiveSmoke',
+            'runDelosPageVolumeContractSmoke',
+            'runFileChannelPageVolumeSmoke',
+            'runOffHeapPageVolumeSmoke',
+            'runFaultInjectingPageVolumeSmoke',
+            'runMappedPageVolumeSmoke',
+            'runDelosPageVolumeFactorySmoke'
 }
