@@ -20,7 +20,7 @@ public final class StoragePhaseN16HeapMutationClassificationDecisionSmoke {
         proveDecisionDocument();
         proveAdapterStillInternalOnly();
         provePriorAdapterProofRemainsPresent();
-        proveNoHeapMutationSqlRoutingYet();
+        proveNoHeapDeleteUpdateSqlRoutingYet();
         proveNoGenericHeapMutationContractYet();
         proveGradleWiring();
         System.out.println("storage_phase_n16_heap_mutation_classification_decision: PASS");
@@ -30,7 +30,6 @@ public final class StoragePhaseN16HeapMutationClassificationDecisionSmoke {
         assertSourceContains(Path.of("docs/storage-phase-n16-heap-mutation-classification-decision.md"), List.of(
                 "Storage Phase N1.6 — Heap mutation classification decision",
                 "N2 may start with heap INSERT only",
-                "DelosHeapInsertResultSet",
                 "property-gated heap INSERT live route",
                 "EngineHeapRowChangerMutationAdapter as the implementation seam",
                 "unsupported INSERT shapes fall back to ordinary Derby InsertResultSet",
@@ -70,9 +69,7 @@ public final class StoragePhaseN16HeapMutationClassificationDecisionSmoke {
                 "verifyStoragePhaseN15HeapRowChangerAdapterProof"));
     }
 
-    private static void proveNoHeapMutationSqlRoutingYet() throws Exception {
-        assertPathMissing(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapInsertResultSet.java"));
+    private static void proveNoHeapDeleteUpdateSqlRoutingYet() throws Exception {
         assertPathMissing(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapDeleteResultSet.java"));
         assertPathMissing(Path.of(
@@ -88,7 +85,6 @@ public final class StoragePhaseN16HeapMutationClassificationDecisionSmoke {
                 "DelosUpdateResultSet.createIfEnabled(",
                 "source, generationClauses, checkGM, activation)"));
         assertSourceNotContains(factory, List.of(
-                "DelosHeapInsertResultSet",
                 "DelosHeapDeleteResultSet",
                 "DelosHeapUpdateResultSet"));
     }

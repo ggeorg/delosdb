@@ -21,7 +21,7 @@ public final class StoragePhaseN11HeapMutationContextShapeSmoke {
         proveResultSetsAlreadyCarryRequiredContext();
         proveRowChangerRuntimeInputsRemainExplicit();
         proveM3HeapReadRouteStillReadOnly();
-        proveNoHeapMutationProviderActivation();
+        proveNoHeapDeleteUpdateProviderActivation();
         System.out.println("storage_phase_n11_heap_mutation_context_shape: PASS");
     }
 
@@ -175,11 +175,9 @@ public final class StoragePhaseN11HeapMutationContextShapeSmoke {
                 "EngineHeapMutableTableAccess"));
     }
 
-    private static void proveNoHeapMutationProviderActivation() throws Exception {
+    private static void proveNoHeapDeleteUpdateProviderActivation() throws Exception {
         assertFileAbsent(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineHeapMutableTableAccess.java"));
-        assertFileAbsent(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapInsertResultSet.java"));
         assertFileAbsent(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapDeleteResultSet.java"));
         assertFileAbsent(Path.of(

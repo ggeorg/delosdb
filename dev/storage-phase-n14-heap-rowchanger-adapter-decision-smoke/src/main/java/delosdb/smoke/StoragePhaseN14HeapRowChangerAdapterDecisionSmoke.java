@@ -99,14 +99,11 @@ public final class StoragePhaseN14HeapRowChangerAdapterDecisionSmoke {
                     "delete(ExecRow row"));
             assertSourceNotContains(adapterPath, List.of(
                     "implements DelosMutableTableAccess",
-                    "DelosHeapInsertResultSet",
-                    "DelosHeapDeleteResultSet",
+                        "DelosHeapDeleteResultSet",
                     "DelosHeapUpdateResultSet"));
         }
         assertPathMissing(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineHeapMutableTableAccess.java"));
-        assertPathMissing(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapInsertResultSet.java"));
         assertPathMissing(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapDeleteResultSet.java"));
         assertPathMissing(Path.of(
@@ -124,7 +121,6 @@ public final class StoragePhaseN14HeapRowChangerAdapterDecisionSmoke {
 
         assertSourceNotContains(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"), List.of(
-                "DelosHeapInsertResultSet",
                 "DelosHeapDeleteResultSet",
                 "DelosHeapUpdateResultSet"));
     }

@@ -140,8 +140,6 @@ public final class StoragePhaseN1HeapMutationMappingProofSmoke {
 
     private static void proveNoPrematureHeapMutationProviderContract() throws Exception {
         assertFileAbsent(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapInsertResultSet.java"));
-        assertFileAbsent(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapDeleteResultSet.java"));
         assertFileAbsent(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapUpdateResultSet.java"));

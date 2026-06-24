@@ -66,12 +66,13 @@ tasks.register('verifyDelosDbPermanentStorageGuards') {
     group = 'verification'
     // Permanent guard history includes through N1.4 heap RowChanger adapter decision.
     // Permanent guard history includes through N1.5 heap RowChanger adapter proof.
-    description = 'Verifies permanent DelosDB storage boundaries and closed native execution lane through N1.6 heap mutation classification decision.'
+    // Permanent guard history includes through N2 heap INSERT live route.
+    description = 'Verifies permanent DelosDB storage boundaries and closed native execution lane through N2 heap INSERT live route.'
     dependsOn 'verifyStorageDerbyBoundary',
             'verifyStorageSpiTruthMap',
             'storagePhaseC7StabilizationSmoke',
-            'verifyStorageNativeExecutionCloseout'
+            'verifyStorageNativeExecutionCloseoutThroughN2'
     doLast {
-        println 'Verified permanent DelosDB storage guards and closed native execution lane through N1.6 heap mutation classification decision'
+        println 'Verified permanent DelosDB storage guards and closed native execution lane through N2 heap INSERT live route'
     }
 }

@@ -280,8 +280,6 @@ public final class StoragePhaseN13HeapRowChangerDeleteUpdateProofSmoke {
 
     private static void proveNoHeapMutationRoutingOrProviderActivation() throws Exception {
         assertFileAbsent(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapInsertResultSet.java"));
-        assertFileAbsent(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapDeleteResultSet.java"));
         assertFileAbsent(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapUpdateResultSet.java"));
@@ -290,11 +288,9 @@ public final class StoragePhaseN13HeapRowChangerDeleteUpdateProofSmoke {
 
         assertSourceDoesNotContain(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"), List.of(
-                "DelosHeapInsertResultSet",
                 "DelosHeapDeleteResultSet",
                 "DelosHeapUpdateResultSet",
                 "EngineHeapMutableTableAccess",
-                "heapInsertLiveRoute",
                 "heapDeleteLiveRoute",
                 "heapUpdateLiveRoute"));
 

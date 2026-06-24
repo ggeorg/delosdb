@@ -119,6 +119,10 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_NATIVE_INSERT_PROPERTY =
             DelosInsertResultSet.NATIVE_INSERT_PROPERTY;
 
+    /** Test/proof gate for Phase N2 heap INSERT live route. */
+    public static final String FACTORY_HEAP_INSERT_LIVE_ROUTE_PROPERTY =
+            DelosHeapInsertResultSet.HEAP_INSERT_LIVE_ROUTE_PROPERTY;
+
     /** Test/proof gate for Phase F6 native DELETE equality mutation. */
     public static final String FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY =
             DelosDeleteResultSet.NATIVE_DELETE_EQUALITY_PROPERTY;
@@ -206,6 +210,21 @@ public final class DelosTableScanProviderLookup
     public static Optional<Result> lastHeapSelectLiveRouteLookupForTesting()
     {
         return DelosHeapLiveTableScanResultSet.lastLiveLookupForTesting();
+    }
+
+    public static void resetHeapInsertLiveRouteForTesting()
+    {
+        DelosHeapInsertResultSet.resetForTesting();
+    }
+
+    public static int heapInsertLiveRouteBranchCountForTesting()
+    {
+        return DelosHeapInsertResultSet.liveBranchCountForTesting();
+    }
+
+    public static Optional<Result> lastHeapInsertLiveRouteLookupForTesting()
+    {
+        return DelosHeapInsertResultSet.lastLiveLookupForTesting();
     }
 
     public static Optional<Result> find(Activation activation, String tableName)

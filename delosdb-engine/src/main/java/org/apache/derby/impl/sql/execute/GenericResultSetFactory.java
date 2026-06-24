@@ -261,6 +261,8 @@ public class GenericResultSetFactory implements ResultSetFactory
                 activation);
         ResultSet delosInsert = DelosInsertResultSet.createIfEnabled(params).orElse(null);
         if (delosInsert != null) { return delosInsert; }
+        ResultSet heapInsert = DelosHeapInsertResultSet.createIfEnabled(params).orElse(null);
+        if (heapInsert != null) { return heapInsert; }
         return new InsertResultSet(params);
 	}
 

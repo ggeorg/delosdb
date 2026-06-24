@@ -430,3 +430,28 @@ tasks.register('verifyStorageNativeExecutionCloseout') {
         println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N1.6'
     }
 }
+
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-n2-heap-insert-live-route-smoke',
+        compileTask       : 'compileStoragePhaseN2HeapInsertLiveRouteSmoke',
+        smokeTask         : 'storagePhaseN2HeapInsertLiveRouteSmoke',
+        verifyTask        : 'verifyStoragePhaseN2HeapInsertLiveRoute',
+        dependsOn         : 'verifyStoragePhaseN16HeapMutationClassificationDecision',
+        sourceDir         : 'dev/storage-phase-n2-heap-insert-live-route-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseN2HeapInsertLiveRouteSmoke',
+        compileDescription: 'Compiles the N2 heap INSERT live-route smoke test.',
+        smokeDescription  : 'Runs the N2 property-gated heap INSERT live-route smoke test.',
+        verifyDescription : 'Verifies N2 heap INSERT live route without heap DELETE/UPDATE or locking parity.',
+        successMessage    : 'Verified N2 heap INSERT live route without heap DELETE/UPDATE or locking parity'
+])
+
+// Additional N2 verifier. Existing verifyStorageNativeExecutionCloseout remains the historical closeout through N1.6.
+tasks.register('verifyStorageNativeExecutionCloseoutThroughN2') {
+    group = 'verification'
+    description = 'Verifies the native delos_mvcc lane and heap provider-parity route through N2 heap INSERT live route.'
+    dependsOn 'verifyStoragePhaseN2HeapInsertLiveRoute'
+    doLast {
+        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N2'
+    }
+}

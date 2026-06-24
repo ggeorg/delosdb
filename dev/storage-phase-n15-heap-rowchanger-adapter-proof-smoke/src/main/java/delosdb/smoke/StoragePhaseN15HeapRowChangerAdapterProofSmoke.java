@@ -44,7 +44,7 @@ public final class StoragePhaseN15HeapRowChangerAdapterProofSmoke {
         proveAdapterSourceShape();
         provePriorGuardAllowsAdapterButStillBlocksSqlRouting();
         proveAdapterBackedHeapInsertUpdateDelete();
-        proveNoHeapMutationSqlRoutingOrProviderActivation();
+        proveNoHeapDeleteUpdateSqlRoutingOrProviderActivation();
         proveGradleWiring();
         System.out.println("storage_phase_n15_heap_rowchanger_adapter_proof: PASS");
     }
@@ -93,7 +93,6 @@ public final class StoragePhaseN15HeapRowChangerAdapterProofSmoke {
                 "implements DelosMutableTableAccess",
                 "tryLock(",
                 "reserveMutation(",
-                "DelosHeapInsertResultSet",
                 "DelosHeapDeleteResultSet",
                 "DelosHeapUpdateResultSet"));
     }
@@ -104,7 +103,6 @@ public final class StoragePhaseN15HeapRowChangerAdapterProofSmoke {
                 "EngineHeapRowChangerMutationAdapter",
                 "if (Files.exists(adapterPath))",
                 "must remain internal-only",
-                "DelosHeapInsertResultSet",
                 "DelosHeapDeleteResultSet",
                 "DelosHeapUpdateResultSet"));
     }
@@ -265,9 +263,7 @@ public final class StoragePhaseN15HeapRowChangerAdapterProofSmoke {
         }
     }
 
-    private static void proveNoHeapMutationSqlRoutingOrProviderActivation() throws Exception {
-        assertPathMissing(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapInsertResultSet.java"));
+    private static void proveNoHeapDeleteUpdateSqlRoutingOrProviderActivation() throws Exception {
         assertPathMissing(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapDeleteResultSet.java"));
         assertPathMissing(Path.of(
@@ -277,11 +273,9 @@ public final class StoragePhaseN15HeapRowChangerAdapterProofSmoke {
 
         assertSourceNotContains(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"), List.of(
-                "DelosHeapInsertResultSet",
                 "DelosHeapDeleteResultSet",
                 "DelosHeapUpdateResultSet",
                 "EngineHeapMutableTableAccess",
-                "heapInsertLiveRoute",
                 "heapDeleteLiveRoute",
                 "heapUpdateLiveRoute"));
 
