@@ -29,7 +29,7 @@ public final class MvccPageFileTest {
     public void testWriteReadAndReopenPageRecords() throws Exception {
         Path file = directory.resolve("table-1.mvccp");
         try (DelosPageVolume pageFile = FileChannelPageVolume.open(file)) {
-            DelosPage page = pageFile.allocatePage();
+            DelosPage page = pageFile.allocatePage(DelosPage.DATA_PAGE_TYPE);
             int alpha = page.appendRecord("alpha".getBytes(StandardCharsets.UTF_8));
             int beta = page.appendRecord("beta".getBytes(StandardCharsets.UTF_8));
             pageFile.writePage(page);
@@ -55,8 +55,8 @@ public final class MvccPageFileTest {
         Arrays.fill(largePayload, (byte) 7);
 
         try (DelosPageVolume pageFile = FileChannelPageVolume.open(file)) {
-            DelosPage first = pageFile.allocatePage();
-            DelosPage second = pageFile.allocatePage();
+            DelosPage first = pageFile.allocatePage(DelosPage.DATA_PAGE_TYPE);
+            DelosPage second = pageFile.allocatePage(DelosPage.DATA_PAGE_TYPE);
             first.appendRecord("first".getBytes(StandardCharsets.UTF_8));
             second.appendRecord(largePayload);
             pageFile.writePage(first);
@@ -75,7 +75,7 @@ public final class MvccPageFileTest {
     public void testRejectsBadMagic() throws Exception {
         Path file = directory.resolve("bad-magic.mvccp");
         try (DelosPageVolume pageFile = FileChannelPageVolume.open(file)) {
-            DelosPage page = pageFile.allocatePage();
+            DelosPage page = pageFile.allocatePage(DelosPage.DATA_PAGE_TYPE);
             page.appendRecord("ok".getBytes(StandardCharsets.UTF_8));
             pageFile.writePage(page);
         }
@@ -93,7 +93,7 @@ public final class MvccPageFileTest {
     public void testRejectsUnsupportedVersion() throws Exception {
         Path file = directory.resolve("bad-version.mvccp");
         try (DelosPageVolume pageFile = FileChannelPageVolume.open(file)) {
-            DelosPage page = pageFile.allocatePage();
+            DelosPage page = pageFile.allocatePage(DelosPage.DATA_PAGE_TYPE);
             page.appendRecord("ok".getBytes(StandardCharsets.UTF_8));
             pageFile.writePage(page);
         }
