@@ -415,10 +415,10 @@ delosdbStorageNativeCloseoutRegisterSmoke([
 
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane and heap provider facade through O2.'
-    dependsOn 'verifyStoragePhaseO2HeapProviderFacade'
+    description = 'Verifies the closed native delos_mvcc execution lane and heap provider truth through O3.'
+    dependsOn 'verifyStoragePhaseO3ProviderTruthCleanup'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane and heap provider facade through O2'
+        println 'Verified closed native delos_mvcc execution lane and heap provider truth through O3'
     }
 }
 
@@ -492,4 +492,19 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         smokeDescription  : 'Runs the O2 heap provider facade behavior smoke test.',
         verifyDescription : 'Verifies O2 heap provider facade without heap locking parity.',
         successMessage    : 'Verified O2 heap provider facade without heap locking parity'
+])
+
+// O3 uses behavior proof only. No exact-text history-marker guard chain.
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-o3-provider-truth-cleanup-smoke',
+        compileTask       : 'compileStoragePhaseO3ProviderTruthCleanupSmoke',
+        smokeTask         : 'storagePhaseO3ProviderTruthCleanupSmoke',
+        verifyTask        : 'verifyStoragePhaseO3ProviderTruthCleanup',
+        dependsOn         : 'verifyStoragePhaseO2HeapProviderFacade',
+        sourceDir         : 'dev/storage-phase-o3-provider-truth-cleanup-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseO3ProviderTruthCleanupSmoke',
+        compileDescription: 'Compiles the O3 provider truth cleanup smoke test.',
+        smokeDescription  : 'Runs the O3 two-live-provider truth behavior smoke test.',
+        verifyDescription : 'Verifies O3 provider truth without heap locking parity claims.',
+        successMessage    : 'Verified O3 provider truth without heap locking parity claims'
 ])
