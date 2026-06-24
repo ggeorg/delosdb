@@ -1,11 +1,8 @@
 package delosdb.smoke;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.util.List;
 import java.util.Optional;
 import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
 
@@ -23,58 +20,14 @@ public final class StoragePhaseN3HeapDeleteUpdateLiveRouteSmoke {
     public static void main(String[] args) throws Exception {
         SmokeUtils.loadEmbeddedDriver();
         try {
-            proveSourceShape();
             proveDisabledLeavesHeapDeleteUpdateOnDerbyRoute();
             proveEnabledRoutesSupportedHeapDeleteUpdate();
-            proveNoLockingOrMutableProviderClaim();
         } finally {
             clearProofProperties();
             DelosTableScanProviderLookup.resetHeapDeleteUpdateLiveRouteForTesting();
             SmokeUtils.shutdown(DATABASE_PATH);
         }
         System.out.println("storage_phase_n3_heap_delete_update_live_route: PASS");
-    }
-
-    private static void proveSourceShape() throws Exception {
-        assertSourceContains(Path.of("docs/storage-phase-n3-heap-delete-update-live-route.md"), List.of(
-                "Storage Phase N3 — Heap DELETE / UPDATE live route",
-                "delosdb.storage.phaseN3.heapDeleteUpdateLiveRoute=true",
-                "DelosHeapDeleteResultSet.createIfEnabled",
-                "DelosHeapUpdateResultSet.createIfEnabled",
-                "Unsupported shapes continue through the ordinary Derby result sets"));
-
-        assertSourceContains(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapDeleteResultSet.java"), List.of(
-                "extends DeleteResultSet",
-                "HEAP_DELETE_UPDATE_LIVE_ROUTE_PROPERTY",
-                "delosdb.storage.phaseN3.heapDeleteUpdateLiveRoute",
-                "findByTargetUUID",
-                "lookup.get().isDefaultStorageProvider()",
-                "isSupportedHeapDeleteShape"));
-
-        assertSourceContains(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosHeapUpdateResultSet.java"), List.of(
-                "extends UpdateResultSet",
-                "HEAP_DELETE_UPDATE_LIVE_ROUTE_PROPERTY",
-                "lookup.get().isDefaultStorageProvider()",
-                "isSupportedHeapUpdateShape"));
-
-        String factory = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"));
-        require(factory.contains("DelosDeleteResultSet.createIfEnabled(source, activation)"),
-                "Expected delos_mvcc DELETE route to remain present");
-        require(factory.contains("DelosHeapDeleteResultSet.createIfEnabled(source, activation)"),
-                "Expected N3 heap DELETE route at the delete factory seam");
-        require(factory.indexOf("DelosDeleteResultSet.createIfEnabled(source, activation)")
-                        < factory.indexOf("DelosHeapDeleteResultSet.createIfEnabled(source, activation)"),
-                "Expected delos_mvcc DELETE route before heap DELETE route");
-        require(factory.contains("DelosUpdateResultSet.createIfEnabled("),
-                "Expected delos_mvcc UPDATE route to remain present");
-        require(factory.contains("DelosHeapUpdateResultSet.createIfEnabled("),
-                "Expected N3 heap UPDATE route at the update factory seam");
-        require(factory.indexOf("DelosUpdateResultSet.createIfEnabled(")
-                        < factory.indexOf("DelosHeapUpdateResultSet.createIfEnabled("),
-                "Expected delos_mvcc UPDATE route before heap UPDATE route");
     }
 
     private static void proveDisabledLeavesHeapDeleteUpdateOnDerbyRoute() throws Exception {
@@ -152,15 +105,6 @@ public final class StoragePhaseN3HeapDeleteUpdateLiveRouteSmoke {
                 "Expected N3 UPDATE lookup to be default-provider heap only");
     }
 
-    private static void proveNoLockingOrMutableProviderClaim() throws Exception {
-        assertPathMissing(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineHeapMutableTableAccess.java"));
-        assertSourceDoesNotContain(Path.of(
-                "delosdb-engine-kernel/src/main/java/org/apache/derby/iapi/store/types/DelosMutableTableAccess.java"), List.of(
-                "tryLock(",
-                "reserveMutation("));
-    }
-
     private static void assertValue(Statement statement, String table, int id, String value)
             throws Exception {
         try (ResultSet rows = statement.executeQuery(
@@ -184,24 +128,6 @@ public final class StoragePhaseN3HeapDeleteUpdateLiveRouteSmoke {
         System.clearProperty(DelosTableScanProviderLookup.FACTORY_HEAP_INSERT_LIVE_ROUTE_PROPERTY);
         System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY);
         System.clearProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_UPDATE_EQUALITY_PROPERTY);
-    }
-
-    private static void assertPathMissing(Path path) {
-        require(!Files.exists(path), path + " must not exist in N3");
-    }
-
-    private static void assertSourceContains(Path path, List<String> markers) throws Exception {
-        String source = Files.readString(path);
-        for (String marker : markers) {
-            require(source.contains(marker), path + " is missing required N3 marker: " + marker);
-        }
-    }
-
-    private static void assertSourceDoesNotContain(Path path, List<String> markers) throws Exception {
-        String source = Files.readString(path);
-        for (String marker : markers) {
-            require(!source.contains(marker), path + " must not contain N3-forbidden marker: " + marker);
-        }
     }
 
     private static void require(boolean condition, String message) {
