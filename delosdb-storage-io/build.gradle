@@ -9,12 +9,36 @@ version = rootProject.version
 group = rootProject.group
 
 def sourceRoot = file('src/main/java')
+def testSourceRoot = file('src/test/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
+def testClassDir = layout.buildDirectory.dir('classes/test')
 
 tasks.register('compileDelosDbStorageIo', JavaCompile) {
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = mainClassDir
     rootProject.ext.delosdbConfigureJavaCompile(delegate)
+}
+
+
+tasks.register('compileDelosDbStorageIoTests', JavaCompile) {
+    dependsOn 'compileDelosDbStorageIo'
+    source = fileTree(testSourceRoot) { include '**/*.java' }
+    destinationDirectory = testClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = rootProject.files(mainClassDir)
+}
+
+tasks.register('runDelosPagePrimitiveSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Runs the S2 storage-io page primitive smoke test.'
+    dependsOn 'compileDelosDbStorageIoTests'
+    classpath = rootProject.files(mainClassDir, testClassDir)
+    mainClass = 'io.github.ggeorg.delosdb.storage.io.page.DelosPagePrimitiveSmoke'
 }
 
 tasks.register('verifyDelosDbStorageIoBoundary') {
@@ -88,5 +112,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'compileDelosDbStorageIo', 'verifyDelosDbStorageIoBoundary'
+    dependsOn 'compileDelosDbStorageIo', 'verifyDelosDbStorageIoBoundary', 'runDelosPagePrimitiveSmoke'
 }
