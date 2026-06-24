@@ -124,9 +124,17 @@ ext.buildNumberProvider = buildNumber
 ext.derbyCompatibilityVersion = derbyCompatibilityVersion
 
 ext.junitPlatformConsoleVersion = '1.11.4'
+ext.junit4Version = '4.13.2'
 ext.asmVersion = '9.9'
 
 configurations {
+    delosdbJunit4 {
+        canBeConsumed = false
+        canBeResolved = true
+        attributes {
+            attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling, Bundling.EXTERNAL))
+        }
+    }
     delosdbJunit5Console {
         canBeConsumed = false
         canBeResolved = true
@@ -144,6 +152,9 @@ configurations {
 }
 
 dependencies {
+    // Gradle's Test task requires the JUnit 4 runner on the runtime classpath
+    // even when the inherited Derby tests themselves are JUnit 3-style tests.
+    delosdbJunit4 "junit:junit:${junit4Version}"
     // Test-only dependency for new DelosDB tests. Inherited Derby tests remain JUnit 3.
     delosdbJunit5Console "org.junit.platform:junit-platform-console-standalone:${junitPlatformConsoleVersion}"
     // Runtime dependency for the ASM-backed generated SQL bytecode backend.

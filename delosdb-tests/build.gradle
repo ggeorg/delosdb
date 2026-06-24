@@ -120,13 +120,16 @@ def testModulePath = {
     rootProject.files(derbyRuntimeModuleClassDirs, thirdPartyTestModules)
 }
 
+def junit4Runtime = rootProject.configurations.delosdbJunit4
+
 def testRuntimeClasspath = {
     rootProject.files(
             derbyTestsClassDir,
             derbyRuntimeJars,
             testSourceRoot,
             toursDbSourceRoot,
-            thirdPartyTestModules
+            thirdPartyTestModules,
+            junit4Runtime
     )
 }
 
