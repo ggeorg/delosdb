@@ -455,3 +455,19 @@ tasks.register('verifyStorageNativeExecutionCloseoutThroughN2') {
         println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N2'
     }
 }
+
+// N3 deliberately does not depend on the old exact-text history-marker guard chain.
+// It runs the real heap DELETE/UPDATE behavior proof plus normal engine compilation.
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-n3-heap-delete-update-live-route-smoke',
+        compileTask       : 'compileStoragePhaseN3HeapDeleteUpdateLiveRouteSmoke',
+        smokeTask         : 'storagePhaseN3HeapDeleteUpdateLiveRouteSmoke',
+        verifyTask        : 'verifyStoragePhaseN3HeapDeleteUpdateLiveRoute',
+        dependsOn         : 'storagePhaseC7StabilizationSmoke',
+        sourceDir         : 'dev/storage-phase-n3-heap-delete-update-live-route-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseN3HeapDeleteUpdateLiveRouteSmoke',
+        compileDescription: 'Compiles the N3 heap DELETE/UPDATE live-route smoke test.',
+        smokeDescription  : 'Runs the N3 property-gated heap DELETE/UPDATE live-route smoke test.',
+        verifyDescription : 'Verifies N3 heap DELETE/UPDATE live route without heap locking parity.',
+        successMessage    : 'Verified N3 heap DELETE/UPDATE live route without heap locking parity'
+])

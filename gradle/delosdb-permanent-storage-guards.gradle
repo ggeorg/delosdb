@@ -66,6 +66,7 @@ tasks.register('verifyDelosDbPermanentStorageGuards') {
     group = 'verification'
     // Permanent guard history includes through N1.4 heap RowChanger adapter decision.
     // Permanent guard history includes through N1.5 heap RowChanger adapter proof.
+    // Permanent guard history includes through N1.6 heap mutation classification decision.
     // Permanent guard history includes through N2 heap INSERT live route.
     description = 'Verifies permanent DelosDB storage boundaries and closed native execution lane through N2 heap INSERT live route.'
     dependsOn 'verifyStorageDerbyBoundary',

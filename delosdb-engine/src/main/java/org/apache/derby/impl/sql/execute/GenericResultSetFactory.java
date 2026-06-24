@@ -303,6 +303,8 @@ public class GenericResultSetFactory implements ResultSetFactory
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
         ResultSet delosDelete = DelosDeleteResultSet.createIfEnabled(source, activation).orElse(null);
         if (delosDelete != null) { return delosDelete; }
+        ResultSet heapDelete = DelosHeapDeleteResultSet.createIfEnabled(source, activation).orElse(null);
+        if (heapDelete != null) { return heapDelete; }
 		return new DeleteResultSet(source, activation );
 	}
 
@@ -364,6 +366,9 @@ public class GenericResultSetFactory implements ResultSetFactory
         ResultSet delosUpdate = DelosUpdateResultSet.createIfEnabled(
                 source, generationClauses, checkGM, activation).orElse(null);
         if (delosUpdate != null) { return delosUpdate; }
+        ResultSet heapUpdate = DelosHeapUpdateResultSet.createIfEnabled(
+                source, generationClauses, checkGM, activation).orElse(null);
+        if (heapUpdate != null) { return heapUpdate; }
 		return new UpdateResultSet(UpdateResultSetParameters.normal(
                 source, generationClauses, checkGM, activation));
 	}

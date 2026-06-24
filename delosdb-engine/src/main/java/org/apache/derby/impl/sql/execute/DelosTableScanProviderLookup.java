@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.derby.catalog.UUID;
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.dictionary.DataDictionary;
@@ -122,6 +123,10 @@ public final class DelosTableScanProviderLookup
     /** Test/proof gate for Phase N2 heap INSERT live route. */
     public static final String FACTORY_HEAP_INSERT_LIVE_ROUTE_PROPERTY =
             DelosHeapInsertResultSet.HEAP_INSERT_LIVE_ROUTE_PROPERTY;
+
+    /** Test/proof gate for Phase N3 heap DELETE / UPDATE live route. */
+    public static final String FACTORY_HEAP_DELETE_UPDATE_LIVE_ROUTE_PROPERTY =
+            DelosHeapDeleteResultSet.HEAP_DELETE_UPDATE_LIVE_ROUTE_PROPERTY;
 
     /** Test/proof gate for Phase F6 native DELETE equality mutation. */
     public static final String FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY =
@@ -227,6 +232,32 @@ public final class DelosTableScanProviderLookup
         return DelosHeapInsertResultSet.lastLiveLookupForTesting();
     }
 
+    public static void resetHeapDeleteUpdateLiveRouteForTesting()
+    {
+        DelosHeapDeleteResultSet.resetForTesting();
+        DelosHeapUpdateResultSet.resetForTesting();
+    }
+
+    public static int heapDeleteLiveRouteBranchCountForTesting()
+    {
+        return DelosHeapDeleteResultSet.liveBranchCountForTesting();
+    }
+
+    public static Optional<Result> lastHeapDeleteLiveRouteLookupForTesting()
+    {
+        return DelosHeapDeleteResultSet.lastLiveLookupForTesting();
+    }
+
+    public static int heapUpdateLiveRouteBranchCountForTesting()
+    {
+        return DelosHeapUpdateResultSet.liveBranchCountForTesting();
+    }
+
+    public static Optional<Result> lastHeapUpdateLiveRouteLookupForTesting()
+    {
+        return DelosHeapUpdateResultSet.lastLiveLookupForTesting();
+    }
+
     public static Optional<Result> find(Activation activation, String tableName)
             throws StandardException
     {
@@ -252,10 +283,29 @@ public final class DelosTableScanProviderLookup
                 parsedName.tableName(), schema, transactionController);
         if (table == null) { return Optional.empty(); }
 
-        return Optional.of(new Result(
+        return Optional.of(toResult(schema, table));
+    }
+
+    public static Optional<Result> findByTargetUUID(Activation activation, UUID targetUUID)
+            throws StandardException
+    {
+        if (activation == null || targetUUID == null) { return Optional.empty(); }
+        LanguageConnectionContext lcc = activation.getLanguageConnectionContext();
+        if (lcc == null) { return Optional.empty(); }
+        DataDictionary dataDictionary = lcc.getDataDictionary();
+        TableDescriptor table = dataDictionary.getTableDescriptor(targetUUID);
+        if (table == null) { return Optional.empty(); }
+        SchemaDescriptor schema = table.getSchemaDescriptor();
+        if (schema == null) { return Optional.empty(); }
+        return Optional.of(toResult(schema, table));
+    }
+
+    private static Result toResult(SchemaDescriptor schema, TableDescriptor table)
+    {
+        return new Result(
                 schema.getSchemaName(),
                 table.getName(),
-                table.getStorageProviderName()));
+                table.getStorageProviderName());
     }
 
     private static ParsedName parseTableName(LanguageConnectionContext lcc, String tableName)
