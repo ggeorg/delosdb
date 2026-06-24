@@ -11,7 +11,8 @@ import java.util.Objects;
 import io.github.ggeorg.delosdb.storage.io.page.DelosPage;
 import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
 import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolume;
-import io.github.ggeorg.delosdb.storage.io.volume.FileChannelPageVolume;
+import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactories;
+import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactory;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordCodec;
 
@@ -19,21 +20,28 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordCodec;
 public final class PageBackedMvccTableStore implements AutoCloseable {
     private static final int SLOT_OVERHEAD_BYTES = 12;
 
+    private static final DelosPageVolumeFactory FILE_VOLUME_FACTORY = DelosPageVolumeFactories.fileChannel();
+
     private final Path path;
+    private final DelosPageVolumeFactory volumeFactory;
     private DelosPageVolume pageVolume;
 
-    private PageBackedMvccTableStore(Path path, DelosPageVolume pageVolume) {
+    private PageBackedMvccTableStore(
+            Path path,
+            DelosPageVolumeFactory volumeFactory,
+            DelosPageVolume pageVolume) {
         this.path = Objects.requireNonNull(path, "path");
+        this.volumeFactory = Objects.requireNonNull(volumeFactory, "volumeFactory");
         this.pageVolume = Objects.requireNonNull(pageVolume, "pageVolume");
     }
 
     public static PageBackedMvccTableStore open(Path path) throws IOException {
         Objects.requireNonNull(path, "path");
-        return open(path, openVolume(path));
+        return new PageBackedMvccTableStore(path, FILE_VOLUME_FACTORY, FILE_VOLUME_FACTORY.open(path));
     }
 
     static PageBackedMvccTableStore open(Path path, DelosPageVolume pageVolume) {
-        return new PageBackedMvccTableStore(path, pageVolume);
+        return new PageBackedMvccTableStore(path, FILE_VOLUME_FACTORY, pageVolume);
     }
 
     public synchronized MvccVersionLocator append(MvccVersionRecord record) throws IOException {
@@ -69,7 +77,10 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         Objects.requireNonNull(records, "records");
         Path rewritePath = path.resolveSibling(path.getFileName() + ".rewrite");
         Files.deleteIfExists(rewritePath);
-        try (PageBackedMvccTableStore rewrite = PageBackedMvccTableStore.open(rewritePath)) {
+        try (PageBackedMvccTableStore rewrite = new PageBackedMvccTableStore(
+                rewritePath,
+                volumeFactory,
+                volumeFactory.open(rewritePath))) {
             for (MvccVersionRecord record : records) {
                 rewrite.append(record);
             }
@@ -77,7 +88,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
         pageVolume.close();
         Files.move(rewritePath, path, StandardCopyOption.REPLACE_EXISTING);
-        pageVolume = openVolume(path);
+        pageVolume = volumeFactory.open(path);
         return loadAll();
     }
 
@@ -90,9 +101,6 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         pageVolume.close();
     }
 
-    private static DelosPageVolume openVolume(Path path) throws IOException {
-        return FileChannelPageVolume.open(path);
-    }
 
     private static int maxSingleRecordBytes() {
         return DelosPage.empty(new DelosPageId(0L)).freeBytes() - SLOT_OVERHEAD_BYTES;

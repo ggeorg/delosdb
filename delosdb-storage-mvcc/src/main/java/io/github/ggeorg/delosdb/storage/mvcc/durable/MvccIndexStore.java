@@ -13,7 +13,8 @@ import java.util.function.BiPredicate;
 import io.github.ggeorg.delosdb.storage.io.page.DelosPage;
 import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
 import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolume;
-import io.github.ggeorg.delosdb.storage.io.volume.FileChannelPageVolume;
+import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactories;
+import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactory;
 
 /**
  * Durable MVCC index-candidate store.
@@ -27,18 +28,21 @@ public final class MvccIndexStore implements AutoCloseable {
     private static final int INDEX_PAGE_TYPE = 2;
     private static final int SLOT_OVERHEAD_BYTES = 12;
     private static final String DEFAULT_INDEX_NAME = "IDX";
+    private static final DelosPageVolumeFactory FILE_VOLUME_FACTORY = DelosPageVolumeFactories.fileChannel();
 
     private final Path path;
+    private final DelosPageVolumeFactory volumeFactory;
     private DelosPageVolume pageVolume;
 
-    private MvccIndexStore(Path path, DelosPageVolume pageVolume) {
+    private MvccIndexStore(Path path, DelosPageVolumeFactory volumeFactory, DelosPageVolume pageVolume) {
         this.path = Objects.requireNonNull(path, "path");
+        this.volumeFactory = Objects.requireNonNull(volumeFactory, "volumeFactory");
         this.pageVolume = Objects.requireNonNull(pageVolume, "pageVolume");
     }
 
     public static MvccIndexStore open(Path path) throws IOException {
         Objects.requireNonNull(path, "path");
-        MvccIndexStore store = new MvccIndexStore(path, FileChannelPageVolume.open(path));
+        MvccIndexStore store = new MvccIndexStore(path, FILE_VOLUME_FACTORY, FILE_VOLUME_FACTORY.open(path));
         store.readCandidates(); // validate existing durable bytes eagerly
         return store;
     }
@@ -205,7 +209,7 @@ public final class MvccIndexStore implements AutoCloseable {
     private void rewrite(List<Candidate> retained) throws IOException {
         pageVolume.close();
         Files.deleteIfExists(path);
-        pageVolume = FileChannelPageVolume.open(path);
+        pageVolume = volumeFactory.open(path);
         for (Candidate candidate : retained) {
             appendEncoded(MvccIndexTupleCodec.encode(candidate.indexKey(), candidate.tuple()));
         }
