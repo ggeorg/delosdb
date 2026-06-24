@@ -1,0 +1,161 @@
+import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.Copy
+import org.gradle.api.tasks.bundling.Compression
+import org.gradle.api.tasks.bundling.Tar
+import org.gradle.api.tasks.bundling.Zip
+
+def delosDbVersion = rootProject.ext.delosDbVersion
+def runtimeJars = rootProject.ext.delosdbRuntimeJars
+def moduleDirsForRuntime = rootProject.ext.delosdbModuleDirsForRuntime
+
+def legalFileNames = ['LICENSE', 'NOTICE', 'NOTICE-FORK.md']
+def legalFiles = files(legalFileNames.collect { file(it) })
+
+
+def runtimeBuildTasks = [
+        ':delosdb-engine-kernel:compileDelosDbEngineKernel',
+        ':delosdb-engine:compileClassSizeCatalog',
+        'splitEngineMessages',
+        'generateOdbcMetadata',
+        'ensureCatalogMetadataResources'
+]
+
+tasks.register('compileAll') {
+    dependsOn runtimeBuildTasks
+}
+
+tasks.register('jars') {
+    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-kernel:delosDbEngineKernelJar', ':delosdb-engine:derbyJar',
+            ':delosdb-client:derbyClientJar', ':delosdb-tools:derbyToolsJar',
+            ':delosdb-server:derbyNetJar', ':delosdb-optionaltools:derbyOptionalToolsJar',
+            ':delosdb-runner:derbyRunJar', ':delosdb-osgi-stub:osgiFrameworkStubJar'
+}
+
+tasks.named('assemble') {
+    dependsOn 'jars'
+}
+
+
+tasks.register('sysinfoFromJars', JavaExec) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Runs DelosDB sysinfo from the assembled jars in build/libs.'
+    classpath = runtimeJars()
+    mainClass = 'org.apache.derby.run.run'
+    args 'sysinfo'
+}
+
+tasks.register('smokeFromJars', JavaExec) {
+    dependsOn 'jars'
+    mustRunAfter 'smoke'
+    group = 'verification'
+    description = 'Runs the embedded JDBC smoke script from the assembled jars in build/libs.'
+    classpath = runtimeJars()
+    mainClass = 'org.apache.derby.run.run'
+    args 'ij', file('dev/smoke.sql').absolutePath
+    workingDir = projectDir
+    doFirst {
+        delete file('build/smoke-db')
+    }
+}
+
+
+def smokeUtilsSourceDir = 'dev/smoke-utils/src/main/java'
+
+// Export smoke helper source path for extracted Gradle guard scripts.
+// Plain `smokeUtilsSourceDir` references inside task configuration closures may
+// resolve against the task object after extraction, so guards call this explicitly.
+ext.delosdbSmokeUtilsSourceDir = smokeUtilsSourceDir
+
+
+
+def distributionBaseName = "delosdb-${delosDbVersion}"
+def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
+def distributionDocFiles = files(
+        'README.md',
+        'CONTRIBUTING.md',
+        'GOVERNANCE.md',
+        'SECURITY.md',
+        'NOTICE-FORK.md'
+)
+
+tasks.register('prepareBinaryDistribution', Copy) {
+    dependsOn 'jars'
+    group = 'distribution'
+    description = 'Stages the DelosDB binary distribution layout under build/release.'
+    into distributionStagingDir
+    from(distributionDocFiles)
+    from(legalFiles)
+    from('docs') {
+        into 'docs'
+    }
+    from('bin') {
+        into 'bin'
+    }
+    from(runtimeJars()) {
+        into 'lib'
+    }
+    from('dev/smoke.sql') {
+        into 'examples'
+    }
+    doFirst {
+        delete distributionStagingDir.get().asFile
+    }
+}
+
+tasks.register('delosdbBinaryZip', Zip) {
+    dependsOn 'prepareBinaryDistribution'
+    group = 'distribution'
+    description = 'Assembles the DelosDB binary ZIP distribution.'
+    archiveBaseName = 'delosdb'
+    archiveVersion = delosDbVersion
+    archiveClassifier = 'bin'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    from(distributionStagingDir) {
+        into distributionBaseName
+    }
+}
+
+tasks.register('delosdbBinaryTar', Tar) {
+    dependsOn 'prepareBinaryDistribution'
+    group = 'distribution'
+    description = 'Assembles the DelosDB binary tar.gz distribution.'
+    archiveBaseName = 'delosdb'
+    archiveVersion = delosDbVersion
+    archiveClassifier = 'bin'
+    archiveExtension = 'tar.gz'
+    compression = Compression.GZIP
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    from(distributionStagingDir) {
+        into distributionBaseName
+    }
+}
+
+
+tasks.register('dist') {
+    dependsOn 'delosdbBinaryZip', 'delosdbBinaryTar'
+    group = 'distribution'
+    description = 'Builds the DelosDB binary distribution archives.'
+}
+
+tasks.register('sysinfo', JavaExec) {
+    dependsOn 'compileAll'
+    group = 'verification'
+    description = 'Runs DelosDB sysinfo from Gradle-built classes.'
+    classpath = moduleDirsForRuntime
+    mainClass = 'org.apache.derby.run.run'
+    args 'sysinfo'
+}
+
+tasks.register('smoke', JavaExec) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Runs a small embedded JDBC create/insert/select script using assembled runtime jars.'
+    classpath = runtimeJars()
+    mainClass = 'org.apache.derby.run.run'
+    args 'ij', file('dev/smoke.sql').absolutePath
+    workingDir = projectDir
+    doFirst {
+        delete file('build/smoke-db')
+    }
+}

@@ -1,0 +1,95 @@
+// -----------------------------------------------------------------------------
+// Local Maven publication baseline
+// -----------------------------------------------------------------------------
+// Maven coordinates are DelosDB-branded even while the binary distribution keeps
+// Derby-compatible runtime jar names for now.
+def delosdbPublicationMetadata = [
+        'delosdb-commons'      : [artifactId: 'delosdb-commons',       jarTask: 'derbySharedJar',        title: 'DelosDB Shared Utilities', dependencies: []],
+        'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'delosDbSpiJar',       title: 'DelosDB SPI Stability Markers', dependencies: []],
+        'delosdb-engine'       : [artifactId: 'delosdb-engine',        jarTask: 'derbyJar',              title: 'DelosDB Embedded Engine', dependencies: ['delosdb-commons']],
+        'delosdb-client'       : [artifactId: 'delosdb-client',        jarTask: 'derbyClientJar',        title: 'DelosDB Network Client', dependencies: ['delosdb-commons']],
+        'delosdb-tools'        : [artifactId: 'delosdb-tools',         jarTask: 'derbyToolsJar',         title: 'DelosDB Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-client']],
+        'delosdb-runner'       : [artifactId: 'delosdb-runner',        jarTask: 'derbyRunJar',           title: 'DelosDB Runner', dependencies: ['delosdb-commons', 'delosdb-tools', 'delosdb-server']],
+        'delosdb-server'       : [artifactId: 'delosdb-server',        jarTask: 'derbyNetJar',           title: 'DelosDB Network Server', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-tools']],
+        'delosdb-optionaltools': [artifactId: 'delosdb-optionaltools', jarTask: 'derbyOptionalToolsJar', title: 'DelosDB Optional Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-tools']]
+]
+
+ext.delosdbPublicationMetadata = delosdbPublicationMetadata
+ext.delosdbPublicationProjectNames = delosdbPublicationMetadata.keySet().sort()
+
+subprojects { subproject ->
+    def publicationInfo = rootProject.ext.delosdbPublicationMetadata[subproject.name]
+    if (publicationInfo != null) {
+        apply plugin: 'maven-publish'
+
+        afterEvaluate {
+            publishing {
+                publications {
+                    create('mavenJava', org.gradle.api.publish.maven.MavenPublication) {
+                        groupId = rootProject.group.toString()
+                        artifactId = publicationInfo.artifactId
+                        version = rootProject.version.toString()
+
+                        def runtimeJarTask = tasks.named(publicationInfo.jarTask)
+                        artifact(runtimeJarTask.flatMap { it.archiveFile }) {
+                            builtBy runtimeJarTask
+                        }
+
+                        pom {
+                            name = publicationInfo.title
+                            description = "${publicationInfo.title}. Part of DelosDB, a modern Java embedded SQL database forked from Apache Derby 10.17.1.0."
+                            url = 'https://github.com/ggeorg/delosdb'
+
+                            licenses {
+                                license {
+                                    name = 'Apache License, Version 2.0'
+                                    url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                                    distribution = 'repo'
+                                }
+                            }
+
+                            developers {
+                                developer {
+                                    id = 'ggeorg'
+                                    name = 'DelosDB Project'
+                                    url = 'https://github.com/ggeorg/delosdb'
+                                }
+                            }
+
+                            scm {
+                                connection = 'scm:git:https://github.com/ggeorg/delosdb.git'
+                                developerConnection = 'scm:git:https://github.com/ggeorg/delosdb.git'
+                                url = 'https://github.com/ggeorg/delosdb'
+                            }
+
+                            withXml {
+                                def dependencyProjectNames = publicationInfo.dependencies ?: []
+                                if (!dependencyProjectNames.isEmpty()) {
+                                    def dependenciesNode = asNode().appendNode('dependencies')
+                                    dependencyProjectNames.each { dependencyProjectName ->
+                                        def dependencyInfo = rootProject.ext.delosdbPublicationMetadata[dependencyProjectName]
+                                        if (dependencyInfo == null) {
+                                            throw new GradleException("Unknown DelosDB publication dependency '${dependencyProjectName}' for ${subproject.path}")
+                                        }
+                                        def dependencyNode = dependenciesNode.appendNode('dependency')
+                                        dependencyNode.appendNode('groupId', rootProject.group.toString())
+                                        dependencyNode.appendNode('artifactId', dependencyInfo.artifactId)
+                                        dependencyNode.appendNode('version', rootProject.version.toString())
+                                        dependencyNode.appendNode('scope', 'compile')
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+
+
+
+

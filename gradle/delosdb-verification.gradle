@@ -1,0 +1,112 @@
+tasks.register('verifyDeprecatedAnnotations') {
+    group = 'verification'
+    description = 'Fails when source Javadoc @deprecated entries are missing Java @Deprecated annotations.'
+
+    doLast {
+        def sourceRoots = [
+            file('delosdb-engine/src/main/java'),
+            file('delosdb-client/src/main/java'),
+            file('delosdb-tools/src/main/java'),
+            file('delosdb-commons/src/main/java'),
+            file('delosdb-server/src/main/java'),
+            file('delosdb-runner/src/main/java'),
+            file('delosdb-spi/src/main/java'),
+            file('delosdb-optionaltools/src/main/java'),
+            file('delosdb-osgi-stub/src/main/java')
+        ].findAll { it.exists() }
+
+        def missingAnnotations = []
+        sourceRoots.each { sourceRoot ->
+            fileTree(sourceRoot).matching { include '**/*.java' }.files.each { sourceFile ->
+                def lines = sourceFile.readLines('UTF-8')
+                for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
+                    if (!lines[lineIndex].contains('@deprecated')) {
+                        continue
+                    }
+
+                    int commentEnd = lineIndex
+                    while (commentEnd < lines.size() && !lines[commentEnd].contains('*/')) {
+                        commentEnd++
+                    }
+                    if (commentEnd >= lines.size()) {
+                        continue
+                    }
+
+                    int declarationStart = commentEnd + 1
+                    while (declarationStart < lines.size() && lines[declarationStart].trim().isEmpty()) {
+                        declarationStart++
+                    }
+
+                    boolean hasDeprecatedAnnotation = false
+                    for (int scan = declarationStart; scan < lines.size(); scan++) {
+                        def trimmed = lines[scan].trim()
+                        if (trimmed.startsWith('@Deprecated')) {
+                            hasDeprecatedAnnotation = true
+                            break
+                        }
+                        if (trimmed.startsWith('@')) {
+                            continue
+                        }
+                        break
+                    }
+
+                    if (!hasDeprecatedAnnotation) {
+                        missingAnnotations << "${project.relativePath(sourceFile)}:${lineIndex + 1}"
+                    }
+                }
+            }
+        }
+
+        if (!missingAnnotations.isEmpty()) {
+            throw new GradleException('Javadoc @deprecated entries without @Deprecated annotations:\n' + missingAnnotations.join('\n'))
+        }
+    }
+}
+
+
+tasks.register('derbyRuntimeSmoke') {
+    group = 'verification'
+    description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
+    dependsOn 'smoke', 'smokeFromJars', 'sysinfoFromJars', 'verifyDelosDbPermanentStorageGuards'
+}
+
+tasks.register('derbyTestSuite') {
+    group = 'verification'
+    description = 'Runs the original Derby lang JUnit suite through Gradle.'
+    dependsOn ':delosdb-tests:runDerbyLangSuite'
+}
+
+
+tasks.register('storelessPrototypeSmoke') {
+    group = 'verification'
+    description = 'Verifies the inherited storeless prototype remains compile-gated and boot-resource complete.'
+    dependsOn ':delosdb-storeless:storelessPrototypeSmoke'
+}
+
+tasks.register('verifyInheritedDemosStatus') {
+    group = 'verification'
+    description = 'Verifies inherited Derby demos are explicitly marked as retained but unverified.'
+    dependsOn ':delosdb-demos:verifyInheritedDemosStatus'
+}
+
+tasks.named('check') {
+    dependsOn 'derbyRuntimeSmoke', ':delosdb-tests:runDerbyLangSuite', 'verifyDeprecatedAnnotations', 'storelessPrototypeSmoke', 'verifyInheritedDemosStatus'
+}
+
+tasks.register('fullVerification') {
+    group = 'verification'
+    description = 'Runs Derby-compatible runtime smokes and the original Derby lang JUnit suite.'
+    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite', 'verifyDeprecatedAnnotations', 'storelessPrototypeSmoke', 'verifyInheritedDemosStatus'
+}
+
+tasks.register('test') {
+    group = 'verification'
+    description = 'Alias for the Derby-focused verification suite.'
+    dependsOn 'fullVerification'
+}
+
+tasks.named('build') {
+    dependsOn 'jars'
+}
+
+
