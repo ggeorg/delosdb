@@ -28,7 +28,9 @@ import org.apache.derby.impl.sql.execute.DelosTableScanProviderLookup;
  * reservation or a provider-neutral tryLock API.</p>
  */
 public final class StoragePhaseO5FullProviderParityCloseoutSmoke {
-    private static final String DATABASE_PATH = "storage-phase-o5-full-provider-parity-closeout-db";
+    private static final String DATABASE_NAME = "storage-phase-o5-full-provider-parity-closeout-db";
+    private static Path databaseRoot;
+    private static String databasePath;
     private static final String MVCC_TABLE = "O5_MVCC_PROVIDER";
     private static final String HEAP_TABLE = "O5_HEAP_PROVIDER";
 
@@ -39,13 +41,16 @@ public final class StoragePhaseO5FullProviderParityCloseoutSmoke {
         proveProofOnlyHeapSourceIsGone();
         proveHeapFacadeAdvertisesHonestCostAndGuarantees();
         SmokeUtils.loadEmbeddedDriver();
+        databaseRoot = Files.createTempDirectory("delosdb-o5-smoke-");
+        databasePath = databaseRoot.resolve(DATABASE_NAME).toString();
         try {
             proveInheritedHeapStorageRemainsDerbyOwned();
             proveTwoLiveProvidersUnderTheCloseoutGate();
         } finally {
             clearProofProperties();
             resetCounters();
-            SmokeUtils.shutdown(DATABASE_PATH);
+            SmokeUtils.shutdownQuietly(databasePath);
+            SmokeUtils.deleteRecursively(databaseRoot);
         }
         System.out.println("storage_phase_o5_full_provider_parity_closeout: PASS");
     }
@@ -91,7 +96,7 @@ public final class StoragePhaseO5FullProviderParityCloseoutSmoke {
         clearProofProperties();
         resetCounters();
 
-        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true);
+        try (Connection connection = SmokeUtils.connect(databasePath(), true);
              Statement statement = connection.createStatement()) {
             dropTableIfExists(statement, "APP.I0_HEAP_STORAGE");
             require(statement.executeUpdate(
@@ -133,10 +138,10 @@ public final class StoragePhaseO5FullProviderParityCloseoutSmoke {
             connection.commit();
         }
 
-        SmokeUtils.shutdown(DATABASE_PATH);
+        SmokeUtils.shutdown(databasePath());
         SmokeUtils.loadEmbeddedDriver();
 
-        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false);
+        try (Connection connection = SmokeUtils.connect(databasePath(), false);
              Statement statement = connection.createStatement()) {
             assertMissingHeapId(statement, 1);
             assertSingleHeapRow(statement, 2, "two", 250);
@@ -167,7 +172,7 @@ public final class StoragePhaseO5FullProviderParityCloseoutSmoke {
         enableMvccNativeRoute();
         System.setProperty(DelosTableScanProviderLookup.FACTORY_HEAP_PROVIDER_PARITY_PROPERTY, "true");
 
-        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true);
+        try (Connection connection = SmokeUtils.connect(databasePath(), true);
              Statement statement = connection.createStatement()) {
             require(statement.executeUpdate(
                     "CREATE TABLE APP." + MVCC_TABLE + " (id INT, value VARCHAR(32)) USING delos_mvcc") == 0,
@@ -232,6 +237,12 @@ public final class StoragePhaseO5FullProviderParityCloseoutSmoke {
                 "Expected O5 heap UPDATE lookup to be default-provider heap");
         assertDefaultProvider(DelosTableScanProviderLookup.lastHeapDeleteLiveRouteLookupForTesting(),
                 "Expected O5 heap DELETE lookup to be default-provider heap");
+    }
+
+
+    private static String databasePath() {
+        require(databasePath != null && !databasePath.isBlank(), "O5 smoke database path was not initialized");
+        return databasePath;
     }
 
     private static void enableMvccNativeRoute() {

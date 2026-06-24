@@ -1,5 +1,10 @@
 package delosdb.smoke;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
+import java.util.stream.Stream;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -37,6 +42,41 @@ public final class SmokeUtils {
             }
 
             throw expected;
+        }
+    }
+
+
+    public static void deleteRecursively(Path root) throws IOException {
+        if (root == null || !Files.exists(root)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(root)) {
+            IOException[] failure = new IOException[1];
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException exception) {
+                    if (failure[0] == null) {
+                        failure[0] = exception;
+                    } else {
+                        failure[0].addSuppressed(exception);
+                    }
+                }
+            });
+            if (failure[0] != null) {
+                throw failure[0];
+            }
+        }
+    }
+
+    public static void shutdownQuietly(String databasePath) {
+        if (databasePath == null || databasePath.isBlank()) {
+            return;
+        }
+        try {
+            shutdown(databasePath);
+        } catch (SQLException ignored) {
+            // Best-effort cleanup path for smoke programs.
         }
     }
 
