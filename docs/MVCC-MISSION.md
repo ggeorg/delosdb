@@ -61,8 +61,6 @@ The transferable decisions are:
 
 ## Completed storage/MVCC lane
 
-The ASM bytecode switch is closed. ASM is the production bytecode compiler.
-
 The MVCC lane has advanced from isolated storage proofs to a guarded SQL
 candidate path with semantic correctness gates. Important gates now include:
 

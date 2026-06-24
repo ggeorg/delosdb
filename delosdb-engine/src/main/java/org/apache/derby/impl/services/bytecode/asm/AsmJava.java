@@ -44,7 +44,7 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
 /**
- * ASM-backed production implementation of Derby's JavaFactory contract.
+ * ASM-backed implementation of Derby's JavaFactory contract.
  * <p>
  * This class is registered directly in {@code modules.properties} and replaces
  * the legacy Derby generated-bytecode writer for SQL activations. Unsupported
@@ -104,7 +104,7 @@ public final class AsmJava implements JavaFactory {
         @Override
         public GeneratedClass getGeneratedClass() throws StandardException {
             if (classFactory == null) {
-                throw new IllegalStateException("Experimental ASM backend cannot load generated class without a ClassFactory");
+                throw new IllegalStateException("ASM backend cannot load generated class without a ClassFactory");
             }
             return classFactory.loadGeneratedClass(fullName, getClassBytecode());
         }

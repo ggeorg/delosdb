@@ -146,7 +146,7 @@ configurations {
 dependencies {
     // Test-only dependency for new DelosDB tests. Inherited Derby tests remain JUnit 3.
     delosdbJunit5Console "org.junit.platform:junit-platform-console-standalone:${junitPlatformConsoleVersion}"
-    // Runtime dependency for the permanent ASM generated-bytecode backend.
+    // Runtime dependency for the ASM-backed generated SQL bytecode backend.
     delosdbAsm "org.ow2.asm:asm:${asmVersion}"
 }
 
@@ -421,9 +421,8 @@ def runtimeJarNames = [
 
 
 def runtimeJars = {
-    // derby.jar now contains the permanent ASM bytecode backend. Keep ASM on
-    // the runtime classpath for jar-based smokes instead of relying on the
-    // old optional/static module edge.
+    // derby.jar uses the ASM-backed generated SQL bytecode backend. Keep ASM on
+    // the runtime classpath for jar-based smokes.
     files(runtimeJarNames.collect { layout.buildDirectory.file("libs/${it}") }, configurations.delosdbAsm)
 }
 
