@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Provider-owned fixed-size page file for the experimental MVCC storage engine.
@@ -15,6 +16,7 @@ import java.util.Objects;
 public final class MvccPageFile implements AutoCloseable {
     private final Path path;
     private final FileChannel channel;
+    private final ReentrantLock lock = new ReentrantLock();
 
     private MvccPageFile(Path path, FileChannel channel) {
         this.path = Objects.requireNonNull(path, "path");
@@ -41,49 +43,79 @@ public final class MvccPageFile implements AutoCloseable {
         return path;
     }
 
-    public synchronized long pageCount() throws IOException {
-        long size = channel.size();
-        if (size % MvccPage.PAGE_SIZE != 0L) {
-            throw new IllegalStateException(
-                    "MVCC page file has torn length " + size + " at " + path);
+    public long pageCount() throws IOException {
+        lock.lock();
+        try {
+            long size = channel.size();
+            if (size % MvccPage.PAGE_SIZE != 0L) {
+                throw new IllegalStateException(
+                        "MVCC page file has torn length " + size + " at " + path);
+            }
+            return size / MvccPage.PAGE_SIZE;
+        } finally {
+            lock.unlock();
         }
-        return size / MvccPage.PAGE_SIZE;
     }
 
-    public synchronized MvccPage allocatePage() throws IOException {
+    public MvccPage allocatePage() throws IOException {
         return allocatePage(MvccPage.DATA_PAGE_TYPE);
     }
 
-    public synchronized MvccPage allocatePage(int pageType) throws IOException {
-        MvccPage page = MvccPage.empty(new MvccPageId(pageCount()), pageType);
-        writePage(page);
-        return page;
-    }
-
-    public synchronized void writePage(MvccPage page) throws IOException {
-        Objects.requireNonNull(page, "page");
-        ByteBuffer buffer = ByteBuffer.wrap(page.toBytes());
-        writeFully(buffer, page.pageId().byteOffset(MvccPage.PAGE_SIZE));
-    }
-
-    public synchronized MvccPage readPage(MvccPageId pageId) throws IOException {
-        Objects.requireNonNull(pageId, "pageId");
-        long count = pageCount();
-        if (pageId.value() >= count) {
-            throw new EOFException("page " + pageId.value() + " outside page file; pageCount=" + count);
+    public MvccPage allocatePage(int pageType) throws IOException {
+        lock.lock();
+        try {
+            MvccPage page = MvccPage.empty(new MvccPageId(pageCount()), pageType);
+            writePage(page);
+            return page;
+        } finally {
+            lock.unlock();
         }
-        ByteBuffer buffer = ByteBuffer.allocate(MvccPage.PAGE_SIZE);
-        readFully(buffer, pageId.byteOffset(MvccPage.PAGE_SIZE));
-        return MvccPageIo.decode(buffer.array(), pageId);
     }
 
-    public synchronized void force() throws IOException {
-        channel.force(true);
+    public void writePage(MvccPage page) throws IOException {
+        lock.lock();
+        try {
+            Objects.requireNonNull(page, "page");
+            ByteBuffer buffer = ByteBuffer.wrap(page.toBytes());
+            writeFully(buffer, page.pageId().byteOffset(MvccPage.PAGE_SIZE));
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public MvccPage readPage(MvccPageId pageId) throws IOException {
+        lock.lock();
+        try {
+            Objects.requireNonNull(pageId, "pageId");
+            long count = pageCount();
+            if (pageId.value() >= count) {
+                throw new EOFException("page " + pageId.value() + " outside page file; pageCount=" + count);
+            }
+            ByteBuffer buffer = ByteBuffer.allocate(MvccPage.PAGE_SIZE);
+            readFully(buffer, pageId.byteOffset(MvccPage.PAGE_SIZE));
+            return MvccPageIo.decode(buffer.array(), pageId);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void force() throws IOException {
+        lock.lock();
+        try {
+            channel.force(true);
+        } finally {
+            lock.unlock();
+        }
     }
 
     @Override
-    public synchronized void close() throws IOException {
-        channel.close();
+    public void close() throws IOException {
+        lock.lock();
+        try {
+            channel.close();
+        } finally {
+            lock.unlock();
+        }
     }
 
     private void verifyAligned() throws IOException {
