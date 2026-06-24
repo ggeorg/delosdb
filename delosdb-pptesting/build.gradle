@@ -36,6 +36,8 @@ def externalTestClasspath = rootProject.files(
         'tools/java/lucene-queryparser.jar'
 )
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
+def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def clientModuleClassDir = rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client')
 def serverModuleClassDir = rootProject.project(':delosdb-server').layout.buildDirectory.dir('classes/modules/org.apache.derby.server')
@@ -51,7 +53,11 @@ tasks.register('compileDerbyPackagePrivateTests', JavaCompile) {
             ':delosdb-tools:compileDerbyTools',
             ':delosdb-optionaltools:compileDerbyOptionalTools',
             ':delosdb-runner:compileDerbyRunner',
+            ':delosdb-engine-kernel:compileDelosDbEngineKernel',
+            ':delosdb-engine-kernel:compileDelosDbEngineKernelClassSizeCatalog',
+            ':delosdb-storage-derby:compileLegacyDerbyStorage',
             ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:copyEngineServiceDescriptors',
             ':delosdb-engine:compileClassSizeCatalog',
             ':splitEngineMessages'
     source = fileTree(packagePrivateTestSourceRoot) { include '**/*.java' }
@@ -64,6 +70,8 @@ tasks.register('compileDerbyPackagePrivateTests', JavaCompile) {
     options.warnings = true
     classpath = rootProject.files(
             commonsModuleClassDir,
+            kernelModuleClassDir,
+            storageDerbyClassDir,
             engineModuleClassDir,
             clientModuleClassDir,
             serverModuleClassDir,

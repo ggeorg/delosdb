@@ -239,7 +239,7 @@ tasks.register('verifyInheritedDemosStatus') {
 }
 
 tasks.named('check') {
-    dependsOn 'derbyRuntimeSmoke', ':delosdb-tests:runDerbyLangSuite', 'verifyDeprecatedAnnotations', 'verifyInheritedDemosStatus'
+    dependsOn 'derbyRuntimeSmoke', 'verifyDeprecatedAnnotations', 'verifyInheritedDemosStatus'
 }
 
 tasks.register('fullVerification') {

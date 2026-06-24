@@ -181,7 +181,7 @@ public class RolesTest extends BaseJDBCTestCase
         suite.addTest(noauthSuite);
 
         // Tests running with sql authorization set.
-        suite.addTest(wrapInAuthorization("testNegativeSyntax"));
+        suite.addTest(wrapInAuthorization("testNegativeSyntax", framework));
 
         return suite;
     }
@@ -206,9 +206,11 @@ public class RolesTest extends BaseJDBCTestCase
                                  dbo, dbopw),
                    dbo, dbopw));
 
-        return TestConfiguration.sqlAuthorizationDecorator(
+        return TestConfiguration.sqlAuthorizationDecoratorSingleUse(
             DatabasePropertyTestSetup.builtinAuthentication(
-                t, users, pwSuffix));
+                t, users, pwSuffix),
+            sqlAuthorizationDbName("positive", framework),
+            false);
     }
 
 
@@ -343,9 +345,21 @@ public class RolesTest extends BaseJDBCTestCase
         BaseTestSuite suite = new BaseTestSuite("roles:"+framework);
 
         suite.addTest(noauthSuite);
-        suite.addTest(wrapInAuthorization("testSemantics"));
+        suite.addTest(wrapInAuthorization("testSemantics", framework));
 
         return suite;
+    }
+
+    /**
+     * Return a stable per-suite SQL authorization database name. The Gradle
+     * JUnit runner executes the embedded and client variants in one JVM and
+     * one working directory. The inherited default dbsqlauth name therefore
+     * lets roles and setup tables leak across variants after a failed test.
+     */
+    private static String sqlAuthorizationDbName(String testName, String framework)
+    {
+        return ("dbsqlauth_roles_" + testName + "_" + framework)
+            .replaceAll("[^A-Za-z0-9]", "_");
     }
 
     /**
@@ -354,7 +368,7 @@ public class RolesTest extends BaseJDBCTestCase
      *
      * @param testName test to wrap
      */
-    private static Test wrapInAuthorization(String testName)
+    private static Test wrapInAuthorization(String testName, String framework)
     {
         // add decorator for different users authenticated
         BaseTestSuite usersSuite =
@@ -375,7 +389,9 @@ public class RolesTest extends BaseJDBCTestCase
 
         return TestConfiguration.sqlAuthorizationDecoratorSingleUse(
             DatabasePropertyTestSetup.builtinAuthentication(
-                usersSuite, users, pwSuffix));
+                usersSuite, users, pwSuffix),
+            sqlAuthorizationDbName(testName, framework),
+            false);
     }
 
     /**
@@ -873,6 +889,22 @@ public class RolesTest extends BaseJDBCTestCase
         }
 
         if (_authLevel == SQLAUTHORIZATION && isDbo()) {
+            // Previous failed or interrupted runs may leave these setup
+            // objects behind. Clean them before recreating the fixed
+            // fixture state expected by the inherited RolesTest.
+            try {
+                _stm.executeUpdate("revoke select on t1 from whoever");
+            } catch (SQLException se) {
+            }
+            try {
+                _stm.executeUpdate("drop table t1");
+            } catch (SQLException se) {
+            }
+            try {
+                _stm.executeUpdate("drop schema lingerSchema restrict");
+            } catch (SQLException se) {
+            }
+
             // create a table grant to an (uknown) user WHOEVER.
             // This is used to test that create role detects the
             // presence of existing user ids before allowing a
