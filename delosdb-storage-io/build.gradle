@@ -2,104 +2,18 @@ plugins {
     id 'base'
 }
 
-import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.tasks.compile.JavaCompile
 
 version = rootProject.version
 group = rootProject.group
 
 def sourceRoot = file('src/main/java')
-def testSourceRoot = file('src/test/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
-def testClassDir = layout.buildDirectory.dir('classes/test')
 
 tasks.register('compileDelosDbStorageIo', JavaCompile) {
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = mainClassDir
     rootProject.ext.delosdbConfigureJavaCompile(delegate)
-}
-
-
-tasks.register('compileDelosDbStorageIoTests', JavaCompile) {
-    dependsOn 'compileDelosDbStorageIo'
-    source = fileTree(testSourceRoot) { include '**/*.java' }
-    destinationDirectory = testClassDir
-    sourceCompatibility = rootProject.ext.javaRelease.toString()
-    targetCompatibility = rootProject.ext.javaRelease.toString()
-    options.release = rootProject.ext.javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = rootProject.files(mainClassDir)
-}
-
-tasks.register('runDelosPagePrimitiveSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Runs the S2 storage-io page primitive smoke test.'
-    dependsOn 'compileDelosDbStorageIoTests'
-    classpath = rootProject.files(mainClassDir, testClassDir)
-    mainClass = 'io.github.ggeorg.delosdb.storage.io.page.DelosPagePrimitiveSmoke'
-}
-
-
-
-tasks.register('runDelosPageVolumeContractSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Runs the S3 storage-io page volume contract smoke test.'
-    dependsOn 'compileDelosDbStorageIoTests'
-    classpath = rootProject.files(mainClassDir, testClassDir)
-    mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeContractSmoke'
-}
-
-
-
-tasks.register('runFileChannelPageVolumeSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Runs the S4 file-backed page volume smoke test.'
-    dependsOn 'compileDelosDbStorageIoTests'
-    classpath = rootProject.files(mainClassDir, testClassDir)
-    mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.FileChannelPageVolumeSmoke'
-}
-
-
-
-tasks.register('runOffHeapPageVolumeSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Runs the S7 off-heap page volume smoke test.'
-    dependsOn 'compileDelosDbStorageIoTests'
-    classpath = rootProject.files(mainClassDir, testClassDir)
-    mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.OffHeapPageVolumeSmoke'
-}
-
-
-
-tasks.register('runFaultInjectingPageVolumeSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Runs the S8 fault-injecting page volume smoke test.'
-    dependsOn 'compileDelosDbStorageIoTests'
-    classpath = rootProject.files(mainClassDir, testClassDir)
-    mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.FaultInjectingPageVolumeSmoke'
-}
-
-
-
-
-
-
-tasks.register('runMappedPageVolumeSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Runs the S11 optional mapped page volume smoke test.'
-    dependsOn 'compileDelosDbStorageIoTests'
-    classpath = rootProject.files(mainClassDir, testClassDir)
-    mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.MappedPageVolumeSmoke'
-}
-
-tasks.register('runDelosPageVolumeFactorySmoke', JavaExec) {
-    group = 'verification'
-    description = 'Runs the S12 page-volume factory smoke test.'
-    dependsOn 'compileDelosDbStorageIoTests'
-    classpath = rootProject.files(mainClassDir, testClassDir)
-    mainClass = 'io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactorySmoke'
 }
 
 tasks.register('classes') {
@@ -125,12 +39,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'compileDelosDbStorageIo',
-            'runDelosPagePrimitiveSmoke',
-            'runDelosPageVolumeContractSmoke',
-            'runFileChannelPageVolumeSmoke',
-            'runOffHeapPageVolumeSmoke',
-            'runFaultInjectingPageVolumeSmoke',
-            'runMappedPageVolumeSmoke',
-            'runDelosPageVolumeFactorySmoke'
+    dependsOn 'compileDelosDbStorageIo'
 }

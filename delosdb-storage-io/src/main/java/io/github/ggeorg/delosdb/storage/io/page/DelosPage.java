@@ -1,7 +1,7 @@
 package io.github.ggeorg.delosdb.storage.io.page;
 
+import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -22,18 +22,18 @@ public final class DelosPage {
 
     private final DelosPageId pageId;
     private final int pageType;
-    private final byte[] image;
+    private final MemorySegment image;
     private final List<Slot> slots;
     private int freeEnd;
 
-    private DelosPage(DelosPageId pageId, int pageType, byte[] image, List<Slot> slots, int freeEnd) {
+    private DelosPage(DelosPageId pageId, int pageType, MemorySegment image, List<Slot> slots, int freeEnd) {
         this.pageId = Objects.requireNonNull(pageId, "pageId");
         if (pageType <= 0) {
             throw new IllegalArgumentException("page type must be positive: " + pageType);
         }
         this.pageType = pageType;
         this.image = Objects.requireNonNull(image, "image");
-        if (image.length != PAGE_SIZE) {
+        if (image.byteSize() != PAGE_SIZE) {
             throw new IllegalArgumentException("page image must be exactly " + PAGE_SIZE + " bytes");
         }
         this.slots = new ArrayList<>(Objects.requireNonNull(slots, "slots"));
@@ -46,11 +46,11 @@ public final class DelosPage {
     }
 
     public static DelosPage empty(DelosPageId pageId, int pageType) {
-        return new DelosPage(pageId, pageType, new byte[PAGE_SIZE], List.of(), PAGE_SIZE);
+        return new DelosPage(pageId, pageType, MemorySegment.ofArray(new byte[PAGE_SIZE]), List.of(), PAGE_SIZE);
     }
 
     static DelosPage decoded(DelosPageId pageId, int pageType, byte[] image, List<Slot> slots, int freeEnd) {
-        return new DelosPage(pageId, pageType, image, slots, freeEnd);
+        return new DelosPage(pageId, pageType, MemorySegment.ofArray(image.clone()), slots, freeEnd);
     }
 
     public DelosPageId pageId() {
@@ -82,7 +82,7 @@ public final class DelosPage {
         }
 
         int offset = freeEnd - payload.length;
-        System.arraycopy(payload, 0, image, offset, payload.length);
+        image.asSlice(offset, payload.length).copyFrom(MemorySegment.ofArray(payload));
         freeEnd = offset;
         slots.add(new Slot(offset, payload.length, ACTIVE_SLOT));
         validateLayout();
@@ -94,7 +94,9 @@ public final class DelosPage {
         if ((slot.flags() & ACTIVE_SLOT) == 0) {
             throw new IllegalStateException("slot " + slotId + " is not active");
         }
-        return Arrays.copyOfRange(image, slot.offset(), slot.offset() + slot.length());
+        byte[] payload = new byte[slot.length()];
+        MemorySegment.ofArray(payload).copyFrom(image.asSlice(slot.offset(), slot.length()));
+        return payload;
     }
 
     public byte[] toBytes() {
@@ -102,7 +104,9 @@ public final class DelosPage {
     }
 
     byte[] copyImage() {
-        return image.clone();
+        byte[] bytes = new byte[PAGE_SIZE];
+        MemorySegment.ofArray(bytes).copyFrom(image.asSlice(0, PAGE_SIZE));
+        return bytes;
     }
 
     List<Slot> copySlots() {
