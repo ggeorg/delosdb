@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +40,7 @@ public final class StoragePhaseO5FullProviderParityCloseoutSmoke {
         proveHeapFacadeAdvertisesHonestCostAndGuarantees();
         SmokeUtils.loadEmbeddedDriver();
         try {
+            proveInheritedHeapStorageRemainsDerbyOwned();
             proveTwoLiveProvidersUnderTheCloseoutGate();
         } finally {
             clearProofProperties();
@@ -82,6 +84,81 @@ public final class StoragePhaseO5FullProviderParityCloseoutSmoke {
                 "Expected heap facade cost mapping to preserve visible row count");
         require(estimate.estimatedFullScanCost() == 9L,
                 "Expected heap facade cost mapping to preserve estimated scan cost");
+    }
+
+
+    private static void proveInheritedHeapStorageRemainsDerbyOwned() throws Exception {
+        clearProofProperties();
+        resetCounters();
+
+        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true);
+             Statement statement = connection.createStatement()) {
+            dropTableIfExists(statement, "APP.I0_HEAP_STORAGE");
+            require(statement.executeUpdate(
+                    "CREATE TABLE APP.I0_HEAP_STORAGE "
+                            + "(id INT NOT NULL, value VARCHAR(32), amount INT)") == 0,
+                    "Expected inherited heap table creation");
+            require(statement.executeUpdate(
+                    "CREATE INDEX I0_HEAP_STORAGE_ID_IDX ON APP.I0_HEAP_STORAGE(id)") == 0,
+                    "Expected inherited heap btree index creation");
+
+            connection.setAutoCommit(false);
+            require(SmokeUtils.executePreparedUpdate(connection,
+                    "INSERT INTO APP.I0_HEAP_STORAGE VALUES (?, ?, ?)", 1, "one", 100) == 1,
+                    "Expected inherited heap INSERT row 1");
+            require(SmokeUtils.executePreparedUpdate(connection,
+                    "INSERT INTO APP.I0_HEAP_STORAGE VALUES (?, ?, ?)", 2, "two", 200) == 1,
+                    "Expected inherited heap INSERT row 2");
+            require(SmokeUtils.executePreparedUpdate(connection,
+                    "INSERT INTO APP.I0_HEAP_STORAGE VALUES (?, ?, ?)", 3, "three", 300) == 1,
+                    "Expected inherited heap INSERT row 3");
+            connection.commit();
+
+            require(statement.executeUpdate(
+                    "UPDATE APP.I0_HEAP_STORAGE SET value = 'rolled-back' WHERE id = 2") == 1,
+                    "Expected inherited heap UPDATE before rollback");
+            require(statement.executeUpdate(
+                    "DELETE FROM APP.I0_HEAP_STORAGE WHERE id = 1") == 1,
+                    "Expected inherited heap DELETE before rollback");
+            connection.rollback();
+            assertSingleHeapRow(statement, 1, "one", 100);
+            assertSingleHeapRow(statement, 2, "two", 200);
+
+            require(statement.executeUpdate(
+                    "UPDATE APP.I0_HEAP_STORAGE SET amount = 250 WHERE id = 2") == 1,
+                    "Expected inherited heap UPDATE before commit");
+            require(statement.executeUpdate(
+                    "DELETE FROM APP.I0_HEAP_STORAGE WHERE id = 1") == 1,
+                    "Expected inherited heap DELETE before commit");
+            connection.commit();
+        }
+
+        SmokeUtils.shutdown(DATABASE_PATH);
+        SmokeUtils.loadEmbeddedDriver();
+
+        try (Connection connection = SmokeUtils.connect(DATABASE_PATH, false);
+             Statement statement = connection.createStatement()) {
+            assertMissingHeapId(statement, 1);
+            assertSingleHeapRow(statement, 2, "two", 250);
+            assertSingleHeapRow(statement, 3, "three", 300);
+            assertInt(statement,
+                    "SELECT COUNT(*) FROM APP.I0_HEAP_STORAGE WHERE id >= 2",
+                    2,
+                    "Expected inherited heap indexed predicate count after restart");
+            assertInt(statement,
+                    "SELECT SUM(amount) FROM APP.I0_HEAP_STORAGE",
+                    550,
+                    "Expected inherited heap committed data after restart");
+        }
+
+        require(DelosTableScanProviderLookup.factoryLookupCountForTesting() == 0,
+                "Plain inherited heap storage must not require Delos provider lookup probing");
+        require(DelosTableScanProviderLookup.lastNonDefaultFactoryLookupForTesting().isEmpty(),
+                "Plain inherited heap storage must not resolve delos_mvcc or another non-default provider");
+        require(EngineHeapTableAccess.facadeScanOpenCountForTesting() == 0,
+                "Plain inherited heap storage must not use the Delos heap facade unless explicitly gated");
+        require(EngineHeapTableAccess.facadeMutationAdapterOpenCountForTesting() == 0,
+                "Plain inherited heap storage must not use the Delos heap mutation facade unless explicitly gated");
     }
 
     private static void proveTwoLiveProvidersUnderTheCloseoutGate() throws Exception {
@@ -163,6 +240,47 @@ public final class StoragePhaseO5FullProviderParityCloseoutSmoke {
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY, "true");
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_UPDATE_EQUALITY_PROPERTY, "true");
         System.setProperty(DelosTableScanProviderLookup.FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY, "true");
+    }
+
+
+    private static void dropTableIfExists(Statement statement, String tableName) throws SQLException {
+        try {
+            statement.executeUpdate("DROP TABLE " + tableName);
+        } catch (SQLException expected) {
+            if (!"42Y55".equals(expected.getSQLState())) {
+                throw expected;
+            }
+        }
+    }
+
+    private static void assertSingleHeapRow(Statement statement, int id, String value, int amount)
+            throws Exception {
+        try (ResultSet rows = statement.executeQuery(
+                "SELECT value, amount FROM APP.I0_HEAP_STORAGE WHERE id = " + id)) {
+            require(rows.next(), "Expected inherited heap row " + id);
+            require(value.equals(rows.getString(1)),
+                    "Expected inherited heap value " + value + " for row " + id);
+            require(rows.getInt(2) == amount,
+                    "Expected inherited heap amount " + amount + " for row " + id);
+            require(!rows.next(), "Expected one inherited heap row " + id);
+        }
+    }
+
+    private static void assertMissingHeapId(Statement statement, int id) throws Exception {
+        try (ResultSet rows = statement.executeQuery(
+                "SELECT id FROM APP.I0_HEAP_STORAGE WHERE id = " + id)) {
+            require(!rows.next(), "Expected inherited heap row " + id + " to be absent");
+        }
+    }
+
+    private static void assertInt(Statement statement, String sql, int expected, String message)
+            throws Exception {
+        try (ResultSet rows = statement.executeQuery(sql)) {
+            require(rows.next(), message + ": no row returned");
+            require(rows.getInt(1) == expected,
+                    message + ": expected " + expected + " but was " + rows.getInt(1));
+            require(!rows.next(), message + ": expected one aggregate row");
+        }
     }
 
     private static void assertDefaultProvider(
