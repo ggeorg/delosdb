@@ -373,7 +373,7 @@ public class RolesTest extends BaseJDBCTestCase
                   users[userNo].concat(pwSuffix)));
         }
 
-        return TestConfiguration.sqlAuthorizationDecorator(
+        return TestConfiguration.sqlAuthorizationDecoratorSingleUse(
             DatabasePropertyTestSetup.builtinAuthentication(
                 usersSuite, users, pwSuffix));
     }

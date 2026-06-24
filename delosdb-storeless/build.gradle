@@ -39,6 +39,7 @@ tasks.register('compileDerbyStoreless', JavaCompile) {
             ':delosdb-commons:compileDerbyCommons',
             ':delosdb-engine-kernel:compileDelosDbEngineKernel',
             ':delosdb-engine:compileDerbyEngine',
+            ':delosdb-engine:copyEngineServiceDescriptors',
             ':delosdb-storage-derby:compileLegacyDerbyStorage',
             ':delosdb-engine:compileClassSizeCatalog',
             ':splitEngineMessages'
