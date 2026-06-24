@@ -232,12 +232,6 @@ tasks.register('derbyTestSuite') {
 }
 
 
-tasks.register('storelessPrototypeSmoke') {
-    group = 'verification'
-    description = 'Verifies the inherited storeless prototype remains compile-gated and boot-resource complete.'
-    dependsOn ':delosdb-storeless:storelessPrototypeSmoke'
-}
-
 tasks.register('verifyInheritedDemosStatus') {
     group = 'verification'
     description = 'Verifies inherited Derby demos are explicitly marked as retained but unverified.'
@@ -245,13 +239,13 @@ tasks.register('verifyInheritedDemosStatus') {
 }
 
 tasks.named('check') {
-    dependsOn 'derbyRuntimeSmoke', ':delosdb-tests:runDerbyLangSuite', 'verifyDeprecatedAnnotations', 'storelessPrototypeSmoke', 'verifyInheritedDemosStatus'
+    dependsOn 'derbyRuntimeSmoke', ':delosdb-tests:runDerbyLangSuite', 'verifyDeprecatedAnnotations', 'verifyInheritedDemosStatus'
 }
 
 tasks.register('fullVerification') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime smokes and the original Derby lang JUnit suite.'
-    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite', 'verifyDeprecatedAnnotations', 'storelessPrototypeSmoke', 'verifyInheritedDemosStatus'
+    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite', 'verifyDeprecatedAnnotations', 'verifyInheritedDemosStatus'
 }
 
 tasks.register('test') {

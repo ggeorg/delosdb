@@ -46,7 +46,7 @@ import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.raw.Loggable;
-import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.types.DataValueFactory;
 
 /**
@@ -68,7 +68,7 @@ class NoOpTransaction implements TransactionController {
     }
 
     public long createConglomerate(String implementation,
-            DataValueDescriptor[] template, ColumnOrdering[] columnOrder,
+            StoreDataValue[] template, ColumnOrdering[] columnOrder,
             int[] collation_ids,
             Properties properties, int temporaryFlag) throws StandardException {
         // Auto-generated method stub
@@ -76,7 +76,7 @@ class NoOpTransaction implements TransactionController {
     }
 
     public long createAndLoadConglomerate(String implementation,
-            DataValueDescriptor[] template, ColumnOrdering[] columnOrder,
+            StoreDataValue[] template, ColumnOrdering[] columnOrder,
             int[] collation_ids,
             Properties properties, int temporaryFlag,
             RowLocationRetRowSource rowSource, long[] rowCount)
@@ -86,7 +86,7 @@ class NoOpTransaction implements TransactionController {
     }
 
     public long recreateAndLoadConglomerate(String implementation,
-            boolean recreate_ifempty, DataValueDescriptor[] template,
+            boolean recreate_ifempty, StoreDataValue[] template,
             ColumnOrdering[] columnOrder, 
             int[] collation_ids,
             Properties properties,
@@ -149,8 +149,8 @@ class NoOpTransaction implements TransactionController {
     public BackingStoreHashtable createBackingStoreHashtableFromScan(
             long conglomId, int open_mode, int lock_level, int isolation_level,
             FormatableBitSet scanColumnList,
-            DataValueDescriptor[] startKeyValue, int startSearchOperator,
-            Qualifier[][] qualifier, DataValueDescriptor[] stopKeyValue,
+            StoreDataValue[] startKeyValue, int startSearchOperator,
+            Qualifier[][] qualifier, StoreDataValue[] stopKeyValue,
             int stopSearchOperator, long max_rowcnt, int[] key_column_numbers,
             boolean remove_duplicates, long estimated_rowcnt,
             long max_inmemory_rowcnt, int initialCapacity, float loadFactor,
@@ -165,8 +165,8 @@ class NoOpTransaction implements TransactionController {
     public ScanController openScan(long conglomId, boolean hold, int open_mode,
             int lock_level, int isolation_level,
             FormatableBitSet scanColumnList,
-            DataValueDescriptor[] startKeyValue, int startSearchOperator,
-            Qualifier[][] qualifier, DataValueDescriptor[] stopKeyValue,
+            StoreDataValue[] startKeyValue, int startSearchOperator,
+            Qualifier[][] qualifier, StoreDataValue[] stopKeyValue,
             int stopSearchOperator) throws StandardException {
         // Auto-generated method stub
         return null;
@@ -175,8 +175,8 @@ class NoOpTransaction implements TransactionController {
     public ScanController openCompiledScan(boolean hold, int open_mode,
             int lock_level, int isolation_level,
             FormatableBitSet scanColumnList,
-            DataValueDescriptor[] startKeyValue, int startSearchOperator,
-            Qualifier[][] qualifier, DataValueDescriptor[] stopKeyValue,
+            StoreDataValue[] startKeyValue, int startSearchOperator,
+            Qualifier[][] qualifier, StoreDataValue[] stopKeyValue,
             int stopSearchOperator, StaticCompiledOpenConglomInfo static_info,
             DynamicCompiledOpenConglomInfo dynamic_info)
             throws StandardException {
@@ -187,8 +187,8 @@ class NoOpTransaction implements TransactionController {
     public GroupFetchScanController openGroupFetchScan(long conglomId,
             boolean hold, int open_mode, int lock_level, int isolation_level,
             FormatableBitSet scanColumnList,
-            DataValueDescriptor[] startKeyValue, int startSearchOperator,
-            Qualifier[][] qualifier, DataValueDescriptor[] stopKeyValue,
+            StoreDataValue[] startKeyValue, int startSearchOperator,
+            Qualifier[][] qualifier, StoreDataValue[] stopKeyValue,
             int stopSearchOperator) throws StandardException {
         // Auto-generated method stub
         return null;
@@ -213,7 +213,7 @@ class NoOpTransaction implements TransactionController {
 
     public boolean fetchMaxOnBtree(long conglomId, int open_mode,
             int lock_level, int isolation_level,
-            FormatableBitSet scanColumnList, DataValueDescriptor[] fetchRow)
+            FormatableBitSet scanColumnList, StoreDataValue[] fetchRow)
             throws StandardException {
         // Auto-generated method stub
         return false;
@@ -273,7 +273,7 @@ class NoOpTransaction implements TransactionController {
     }
 
     public long createSort(Properties implParameters,
-            DataValueDescriptor[] template, ColumnOrdering[] columnOrdering,
+            StoreDataValue[] template, ColumnOrdering[] columnOrdering,
             SortObserver sortObserver, boolean alreadyInOrder,
             long estimatedRows, int estimatedRowSize) throws StandardException {
         // Auto-generated method stub

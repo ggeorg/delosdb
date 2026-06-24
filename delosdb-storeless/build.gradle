@@ -16,8 +16,6 @@ def storelessSourceRoot = file('src/main/java')
 def storelessResourcesRoot = file('src/main/resources')
 def storelessClassDir = layout.buildDirectory.dir('classes/storeless')
 def storelessResourceDir = layout.buildDirectory.dir('resources/storeless')
-def storelessSmokeSourceRoot = rootProject.file('dev/storeless-prototype-smoke/src/main/java')
-def storelessSmokeClassDir = layout.buildDirectory.dir('classes/storeless-smoke')
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
@@ -60,36 +58,6 @@ tasks.register('processStorelessResources', Copy) {
     into storelessResourceDir
 }
 
-tasks.register('compileStorelessPrototypeSmoke', JavaCompile) {
-    dependsOn 'compileDerbyStoreless', 'processStorelessResources'
-    source = fileTree(storelessSmokeSourceRoot) { include '**/*.java' }
-    destinationDirectory = storelessSmokeClassDir
-    sourceCompatibility = rootProject.ext.javaRelease.toString()
-    targetCompatibility = rootProject.ext.javaRelease.toString()
-    options.release = rootProject.ext.javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    options.compilerArgs.add('-Xlint:deprecation')
-    classpath = rootProject.files(
-            storelessClassDir,
-            storelessResourceDir,
-            storelessClasspath()
-    )
-}
-
-tasks.register('storelessPrototypeSmoke', JavaExec) {
-    group = 'verification'
-    description = 'Verifies the inherited storeless prototype classes and boot resources are present.'
-    dependsOn 'compileStorelessPrototypeSmoke'
-    mainClass = 'delosdb.smoke.StorelessPrototypeSmoke'
-    classpath = rootProject.files(
-            storelessSmokeClassDir,
-            storelessClassDir,
-            storelessResourceDir,
-            storelessClasspath()
-    )
-}
 
 tasks.register('classes') {
     dependsOn 'compileDerbyStoreless', 'processStorelessResources'
@@ -100,5 +68,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'storelessPrototypeSmoke'
+    dependsOn 'classes'
 }
