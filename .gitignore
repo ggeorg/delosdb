@@ -93,3 +93,23 @@ replay_pid*.log
 /modernization-smoke-db
 /modernization-smoke-db/
 /modernization-smoke-db/**
+
+# DelosDB cleanup policy: historical proposals and generated/local docs are not source.
+/docs/proposals/
+/docs/.DS_Store
+/docs/book/render/
+/docs/book/chapter-renders/
+
+# Historical storage-phase scratch smokes should not be reintroduced as source.
+/dev/storage-phase-g-*/
+/dev/storage-phase-h*/
+/dev/storage-phase-i*/
+/dev/storage-phase-j*/
+/dev/storage-phase-k*/
+/dev/storage-phase-l*/
+/dev/storage-phase-m*/
+/dev/storage-phase-n*/
+/dev/storage-phase-o1-*/
+/dev/storage-phase-o2-*/
+/dev/storage-phase-o3-*/
+/dev/storage-phase-o4-*/
