@@ -406,11 +406,27 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         successMessage    : 'Verified N1.5 heap RowChanger adapter proof without heap mutation SQL routing'
 ])
 
+
+
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-n16-heap-mutation-classification-decision-smoke',
+        compileTask       : 'compileStoragePhaseN16HeapMutationClassificationDecisionSmoke',
+        smokeTask         : 'storagePhaseN16HeapMutationClassificationDecisionSmoke',
+        verifyTask        : 'verifyStoragePhaseN16HeapMutationClassificationDecision',
+        dependsOn         : 'verifyStoragePhaseN15HeapRowChangerAdapterProof',
+        sourceDir         : 'dev/storage-phase-n16-heap-mutation-classification-decision-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseN16HeapMutationClassificationDecisionSmoke',
+        compileDescription: 'Compiles the N1.6 heap mutation classification decision smoke test.',
+        smokeDescription  : 'Runs the N1.6 heap mutation classification decision smoke test.',
+        verifyDescription : 'Verifies N1.6 heap mutation classification decision without starting heap mutation SQL routing.',
+        successMessage    : 'Verified N1.6 heap mutation classification decision without starting heap mutation SQL routing'
+])
+
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane and heap provider-parity route through N1.5.'
-    dependsOn 'verifyStoragePhaseN15HeapRowChangerAdapterProof'
+    description = 'Verifies the closed native delos_mvcc execution lane and heap provider-parity route through N1.6.'
+    dependsOn 'verifyStoragePhaseN16HeapMutationClassificationDecision'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N1.5'
+        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through N1.6'
     }
 }
