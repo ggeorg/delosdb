@@ -415,10 +415,10 @@ delosdbStorageNativeCloseoutRegisterSmoke([
 
 tasks.register('verifyStorageNativeExecutionCloseout') {
     group = 'verification'
-    description = 'Verifies the closed native delos_mvcc execution lane and heap provider-parity route through O1.'
-    dependsOn 'verifyStoragePhaseO1HeapProviderParityGate'
+    description = 'Verifies the closed native delos_mvcc execution lane and heap provider facade through O2.'
+    dependsOn 'verifyStoragePhaseO2HeapProviderFacade'
     doLast {
-        println 'Verified closed native delos_mvcc execution lane and heap provider-parity route through O1'
+        println 'Verified closed native delos_mvcc execution lane and heap provider facade through O2'
     }
 }
 
@@ -476,4 +476,20 @@ delosdbStorageNativeCloseoutRegisterSmoke([
         smokeDescription  : 'Runs the O1 unified heap read/write provider-parity gate smoke test.',
         verifyDescription : 'Verifies O1 unified heap SELECT/INSERT/UPDATE/DELETE gate without heap locking parity.',
         successMessage    : 'Verified O1 unified heap provider-parity gate without heap locking parity'
+])
+
+
+// O2 uses behavior proof only. No exact-text history-marker guard chain.
+delosdbStorageNativeCloseoutRegisterSmoke([
+        classesDirName    : 'storage-phase-o2-heap-provider-facade-smoke',
+        compileTask       : 'compileStoragePhaseO2HeapProviderFacadeSmoke',
+        smokeTask         : 'storagePhaseO2HeapProviderFacadeSmoke',
+        verifyTask        : 'verifyStoragePhaseO2HeapProviderFacade',
+        dependsOn         : 'verifyStoragePhaseO1HeapProviderParityGate',
+        sourceDir         : 'dev/storage-phase-o2-heap-provider-facade-smoke/src/main/java',
+        mainClass         : 'delosdb.smoke.StoragePhaseO2HeapProviderFacadeSmoke',
+        compileDescription: 'Compiles the O2 heap provider facade smoke test.',
+        smokeDescription  : 'Runs the O2 heap provider facade behavior smoke test.',
+        verifyDescription : 'Verifies O2 heap provider facade without heap locking parity.',
+        successMessage    : 'Verified O2 heap provider facade without heap locking parity'
 ])

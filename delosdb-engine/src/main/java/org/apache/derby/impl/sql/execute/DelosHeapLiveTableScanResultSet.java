@@ -46,13 +46,13 @@ import org.apache.derby.iapi.sql.dictionary.ColumnDescriptorList;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
-import org.apache.derby.impl.services.storetypes.EngineHeapTableAccessLiveCandidate;
+import org.apache.derby.impl.services.storetypes.EngineHeapTableAccess;
 import org.apache.derby.impl.services.storetypes.EngineHeapTableAccessProof;
 import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * M3 property-gated heap SELECT live route for supported read-only shapes.
+ * M3/O2 property-gated heap SELECT live route for supported read-only shapes.
  *
  * <p>This result set is the first heap SQL read path that crosses a Delos table
  * access object.  It is deliberately narrow: default-provider heap only,
@@ -140,7 +140,7 @@ final class DelosHeapLiveTableScanResultSet extends TableScanResultSet {
                     providerLookup.schemaName(),
                     providerLookup.tableName(),
                     "M3 heap SELECT live route");
-            EngineHeapTableAccessLiveCandidate heapAccess = new EngineHeapTableAccessLiveCandidate(
+            EngineHeapTableAccess heapAccess = new EngineHeapTableAccess(
                     DelosTableIdentity.of(providerLookup.schemaName(), providerLookup.tableName()),
                     tableShape(tableDescriptor));
             heapScan = heapAccess.scan(heapContext(transactionController), List.of(), DelosProjection.all());
@@ -172,8 +172,8 @@ final class DelosHeapLiveTableScanResultSet extends TableScanResultSet {
                 .put(EngineHeapTableAccessProof.QUALIFIER_KEY, params.qualifiers)
                 .put(EngineHeapTableAccessProof.STATIC_COMPILED_INFO_KEY, params.scoci)
                 .put(EngineHeapTableAccessProof.DYNAMIC_COMPILED_INFO_KEY, dcoci)
-                .put(EngineHeapTableAccessLiveCandidate.HOLD_SCAN_OPEN_KEY, activation.getResultSetHoldability())
-                .put(EngineHeapTableAccessLiveCandidate.ROW_TEMPLATE_KEY, candidate.getRowArray())
+                .put(EngineHeapTableAccess.HOLD_SCAN_OPEN_KEY, activation.getResultSetHoldability())
+                .put(EngineHeapTableAccess.ROW_TEMPLATE_KEY, candidate.getRowArray())
                 .build();
     }
 

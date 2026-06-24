@@ -8,6 +8,7 @@
  */
 package org.apache.derby.impl.sql.execute;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,17 +17,23 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.derby.iapi.sql.ResultSet;
 import org.apache.derby.iapi.sql.execute.ConstantAction;
 import org.apache.derby.iapi.sql.execute.ExecRow;
+import org.apache.derby.iapi.store.types.DelosAccessContext;
+import org.apache.derby.iapi.store.types.DelosContextKey;
+import org.apache.derby.iapi.store.types.DelosTableIdentity;
+import org.apache.derby.iapi.store.types.DelosTableShape;
 import org.apache.derby.impl.services.storetypes.EngineHeapRowChangerMutationAdapter;
+import org.apache.derby.impl.services.storetypes.EngineHeapTableAccess;
+import org.apache.derby.impl.services.storetypes.EngineHeapTableAccessProof;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * N2 property-gated heap INSERT live route for supported shapes.
+ * N2/O2 property-gated heap INSERT live route for supported shapes.
  *
  * <p>This result set is deliberately narrow. It activates only for the default
  * heap provider, only when {@link #HEAP_INSERT_LIVE_ROUTE_PROPERTY} is set, and
  * only for ordinary immediate heap INSERT shapes that Derby has already
  * normalized into source rows. The actual heap mutation is still Derby-owned
- * through {@link EngineHeapRowChangerMutationAdapter} and RowChanger. This is
+ * through {@link EngineHeapTableAccess} and RowChanger. This is
  * not a heap DELETE/UPDATE route, not a heap lock/reservation API, and not a
  * full heap mutable-provider implementation.</p>
  */
@@ -104,24 +111,10 @@ final class DelosHeapInsertResultSet extends DMLWriteResultSet {
         try {
             params.source.openCore();
             sourceOpen = true;
-            adapter = EngineHeapRowChangerMutationAdapter.open(
-                    lcc.getLanguageConnectionFactory().getExecutionFactory(),
-                    constants.conglomId,
-                    constants.heapSCOCI,
-                    heapDCOCI,
-                    constants.irgs,
-                    constants.indexCIDS,
-                    constants.indexSCOCIs,
-                    indexDCOCIs,
-                    0,
-                    activation.getTransactionController(),
-                    null,
-                    null,
-                    null,
-                    constants.getStreamStorableHeapColIds(),
-                    activation,
-                    constants.indexNames,
-                    decodeLockMode(constants.lockMode));
+            EngineHeapTableAccess heapAccess = new EngineHeapTableAccess(
+                    DelosTableIdentity.of(providerLookup.schemaName(), providerLookup.tableName()),
+                    DelosTableShape.of(List.of()));
+            adapter = heapAccess.openMutationAdapter(heapMutationContext());
 
             ExecRow row;
             while ((row = params.source.getNextRowCore()) != null) {
@@ -155,6 +148,37 @@ final class DelosHeapInsertResultSet extends DMLWriteResultSet {
             if (pending != null) {
                 throw pending;
             }
+        }
+    }
+
+    private DelosAccessContext heapMutationContext() {
+        DelosAccessContext.Builder builder = DelosAccessContext.builder(true)
+                .put(EngineHeapTableAccess.EXECUTION_FACTORY_KEY,
+                        lcc.getLanguageConnectionFactory().getExecutionFactory())
+                .put(EngineHeapTableAccessProof.CONGLOMERATE_ID_KEY, constants.conglomId)
+                .put(EngineHeapTableAccessProof.TRANSACTION_CONTROLLER_KEY,
+                        activation.getTransactionController())
+                .put(EngineHeapTableAccess.NUMBER_OF_COLUMNS_KEY, 0)
+                .put(EngineHeapTableAccess.ACTIVATION_KEY, activation)
+                .put(EngineHeapTableAccess.MUTATION_LOCK_MODE_KEY, decodeLockMode(constants.lockMode));
+        putIfPresent(builder, EngineHeapTableAccess.HEAP_SCOCI_KEY, constants.heapSCOCI);
+        putIfPresent(builder, EngineHeapTableAccess.HEAP_DCOCI_KEY, heapDCOCI);
+        putIfPresent(builder, EngineHeapTableAccess.INDEX_ROW_GENERATORS_KEY, constants.irgs);
+        putIfPresent(builder, EngineHeapTableAccess.INDEX_CONGLOMERATE_IDS_KEY, constants.indexCIDS);
+        putIfPresent(builder, EngineHeapTableAccess.INDEX_SCOCIS_KEY, constants.indexSCOCIs);
+        putIfPresent(builder, EngineHeapTableAccess.INDEX_DCOCIS_KEY, indexDCOCIs);
+        putIfPresent(builder, EngineHeapTableAccess.STREAM_STORABLE_COLUMN_IDS_KEY,
+                constants.getStreamStorableHeapColIds());
+        putIfPresent(builder, EngineHeapTableAccess.INDEX_NAMES_KEY, constants.indexNames);
+        return builder.build();
+    }
+
+    private static <T> void putIfPresent(
+            DelosAccessContext.Builder builder,
+            DelosContextKey<T> key,
+            T value) {
+        if (value != null) {
+            builder.put(key, value);
         }
     }
 
