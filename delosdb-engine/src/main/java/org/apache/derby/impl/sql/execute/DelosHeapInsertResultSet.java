@@ -163,6 +163,17 @@ final class DelosHeapInsertResultSet extends DMLWriteResultSet {
         close(constants.underMerge());
     }
 
+    @Override
+    public void cleanUp() throws StandardException {
+        if (sourceOpen) {
+            try {
+                params.source.close();
+            } finally {
+                sourceOpen = false;
+            }
+        }
+    }
+
     static void resetForTesting() {
         LIVE_BRANCH_COUNT.set(0);
         LAST_LIVE_LOOKUP.set(null);
