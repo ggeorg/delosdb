@@ -378,13 +378,13 @@ tasks.register('mvccDefaultSwitchReadiness') {
 
 // Bridge-era VersionedStorage SQL metadata smokes were retired after the F-I
 // native Derby execution lane closed.  Supported delos_mvcc SQL verification now
-// lives under the Phase F/G/H/I native smoke wiring in gradle/delosdb-permanent-storage-guards.gradle.
+// uses the current O5/C7 storage closeout behavior smokes in gradle/delosdb-verification.gradle.
 
 
 tasks.register('mvccVersionedStorageProviderTest') {
     group = 'verification'
-    description = 'Runs MVCC provider-boundary tests plus permanent native SQL execution closeout guards.'
-    dependsOn 'mvccStorageModelTest', 'verifyDelosDbPermanentStorageGuards'
+    description = 'Runs MVCC provider-boundary tests plus current storage closeout smokes.'
+    dependsOn 'mvccStorageModelTest', 'verifyStorageCloseoutSmokes'
 }
 
 tasks.register('verifyMvccNativeExecutionReadinessConfiguration') {
@@ -393,7 +393,7 @@ tasks.register('verifyMvccNativeExecutionReadinessConfiguration') {
     doLast {
         def requiredTasks = [
                 'mvccDefaultSwitchReadiness',
-                'verifyDelosDbPermanentStorageGuards'
+                'verifyStorageCloseoutSmokes'
         ]
         def missingTasks = requiredTasks.findAll { tasks.findByName(it) == null }
         if (!missingTasks.isEmpty()) {
@@ -454,7 +454,7 @@ tasks.register('mvccNativeExecutionReadiness') {
     description = 'Runs the native delos_mvcc execution readiness lane after bridge deletion.'
     dependsOn 'verifyMvccNativeExecutionReadinessConfiguration',
             'mvccDefaultSwitchReadiness',
-            'verifyDelosDbPermanentStorageGuards'
+            'verifyStorageCloseoutSmokes'
 }
 
 tasks.register('mvccDefaultProviderCandidateSmoke') {
