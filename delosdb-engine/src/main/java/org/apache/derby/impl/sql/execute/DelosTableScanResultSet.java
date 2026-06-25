@@ -162,7 +162,8 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 || Boolean.getBoolean(NATIVE_BETWEEN_PREDICATES_PROPERTY)
                 || Boolean.getBoolean(NATIVE_NULL_PREDICATES_PROPERTY);
         boolean skeletonEnabled = Boolean.getBoolean(SKELETON_BRANCH_PROPERTY);
-        if (!nativePredicateScanEnabled && !skeletonEnabled) {
+        boolean nativeProviderFullScan = isUnqualifiedFullScan(params.qualifiers);
+        if (!nativePredicateScanEnabled && !skeletonEnabled && !nativeProviderFullScan) {
             return Optional.empty();
         }
 
@@ -172,12 +173,34 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             return Optional.empty();
         }
 
+        if (nativeProviderFullScan && !nativePredicateScanEnabled && !skeletonEnabled) {
+            return Optional.of(new DelosTableScanResultSet(
+                    params,
+                    lookup.get(),
+                    true,
+                    true,
+                    false));
+        }
+
         return Optional.of(new DelosTableScanResultSet(
                 params,
                 lookup.get(),
                 nativePredicateScanEnabled,
                 nativeFullScanEnabled,
                 nativeOrPredicateEnabled));
+    }
+
+    private static boolean isUnqualifiedFullScan(Qualifier[][] qualifiers)
+    {
+        if (qualifiers == null || qualifiers.length == 0) {
+            return true;
+        }
+        for (Qualifier[] termQualifiers : qualifiers) {
+            if (termQualifiers != null && termQualifiers.length > 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override

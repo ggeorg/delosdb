@@ -622,6 +622,13 @@ tasks.register('module5cDerbyTransactionMvccSmoke') {
 }
 
 
+tasks.register('module5dDerbySelectFullScanSmoke') {
+    dependsOn ':module5d-derby-select-full-scan-smoke:run'
+    group = 'verification'
+    description = 'Runs the dependency-driven MODULE5D normal Derby SELECT full-scan smoke for delos_mvcc tables.'
+}
+
+
 def distributionBaseName = "delosdb-${delosDbVersion}"
 def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
 def distributionDocFiles = files(

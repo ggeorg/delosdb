@@ -42,3 +42,6 @@ project(':module5b-native-table-identity-smoke').projectDir = file('dev/module5b
 
 include 'module5c-derby-transaction-mvcc-smoke'
 project(':module5c-derby-transaction-mvcc-smoke').projectDir = file('dev/module5c-derby-transaction-mvcc-smoke')
+
+include 'module5d-derby-select-full-scan-smoke'
+project(':module5d-derby-select-full-scan-smoke').projectDir = file('dev/module5d-derby-select-full-scan-smoke')
