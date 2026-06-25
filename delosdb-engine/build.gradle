@@ -32,6 +32,23 @@ def replaceInFile = { File file, Closure<String> transform ->
     file.text = transform(file.text)
 }
 
+// Gradle-consumable compile artifact for modules that still need the inherited
+// engine classes while delosdb-engine itself remains on the legacy custom
+// compile path. This avoids hard-coded cross-project build/classes lookups in
+// downstream modules and can be retired when delosdb-engine is converted.
+configurations {
+    derbyEngineClasses {
+        canBeConsumed = true
+        canBeResolved = false
+    }
+}
+
+artifacts {
+    derbyEngineClasses(moduleClassDir) {
+        builtBy tasks.named('compileDerbyEngine')
+    }
+}
+
 tasks.register('generateSqlParser', JavaExec) {
     def outputDir = generatedSourceRoot.map {
         it.dir('org/apache/derby/impl/sql/compile')

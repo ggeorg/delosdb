@@ -1,11 +1,10 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.process.ExecOperations
 import javax.inject.Inject
-
 
 abstract class DelosDbToolsExecSupport {
     @Inject
@@ -15,19 +14,40 @@ abstract class DelosDbToolsExecSupport {
 version = rootProject.version
 group = rootProject.group
 
+// Real Gradle Java module for derbytools.jar. The generated ij parsers remain
+// local generated sources; legacy task names remain as aliases for the root
+// Derby compatibility build.
 def moduleName = 'org.apache.derby.tools'
-def sourceRoot = rootProject.file('delosdb-tools/src/main/java')
 def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
-def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def clientModuleClassDir = rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client')
-def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
-def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
 def javaccClasspath = rootProject.files('tools/java/javacc.jar')
 def execSupport = objects.newInstance(DelosDbToolsExecSupport)
 
 def replaceInFile = { File file, Closure<String> transform ->
     file.text = transform(file.text)
+}
+
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
+dependencies {
+    implementation project(':delosdb-commons')
+    compileOnly project(':delosdb-engine-api')
+    compileOnly project(':delosdb-client')
+    compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
+    compileOnly rootProject.configurations.delosdbAsm
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+            srcDir generatedSourceRoot
+            destinationDirectory.set(moduleClassDir)
+        }
+    }
 }
 
 tasks.register('generateIjParsers') {
@@ -90,39 +110,26 @@ tasks.register('generateIjParsers') {
     }
 }
 
-tasks.register('compileDerbyTools', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-api:compileDelosDbEngineApi', ':delosdb-engine:compileDerbyEngine', ':delosdb-client:compileDerbyClient', 'generateIjParsers'
-    source = files(
-            fileTree(sourceRoot) { include '**/*.java' },
-            fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
-    )
-    destinationDirectory = moduleClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate, [
-            commonsModuleClassDir,
-            engineApiModuleClassDir,
-            engineModuleClassDir,
-            clientModuleClassDir,
-            rootProject.configurations.delosdbAsm
-    ])
+tasks.named('compileJava', JavaCompile) {
+    dependsOn tasks.named('generateIjParsers')
+    destinationDirectory.set(moduleClassDir)
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
 }
 
-tasks.register('classes') {
-    dependsOn 'compileDerbyTools'
+// Compatibility alias used by the existing root build.
+tasks.register('compileDerbyTools') {
+    dependsOn tasks.named('compileJava')
 }
-
-tasks.named('assemble') {
-    dependsOn 'classes'
-}
-
 
 def toolsArchiveName = 'derbytools.jar'
 
-tasks.register('derbyToolsJar', Jar) {
-    dependsOn 'compileDerbyTools', ':processDerbyResources'
+tasks.named('jar', Jar) {
     archiveFileName = toolsArchiveName
-    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from moduleClassDir
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
@@ -131,6 +138,19 @@ tasks.register('derbyToolsJar', Jar) {
     }
 }
 
-tasks.named('assemble') {
-    dependsOn 'derbyToolsJar'
+// Compatibility runtime jar used by the root `jars` task. Keep root Derby
+// resource processing out of the normal Gradle jar consumed by project deps.
+tasks.register('derbyToolsJar', Jar) {
+    dependsOn tasks.named('compileJava'), tasks.named('processResources'), ':processDerbyResources'
+    archiveFileName = toolsArchiveName
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(moduleClassDir)
+    from(sourceSets.main.output.resourcesDir)
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Tools')
+    }
 }

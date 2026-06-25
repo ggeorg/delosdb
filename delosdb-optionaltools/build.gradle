@@ -1,5 +1,5 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
@@ -7,16 +7,11 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
+// Real Gradle Java module for derbyoptionaltools.jar. Patch-module inputs are
+// resolved through Gradle configurations instead of hard-coded sibling output
+// dirs.
 def moduleName = 'org.apache.derby.optionaltools'
-def sourceRoot = project.file('src/main/java')
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
-def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
-def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
-def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
-def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
-def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
-def toolsModuleClassDir = rootProject.project(':delosdb-tools').layout.buildDirectory.dir('classes/modules/org.apache.derby.tools')
 def externalModulePath = rootProject.files(
         'tools/java/json_simple-1.1.jar',
         'tools/java/lucene-analyzers-common.jar',
@@ -24,40 +19,62 @@ def externalModulePath = rootProject.files(
         'tools/java/lucene-queryparser.jar'
 )
 
-tasks.register('compileDerbyOptionalTools', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-api:compileDelosDbEngineApi', ':delosdb-engine:compileDerbyEngine', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-tools:compileDerbyTools'
-    source = fileTree(sourceRoot) { include '**/*.java' }
-    destinationDirectory = moduleClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate, [
-            commonsModuleClassDir,
-            engineApiModuleClassDir,
-            engineModuleClassDir,
-            toolsModuleClassDir,
-            externalModulePath,
-            rootProject.configurations.delosdbAsm
-    ])
-    doFirst {
-        options.compilerArgs.addAll(['--patch-module', "org.apache.derby.engine=${rootProject.files(engineStorageApiClassDir, storeApiClassDir, storageDerbyClassDir).asPath}"])
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
+configurations {
+    enginePatchModule {
+        canBeResolved = true
+        canBeConsumed = false
     }
 }
 
-tasks.register('classes') {
-    dependsOn 'compileDerbyOptionalTools'
+dependencies {
+    implementation project(':delosdb-commons')
+    implementation project(':delosdb-tools')
+    implementation project(':delosdb-engine-api')
+    compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
+    compileOnly externalModulePath
+    compileOnly rootProject.configurations.delosdbAsm
+
+    enginePatchModule(project(':delosdb-engine-storage-api')) { transitive = false }
+    enginePatchModule(project(':delosdb-derby-store-api')) { transitive = false }
+    enginePatchModule(project(':delosdb-storage-derby')) { transitive = false }
 }
 
-tasks.named('assemble') {
-    dependsOn 'classes'
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+            destinationDirectory.set(moduleClassDir)
+        }
+    }
 }
 
+tasks.named('compileJava', JavaCompile) {
+    destinationDirectory.set(moduleClassDir)
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
+    doFirst {
+        options.compilerArgs.addAll(['--patch-module', "org.apache.derby.engine=${configurations.enginePatchModule.asPath}"])
+    }
+}
+
+// Compatibility alias used by the existing root build.
+tasks.register('compileDerbyOptionalTools') {
+    dependsOn tasks.named('compileJava')
+}
 
 def optionalToolsArchiveName = 'derbyoptionaltools.jar'
 
-tasks.register('derbyOptionalToolsJar', Jar) {
-    dependsOn 'compileDerbyOptionalTools', ':processDerbyResources'
+tasks.named('jar', Jar) {
     archiveFileName = optionalToolsArchiveName
-    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from moduleClassDir
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
@@ -66,6 +83,19 @@ tasks.register('derbyOptionalToolsJar', Jar) {
     }
 }
 
-tasks.named('assemble') {
-    dependsOn 'derbyOptionalToolsJar'
+// Compatibility runtime jar used by the root `jars` task. Keep root Derby
+// resource processing out of the normal Gradle jar consumed by project deps.
+tasks.register('derbyOptionalToolsJar', Jar) {
+    dependsOn tasks.named('compileJava'), tasks.named('processResources'), ':processDerbyResources'
+    archiveFileName = optionalToolsArchiveName
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(moduleClassDir)
+    from(sourceSets.main.output.resourcesDir)
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Optional Tools')
+    }
 }

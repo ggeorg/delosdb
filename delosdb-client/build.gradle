@@ -46,11 +46,8 @@ tasks.register('compileDerbyClient') {
 def clientArchiveName = 'derbyclient.jar'
 
 tasks.named('jar', Jar) {
-    dependsOn ':processDerbyResources'
     archiveFileName = clientArchiveName
-    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from(moduleClassDir)
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
@@ -59,9 +56,21 @@ tasks.named('jar', Jar) {
     }
 }
 
-// Compatibility alias used by the root `jars` task.
-tasks.register('derbyClientJar') {
-    dependsOn tasks.named('jar')
+// Compatibility runtime jar used by the root `jars` task. Keep root Derby
+// resource processing out of the normal Gradle jar consumed by project deps.
+tasks.register('derbyClientJar', Jar) {
+    dependsOn tasks.named('compileJava'), tasks.named('processResources'), ':processDerbyResources'
+    archiveFileName = clientArchiveName
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(moduleClassDir)
+    from(sourceSets.main.output.resourcesDir)
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Network Client')
+    }
 }
 
 tasks.named('check') {

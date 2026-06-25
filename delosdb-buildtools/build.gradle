@@ -1,53 +1,70 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
+
+import org.gradle.api.tasks.compile.JavaCompile
 
 version = rootProject.version
 group = rootProject.group
 
-def buildToolsSourceRoot = file('src/main/java')
+// Real Gradle Java module for the small Derby build tools used by the root
+// resource/code-generation tasks. Keep the legacy compile task name while the
+// root build is migrated away from custom task wiring.
 def buildToolsClassDir = layout.buildDirectory.dir('classes/build-tools')
-def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
 
+def buildToolSourceIncludes = [
+        'org/apache/derbyBuild/splitmessages.java',
+        'org/apache/derbyBuild/EnglishMessagePropertiesGenerator.java',
+        'org/apache/derbyBuild/ODBCMetadataGenerator.java',
+        'org/apache/derbyBuild/ClassSizeCrawler.java',
+        'org/apache/derbyBuild/SecureXmlFactoryProbe.java',
+        'org/apache/derby/impl/store/access/sort/SortMemoryPolicyProbe.java'
+]
 
-tasks.register('compileDerbyBuildTools', JavaCompile) {
-    // The build-tools compiler reads the assembled module output directories, not
-    // just javac class directories. Gradle 8.14 also tracks resources copied into
-    // those same module output directories by the root processDerbyResources task,
-    // so keep the dependency explicit instead of relying on task ordering through
-    // aggregate verification tasks.
-    dependsOn ':processDerbyResources',
-            ':delosdb-commons:compileDerbyCommons',
-            ':delosdb-engine-api:compileDelosDbEngineApi'
-    source = files(
-            'src/main/java/org/apache/derbyBuild/splitmessages.java',
-            'src/main/java/org/apache/derbyBuild/EnglishMessagePropertiesGenerator.java',
-            'src/main/java/org/apache/derbyBuild/ODBCMetadataGenerator.java',
-            'src/main/java/org/apache/derbyBuild/ClassSizeCrawler.java',
-            'src/main/java/org/apache/derbyBuild/SecureXmlFactoryProbe.java',
-            'src/main/java/org/apache/derby/impl/store/access/sort/SortMemoryPolicyProbe.java'
-    )
-    destinationDirectory = buildToolsClassDir
-    sourceCompatibility = rootProject.ext.javaRelease.toString()
-    targetCompatibility = rootProject.ext.javaRelease.toString()
-    options.release = rootProject.ext.javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-    classpath = rootProject.files(commonsModuleClassDir, engineApiModuleClassDir)
-    doLast {
-        copy {
-            from 'src/main/java/org/apache/derbyBuild/odbcgen_fragments.properties'
-            into new File(buildToolsClassDir.get().asFile, 'org/apache/derbyBuild')
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
+dependencies {
+    implementation project(':delosdb-commons')
+    implementation project(':delosdb-engine-api')
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+            setIncludes(buildToolSourceIncludes)
+            destinationDirectory.set(buildToolsClassDir)
+        }
+        resources {
+            srcDir 'src/main/java'
+            include 'org/apache/derbyBuild/odbcgen_fragments.properties'
         }
     }
 }
 
-tasks.register('classes') {
-    dependsOn 'compileDerbyBuildTools'
+tasks.named('compileJava', JavaCompile) {
+    destinationDirectory.set(buildToolsClassDir)
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
+}
+
+// Keep build-tool resources beside the compiled build-tool classes because the
+// root generation tasks execute directly from this class directory.
+tasks.named('processResources') {
+    destinationDir = buildToolsClassDir.get().asFile
+}
+
+// Compatibility alias used by the root build.
+tasks.register('compileDerbyBuildTools') {
+    dependsOn tasks.named('classes')
 }
 
 tasks.named('check') {
-    dependsOn 'compileDerbyBuildTools'
+    dependsOn tasks.named('classes')
 }

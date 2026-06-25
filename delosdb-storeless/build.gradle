@@ -1,5 +1,5 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
@@ -7,66 +7,61 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-// The inherited Derby storeless prototype is Gradle-owned now. Keep it as a
-// classpath-compiled legacy prototype because it intentionally reaches into
-// engine internals and is not a runtime JPMS module. It is not a supported
-// DelosDB storage provider yet; it is a compile-gated research seed for future
-// no-store compiler/planner experiments.
-def storelessSourceRoot = file('src/main/java')
-def storelessResourcesRoot = file('src/main/resources')
+// Real Gradle Java module for the inherited Derby storeless prototype. It is
+// still classpath-compiled because the prototype intentionally reaches engine
+// internals and is not a runtime JPMS module.
 def storelessClassDir = layout.buildDirectory.dir('classes/storeless')
 def storelessResourceDir = layout.buildDirectory.dir('resources/storeless')
-def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
-def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
-def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
-def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
 
-def storelessClasspath = {
-    rootProject.files(
-            commonsModuleClassDir,
-            engineApiModuleClassDir,
-            engineModuleClassDir,
-            engineStorageApiClassDir,
-            storeApiClassDir
-    )
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
-tasks.register('compileDerbyStoreless', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons',
-            ':delosdb-engine-api:compileDelosDbEngineApi',
-            ':delosdb-engine:compileDerbyEngine',
-            ':delosdb-engine:copyEngineServiceDescriptors',
-            ':delosdb-engine-storage-api:compileEngineStorageApi',
-            ':delosdb-derby-store-api:compileDerbyStoreApi',
-            ':delosdb-engine:compileClassSizeCatalog',
-            ':splitEngineMessages'
-    source = fileTree(storelessSourceRoot) { include '**/*.java' }
-    destinationDirectory = storelessClassDir
-    sourceCompatibility = rootProject.ext.javaRelease.toString()
-    targetCompatibility = rootProject.ext.javaRelease.toString()
+dependencies {
+    implementation project(':delosdb-commons')
+    implementation project(':delosdb-engine-api')
+    implementation project(':delosdb-engine-storage-api')
+    implementation project(':delosdb-derby-store-api')
+    compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+            destinationDirectory.set(storelessClassDir)
+        }
+        resources {
+            srcDir 'src/main/resources'
+        }
+    }
+}
+
+tasks.named('compileJava', JavaCompile) {
+    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine:copyEngineServiceDescriptors', ':delosdb-engine:compileClassSizeCatalog', ':splitEngineMessages'
+    destinationDirectory.set(storelessClassDir)
+    modularity.inferModulePath = false
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
-    classpath = storelessClasspath()
 }
 
-tasks.register('processStorelessResources', Copy) {
-    from storelessResourcesRoot
-    into storelessResourceDir
+tasks.named('processResources') {
+    destinationDir = storelessResourceDir.get().asFile
 }
 
-
-tasks.register('classes') {
-    dependsOn 'compileDerbyStoreless', 'processStorelessResources'
+// Compatibility aliases used by the existing root and verification wiring.
+tasks.register('compileDerbyStoreless') {
+    dependsOn tasks.named('compileJava')
 }
 
-tasks.named('assemble') {
-    dependsOn 'classes'
+tasks.register('processStorelessResources') {
+    dependsOn tasks.named('processResources')
 }
 
 tasks.named('check') {
-    dependsOn 'classes'
+    dependsOn tasks.named('classes')
 }
