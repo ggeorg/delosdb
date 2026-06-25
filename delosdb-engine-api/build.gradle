@@ -8,8 +8,8 @@ version = rootProject.version
 group = rootProject.group
 
 // Real Gradle Java module for shared inherited Derby engine/kernel API
-// contracts. The legacy compile/jar task names remain as lifecycle aliases
-// while the rest of the extracted build is migrated.
+// contracts. The legacy compile/jar task names remain while the wider build is
+// migrated away from custom task wiring.
 def moduleName = 'io.github.ggeorg.delosdb.engine.api'
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
@@ -22,6 +22,9 @@ java {
 
 dependencies {
     api project(':delosdb-commons')
+
+    // delosdb-spi is still on the inherited custom compile path. Convert it in
+    // a later pass before replacing this with a normal project dependency.
     compileOnly files(spiModuleClassDir)
 }
 
@@ -33,7 +36,7 @@ sourceSets {
     }
 }
 
-tasks.named('compileJava') {
+tasks.named('compileJava', JavaCompile) {
     dependsOn ':delosdb-spi:compileDelosDbSpi'
     destinationDirectory.set(moduleClassDir)
     options.release = rootProject.ext.javaRelease
@@ -48,6 +51,9 @@ tasks.register('compileDelosDbEngineApi') {
     dependsOn tasks.named('compileJava')
 }
 
+// Keep generated ClassSizeCatalog out of the normal Java lifecycle. Gradle
+// project dependencies must be able to consume delosdb-engine-api without
+// pulling the root Derby resource/build-tools graph back through this module.
 tasks.register('compileDelosDbEngineApiClassSizeCatalog', JavaCompile) {
     dependsOn tasks.named('compileJava'), ':delosdb-engine:compileDerbyEngine', ':generateClassSizeCatalog'
     source = files(generatedClassSizeCatalogSource)
@@ -59,14 +65,8 @@ tasks.register('compileDelosDbEngineApiClassSizeCatalog', JavaCompile) {
     ])
 }
 
-tasks.named('classes') {
-    dependsOn 'compileDelosDbEngineApiClassSizeCatalog'
-}
-
-tasks.named('jar') {
-    dependsOn tasks.named('classes')
+tasks.named('jar', Jar) {
     archiveFileName = 'delosdb-engine-api.jar'
-    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
@@ -76,11 +76,20 @@ tasks.named('jar') {
     }
 }
 
-// Compatibility alias used by the root `jars` task.
-tasks.register('delosDbEngineApiJar') {
-    dependsOn tasks.named('jar')
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('classes')
+// Compatibility runtime jar used by the root `jars` task. This is separate from
+// the normal Gradle `jar` artifact so project dependencies do not depend on the
+// generated ClassSizeCatalog path.
+tasks.register('delosDbEngineApiJar', Jar) {
+    dependsOn tasks.named('compileJava'), tasks.named('processResources'), tasks.named('compileDelosDbEngineApiClassSizeCatalog')
+    archiveFileName = 'delosdb-engine-api.jar'
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(moduleClassDir)
+    from(sourceSets.main.output.resourcesDir)
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Engine API')
+    }
 }

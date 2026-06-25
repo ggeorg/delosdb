@@ -8,21 +8,18 @@ version = rootProject.version
 group = rootProject.group
 
 // Real Gradle Java module for the DelosDB engine-kernel compatibility
-// boundary. Keep the legacy compile/jar task names as lifecycle aliases while
-// the root build and downstream packaging are migrated away from custom task
-// wiring.
-//
-// This module currently compiles only its module descriptor. Use the compiled
-// engine-api module classes directly for that descriptor compile so engine-kernel
-// does not force delosdb-engine-api:jar and the generated ClassSizeCatalog task
-// into the resource/build-tools task graph.
+// boundary. Keep the legacy compile/jar task names while the root build and
+// downstream packaging are migrated away from custom task wiring.
 def moduleName = 'io.github.ggeorg.delosdb.engine.kernel'
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
-def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
 
 java {
     sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
     targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
+dependencies {
+    implementation project(':delosdb-engine-api')
 }
 
 sourceSets {
@@ -34,9 +31,12 @@ sourceSets {
 }
 
 tasks.named('compileJava', JavaCompile) {
-    dependsOn ':delosdb-engine-api:compileJava'
     destinationDirectory.set(moduleClassDir)
-    rootProject.ext.delosdbConfigureJavaCompile(delegate, [engineApiModuleClassDir])
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
 }
 
 // Compatibility alias used by the existing root build and extracted modules.
@@ -51,7 +51,7 @@ tasks.register('compileDelosDbEngineKernelClassSizeCatalog') {
     dependsOn ':delosdb-engine-api:compileDelosDbEngineApiClassSizeCatalog'
 }
 
-tasks.named('jar') {
+tasks.named('jar', Jar) {
     archiveFileName = 'delosdb-engine-kernel.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
