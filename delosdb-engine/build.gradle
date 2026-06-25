@@ -1,5 +1,5 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
@@ -8,40 +8,58 @@ version = rootProject.version
 group = rootProject.group
 
 def moduleName = 'org.apache.derby.engine'
-def sourceRoot = rootProject.file('delosdb-engine/src/main/java')
-def resourceRoot = rootProject.file('delosdb-engine/src/main/resources')
 def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
-def rootGeneratedSourceRoot = rootProject.layout.buildDirectory.dir("generated/sources/${moduleName}")
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
-
-// Use exact compile task dependencies but plain output locations. Do not resolve
-// cross-project task providers while this project is being evaluated: several
-// sibling projects have not registered their tasks yet. Also do not depend on
-// lifecycle tasks such as :classes, because lifecycle wiring may
-// build the generated ClassSizeCatalog and re-enter compileDerbyEngine.
-def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
-def osgiModuleClassDir = rootProject.project(':delosdb-osgi-stub').layout.buildDirectory.dir('classes/modules/org.osgi.framework')
-def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
-def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
-def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
-def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
+def generatedProductInfoResourceDir = layout.buildDirectory.dir('generated/resources/product-info')
+def generatedServiceResourceDir = layout.buildDirectory.dir('generated/resources/services')
 def javaccClasspath = rootProject.files('tools/java/javacc.jar')
 
 def replaceInFile = { File file, Closure<String> transform ->
     file.text = transform(file.text)
 }
 
-// Gradle-consumable compile artifact for modules that still need the inherited
-// engine classes while delosdb-engine itself remains on the legacy custom
-// compile path. This avoids hard-coded cross-project build/classes lookups in
-// downstream modules and can be retired when delosdb-engine is converted.
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
 configurations {
+    enginePatch {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
     derbyEngineClasses {
         canBeConsumed = true
         canBeResolved = false
     }
 }
+
+dependencies {
+    implementation project(':delosdb-commons')
+    implementation project(':delosdb-engine-api')
+    implementation project(':delosdb-spi')
+    implementation "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
+    compileOnly project(':delosdb-osgi-stub')
+
+    enginePatch project(':delosdb-engine-storage-api')
+    enginePatch project(':delosdb-derby-store-api')
+    enginePatch project(':delosdb-storage-derby')
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+            srcDir generatedSourceRoot
+            destinationDirectory.set(moduleClassDir)
+        }
+        resources {
+            setSrcDirs([])
+        }
+    }
+}
+
 tasks.register('generateSqlParser', JavaExec) {
     def outputDir = generatedSourceRoot.map {
         it.dir('org/apache/derby/impl/sql/compile')
@@ -73,84 +91,138 @@ tasks.register('generateSqlParser', JavaExec) {
     }
 }
 
-tasks.register('compileDerbyEngine', JavaCompile) {
-    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-api:compileDelosDbEngineApi', ':delosdb-spi:compileDelosDbSpi', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', 'generateSqlParser'
-    source = files(
-            fileTree(sourceRoot) { include '**/*.java' },
-            fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
-    )
-    destinationDirectory = moduleClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate, [
-            osgiModuleClassDir,
-            commonsModuleClassDir,
-            engineApiModuleClassDir,
-            spiModuleClassDir,
-            rootProject.configurations.delosdbAsm
-    ])
+// Engine owns the embedded-engine runtime resources. Root-level Derby resource
+// tasks still generate messages and JDBC metadata, but they no longer copy the
+// engine's ordinary resources or product-info file into this module's classes.
+def registerProductInfoTask = { String taskName, String resourcePath, String technologyName, String productFile ->
+    def outputFile = generatedProductInfoResourceDir.map { it.file(resourcePath) }
+    tasks.register(taskName) {
+        outputs.file(outputFile)
+        doLast {
+            def target = outputFile.get().asFile
+            target.parentFile.mkdirs()
+            target.text = """# Generated by Gradle. Do not edit.
+derby.version.major=10
+derby.version.minor=17
+derby.version.maint=1000000
+derby.version.drdamaint=0
+derby.build.number=${rootProject.ext.buildNumberProvider.get()}
+derby.product.technology.name=${technologyName}
+derby.product.external.name=DelosDB
+derby.product.external.version=${rootProject.ext.delosDbVersion}
+delosdb.version=${rootProject.ext.delosDbVersion}
+derby.version.beta=false
+derby.product.vendor=DelosDB Project
+derby.product.file=${productFile}
+"""
+        }
+    }
+}
+
+registerProductInfoTask(
+        'generateEngineInfoProperties',
+        'org/apache/derby/info/engine/info.properties',
+        'DelosDB Embedded Engine',
+        'derby.jar')
+
+tasks.register('generateEngineServiceDescriptor') {
+    def serviceFile = generatedServiceResourceDir.map { it.file('META-INF/services/java.sql.Driver') }
+    outputs.file(serviceFile)
+    doLast {
+        def target = serviceFile.get().asFile
+        target.parentFile.mkdirs()
+        target.text = 'org.apache.derby.iapi.jdbc.AutoloadedDriver\n'
+    }
+}
+
+tasks.named('compileJava', JavaCompile) {
+    dependsOn tasks.named('generateSqlParser')
+    inputs.files(configurations.enginePatch).withPropertyName('enginePatch')
+    destinationDirectory.set(moduleClassDir)
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
     doFirst {
-        def patchPath = rootProject.files(engineStorageApiClassDir, storeApiClassDir, storageDerbyClassDir).asPath
-        options.compilerArgs.addAll(['--patch-module', "${moduleName}=${patchPath}"])
+        options.compilerArgs.addAll(['--patch-module', "${moduleName}=${configurations.enginePatch.asPath}"])
     }
 }
 
-
-artifacts {
-    derbyEngineClasses(moduleClassDir) {
-        builtBy tasks.named('compileDerbyEngine')
-    }
-}
-
-
-tasks.register('copyEngineServiceDescriptors', Copy) {
-    dependsOn 'compileDerbyEngine'
-    from(resourceRoot) {
-        include 'META-INF/services/**'
-    }
-    into moduleClassDir
-}
-
-tasks.register('compileClassSizeCatalog') {
-    dependsOn ':delosdb-engine-api:compileDelosDbEngineApiClassSizeCatalog'
-}
-
-tasks.register('classes') {
-    dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog', 'copyEngineServiceDescriptors'
-}
-
-
-
-
-
-
-
-tasks.named('assemble') {
-    dependsOn 'classes'
-}
-
-
-def engineArchiveName = 'derby.jar'
-
-tasks.register('derbyJar', Jar) {
-    dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog', 'copyEngineServiceDescriptors', ':processDerbyResources', ':splitEngineMessages', ':generateOdbcMetadata', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage'
-    archiveFileName = engineArchiveName
-    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+tasks.named('processResources') {
+    dependsOn tasks.named('generateEngineInfoProperties'), tasks.named('generateEngineServiceDescriptor')
+    destinationDir = moduleClassDir.get().asFile
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from moduleClassDir
-    from(engineStorageApiClassDir) {
-        include 'org/apache/derby/iapi/store/types/**'
-    }
-    from(storeApiClassDir) {
-        include 'org/apache/derby/iapi/store/**'
-    }
-    from(storageDerbyClassDir) {
-        include 'org/apache/derby/impl/store/**'
-    }
-    from(sourceRoot) {
+    from generatedProductInfoResourceDir
+    from generatedServiceResourceDir
+    from('src/main/resources')
+    from('src/main/java') {
         include '**/*.properties'
         include '**/*.policy'
         include '**/*.xml'
         exclude '**/messages.xml'
         exclude '**/*.tmpl'
+    }
+}
+
+// Compatibility alias used by the root Derby build and extracted modules.
+tasks.register('compileDerbyEngine') {
+    dependsOn tasks.named('compileJava')
+}
+
+artifacts {
+    derbyEngineClasses(moduleClassDir) {
+        builtBy tasks.named('compileJava')
+    }
+}
+
+// Compatibility alias retained for existing root build wiring. The generated
+// ClassSizeCatalog belongs to delosdb-engine-api, not to the engine classes task.
+tasks.register('compileClassSizeCatalog') {
+    dependsOn ':delosdb-engine-api:compileDelosDbEngineApiClassSizeCatalog'
+}
+
+// Compatibility alias retained because older root wiring referred to this task.
+tasks.register('copyEngineServiceDescriptors') {
+    dependsOn tasks.named('processResources')
+}
+
+tasks.named('classes') {
+    dependsOn tasks.named('compileJava'), tasks.named('processResources')
+}
+
+def engineArchiveName = 'derby.jar'
+
+tasks.named('jar', Jar) {
+    archiveFileName = 'delosdb-engine.jar'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Embedded Engine')
+    }
+}
+
+// Compatibility runtime jar used by the root `jars` task. It remains the full
+// Derby-compatible derby.jar, including patched store classes and generated
+// Derby runtime resources.
+tasks.register('derbyJar', Jar) {
+    dependsOn tasks.named('compileJava'), tasks.named('processResources'), tasks.named('compileClassSizeCatalog'),
+            ':splitEngineMessages', ':generateOdbcMetadata', ':ensureCatalogMetadataResources',
+            ':delosdb-engine-storage-api:compileEngineStorageApi',
+            ':delosdb-derby-store-api:compileDerbyStoreApi',
+            ':delosdb-storage-derby:compileLegacyDerbyStorage'
+    archiveFileName = engineArchiveName
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from moduleClassDir
+    from({ configurations.enginePatch.collect { it.isDirectory() ? it : zipTree(it) } }) {
+        include 'org/apache/derby/iapi/store/types/**'
+        include 'org/apache/derby/iapi/store/**'
+        include 'org/apache/derby/impl/store/**'
+        exclude 'META-INF/**'
+        exclude 'module-info.class'
     }
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
@@ -161,5 +233,9 @@ tasks.register('derbyJar', Jar) {
 }
 
 tasks.named('assemble') {
-    dependsOn 'derbyJar'
+    dependsOn tasks.named('derbyJar')
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('classes')
 }

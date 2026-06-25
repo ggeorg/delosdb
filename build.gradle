@@ -53,9 +53,7 @@ def moduleProjects = [
         (moduleNames.runner)       : ':delosdb-runner'
 ]
 
-def moduleSourceRoots = [
-        (moduleNames.engine): 'delosdb-engine/src/main/java'
-]
+def moduleSourceRoots = [:]
 
 def runtimeCompileTasks = [
         ':delosdb-commons:compileDerbyCommons',
@@ -69,9 +67,7 @@ def runtimeCompileTasks = [
         ':delosdb-runner:compileDerbyRunner'
 ]
 
-def productInfoResources = [
-        [module: moduleNames.engine, path: 'org/apache/derby/info/engine/info.properties', technology: 'DelosDB Embedded Engine', productFile: 'derby.jar']
-]
+def productInfoResources = []
 
 def moduleClassDir = { String moduleName ->
     def moduleProject = moduleProjects[moduleName]
@@ -273,35 +269,6 @@ tasks.register('generateClassSizeCatalog') {
 
 tasks.register('processDerbyResources') {
     dependsOn runtimeCompileTasks
-    productInfoResources.each { info ->
-        outputs.file(moduleClassDir(info.module).map { it.file(info.path) })
-    }
-    outputs.dir(moduleClassDir(moduleNames.engine).map { it.dir('META-INF/services') })
-    doLast {
-        moduleSourceRoots.each { moduleName, sourceDir ->
-            copy {
-                from(sourceDir) {
-                    include '**/*.properties'
-                    include '**/*.policy'
-                    include '**/*.xml'
-                    exclude '**/messages.xml'
-                    exclude '**/*.tmpl'
-                }
-                into moduleClassDir(moduleName).get().asFile
-            }
-        }
-
-        new File(moduleClassDir(moduleNames.engine).get().asFile, 'META-INF/services').mkdirs()
-        new File(moduleClassDir(moduleNames.engine).get().asFile, 'META-INF/services/java.sql.Driver').text =
-                'org.apache.derby.iapi.jdbc.AutoloadedDriver\n'
-        productInfoResources.each { info ->
-            writeInfoProperties(
-                    new File(moduleClassDir(info.module).get().asFile, info.path),
-                    info.technology,
-                    info.productFile
-            )
-        }
-    }
 }
 
 tasks.register('splitEngineMessages') {
