@@ -41,12 +41,13 @@ import org.apache.derby.shared.common.error.StandardException;
 /**
  * Delos DELETE result set for the Phase F native execution seam.
  *
- * <p>F6 keeps Derby's generated activation and {@code ResultSetFactory}
- * method shape intact.  Under a proof property, {@link GenericResultSetFactory}
- * replaces the normal heap {@link DeleteResultSet} for {@code delos_mvcc}
- * catalog tables.  The WHERE equality still comes from Derby's generated
- * source tree and its native {@link DelosTableScanResultSet}; this class owns
- * only the provider mutation boundary:</p>
+ * <p>F6 kept Derby's generated activation and {@code ResultSetFactory}
+ * method shape intact behind a proof property.  MODULE5F removes that proof
+ * gate for {@code delos_mvcc} catalog tables: provider identity now selects
+ * this result set automatically, while default heap tables continue to use
+ * Derby's normal {@link DeleteResultSet}.  The source scan still comes from
+ * Derby's generated execution tree and its native {@link DelosTableScanResultSet};
+ * this class owns only the provider mutation boundary:</p>
  *
  * <pre>
  * DelosTableScanResultSet Qualifier[][]
@@ -65,6 +66,11 @@ import org.apache.derby.shared.common.error.StandardException;
  */
 final class DelosDeleteResultSet extends NoRowsResultSetImpl
 {
+    /**
+     * Legacy proof property retained for compatibility with earlier smokes.
+     * MODULE5F no longer uses it as a route guard; delos_mvcc DELETE now routes
+     * by persisted table/provider identity.
+     */
     static final String NATIVE_DELETE_EQUALITY_PROPERTY =
             "delosdb.storage.phaseF6.nativeMvccDeleteEquality";
 
@@ -88,9 +94,6 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
     static Optional<ResultSet> createIfEnabled(NoPutResultSet source, Activation activation)
             throws StandardException
     {
-        if (!Boolean.getBoolean(NATIVE_DELETE_EQUALITY_PROPERTY)) {
-            return Optional.empty();
-        }
         if (source == null || activation == null) {
             return Optional.empty();
         }
@@ -114,11 +117,11 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
         Optional<DelosTableScanResultSet> nativeScan = DelosTableScanResultSet.findIn(source);
         if (nativeScan.isEmpty()) {
             throw StandardException.plainWrapException(new UnsupportedOperationException(
-                    "F6 native MVCC DELETE equality requires a DelosTableScanResultSet source"));
+                    "MODULE5F native MVCC DELETE requires a DelosTableScanResultSet source"));
         }
         if (!lookup.get().equals(nativeScan.get().providerLookupForMutation())) {
             throw StandardException.plainWrapException(new IllegalStateException(
-                    "F6 native DELETE target table does not match the native scan provider lookup"));
+                    "MODULE5F native DELETE target table does not match the native scan provider lookup"));
         }
         return Optional.of(new DelosDeleteResultSet(source, activation, nativeScan.get(), lookup.get()));
     }
@@ -132,7 +135,7 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
         DelosNativeTableRegistry.NativeExecutionTableAccess nativeAccess = null;
         DelosScan scan = null;
         try {
-            List<DelosPredicate> predicates = nativeScanSource.equalityPredicatesForNativeMutation();
+            List<DelosPredicate> predicates = nativeScanSource.predicatesForNativeMutation();
             nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(
                     activation,
                     nativeScanSource.tableDescriptorForNativeRegistry(),
@@ -207,7 +210,7 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
     {
         if (constants.deferred || constants.getFKInfo() != null || constants.getTriggerInfo() != null) {
             throw StandardException.plainWrapException(new UnsupportedOperationException(
-                    "F6 native MVCC DELETE equality does not support deferred deletes, triggers, or FK checks yet"));
+                    "MODULE5F native MVCC DELETE does not support deferred deletes, triggers, or FK checks yet"));
         }
     }
 }

@@ -48,3 +48,6 @@ project(':module5d-derby-select-full-scan-smoke').projectDir = file('dev/module5
 
 include 'module5e-derby-insert-provider-route-smoke'
 project(':module5e-derby-insert-provider-route-smoke').projectDir = file('dev/module5e-derby-insert-provider-route-smoke')
+
+include 'module5f-derby-delete-update-provider-route-smoke'
+project(':module5f-derby-delete-update-provider-route-smoke').projectDir = file('dev/module5f-derby-delete-update-provider-route-smoke')

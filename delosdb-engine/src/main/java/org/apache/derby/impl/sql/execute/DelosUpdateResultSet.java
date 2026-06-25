@@ -41,12 +41,13 @@ import org.apache.derby.shared.common.error.StandardException;
 /**
  * Delos UPDATE result set for the Phase F native execution seam.
  *
- * <p>F7 keeps Derby's generated activation and {@code ResultSetFactory}
- * method shape intact.  Under a proof property, {@link GenericResultSetFactory}
- * replaces the normal heap {@link UpdateResultSet} for {@code delos_mvcc}
- * catalog tables.  Derby still computes the replacement row through the
- * generated source tree; this result set owns only the provider mutation
- * boundary:</p>
+ * <p>F7 kept Derby's generated activation and {@code ResultSetFactory}
+ * method shape intact behind a proof property.  MODULE5F removes that proof
+ * gate for {@code delos_mvcc} catalog tables: provider identity now selects
+ * this result set automatically, while default heap tables continue to use
+ * Derby's normal {@link UpdateResultSet}.  Derby still computes the replacement
+ * row through the generated source tree; this result set owns only the provider
+ * mutation boundary:</p>
  *
  * <pre>
  * DelosTableScanResultSet Qualifier[][]
@@ -65,6 +66,11 @@ import org.apache.derby.shared.common.error.StandardException;
  */
 final class DelosUpdateResultSet extends NoRowsResultSetImpl
 {
+    /**
+     * Legacy proof property retained for compatibility with earlier smokes.
+     * MODULE5F no longer uses it as a route guard; delos_mvcc UPDATE now routes
+     * by persisted table/provider identity.
+     */
     static final String NATIVE_UPDATE_EQUALITY_PROPERTY =
             "delosdb.storage.phaseF7.nativeMvccUpdateEquality";
 
@@ -104,9 +110,6 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
             Activation activation)
             throws StandardException
     {
-        if (!Boolean.getBoolean(NATIVE_UPDATE_EQUALITY_PROPERTY)) {
-            return Optional.empty();
-        }
         if (source == null || activation == null) {
             return Optional.empty();
         }
@@ -130,11 +133,11 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
         Optional<DelosTableScanResultSet> nativeScan = DelosTableScanResultSet.findIn(source);
         if (nativeScan.isEmpty()) {
             throw StandardException.plainWrapException(new UnsupportedOperationException(
-                    "F7 native MVCC UPDATE equality requires a DelosTableScanResultSet source"));
+                    "MODULE5F native MVCC UPDATE requires a DelosTableScanResultSet source"));
         }
         if (!lookup.get().equals(nativeScan.get().providerLookupForMutation())) {
             throw StandardException.plainWrapException(new IllegalStateException(
-                    "F7 native UPDATE target table does not match the native scan provider lookup"));
+                    "MODULE5F native UPDATE target table does not match the native scan provider lookup"));
         }
         return Optional.of(new DelosUpdateResultSet(
                 source,
@@ -231,11 +234,11 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
     {
         if (constants.deferred || constants.getFKInfo() != null || constants.getTriggerInfo() != null) {
             throw StandardException.plainWrapException(new UnsupportedOperationException(
-                    "F7 native MVCC UPDATE equality does not support deferred updates, triggers, or FK checks yet"));
+                    "MODULE5F native MVCC UPDATE does not support deferred updates, triggers, or FK checks yet"));
         }
         if (constants.hasAutoincrement()) {
             throw StandardException.plainWrapException(new UnsupportedOperationException(
-                    "F7 native MVCC UPDATE equality does not support autoincrement updates yet"));
+                    "MODULE5F native MVCC UPDATE does not support autoincrement updates yet"));
         }
     }
 

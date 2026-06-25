@@ -362,10 +362,10 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
         return tableDescriptor();
     }
 
-    List<DelosPredicate> equalityPredicatesForNativeMutation()
+    List<DelosPredicate> predicatesForNativeMutation()
             throws StandardException
     {
-        return equalityPredicates(tableDescriptor());
+        return predicates(tableDescriptor(), false, true);
     }
 
     DelosRowIdentity currentDelosRowIdentityForNativeMutation() throws StandardException

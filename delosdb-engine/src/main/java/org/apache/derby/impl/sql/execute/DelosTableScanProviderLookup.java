@@ -136,11 +136,19 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_HEAP_PROVIDER_PARITY_PROPERTY =
             "delosdb.storage.phaseO.heapProviderParity";
 
-    /** Test/proof gate for Phase F6 native DELETE equality mutation. */
+    /**
+     * Legacy proof property for Phase F6 native DELETE mutation. MODULE5F keeps
+     * the constant for old smokes, but provider identity now drives delos_mvcc
+     * DELETE routing.
+     */
     public static final String FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY =
             DelosDeleteResultSet.NATIVE_DELETE_EQUALITY_PROPERTY;
 
-    /** Test/proof gate for Phase F7 native UPDATE equality mutation. */
+    /**
+     * Legacy proof property for Phase F7 native UPDATE mutation. MODULE5F keeps
+     * the constant for old smokes, but provider identity now drives delos_mvcc
+     * UPDATE routing.
+     */
     public static final String FACTORY_NATIVE_UPDATE_EQUALITY_PROPERTY =
             DelosUpdateResultSet.NATIVE_UPDATE_EQUALITY_PROPERTY;
 

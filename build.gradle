@@ -636,6 +636,13 @@ tasks.register('module5eDerbyInsertProviderRouteSmoke') {
 }
 
 
+tasks.register('module5fDerbyDeleteUpdateProviderRouteSmoke') {
+    dependsOn ':module5f-derby-delete-update-provider-route-smoke:run'
+    group = 'verification'
+    description = 'Runs the dependency-driven MODULE5F Derby DELETE/UPDATE provider-identity smoke for delos_mvcc tables.'
+}
+
+
 def distributionBaseName = "delosdb-${delosDbVersion}"
 def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
 def distributionDocFiles = files(
