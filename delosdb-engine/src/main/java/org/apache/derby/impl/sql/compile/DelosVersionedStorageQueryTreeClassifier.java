@@ -40,6 +40,12 @@ import java.util.Optional;
  * the resulting query-tree node shape, and returns a narrow planned route for
  * one already-supported bridge statement. Regex routing remains the fallback
  * until each regex route has an equivalent QueryTreeNode route.</p>
+ *
+ * <p><strong>MODULE5A bridge status:</strong> proof-only. Current role:
+ * compiler-tree classifier for existing bridge routes. Replacement path:
+ * provider selection from Derby-visible table/conglomerate metadata, not SQL
+ * text classification. Delete after: MVCC-backed tables route through normal
+ * Derby compilation/execution metadata without this classifier.</p>
  */
 public final class DelosVersionedStorageQueryTreeClassifier {
     private DelosVersionedStorageQueryTreeClassifier() {

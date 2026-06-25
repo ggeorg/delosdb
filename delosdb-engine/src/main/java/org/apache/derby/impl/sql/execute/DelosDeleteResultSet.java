@@ -55,6 +55,13 @@ import org.apache.derby.shared.common.error.StandardException;
  *   -> DelosRowIdentity
  *   -> EngineMvccTableAccess.delete(...)
  * </pre>
+ *
+ * <p><strong>MODULE5A bridge status:</strong> transitional Derby execution
+ * seam, not final store/access integration. Current role: prove Derby DELETE
+ * execution can turn a scan-visible MVCC row identity into a provider delete.
+ * Replacement path: Derby delete/conglomerate/store-access dispatch deletes
+ * through the MVCC provider directly. Delete after: normal Derby DELETE over
+ * MVCC-backed tables no longer needs this proof result set.</p>
  */
 final class DelosDeleteResultSet extends NoRowsResultSetImpl
 {

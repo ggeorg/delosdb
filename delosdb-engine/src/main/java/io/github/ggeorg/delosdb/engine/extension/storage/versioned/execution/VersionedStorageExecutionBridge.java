@@ -30,6 +30,13 @@ import java.util.Optional;
  * insert, read, update, delete, scan, stats, and the first provider-owned
  * index creation plus index lookup/statistics proof. WAL and broader optimizer
  * costing remain outside this bridge until their own proofs exist.</p>
+ *
+ * <p><strong>MODULE5A bridge status:</strong> transitional provider facade.
+ * Current role: isolates proof/result-set code from direct provider calls.
+ * Replacement path: Derby store/access adapters own provider dispatch and
+ * transaction lifecycle binding. Retire after: Derby-visible MVCC table,
+ * scan, and DML paths call the storage provider through the final access/store
+ * boundary instead of this proof bridge.</p>
  */
 @InternalApi
 public final class VersionedStorageExecutionBridge {

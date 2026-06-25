@@ -51,6 +51,13 @@ import org.apache.derby.shared.common.error.StandardException;
  *   -> DelosNativeTableRegistry.NativeExecutionTableAccess.insert(...)
  *   -> EngineMvccTableAccess.insert(...)
  * </pre>
+ *
+ * <p><strong>MODULE5A bridge status:</strong> transitional Derby execution
+ * seam, not final store/access integration. Current role: prove Derby INSERT
+ * execution can append MVCC versions through the provider mutation boundary.
+ * Replacement path: Derby insert/conglomerate/store-access dispatch writes to
+ * an MVCC table provider directly. Delete after: normal Derby INSERT over
+ * MVCC-backed tables no longer needs this proof result set.</p>
  */
 final class DelosInsertResultSet extends NoRowsResultSetImpl
 {

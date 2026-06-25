@@ -55,6 +55,13 @@ import org.apache.derby.shared.common.error.StandardException;
  *   -> replacement DelosRow values
  *   -> EngineMvccTableAccess.update(...)
  * </pre>
+ *
+ * <p><strong>MODULE5A bridge status:</strong> transitional Derby execution
+ * seam, not final store/access integration. Current role: prove Derby UPDATE
+ * execution can convert a scan-visible MVCC row identity plus replacement row
+ * into a provider update. Replacement path: Derby update/conglomerate/store-
+ * access dispatch updates the MVCC provider directly. Delete after: normal
+ * Derby UPDATE over MVCC-backed tables no longer needs this proof result set.</p>
  */
 final class DelosUpdateResultSet extends NoRowsResultSetImpl
 {

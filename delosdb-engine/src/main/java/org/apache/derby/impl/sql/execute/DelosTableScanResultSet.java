@@ -66,6 +66,13 @@ import org.apache.derby.shared.common.error.StandardException;
  *   -> EngineMvccTableAccess.scan(...)
  *   -> Derby ExecRow materialization
  * </pre>
+ *
+ * <p><strong>MODULE5A bridge status:</strong> transitional Derby execution
+ * seam, not final store/access integration. Current role: prove Derby result
+ * set execution can materialize rows from MVCC provider scans. Replacement
+ * path: Derby scan/conglomerate/store-access dispatch opens an MVCC scan
+ * controller/provider directly. Delete after: normal Derby SELECT full scan
+ * over MVCC-backed tables no longer needs this proof result set.</p>
  */
 final class DelosTableScanResultSet extends NoPutResultSetImpl
         implements CursorResultSet

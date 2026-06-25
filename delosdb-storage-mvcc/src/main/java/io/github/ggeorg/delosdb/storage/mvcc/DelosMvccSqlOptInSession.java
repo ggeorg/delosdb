@@ -28,6 +28,12 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordi
  * adapter and transaction coordinator that a future Derby SQL bridge will use.
  * MVCC-14 adds a primary-key/index lookup shape so index candidates are also
  * forced through MVCC visibility checks before SQL integration gets wider.</p>
+ *
+ * <p><strong>MODULE5A bridge status:</strong> proof-only. Current role:
+ * regex SQL-shaped smoke harness for the MVCC provider lifecycle. Replacement
+ * path: Derby-visible MVCC table identity plus Derby execution/store-access
+ * provider dispatch. Delete after: normal Derby SELECT/INSERT/DELETE/UPDATE
+ * over MVCC-backed tables no longer require this class.</p>
  */
 public final class DelosMvccSqlOptInSession {
     private static final String DEFAULT_SCHEMA = "APP";
