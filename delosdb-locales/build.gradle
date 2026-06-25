@@ -1,9 +1,3 @@
 plugins {
     id 'base'
 }
-
-
-
-tasks.named('check') {
-    // No custom layout guards in the Derby-focused validation path.
-}
