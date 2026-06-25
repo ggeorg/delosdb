@@ -37,21 +37,17 @@ include 'delosdb-demos'
 include 'delosdb-locales'
 include 'delosdb-buildtools'
 
-include 'module5b-native-table-identity-smoke'
-project(':module5b-native-table-identity-smoke').projectDir = file('dev/module5b-native-table-identity-smoke')
-
-include 'module5c-derby-transaction-mvcc-smoke'
-project(':module5c-derby-transaction-mvcc-smoke').projectDir = file('dev/module5c-derby-transaction-mvcc-smoke')
-
-include 'module5d-derby-select-full-scan-smoke'
-project(':module5d-derby-select-full-scan-smoke').projectDir = file('dev/module5d-derby-select-full-scan-smoke')
-
-include 'module5e-derby-insert-provider-route-smoke'
-project(':module5e-derby-insert-provider-route-smoke').projectDir = file('dev/module5e-derby-insert-provider-route-smoke')
-
-include 'module5f-derby-delete-update-provider-route-smoke'
-project(':module5f-derby-delete-update-provider-route-smoke').projectDir = file('dev/module5f-derby-delete-update-provider-route-smoke')
-
-
-include 'module5g-provider-route-crud-preflight-smoke'
-project(':module5g-provider-route-crud-preflight-smoke').projectDir = file('dev/module5g-provider-route-crud-preflight-smoke')
+// Development smoke proofs live under dev/*-smoke and are included
+// automatically. New smokes should add only their own dev/<name>-smoke
+// directory and build.gradle, not root build.gradle aliases or explicit
+// settings.gradle entries.
+def devDir = file('dev')
+if (devDir.isDirectory()) {
+    devDir.listFiles()
+            .findAll { it.isDirectory() && it.name.endsWith('-smoke') && new File(it, 'build.gradle').isFile() }
+            .sort { left, right -> left.name <=> right.name }
+            .each { smokeDir ->
+                include smokeDir.name
+                project(":${smokeDir.name}").projectDir = smokeDir
+            }
+}

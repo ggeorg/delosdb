@@ -2,51 +2,8 @@ plugins {
     id 'application'
 }
 
-import org.gradle.api.tasks.compile.JavaCompile
-import org.gradle.api.tasks.JavaExec
+ext.delosdbSmokeMainClass = 'delosdb.smoke.Module5fDerbyDeleteUpdateProviderRouteSmoke'
+ext.delosdbSmokeDescription = 'Runs the MODULE5F Derby DELETE/UPDATE provider-identity smoke for delos_mvcc tables.'
+ext.delosdbSmokeDatabasePath = 'build/module5f-derby-delete-update-provider-route-db'
 
-version = rootProject.version
-group = rootProject.group
-
-java {
-    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
-    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
-}
-
-application {
-    mainClass = 'delosdb.smoke.Module5fDerbyDeleteUpdateProviderRouteSmoke'
-}
-
-sourceSets {
-    main {
-        java {
-            srcDir 'src/main/java'
-            srcDir '../smoke-utils/src/main/java'
-        }
-    }
-}
-
-dependencies {
-    compileOnly rootProject.ext.delosdbRuntimeJars()
-    implementation project(':delosdb-storage-io')
-    implementation project(':delosdb-storage-mvcc')
-    runtimeOnly rootProject.ext.delosdbRuntimeJars()
-}
-
-tasks.named('compileJava', JavaCompile) {
-    dependsOn rootProject.tasks.named('jars')
-    options.release = rootProject.ext.javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-}
-
-tasks.named('run', JavaExec) {
-    dependsOn rootProject.tasks.named('jars')
-    group = 'verification'
-    description = 'Runs the MODULE5F Derby DELETE/UPDATE provider-identity smoke for delos_mvcc tables.'
-    workingDir = rootProject.projectDir
-    doFirst {
-        delete rootProject.file('build/module5f-derby-delete-update-provider-route-db')
-    }
-}
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

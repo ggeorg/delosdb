@@ -607,48 +607,10 @@ tasks.register('smokeFromJars', JavaExec) {
 
 
 
-tasks.register('module5bNativeTableIdentitySmoke') {
-    dependsOn ':module5b-native-table-identity-smoke:run'
-    group = 'verification'
-    description = 'Runs the dependency-driven MODULE5B Derby-visible MVCC table identity smoke.'
-}
-
-
-
-tasks.register('module5cDerbyTransactionMvccSmoke') {
-    dependsOn ':module5c-derby-transaction-mvcc-smoke:run'
-    group = 'verification'
-    description = 'Runs the dependency-driven MODULE5C Derby transaction to MVCC transaction-context smoke.'
-}
-
-
-tasks.register('module5dDerbySelectFullScanSmoke') {
-    dependsOn ':module5d-derby-select-full-scan-smoke:run'
-    group = 'verification'
-    description = 'Runs the dependency-driven MODULE5D normal Derby SELECT full-scan smoke for delos_mvcc tables.'
-}
-
-
-tasks.register('module5eDerbyInsertProviderRouteSmoke') {
-    dependsOn ':module5e-derby-insert-provider-route-smoke:run'
-    group = 'verification'
-    description = 'Runs the dependency-driven MODULE5E Derby INSERT provider-identity smoke for delos_mvcc tables.'
-}
-
-
-tasks.register('module5fDerbyDeleteUpdateProviderRouteSmoke') {
-    dependsOn ':module5f-derby-delete-update-provider-route-smoke:run'
-    group = 'verification'
-    description = 'Runs the dependency-driven MODULE5F Derby DELETE/UPDATE provider-identity smoke for delos_mvcc tables.'
-}
-
-
-tasks.register('module5gProviderRouteCrudPreflightSmoke') {
-    dependsOn ':module5g-provider-route-crud-preflight-smoke:run'
-    group = 'verification'
-    description = 'Runs the dependency-driven MODULE5G provider-route CRUD preflight smoke for delos_mvcc tables.'
-}
-
+// MODULE5 dev smoke projects are discovered from settings.gradle and run by
+// project path, for example:
+//   ./gradlew :module5g-provider-route-crud-preflight-smoke:run
+// Do not add one root alias task per smoke proof.
 
 def distributionBaseName = "delosdb-${delosDbVersion}"
 def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")

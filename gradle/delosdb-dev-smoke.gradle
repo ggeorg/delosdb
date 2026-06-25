@@ -1,0 +1,70 @@
+import org.gradle.api.GradleException
+import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = rootProject.version
+group = rootProject.group
+
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
+if (!extensions.extraProperties.has('delosdbSmokeMainClass')) {
+    throw new GradleException("${path} must set ext.delosdbSmokeMainClass before applying delosdb-dev-smoke.gradle")
+}
+
+def smokeMainClass = extensions.extraProperties.get('delosdbSmokeMainClass').toString()
+def smokeDescription = extensions.extraProperties.has('delosdbSmokeDescription')
+        ? extensions.extraProperties.get('delosdbSmokeDescription').toString()
+        : "Runs ${project.name}."
+def smokeDatabasePath = extensions.extraProperties.has('delosdbSmokeDatabasePath')
+        ? extensions.extraProperties.get('delosdbSmokeDatabasePath').toString()
+        : null
+
+application {
+    mainClass = smokeMainClass
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+            srcDir '../smoke-utils/src/main/java'
+        }
+    }
+}
+
+dependencies {
+    // Compile against the assembled runtime jars instead of the inherited engine
+    // classes directory. The engine output directory is also populated by legacy
+    // root resource tasks, so using it directly as a downstream compile classpath
+    // triggers Gradle implicit-dependency validation.
+    compileOnly rootProject.ext.delosdbRuntimeJars()
+    implementation project(':delosdb-storage-io')
+    implementation project(':delosdb-storage-mvcc')
+
+    // Derby's embedded runtime is still assembled through legacy product jar
+    // tasks while delosdb-engine remains on its custom compile path.
+    runtimeOnly rootProject.ext.delosdbRuntimeJars()
+}
+
+tasks.named('compileJava', JavaCompile) {
+    dependsOn rootProject.tasks.named('jars')
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+}
+
+tasks.named('run', JavaExec) {
+    dependsOn rootProject.tasks.named('jars')
+    group = 'verification'
+    description = smokeDescription
+    workingDir = rootProject.projectDir
+    if (smokeDatabasePath != null && !smokeDatabasePath.isBlank()) {
+        doFirst {
+            delete rootProject.file(smokeDatabasePath)
+        }
+    }
+}
