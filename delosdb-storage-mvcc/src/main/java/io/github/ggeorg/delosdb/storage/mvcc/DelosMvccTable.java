@@ -33,6 +33,7 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     private final VersionedTableMetadata metadata;
     private final MvccTable<K, V> table;
     private final DelosMvccStorageLog storageLog;
+    private final MvccLogWriter logWriter;
     private final BooleanSupplier loggingSuppressed;
     private final PageBackedMvccTable durableTable;
     private final Map<String, DelosMvccIndex<K, V>> indexes = new LinkedHashMap<>();
@@ -40,7 +41,7 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     private boolean hydratingFromDurable;
 
     DelosMvccTable(VersionedTableMetadata metadata, MvccTable<K, V> table) {
-        this(metadata, table, DelosMvccStorageLog.disabled(), NEVER_SUPPRESS_LOGGING);
+        this(metadata, table, DelosMvccStorageLog.disabled(), MvccLogWriter.disabled(), NEVER_SUPPRESS_LOGGING, null);
     }
 
     DelosMvccTable(
@@ -48,18 +49,20 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
             MvccTable<K, V> table,
             DelosMvccStorageLog storageLog,
             BooleanSupplier loggingSuppressed) {
-        this(metadata, table, storageLog, loggingSuppressed, null);
+        this(metadata, table, storageLog, MvccLogWriter.disabled(), loggingSuppressed, null);
     }
 
     DelosMvccTable(
             VersionedTableMetadata metadata,
             MvccTable<K, V> table,
             DelosMvccStorageLog storageLog,
+            MvccLogWriter logWriter,
             BooleanSupplier loggingSuppressed,
             PageBackedMvccTable durableTable) {
         this.metadata = Objects.requireNonNull(metadata, "metadata");
         this.table = Objects.requireNonNull(table, "table");
         this.storageLog = Objects.requireNonNull(storageLog, "storageLog");
+        this.logWriter = Objects.requireNonNull(logWriter, "logWriter");
         this.loggingSuppressed = Objects.requireNonNull(loggingSuppressed, "loggingSuppressed");
         this.durableTable = durableTable;
     }
@@ -126,8 +129,9 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     public void insert(K key, V value, TxContext transaction) {
         DelosMvccTxContext context = requireMvccContext(transaction);
         table.insert(key, value, context.transaction(), context.commandSequence());
+        DelosLogSequenceNumber versionLsn = appendInsertVersionIfEnabled(context, key);
         recordIndexCandidates(key, value);
-        recordDurableChange(context.transactionId(), DurableChange.insert(key, value));
+        recordDurableChange(context.transactionId(), DurableChange.insert(key, value, versionLsn));
         if (shouldLog()) {
             storageLog.appendInsert(metadata, context.transactionId(), key, value);
         }
@@ -137,8 +141,9 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     public void update(K key, V value, TxContext transaction) {
         DelosMvccTxContext context = requireMvccContext(transaction);
         table.update(key, value, context.transaction(), context.snapshot(), context.catalog(), context.commandSequence());
+        DelosLogSequenceNumber versionLsn = appendUpdateVersionIfEnabled(context, key);
         recordIndexCandidates(key, value);
-        recordDurableChange(context.transactionId(), DurableChange.update(key, value));
+        recordDurableChange(context.transactionId(), DurableChange.update(key, value, versionLsn));
         if (shouldLog()) {
             storageLog.appendUpdate(metadata, context.transactionId(), key, value);
         }
@@ -148,7 +153,8 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     public void delete(K key, TxContext transaction) {
         DelosMvccTxContext context = requireMvccContext(transaction);
         table.delete(key, context.transaction(), context.snapshot(), context.catalog(), context.commandSequence());
-        recordDurableChange(context.transactionId(), DurableChange.delete(key));
+        DelosLogSequenceNumber versionLsn = appendDeleteVersionIfEnabled(context, key);
+        recordDurableChange(context.transactionId(), DurableChange.delete(key, versionLsn));
         if (shouldLog()) {
             storageLog.appendDelete(metadata, context.transactionId(), key);
         }
@@ -249,27 +255,52 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
         return storageLog.isEnabled() && !loggingSuppressed.getAsBoolean();
     }
 
-    private record DurableChange<K, V>(String operation, K key, V value) {
-        private static <K, V> DurableChange<K, V> insert(K key, V value) {
-            return new DurableChange<>("insert", key, value);
+    private DelosLogSequenceNumber appendInsertVersionIfEnabled(DelosMvccTxContext context, K key) {
+        if (!logWriter.isEnabled() || loggingSuppressed.getAsBoolean()) {
+            return DelosLogSequenceNumber.NONE;
+        }
+        return logWriter.appendInsertVersion(context.transaction().id(), metadata, key).lsn();
+    }
+
+    private DelosLogSequenceNumber appendUpdateVersionIfEnabled(DelosMvccTxContext context, K key) {
+        if (!logWriter.isEnabled() || loggingSuppressed.getAsBoolean()) {
+            return DelosLogSequenceNumber.NONE;
+        }
+        return logWriter.appendUpdateVersion(context.transaction().id(), metadata, key).lsn();
+    }
+
+    private DelosLogSequenceNumber appendDeleteVersionIfEnabled(DelosMvccTxContext context, K key) {
+        if (!logWriter.isEnabled() || loggingSuppressed.getAsBoolean()) {
+            return DelosLogSequenceNumber.NONE;
+        }
+        return logWriter.appendDeleteVersion(context.transaction().id(), metadata, key).lsn();
+    }
+
+    private record DurableChange<K, V>(String operation, K key, V value, DelosLogSequenceNumber pageLsn) {
+        private DurableChange {
+            pageLsn = Objects.requireNonNull(pageLsn, "pageLsn");
         }
 
-        private static <K, V> DurableChange<K, V> update(K key, V value) {
-            return new DurableChange<>("update", key, value);
+        private static <K, V> DurableChange<K, V> insert(K key, V value, DelosLogSequenceNumber pageLsn) {
+            return new DurableChange<>("insert", key, value, pageLsn);
         }
 
-        private static <K, V> DurableChange<K, V> delete(K key) {
-            return new DurableChange<>("delete", key, null);
+        private static <K, V> DurableChange<K, V> update(K key, V value, DelosLogSequenceNumber pageLsn) {
+            return new DurableChange<>("update", key, value, pageLsn);
+        }
+
+        private static <K, V> DurableChange<K, V> delete(K key, DelosLogSequenceNumber pageLsn) {
+            return new DurableChange<>("delete", key, null, pageLsn);
         }
 
         private void apply(PageBackedMvccTable durableTable, long transactionId, long commitSequence) throws IOException {
             String durableKey = requireDurableLongKey(key);
             switch (operation) {
             case "insert" -> durableTable.insertCommitted(
-                    durableKey, DurableMvccSqlRowCodec.encode(requireDurableSqlRowValue(value)), transactionId, commitSequence);
+                    durableKey, DurableMvccSqlRowCodec.encode(requireDurableSqlRowValue(value)), transactionId, commitSequence, pageLsn);
             case "update" -> durableTable.updateCommitted(
-                    durableKey, DurableMvccSqlRowCodec.encode(requireDurableSqlRowValue(value)), transactionId, commitSequence);
-            case "delete" -> durableTable.deleteCommitted(durableKey, transactionId, commitSequence);
+                    durableKey, DurableMvccSqlRowCodec.encode(requireDurableSqlRowValue(value)), transactionId, commitSequence, pageLsn);
+            case "delete" -> durableTable.deleteCommitted(durableKey, transactionId, commitSequence, pageLsn);
             default -> throw new IllegalStateException("Unsupported durable delos_mvcc operation: " + operation);
             }
         }

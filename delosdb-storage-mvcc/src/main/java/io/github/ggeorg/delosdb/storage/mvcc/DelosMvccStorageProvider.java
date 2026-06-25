@@ -33,9 +33,11 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
     private final Map<VersionedTableMetadata, DelosMvccTable<?, ?>> tables = new LinkedHashMap<>();
     public static final String DATABASE_STORAGE_DIRECTORY_NAME = "delos_mvcc";
     public static final String TRANSACTION_STATUS_FILE_NAME = "delos-mvcc-tx-status.log";
+    public static final String MVCC_LOG_FILE_NAME = "delos-mvcc-wal-skeleton.log";
 
     private final DelosMvccStorageLog storageLog;
     private final MvccTransactionStatusStore transactionStatusStore;
+    private final MvccLogWriter logWriter;
     private final Path pageBackedStorageDirectory;
     private final DelosMvccTransactionCoordinator transactionCoordinator;
     private final VersionedStorageCapabilities capabilities;
@@ -43,7 +45,7 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
 
     /** Creates the default in-memory prototype provider used by ServiceLoader. */
     public DelosMvccStorageProvider() {
-        this(DelosMvccStorageLog.disabled(), MvccTransactionStatusStore.disabled(), null, false);
+        this(DelosMvccStorageLog.disabled(), MvccTransactionStatusStore.disabled(), MvccLogWriter.disabled(), null, false);
     }
 
     /** Opens a provider instance backed by the provider-local append-only log. */
@@ -51,6 +53,7 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
         return new DelosMvccStorageProvider(
                 DelosMvccStorageLog.open(storageDirectory),
                 MvccTransactionStatusStore.open(transactionStatusPath(storageDirectory)),
+                MvccLogWriter.open(mvccLogPath(storageDirectory)),
                 null,
                 true);
     }
@@ -71,6 +74,11 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
                 .resolve(TRANSACTION_STATUS_FILE_NAME);
     }
 
+    public static Path mvccLogPath(Path storageDirectory) {
+        return Objects.requireNonNull(storageDirectory, "storageDirectory")
+                .resolve(MVCC_LOG_FILE_NAME);
+    }
+
     /**
      * Opens a provider instance backed by the Phase A page-file table store.
      *
@@ -88,6 +96,7 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
         return new DelosMvccStorageProvider(
                 DelosMvccStorageLog.disabled(),
                 MvccTransactionStatusStore.open(transactionStatusPath(storageDirectory)),
+                MvccLogWriter.open(mvccLogPath(storageDirectory)),
                 storageDirectory,
                 false);
     }
@@ -95,14 +104,17 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
     private DelosMvccStorageProvider(
             DelosMvccStorageLog storageLog,
             MvccTransactionStatusStore transactionStatusStore,
+            MvccLogWriter logWriter,
             Path pageBackedStorageDirectory,
             boolean recover) {
         this.storageLog = Objects.requireNonNull(storageLog, "storageLog");
         this.transactionStatusStore = Objects.requireNonNull(transactionStatusStore, "transactionStatusStore");
+        this.logWriter = Objects.requireNonNull(logWriter, "logWriter");
         this.pageBackedStorageDirectory = pageBackedStorageDirectory;
         this.transactionCoordinator = new DelosMvccTransactionCoordinator(
                 storageLog,
                 transactionStatusStore,
+                logWriter,
                 this::isRecovering,
                 new DelosMvccTransactionCoordinator.TransactionCompletionListener() {
                     @Override
@@ -127,6 +139,9 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
         }
         if (transactionStatusStore.isEnabled()) {
             capabilityValues.add("persistent-mvcc-transaction-status");
+        }
+        if (logWriter.isEnabled()) {
+            capabilityValues.add("minimal-mvcc-wal-skeleton");
         }
         if (pageBackedStorageDirectory != null) {
             capabilityValues.add(VersionedStorageCapabilities.APPEND_ONLY_RECOVERY_LOG);
@@ -224,11 +239,24 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
                 metadata,
                 new MvccTable<>(),
                 storageLog,
+                logWriter,
                 this::isRecovering,
                 openPageBackedTableIfEnabled(metadata));
-        table.hydrateFromDurable(transactionCoordinator);
+        hydrateTableWithoutLogging(table);
         tables.put(metadata, table);
         return table;
+    }
+
+    private void hydrateTableWithoutLogging(DelosMvccTable<?, ?> table) {
+        boolean previousRecovering = recovering;
+        if (pageBackedStorageDirectory != null) {
+            recovering = true;
+        }
+        try {
+            table.hydrateFromDurable(transactionCoordinator);
+        } finally {
+            recovering = previousRecovering;
+        }
     }
 
     private PageBackedMvccTable openPageBackedTableIfEnabled(VersionedTableMetadata metadata) {

@@ -16,22 +16,27 @@ public final class DelosPage {
     public static final int PAGE_SIZE = 8192;
     public static final int DATA_PAGE_TYPE = 1;
 
-    static final int HEADER_SIZE = 28;
+    static final int HEADER_SIZE = 36;
     static final int SLOT_SIZE = 12;
     static final int ACTIVE_SLOT = 1;
 
     private final DelosPageId pageId;
     private final int pageType;
+    private final long pageLsn;
     private final MemorySegment image;
     private final List<Slot> slots;
     private int freeEnd;
 
-    private DelosPage(DelosPageId pageId, int pageType, MemorySegment image, List<Slot> slots, int freeEnd) {
+    private DelosPage(DelosPageId pageId, int pageType, long pageLsn, MemorySegment image, List<Slot> slots, int freeEnd) {
         this.pageId = Objects.requireNonNull(pageId, "pageId");
         if (pageType <= 0) {
             throw new IllegalArgumentException("page type must be positive: " + pageType);
         }
+        if (pageLsn < 0L) {
+            throw new IllegalArgumentException("pageLSN must be non-negative: " + pageLsn);
+        }
         this.pageType = pageType;
+        this.pageLsn = pageLsn;
         this.image = Objects.requireNonNull(image, "image");
         if (image.byteSize() != PAGE_SIZE) {
             throw new IllegalArgumentException("page image must be exactly " + PAGE_SIZE + " bytes");
@@ -46,11 +51,11 @@ public final class DelosPage {
     }
 
     public static DelosPage empty(DelosPageId pageId, int pageType) {
-        return new DelosPage(pageId, pageType, MemorySegment.ofArray(new byte[PAGE_SIZE]), List.of(), PAGE_SIZE);
+        return new DelosPage(pageId, pageType, 0L, MemorySegment.ofArray(new byte[PAGE_SIZE]), List.of(), PAGE_SIZE);
     }
 
-    static DelosPage decoded(DelosPageId pageId, int pageType, byte[] image, List<Slot> slots, int freeEnd) {
-        return new DelosPage(pageId, pageType, MemorySegment.ofArray(image.clone()), slots, freeEnd);
+    static DelosPage decoded(DelosPageId pageId, int pageType, long pageLsn, byte[] image, List<Slot> slots, int freeEnd) {
+        return new DelosPage(pageId, pageType, pageLsn, MemorySegment.ofArray(image.clone()), slots, freeEnd);
     }
 
     public DelosPageId pageId() {
@@ -59,6 +64,14 @@ public final class DelosPage {
 
     public int pageType() {
         return pageType;
+    }
+
+    public long pageLsn() {
+        return pageLsn;
+    }
+
+    public DelosPage withPageLsn(long newPageLsn) {
+        return new DelosPage(pageId, pageType, newPageLsn, MemorySegment.ofArray(copyImage()), copySlots(), freeEnd);
     }
 
     public int slotCount() {

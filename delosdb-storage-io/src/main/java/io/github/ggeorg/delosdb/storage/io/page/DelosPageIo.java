@@ -9,7 +9,7 @@ import java.util.Objects;
 /** Codec for {@link DelosPage} images. */
 public final class DelosPageIo {
     public static final int MAGIC = 0x444D5650; // "DMVP" existing DelosDB page magic.
-    public static final short FORMAT_VERSION = 1;
+    public static final short FORMAT_VERSION = 2;
 
     private static final ByteOrder BYTE_ORDER = ByteOrder.BIG_ENDIAN;
 
@@ -24,9 +24,10 @@ public final class DelosPageIo {
         buffer.putShort(4, FORMAT_VERSION);
         buffer.putShort(6, checkedShort(page.pageType(), "pageType"));
         buffer.putLong(8, page.pageId().value());
-        buffer.putInt(16, page.slotTableEnd());
-        buffer.putInt(20, page.freeEnd());
-        buffer.putInt(24, page.slotCount());
+        buffer.putLong(16, page.pageLsn());
+        buffer.putInt(24, page.slotTableEnd());
+        buffer.putInt(28, page.freeEnd());
+        buffer.putInt(32, page.slotCount());
 
         int position = DelosPage.HEADER_SIZE;
         for (DelosPage.Slot slot : page.copySlots()) {
@@ -68,9 +69,13 @@ public final class DelosPageIo {
                     "page id mismatch: expected " + expectedPageId.value() + ", found " + pageId.value());
         }
 
-        int freeStart = buffer.getInt(16);
-        int freeEnd = buffer.getInt(20);
-        int slotCount = buffer.getInt(24);
+        long pageLsn = buffer.getLong(16);
+        if (pageLsn < 0L) {
+            throw new IllegalArgumentException("pageLSN must be non-negative: " + pageLsn);
+        }
+        int freeStart = buffer.getInt(24);
+        int freeEnd = buffer.getInt(28);
+        int slotCount = buffer.getInt(32);
         if (slotCount < 0) {
             throw new IllegalArgumentException("slot count must be non-negative: " + slotCount);
         }
@@ -99,7 +104,7 @@ public final class DelosPageIo {
             slots.add(new DelosPage.Slot(offset, length, flags));
             position += DelosPage.SLOT_SIZE;
         }
-        return DelosPage.decoded(pageId, pageType, image, slots, freeEnd);
+        return DelosPage.decoded(pageId, pageType, pageLsn, image, slots, freeEnd);
     }
 
     private static short checkedShort(int value, String name) {

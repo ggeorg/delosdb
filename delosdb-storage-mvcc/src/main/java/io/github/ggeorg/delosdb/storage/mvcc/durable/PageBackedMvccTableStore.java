@@ -13,6 +13,7 @@ import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
 import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolume;
 import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactories;
 import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactory;
+import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordCodec;
 
@@ -45,7 +46,14 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     }
 
     public synchronized MvccVersionLocator append(MvccVersionRecord record) throws IOException {
+        return append(record, DelosLogSequenceNumber.NONE);
+    }
+
+    public synchronized MvccVersionLocator append(
+            MvccVersionRecord record,
+            DelosLogSequenceNumber pageLsn) throws IOException {
         Objects.requireNonNull(record, "record");
+        pageLsn = Objects.requireNonNull(pageLsn, "pageLsn");
         byte[] encoded = MvccVersionRecordCodec.encode(record);
         if (encoded.length > maxSingleRecordBytes()) {
             throw new IllegalArgumentException("MVCC version record is too large for one page: " + encoded.length);
@@ -53,7 +61,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
         DelosPage page = writablePage(encoded.length);
         int slotId = page.appendRecord(encoded);
-        pageVolume.writePage(page);
+        pageVolume.writePage(page.withPageLsn(pageLsn.value()));
         pageVolume.force();
         return new MvccVersionLocator(page.pageId(), slotId);
     }

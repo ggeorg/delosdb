@@ -28,31 +28,45 @@ public final class DelosMvccTransactionCoordinator implements VersionedTransacti
     };
 
     private final DelosMvccStorageLog storageLog;
+    private final MvccLogWriter logWriter;
     private final BooleanSupplier loggingSuppressed;
     private final TransactionCompletionListener completionListener;
 
     public DelosMvccTransactionCoordinator() {
-        this(DelosMvccStorageLog.disabled(), MvccTransactionStatusStore.disabled(), NEVER_SUPPRESS_LOGGING);
+        this(DelosMvccStorageLog.disabled(), MvccTransactionStatusStore.disabled(), MvccLogWriter.disabled(), NEVER_SUPPRESS_LOGGING);
     }
 
     DelosMvccTransactionCoordinator(DelosMvccStorageLog storageLog, BooleanSupplier loggingSuppressed) {
-        this(storageLog, MvccTransactionStatusStore.disabled(), loggingSuppressed, NOOP_LISTENER);
+        this(storageLog, MvccTransactionStatusStore.disabled(), MvccLogWriter.disabled(), loggingSuppressed, NOOP_LISTENER);
     }
 
     DelosMvccTransactionCoordinator(
             DelosMvccStorageLog storageLog,
             MvccTransactionStatusStore statusStore,
             BooleanSupplier loggingSuppressed) {
-        this(storageLog, statusStore, loggingSuppressed, NOOP_LISTENER);
+        this(storageLog, statusStore, MvccLogWriter.disabled(), loggingSuppressed, NOOP_LISTENER);
     }
 
     DelosMvccTransactionCoordinator(
             DelosMvccStorageLog storageLog,
             MvccTransactionStatusStore statusStore,
+            MvccLogWriter logWriter,
+            BooleanSupplier loggingSuppressed) {
+        this(storageLog, statusStore, logWriter, loggingSuppressed, NOOP_LISTENER);
+    }
+
+    DelosMvccTransactionCoordinator(
+            DelosMvccStorageLog storageLog,
+            MvccTransactionStatusStore statusStore,
+            MvccLogWriter logWriter,
             BooleanSupplier loggingSuppressed,
             TransactionCompletionListener completionListener) {
         this.storageLog = Objects.requireNonNull(storageLog, "storageLog");
-        this.transactionManager = new MvccTransactionManager(Objects.requireNonNull(statusStore, "statusStore"));
+        this.logWriter = Objects.requireNonNull(logWriter, "logWriter");
+        this.transactionManager = new MvccTransactionManager(
+                Objects.requireNonNull(statusStore, "statusStore"),
+                logWriter,
+                loggingSuppressed);
         this.loggingSuppressed = Objects.requireNonNull(loggingSuppressed, "loggingSuppressed");
         this.completionListener = Objects.requireNonNull(completionListener, "completionListener");
     }
