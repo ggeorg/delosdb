@@ -7,8 +7,9 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-// Real Gradle Java module for DelosDB page/volume I/O primitives.
-def mainClassDir = layout.buildDirectory.dir('classes/main')
+// Real Gradle Java module for low-level DelosDB storage I/O contracts.
+def moduleName = 'io.github.ggeorg.delosdb.storage.io'
+def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 
 java {
     sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
@@ -18,13 +19,13 @@ java {
 sourceSets {
     main {
         java {
-            destinationDirectory.set(mainClassDir)
+            destinationDirectory.set(moduleClassDir)
         }
     }
 }
 
 tasks.named('compileJava', JavaCompile) {
-    destinationDirectory.set(mainClassDir)
+    destinationDirectory.set(moduleClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false

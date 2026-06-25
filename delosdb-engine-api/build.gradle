@@ -22,6 +22,7 @@ java {
 dependencies {
     api project(':delosdb-commons')
     api project(':delosdb-spi')
+    api project(':delosdb-storage-io')
 }
 
 sourceSets {
@@ -52,12 +53,14 @@ tasks.register('compileDelosDbEngineApi') {
 tasks.register('compileDelosDbEngineApiClassSizeCatalog', JavaCompile) {
     dependsOn tasks.named('compileJava'), ':delosdb-engine:compileDerbyEngine', ':generateClassSizeCatalog',
             project(':delosdb-commons').tasks.named('jar'),
-            project(':delosdb-spi').tasks.named('jar')
+            project(':delosdb-spi').tasks.named('jar'),
+            project(':delosdb-storage-io').tasks.named('jar')
     source = files(generatedClassSizeCatalogSource)
     destinationDirectory.set(moduleClassDir)
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             project(':delosdb-commons').tasks.named('jar'),
             project(':delosdb-spi').tasks.named('jar'),
+            project(':delosdb-storage-io').tasks.named('jar'),
             moduleClassDir
     ])
 }

@@ -71,6 +71,7 @@ def derbyRuntimeJars = rootProject.files(
         rootProject.layout.buildDirectory.file('libs/osgi-framework-stub.jar'),
         rootProject.layout.buildDirectory.file('libs/derbyshared.jar'),
         rootProject.layout.buildDirectory.file('libs/delosdb-engine-api.jar'),
+        rootProject.layout.buildDirectory.file('libs/delosdb-storage-io.jar'),
         rootProject.layout.buildDirectory.file('libs/derby.jar'),
         rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
         rootProject.layout.buildDirectory.file('libs/derbytools.jar'),
@@ -116,6 +117,7 @@ dependencies {
     testImplementation project(':delosdb-runner')
     testImplementation project(':delosdb-server')
     testImplementation project(':delosdb-spi')
+    testImplementation project(':delosdb-storage-io')
     testImplementation project(':delosdb-storage-derby')
     testImplementation project(':delosdb-tools')
 

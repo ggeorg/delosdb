@@ -79,6 +79,7 @@ module org.apache.derby.engine
     
     requires org.apache.derby.commons;
     requires io.github.ggeorg.delosdb.engine.api;
+    requires io.github.ggeorg.delosdb.storage.io;
     requires io.github.ggeorg.delosdb.spi;
 
     //

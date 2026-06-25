@@ -8,8 +8,8 @@ module io.github.ggeorg.delosdb.engine.api {
     requires java.xml;
     requires org.apache.derby.commons;
     requires io.github.ggeorg.delosdb.spi;
+    requires transitive io.github.ggeorg.delosdb.storage.io;
 
-    exports org.apache.derby.io;
 
     exports org.apache.derby.iapi.services.cache;
     exports org.apache.derby.iapi.services.classfile;
