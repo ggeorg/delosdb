@@ -63,7 +63,7 @@ tasks.named('jar', Jar) {
 // Compatibility runtime jar used by the root `jars` task. Keep root Derby
 // resource processing out of the normal Gradle jar consumed by project deps.
 tasks.register('derbyRunJar', Jar) {
-    dependsOn tasks.named('compileJava'), tasks.named('processResources'), ':processDerbyResources'
+    dependsOn tasks.named('compileJava'), tasks.named('processResources')
     archiveFileName = runnerArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE

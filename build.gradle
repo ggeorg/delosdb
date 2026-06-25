@@ -54,14 +54,7 @@ def moduleProjects = [
 ]
 
 def moduleSourceRoots = [
-        (moduleNames.engineKernel) : 'delosdb-engine-kernel/src/main/java',
-        (moduleNames.engineApi)    : 'delosdb-engine-api/src/main/java',
-        (moduleNames.engine)       : 'delosdb-engine/src/main/java',
-        (moduleNames.client)       : 'delosdb-client/src/main/java',
-        (moduleNames.tools)        : 'delosdb-tools/src/main/java',
-        (moduleNames.server)       : 'delosdb-server/src/main/java',
-        (moduleNames.optionaltools): 'delosdb-optionaltools/src/main/java',
-        (moduleNames.runner)       : 'delosdb-runner/src/main/java'
+        (moduleNames.engine): 'delosdb-engine/src/main/java'
 ]
 
 def runtimeCompileTasks = [
@@ -77,11 +70,7 @@ def runtimeCompileTasks = [
 ]
 
 def productInfoResources = [
-        [module: moduleNames.engine,        path: 'org/apache/derby/info/engine/info.properties',   technology: 'DelosDB Embedded Engine', productFile: 'derby.jar'],
-        [module: moduleNames.tools,         path: 'org/apache/derby/info/tools/info.properties',    technology: 'DelosDB Tools',           productFile: 'derbytools.jar'],
-        [module: moduleNames.server,        path: 'org/apache/derby/info/net/info.properties',      technology: 'DelosDB Network Server',  productFile: 'derbynet.jar'],
-        [module: moduleNames.client,        path: 'org/apache/derby/info/client/info.properties',   technology: 'DelosDB Network Client',  productFile: 'derbyclient.jar'],
-        [module: moduleNames.optionaltools, path: 'org/apache/derby/optional/info.properties',       technology: 'DelosDB Optional Tools',   productFile: 'derbyoptionaltools.jar']
+        [module: moduleNames.engine, path: 'org/apache/derby/info/engine/info.properties', technology: 'DelosDB Embedded Engine', productFile: 'derby.jar']
 ]
 
 def moduleClassDir = { String moduleName ->
@@ -288,8 +277,6 @@ tasks.register('processDerbyResources') {
         outputs.file(moduleClassDir(info.module).map { it.file(info.path) })
     }
     outputs.dir(moduleClassDir(moduleNames.engine).map { it.dir('META-INF/services') })
-    outputs.dir(moduleClassDir(moduleNames.client).map { it.dir('META-INF/services') })
-    outputs.dir(moduleClassDir(moduleNames.tools).map { it.dir('org/apache/derby/loc/tools') })
     doLast {
         moduleSourceRoots.each { moduleName, sourceDir ->
             copy {
@@ -304,21 +291,9 @@ tasks.register('processDerbyResources') {
             }
         }
 
-        copy {
-            from('delosdb-tools/src/main/java/org/apache/derby/loc') {
-                include 'sysinfoMessages.properties'
-                include 'toolsmessages.properties'
-            }
-            into new File(moduleClassDir(moduleNames.tools).get().asFile, 'org/apache/derby/loc/tools')
-        }
-
         new File(moduleClassDir(moduleNames.engine).get().asFile, 'META-INF/services').mkdirs()
         new File(moduleClassDir(moduleNames.engine).get().asFile, 'META-INF/services/java.sql.Driver').text =
                 'org.apache.derby.iapi.jdbc.AutoloadedDriver\n'
-        new File(moduleClassDir(moduleNames.client).get().asFile, 'META-INF/services').mkdirs()
-        new File(moduleClassDir(moduleNames.client).get().asFile, 'META-INF/services/java.sql.Driver').text =
-                'org.apache.derby.client.ClientAutoloadedDriver\n'
-
         productInfoResources.each { info ->
             writeInfoProperties(
                     new File(moduleClassDir(info.module).get().asFile, info.path),
