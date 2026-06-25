@@ -27,7 +27,12 @@ sourceSets {
 }
 
 dependencies {
-    compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
+    // Compile against the assembled runtime jars instead of the inherited engine
+    // classes directory. The engine output directory is also populated by legacy
+    // root resource tasks, so using it directly as a downstream compile classpath
+    // triggers Gradle implicit-dependency validation. The jar path keeps this
+    // smoke dependency-driven while avoiding another ad hoc root JavaCompile task.
+    compileOnly rootProject.ext.delosdbRuntimeJars()
     implementation project(':delosdb-storage-io')
     implementation project(':delosdb-storage-mvcc')
 
@@ -39,6 +44,7 @@ dependencies {
 }
 
 tasks.named('compileJava', JavaCompile) {
+    dependsOn rootProject.tasks.named('jars')
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
