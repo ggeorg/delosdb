@@ -21,6 +21,8 @@
 
 package org.apache.derby.impl.sql.conn;
 
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -1542,6 +1544,12 @@ public class GenericLanguageConnectionContext
             }
         }
 
+        try {
+            DelosNativeTableRegistry.commitDerbyTransaction(this);
+        } catch (java.sql.SQLException e) {
+            throw StandardException.plainWrapException(e);
+        }
+
         // now commit the Store transaction
         TransactionController tc = getTransactionExecute();
         if ( tc != null && commitStore ) 
@@ -1771,6 +1779,12 @@ public class GenericLanguageConnectionContext
             readOnlyNestedTransaction.destroy();
             readOnlyNestedTransaction = null;
             queryNestingDepth = 0;
+        }
+
+        try {
+            DelosNativeTableRegistry.rollbackDerbyTransaction(this);
+        } catch (java.sql.SQLException e) {
+            throw StandardException.plainWrapException(e);
         }
 
         // now rollback the Store transaction

@@ -27,11 +27,14 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Native provider-owned table registry for the Derby execution path.
@@ -47,6 +50,7 @@ public final class DelosNativeTableRegistry {
     private static final String PROVIDER_NAME = "delos_mvcc";
     private static final Object LOCK = new Object();
     private static final Map<VersionedTableMetadata, TableDefinition> TABLES = new HashMap<>();
+    private static final Map<Object, TransactionScope> DERBY_TRANSACTION_SCOPES = new IdentityHashMap<>();
     private static final VersionedStorageExecutionBridge TABLE_OPERATION_BRIDGE =
             VersionedStorageExecutionBridge.resolvedTableOperations();
 
@@ -105,13 +109,24 @@ public final class DelosNativeTableRegistry {
      */
     public static Optional<NativeExecutionTableAccess> openNativeExecutionTableAccess(
             TableDescriptor tableDescriptor) throws SQLException {
+        return openNativeExecutionTableAccess(null, tableDescriptor);
+    }
+
+    /**
+     * Opens provider-owned table access under the Derby transaction owner when
+     * one is supplied. MODULE5C moves native MVCC execution from statement-local
+     * auto-commit contexts toward Derby transaction lifecycle ownership.
+     */
+    public static Optional<NativeExecutionTableAccess> openNativeExecutionTableAccess(
+            Object derbyTransactionOwner,
+            TableDescriptor tableDescriptor) throws SQLException {
         Objects.requireNonNull(tableDescriptor, "tableDescriptor");
         if (!isDelosMvcc(tableDescriptor.getStorageProviderName())) {
             return Optional.empty();
         }
 
         TableDefinition table = tableDefinition(tableDescriptor);
-        StatementTransaction statementTx = beginStatementTransaction(table);
+        StatementTransaction statementTx = beginStatementTransaction(derbyTransactionOwner, table);
         return Optional.of(new NativeExecutionTableAccess(
                 table,
                 table.tableAccess(),
@@ -119,10 +134,21 @@ public final class DelosNativeTableRegistry {
                 statementTx));
     }
 
+    /** Completes any MVCC work attached to a Derby transaction owner. */
+    public static void commitDerbyTransaction(Object derbyTransactionOwner) throws SQLException {
+        completeDerbyTransaction(derbyTransactionOwner, true);
+    }
+
+    /** Aborts any MVCC work attached to a Derby transaction owner. */
+    public static void rollbackDerbyTransaction(Object derbyTransactionOwner) throws SQLException {
+        completeDerbyTransaction(derbyTransactionOwner, false);
+    }
+
     /** Test-only hook used by G-post restart/reopen smokes. */
     public static void clearRegisteredTablesForTesting() {
         synchronized (LOCK) {
             TABLES.clear();
+            DERBY_TRANSACTION_SCOPES.clear();
         }
     }
 
@@ -205,13 +231,10 @@ public final class DelosNativeTableRegistry {
                 return;
             }
             closed = true;
-            boolean committed = false;
-            try {
-                finishStatementTransaction(statementTx, table);
-                committed = true;
-            } finally {
-                tableAccess.completeMutationReservations(context, committed);
+            if (statementTx.derbyTransactionScoped()) {
+                return;
             }
+            finishStandaloneStatementTransaction(statementTx, table);
         }
 
         public void abort() throws SQLException {
@@ -219,11 +242,11 @@ public final class DelosNativeTableRegistry {
                 return;
             }
             closed = true;
-            try {
-                DelosNativeTableRegistry.abort(statementTx, table);
-            } finally {
-                tableAccess.completeMutationReservations(context, false);
+            if (statementTx.derbyTransactionScoped()) {
+                statementTx.scope().markRollbackOnly();
+                return;
             }
+            abortStandaloneStatementTransaction(statementTx, table);
         }
     }
 
@@ -307,29 +330,64 @@ public final class DelosNativeTableRegistry {
                 .orElseThrow(() -> sqlException("0A000", "VersionedStorageProvider not discovered: " + PROVIDER_NAME));
     }
 
-    private static StatementTransaction beginStatementTransaction(TableDefinition table) {
-        TxContext context = table.coordinator().begin();
-        return new StatementTransaction(table.coordinator(), context);
+    private static StatementTransaction beginStatementTransaction(Object derbyTransactionOwner, TableDefinition table) {
+        if (derbyTransactionOwner == null) {
+            TxContext context = table.coordinator().begin();
+            return StatementTransaction.standalone(table.coordinator(), context);
+        }
+
+        synchronized (LOCK) {
+            TransactionScope scope = DERBY_TRANSACTION_SCOPES.computeIfAbsent(
+                    derbyTransactionOwner, ignored -> new TransactionScope());
+            return scope.transactionFor(table);
+        }
     }
 
-    private static void finishStatementTransaction(StatementTransaction statementTx, TableDefinition table) throws SQLException {
+    private static void finishStandaloneStatementTransaction(
+            StatementTransaction statementTx,
+            TableDefinition table) throws SQLException {
         try {
             statementTx.coordinator().commit(statementTx.context());
-            table.completeUniqueReservations(statementTx.context().transactionId(), true);
+            completeTableReservations(table, statementTx, true);
         } catch (RuntimeException e) {
-            table.completeUniqueReservations(statementTx.context().transactionId(), false);
+            completeTableReservations(table, statementTx, false);
             throw sqlException("X0MV1", "Could not commit delos_mvcc statement transaction: " + e.getMessage(), e);
         }
     }
 
-    private static void abort(StatementTransaction statementTx, TableDefinition table) throws SQLException {
+    private static void abortStandaloneStatementTransaction(
+            StatementTransaction statementTx,
+            TableDefinition table) throws SQLException {
         try {
             statementTx.coordinator().abort(statementTx.context());
-            table.completeUniqueReservations(statementTx.context().transactionId(), false);
+            completeTableReservations(table, statementTx, false);
         } catch (RuntimeException e) {
-            table.completeUniqueReservations(statementTx.context().transactionId(), false);
+            completeTableReservations(table, statementTx, false);
             throw sqlException("X0MV1", "Could not abort delos_mvcc statement transaction: " + e.getMessage(), e);
         }
+    }
+
+    private static void completeDerbyTransaction(Object derbyTransactionOwner, boolean commit) throws SQLException {
+        if (derbyTransactionOwner == null) {
+            return;
+        }
+
+        TransactionScope scope;
+        synchronized (LOCK) {
+            scope = DERBY_TRANSACTION_SCOPES.remove(derbyTransactionOwner);
+        }
+        if (scope == null) {
+            return;
+        }
+        scope.complete(commit);
+    }
+
+    private static void completeTableReservations(
+            TableDefinition table,
+            StatementTransaction statementTx,
+            boolean committed) {
+        table.completeUniqueReservations(statementTx.context().transactionId(), committed);
+        table.tableAccess().completeMutationReservations(delosAccessContext(statementTx), committed);
     }
 
     private static DelosAccessContext delosAccessContext(StatementTransaction statementTx) {
@@ -354,9 +412,77 @@ public final class DelosNativeTableRegistry {
         }
     }
 
+    private static final class TransactionScope {
+        private final Map<VersionedTransactionCoordinator, StatementTransaction> transactionsByCoordinator = new IdentityHashMap<>();
+        private final Set<TableDefinition> touchedTables = new HashSet<>();
+        private boolean rollbackOnly;
+
+        private StatementTransaction transactionFor(TableDefinition table) {
+            touchedTables.add(table);
+            return transactionsByCoordinator.computeIfAbsent(table.coordinator(), coordinator ->
+                    StatementTransaction.scoped(this, coordinator, coordinator.begin()));
+        }
+
+        private void markRollbackOnly() {
+            rollbackOnly = true;
+        }
+
+        private void complete(boolean commit) throws SQLException {
+            boolean commitScope = commit && !rollbackOnly;
+            SQLException failure = null;
+
+            for (StatementTransaction transaction : transactionsByCoordinator.values()) {
+                try {
+                    if (commitScope) {
+                        transaction.coordinator().commit(transaction.context());
+                    } else {
+                        transaction.coordinator().abort(transaction.context());
+                    }
+                } catch (RuntimeException e) {
+                    SQLException wrapped = sqlException("X0MV1",
+                            "Could not " + (commitScope ? "commit" : "abort")
+                                    + " delos_mvcc Derby transaction: " + e.getMessage(), e);
+                    if (failure == null) {
+                        failure = wrapped;
+                    } else {
+                        failure.addSuppressed(wrapped);
+                    }
+                }
+            }
+
+            for (TableDefinition table : touchedTables) {
+                StatementTransaction transaction = transactionsByCoordinator.get(table.coordinator());
+                if (transaction != null) {
+                    completeTableReservations(table, transaction, commitScope && failure == null);
+                }
+            }
+
+            if (failure != null) {
+                throw failure;
+            }
+        }
+    }
+
     private record StatementTransaction(
             VersionedTransactionCoordinator coordinator,
-            TxContext context) {
+            TxContext context,
+            TransactionScope scope) {
+        private static StatementTransaction standalone(
+                VersionedTransactionCoordinator coordinator,
+                TxContext context) {
+            return new StatementTransaction(coordinator, context, null);
+        }
+
+        private static StatementTransaction scoped(
+                TransactionScope scope,
+                VersionedTransactionCoordinator coordinator,
+                TxContext context) {
+            return new StatementTransaction(coordinator, context, scope);
+        }
+
+        private boolean derbyTransactionScoped() {
+            return scope != null;
+        }
     }
 
     private static final class TableDefinition {

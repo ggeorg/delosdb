@@ -159,6 +159,7 @@ final class DelosUpdateResultSet extends NoRowsResultSetImpl
             source.openCore();
             sourceOpen = true;
             nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(
+                    activation,
                     nativeScanSource.tableDescriptorForNativeRegistry(),
                     providerLookup);
 

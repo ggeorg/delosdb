@@ -109,7 +109,7 @@ final class DelosInsertResultSet extends NoRowsResultSetImpl
                     providerLookup.schemaName(),
                     providerLookup.tableName(),
                     "Delos native insert");
-            nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(tableDescriptor, providerLookup);
+            nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(params.activation, tableDescriptor, providerLookup);
 
             ExecRow row;
             while ((row = params.source.getNextRowCore()) != null) {

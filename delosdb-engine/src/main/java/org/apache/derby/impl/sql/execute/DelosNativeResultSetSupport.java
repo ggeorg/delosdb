@@ -88,9 +88,12 @@ final class DelosNativeResultSetSupport {
     }
 
     static DelosNativeTableRegistry.NativeExecutionTableAccess openNativeTableAccess(
+            Activation activation,
             TableDescriptor tableDescriptor,
             DelosTableScanProviderLookup.Result providerLookup) throws StandardException, SQLException {
-        return DelosNativeTableRegistry.openNativeExecutionTableAccess(tableDescriptor)
+        return DelosNativeTableRegistry.openNativeExecutionTableAccess(
+                        activation.getLanguageConnectionContext(),
+                        tableDescriptor)
                 .orElseThrow(() -> StandardException.plainWrapException(
                         new IllegalStateException("No delos_mvcc native table access registered for "
                                 + providerLookup.schemaName() + "." + providerLookup.tableName())));

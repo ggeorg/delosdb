@@ -615,6 +615,13 @@ tasks.register('module5bNativeTableIdentitySmoke') {
 
 
 
+tasks.register('module5cDerbyTransactionMvccSmoke') {
+    dependsOn ':module5c-derby-transaction-mvcc-smoke:run'
+    group = 'verification'
+    description = 'Runs the dependency-driven MODULE5C Derby transaction to MVCC transaction-context smoke.'
+}
+
+
 def distributionBaseName = "delosdb-${delosDbVersion}"
 def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
 def distributionDocFiles = files(

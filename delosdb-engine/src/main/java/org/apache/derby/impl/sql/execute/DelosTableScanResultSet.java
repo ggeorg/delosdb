@@ -198,7 +198,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
             scanTableDescriptor = tableDescriptor;
             accessedCols = accessedColumnsForNativeScan();
             List<DelosPredicate> filters = scanPredicates(tableDescriptor, nativeSelectAll);
-            nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(tableDescriptor, providerLookup);
+            nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(params.activation, tableDescriptor, providerLookup);
             requireSnapshotIsolation(nativeAccess.tableAccess());
             scan = nativeAccess.tableAccess().scan(
                     nativeAccess.context(),

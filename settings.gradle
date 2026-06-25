@@ -39,3 +39,6 @@ include 'delosdb-buildtools'
 
 include 'module5b-native-table-identity-smoke'
 project(':module5b-native-table-identity-smoke').projectDir = file('dev/module5b-native-table-identity-smoke')
+
+include 'module5c-derby-transaction-mvcc-smoke'
+project(':module5c-derby-transaction-mvcc-smoke').projectDir = file('dev/module5c-derby-transaction-mvcc-smoke')

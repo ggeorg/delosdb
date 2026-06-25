@@ -134,6 +134,7 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
         try {
             List<DelosPredicate> predicates = nativeScanSource.equalityPredicatesForNativeMutation();
             nativeAccess = DelosNativeResultSetSupport.openNativeTableAccess(
+                    activation,
                     nativeScanSource.tableDescriptorForNativeRegistry(),
                     providerLookup);
             scan = nativeAccess.tableAccess().scan(
