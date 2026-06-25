@@ -643,6 +643,13 @@ tasks.register('module5fDerbyDeleteUpdateProviderRouteSmoke') {
 }
 
 
+tasks.register('module5gProviderRouteCrudPreflightSmoke') {
+    dependsOn ':module5g-provider-route-crud-preflight-smoke:run'
+    group = 'verification'
+    description = 'Runs the dependency-driven MODULE5G provider-route CRUD preflight smoke for delos_mvcc tables.'
+}
+
+
 def distributionBaseName = "delosdb-${delosDbVersion}"
 def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
 def distributionDocFiles = files(

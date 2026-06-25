@@ -51,3 +51,7 @@ project(':module5e-derby-insert-provider-route-smoke').projectDir = file('dev/mo
 
 include 'module5f-derby-delete-update-provider-route-smoke'
 project(':module5f-derby-delete-update-provider-route-smoke').projectDir = file('dev/module5f-derby-delete-update-provider-route-smoke')
+
+
+include 'module5g-provider-route-crud-preflight-smoke'
+project(':module5g-provider-route-crud-preflight-smoke').projectDir = file('dev/module5g-provider-route-crud-preflight-smoke')

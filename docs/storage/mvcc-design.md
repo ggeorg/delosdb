@@ -412,6 +412,40 @@ native/direct buffer allocation boundary
 short read/write handling
 ```
 
+
+## 8.5 MODULE5B–MODULE5G execution status
+
+Current fast-pass status after the MODULE5 provider-route smokes:
+
+```text
+Green so far:
+  Derby-visible delos_mvcc table identity exists in catalog/provider metadata.
+  Derby transaction lifecycle reaches the MVCC transaction-context hook.
+  Normal Derby SELECT full scan reaches delos_mvcc by provider identity.
+  Normal Derby INSERT reaches delos_mvcc by provider identity.
+  Simple normal Derby UPDATE and DELETE reach delos_mvcc by provider identity.
+  Default heap tables still route through the inherited Derby heap path.
+```
+
+Important limitation:
+
+```text
+This is provider-identity execution routing, not final Derby store/access provider integration.
+The Delos ResultSet family remains a transitional execution seam.
+```
+
+Tightened bridge rule before WAL/pageLSN:
+
+```text
+Do not add new capability to DelosMvccSqlOptInSession.
+Do not add new proof-property routes for core CRUD.
+For core delos_mvcc CRUD, provider identity must be the route source.
+```
+
+The MODULE5G preflight smoke exists to enforce that the old native proof
+properties are cleared while normal Derby INSERT / SELECT full scan / UPDATE /
+DELETE still work over a `USING delos_mvcc` table.
+
 ## 9. Fast implementation sequence
 
 ### MODULE5A-1: this boundary map
@@ -523,9 +557,9 @@ MVCC table identity cannot survive restart without the bridge registry.
 
 ## 11. Current recommendation
 
-Proceed to MODULE5A-2 next.
+Finish the MODULE5G provider-route CRUD preflight, then make the next plan.
 
-Do not start:
+Do not start these until the preflight is green:
 
 ```text
 WAL
@@ -536,4 +570,5 @@ buffer manager
 new SQL bridge capabilities
 ```
 
-The next code pass should make bridge debt explicit in source comments, then move immediately to table identity and transaction lifecycle proofs.
+The next plan should start from the honest status: provider-identity CRUD routing
+is green, but final Derby store/access provider integration is not complete.
