@@ -45,3 +45,6 @@ project(':module5c-derby-transaction-mvcc-smoke').projectDir = file('dev/module5
 
 include 'module5d-derby-select-full-scan-smoke'
 project(':module5d-derby-select-full-scan-smoke').projectDir = file('dev/module5d-derby-select-full-scan-smoke')
+
+include 'module5e-derby-insert-provider-route-smoke'
+project(':module5e-derby-insert-provider-route-smoke').projectDir = file('dev/module5e-derby-insert-provider-route-smoke')

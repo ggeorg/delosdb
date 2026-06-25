@@ -116,7 +116,11 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_NATIVE_COUNT_AGGREGATE_PROPERTY =
             DelosTableScanResultSet.NATIVE_COUNT_AGGREGATE_PROPERTY;
 
-    /** Test/proof gate for Phase F5 native INSERT mutation. */
+    /**
+     * Legacy proof property for Phase F5 native INSERT mutation. MODULE5E keeps
+     * the constant for old smokes, but provider identity now drives delos_mvcc
+     * INSERT routing.
+     */
     public static final String FACTORY_NATIVE_INSERT_PROPERTY =
             DelosInsertResultSet.NATIVE_INSERT_PROPERTY;
 

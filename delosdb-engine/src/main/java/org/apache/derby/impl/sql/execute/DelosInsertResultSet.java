@@ -38,12 +38,12 @@ import org.apache.derby.shared.common.error.StandardException;
 /**
  * Delos INSERT result set for the Phase F native execution seam.
  *
- * <p>F5 keeps the generated activation and {@code ResultSetFactory} method
- * shape intact.  Under a proof property, {@link GenericResultSetFactory}
- * replaces the normal Derby heap {@link InsertResultSet} with this result set
- * for {@code delos_mvcc} catalog tables.  The source row still comes from
- * Derby's generated execution tree; this class only owns the provider mutation
- * boundary:</p>
+ * <p>F5 kept the generated activation and {@code ResultSetFactory} method
+ * shape intact behind a proof property.  MODULE5E removes that proof gate for
+ * {@code delos_mvcc} catalog tables: provider identity now selects this result
+ * set automatically, while default heap tables continue to use Derby's normal
+ * {@link InsertResultSet}.  The source row still comes from Derby's generated
+ * execution tree; this class only owns the provider mutation boundary:</p>
  *
  * <pre>
  * source ExecRow
@@ -61,6 +61,11 @@ import org.apache.derby.shared.common.error.StandardException;
  */
 final class DelosInsertResultSet extends NoRowsResultSetImpl
 {
+    /**
+     * Legacy proof property retained for compatibility with earlier smokes.
+     * MODULE5E no longer uses it as a route guard; delos_mvcc INSERT now routes
+     * by persisted table/provider identity.
+     */
     static final String NATIVE_INSERT_PROPERTY =
             "delosdb.storage.phaseF5.nativeMvccInsert";
 
@@ -80,9 +85,6 @@ final class DelosInsertResultSet extends NoRowsResultSetImpl
     static Optional<ResultSet> createIfEnabled(InsertResultSetParameters params)
             throws StandardException
     {
-        if (!Boolean.getBoolean(NATIVE_INSERT_PROPERTY)) {
-            return Optional.empty();
-        }
         Optional<DelosTableScanProviderLookup.Result> lookup =
                 DelosTableScanProviderLookup.find(
                         params.activation,

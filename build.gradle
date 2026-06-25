@@ -629,6 +629,13 @@ tasks.register('module5dDerbySelectFullScanSmoke') {
 }
 
 
+tasks.register('module5eDerbyInsertProviderRouteSmoke') {
+    dependsOn ':module5e-derby-insert-provider-route-smoke:run'
+    group = 'verification'
+    description = 'Runs the dependency-driven MODULE5E Derby INSERT provider-identity smoke for delos_mvcc tables.'
+}
+
+
 def distributionBaseName = "delosdb-${delosDbVersion}"
 def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
 def distributionDocFiles = files(
