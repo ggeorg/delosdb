@@ -108,7 +108,11 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_HEAP_SELECT_LIVE_ROUTE_PROPERTY =
             DelosHeapLiveTableScanResultSet.HEAP_SELECT_LIVE_ROUTE_PROPERTY;
 
-    /** Test/proof gate for Phase G3 native SELECT * full scans. */
+    /**
+     * Obsolete MODULE5-era compatibility property name. It no longer controls
+     * routing; delos_mvcc full scans are selected by persisted provider
+     * identity.
+     */
     public static final String FACTORY_NATIVE_SELECT_ALL_PROPERTY =
             DelosTableScanResultSet.NATIVE_SELECT_ALL_PROPERTY;
 
@@ -117,9 +121,8 @@ public final class DelosTableScanProviderLookup
             DelosTableScanResultSet.NATIVE_COUNT_AGGREGATE_PROPERTY;
 
     /**
-     * Legacy proof property for Phase F5 native INSERT mutation. MODULE5E keeps
-     * the constant for old smokes, but provider identity now drives delos_mvcc
-     * INSERT routing.
+     * Obsolete MODULE5-era compatibility property name. It no longer controls
+     * routing; delos_mvcc INSERT is selected by persisted provider identity.
      */
     public static final String FACTORY_NATIVE_INSERT_PROPERTY =
             DelosInsertResultSet.NATIVE_INSERT_PROPERTY;
@@ -137,20 +140,29 @@ public final class DelosTableScanProviderLookup
             "delosdb.storage.phaseO.heapProviderParity";
 
     /**
-     * Legacy proof property for Phase F6 native DELETE mutation. MODULE5F keeps
-     * the constant for old smokes, but provider identity now drives delos_mvcc
-     * DELETE routing.
+     * Obsolete MODULE5-era compatibility property name. It no longer controls
+     * routing; delos_mvcc DELETE is selected by persisted provider identity.
      */
     public static final String FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY =
             DelosDeleteResultSet.NATIVE_DELETE_EQUALITY_PROPERTY;
 
     /**
-     * Legacy proof property for Phase F7 native UPDATE mutation. MODULE5F keeps
-     * the constant for old smokes, but provider identity now drives delos_mvcc
-     * UPDATE routing.
+     * Obsolete MODULE5-era compatibility property name. It no longer controls
+     * routing; delos_mvcc UPDATE is selected by persisted provider identity.
      */
     public static final String FACTORY_NATIVE_UPDATE_EQUALITY_PROPERTY =
             DelosUpdateResultSet.NATIVE_UPDATE_EQUALITY_PROPERTY;
+
+
+    /**
+     * MODULE5L guardrail: the old SELECT/INSERT/DELETE/UPDATE native proof
+     * properties are kept only so older smokes can clear or reference their
+     * names. They must not become route guards again.
+     */
+    public static boolean legacyNativeMvccCrudProofRoutesEnabledForTesting()
+    {
+        return false;
+    }
 
     private static final AtomicReference<Result> LAST_FACTORY_LOOKUP = new AtomicReference<>();
     private static final AtomicReference<Result> LAST_NON_DEFAULT_FACTORY_LOOKUP = new AtomicReference<>();

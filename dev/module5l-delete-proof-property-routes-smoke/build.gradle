@@ -1,0 +1,9 @@
+plugins {
+    id 'application'
+}
+
+ext.delosdbSmokeMainClass = 'delosdb.smoke.Module5lDeleteProofPropertyRoutesSmoke'
+ext.delosdbSmokeDescription = 'Runs the MODULE5L proof that legacy MVCC CRUD proof properties no longer route execution.'
+ext.delosdbSmokeDatabasePath = 'build/module5l-delete-proof-property-routes-db'
+
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

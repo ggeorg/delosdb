@@ -62,9 +62,9 @@ import org.apache.derby.shared.common.error.StandardException;
 final class DelosInsertResultSet extends NoRowsResultSetImpl
 {
     /**
-     * Legacy proof property retained for compatibility with earlier smokes.
-     * MODULE5E no longer uses it as a route guard; delos_mvcc INSERT now routes
-     * by persisted table/provider identity.
+     * Obsolete MODULE5-era compatibility property name retained for earlier
+     * smokes. It is not a route guard; delos_mvcc INSERT routes only by
+     * persisted table/provider identity.
      */
     static final String NATIVE_INSERT_PROPERTY =
             "delosdb.storage.phaseF5.nativeMvccInsert";

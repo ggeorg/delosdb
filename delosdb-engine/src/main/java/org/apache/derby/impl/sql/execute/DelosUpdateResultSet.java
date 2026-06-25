@@ -67,9 +67,9 @@ import org.apache.derby.shared.common.error.StandardException;
 final class DelosUpdateResultSet extends NoRowsResultSetImpl
 {
     /**
-     * Legacy proof property retained for compatibility with earlier smokes.
-     * MODULE5F no longer uses it as a route guard; delos_mvcc UPDATE now routes
-     * by persisted table/provider identity.
+     * Obsolete MODULE5-era compatibility property name retained for earlier
+     * smokes. It is not a route guard; delos_mvcc UPDATE routes only by
+     * persisted table/provider identity.
      */
     static final String NATIVE_UPDATE_EQUALITY_PROPERTY =
             "delosdb.storage.phaseF7.nativeMvccUpdateEquality";

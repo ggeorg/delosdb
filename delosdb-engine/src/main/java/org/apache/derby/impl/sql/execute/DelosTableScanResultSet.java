@@ -101,6 +101,10 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static final String NATIVE_ORDER_BY_RESIDUAL_PROPERTY =
             "delosdb.storage.phaseL35.nativeOrderByResidual";
 
+    /**
+     * Obsolete MODULE5-era compatibility property name. Provider identity, not
+     * this property, now selects delos_mvcc full scans.
+     */
     static final String NATIVE_SELECT_ALL_PROPERTY =
             "delosdb.storage.phaseG3.nativeSelectAll";
 
@@ -147,8 +151,7 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static Optional<NoPutResultSet> createIfEnabled(TableScanResultSetParameters params)
             throws StandardException
     {
-        boolean nativeSelectAllEnabled = Boolean.getBoolean(NATIVE_SELECT_ALL_PROPERTY)
-                || Boolean.getBoolean(NATIVE_COUNT_AGGREGATE_PROPERTY);
+        boolean nativeSelectAllEnabled = Boolean.getBoolean(NATIVE_COUNT_AGGREGATE_PROPERTY);
         boolean nativeOrPredicateEnabled = Boolean.getBoolean(NATIVE_OR_PREDICATES_PROPERTY);
         boolean nativeProjectionVariantsEnabled = Boolean.getBoolean(NATIVE_PROJECTION_VARIANTS_PROPERTY);
         boolean nativeOrderByResidualEnabled = Boolean.getBoolean(NATIVE_ORDER_BY_RESIDUAL_PROPERTY);

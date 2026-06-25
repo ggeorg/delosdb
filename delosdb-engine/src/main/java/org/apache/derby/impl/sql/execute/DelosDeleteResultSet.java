@@ -67,9 +67,9 @@ import org.apache.derby.shared.common.error.StandardException;
 final class DelosDeleteResultSet extends NoRowsResultSetImpl
 {
     /**
-     * Legacy proof property retained for compatibility with earlier smokes.
-     * MODULE5F no longer uses it as a route guard; delos_mvcc DELETE now routes
-     * by persisted table/provider identity.
+     * Obsolete MODULE5-era compatibility property name retained for earlier
+     * smokes. It is not a route guard; delos_mvcc DELETE routes only by
+     * persisted table/provider identity.
      */
     static final String NATIVE_DELETE_EQUALITY_PROPERTY =
             "delosdb.storage.phaseF6.nativeMvccDeleteEquality";
