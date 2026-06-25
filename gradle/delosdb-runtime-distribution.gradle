@@ -13,7 +13,10 @@ def legalFiles = files(legalFileNames.collect { file(it) })
 
 
 def runtimeBuildTasks = [
+        ':delosdb-engine-api:compileDelosDbEngineApi',
+        ':delosdb-storage-io:compileDelosDbStorageIo',
         ':delosdb-engine-kernel:compileDelosDbEngineKernel',
+        ':delosdb-engine-storage-api:compileEngineStorageApi',
         ':delosdb-engine:compileClassSizeCatalog',
         'splitEngineMessages',
         'generateOdbcMetadata',
@@ -25,7 +28,7 @@ tasks.register('compileAll') {
 }
 
 tasks.register('jars') {
-    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-kernel:delosDbEngineKernelJar', ':delosdb-engine:derbyJar',
+    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-api:delosDbEngineApiJar', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-engine-kernel:delosDbEngineKernelJar', ':delosdb-engine-storage-api:engineStorageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
             ':delosdb-client:derbyClientJar', ':delosdb-tools:derbyToolsJar',
             ':delosdb-server:derbyNetJar', ':delosdb-optionaltools:derbyOptionalToolsJar',
             ':delosdb-runner:derbyRunJar', ':delosdb-osgi-stub:osgiFrameworkStubJar'
@@ -63,6 +66,7 @@ tasks.register('smokeFromJars', JavaExec) {
 def smokeUtilsSourceDir = 'dev/smoke-utils/src/main/java'
 
 // Plain `smokeUtilsSourceDir` references inside task configuration closures may
+// resolve against the task object after extraction, so expose it explicitly.
 ext.delosdbSmokeUtilsSourceDir = smokeUtilsSourceDir
 
 

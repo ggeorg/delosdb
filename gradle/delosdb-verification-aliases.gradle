@@ -1,0 +1,293 @@
+tasks.register('derbyRuntimeSmoke') {
+    group = 'verification'
+    description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
+    dependsOn 'smoke', 'smokeFromJars', 'sysinfoFromJars'
+}
+
+tasks.register('derbyTestSuite') {
+    group = 'verification'
+    description = 'Runs the original Derby lang JUnit suite through Gradle.'
+    dependsOn ':delosdb-tests:runDerbyLangSuite'
+}
+
+tasks.named('check') {
+    dependsOn 'derbyRuntimeSmoke'
+}
+
+tasks.register('fullVerification') {
+    group = 'verification'
+    description = 'Runs Derby-compatible runtime smokes and the original Derby lang JUnit suite.'
+    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite'
+}
+
+tasks.register('test') {
+    group = 'verification'
+    description = 'Alias for the Derby-focused verification suite.'
+    dependsOn 'fullVerification'
+}
+
+tasks.named('build') {
+    dependsOn 'jars'
+}
+
+
+tasks.register('mvccCoreModelTest') {
+    group = 'verification'
+    description = 'Runs the experimental DelosDB MVCC core model tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest'
+}
+
+tasks.register('mvccTableScanModelTest') {
+    group = 'verification'
+    description = 'Runs the experimental DelosDB MVCC table-scan model tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccTableScanModelTest'
+}
+
+
+tasks.register('mvccPageFileTest') {
+    group = 'verification'
+    description = 'Runs Phase A1 delos_mvcc durable page-file tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccPageFileTest'
+}
+
+
+tasks.register('mvccVersionRecordCodecTest') {
+    group = 'verification'
+    description = 'Runs Phase A2 delos_mvcc durable version-record codec tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccVersionRecordCodecTest'
+}
+
+tasks.register('mvccPageBackedTableTest') {
+    group = 'verification'
+    description = 'Runs Phase A3 delos_mvcc page-backed table tests.'
+    dependsOn ':delosdb-storage-mvcc:runPageBackedMvccTableTest'
+}
+
+
+
+tasks.register('mvccDurableIndexCandidateTest') {
+    group = 'verification'
+    description = 'Runs Phase A6 delos_mvcc durable index-candidate tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccDurableIndexCandidateTest'
+}
+
+
+tasks.register('mvccDurableVacuumTest') {
+    group = 'verification'
+    description = 'Runs Phase A7 delos_mvcc durable vacuum tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccDurableVacuumTest'
+}
+
+tasks.register('mvccPageRecoveryTest') {
+    group = 'verification'
+    description = 'Runs Phase A5 delos_mvcc page-aware recovery tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccPageRecoveryTest'
+}
+
+
+tasks.register('mvccPageMutationLogContractTest') {
+    group = 'verification'
+    description = 'Runs MVCC-3 durable page mutation-log contract tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccPageMutationLogContractTest'
+}
+
+
+tasks.register('mvccRecoveryBootProof') {
+    group = 'verification'
+    description = 'Runs MVCC-4 recovery runner boot proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccRecoveryBootProof'
+}
+
+
+tasks.register('mvccDurableIndexVisibilityTest') {
+    group = 'verification'
+    description = 'Runs MVCC-5 durable index tuple visibility proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccDurableIndexVisibilityTest'
+}
+
+
+tasks.register('mvccDurableIndexRecoveryTest') {
+    group = 'verification'
+    description = 'Runs MVCC-6 durable index recovery replay proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccDurableIndexRecoveryTest'
+}
+
+
+tasks.register('mvccVacuumSafetyTest') {
+    group = 'verification'
+    description = 'Runs MVCC-7 vacuum safety-window proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccVacuumSafetyTest'
+}
+
+tasks.register('mvccVacuumRecoveryTest') {
+    group = 'verification'
+    description = 'Runs MVCC-8 vacuum/recovery interaction proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccVacuumRecoveryTest'
+}
+
+tasks.register('mvccConcurrencyStressTest') {
+    group = 'verification'
+    description = 'Runs MVCC-9 deterministic concurrent readers/writers stress proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccConcurrencyStressTest'
+}
+
+
+tasks.register('mvccTransactionLockOrderProof') {
+    group = 'verification'
+    description = 'Runs MVCC-18 transaction/catalog/table/index lock-order proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccTransactionLockOrderTest'
+}
+
+
+tasks.register('mvccStoreAdapterSmoke') {
+    group = 'verification'
+    description = 'Runs MVCC-11 opt-in MVCC store adapter smoke proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccStoreAdapterSmoke'
+}
+
+tasks.register('mvccSqlOptInSmoke') {
+    group = 'verification'
+    description = 'Runs MVCC-12 SQL-shaped opt-in MVCC storage smoke proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccSqlOptInSmoke'
+}
+
+
+tasks.register('mvccSqlRecoverySmoke') {
+    group = 'verification'
+    description = 'Runs MVCC-13 SQL-shaped opt-in recovery smoke proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccSqlRecoverySmoke', ':delosdb-storage-mvcc:runMvccSqlIndexVisibilitySmoke'
+}
+
+tasks.register('mvccSqlIndexVisibilitySmoke') {
+    group = 'verification'
+    description = 'Runs MVCC-14 SQL-shaped primary-key/index visibility smoke proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccSqlIndexVisibilitySmoke'
+}
+
+tasks.register('mvccKernelReviewCloseoutProof') {
+    group = 'verification'
+    description = 'Runs MVCC-19 low-level kernel review closeout proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccKernelReviewCloseoutTest'
+}
+
+tasks.register('mvccHistoryPrunedSafetyProof') {
+    group = 'verification'
+    description = 'Runs A44 MVCC missing-history / prune-safety proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccHistoryPrunedSafetyTest'
+}
+
+tasks.register('mvccVacuumWatermarkProof') {
+    group = 'verification'
+    description = 'Runs A45 MVCC vacuum watermark proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccVacuumWatermarkTest'
+}
+
+tasks.register('mvccCommandSequenceProof') {
+    group = 'verification'
+    description = 'Runs A46 MVCC command sequence proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccCommandSequenceTest'
+}
+
+
+tasks.register('mvccStatementSnapshotVisibilityProof') {
+    group = 'verification'
+    description = 'Runs A47 MVCC statement snapshot visibility proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccStatementSnapshotVisibilityTest'
+}
+
+
+tasks.register('mvccSqlStatementBoundarySmoke') {
+    group = 'verification'
+    description = 'Runs A48 MVCC SQL statement-boundary smoke proof.'
+    dependsOn 'mvccStatementSnapshotVisibilityProof'
+}
+
+tasks.register('mvccStorageModelTest') {
+    group = 'verification'
+    description = 'Runs all experimental DelosDB MVCC storage model tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runMvccKernelReviewCloseoutTest', ':delosdb-storage-mvcc:runMvccHistoryPrunedSafetyTest', ':delosdb-storage-mvcc:runMvccVacuumWatermarkTest', ':delosdb-storage-mvcc:runMvccCommandSequenceTest', ':delosdb-storage-mvcc:runMvccStatementSnapshotVisibilityTest', ':delosdb-storage-mvcc:runMvccCapturedVisibilitySnapshotTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest', ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest', ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest', ':delosdb-storage-mvcc:runDelosMvccIndexStatsTest', ':delosdb-storage-mvcc:runDelosMvccOrderedIndexRangeTest', ':delosdb-storage-mvcc:runMvccPageFileTest', ':delosdb-storage-mvcc:runMvccVersionRecordCodecTest', ':delosdb-storage-mvcc:runPageBackedMvccTableTest', ':delosdb-storage-mvcc:runMvccPageRecoveryTest', ':delosdb-storage-mvcc:runMvccPageMutationLogContractTest', ':delosdb-storage-mvcc:runMvccRecoveryBootProof', ':delosdb-storage-mvcc:runMvccDurableIndexVisibilityTest', ':delosdb-storage-mvcc:runMvccDurableIndexRecoveryTest', ':delosdb-storage-mvcc:runMvccVacuumSafetyTest', ':delosdb-storage-mvcc:runMvccVacuumRecoveryTest', ':delosdb-storage-mvcc:runMvccDurableIndexCandidateTest', ':delosdb-storage-mvcc:runMvccDurableVacuumTest', ':delosdb-storage-mvcc:runMvccConcurrencyStressTest', ':delosdb-storage-mvcc:runMvccTransactionLockOrderTest', ':delosdb-storage-mvcc:runMvccStoreAdapterSmoke', ':delosdb-storage-mvcc:runMvccSqlOptInSmoke', ':delosdb-storage-mvcc:runMvccSqlRecoverySmoke', ':delosdb-storage-mvcc:runMvccSqlIndexVisibilitySmoke'
+}
+
+tasks.register('mvccRecoveryLogTest') {
+    group = 'verification'
+    description = 'Runs the experimental delos_mvcc provider recovery-log tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccRecoveryLogTest'
+}
+
+tasks.register('mvccRecoveryHardeningTest') {
+    group = 'verification'
+    description = 'Runs Phase 11 delos_mvcc recovery hardening tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest'
+}
+
+tasks.register('mvccWriteConflictTest') {
+    group = 'verification'
+    description = 'Runs Phase 12 delos_mvcc write-conflict tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest'
+}
+
+
+tasks.register('mvccIndexStatsTest') {
+    group = 'verification'
+    description = 'Runs Phase 13 delos_mvcc index statistics tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccIndexStatsTest'
+}
+
+tasks.register('mvccOrderedIndexRangeTest') {
+    group = 'verification'
+    description = 'Runs Phase 14 delos_mvcc ordered provider-owned index range tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccOrderedIndexRangeTest'
+}
+
+tasks.register('mvccOrderedIndexOrderByTest') {
+    group = 'verification'
+    description = 'Runs Phase 15 delos_mvcc ordered provider-owned index ORDER BY tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccOrderedIndexOrderByTest'
+}
+
+tasks.register('mvccSnapshotIsolationTest') {
+    group = 'verification'
+    description = 'Runs Phase 9 delos_mvcc snapshot semantics tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest'
+}
+
+
+tasks.register('mvccSnapshotVisibilityTest') {
+    group = 'verification'
+    description = 'Runs MVCC-2 low-level transaction/snapshot visibility contract tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccSnapshotVisibilityTest'
+}
+
+tasks.register('mvccCleanupVacuumTest') {
+    group = 'verification'
+    description = 'Runs Phase 10 delos_mvcc cleanup/vacuum tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest'
+}
+
+
+tasks.register('mvccVersionedStorageProviderTest') {
+    group = 'verification'
+    description = 'Runs MVCC provider-boundary tests.'
+    dependsOn 'mvccStorageModelTest'
+}
+
+tasks.register('mvccTransactionOutcomeLogProof') {
+    group = 'verification'
+    description = 'Runs A49 durable transaction outcome-log proof for strict MVCC recovery paths.'
+    dependsOn ':delosdb-storage-mvcc:runMvccTransactionOutcomeLogTest'
+}
+
+
+tasks.register('mvccUnresolvedOutcomeRecoveryProof') {
+    group = 'verification'
+    description = 'Runs A50 strict unresolved transaction outcome recovery proof for durable MVCC.'
+    dependsOn 'mvccTransactionOutcomeLogProof', ':delosdb-storage-mvcc:runMvccUnresolvedOutcomeRecoveryTest'
+}
+
+
+
+tasks.register('mvccCapturedVisibilitySnapshotProof') {
+    group = 'verification'
+    description = 'Runs A51 MVCC captured visibility-state snapshot proof.'
+    dependsOn 'mvccUnresolvedOutcomeRecoveryProof', ':delosdb-storage-mvcc:runMvccCapturedVisibilitySnapshotTest'
+}

@@ -3,7 +3,7 @@
 // -----------------------------------------------------------------------------
 // Maven coordinates are DelosDB-branded even while the binary distribution keeps
 // Derby-compatible runtime jar names for now.
-def delosdbPublicationMetadata = [
+ext.delosdbPublicationMetadata = [
         'delosdb-commons'      : [artifactId: 'delosdb-commons',       jarTask: 'derbySharedJar',        title: 'DelosDB Shared Utilities', dependencies: []],
         'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'delosDbSpiJar',       title: 'DelosDB SPI Stability Markers', dependencies: []],
         'delosdb-engine'       : [artifactId: 'delosdb-engine',        jarTask: 'derbyJar',              title: 'DelosDB Embedded Engine', dependencies: ['delosdb-commons']],
@@ -14,8 +14,7 @@ def delosdbPublicationMetadata = [
         'delosdb-optionaltools': [artifactId: 'delosdb-optionaltools', jarTask: 'derbyOptionalToolsJar', title: 'DelosDB Optional Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-tools']]
 ]
 
-ext.delosdbPublicationMetadata = delosdbPublicationMetadata
-ext.delosdbPublicationProjectNames = delosdbPublicationMetadata.keySet().sort()
+ext.delosdbPublicationProjectNames = rootProject.ext.delosdbPublicationMetadata.keySet().sort()
 
 subprojects { subproject ->
     def publicationInfo = rootProject.ext.delosdbPublicationMetadata[subproject.name]
@@ -86,10 +85,3 @@ subprojects { subproject ->
         }
     }
 }
-
-
-
-
-
-
-
