@@ -1,5 +1,5 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
@@ -7,30 +7,43 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-def sourceRoot = file('src/main/java')
-def spiClassDir = layout.buildDirectory.dir('classes/spi')
+// Real Gradle Java module for the DelosDB provider-facing SPI. Keep the
+// legacy compile/jar task names while the wider build is migrated away from
+// custom task wiring.
+def moduleName = 'io.github.ggeorg.delosdb.spi'
+def moduleClassDir = layout.buildDirectory.dir('classes/spi')
 
-
-tasks.register('compileDelosDbSpi', JavaCompile) {
-    source = fileTree(sourceRoot) { include '**/*.java' }
-    destinationDirectory = spiClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate)
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
-tasks.register('classes') {
-    dependsOn 'compileDelosDbSpi'
+sourceSets {
+    main {
+        java {
+            destinationDirectory.set(moduleClassDir)
+        }
+    }
 }
 
-tasks.named('assemble') {
-    dependsOn 'classes'
+tasks.named('compileJava', JavaCompile) {
+    destinationDirectory.set(moduleClassDir)
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
 }
 
-tasks.register('delosDbSpiJar', Jar) {
-    dependsOn 'compileDelosDbSpi'
+// Compatibility alias used by the existing root build and extracted modules.
+tasks.register('compileDelosDbSpi') {
+    dependsOn tasks.named('compileJava')
+}
+
+tasks.named('jar', Jar) {
     archiveFileName = 'delosdb-spi.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from spiClassDir
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
@@ -39,10 +52,11 @@ tasks.register('delosDbSpiJar', Jar) {
     }
 }
 
-tasks.named('assemble') {
-    dependsOn 'delosDbSpiJar'
+// Compatibility alias used by the root `jars` task.
+tasks.register('delosDbSpiJar') {
+    dependsOn tasks.named('jar')
 }
 
 tasks.named('check') {
-    dependsOn 'compileDelosDbSpi'
+    dependsOn tasks.named('classes')
 }

@@ -1,5 +1,5 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
@@ -8,36 +8,68 @@ import org.gradle.api.tasks.testing.Test
 version = rootProject.version
 group = rootProject.group
 
-def sourceRoot = file('src/main/java')
-def testSourceRoot = file('src/test/java')
+// Real Gradle Java module for the experimental DelosDB MVCC storage provider.
+// Keep legacy compile/jar task names while downstream scripts are migrated.
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 def testClassDir = layout.buildDirectory.dir('classes/test')
-def spiClassDir = project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
-def storageIoClassDir = project(':delosdb-storage-io').layout.buildDirectory.dir('classes/main')
 
-tasks.register('compileDelosDbStorageMvcc', JavaCompile) {
-    dependsOn ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-io:compileDelosDbStorageIo'
-    source = fileTree(sourceRoot) { include '**/*.java' }
-    destinationDirectory = mainClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate)
-    // delosdbConfigureJavaCompile centralizes Java 21 settings and intentionally
-    // clears the default classpath. Restore the SPI classes afterwards because
-    // this experimental storage module is not a JPMS module yet; it consumes
-    // delosdb-spi as normal compile classpath.
-    classpath = rootProject.files(spiClassDir, storageIoClassDir)
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
-tasks.register('compileDelosDbStorageMvccTests', JavaCompile) {
-    dependsOn 'compileDelosDbStorageMvcc'
-    source = fileTree(testSourceRoot) { include '**/*.java' }
-    destinationDirectory = testClassDir
-    sourceCompatibility = rootProject.ext.javaRelease.toString()
-    targetCompatibility = rootProject.ext.javaRelease.toString()
+dependencies {
+    implementation project(':delosdb-spi')
+    implementation project(':delosdb-storage-io')
+    testImplementation project(':delosdb-spi')
+    testImplementation project(':delosdb-storage-io')
+    testImplementation "org.junit.platform:junit-platform-console-standalone:${rootProject.ext.junitPlatformConsoleVersion}"
+}
+
+sourceSets {
+    main {
+        java {
+            destinationDirectory.set(mainClassDir)
+        }
+    }
+    test {
+        java {
+            destinationDirectory.set(testClassDir)
+        }
+    }
+}
+
+tasks.named('compileJava', JavaCompile) {
+    destinationDirectory.set(mainClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
-    classpath = rootProject.files(mainClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    options.compilerArgs.add('-Xlint:deprecation')
+}
+
+tasks.named('compileTestJava', JavaCompile) {
+    destinationDirectory.set(testClassDir)
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+}
+
+// The MVCC module intentionally uses named proof tasks below. The Java plugin
+// adds a default `test` task, but this module's verification contract is the
+// explicit runMvcc* tasks wired into `check`, matching the pre-conversion build.
+tasks.named('test', Test) {
+    enabled = false
+}
+
+// Compatibility aliases used by existing verification tasks.
+tasks.register('compileDelosDbStorageMvcc') {
+    dependsOn tasks.named('compileJava')
+}
+
+tasks.register('compileDelosDbStorageMvccTests') {
+    dependsOn tasks.named('testClasses')
 }
 
 tasks.register('runMvccCoreModelTest', Test) {
@@ -47,7 +79,7 @@ tasks.register('runMvccCoreModelTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccCoreModelTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccCoreModelTest'))
@@ -73,7 +105,7 @@ tasks.register('runMvccTableScanModelTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccTableScanModelTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccTableScanModelTest'))
@@ -99,7 +131,7 @@ tasks.register('runVersionedStorageProviderSpiTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/VersionedStorageProviderSpiTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runVersionedStorageProviderSpiTest'))
@@ -125,7 +157,7 @@ tasks.register('runMvccRecoveryLogTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/DelosMvccRecoveryLogTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccRecoveryLogTest'))
@@ -151,7 +183,7 @@ tasks.register('runDelosMvccProviderOwnedIndexTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/DelosMvccProviderOwnedIndexTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccProviderOwnedIndexTest'))
@@ -177,7 +209,7 @@ tasks.register('runDelosMvccSnapshotIsolationTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/DelosMvccSnapshotIsolationTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccSnapshotIsolationTest'))
@@ -203,7 +235,7 @@ tasks.register('runMvccSnapshotVisibilityTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccSnapshotVisibilityTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccSnapshotVisibilityTest'))
@@ -228,7 +260,7 @@ tasks.register('runMvccKernelReviewCloseoutTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccKernelReviewCloseoutTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccKernelReviewCloseoutTest'))
@@ -254,7 +286,7 @@ tasks.register('runMvccHistoryPrunedSafetyTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccHistoryPrunedSafetyTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccHistoryPrunedSafetyTest'))
@@ -280,7 +312,7 @@ tasks.register('runMvccVacuumWatermarkTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccVacuumWatermarkTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccVacuumWatermarkTest'))
@@ -306,7 +338,7 @@ tasks.register('runMvccCommandSequenceTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccCommandSequenceTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccCommandSequenceTest'))
@@ -332,7 +364,7 @@ tasks.register('runMvccStatementSnapshotVisibilityTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccStatementSnapshotVisibilityTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccStatementSnapshotVisibilityTest'))
@@ -359,7 +391,7 @@ tasks.register('runMvccTransactionOutcomeLogTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccTransactionOutcomeLogTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccTransactionOutcomeLogTest'))
@@ -385,7 +417,7 @@ tasks.register('runMvccUnresolvedOutcomeRecoveryTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccUnresolvedOutcomeRecoveryTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccUnresolvedOutcomeRecoveryTest'))
@@ -412,7 +444,7 @@ tasks.register('runMvccCapturedVisibilitySnapshotTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccCapturedVisibilitySnapshotTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccCapturedVisibilitySnapshotTest'))
@@ -437,7 +469,7 @@ tasks.register('runDelosMvccCleanupVacuumTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/DelosMvccCleanupVacuumTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccCleanupVacuumTest'))
@@ -463,7 +495,7 @@ tasks.register('runDelosMvccRecoveryHardeningTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/DelosMvccRecoveryHardeningTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccRecoveryHardeningTest'))
@@ -489,7 +521,7 @@ tasks.register('runDelosMvccWriteConflictTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/DelosMvccWriteConflictTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccWriteConflictTest'))
@@ -516,7 +548,7 @@ tasks.register('runDelosMvccIndexStatsTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/DelosMvccIndexStatsTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccIndexStatsTest'))
@@ -542,7 +574,7 @@ tasks.register('runDelosMvccOrderedIndexRangeTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/DelosMvccOrderedIndexRangeTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccOrderedIndexRangeTest'))
@@ -569,7 +601,7 @@ tasks.register('runDelosMvccOrderedIndexOrderByTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/DelosMvccOrderedIndexOrderByTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccOrderedIndexOrderByTest'))
@@ -595,7 +627,7 @@ tasks.register('runMvccPageFileTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccPageFileTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccPageFileTest'))
@@ -621,7 +653,7 @@ tasks.register('runMvccVersionRecordCodecTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccVersionRecordCodecTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccVersionRecordCodecTest'))
@@ -648,7 +680,7 @@ tasks.register('runPageBackedMvccTableTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/PageBackedMvccTableTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runPageBackedMvccTableTest'))
@@ -674,7 +706,7 @@ tasks.register('runMvccPageRecoveryTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccPageRecoveryTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccPageRecoveryTest'))
@@ -700,7 +732,7 @@ tasks.register('runMvccPageMutationLogContractTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccPageMutationLogContractTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccPageMutationLogContractTest'))
@@ -726,7 +758,7 @@ tasks.register('runMvccRecoveryBootProof', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccRecoveryBootProofTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccRecoveryBootProof'))
@@ -752,7 +784,7 @@ tasks.register('runMvccDurableIndexVisibilityTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccDurableIndexVisibilityTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccDurableIndexVisibilityTest'))
@@ -778,7 +810,7 @@ tasks.register('runMvccDurableIndexRecoveryTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccDurableIndexRecoveryTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccDurableIndexRecoveryTest'))
@@ -804,7 +836,7 @@ tasks.register('runMvccVacuumSafetyTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccVacuumSafetyTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccVacuumSafetyTest'))
@@ -829,7 +861,7 @@ tasks.register('runMvccVacuumRecoveryTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccVacuumRecoveryTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccVacuumRecoveryTest'))
@@ -855,7 +887,7 @@ tasks.register('runMvccConcurrencyStressTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccConcurrencyStressTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccConcurrencyStressTest'))
@@ -881,7 +913,7 @@ tasks.register('runMvccTransactionLockOrderTest', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccTransactionLockOrderTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccTransactionLockOrderTest'))
@@ -907,7 +939,7 @@ tasks.register('runMvccStoreAdapterSmoke', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccStoreAdapterSmokeTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccStoreAdapterSmoke'))
@@ -932,7 +964,7 @@ tasks.register('runMvccSqlOptInSmoke', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccSqlOptInSmokeTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccSqlOptInSmoke'))
@@ -958,7 +990,7 @@ tasks.register('runMvccSqlRecoverySmoke', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccSqlRecoverySmokeTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccSqlRecoverySmoke'))
@@ -983,7 +1015,7 @@ tasks.register('runMvccSqlIndexVisibilitySmoke', Test) {
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
-    classpath = files(mainClassDir, testClassDir, storageIoClassDir, spiClassDir, rootProject.configurations.delosdbJunit5Console)
+    classpath = sourceSets.test.runtimeClasspath
     include '**/MvccSqlIndexVisibilitySmokeTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccSqlIndexVisibilitySmoke'))
@@ -1002,18 +1034,10 @@ tasks.register('runMvccSqlIndexVisibilitySmoke', Test) {
 }
 
 
-
-tasks.register('classes') {
-    dependsOn 'compileDelosDbStorageMvcc'
-}
-
-tasks.register('delosDbStorageMvccJar', Jar) {
-    dependsOn 'compileDelosDbStorageMvcc'
+tasks.named('jar', Jar) {
     archiveFileName = 'delosdb-storage-mvcc.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from mainClassDir
-    from('src/main/resources')
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
@@ -1022,8 +1046,13 @@ tasks.register('delosDbStorageMvccJar', Jar) {
     }
 }
 
+// Compatibility alias used by the root `jars` task.
+tasks.register('delosDbStorageMvccJar') {
+    dependsOn tasks.named('jar')
+}
+
 tasks.named('assemble') {
-    dependsOn 'classes', 'delosDbStorageMvccJar'
+    dependsOn tasks.named('classes'), tasks.named('delosDbStorageMvccJar')
 }
 
 tasks.named('check') {

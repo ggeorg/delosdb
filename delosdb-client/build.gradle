@@ -1,5 +1,5 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
@@ -7,37 +7,50 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
+// Real Gradle Java module for derbyclient.jar. Keep the legacy task names
+// while root runtime/resource tasks are migrated away from custom wiring.
 def moduleName = 'org.apache.derby.client'
-def sourceRoot = file('src/main/java')
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
-def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 
-tasks.register('compileDerbyClient', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons'
-    source = fileTree(sourceRoot) { include '**/*.java' }
-    destinationDirectory = moduleClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate, [
-            commonsModuleClassDir
-    ])
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
-tasks.register('classes') {
-    dependsOn 'compileDerbyClient'
+dependencies {
+    implementation project(':delosdb-commons')
 }
 
-tasks.named('assemble') {
-    dependsOn 'classes'
+sourceSets {
+    main {
+        java {
+            destinationDirectory.set(moduleClassDir)
+        }
+    }
 }
 
+tasks.named('compileJava', JavaCompile) {
+    destinationDirectory.set(moduleClassDir)
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
+}
+
+// Compatibility alias used by the existing root build.
+tasks.register('compileDerbyClient') {
+    dependsOn tasks.named('compileJava')
+}
 
 def clientArchiveName = 'derbyclient.jar'
 
-tasks.register('derbyClientJar', Jar) {
-    dependsOn 'compileDerbyClient', ':splitEngineMessages'
+tasks.named('jar', Jar) {
+    dependsOn ':processDerbyResources'
     archiveFileName = clientArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from moduleClassDir
+    from(moduleClassDir)
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
@@ -46,6 +59,11 @@ tasks.register('derbyClientJar', Jar) {
     }
 }
 
-tasks.named('assemble') {
-    dependsOn 'derbyClientJar'
+// Compatibility alias used by the root `jars` task.
+tasks.register('derbyClientJar') {
+    dependsOn tasks.named('jar')
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('classes')
 }

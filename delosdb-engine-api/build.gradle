@@ -12,7 +12,6 @@ group = rootProject.group
 // migrated away from custom task wiring.
 def moduleName = 'io.github.ggeorg.delosdb.engine.api'
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
-def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
 def generatedClassSizeCatalogSource = rootProject.layout.buildDirectory.file("generated/sources/${moduleName}/org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java")
 
 java {
@@ -22,10 +21,7 @@ java {
 
 dependencies {
     api project(':delosdb-commons')
-
-    // delosdb-spi is still on the inherited custom compile path. Convert it in
-    // a later pass before replacing this with a normal project dependency.
-    compileOnly files(spiModuleClassDir)
+    api project(':delosdb-spi')
 }
 
 sourceSets {
@@ -37,7 +33,6 @@ sourceSets {
 }
 
 tasks.named('compileJava', JavaCompile) {
-    dependsOn ':delosdb-spi:compileDelosDbSpi'
     destinationDirectory.set(moduleClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
@@ -55,12 +50,14 @@ tasks.register('compileDelosDbEngineApi') {
 // project dependencies must be able to consume delosdb-engine-api without
 // pulling the root Derby resource/build-tools graph back through this module.
 tasks.register('compileDelosDbEngineApiClassSizeCatalog', JavaCompile) {
-    dependsOn tasks.named('compileJava'), ':delosdb-engine:compileDerbyEngine', ':generateClassSizeCatalog'
+    dependsOn tasks.named('compileJava'), ':delosdb-engine:compileDerbyEngine', ':generateClassSizeCatalog',
+            project(':delosdb-commons').tasks.named('jar'),
+            project(':delosdb-spi').tasks.named('jar')
     source = files(generatedClassSizeCatalogSource)
     destinationDirectory.set(moduleClassDir)
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
-            project(':delosdb-commons').tasks.named('compileJava').flatMap { it.destinationDirectory },
-            spiModuleClassDir,
+            project(':delosdb-commons').tasks.named('jar'),
+            project(':delosdb-spi').tasks.named('jar'),
             moduleClassDir
     ])
 }
