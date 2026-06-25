@@ -1,103 +1,88 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.tasks.testing.Test
 
 version = rootProject.version
 group = rootProject.group
 
-// The inherited Derby package-private tests are intentionally moved into this
-// Gradle module as source layout first. Compilation/execution is deferred
-// because these tests are tied to legacy harness wiring and package-private
-// access assumptions.
+// Real Gradle Java module for the inherited Derby package-private test island.
+// These tests are intentionally classpath-compiled because they live inside
+// production packages to exercise package-private behavior.
 def packagePrivateTestSourceRoot = file('src/test/java')
-def legacyBuildFile = file('src/test/legacy/build.xml')
-
-
-
-
-
-
-// Compile the small inherited package-private test island. These tests are
-// classpath-compiled intentionally because they live in production packages to
-// exercise package-private behavior.
 def packagePrivateTestClassDir = layout.buildDirectory.dir('classes/pptesting')
-// The active Gradle test support now lives in the compiled inherited test module.
-// Keep package-private tests classpath-compiled, but depend on the proven
-// compileDerbyTestsModule task instead of the removed compileDerbyTestSupport task.
-def testSupportClassDir = rootProject.project(':delosdb-tests').layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
-def junitClasspath = rootProject.files('tools/java/junit.jar')
-def externalTestClasspath = rootProject.files(
-        'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
-        'tools/java/json_simple-1.1.jar',
-        'tools/java/lucene-analyzers-common.jar',
-        'tools/java/lucene-core.jar',
-        'tools/java/lucene-queryparser.jar'
-)
-def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
-def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
-def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
-def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
-def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
-def clientModuleClassDir = rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client')
-def serverModuleClassDir = rootProject.project(':delosdb-server').layout.buildDirectory.dir('classes/modules/org.apache.derby.server')
-def toolsModuleClassDir = rootProject.project(':delosdb-tools').layout.buildDirectory.dir('classes/modules/org.apache.derby.tools')
-def optionalToolsModuleClassDir = rootProject.project(':delosdb-optionaltools').layout.buildDirectory.dir('classes/modules/org.apache.derby.optionaltools')
-def runnerModuleClassDir = rootProject.project(':delosdb-runner').layout.buildDirectory.dir('classes/modules/org.apache.derby.runner')
 
-tasks.register('compileDerbyPackagePrivateTests', JavaCompile) {
-    dependsOn ':delosdb-tests:compileDerbyTestsModule',
-            ':delosdb-commons:compileDerbyCommons',
-            ':delosdb-client:compileDerbyClient',
-            ':delosdb-server:compileDerbyServer',
-            ':delosdb-tools:compileDerbyTools',
-            ':delosdb-optionaltools:compileDerbyOptionalTools',
-            ':delosdb-runner:compileDerbyRunner',
-            ':delosdb-engine-api:compileDelosDbEngineApi',
-            ':delosdb-engine-api:compileDelosDbEngineApiClassSizeCatalog',
-            ':delosdb-engine-storage-api:compileEngineStorageApi',
-            ':delosdb-derby-store-api:compileDerbyStoreApi',
-            ':delosdb-storage-derby:compileLegacyDerbyStorage',
-            ':delosdb-engine:compileDerbyEngine',
-            ':delosdb-engine:copyEngineServiceDescriptors',
-            ':delosdb-engine:compileClassSizeCatalog',
-            ':splitEngineMessages'
-    source = fileTree(packagePrivateTestSourceRoot) { include '**/*.java' }
-    destinationDirectory = packagePrivateTestClassDir
-    sourceCompatibility = rootProject.ext.javaRelease.toString()
-    targetCompatibility = rootProject.ext.javaRelease.toString()
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
+dependencies {
+    testImplementation project(':delosdb-client')
+    testImplementation project(':delosdb-commons')
+    testImplementation project(':delosdb-derby-store-api')
+    testImplementation project(':delosdb-engine')
+    testImplementation project(':delosdb-engine-api')
+    testImplementation project(':delosdb-engine-storage-api')
+    testImplementation project(':delosdb-optionaltools')
+    testImplementation project(':delosdb-runner')
+    testImplementation project(':delosdb-server')
+    testImplementation project(':delosdb-spi')
+    testImplementation project(':delosdb-storage-derby')
+    testImplementation project(':delosdb-tools')
+    testImplementation project(path: ':delosdb-tests', configuration: 'derbyTestsClasses')
+
+    testImplementation rootProject.files('tools/java/junit.jar')
+    testImplementation rootProject.files('tools/java/geronimo-spec-servlet-2.4-rc4.jar')
+    testImplementation rootProject.files('tools/java/json_simple-1.1.jar')
+    testImplementation rootProject.files('tools/java/lucene-analyzers-common.jar')
+    testImplementation rootProject.files('tools/java/lucene-core.jar')
+    testImplementation rootProject.files('tools/java/lucene-queryparser.jar')
+    testImplementation "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
+}
+
+sourceSets {
+    main {
+        java.setSrcDirs([])
+        resources.setSrcDirs([])
+    }
+    test {
+        java {
+            setSrcDirs([packagePrivateTestSourceRoot])
+            include '**/*.java'
+            destinationDirectory.set(packagePrivateTestClassDir)
+        }
+        resources.setSrcDirs([])
+    }
+}
+
+tasks.named('compileTestJava', JavaCompile) {
+    destinationDirectory.set(packagePrivateTestClassDir)
+    modularity.inferModulePath = false
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
-    classpath = rootProject.files(
-            commonsModuleClassDir,
-            engineApiModuleClassDir,
-            engineStorageApiClassDir,
-            storeApiClassDir,
-            storageDerbyClassDir,
-            engineModuleClassDir,
-            clientModuleClassDir,
-            serverModuleClassDir,
-            toolsModuleClassDir,
-            optionalToolsModuleClassDir,
-            runnerModuleClassDir,
-            testSupportClassDir,
-            junitClasspath,
-            externalTestClasspath
-    )
 }
 
-tasks.register('classes') {
-    dependsOn 'compileDerbyPackagePrivateTests'
+// Package-private tests are compiled as a structural proof. They are not part
+// of the default catch-all Gradle test task.
+tasks.named('test', Test) {
+    enabled = false
 }
+
+// Compatibility alias used by the root build and existing scripts.
+tasks.register('compileDerbyPackagePrivateTests') {
+    dependsOn tasks.named('compileTestJava')
+}
+
 
 tasks.named('assemble') {
-    dependsOn 'classes'
+    dependsOn tasks.named('compileDerbyPackagePrivateTests')
 }
 
 tasks.named('check') {
-    dependsOn 'compileDerbyPackagePrivateTests'
+    dependsOn tasks.named('compileDerbyPackagePrivateTests')
 }

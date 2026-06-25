@@ -1,5 +1,5 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
@@ -9,19 +9,13 @@ version = rootProject.version
 group = rootProject.group
 
 /*
- * Derby tests are compiled as one inherited test module, not as hand-picked
- * Gradle islands. The only source changes needed here are real modernization
- * fixes in the inherited tests themselves.
+ * Derby tests are compiled as one inherited test module. The Java plugin now
+ * owns the real test compilation task; the old Derby task name is kept only as
+ * a compatibility alias for root/pptesting wiring.
  */
 
 def testSourceRoot = file('src/test/java')
 
-// Keep the historical Derby harness sources in the repository for reference, but
-// do not compile the stale VM launcher/adaptor layer in the active Gradle test
-// module. The active DelosDB gate is the JUnit language suite, not the old
-// Ant-era RunSuite process launcher. RunTest/RunList/NetServer remain compiled
-// for inherited utility compatibility; only the proven-unused VM adapters and
-// RunSuite entrypoint are quarantined from active compilation.
 def legacyHarnessQuarantineExcludes = [
         'org/apache/derbyTesting/functionTests/harness/RunSuite.java',
         'org/apache/derbyTesting/functionTests/harness/ibm13.java',
@@ -55,24 +49,9 @@ def legacyHarnessQuarantineExcludes = [
         'org/apache/derbyTesting/functionTests/harness/jdk18.java',
         'org/apache/derbyTesting/functionTests/harness/jdk19.java'
 ]
+
 def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/demo/toursdb')
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
-def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
-def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
-def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
-def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
-
-def derbyRuntimeModuleClassDirs = rootProject.files(
-        rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons'),
-        rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
-        engineApiModuleClassDir,
-        rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine'),
-        rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client'),
-        rootProject.project(':delosdb-server').layout.buildDirectory.dir('classes/modules/org.apache.derby.server'),
-        rootProject.project(':delosdb-tools').layout.buildDirectory.dir('classes/modules/org.apache.derby.tools'),
-        rootProject.project(':delosdb-optionaltools').layout.buildDirectory.dir('classes/modules/org.apache.derby.optionaltools'),
-        rootProject.project(':delosdb-runner').layout.buildDirectory.dir('classes/modules/org.apache.derby.runner')
-)
 
 def thirdPartyTestModules = rootProject.files(
         'tools/java/junit.jar',
@@ -84,10 +63,9 @@ def thirdPartyTestModules = rootProject.files(
         rootProject.configurations.delosdbAsm
 )
 
-// Execute the inherited Derby JUnit suite against the assembled runtime jars,
-// not the exploded module output trees. The jars are the supported runtime
-// shape and contain the generated/copy-only boot resources such as
-// org/apache/derby/modules.properties and catalog metadata resources.
+// Compile and execute inherited Derby tests against the assembled runtime jars.
+// The runtime jars are the supported Derby-compatible shape and include the
+// generated/copy-only boot resources and patched store implementation classes.
 def derbyRuntimeJars = rootProject.files(
         rootProject.layout.buildDirectory.file('libs/delosdb-spi.jar'),
         rootProject.layout.buildDirectory.file('libs/osgi-framework-stub.jar'),
@@ -101,28 +79,8 @@ def derbyRuntimeJars = rootProject.files(
         rootProject.layout.buildDirectory.file('libs/derbyrun.jar')
 )
 
-def compilePrerequisites = [
-        ':delosdb-commons:compileDerbyCommons',
-        ':delosdb-spi:compileDelosDbSpi',
-        ':delosdb-engine-api:compileDelosDbEngineApi',
-        ':delosdb-engine-api:compileDelosDbEngineApiClassSizeCatalog',
-        ':delosdb-engine:compileDerbyEngine',
-        ':delosdb-engine-storage-api:compileEngineStorageApi',
-        ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage',
-        ':delosdb-engine:compileClassSizeCatalog',
-        ':delosdb-client:compileDerbyClient',
-        ':delosdb-server:compileDerbyServer',
-        ':delosdb-tools:compileDerbyTools',
-        ':delosdb-optionaltools:compileDerbyOptionalTools',
-        ':delosdb-runner:compileDerbyRunner',
-        ':processDerbyResources',
-        ':splitEngineMessages',
-        ':generateOdbcMetadata',
-        ':ensureCatalogMetadataResources'
-]
-
 def testModulePath = {
-    rootProject.files(derbyRuntimeModuleClassDirs, thirdPartyTestModules)
+    rootProject.files(derbyRuntimeJars, thirdPartyTestModules)
 }
 
 def testRuntimeClasspath = {
@@ -135,22 +93,66 @@ def testRuntimeClasspath = {
     )
 }
 
-tasks.register('compileDerbyTestsModule', JavaCompile) {
-    group = 'verification'
-    description = 'Compiles the inherited Derby test module.'
-    dependsOn compilePrerequisites
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
 
-    source = files(
-            fileTree(testSourceRoot) {
-                include '**/*.java'
-                exclude legacyHarnessQuarantineExcludes
-            },
-            new File(toursDbSourceRoot, 'insertMaps.java')
-    )
-    destinationDirectory = derbyTestsClassDir
+configurations {
+    derbyTestsClasses {
+        canBeConsumed = true
+        canBeResolved = false
+    }
+}
 
-    sourceCompatibility = rootProject.ext.javaRelease.toString()
-    targetCompatibility = rootProject.ext.javaRelease.toString()
+dependencies {
+    testImplementation project(':delosdb-client')
+    testImplementation project(':delosdb-commons')
+    testImplementation project(':delosdb-derby-store-api')
+    testImplementation project(':delosdb-engine')
+    testImplementation project(':delosdb-engine-api')
+    testImplementation project(':delosdb-engine-storage-api')
+    testImplementation project(':delosdb-optionaltools')
+    testImplementation project(':delosdb-runner')
+    testImplementation project(':delosdb-server')
+    testImplementation project(':delosdb-spi')
+    testImplementation project(':delosdb-storage-derby')
+    testImplementation project(':delosdb-tools')
+
+    testCompileOnly rootProject.files('tools/java/junit.jar')
+    testCompileOnly rootProject.files('tools/java/geronimo-spec-servlet-2.4-rc4.jar')
+    testCompileOnly rootProject.files('tools/java/json_simple-1.1.jar')
+    testCompileOnly rootProject.files('tools/java/lucene-analyzers-common.jar')
+    testCompileOnly rootProject.files('tools/java/lucene-core.jar')
+    testCompileOnly rootProject.files('tools/java/lucene-queryparser.jar')
+    testCompileOnly "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
+}
+
+sourceSets {
+    main {
+        java.setSrcDirs([])
+        resources.setSrcDirs([])
+    }
+    test {
+        java {
+            setSrcDirs([testSourceRoot, toursDbSourceRoot])
+            include '**/*.java'
+            exclude legacyHarnessQuarantineExcludes
+            destinationDirectory.set(derbyTestsClassDir)
+        }
+        resources.setSrcDirs([])
+    }
+}
+
+artifacts {
+    derbyTestsClasses(derbyTestsClassDir) {
+        builtBy tasks.named('compileTestJava')
+    }
+}
+
+tasks.named('compileTestJava', JavaCompile) {
+    dependsOn ':jars'
+    destinationDirectory.set(derbyTestsClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
@@ -161,20 +163,30 @@ tasks.register('compileDerbyTestsModule', JavaCompile) {
     doFirst {
         options.compilerArgs = [
                 '--module-path', testModulePath().asPath,
-                '--patch-module', "org.apache.derby.engine=${rootProject.files(engineStorageApiClassDir, storeApiClassDir, storageDerbyClassDir).asPath}",
                 '-proc:none'
         ]
     }
 }
+
+// The inherited Derby test suite is exposed through named Test tasks below.
+// Disable Gradle's default catch-all test task so build/check stay focused on
+// the selected compatibility gates.
+tasks.named('test', Test) {
+    enabled = false
+}
+
+// Compatibility alias used by pptesting and root verification wiring.
+tasks.register('compileDerbyTestsModule') {
+    group = 'verification'
+    description = 'Compatibility alias for compileTestJava.'
+    dependsOn tasks.named('compileTestJava')
+}
+
 tasks.register('runDerbyLangSuite', Test) {
     group = 'verification'
     description = 'Runs the original Derby lang JUnit suite through Gradle using the default bytecode backend.'
-    dependsOn 'compileDerbyTestsModule', ':jars'
+    dependsOn tasks.named('compileTestJava'), ':jars'
 
-    // Derby's inherited JUnit tests are classpath-era tests. Compile the test
-    // sources as a module for source correctness, but execute them on the
-    // classpath to avoid JPMS split-package failures from Derby locale/resource
-    // packages in exploded module directories.
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
     classpath = testRuntimeClasspath()
@@ -203,15 +215,10 @@ tasks.register('runDerbyLangSuite', Test) {
     }
 }
 
-
-
-
-
-
 tasks.register('runWalRecoveryArchitectureProofTest', Test) {
     group = 'verification'
     description = 'Runs focused WAL/restart recovery proof tests for the PostgreSQL-class storage/concurrency campaign.'
-    dependsOn 'compileDerbyTestsModule', ':jars'
+    dependsOn tasks.named('compileTestJava'), ':jars'
 
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
@@ -244,7 +251,7 @@ tasks.register('runWalRecoveryArchitectureProofTest', Test) {
 tasks.register('runTransactionLockingRecoveryProofTest', Test) {
     group = 'verification'
     description = 'Runs focused transaction, locking, checkpoint, and restart recovery boundary proof tests.'
-    dependsOn 'compileDerbyTestsModule', ':jars'
+    dependsOn tasks.named('compileTestJava'), ':jars'
 
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
@@ -279,7 +286,7 @@ tasks.register('runTransactionLockingRecoveryProofTest', Test) {
 tasks.register('runBTreeSearchRefactorProofTests', Test) {
     group = 'verification'
     description = 'Runs focused B-tree search, split, max-scan, and reposition proof tests before any ControlRow refactor.'
-    dependsOn 'compileDerbyTestsModule', ':jars'
+    dependsOn tasks.named('compileTestJava'), ':jars'
 
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
@@ -315,7 +322,7 @@ tasks.register('runBTreeSearchRefactorProofTests', Test) {
 tasks.register('runBTreeIndexConcurrencyArchitectureProofTest', Test) {
     group = 'verification'
     description = 'Runs focused B-tree unique-key concurrency and rollback proof tests.'
-    dependsOn 'compileDerbyTestsModule', ':jars'
+    dependsOn tasks.named('compileTestJava'), ':jars'
 
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
@@ -350,7 +357,7 @@ tasks.register('runBTreeIndexConcurrencyArchitectureProofTest', Test) {
 tasks.register('runVersionCleanupArchitectureProofTest', Test) {
     group = 'verification'
     description = 'Runs focused version-cleanup visibility proof tests for future MVCC work.'
-    dependsOn 'compileDerbyTestsModule', ':jars'
+    dependsOn tasks.named('compileTestJava'), ':jars'
 
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
@@ -383,7 +390,7 @@ tasks.register('runVersionCleanupArchitectureProofTest', Test) {
 tasks.register('runExternalSortJvmPolicyProofTest', Test) {
     group = 'verification'
     description = 'Runs focused ORDER BY, DISTINCT, and GROUP BY proof tests for the JVM-aware external sort policy.'
-    dependsOn 'compileDerbyTestsModule', ':jars'
+    dependsOn tasks.named('compileTestJava'), ':jars'
 
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
@@ -437,14 +444,16 @@ tasks.register('runInheritedAlgorithmClosureProofTests') {
 }
 
 
-tasks.register('classes') {
-    dependsOn 'compileDerbyTestsModule'
+
+
+tasks.named('classes') {
+    dependsOn tasks.named('compileTestJava')
 }
 
 tasks.named('assemble') {
-    dependsOn 'classes'
+    dependsOn tasks.named('compileTestJava')
 }
 
 tasks.named('check') {
-    dependsOn 'compileDerbyTestsModule'
+    dependsOn tasks.named('compileTestJava')
 }
