@@ -1,0 +1,9 @@
+plugins {
+    id 'application'
+}
+
+ext.delosdbSmokeMainClass = 'delosdb.smoke.Module5kCrashPointRecoverySmoke'
+ext.delosdbSmokeDescription = 'Runs the MODULE5K crash-point recovery smoke.'
+ext.delosdbSmokeDatabasePath = 'build/module5k-heap-smoke-db'
+
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')
