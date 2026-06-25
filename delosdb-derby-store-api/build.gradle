@@ -1,51 +1,52 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
-
-import org.gradle.api.tasks.compile.JavaCompile
 
 version = rootProject.version
 group = rootProject.group
 
-// Source-owner module for the inherited Derby store contracts. Keep this
-// classpath-compiled for now because derby.jar still presents these packages as
-// part of org.apache.derby.engine for Derby compatibility.
-def sourceRoot = file('src/main/java')
+// Real Gradle Java module for inherited Derby store contracts. Keep the
+// legacy compile/jar task names as lifecycle aliases while downstream modules
+// are migrated away from custom task wiring.
 def mainClassDir = layout.buildDirectory.dir('classes/store-api')
-def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
-def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
 
-tasks.register('compileDerbyStoreApi', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons',
-            ':delosdb-engine-api:compileDelosDbEngineApi',
-            ':delosdb-engine-storage-api:compileEngineStorageApi'
-    source = fileTree(sourceRoot) { include 'org/apache/derby/iapi/store/**/*.java' }
-    destinationDirectory = mainClassDir
-    sourceCompatibility = rootProject.ext.javaRelease.toString()
-    targetCompatibility = rootProject.ext.javaRelease.toString()
-    modularity.inferModulePath = false
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
+dependencies {
+    api project(':delosdb-commons')
+    api project(':delosdb-engine-api')
+    api project(':delosdb-engine-storage-api')
+}
+
+sourceSets {
+    main {
+        java {
+            destinationDirectory.set(mainClassDir)
+        }
+    }
+}
+
+tasks.named('compileJava') {
+    destinationDirectory.set(mainClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
-    classpath = rootProject.files(
-            commonsModuleClassDir,
-            engineApiModuleClassDir,
-            engineStorageApiClassDir)
 }
 
-tasks.register('classes') {
-    dependsOn 'compileDerbyStoreApi'
+// Compatibility alias used by the existing root build and extracted modules.
+tasks.register('compileDerbyStoreApi') {
+    dependsOn tasks.named('compileJava')
 }
 
-tasks.register('derbyStoreApiJar', Jar) {
-    dependsOn 'compileDerbyStoreApi'
+tasks.named('jar') {
     archiveFileName = 'delosdb-derby-store-api.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from mainClassDir
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
@@ -54,10 +55,11 @@ tasks.register('derbyStoreApiJar', Jar) {
     }
 }
 
-tasks.named('assemble') {
-    dependsOn 'derbyStoreApiJar'
+// Compatibility alias used by the root `jars` task.
+tasks.register('derbyStoreApiJar') {
+    dependsOn tasks.named('jar')
 }
 
 tasks.named('check') {
-    dependsOn 'compileDerbyStoreApi'
+    dependsOn tasks.named('classes')
 }

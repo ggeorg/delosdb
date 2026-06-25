@@ -1,49 +1,51 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
-
-import org.gradle.api.tasks.compile.JavaCompile
 
 version = rootProject.version
 group = rootProject.group
 
-// Source-owner module for engine-facing storage contracts and store value
-// bridge types. Keep this classpath-compiled for now because derby.jar still
-// presents these packages as part of org.apache.derby.engine for Derby
-// compatibility.
-def sourceRoot = file('src/main/java')
+// Real Gradle Java module for engine-facing storage contracts and store value
+// bridge types. Keep the legacy compile/jar task names as lifecycle aliases
+// while downstream modules are migrated.
 def mainClassDir = layout.buildDirectory.dir('classes/engine-storage-api')
-def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
 
-tasks.register('compileEngineStorageApi', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons',
-            ':delosdb-engine-api:compileDelosDbEngineApi'
-    source = fileTree(sourceRoot) { include 'org/apache/derby/iapi/store/types/**/*.java' }
-    destinationDirectory = mainClassDir
-    sourceCompatibility = rootProject.ext.javaRelease.toString()
-    targetCompatibility = rootProject.ext.javaRelease.toString()
-    modularity.inferModulePath = false
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
+dependencies {
+    api project(':delosdb-commons')
+    api project(':delosdb-engine-api')
+}
+
+sourceSets {
+    main {
+        java {
+            destinationDirectory.set(mainClassDir)
+        }
+    }
+}
+
+tasks.named('compileJava') {
+    destinationDirectory.set(mainClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
-    classpath = rootProject.files(
-            commonsModuleClassDir,
-            engineApiModuleClassDir)
 }
 
-tasks.register('classes') {
-    dependsOn 'compileEngineStorageApi'
+// Compatibility alias used by the existing root build and extracted modules.
+tasks.register('compileEngineStorageApi') {
+    dependsOn tasks.named('compileJava')
 }
 
-tasks.register('engineStorageApiJar', Jar) {
-    dependsOn 'compileEngineStorageApi'
+tasks.named('jar') {
     archiveFileName = 'delosdb-engine-storage-api.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from mainClassDir
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
@@ -52,10 +54,11 @@ tasks.register('engineStorageApiJar', Jar) {
     }
 }
 
-tasks.named('assemble') {
-    dependsOn 'engineStorageApiJar'
+// Compatibility alias used by the root `jars` task.
+tasks.register('engineStorageApiJar') {
+    dependsOn tasks.named('jar')
 }
 
 tasks.named('check') {
-    dependsOn 'compileEngineStorageApi'
+    dependsOn tasks.named('classes')
 }

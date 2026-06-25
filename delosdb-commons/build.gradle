@@ -1,19 +1,34 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
-
-import org.gradle.api.tasks.compile.JavaCompile
 
 version = rootProject.version
 group = rootProject.group
 
+// Real Gradle Java module for Derby shared utilities. Keep the legacy
+// compile/jar task names as lifecycle aliases while the root build and
+// downstream modules are being migrated away from custom task wiring.
 def moduleName = 'org.apache.derby.commons'
-def sourceRoot = file('src/main/java')
 def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+            srcDir generatedSourceRoot
+            destinationDirectory.set(moduleClassDir)
+        }
+    }
+}
+
 tasks.register('generateSanityState') {
-    def templateFile = new File(sourceRoot, 'org/apache/derby/shared/common/sanity/SanityState.tmpl')
+    def templateFile = file('src/main/java/org/apache/derby/shared/common/sanity/SanityState.tmpl')
     def outputFile = generatedSourceRoot.map {
         it.file('org/apache/derby/shared/common/sanity/SanityState.java')
     }
@@ -26,32 +41,28 @@ tasks.register('generateSanityState') {
     }
 }
 
-tasks.register('compileDerbyCommons', JavaCompile) {
+tasks.named('compileJava') {
     dependsOn 'generateSanityState'
-    source = files(
-            fileTree(sourceRoot) { include '**/*.java' },
-            fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
-    )
-    destinationDirectory = moduleClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate)
+    destinationDirectory.set(moduleClassDir)
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
 }
 
-tasks.register('classes') {
-    dependsOn 'compileDerbyCommons'
-}
-
-tasks.named('assemble') {
-    dependsOn 'classes'
+// Compatibility alias used by the existing root build and extracted modules.
+tasks.register('compileDerbyCommons') {
+    dependsOn tasks.named('compileJava')
 }
 
 def commonsArchiveName = 'derbyshared.jar'
 
-tasks.register('derbySharedJar', Jar) {
-    dependsOn 'compileDerbyCommons', ':processDerbyResources'
+tasks.named('jar') {
+    dependsOn ':processDerbyResources'
     archiveFileName = commonsArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from moduleClassDir
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
@@ -60,6 +71,7 @@ tasks.register('derbySharedJar', Jar) {
     }
 }
 
-tasks.named('assemble') {
-    dependsOn 'derbySharedJar'
+// Compatibility alias used by the root `jars` task.
+tasks.register('derbySharedJar') {
+    dependsOn tasks.named('jar')
 }
