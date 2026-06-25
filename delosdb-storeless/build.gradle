@@ -29,11 +29,11 @@ dependencies {
 sourceSets {
     main {
         java {
-            srcDir 'src/main/java'
+            setSrcDirs(['src/main/java'])
             destinationDirectory.set(storelessClassDir)
         }
         resources {
-            srcDir 'src/main/resources'
+            setSrcDirs(['src/main/resources'])
         }
     }
 }
