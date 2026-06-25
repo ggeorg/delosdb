@@ -1,5 +1,5 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
@@ -7,32 +7,54 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
+// Real Gradle Java module for the DelosDB engine-kernel compatibility
+// boundary. Keep the legacy compile/jar task names as lifecycle aliases while
+// the root build and downstream packaging are migrated away from custom task
+// wiring.
+//
+// This module currently compiles only its module descriptor. Use the compiled
+// engine-api module classes directly for that descriptor compile so engine-kernel
+// does not force delosdb-engine-api:jar and the generated ClassSizeCatalog task
+// into the resource/build-tools task graph.
 def moduleName = 'io.github.ggeorg.delosdb.engine.kernel'
-def sourceRoot = file('src/main/java')
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
 
-tasks.register('compileDelosDbEngineKernel', JavaCompile) {
-    dependsOn ':delosdb-engine-api:compileDelosDbEngineApi'
-    source = fileTree(sourceRoot) { include '**/*.java' }
-    destinationDirectory = moduleClassDir
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
+sourceSets {
+    main {
+        java {
+            destinationDirectory.set(moduleClassDir)
+        }
+    }
+}
+
+tasks.named('compileJava', JavaCompile) {
+    dependsOn ':delosdb-engine-api:compileJava'
+    destinationDirectory.set(moduleClassDir)
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [engineApiModuleClassDir])
 }
 
-tasks.register('classes') {
-    dependsOn 'compileDelosDbEngineKernel'
+// Compatibility alias used by the existing root build and extracted modules.
+tasks.register('compileDelosDbEngineKernel') {
+    dependsOn tasks.named('compileJava')
 }
 
-tasks.named('assemble') {
-    dependsOn 'classes'
+// Preserve the legacy task name, but do not wire it into engine-kernel classes
+// or jar. The generated ClassSizeCatalog belongs to delosdb-engine-api and
+// should not be pulled into engine-kernel's normal lifecycle.
+tasks.register('compileDelosDbEngineKernelClassSizeCatalog') {
+    dependsOn ':delosdb-engine-api:compileDelosDbEngineApiClassSizeCatalog'
 }
 
-tasks.register('delosDbEngineKernelJar', Jar) {
-    dependsOn 'compileDelosDbEngineKernel'
+tasks.named('jar') {
     archiveFileName = 'delosdb-engine-kernel.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from moduleClassDir
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
@@ -41,24 +63,11 @@ tasks.register('delosDbEngineKernelJar', Jar) {
     }
 }
 
-tasks.named('assemble') {
-    dependsOn 'delosDbEngineKernelJar'
+// Compatibility alias used by the root `jars` task.
+tasks.register('delosDbEngineKernelJar') {
+    dependsOn tasks.named('jar')
 }
 
 tasks.named('check') {
-    dependsOn 'compileDelosDbEngineKernel'
-}
-
-
-
-tasks.register('compileDelosDbEngineKernelClassSizeCatalog') {
-    dependsOn ':delosdb-engine-api:compileDelosDbEngineApiClassSizeCatalog'
-}
-
-tasks.named('classes') {
-    dependsOn 'compileDelosDbEngineKernelClassSizeCatalog'
-}
-
-tasks.named('delosDbEngineKernelJar') {
-    dependsOn 'compileDelosDbEngineKernelClassSizeCatalog'
+    dependsOn tasks.named('classes')
 }
