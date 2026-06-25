@@ -1,0 +1,61 @@
+plugins {
+    id 'base'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = rootProject.version
+group = rootProject.group
+
+// Source-owner module for engine-facing storage contracts and store value
+// bridge types. Keep this classpath-compiled for now because derby.jar still
+// presents these packages as part of org.apache.derby.engine for Derby
+// compatibility.
+def sourceRoot = file('src/main/java')
+def mainClassDir = layout.buildDirectory.dir('classes/engine-storage-api')
+def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
+
+tasks.register('compileEngineStorageApi', JavaCompile) {
+    dependsOn ':delosdb-commons:compileDerbyCommons',
+            ':delosdb-engine-kernel:compileDelosDbEngineKernel'
+    source = fileTree(sourceRoot) { include 'org/apache/derby/iapi/store/types/**/*.java' }
+    destinationDirectory = mainClassDir
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    modularity.inferModulePath = false
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
+    classpath = rootProject.files(
+            commonsModuleClassDir,
+            kernelModuleClassDir)
+}
+
+tasks.register('classes') {
+    dependsOn 'compileEngineStorageApi'
+}
+
+tasks.register('engineStorageApiJar', Jar) {
+    dependsOn 'compileEngineStorageApi'
+    archiveFileName = 'delosdb-engine-storage-api.jar'
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from mainClassDir
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Engine Storage API')
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn 'engineStorageApiJar'
+}
+
+tasks.named('check') {
+    dependsOn 'compileEngineStorageApi'
+}

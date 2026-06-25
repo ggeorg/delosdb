@@ -24,6 +24,8 @@ def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.
 def osgiModuleClassDir = rootProject.project(':delosdb-osgi-stub').layout.buildDirectory.dir('classes/modules/org.osgi.framework')
 def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
 def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
+def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
+def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
 def javaccClasspath = rootProject.files('tools/java/javacc.jar')
 
 def replaceInFile = { File file, Closure<String> transform ->
@@ -62,7 +64,7 @@ tasks.register('generateSqlParser', JavaExec) {
 }
 
 tasks.register('compileDerbyEngine', JavaCompile) {
-    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-kernel:compileDelosDbEngineKernel', ':delosdb-spi:compileDelosDbSpi', ':delosdb-storage-derby:compileLegacyDerbyStorage', 'generateSqlParser'
+    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-kernel:compileDelosDbEngineKernel', ':delosdb-spi:compileDelosDbSpi', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', 'generateSqlParser'
     source = files(
             fileTree(sourceRoot) { include '**/*.java' },
             fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
@@ -76,7 +78,8 @@ tasks.register('compileDerbyEngine', JavaCompile) {
             rootProject.configurations.delosdbAsm
     ])
     doFirst {
-        options.compilerArgs.addAll(['--patch-module', "${moduleName}=${storageDerbyClassDir.get().asFile.absolutePath}"])
+        def patchPath = rootProject.files(engineStorageApiClassDir, storeApiClassDir, storageDerbyClassDir).asPath
+        options.compilerArgs.addAll(['--patch-module', "${moduleName}=${patchPath}"])
     }
 }
 
@@ -111,13 +114,18 @@ tasks.named('assemble') {
 def engineArchiveName = 'derby.jar'
 
 tasks.register('derbyJar', Jar) {
-    dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog', 'copyEngineServiceDescriptors', ':processDerbyResources', ':splitEngineMessages', ':generateOdbcMetadata', ':delosdb-storage-derby:compileLegacyDerbyStorage'
+    dependsOn 'compileDerbyEngine', 'compileClassSizeCatalog', 'copyEngineServiceDescriptors', ':processDerbyResources', ':splitEngineMessages', ':generateOdbcMetadata', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage'
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from moduleClassDir
-    from(storageDerbyClassDir) {
+    from(engineStorageApiClassDir) {
+        include 'org/apache/derby/iapi/store/types/**'
+    }
+    from(storeApiClassDir) {
         include 'org/apache/derby/iapi/store/**'
+    }
+    from(storageDerbyClassDir) {
         include 'org/apache/derby/impl/store/**'
     }
     from(sourceRoot) {

@@ -1,11 +1,12 @@
 /**
  * Source and compile home for the inherited Derby-compatible heap/raw/access/WAL
- * store.
+ * store implementation.
  *
- * <p>B6 closes the source-owner boundary: {@code delosdb-storage-derby}
- * compiles {@code org.apache.derby.iapi.store.*} and
- * {@code org.apache.derby.impl.store.*}. For compatibility, the current
- * {@code derby.jar} build still patches the compiled storage output into
+ * <p>This module now owns only the real inherited Derby store implementation
+ * under {@code org.apache.derby.impl.store.*}. The shared Derby store contracts
+ * under {@code org.apache.derby.iapi.store.*} live in
+ * {@code delosdb-derby-store-api}. For compatibility, the current
+ * {@code derby.jar} build still patches both compiled outputs into
  * {@code org.apache.derby.engine}; the named storage module descriptor remains
  * a scaffold for the later runtime-packaging boundary.</p>
  */

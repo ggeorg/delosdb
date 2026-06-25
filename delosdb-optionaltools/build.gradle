@@ -14,6 +14,8 @@ def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.build
 def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
+def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
+def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
 def toolsModuleClassDir = rootProject.project(':delosdb-tools').layout.buildDirectory.dir('classes/modules/org.apache.derby.tools')
 def externalModulePath = rootProject.files(
         'tools/java/json_simple-1.1.jar',
@@ -23,7 +25,7 @@ def externalModulePath = rootProject.files(
 )
 
 tasks.register('compileDerbyOptionalTools', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-kernel:compileDelosDbEngineKernel', ':delosdb-engine:compileDerbyEngine', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-tools:compileDerbyTools'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-kernel:compileDelosDbEngineKernel', ':delosdb-engine:compileDerbyEngine', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-tools:compileDerbyTools'
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = moduleClassDir
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
@@ -35,7 +37,7 @@ tasks.register('compileDerbyOptionalTools', JavaCompile) {
             rootProject.configurations.delosdbAsm
     ])
     doFirst {
-        options.compilerArgs.addAll(['--patch-module', "org.apache.derby.engine=${storageDerbyClassDir.get().asFile.absolutePath}"])
+        options.compilerArgs.addAll(['--patch-module', "org.apache.derby.engine=${rootProject.files(engineStorageApiClassDir, storeApiClassDir, storageDerbyClassDir).asPath}"])
     }
 }
 

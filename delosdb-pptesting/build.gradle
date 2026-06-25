@@ -38,6 +38,8 @@ def externalTestClasspath = rootProject.files(
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
+def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
+def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def clientModuleClassDir = rootProject.project(':delosdb-client').layout.buildDirectory.dir('classes/modules/org.apache.derby.client')
 def serverModuleClassDir = rootProject.project(':delosdb-server').layout.buildDirectory.dir('classes/modules/org.apache.derby.server')
@@ -55,6 +57,8 @@ tasks.register('compileDerbyPackagePrivateTests', JavaCompile) {
             ':delosdb-runner:compileDerbyRunner',
             ':delosdb-engine-kernel:compileDelosDbEngineKernel',
             ':delosdb-engine-kernel:compileDelosDbEngineKernelClassSizeCatalog',
+            ':delosdb-engine-storage-api:compileEngineStorageApi',
+            ':delosdb-derby-store-api:compileDerbyStoreApi',
             ':delosdb-storage-derby:compileLegacyDerbyStorage',
             ':delosdb-engine:compileDerbyEngine',
             ':delosdb-engine:copyEngineServiceDescriptors',
@@ -71,6 +75,8 @@ tasks.register('compileDerbyPackagePrivateTests', JavaCompile) {
     classpath = rootProject.files(
             commonsModuleClassDir,
             kernelModuleClassDir,
+            engineStorageApiClassDir,
+            storeApiClassDir,
             storageDerbyClassDir,
             engineModuleClassDir,
             clientModuleClassDir,

@@ -17,6 +17,8 @@ def mainClassDir = layout.buildDirectory.dir('classes/main')
 def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
+def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
+def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
 
 tasks.register('compileLegacyDerbyStorage', JavaCompile) {
     // B6n closes the source-owner boundary: the storage module compiles the
@@ -25,8 +27,9 @@ tasks.register('compileLegacyDerbyStorage', JavaCompile) {
     dependsOn ':delosdb-engine-kernel:compileDelosDbEngineKernel'
     dependsOn ':delosdb-commons:compileDerbyCommons'
     dependsOn ':delosdb-spi:compileDelosDbSpi'
+    dependsOn ':delosdb-engine-storage-api:compileEngineStorageApi'
+    dependsOn ':delosdb-derby-store-api:compileDerbyStoreApi'
     source = fileTree(sourceRoot) {
-        include 'org/apache/derby/iapi/store/**/*.java'
         include 'org/apache/derby/impl/store/**/*.java'
         exclude 'module-info.java'
     }
@@ -45,7 +48,9 @@ tasks.register('compileLegacyDerbyStorage', JavaCompile) {
     classpath = rootProject.files(
             kernelModuleClassDir,
             commonsModuleClassDir,
-            spiModuleClassDir)
+            spiModuleClassDir,
+            engineStorageApiClassDir,
+            storeApiClassDir)
 }
 
 tasks.register('classes') {

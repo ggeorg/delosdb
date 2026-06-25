@@ -3,6 +3,9 @@ plugins {
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.tasks.bundling.Compression
+import org.gradle.api.tasks.bundling.Tar
+import org.gradle.api.tasks.bundling.Zip
 import org.gradle.api.attributes.Bundling
 import org.gradle.process.ExecOperations
 import javax.inject.Inject
@@ -124,17 +127,9 @@ ext.buildNumberProvider = buildNumber
 ext.derbyCompatibilityVersion = derbyCompatibilityVersion
 
 ext.junitPlatformConsoleVersion = '1.11.4'
-ext.junit4Version = '4.13.2'
 ext.asmVersion = '9.9'
 
 configurations {
-    delosdbJunit4 {
-        canBeConsumed = false
-        canBeResolved = true
-        attributes {
-            attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling, Bundling.EXTERNAL))
-        }
-    }
     delosdbJunit5Console {
         canBeConsumed = false
         canBeResolved = true
@@ -152,12 +147,9 @@ configurations {
 }
 
 dependencies {
-    // Gradle's Test task requires the JUnit 4 runner on the runtime classpath
-    // even when the inherited Derby tests themselves are JUnit 3-style tests.
-    delosdbJunit4 "junit:junit:${junit4Version}"
     // Test-only dependency for new DelosDB tests. Inherited Derby tests remain JUnit 3.
     delosdbJunit5Console "org.junit.platform:junit-platform-console-standalone:${junitPlatformConsoleVersion}"
-    // Runtime dependency for the ASM-backed generated SQL bytecode backend.
+    // Runtime dependency for the permanent ASM generated-bytecode backend.
     delosdbAsm "org.ow2.asm:asm:${asmVersion}"
 }
 
@@ -186,6 +178,15 @@ ext.delosdbRuntimeJarAttributes = { String title ->
     ]
 }
 
+def externalModulePath = files(
+        'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
+        'tools/java/json_simple-1.1.jar',
+        'tools/java/lucene-analyzers-common.jar',
+        'tools/java/lucene-core.jar',
+        'tools/java/lucene-queryparser.jar'
+)
+
+def javaccClasspath = files('tools/java/javacc.jar')
 
 ext.delosdbConfigureJavaCompile = { JavaCompile task, Collection<Object> modulePathEntries = [] ->
     // Gradle 8.14 validates custom JavaCompile tasks even when --release is set.
@@ -207,6 +208,9 @@ ext.delosdbConfigureJavaCompile = { JavaCompile task, Collection<Object> moduleP
     }
 }
 
+def replaceInFile = { File file, Closure<String> transform ->
+    file.text = transform(file.text)
+}
 
 def writeInfoProperties = { File file, String technologyName, String productFile ->
     file.parentFile.mkdirs()
@@ -236,11 +240,13 @@ tasks.register('generateClassSizeCatalog') {
     // ClassSizeCrawler scans the compiled engine output tree. Gradle 8.14
     // requires every task which writes into that tree to be ordered before
     // this scan, otherwise it reports an implicit dependency problem.
-    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-storage-derby:compileLegacyDerbyStorage', 'compileDerbyBuildTools', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
+    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', 'compileDerbyBuildTools', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
     def outputFile = generatedSourceDir(moduleNames.engine).map {
         it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
     }
     inputs.dir(moduleClassDir(moduleNames.engine))
+    inputs.dir(project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api'))
+    inputs.dir(project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api'))
     inputs.dir(project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main'))
     outputs.file(outputFile)
     doLast {
@@ -250,6 +256,8 @@ tasks.register('generateClassSizeCatalog') {
                 moduleClassDir(moduleNames.commons),
                 moduleClassDir(moduleNames.engineKernel),
                 moduleClassDir(moduleNames.engine),
+                project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api'),
+                project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api'),
                 project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
         ]) {
             systemProperty 'WS', projectDir.absolutePath
@@ -415,7 +423,6 @@ def moduleDirsForRuntime = files(
         moduleClassDir(moduleNames.optionaltools),
         moduleClassDir(moduleNames.runner)
 )
-ext.delosdbModuleDirsForRuntime = moduleDirsForRuntime
 
 def runtimeJarNames = [
         'delosdb-spi.jar',
@@ -431,12 +438,131 @@ def runtimeJarNames = [
 ]
 
 
+def moduleSplitInventory = [
+        [
+                key              : 'osgi',
+                gradleProject    : 'delosdb-osgi-stub',
+                jpmsModule       : moduleNames.osgi,
+                currentSourceRoot: 'delosdb-osgi-stub/src/main/java',
+                compileTask      : 'compileOsgiStubs',
+                jarTask          : 'osgiFrameworkStubJar',
+                jarName          : 'osgi-framework-stub.jar',
+                dependencies     : [],
+                generatedBy      : [],
+                publicArtifact   : false,
+                extractionOrder  : 0,
+                extractionRisk   : 'low'
+        ],
+        [
+                key              : 'commons',
+                gradleProject    : 'delosdb-commons',
+                jpmsModule       : moduleNames.commons,
+                currentSourceRoot: 'delosdb-commons/src/main/java',
+                compileTask      : 'compileDerbyCommons',
+                jarTask          : 'derbySharedJar',
+                jarName          : 'derbyshared.jar',
+                dependencies     : [],
+                generatedBy      : ['generateSanityState'],
+                publicArtifact   : true,
+                extractionOrder  : 1,
+                extractionRisk   : 'low'
+        ],
+        [
+                key              : 'client',
+                gradleProject    : 'delosdb-client',
+                jpmsModule       : moduleNames.client,
+                currentSourceRoot: 'delosdb-client/src/main/java',
+                compileTask      : 'compileDerbyClient',
+                jarTask          : 'derbyClientJar',
+                jarName          : 'derbyclient.jar',
+                dependencies     : ['commons'],
+                generatedBy      : ['processDerbyResources', 'splitEngineMessages'],
+                publicArtifact   : true,
+                extractionOrder  : 2,
+                extractionRisk   : 'low-medium'
+        ],
+        [
+                key              : 'tools',
+                gradleProject    : 'delosdb-tools',
+                jpmsModule       : moduleNames.tools,
+                currentSourceRoot: 'delosdb-tools/src/main/java',
+                compileTask      : 'compileDerbyTools',
+                jarTask          : 'derbyToolsJar',
+                jarName          : 'derbytools.jar',
+                dependencies     : ['commons', 'engine', 'client'],
+                generatedBy      : ['generateIjParsers', 'processDerbyResources'],
+                publicArtifact   : true,
+                extractionOrder  : 3,
+                extractionRisk   : 'medium'
+        ],
+        [
+                key              : 'runner',
+                gradleProject    : 'delosdb-runner',
+                jpmsModule       : moduleNames.runner,
+                currentSourceRoot: 'delosdb-runner/src/main/java',
+                compileTask      : 'compileDerbyRunner',
+                jarTask          : 'derbyRunJar',
+                jarName          : 'derbyrun.jar',
+                dependencies     : ['commons', 'tools', 'server'],
+                generatedBy      : [],
+                publicArtifact   : true,
+                extractionOrder  : 4,
+                extractionRisk   : 'low-medium'
+        ],
+        [
+                key              : 'optionaltools',
+                gradleProject    : 'delosdb-optionaltools',
+                jpmsModule       : moduleNames.optionaltools,
+                currentSourceRoot: 'delosdb-optionaltools/src/main/java',
+                compileTask      : 'compileDerbyOptionalTools',
+                jarTask          : 'derbyOptionalToolsJar',
+                jarName          : 'derbyoptionaltools.jar',
+                dependencies     : ['commons', 'engine', 'tools'],
+                generatedBy      : ['processDerbyResources'],
+                publicArtifact   : true,
+                extractionOrder  : 5,
+                extractionRisk   : 'medium'
+        ],
+        [
+                key              : 'server',
+                gradleProject    : 'delosdb-server',
+                jpmsModule       : moduleNames.server,
+                currentSourceRoot: 'delosdb-server/src/main/java',
+                compileTask      : 'compileDerbyServer',
+                jarTask          : 'derbyNetJar',
+                jarName          : 'derbynet.jar',
+                dependencies     : ['commons', 'engine', 'tools'],
+                generatedBy      : ['processDerbyResources'],
+                publicArtifact   : true,
+                extractionOrder  : 6,
+                extractionRisk   : 'medium-high'
+        ],
+        [
+                key              : 'engine',
+                gradleProject    : 'delosdb-engine',
+                jpmsModule       : moduleNames.engine,
+                currentSourceRoot: 'delosdb-engine/src/main/java',
+                compileTask      : 'compileDerbyEngine',
+                jarTask          : 'derbyJar',
+                jarName          : 'derby.jar',
+                dependencies     : ['osgi', 'commons'],
+                generatedBy      : ['generateSqlParser', 'generateClassSizeCatalog', 'processDerbyResources', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'],
+                publicArtifact   : true,
+                extractionOrder  : 7,
+                extractionRisk   : 'high'
+        ]
+]
+
 def runtimeJars = {
-    // derby.jar uses the ASM-backed generated SQL bytecode backend. Keep ASM on
-    // the runtime classpath for jar-based smokes.
+    // derby.jar now contains the permanent ASM bytecode backend. Keep ASM on
+    // the runtime classpath for jar-based smokes instead of relying on the
+    // old optional/static module edge.
     files(runtimeJarNames.collect { layout.buildDirectory.file("libs/${it}") }, configurations.delosdbAsm)
 }
 
+def extensionRuntimeJars = {
+    runtimeJars()
+}
 
 // Export the runtime classpath helpers for extracted Gradle guard scripts.
 // Plain `runtimeJars()` calls inside task configuration closures may resolve
@@ -444,12 +570,1166 @@ def runtimeJars = {
 ext.delosdbRuntimeJarNames = runtimeJarNames
 ext.delosdbRuntimeJars = runtimeJars
 
-apply from: file('gradle/delosdb-runtime-distribution.gradle')
+def legalFileNames = ['LICENSE', 'NOTICE', 'NOTICE-FORK.md']
+def legalFiles = files(legalFileNames.collect { file(it) })
 
-apply from: file('gradle/delosdb-publication.gradle')
 
-apply from: file('gradle/delosdb-verification.gradle')
-apply from: file('gradle/delosdb-mvcc-verification.gradle')
+def runtimeBuildTasks = [
+        ':delosdb-engine-kernel:compileDelosDbEngineKernel',
+        ':delosdb-engine-storage-api:compileEngineStorageApi',
+        ':delosdb-engine:compileClassSizeCatalog',
+        'splitEngineMessages',
+        'generateOdbcMetadata',
+        'ensureCatalogMetadataResources'
+]
+
+tasks.register('compileAll') {
+    dependsOn runtimeBuildTasks
+}
+
+tasks.register('jars') {
+    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-kernel:delosDbEngineKernelJar', ':delosdb-engine-storage-api:engineStorageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
+            ':delosdb-client:derbyClientJar', ':delosdb-tools:derbyToolsJar',
+            ':delosdb-server:derbyNetJar', ':delosdb-optionaltools:derbyOptionalToolsJar',
+            ':delosdb-runner:derbyRunJar', ':delosdb-osgi-stub:osgiFrameworkStubJar'
+}
+
+tasks.named('assemble') {
+    dependsOn 'jars'
+}
+
+
+tasks.register('sysinfoFromJars', JavaExec) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Runs DelosDB sysinfo from the assembled jars in build/libs.'
+    classpath = runtimeJars()
+    mainClass = 'org.apache.derby.run.run'
+    args 'sysinfo'
+}
+
+tasks.register('smokeFromJars', JavaExec) {
+    dependsOn 'jars'
+    mustRunAfter 'smoke'
+    group = 'verification'
+    description = 'Runs the embedded JDBC smoke script from the assembled jars in build/libs.'
+    classpath = runtimeJars()
+    mainClass = 'org.apache.derby.run.run'
+    args 'ij', file('dev/smoke.sql').absolutePath
+    workingDir = projectDir
+    doFirst {
+        delete file('build/smoke-db')
+    }
+}
+
+
+def smokeUtilsSourceDir = 'dev/smoke-utils/src/main/java'
+
+// Export smoke helper source path for extracted Gradle guard scripts.
+// Plain `smokeUtilsSourceDir` references inside task configuration closures may
+// resolve against the task object after extraction, so guards call this explicitly.
+ext.delosdbSmokeUtilsSourceDir = smokeUtilsSourceDir
+
+
+
+def distributionBaseName = "delosdb-${delosDbVersion}"
+def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
+def distributionDocFiles = files(
+        'README.md',
+        'CONTRIBUTING.md',
+        'GOVERNANCE.md',
+        'SECURITY.md',
+        'NOTICE-FORK.md'
+)
+
+tasks.register('prepareBinaryDistribution', Copy) {
+    dependsOn 'jars'
+    group = 'distribution'
+    description = 'Stages the DelosDB binary distribution layout under build/release.'
+    into distributionStagingDir
+    from(distributionDocFiles)
+    from(legalFiles)
+    from('docs') {
+        into 'docs'
+    }
+    from('bin') {
+        into 'bin'
+    }
+    from(runtimeJars()) {
+        into 'lib'
+    }
+    from('dev/smoke.sql') {
+        into 'examples'
+    }
+    doFirst {
+        delete distributionStagingDir.get().asFile
+    }
+}
+
+tasks.register('delosdbBinaryZip', Zip) {
+    dependsOn 'prepareBinaryDistribution'
+    group = 'distribution'
+    description = 'Assembles the DelosDB binary ZIP distribution.'
+    archiveBaseName = 'delosdb'
+    archiveVersion = delosDbVersion
+    archiveClassifier = 'bin'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    from(distributionStagingDir) {
+        into distributionBaseName
+    }
+}
+
+tasks.register('delosdbBinaryTar', Tar) {
+    dependsOn 'prepareBinaryDistribution'
+    group = 'distribution'
+    description = 'Assembles the DelosDB binary tar.gz distribution.'
+    archiveBaseName = 'delosdb'
+    archiveVersion = delosDbVersion
+    archiveClassifier = 'bin'
+    archiveExtension = 'tar.gz'
+    compression = Compression.GZIP
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    from(distributionStagingDir) {
+        into distributionBaseName
+    }
+}
+
+
+tasks.register('dist') {
+    dependsOn 'delosdbBinaryZip', 'delosdbBinaryTar'
+    group = 'distribution'
+    description = 'Builds the DelosDB binary distribution archives.'
+}
+
+tasks.register('sysinfo', JavaExec) {
+    dependsOn 'compileAll'
+    group = 'verification'
+    description = 'Runs DelosDB sysinfo from Gradle-built classes.'
+    classpath = moduleDirsForRuntime
+    mainClass = 'org.apache.derby.run.run'
+    args 'sysinfo'
+}
+
+tasks.register('smoke', JavaExec) {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Runs a small embedded JDBC create/insert/select script using assembled runtime jars.'
+    classpath = runtimeJars()
+    mainClass = 'org.apache.derby.run.run'
+    args 'ij', file('dev/smoke.sql').absolutePath
+    workingDir = projectDir
+    doFirst {
+        delete file('build/smoke-db')
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// Local Maven publication baseline
+// -----------------------------------------------------------------------------
+// Maven coordinates are DelosDB-branded even while the binary distribution keeps
+// Derby-compatible runtime jar names for now.
+ext.delosdbPublicationMetadata = [
+        'delosdb-commons'      : [artifactId: 'delosdb-commons',       jarTask: 'derbySharedJar',        title: 'DelosDB Shared Utilities', dependencies: []],
+        'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'delosDbSpiJar',       title: 'DelosDB SPI Stability Markers', dependencies: []],
+        'delosdb-engine'       : [artifactId: 'delosdb-engine',        jarTask: 'derbyJar',              title: 'DelosDB Embedded Engine', dependencies: ['delosdb-commons']],
+        'delosdb-client'       : [artifactId: 'delosdb-client',        jarTask: 'derbyClientJar',        title: 'DelosDB Network Client', dependencies: ['delosdb-commons']],
+        'delosdb-tools'        : [artifactId: 'delosdb-tools',         jarTask: 'derbyToolsJar',         title: 'DelosDB Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-client']],
+        'delosdb-runner'       : [artifactId: 'delosdb-runner',        jarTask: 'derbyRunJar',           title: 'DelosDB Runner', dependencies: ['delosdb-commons', 'delosdb-tools', 'delosdb-server']],
+        'delosdb-server'       : [artifactId: 'delosdb-server',        jarTask: 'derbyNetJar',           title: 'DelosDB Network Server', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-tools']],
+        'delosdb-optionaltools': [artifactId: 'delosdb-optionaltools', jarTask: 'derbyOptionalToolsJar', title: 'DelosDB Optional Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-tools']]
+]
+
+ext.delosdbPublicationProjectNames = delosdbPublicationMetadata.keySet().sort()
+
+subprojects { subproject ->
+    def publicationInfo = rootProject.ext.delosdbPublicationMetadata[subproject.name]
+    if (publicationInfo != null) {
+        apply plugin: 'maven-publish'
+
+        afterEvaluate {
+            publishing {
+                publications {
+                    create('mavenJava', org.gradle.api.publish.maven.MavenPublication) {
+                        groupId = rootProject.group.toString()
+                        artifactId = publicationInfo.artifactId
+                        version = rootProject.version.toString()
+
+                        def runtimeJarTask = tasks.named(publicationInfo.jarTask)
+                        artifact(runtimeJarTask.flatMap { it.archiveFile }) {
+                            builtBy runtimeJarTask
+                        }
+
+                        pom {
+                            name = publicationInfo.title
+                            description = "${publicationInfo.title}. Part of DelosDB, a modern Java embedded SQL database forked from Apache Derby 10.17.1.0."
+                            url = 'https://github.com/ggeorg/delosdb'
+
+                            licenses {
+                                license {
+                                    name = 'Apache License, Version 2.0'
+                                    url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                                    distribution = 'repo'
+                                }
+                            }
+
+                            developers {
+                                developer {
+                                    id = 'ggeorg'
+                                    name = 'DelosDB Project'
+                                    url = 'https://github.com/ggeorg/delosdb'
+                                }
+                            }
+
+                            scm {
+                                connection = 'scm:git:https://github.com/ggeorg/delosdb.git'
+                                developerConnection = 'scm:git:https://github.com/ggeorg/delosdb.git'
+                                url = 'https://github.com/ggeorg/delosdb'
+                            }
+
+                            withXml {
+                                def dependencyProjectNames = publicationInfo.dependencies ?: []
+                                if (!dependencyProjectNames.isEmpty()) {
+                                    def dependenciesNode = asNode().appendNode('dependencies')
+                                    dependencyProjectNames.each { dependencyProjectName ->
+                                        def dependencyInfo = rootProject.ext.delosdbPublicationMetadata[dependencyProjectName]
+                                        if (dependencyInfo == null) {
+                                            throw new GradleException("Unknown DelosDB publication dependency '${dependencyProjectName}' for ${subproject.path}")
+                                        }
+                                        def dependencyNode = dependenciesNode.appendNode('dependency')
+                                        dependencyNode.appendNode('groupId', rootProject.group.toString())
+                                        dependencyNode.appendNode('artifactId', dependencyInfo.artifactId)
+                                        dependencyNode.appendNode('version', rootProject.version.toString())
+                                        dependencyNode.appendNode('scope', 'compile')
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+tasks.register('verifyDeprecatedAnnotations') {
+    group = 'verification'
+    description = 'Fails when source Javadoc @deprecated entries are missing Java @Deprecated annotations.'
+
+    doLast {
+        def sourceRoots = [
+            file('delosdb-engine/src/main/java'),
+            file('delosdb-client/src/main/java'),
+            file('delosdb-tools/src/main/java'),
+            file('delosdb-commons/src/main/java'),
+            file('delosdb-server/src/main/java'),
+            file('delosdb-runner/src/main/java'),
+            file('delosdb-spi/src/main/java'),
+            file('delosdb-optionaltools/src/main/java'),
+            file('delosdb-osgi-stub/src/main/java')
+        ].findAll { it.exists() }
+
+        def missingAnnotations = []
+        sourceRoots.each { sourceRoot ->
+            fileTree(sourceRoot).matching { include '**/*.java' }.files.each { sourceFile ->
+                def lines = sourceFile.readLines('UTF-8')
+                for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
+                    if (!lines[lineIndex].contains('@deprecated')) {
+                        continue
+                    }
+
+                    int commentEnd = lineIndex
+                    while (commentEnd < lines.size() && !lines[commentEnd].contains('*/')) {
+                        commentEnd++
+                    }
+                    if (commentEnd >= lines.size()) {
+                        continue
+                    }
+
+                    int declarationStart = commentEnd + 1
+                    while (declarationStart < lines.size() && lines[declarationStart].trim().isEmpty()) {
+                        declarationStart++
+                    }
+
+                    boolean hasDeprecatedAnnotation = false
+                    for (int scan = declarationStart; scan < lines.size(); scan++) {
+                        def trimmed = lines[scan].trim()
+                        if (trimmed.startsWith('@Deprecated')) {
+                            hasDeprecatedAnnotation = true
+                            break
+                        }
+                        if (trimmed.startsWith('@')) {
+                            continue
+                        }
+                        break
+                    }
+
+                    if (!hasDeprecatedAnnotation) {
+                        missingAnnotations << "${project.relativePath(sourceFile)}:${lineIndex + 1}"
+                    }
+                }
+            }
+        }
+
+        if (!missingAnnotations.isEmpty()) {
+            throw new GradleException('Javadoc @deprecated entries without @Deprecated annotations:\n' + missingAnnotations.join('\n'))
+        }
+    }
+}
+
+def generatedBytecodeAsmJvm21ProofSourceDir = file('dev/generated-bytecode-asm-jvm21-proof/src/main/java')
+def generatedBytecodeAsmJvm21ProofClassesDir = layout.buildDirectory.dir('classes/generated-bytecode-asm-jvm21-proof')
+
+tasks.register('compileGeneratedBytecodeAsmJvm21Proof', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the permanent ASM default generated-bytecode JVM 21 proof.'
+    // The proof compiles against the fully assembled module output directories,
+    // not just javac class directories. Make every task that writes into those
+    // module directories explicit so Gradle 8.14 does not see an implicit read.
+    dependsOn 'processDerbyResources', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-engine:compileDerbyEngine'
+    source = files(generatedBytecodeAsmJvm21ProofSourceDir)
+    destinationDirectory = generatedBytecodeAsmJvm21ProofClassesDir
+    sourceCompatibility = javaRelease.toString()
+    targetCompatibility = javaRelease.toString()
+    options.release = javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(
+            generatedBytecodeAsmJvm21ProofSourceDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+}
+
+tasks.register('generatedBytecodeAsmJvm21Proof', JavaExec) {
+    group = 'verification'
+    description = 'Proves the default generated-bytecode path uses ASM and emits Java 21 classfiles.'
+    dependsOn 'processDerbyResources', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
+    dependsOn 'compileGeneratedBytecodeAsmJvm21Proof'
+    classpath = files(
+            generatedBytecodeAsmJvm21ProofClassesDir,
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            configurations.delosdbAsm
+    )
+    mainClass = 'org.apache.derbyBuild.asm.GeneratedBytecodeAsmJvm21Proof'
+}
+
+
+tasks.register('verifyAsmSwitchComplete') {
+    group = 'verification'
+    description = 'Audits that the ASM switch is complete and no legacy bytecode backend scaffolding remains active.'
+
+    def modulesPropertiesFile = file('delosdb-engine/src/main/java/org/apache/derby/modules.properties')
+    def moduleInfoFile = file('delosdb-engine/src/main/java/module-info.java')
+    def rootBuildFile = file('build.gradle')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def buildtoolsBuildFile = file('delosdb-buildtools/build.gradle')
+    def bytecodeDir = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode')
+    def asmBackendFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/asm/AsmJava.java')
+    def classfileDir = file('delosdb-engine/src/main/java/org/apache/derby/iapi/services/classfile')
+    def permanentProofDir = file('dev/generated-bytecode-asm-jvm21-proof')
+    def retiredCleanupScripts = [
+            'scripts/cleanup-asm-a21-old-bc' + 'java-backend.sh',
+            'scripts/cleanup-asm-a22-old-classfile-writer.sh',
+            'scripts/cleanup-asm-a23-runtime-dependency-cleanup.sh'
+    ].collect { file(it) }
+
+    inputs.files(modulesPropertiesFile, moduleInfoFile, rootBuildFile, testsBuildFile, buildtoolsBuildFile)
+    inputs.dir(bytecodeDir)
+    inputs.dir(classfileDir)
+    inputs.dir(permanentProofDir)
+    inputs.files(retiredCleanupScripts.findAll { it.exists() })
+
+    doLast {
+        def compilerLines = modulesPropertiesFile.readLines('UTF-8')
+                .collect { it.trim() }
+                .findAll { it.startsWith('derby.module.javaCompiler=') }
+        def expectedCompilerLine = 'derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.asm.AsmJava'
+        if (compilerLines != [expectedCompilerLine]) {
+            throw new GradleException('ASM switch requires modules.properties to point directly at AsmJava; found: '
+                    + compilerLines)
+        }
+
+        def moduleInfoText = moduleInfoFile.getText('UTF-8')
+        if (!moduleInfoText.contains('requires org.objectweb.asm;')) {
+            throw new GradleException('ASM must be a normal engine module dependency: expected requires org.objectweb.asm;')
+        }
+        if (moduleInfoText.contains('requires static org.objectweb' + '.asm;')) {
+            throw new GradleException('ASM is still declared as optional/static in module-info.java')
+        }
+
+        def topLevelBytecodeFiles = bytecodeDir.listFiles()
+                .findAll { it.isFile() && it.name.endsWith('.java') }
+                .collect { it.name }
+                .sort()
+        if (topLevelBytecodeFiles != ['package-info.java']) {
+            throw new GradleException('Legacy top-level bytecode implementation files remain: ' + topLevelBytecodeFiles)
+        }
+        if (!asmBackendFile.isFile()) {
+            throw new GradleException('Permanent ASM backend file is missing: ' + asmBackendFile.path)
+        }
+
+        def classfileJavaFiles = classfileDir.listFiles()
+                .findAll { it.isFile() && it.name.endsWith('.java') }
+                .collect { it.name }
+                .sort()
+        if (classfileJavaFiles != ['VMOpcode.java']) {
+            throw new GradleException('Old classfile writer files remain; only VMOpcode.java should stay: '
+                    + classfileJavaFiles)
+        }
+
+        def devDir = file('dev')
+        def retiredAsmCampaignDirs = devDir.listFiles()
+                .findAll { it.isDirectory() && it.name.startsWith('asm-') }
+                .collect { it.path }
+                .sort()
+        if (!retiredAsmCampaignDirs.isEmpty()) {
+            throw new GradleException('Temporary ASM campaign directories remain: '
+                    + retiredAsmCampaignDirs.join(', '))
+        }
+        if (!file('dev/generated-bytecode-asm-jvm21-proof/src/main/java/org/apache/derbyBuild/asm/GeneratedBytecodeAsmJvm21Proof.java').isFile()) {
+            throw new GradleException('Permanent generated-bytecode ASM JVM21 proof source is missing')
+        }
+
+        def buildTexts = [rootBuildFile, testsBuildFile, buildtoolsBuildFile]
+                .collectEntries { [(it.path): it.getText('UTF-8')] }
+        def retiredTaskNames = [
+                'asm' + 'CompatibilityWindow',
+                'verify' + 'AsmCompatibilityWindowConfiguration',
+                'asm' + 'OnlyBytecodeBackend',
+                'verify' + 'AsmOnlyBytecodeBackendConfiguration',
+                'asm' + 'ClassfileWriterQuarantine',
+                'verify' + 'OldClassfileWriterQuarantined',
+                'asm' + 'RuntimeDependencyCleanup',
+                'verify' + 'AsmRuntimeDependencyCleanup',
+                'runDerbyLangSuiteWith' + 'AsmBackend',
+                'runDerbyLangSuiteWith' + 'BcJavaBackend',
+                'generated' + 'BytecodeJvm21Proof',
+                'compile' + 'GeneratedBytecodeJvm21Proof'
+        ]
+        def remainingTasks = []
+        buildTexts.each { path, text ->
+            retiredTaskNames.each { taskName ->
+                if (text.contains("tasks.register('${taskName}'")) {
+                    remainingTasks << "${path}:${taskName}"
+                }
+            }
+        }
+        if (!remainingTasks.isEmpty()) {
+            throw new GradleException('Retired ASM switch milestone tasks remain: ' + remainingTasks.join(', '))
+        }
+
+        def testsBuildText = testsBuildFile.getText('UTF-8')
+        if (testsBuildText.contains('delosdb.bytecode' + '.backend')
+                || testsBuildText.contains('derby.module' + '.JavaCompiler')
+                || testsBuildText.contains('runDerbyLangSuiteWith' + 'AsmBackend')
+                || testsBuildText.contains('runDerbyLangSuiteWith' + 'BcJavaBackend')) {
+            throw new GradleException('Temporary bytecode backend override wiring remains in delosdb-tests/build.gradle')
+        }
+
+        def retiredScriptsStillPresent = retiredCleanupScripts.findAll { it.exists() }
+        if (!retiredScriptsStillPresent.isEmpty()) {
+            throw new GradleException('Retired ASM cleanup scripts remain. Run scripts/cleanup-asm-a24-closeout.sh first: '
+                    + retiredScriptsStillPresent.collect { it.path }.join(', '))
+        }
+
+        def forbiddenTokens = [
+                'BC' + 'Java',
+                'BC' + 'Class',
+                'BC' + 'Method',
+                'Code' + 'Chunk',
+                'Opcode' + 'Debug',
+                'Experimental' + 'BytecodeJavaFactory',
+                'Class' + 'Holder',
+                'Class' + 'Member',
+                'Class' + 'FormatOutput',
+                'Class' + 'Input',
+                'Class' + 'Investigator',
+                'Class' + 'Enumeration',
+                'CONSTANT' + '_Double_info',
+                'CONSTANT' + '_Float_info',
+                'CONSTANT' + '_Index_info',
+                'CONSTANT' + '_Integer_info',
+                'CONSTANT' + '_Long_info',
+                'CONSTANT' + '_Utf8_info',
+                'delosdb.bytecode' + '.backend',
+                'requires static org.objectweb' + '.asm'
+        ]
+        def scanRoots = [
+                file('delosdb-engine/src/main/java'),
+                file('delosdb-commons/src/main/java'),
+                file('delosdb-buildtools/src/main/java'),
+                file('delosdb-tests/src/test/java')
+        ]
+        def scanFiles = []
+        scanRoots.each { root ->
+            if (root.exists()) {
+                root.eachFileRecurse { candidate ->
+                    if (candidate.isFile()
+                            && (candidate.name.endsWith('.java') || candidate.name.endsWith('.properties'))) {
+                        scanFiles << candidate
+                    }
+                }
+            }
+        }
+        scanFiles.addAll([rootBuildFile, testsBuildFile, buildtoolsBuildFile])
+
+        def findings = []
+        scanFiles.each { candidate ->
+            def text = candidate.getText('UTF-8')
+            forbiddenTokens.each { token ->
+                if (text.contains(token)) {
+                    findings << "${project.relativePath(candidate)} contains ${token}"
+                }
+            }
+        }
+        if (!findings.isEmpty()) {
+            throw new GradleException('Stale bytecode/classfile writer references remain:\n' + findings.join('\n'))
+        }
+    }
+}
+
+tasks.register('asmSwitchComplete') {
+    group = 'verification'
+    description = 'Final closeout gate for the ASM bytecode switch.'
+    dependsOn 'verifyAsmSwitchComplete'
+    dependsOn ':delosdb-engine:compileDerbyEngine'
+    dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
+    dependsOn ':delosdb-tests:runDerbyLangSuite'
+    dependsOn 'smokeFromJars'
+    dependsOn 'generatedBytecodeAsmJvm21Proof'
+}
+
+
+
+tasks.register('generatedMethodDispatchAudit', Exec) {
+    group = 'verification'
+    description = 'Writes a generated-method dispatch audit after ReflectGeneratedClass cleanup.'
+    commandLine 'bash', 'dev/generated-method-dispatch-audit.sh', '--verify'
+}
+
+
+tasks.register('deprecatedApiCleanupAudit', Exec) {
+    group = 'verification'
+    description = 'Verifies Java 21 deprecated API cleanup guardrails for inherited Derby code.'
+    commandLine 'bash', 'dev/deprecated-api-cleanup-audit.sh', '--verify'
+}
+
+
+tasks.register('secureXmlFactoryProbe', JavaExec) {
+    group = 'verification'
+    description = 'Probes XML parser/transformer factory behavior, including XXE blocking and Derby-compatible DTD defaults.'
+    dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
+    classpath = files(
+            project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools'),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine)
+    )
+    mainClass = 'org.apache.derbyBuild.SecureXmlFactoryProbe'
+}
+
+
+tasks.register('xmlHardeningAudit', Exec) {
+    group = 'verification'
+    description = 'Verifies Java 21 XML parser/transformer compatibility hardening guardrails.'
+    dependsOn 'secureXmlFactoryProbe'
+    commandLine 'bash', 'dev/xml-hardening-audit.sh', '--verify'
+}
+
+
+tasks.register('sortMemoryPolicyProbe', JavaExec) {
+    group = 'verification'
+    description = 'Probes the JVM-aware external sort memory-sizing policy.'
+    dependsOn ':delosdb-buildtools:compileDerbyBuildTools', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage'
+    classpath = files(
+            project(':delosdb-buildtools').layout.buildDirectory.dir('classes/build-tools'),
+            moduleClassDir(moduleNames.commons),
+            moduleClassDir(moduleNames.engine),
+            project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api'),
+            project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api'),
+            project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
+    )
+    mainClass = 'org.apache.derby.impl.store.access.sort.SortMemoryPolicyProbe'
+}
+
+
+tasks.register('sortMemoryObservabilityAudit', Exec) {
+    group = 'verification'
+    description = 'Verifies DelosDB JVM-aware external sort memory policy guardrails.'
+    dependsOn 'sortMemoryPolicyProbe'
+    commandLine 'bash', 'dev/sort-memory-observability-audit.sh', '--verify'
+}
+
+
+tasks.register('inheritedCodeQualityAudit', Exec) {
+    group = 'verification'
+    description = 'Writes an inherited Derby code-quality hotspot report for guarded cleanup work.'
+    commandLine 'bash', 'dev/inherited-code-quality-audit.sh', '--verify'
+}
+
+
+tasks.register('legacyDerbyHarnessAudit', Exec) {
+    group = 'verification'
+    description = 'Classifies old Derby function-test harness entrypoints before quarantine/removal.'
+    commandLine 'bash', 'dev/legacy-derby-harness-audit.sh', '--verify'
+}
+
+tasks.register('derbyRuntimeSmoke') {
+    group = 'verification'
+    description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
+    dependsOn 'smoke', 'smokeFromJars', 'sysinfoFromJars'
+}
+
+tasks.register('derbyTestSuite') {
+    group = 'verification'
+    description = 'Runs the original Derby lang JUnit suite through Gradle.'
+    dependsOn ':delosdb-tests:runDerbyLangSuite'
+}
+
+tasks.register('verifyInheritedDemosStatus') {
+    group = 'verification'
+    description = 'Verifies inherited Derby demos are explicitly marked as retained but unverified.'
+    dependsOn ':delosdb-demos:verifyInheritedDemosStatus'
+}
+
+tasks.named('check') {
+    dependsOn 'derbyRuntimeSmoke', 'verifyDeprecatedAnnotations', 'verifyInheritedDemosStatus'
+}
+
+tasks.register('fullVerification') {
+    group = 'verification'
+    description = 'Runs Derby-compatible runtime smokes and the original Derby lang JUnit suite.'
+    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite', 'verifyDeprecatedAnnotations', 'verifyInheritedDemosStatus'
+}
+
+tasks.register('test') {
+    group = 'verification'
+    description = 'Alias for the Derby-focused verification suite.'
+    dependsOn 'fullVerification'
+}
+
+tasks.named('build') {
+    dependsOn 'jars'
+}
+
+
+tasks.register('mvccCoreModelTest') {
+    group = 'verification'
+    description = 'Runs the experimental DelosDB MVCC core model tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest'
+}
+
+tasks.register('mvccTableScanModelTest') {
+    group = 'verification'
+    description = 'Runs the experimental DelosDB MVCC table-scan model tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccTableScanModelTest'
+}
+
+
+tasks.register('mvccPageFileTest') {
+    group = 'verification'
+    description = 'Runs Phase A1 delos_mvcc durable page-file tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccPageFileTest'
+}
+
+
+tasks.register('mvccVersionRecordCodecTest') {
+    group = 'verification'
+    description = 'Runs Phase A2 delos_mvcc durable version-record codec tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccVersionRecordCodecTest'
+}
+
+tasks.register('mvccPageBackedTableTest') {
+    group = 'verification'
+    description = 'Runs Phase A3 delos_mvcc page-backed table tests.'
+    dependsOn ':delosdb-storage-mvcc:runPageBackedMvccTableTest'
+}
+
+
+
+tasks.register('mvccDurableIndexCandidateTest') {
+    group = 'verification'
+    description = 'Runs Phase A6 delos_mvcc durable index-candidate tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccDurableIndexCandidateTest'
+}
+
+
+tasks.register('mvccDurableVacuumTest') {
+    group = 'verification'
+    description = 'Runs Phase A7 delos_mvcc durable vacuum tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccDurableVacuumTest'
+}
+
+tasks.register('mvccPageRecoveryTest') {
+    group = 'verification'
+    description = 'Runs Phase A5 delos_mvcc page-aware recovery tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccPageRecoveryTest'
+}
+
+
+tasks.register('mvccPageMutationLogContractTest') {
+    group = 'verification'
+    description = 'Runs MVCC-3 durable page mutation-log contract tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccPageMutationLogContractTest'
+}
+
+
+tasks.register('mvccRecoveryBootProof') {
+    group = 'verification'
+    description = 'Runs MVCC-4 recovery runner boot proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccRecoveryBootProof'
+}
+
+
+tasks.register('mvccDurableIndexVisibilityTest') {
+    group = 'verification'
+    description = 'Runs MVCC-5 durable index tuple visibility proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccDurableIndexVisibilityTest'
+}
+
+
+tasks.register('mvccDurableIndexRecoveryTest') {
+    group = 'verification'
+    description = 'Runs MVCC-6 durable index recovery replay proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccDurableIndexRecoveryTest'
+}
+
+
+tasks.register('mvccVacuumSafetyTest') {
+    group = 'verification'
+    description = 'Runs MVCC-7 vacuum safety-window proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccVacuumSafetyTest'
+}
+
+tasks.register('mvccVacuumRecoveryTest') {
+    group = 'verification'
+    description = 'Runs MVCC-8 vacuum/recovery interaction proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccVacuumRecoveryTest'
+}
+
+tasks.register('mvccConcurrencyStressTest') {
+    group = 'verification'
+    description = 'Runs MVCC-9 deterministic concurrent readers/writers stress proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccConcurrencyStressTest'
+}
+
+
+tasks.register('mvccTransactionLockOrderProof') {
+    group = 'verification'
+    description = 'Runs MVCC-18 transaction/catalog/table/index lock-order proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccTransactionLockOrderTest'
+}
+
+
+tasks.register('mvccStoreAdapterSmoke') {
+    group = 'verification'
+    description = 'Runs MVCC-11 opt-in MVCC store adapter smoke proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccStoreAdapterSmoke'
+}
+
+tasks.register('mvccSqlOptInSmoke') {
+    group = 'verification'
+    description = 'Runs MVCC-12 SQL-shaped opt-in MVCC storage smoke proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccSqlOptInSmoke'
+}
+
+
+tasks.register('mvccSqlRecoverySmoke') {
+    group = 'verification'
+    description = 'Runs MVCC-13 SQL-shaped opt-in recovery smoke proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccSqlRecoverySmoke', ':delosdb-storage-mvcc:runMvccSqlIndexVisibilitySmoke'
+}
+
+tasks.register('mvccSqlIndexVisibilitySmoke') {
+    group = 'verification'
+    description = 'Runs MVCC-14 SQL-shaped primary-key/index visibility smoke proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccSqlIndexVisibilitySmoke'
+}
+
+tasks.register('mvccKernelReviewCloseoutProof') {
+    group = 'verification'
+    description = 'Runs MVCC-19 low-level kernel review closeout proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccKernelReviewCloseoutTest'
+}
+
+tasks.register('mvccHistoryPrunedSafetyProof') {
+    group = 'verification'
+    description = 'Runs A44 MVCC missing-history / prune-safety proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccHistoryPrunedSafetyTest'
+}
+
+tasks.register('mvccVacuumWatermarkProof') {
+    group = 'verification'
+    description = 'Runs A45 MVCC vacuum watermark proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccVacuumWatermarkTest'
+}
+
+tasks.register('mvccCommandSequenceProof') {
+    group = 'verification'
+    description = 'Runs A46 MVCC command sequence proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccCommandSequenceTest'
+}
+
+
+tasks.register('mvccStatementSnapshotVisibilityProof') {
+    group = 'verification'
+    description = 'Runs A47 MVCC statement snapshot visibility proof.'
+    dependsOn ':delosdb-storage-mvcc:runMvccStatementSnapshotVisibilityTest'
+}
+
+
+tasks.register('mvccSqlStatementBoundarySmoke') {
+    group = 'verification'
+    description = 'Runs A48 MVCC SQL statement-boundary smoke proof.'
+    dependsOn 'mvccStatementSnapshotVisibilityProof'
+}
+
+tasks.register('mvccStorageModelTest') {
+    group = 'verification'
+    description = 'Runs all experimental DelosDB MVCC storage model tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest', ':delosdb-storage-mvcc:runMvccTableScanModelTest', ':delosdb-storage-mvcc:runVersionedStorageProviderSpiTest', ':delosdb-storage-mvcc:runMvccRecoveryLogTest', ':delosdb-storage-mvcc:runDelosMvccProviderOwnedIndexTest', ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest', ':delosdb-storage-mvcc:runMvccKernelReviewCloseoutTest', ':delosdb-storage-mvcc:runMvccHistoryPrunedSafetyTest', ':delosdb-storage-mvcc:runMvccVacuumWatermarkTest', ':delosdb-storage-mvcc:runMvccCommandSequenceTest', ':delosdb-storage-mvcc:runMvccStatementSnapshotVisibilityTest', ':delosdb-storage-mvcc:runMvccCapturedVisibilitySnapshotTest', ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest', ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest', ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest', ':delosdb-storage-mvcc:runDelosMvccIndexStatsTest', ':delosdb-storage-mvcc:runDelosMvccOrderedIndexRangeTest', ':delosdb-storage-mvcc:runMvccPageFileTest', ':delosdb-storage-mvcc:runMvccVersionRecordCodecTest', ':delosdb-storage-mvcc:runPageBackedMvccTableTest', ':delosdb-storage-mvcc:runMvccPageRecoveryTest', ':delosdb-storage-mvcc:runMvccPageMutationLogContractTest', ':delosdb-storage-mvcc:runMvccRecoveryBootProof', ':delosdb-storage-mvcc:runMvccDurableIndexVisibilityTest', ':delosdb-storage-mvcc:runMvccDurableIndexRecoveryTest', ':delosdb-storage-mvcc:runMvccVacuumSafetyTest', ':delosdb-storage-mvcc:runMvccVacuumRecoveryTest', ':delosdb-storage-mvcc:runMvccDurableIndexCandidateTest', ':delosdb-storage-mvcc:runMvccDurableVacuumTest', ':delosdb-storage-mvcc:runMvccConcurrencyStressTest', ':delosdb-storage-mvcc:runMvccTransactionLockOrderTest', ':delosdb-storage-mvcc:runMvccStoreAdapterSmoke', ':delosdb-storage-mvcc:runMvccSqlOptInSmoke', ':delosdb-storage-mvcc:runMvccSqlRecoverySmoke', ':delosdb-storage-mvcc:runMvccSqlIndexVisibilitySmoke'
+}
+
+tasks.register('mvccRecoveryLogTest') {
+    group = 'verification'
+    description = 'Runs the experimental delos_mvcc provider recovery-log tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccRecoveryLogTest'
+}
+
+tasks.register('mvccRecoveryHardeningTest') {
+    group = 'verification'
+    description = 'Runs Phase 11 delos_mvcc recovery hardening tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccRecoveryHardeningTest'
+}
+
+tasks.register('mvccWriteConflictTest') {
+    group = 'verification'
+    description = 'Runs Phase 12 delos_mvcc write-conflict tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccWriteConflictTest'
+}
+
+
+tasks.register('mvccIndexStatsTest') {
+    group = 'verification'
+    description = 'Runs Phase 13 delos_mvcc index statistics tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccIndexStatsTest'
+}
+
+tasks.register('mvccOrderedIndexRangeTest') {
+    group = 'verification'
+    description = 'Runs Phase 14 delos_mvcc ordered provider-owned index range tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccOrderedIndexRangeTest'
+}
+
+tasks.register('mvccOrderedIndexOrderByTest') {
+    group = 'verification'
+    description = 'Runs Phase 15 delos_mvcc ordered provider-owned index ORDER BY tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccOrderedIndexOrderByTest'
+}
+
+tasks.register('mvccSnapshotIsolationTest') {
+    group = 'verification'
+    description = 'Runs Phase 9 delos_mvcc snapshot semantics tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccSnapshotIsolationTest'
+}
+
+
+tasks.register('mvccSnapshotVisibilityTest') {
+    group = 'verification'
+    description = 'Runs MVCC-2 low-level transaction/snapshot visibility contract tests.'
+    dependsOn ':delosdb-storage-mvcc:runMvccSnapshotVisibilityTest'
+}
+
+tasks.register('mvccCleanupVacuumTest') {
+    group = 'verification'
+    description = 'Runs Phase 10 delos_mvcc cleanup/vacuum tests.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccCleanupVacuumTest'
+}
+
+
+tasks.register('mvccStorageAudit') {
+    group = 'verification'
+    description = 'Runs MVCC-1 storage-lane audit before default-store integration.'
+    dependsOn ':delosdb-storage-mvcc:compileDelosDbStorageMvcc', ':delosdb-storage-mvcc:compileDelosDbStorageMvccTests'
+    doLast {
+        def requiredFiles = [
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccTransactionId.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccCommitSequence.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccSnapshot.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccVersion.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccVisibility.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageMutationLog.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageRecoveryRunner.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccIndex.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccCleanupResult.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStoreAdapter.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java'
+        ]
+        requiredFiles.each { path ->
+            if (!file(path).isFile()) {
+                throw new GradleException("Required MVCC storage-lane file is missing: ${path}")
+            }
+        }
+
+        def mainSources = fileTree('delosdb-storage-mvcc/src/main/java') {
+            include '**/*.java'
+        }.files
+        def leakedTestApi = []
+        mainSources.each { source ->
+            def sourceText = source.text
+            if (sourceText.contains('org.junit') || sourceText.contains('Assertions.') || sourceText.contains('@Test')) {
+                leakedTestApi << project.relativePath(source)
+            }
+            sourceText.eachLine { line ->
+                if (line.startsWith('package ') && line.contains('.experimental.')) {
+                    leakedTestApi << "${project.relativePath(source)} uses experimental package name"
+                }
+            }
+        }
+        if (!leakedTestApi.isEmpty()) {
+            throw new GradleException('MVCC main sources leaked test/experimental API: ' + leakedTestApi)
+        }
+
+        def duplicateKeyCodecs = mainSources.findAll { source ->
+            def name = source.name.toLowerCase(Locale.ROOT)
+            name.contains('index') && name.contains('codec') && name.endsWith('.java')
+        }
+        if (duplicateKeyCodecs.size() > 1) {
+            throw new GradleException('Multiple MVCC index key codecs found: ' + duplicateKeyCodecs.collect { project.relativePath(it) })
+        }
+    }
+}
+
+tasks.register('verifyMvccDefaultSwitchReadinessConfiguration') {
+    group = 'verification'
+    description = 'Verifies MVCC is ready for default-switch discussion but remains opt-in.'
+    doLast {
+        def requiredTasks = [
+                'mvccStorageAudit',
+                'mvccSnapshotVisibilityTest',
+                'mvccPageMutationLogContractTest',
+                'mvccRecoveryBootProof',
+                'mvccDurableIndexVisibilityTest',
+                'mvccDurableIndexRecoveryTest',
+                'mvccVacuumSafetyTest',
+                'mvccVacuumRecoveryTest',
+                'mvccConcurrencyStressTest',
+                'mvccWriteConflictTest',
+                'mvccStoreAdapterSmoke',
+                'mvccSqlOptInSmoke',
+                'mvccSqlRecoverySmoke',
+                'mvccSqlIndexVisibilitySmoke'
+        ]
+        requiredTasks.each { taskName ->
+            if (tasks.findByName(taskName) == null) {
+                throw new GradleException("Required MVCC readiness task is missing: ${taskName}")
+            }
+        }
+
+        def adapter = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStoreAdapter.java').text
+        if (!adapter.contains('public static final String STORAGE_PROVIDER_PROPERTY = "delosdb.storage.provider"')) {
+            throw new GradleException('MVCC opt-in property constant is missing from DelosMvccStoreAdapter')
+        }
+        if (!adapter.contains('public static final String PROVIDER_MVCC = "mvcc"')) {
+            throw new GradleException('MVCC provider opt-in value is missing from DelosMvccStoreAdapter')
+        }
+        if (!adapter.contains('requires explicit')) {
+            throw new GradleException('DelosMvccStoreAdapter must continue to reject non-opt-in opens')
+        }
+
+        def sqlSession = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java').text
+        if (!sqlSession.contains('DelosMvccStoreAdapter.open(properties)')) {
+            throw new GradleException('MVCC SQL smoke must enter through the explicit opt-in store adapter')
+        }
+
+        def defaultConfigHits = []
+        fileTree('.') {
+            include '**/*.properties'
+            include '**/*.conf'
+            include '**/*.gradle'
+            exclude 'build/**'
+            exclude '**/build/**'
+            exclude '.gradle/**'
+            exclude '.git/**'
+        }.files.each { candidate ->
+            def relative = project.relativePath(candidate)
+            if (relative == 'build.gradle') {
+                return
+            }
+            def candidateText = candidate.text
+            if (candidateText.contains('delosdb.storage.provider=mvcc')) {
+                defaultConfigHits << relative
+            }
+        }
+        if (!defaultConfigHits.isEmpty()) {
+            throw new GradleException('MVCC must remain opt-in; default config enables mvcc in: ' + defaultConfigHits)
+        }
+    }
+}
+
+tasks.register('mvccDefaultSwitchReadiness') {
+    group = 'verification'
+    description = 'Runs the complete MVCC proof ladder before considering a default storage switch.'
+    dependsOn 'verifyMvccDefaultSwitchReadinessConfiguration',
+            'mvccStorageAudit',
+            'mvccSnapshotVisibilityTest',
+            'mvccPageMutationLogContractTest',
+            'mvccRecoveryBootProof',
+            'mvccDurableIndexVisibilityTest',
+            'mvccDurableIndexRecoveryTest',
+            'mvccVacuumSafetyTest',
+            'mvccVacuumRecoveryTest',
+            'mvccConcurrencyStressTest',
+            'mvccWriteConflictTest',
+            'mvccStoreAdapterSmoke',
+            'mvccSqlOptInSmoke',
+            'mvccSqlRecoverySmoke',
+            'mvccSqlIndexVisibilitySmoke'
+}
+
+
+
+
+
+// Bridge-era VersionedStorage SQL metadata smokes were retired after the F-I
+// native Derby execution lane closed.  Supported delos_mvcc SQL verification now
+// lives under the current explicit MVCC/storage smoke tasks in this build.
+
+
+tasks.register('mvccVersionedStorageProviderTest') {
+    group = 'verification'
+    description = 'Runs MVCC provider-boundary tests plus permanent native SQL execution closeout guards.'
+    dependsOn 'mvccStorageModelTest'
+}
+
+tasks.register('verifyMvccNativeExecutionReadinessConfiguration') {
+    group = 'verification'
+    description = 'Verifies delos_mvcc native execution is cleanly separated from the retired pre-parse SQL bridge.'
+    doLast {
+        def requiredTasks = [
+                'mvccDefaultSwitchReadiness'
+        ]
+        def missingTasks = requiredTasks.findAll { tasks.findByName(it) == null }
+        if (!missingTasks.isEmpty()) {
+            throw new GradleException('Missing MVCC native execution readiness tasks: ' + missingTasks)
+        }
+
+        def bridgePath = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/' + 'VersionedStorage' + 'SqlBridge.java')
+        if (bridgePath.exists()) {
+            throw new GradleException('Retired SQL bridge source must be removed: ' + bridgePath)
+        }
+
+        def embedStatement = file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedStatement.java').text
+        ['VersionedStorage' + 'SqlBridge', 'VersionedStorage' + 'SqlResult', 'isInterceptionEnabled()', 'tryExecute('].each { marker ->
+            if (embedStatement.contains(marker)) {
+                throw new GradleException('EmbedStatement still contains retired bridge marker: ' + marker)
+            }
+        }
+
+        def embedConnection = file('delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedConnection.java').text
+        ['VersionedStorage' + 'SqlBridge.commit', 'VersionedStorage' + 'SqlBridge.rollback'].each { marker ->
+            if (embedConnection.contains(marker)) {
+                throw new GradleException('EmbedConnection still contains retired bridge marker: ' + marker)
+            }
+        }
+
+        def registry = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/versioned/sql/DelosNativeTableRegistry.java').text
+        ['registerNativeExecutionTable', 'openNativeExecutionTableAccess', 'NativeExecutionTableAccess'].each { marker ->
+            if (!registry.contains(marker)) {
+                throw new GradleException('DelosNativeTableRegistry is missing required native registry marker: ' + marker)
+            }
+        }
+
+        def builtIns = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/storage/BuiltInStorageProviders.java').text
+        if (!builtIns.contains('return heap();')) {
+            throw new GradleException('Built-in default storage provider must remain heap until a separate default-store switch overlay')
+        }
+        if (!builtIns.contains('return List.of(heap());')) {
+            throw new GradleException('Built-in storage provider list must not silently add delos_mvcc as default engine storage')
+        }
+
+        def serviceFile = file('delosdb-storage-mvcc/src/main/resources/META-INF/services/io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider')
+        if (!serviceFile.exists() || !serviceFile.text.contains('io.github.ggeorg.delosdb.storage.mvcc.DelosMvccStorageProvider')) {
+            throw new GradleException('delos_mvcc VersionedStorageProvider ServiceLoader entry is missing')
+        }
+
+        def adapter = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStoreAdapter.java').text
+        if (!adapter.contains('STORAGE_PROVIDER_PROPERTY = "delosdb.storage.provider"')) {
+            throw new GradleException('MVCC store adapter must retain explicit provider opt-in property')
+        }
+        if (!adapter.contains('Experimental delos_mvcc storage requires explicit')) {
+            throw new GradleException('MVCC store adapter must reject non-explicit provider opt-in')
+        }
+    }
+}
+
+tasks.register('mvccNativeExecutionReadiness') {
+    group = 'verification'
+    description = 'Runs the native delos_mvcc execution readiness lane after bridge deletion.'
+    dependsOn 'verifyMvccNativeExecutionReadinessConfiguration',
+            'mvccDefaultSwitchReadiness'
+}
+
+tasks.register('mvccDefaultProviderCandidateSmoke') {
+    group = 'verification'
+    description = 'Defers the plain default-provider switch; supported SQL uses explicit USING delos_mvcc native execution.'
+    dependsOn 'mvccNativeExecutionReadiness'
+    doLast {
+        println 'Default-provider switch remains deferred; bridge-era default-provider candidate smoke is retired.'
+    }
+}
+
+tasks.register('mvccTransactionOutcomeLogProof') {
+    group = 'verification'
+    description = 'Runs A49 durable transaction outcome-log proof for strict MVCC recovery paths.'
+    dependsOn ':delosdb-storage-mvcc:runMvccTransactionOutcomeLogTest'
+}
+
+
+tasks.register('mvccUnresolvedOutcomeRecoveryProof') {
+    group = 'verification'
+    description = 'Runs A50 strict unresolved transaction outcome recovery proof for durable MVCC.'
+    dependsOn 'mvccTransactionOutcomeLogProof', ':delosdb-storage-mvcc:runMvccUnresolvedOutcomeRecoveryTest'
+}
+
+
+
+tasks.register('mvccCapturedVisibilitySnapshotProof') {
+    group = 'verification'
+    description = 'Runs A51 MVCC captured visibility-state snapshot proof.'
+    dependsOn 'mvccUnresolvedOutcomeRecoveryProof', ':delosdb-storage-mvcc:runMvccCapturedVisibilitySnapshotTest'
+}
+
+tasks.register('mvccDefaultProviderCandidateMatrix') {
+    group = 'verification'
+    description = 'Runs the guarded default-provider candidate recovery/index/update/delete matrix without flipping the global default store.'
+    dependsOn 'mvccDefaultProviderCandidateSmoke'
+}
+
+
+tasks.register('mvccSqlCompatibilityCandidate') {
+    group = 'verification'
+    description = 'Runs A52 MVCC SQL compatibility candidate matrix while keeping delos_mvcc property-gated.'
+    dependsOn 'mvccCapturedVisibilitySnapshotProof', 'mvccSqlStatementBoundarySmoke', 'mvccDefaultProviderCandidateMatrix'
+}
+
+
+tasks.register('mvccSqlHistoryPrunedProof') {
+    group = 'verification'
+    description = 'Runs the post-A52 MVCC pruned-history proof after bridge deletion.'
+    dependsOn 'mvccSqlCompatibilityCandidate'
+}
 
 
 // -----------------------------------------------------------------------------

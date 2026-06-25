@@ -11,6 +11,8 @@ def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.build
 def engineModuleClassDir = rootProject.project(':delosdb-engine').layout.buildDirectory.dir('classes/modules/org.apache.derby.engine')
 def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
 def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
+def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
+def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
 
 
 tasks.register('compileDerbyBuildTools', JavaCompile) {
@@ -22,13 +24,17 @@ tasks.register('compileDerbyBuildTools', JavaCompile) {
     dependsOn ':processDerbyResources',
             ':delosdb-commons:compileDerbyCommons',
             ':delosdb-engine-kernel:compileDelosDbEngineKernel',
+            ':delosdb-engine-storage-api:compileEngineStorageApi',
+            ':delosdb-derby-store-api:compileDerbyStoreApi',
             ':delosdb-storage-derby:compileLegacyDerbyStorage',
             ':delosdb-engine:compileDerbyEngine'
     source = files(
             'src/main/java/org/apache/derbyBuild/splitmessages.java',
             'src/main/java/org/apache/derbyBuild/EnglishMessagePropertiesGenerator.java',
             'src/main/java/org/apache/derbyBuild/ODBCMetadataGenerator.java',
-            'src/main/java/org/apache/derbyBuild/ClassSizeCrawler.java'
+            'src/main/java/org/apache/derbyBuild/ClassSizeCrawler.java',
+            'src/main/java/org/apache/derbyBuild/SecureXmlFactoryProbe.java',
+            'src/main/java/org/apache/derby/impl/store/access/sort/SortMemoryPolicyProbe.java'
     )
     destinationDirectory = buildToolsClassDir
     sourceCompatibility = rootProject.ext.javaRelease.toString()
@@ -37,7 +43,7 @@ tasks.register('compileDerbyBuildTools', JavaCompile) {
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
-    classpath = rootProject.files(commonsModuleClassDir, kernelModuleClassDir, engineModuleClassDir, storageDerbyClassDir)
+    classpath = rootProject.files(commonsModuleClassDir, kernelModuleClassDir, engineModuleClassDir, engineStorageApiClassDir, storeApiClassDir, storageDerbyClassDir)
     doLast {
         copy {
             from 'src/main/java/org/apache/derbyBuild/odbcgen_fragments.properties'
