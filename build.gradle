@@ -54,7 +54,6 @@ def moduleProjects = [
 ]
 
 def moduleSourceRoots = [
-        (moduleNames.commons)      : 'delosdb-commons/src/main/java',
         (moduleNames.engineKernel) : 'delosdb-engine-kernel/src/main/java',
         (moduleNames.engineApi)    : 'delosdb-engine-api/src/main/java',
         (moduleNames.engine)       : 'delosdb-engine/src/main/java',
@@ -82,7 +81,6 @@ def productInfoResources = [
         [module: moduleNames.tools,         path: 'org/apache/derby/info/tools/info.properties',    technology: 'DelosDB Tools',           productFile: 'derbytools.jar'],
         [module: moduleNames.server,        path: 'org/apache/derby/info/net/info.properties',      technology: 'DelosDB Network Server',  productFile: 'derbynet.jar'],
         [module: moduleNames.client,        path: 'org/apache/derby/info/client/info.properties',   technology: 'DelosDB Network Client',  productFile: 'derbyclient.jar'],
-        [module: moduleNames.commons,       path: 'org/apache/derby/info/shared/info.properties',   technology: 'DelosDB Shared Utilities', productFile: 'derbyshared.jar'],
         [module: moduleNames.optionaltools, path: 'org/apache/derby/optional/info.properties',       technology: 'DelosDB Optional Tools',   productFile: 'derbyoptionaltools.jar']
 ]
 

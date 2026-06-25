@@ -60,6 +60,13 @@ tasks.named('processResources') {
     destinationDir = buildToolsClassDir.get().asFile
 }
 
+// The Java plugin sees the shared build-tool output directory as both classes
+// and resources because root generation tasks execute directly from that
+// directory. Keep the runtime layout, but de-duplicate the normal Gradle jar.
+tasks.named('jar', Jar) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 // Compatibility alias used by the root build.
 tasks.register('compileDerbyBuildTools') {
     dependsOn tasks.named('classes')
