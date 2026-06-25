@@ -42,13 +42,6 @@ configurations {
         canBeResolved = false
     }
 }
-
-artifacts {
-    derbyEngineClasses(moduleClassDir) {
-        builtBy tasks.named('compileDerbyEngine')
-    }
-}
-
 tasks.register('generateSqlParser', JavaExec) {
     def outputDir = generatedSourceRoot.map {
         it.dir('org/apache/derby/impl/sql/compile')
@@ -97,6 +90,13 @@ tasks.register('compileDerbyEngine', JavaCompile) {
     doFirst {
         def patchPath = rootProject.files(engineStorageApiClassDir, storeApiClassDir, storageDerbyClassDir).asPath
         options.compilerArgs.addAll(['--patch-module', "${moduleName}=${patchPath}"])
+    }
+}
+
+
+artifacts {
+    derbyEngineClasses(moduleClassDir) {
+        builtBy tasks.named('compileDerbyEngine')
     }
 }
 

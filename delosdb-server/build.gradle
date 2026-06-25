@@ -37,7 +37,7 @@ dependencies {
     implementation project(':delosdb-engine-api')
     compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
     compileOnly externalModulePath
-    compileOnly rootProject.configurations.delosdbAsm
+    compileOnly "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
 
     enginePatchModule(project(':delosdb-engine-storage-api')) { transitive = false }
     enginePatchModule(project(':delosdb-derby-store-api')) { transitive = false }

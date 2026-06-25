@@ -20,7 +20,7 @@ dependencies {
     implementation project(':delosdb-commons')
     implementation project(':delosdb-tools')
     implementation project(':delosdb-server')
-    compileOnly rootProject.configurations.delosdbAsm
+    compileOnly "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
 }
 
 sourceSets {

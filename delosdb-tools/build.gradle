@@ -37,7 +37,7 @@ dependencies {
     compileOnly project(':delosdb-engine-api')
     compileOnly project(':delosdb-client')
     compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
-    compileOnly rootProject.configurations.delosdbAsm
+    compileOnly "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
 }
 
 sourceSets {
