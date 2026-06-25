@@ -1,0 +1,56 @@
+plugins {
+    id 'application'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.tasks.JavaExec
+
+version = rootProject.version
+group = rootProject.group
+
+java {
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+}
+
+application {
+    mainClass = 'delosdb.smoke.Module5bNativeTableIdentitySmoke'
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'src/main/java'
+            srcDir '../smoke-utils/src/main/java'
+        }
+    }
+}
+
+dependencies {
+    compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
+    implementation project(':delosdb-storage-io')
+    implementation project(':delosdb-storage-mvcc')
+
+    // Derby's embedded runtime is still assembled through the legacy product jar
+    // tasks while delosdb-engine remains on its custom compile path. Keep this
+    // centralized dependency here so MODULE5 smokes no longer need root-level
+    // ad hoc JavaCompile classpaths.
+    runtimeOnly rootProject.ext.delosdbRuntimeJars()
+}
+
+tasks.named('compileJava', JavaCompile) {
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+}
+
+tasks.named('run', JavaExec) {
+    dependsOn rootProject.tasks.named('jars')
+    group = 'verification'
+    description = 'Runs the MODULE5B Derby-visible MVCC table identity smoke without the SQL bridge.'
+    workingDir = rootProject.projectDir
+    doFirst {
+        delete rootProject.file('build/module5b-native-table-identity-db')
+    }
+}

@@ -606,50 +606,11 @@ tasks.register('smokeFromJars', JavaExec) {
 }
 
 
-def smokeUtilsSourceDir = 'dev/smoke-utils/src/main/java'
 
-// Plain `smokeUtilsSourceDir` references inside task configuration closures may
-// resolve against the task object after extraction, so expose it explicitly.
-ext.delosdbSmokeUtilsSourceDir = smokeUtilsSourceDir
-
-
-def module5bNativeTableIdentitySmokeSourceDir = 'dev/module5b-native-table-identity-smoke/src/main/java'
-def module5bNativeTableIdentitySmokeClassesDir = layout.buildDirectory.dir('classes/module5b-native-table-identity-smoke')
-def module5bNativeTableIdentitySmokeClasspath = {
-    files(
-            runtimeJars(),
-            layout.buildDirectory.file('libs/delosdb-storage-io.jar'),
-            layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
-            configurations.delosdbAsm)
-}
-
-tasks.register('compileModule5bNativeTableIdentitySmoke', JavaCompile) {
-    dependsOn 'jars', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-storage-mvcc:delosDbStorageMvccJar'
+tasks.register('module5bNativeTableIdentitySmoke') {
+    dependsOn ':module5b-native-table-identity-smoke:run'
     group = 'verification'
-    description = 'Compiles the MODULE5B Derby-visible MVCC table identity smoke.'
-    source = files(
-            fileTree(rootProject.ext.delosdbSmokeUtilsSourceDir) { include '**/*.java' },
-            fileTree(module5bNativeTableIdentitySmokeSourceDir) { include '**/*.java' })
-    classpath = module5bNativeTableIdentitySmokeClasspath()
-    destinationDirectory.set(module5bNativeTableIdentitySmokeClassesDir)
-    sourceCompatibility = rootProject.ext.javaRelease.toString()
-    targetCompatibility = rootProject.ext.javaRelease.toString()
-    options.release = rootProject.ext.javaRelease
-    options.encoding = 'UTF-8'
-    options.deprecation = false
-    options.warnings = true
-}
-
-tasks.register('module5bNativeTableIdentitySmoke', JavaExec) {
-    dependsOn 'compileModule5bNativeTableIdentitySmoke'
-    group = 'verification'
-    description = 'Runs the MODULE5B Derby-visible MVCC table identity smoke without the SQL bridge.'
-    classpath = files(module5bNativeTableIdentitySmokeClassesDir, module5bNativeTableIdentitySmokeClasspath())
-    mainClass = 'delosdb.smoke.Module5bNativeTableIdentitySmoke'
-    workingDir = projectDir
-    doFirst {
-        delete file('build/module5b-native-table-identity-db')
-    }
+    description = 'Runs the dependency-driven MODULE5B Derby-visible MVCC table identity smoke.'
 }
 
 
