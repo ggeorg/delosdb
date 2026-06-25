@@ -194,6 +194,7 @@ tasks.named('classes') {
 def engineArchiveName = 'derby.jar'
 
 tasks.named('jar', Jar) {
+    dependsOn ':splitEngineMessages', ':generateOdbcMetadata', ':ensureCatalogMetadataResources'
     archiveFileName = 'delosdb-engine.jar'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(rootProject.ext.delosdbLegalFiles) {
