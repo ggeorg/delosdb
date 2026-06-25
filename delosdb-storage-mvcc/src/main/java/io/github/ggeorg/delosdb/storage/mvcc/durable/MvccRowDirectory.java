@@ -155,6 +155,25 @@ public final class MvccRowDirectory {
         }
     }
 
+    public synchronized List<MvccRowDirectoryStore.RowHeadRecord> headRecords() {
+        List<MvccRowDirectoryStore.RowHeadRecord> heads = new ArrayList<>();
+        for (Map.Entry<String, RowState> entry : rowsByKey.entrySet()) {
+            entry.getValue().headRecord(entry.getKey()).ifPresent(heads::add);
+        }
+        heads.sort(Comparator.comparingLong(record -> record.rowId().value()));
+        return List.copyOf(heads);
+    }
+
+    public synchronized Optional<MvccRowDirectoryStore.RowHeadRecord> headRecordForRowId(MvccRowId rowId) {
+        Objects.requireNonNull(rowId, "rowId");
+        for (Map.Entry<String, RowState> entry : rowsByKey.entrySet()) {
+            if (entry.getValue().rowId().equals(rowId)) {
+                return entry.getValue().headRecord(entry.getKey());
+            }
+        }
+        return Optional.empty();
+    }
+
     private void advanceIds(MvccVersionRecord record) {
         nextRowId = Math.max(nextRowId, record.header().rowId().value() + 1L);
         nextVersionId = Math.max(nextVersionId, record.header().versionId().value() + 1L);
@@ -233,6 +252,20 @@ public final class MvccRowDirectory {
                 }
             }
             return Optional.empty();
+        }
+
+        private Optional<MvccRowDirectoryStore.RowHeadRecord> headRecord(String key) {
+            if (newestFirst.isEmpty()) {
+                return Optional.empty();
+            }
+            StoredVersion head = newestFirst.get(0);
+            return Optional.of(new MvccRowDirectoryStore.RowHeadRecord(
+                    rowId,
+                    key,
+                    head.record().header().versionId(),
+                    head.record().header().previousVersionId(),
+                    head.locator(),
+                    head.record().header().isTombstone()));
         }
 
         private boolean containsVersion(MvccVersionId versionId) {

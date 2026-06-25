@@ -2,6 +2,7 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
@@ -25,14 +26,17 @@ public final class PageBackedMvccTable implements AutoCloseable {
     private final PageBackedMvccTableStore store;
     private MvccRowDirectory directory;
     private final MvccPageMutationLog mutationLog;
+    private final MvccRowDirectoryStore rowDirectoryStore;
 
     private PageBackedMvccTable(
             PageBackedMvccTableStore store,
             MvccRowDirectory directory,
-            MvccPageMutationLog mutationLog) {
+            MvccPageMutationLog mutationLog,
+            MvccRowDirectoryStore rowDirectoryStore) {
         this.store = Objects.requireNonNull(store, "store");
         this.directory = Objects.requireNonNull(directory, "directory");
         this.mutationLog = mutationLog;
+        this.rowDirectoryStore = Objects.requireNonNull(rowDirectoryStore, "rowDirectoryStore");
     }
 
     public static PageBackedMvccTable open(Path path) throws IOException {
@@ -51,7 +55,10 @@ public final class PageBackedMvccTable implements AutoCloseable {
                 log = MvccPageMutationLog.open(mutationLogPath);
                 new MvccPageRecoveryRunner(log, store).recover();
             }
-            return new PageBackedMvccTable(store, MvccRowDirectory.fromStoredRecords(store.loadAll()), log);
+            MvccRowDirectory directory = MvccRowDirectory.fromStoredRecords(store.loadAll());
+            MvccRowDirectoryStore rowDirectory = MvccRowDirectoryStore.open(rowDirectoryPath(path));
+            reconcileRowDirectoryWithPages(rowDirectory, directory);
+            return new PageBackedMvccTable(store, directory, log, rowDirectory);
         } catch (RuntimeException | IOException failure) {
             try {
                 store.close();
@@ -218,6 +225,26 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return directory.newestVersionLocatorForKey(key);
     }
 
+    public synchronized Optional<MvccRowDirectoryStore.RowHeadRecord> rowDirectoryHeadForRowId(MvccRowId rowId) {
+        try {
+            return rowDirectoryStore.headForRowId(Objects.requireNonNull(rowId, "rowId"));
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException("Could not read durable MVCC row-directory head", e);
+        }
+    }
+
+    public synchronized java.util.Map<MvccRowId, MvccRowDirectoryStore.RowHeadRecord> durableRowDirectoryHeads() {
+        try {
+            return rowDirectoryStore.recoverHeads();
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException("Could not recover durable MVCC row-directory heads", e);
+        }
+    }
+
+    public synchronized Path rowDirectoryPath() {
+        return rowDirectoryStore.path();
+    }
+
     public synchronized java.util.List<MvccRowPayload> visibleRows(MvccCommitSequence snapshotSequence) {
         return directory.visiblePayloads(Objects.requireNonNull(snapshotSequence, "snapshotSequence"));
     }
@@ -257,6 +284,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
             mutationLog.rewriteCheckpoint(selection.retainedRecords());
         }
         directory = MvccRowDirectory.fromStoredRecords(store.rewrite(selection.retainedRecords()));
+        rowDirectoryStore.rewriteHeads(directory.headRecords());
         return new MvccVacuumResult(
                 selection.removedVersions(),
                 0,
@@ -283,7 +311,24 @@ public final class PageBackedMvccTable implements AutoCloseable {
 
     @Override
     public synchronized void close() throws IOException {
-        store.close();
+        IOException failure = null;
+        try {
+            store.close();
+        } catch (IOException e) {
+            failure = e;
+        }
+        try {
+            rowDirectoryStore.close();
+        } catch (Exception e) {
+            if (failure == null) {
+                failure = e instanceof IOException io ? io : new IOException(e);
+            } else {
+                failure.addSuppressed(e);
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 
     private MvccRowId rowIdForExistingKey(String key, String operation) {
@@ -354,6 +399,13 @@ public final class PageBackedMvccTable implements AutoCloseable {
                 ? appendCommittedRecord(transactionId, commitSequence, record, pageLsn)
                 : store.append(record, pageLsn);
         directory.addNewCommitted(key, rowId, new MvccRowDirectory.StoredVersion(locator, record, payload));
+        rowDirectoryStore.recordHead(new MvccRowDirectoryStore.RowHeadRecord(
+                rowId,
+                key,
+                versionId,
+                previousVersionId,
+                locator,
+                record.header().isTombstone()));
         return MvccIndexTuple.active(rowId, versionId, locator);
     }
 
@@ -367,6 +419,26 @@ public final class PageBackedMvccTable implements AutoCloseable {
             mutationLog.appendCommit(transactionId, commitSequence);
         }
         return store.append(record, pageLsn);
+    }
+
+    private static void reconcileRowDirectoryWithPages(
+            MvccRowDirectoryStore rowDirectoryStore,
+            MvccRowDirectory pageDirectory) throws IOException {
+        Map<MvccRowId, MvccRowDirectoryStore.RowHeadRecord> pageHeads = pageDirectory.headRecords().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        MvccRowDirectoryStore.RowHeadRecord::rowId,
+                        java.util.function.Function.identity(),
+                        (left, right) -> right,
+                        java.util.LinkedHashMap::new));
+        Map<MvccRowId, MvccRowDirectoryStore.RowHeadRecord> durableHeads = rowDirectoryStore.recoverHeads();
+        if (!durableHeads.equals(pageHeads)) {
+            rowDirectoryStore.rewriteHeads(pageHeads.values());
+        }
+    }
+
+    public static Path rowDirectoryPath(Path pageFile) {
+        Objects.requireNonNull(pageFile, "pageFile");
+        return pageFile.resolveSibling(pageFile.getFileName() + ".rowdir");
     }
 
     private static byte[] stringBytes(String value) {
