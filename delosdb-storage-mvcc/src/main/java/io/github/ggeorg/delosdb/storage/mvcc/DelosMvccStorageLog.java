@@ -66,6 +66,10 @@ final class DelosMvccStorageLog {
     }
 
     synchronized RecoveryImage recover() {
+        return recoverUsingDurableStatuses(null);
+    }
+
+    synchronized RecoveryImage recoverUsingDurableStatuses(MvccTransactionStatusStore transactionStatusStore) {
         if (!isEnabled() || !Files.exists(logFile)) {
             return RecoveryImage.empty();
         }
@@ -107,6 +111,16 @@ final class DelosMvccStorageLog {
             }
         }
 
+        List<CommittedTransaction> committed = transactionStatusStore != null && transactionStatusStore.isEnabled()
+                ? committedTransactionsFromDurableStatus(changesByTransaction, transactionStatusStore)
+                : committedTransactionsFromStorageLog(changesByTransaction, terminalStates, terminalOrder);
+        return new RecoveryImage(List.copyOf(tables), List.copyOf(committed));
+    }
+
+    private static List<CommittedTransaction> committedTransactionsFromStorageLog(
+            Map<Long, List<RecoveredChange>> changesByTransaction,
+            Map<Long, TerminalState> terminalStates,
+            List<Long> terminalOrder) {
         List<CommittedTransaction> committed = new ArrayList<>();
         for (Long txId : terminalOrder) {
             if (terminalStates.get(txId) != TerminalState.COMMITTED) {
@@ -117,7 +131,34 @@ final class DelosMvccStorageLog {
                 committed.add(new CommittedTransaction(txId, List.copyOf(changes)));
             }
         }
-        return new RecoveryImage(List.copyOf(tables), List.copyOf(committed));
+        return List.copyOf(committed);
+    }
+
+    private static List<CommittedTransaction> committedTransactionsFromDurableStatus(
+            Map<Long, List<RecoveredChange>> changesByTransaction,
+            MvccTransactionStatusStore transactionStatusStore) {
+        Map<MvccTransactionId, MvccTransactionStatusRecord> statuses = transactionStatusStore.recoverStatuses();
+        List<MvccTransactionStatusRecord> committedStatuses = new ArrayList<>();
+        for (Map.Entry<Long, List<RecoveredChange>> entry : changesByTransaction.entrySet()) {
+            MvccTransactionStatusRecord status = statuses.get(new MvccTransactionId(entry.getKey()));
+            if (status != null && status.status() == MvccTransactionStatus.COMMITTED && !entry.getValue().isEmpty()) {
+                committedStatuses.add(status);
+            }
+        }
+        committedStatuses.sort((left, right) -> {
+            int byCommitSequence = left.commitSequence().compareTo(right.commitSequence());
+            if (byCommitSequence != 0) {
+                return byCommitSequence;
+            }
+            return left.transactionId().compareTo(right.transactionId());
+        });
+
+        List<CommittedTransaction> committed = new ArrayList<>();
+        for (MvccTransactionStatusRecord status : committedStatuses) {
+            long txId = status.transactionId().value();
+            committed.add(new CommittedTransaction(txId, List.copyOf(changesByTransaction.get(txId))));
+        }
+        return List.copyOf(committed);
     }
 
     void appendCreateTable(VersionedTableMetadata metadata) {

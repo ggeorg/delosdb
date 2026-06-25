@@ -272,7 +272,7 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
     }
 
     private void recoverFromLog() {
-        DelosMvccStorageLog.RecoveryImage image = storageLog.recover();
+        DelosMvccStorageLog.RecoveryImage image = storageLog.recoverUsingDurableStatuses(transactionStatusStore);
         recovering = true;
         try {
             for (VersionedTableMetadata metadata : image.tables()) {
