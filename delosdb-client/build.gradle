@@ -65,12 +65,14 @@ derby.product.file=${productFile}
     }
 }
 
+def generateClientInfoProperties = registerProductInfoTask(
+        'generateClientInfoProperties',
+        'org/apache/derby/info/client/info.properties',
+        'DelosDB Network Client',
+        'derbyclient.jar')
+
 def generateClientResources = tasks.register('generateClientResources') {
-    dependsOn registerProductInfoTask(
-            'generateClientInfoProperties',
-            'org/apache/derby/info/client/info.properties',
-            'DelosDB Network Client',
-            'derbyclient.jar')
+    dependsOn generateClientInfoProperties
     def serviceFile = generatedProductInfoResourceDir.map { it.file('META-INF/services/java.sql.Driver') }
     outputs.file(serviceFile)
     doLast {
