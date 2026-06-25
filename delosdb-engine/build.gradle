@@ -17,10 +17,10 @@ def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 // Use exact compile task dependencies but plain output locations. Do not resolve
 // cross-project task providers while this project is being evaluated: several
 // sibling projects have not registered their tasks yet. Also do not depend on
-// lifecycle tasks such as :delosdb-engine-kernel:classes, because that lifecycle
-// builds the generated ClassSizeCatalog and would re-enter compileDerbyEngine.
+// lifecycle tasks such as :classes, because lifecycle wiring may
+// build the generated ClassSizeCatalog and re-enter compileDerbyEngine.
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
+def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
 def osgiModuleClassDir = rootProject.project(':delosdb-osgi-stub').layout.buildDirectory.dir('classes/modules/org.osgi.framework')
 def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
 def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
@@ -64,7 +64,7 @@ tasks.register('generateSqlParser', JavaExec) {
 }
 
 tasks.register('compileDerbyEngine', JavaCompile) {
-    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-kernel:compileDelosDbEngineKernel', ':delosdb-spi:compileDelosDbSpi', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', 'generateSqlParser'
+    dependsOn ':delosdb-osgi-stub:compileOsgiStubs', ':delosdb-commons:compileDerbyCommons', ':delosdb-engine-api:compileDelosDbEngineApi', ':delosdb-spi:compileDelosDbSpi', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', 'generateSqlParser'
     source = files(
             fileTree(sourceRoot) { include '**/*.java' },
             fileTree(generatedSourceRoot.get().asFile) { include '**/*.java' }
@@ -73,7 +73,7 @@ tasks.register('compileDerbyEngine', JavaCompile) {
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             osgiModuleClassDir,
             commonsModuleClassDir,
-            kernelModuleClassDir,
+            engineApiModuleClassDir,
             spiModuleClassDir,
             rootProject.configurations.delosdbAsm
     ])
@@ -93,7 +93,7 @@ tasks.register('copyEngineServiceDescriptors', Copy) {
 }
 
 tasks.register('compileClassSizeCatalog') {
-    dependsOn ':delosdb-engine-kernel:compileDelosDbEngineKernelClassSizeCatalog'
+    dependsOn ':delosdb-engine-api:compileDelosDbEngineApiClassSizeCatalog'
 }
 
 tasks.register('classes') {

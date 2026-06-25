@@ -1,0 +1,56 @@
+plugins {
+    id 'base'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = rootProject.version
+group = rootProject.group
+
+def moduleName = 'io.github.ggeorg.delosdb.engine.api'
+def sourceRoot = file('src/main/java')
+def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
+def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
+def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
+
+tasks.register('compileDelosDbEngineApi', JavaCompile) {
+    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-spi:compileDelosDbSpi'
+    source = fileTree(sourceRoot) { include '**/*.java' }
+    destinationDirectory = moduleClassDir
+    rootProject.ext.delosdbConfigureJavaCompile(delegate, [commonsModuleClassDir, spiModuleClassDir])
+}
+
+def generatedClassSizeCatalogSource = rootProject.layout.buildDirectory.file('generated/sources/io.github.ggeorg.delosdb.engine.api/org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
+
+tasks.register('compileDelosDbEngineApiClassSizeCatalog', JavaCompile) {
+    dependsOn 'compileDelosDbEngineApi', ':delosdb-engine:compileDerbyEngine', ':generateClassSizeCatalog'
+    source = files(generatedClassSizeCatalogSource)
+    destinationDirectory = moduleClassDir
+    rootProject.ext.delosdbConfigureJavaCompile(delegate, [commonsModuleClassDir, spiModuleClassDir, moduleClassDir])
+}
+
+tasks.register('classes') {
+    dependsOn 'compileDelosDbEngineApi', 'compileDelosDbEngineApiClassSizeCatalog'
+}
+
+tasks.register('delosDbEngineApiJar', Jar) {
+    dependsOn 'classes'
+    archiveFileName = 'delosdb-engine-api.jar'
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from moduleClassDir
+    from(rootProject.ext.delosdbLegalFiles) {
+        into 'META-INF'
+    }
+    manifest {
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Engine API')
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn 'delosDbEngineApiJar'
+}
+
+tasks.named('check') {
+    dependsOn 'classes'
+}

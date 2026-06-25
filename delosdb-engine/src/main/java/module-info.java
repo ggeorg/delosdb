@@ -78,7 +78,7 @@ module org.apache.derby.engine
     requires java.xml;
     
     requires org.apache.derby.commons;
-    requires io.github.ggeorg.delosdb.engine.kernel;
+    requires io.github.ggeorg.delosdb.engine.api;
     requires io.github.ggeorg.delosdb.spi;
 
     //

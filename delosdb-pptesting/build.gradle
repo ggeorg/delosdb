@@ -36,7 +36,7 @@ def externalTestClasspath = rootProject.files(
         'tools/java/lucene-queryparser.jar'
 )
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
+def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
 def storageDerbyClassDir = rootProject.project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
 def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
 def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
@@ -55,8 +55,8 @@ tasks.register('compileDerbyPackagePrivateTests', JavaCompile) {
             ':delosdb-tools:compileDerbyTools',
             ':delosdb-optionaltools:compileDerbyOptionalTools',
             ':delosdb-runner:compileDerbyRunner',
-            ':delosdb-engine-kernel:compileDelosDbEngineKernel',
-            ':delosdb-engine-kernel:compileDelosDbEngineKernelClassSizeCatalog',
+            ':delosdb-engine-api:compileDelosDbEngineApi',
+            ':delosdb-engine-api:compileDelosDbEngineApiClassSizeCatalog',
             ':delosdb-engine-storage-api:compileEngineStorageApi',
             ':delosdb-derby-store-api:compileDerbyStoreApi',
             ':delosdb-storage-derby:compileLegacyDerbyStorage',
@@ -74,7 +74,7 @@ tasks.register('compileDerbyPackagePrivateTests', JavaCompile) {
     options.warnings = true
     classpath = rootProject.files(
             commonsModuleClassDir,
-            kernelModuleClassDir,
+            engineApiModuleClassDir,
             engineStorageApiClassDir,
             storeApiClassDir,
             storageDerbyClassDir,

@@ -71,7 +71,7 @@ module org.apache.derby.optionaltools
     requires java.sql;
 
     requires org.apache.derby.engine;
-    requires io.github.ggeorg.delosdb.engine.kernel;
+    requires io.github.ggeorg.delosdb.engine.api;
     requires org.apache.derby.tools;
     requires org.apache.derby.commons;
     

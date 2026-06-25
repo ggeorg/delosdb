@@ -13,15 +13,13 @@ group = rootProject.group
 def sourceRoot = file('src/main/java')
 def mainClassDir = layout.buildDirectory.dir('classes/store-api')
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
+def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
 def engineStorageApiClassDir = rootProject.project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api')
-def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
 
 tasks.register('compileDerbyStoreApi', JavaCompile) {
     dependsOn ':delosdb-commons:compileDerbyCommons',
-            ':delosdb-engine-kernel:compileDelosDbEngineKernel',
-            ':delosdb-engine-storage-api:compileEngineStorageApi',
-            ':delosdb-spi:compileDelosDbSpi'
+            ':delosdb-engine-api:compileDelosDbEngineApi',
+            ':delosdb-engine-storage-api:compileEngineStorageApi'
     source = fileTree(sourceRoot) { include 'org/apache/derby/iapi/store/**/*.java' }
     destinationDirectory = mainClassDir
     sourceCompatibility = rootProject.ext.javaRelease.toString()
@@ -34,9 +32,8 @@ tasks.register('compileDerbyStoreApi', JavaCompile) {
     options.compilerArgs.add('-Xlint:deprecation')
     classpath = rootProject.files(
             commonsModuleClassDir,
-            kernelModuleClassDir,
-            engineStorageApiClassDir,
-            spiModuleClassDir)
+            engineApiModuleClassDir,
+            engineStorageApiClassDir)
 }
 
 tasks.register('classes') {

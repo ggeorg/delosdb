@@ -12,9 +12,8 @@ def mainClassDir = layout.buildDirectory.dir('classes/main')
 
 // Use exact compile task dependencies but plain output locations. Avoid both
 // sibling task-provider lookup during project evaluation and lifecycle outputs
-// such as :delosdb-engine-kernel:classes, which would pull ClassSizeCatalog and
-// re-enter delosdb-engine after B6n.
-def kernelModuleClassDir = rootProject.project(':delosdb-engine-kernel').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.kernel')
+// such as :classes, which would pull ClassSizeCatalog and re-enter delosdb-engine.
+def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
 def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
 def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
 def storeApiClassDir = rootProject.project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
@@ -24,7 +23,7 @@ tasks.register('compileLegacyDerbyStorage', JavaCompile) {
     // B6n closes the source-owner boundary: the storage module compiles the
     // relocated Derby store without depending on delosdb-engine output.
     // Depend only on exact compile producers, never on :classes lifecycle tasks.
-    dependsOn ':delosdb-engine-kernel:compileDelosDbEngineKernel'
+    dependsOn ':delosdb-engine-api:compileDelosDbEngineApi'
     dependsOn ':delosdb-commons:compileDerbyCommons'
     dependsOn ':delosdb-spi:compileDelosDbSpi'
     dependsOn ':delosdb-engine-storage-api:compileEngineStorageApi'
@@ -46,7 +45,7 @@ tasks.register('compileLegacyDerbyStorage', JavaCompile) {
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
     classpath = rootProject.files(
-            kernelModuleClassDir,
+            engineApiModuleClassDir,
             commonsModuleClassDir,
             spiModuleClassDir,
             engineStorageApiClassDir,

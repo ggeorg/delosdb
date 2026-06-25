@@ -10,14 +10,13 @@ group = rootProject.group
 def moduleName = 'io.github.ggeorg.delosdb.engine.kernel'
 def sourceRoot = file('src/main/java')
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
-def commonsModuleClassDir = rootProject.project(':delosdb-commons').layout.buildDirectory.dir('classes/modules/org.apache.derby.commons')
-def spiModuleClassDir = rootProject.project(':delosdb-spi').layout.buildDirectory.dir('classes/spi')
+def engineApiModuleClassDir = rootProject.project(':delosdb-engine-api').layout.buildDirectory.dir('classes/modules/io.github.ggeorg.delosdb.engine.api')
 
 tasks.register('compileDelosDbEngineKernel', JavaCompile) {
-    dependsOn ':delosdb-commons:compileDerbyCommons', ':delosdb-spi:compileDelosDbSpi'
+    dependsOn ':delosdb-engine-api:compileDelosDbEngineApi'
     source = fileTree(sourceRoot) { include '**/*.java' }
     destinationDirectory = moduleClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate, [commonsModuleClassDir, spiModuleClassDir])
+    rootProject.ext.delosdbConfigureJavaCompile(delegate, [engineApiModuleClassDir])
 }
 
 tasks.register('classes') {
@@ -51,17 +50,9 @@ tasks.named('check') {
 }
 
 
-def generatedClassSizeCatalogSource = rootProject.layout.buildDirectory.file('generated/sources/org.apache.derby.engine/org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
 
-tasks.register('compileDelosDbEngineKernelClassSizeCatalog', JavaCompile) {
-    dependsOn 'compileDelosDbEngineKernel', ':delosdb-commons:compileDerbyCommons', ':delosdb-spi:compileDelosDbSpi', ':delosdb-engine:compileDerbyEngine', ':generateClassSizeCatalog'
-    source = files(generatedClassSizeCatalogSource)
-    destinationDirectory = moduleClassDir
-    rootProject.ext.delosdbConfigureJavaCompile(delegate, [
-            commonsModuleClassDir,
-            moduleClassDir,
-            spiModuleClassDir
-    ])
+tasks.register('compileDelosDbEngineKernelClassSizeCatalog') {
+    dependsOn ':delosdb-engine-api:compileDelosDbEngineApiClassSizeCatalog'
 }
 
 tasks.named('classes') {
