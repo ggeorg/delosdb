@@ -10,6 +10,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
+import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.dictionary.ColumnDescriptor;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.store.types.DelosAccessContext;
@@ -22,7 +23,7 @@ import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.types.DataTypeDescriptor;
 import org.apache.derby.impl.services.storetypes.EngineMvccTableAccess;
 
-import java.sql.Connection;
+import java.nio.file.Path;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
@@ -49,12 +50,12 @@ import java.util.Set;
 public final class DelosNativeTableRegistry {
     private static final String PROVIDER_NAME = "delos_mvcc";
     private static final Object LOCK = new Object();
-    private static final Map<VersionedTableMetadata, TableDefinition> TABLES = new HashMap<>();
+    private static final String DEFAULT_DATABASE_SCOPE = "__delosdb_default__";
+    private static final Map<NativeTableKey, TableDefinition> TABLES = new HashMap<>();
     private static final Map<Object, TransactionScope> DERBY_TRANSACTION_SCOPES = new IdentityHashMap<>();
+    private static final Map<String, VersionedStorageProvider> CACHED_PROVIDERS = new HashMap<>();
     private static final VersionedStorageExecutionBridge TABLE_OPERATION_BRIDGE =
             VersionedStorageExecutionBridge.resolvedTableOperations();
-
-    private static VersionedStorageProvider cachedProvider;
 
     private DelosNativeTableRegistry() {
     }
@@ -65,6 +66,7 @@ public final class DelosNativeTableRegistry {
      * TableDescriptor; this method does not parse or route SQL text.
      */
     public static void registerNativeExecutionTable(
+            LanguageConnectionContext languageConnectionContext,
             String schemaName,
             String tableName,
             List<String> columnNames,
@@ -82,21 +84,31 @@ public final class DelosNativeTableRegistry {
             throw sqlException("42X14", "CREATE TABLE USING delos_mvcc requires at least one column");
         }
 
+        String scopeKey = databaseScope(languageConnectionContext);
         VersionedTableMetadata metadata = metadata(schemaName, tableName);
+        NativeTableKey tableKey = new NativeTableKey(scopeKey, metadata);
         List<ColumnDefinition> columns = new ArrayList<>(columnNames.size());
         for (int i = 0; i < columnNames.size(); i++) {
             columns.add(ColumnDefinition.parse(columnNames.get(i), typeNames.get(i)));
         }
 
         synchronized (LOCK) {
-            if (TABLES.containsKey(metadata)) {
+            if (TABLES.containsKey(tableKey)) {
                 throw sqlException("X0Y32", "Versioned storage table already exists: "
                         + metadata.qualifiedName());
             }
-            VersionedStorageProvider provider = provider();
+            VersionedStorageProvider provider = provider(scopeKey);
             VersionedTable<Long, List<Object>> table = TABLE_OPERATION_BRIDGE.createTable(provider, metadata);
-            TABLES.put(metadata, new TableDefinition(metadata, columns, table, provider.transactionCoordinator()));
+            TABLES.put(tableKey, new TableDefinition(metadata, columns, table, provider.transactionCoordinator()));
         }
+    }
+
+    public static void registerNativeExecutionTable(
+            String schemaName,
+            String tableName,
+            List<String> columnNames,
+            List<String> typeNames) throws SQLException {
+        registerNativeExecutionTable(null, schemaName, tableName, columnNames, typeNames);
     }
 
     /**
@@ -125,7 +137,7 @@ public final class DelosNativeTableRegistry {
             return Optional.empty();
         }
 
-        TableDefinition table = tableDefinition(tableDescriptor);
+        TableDefinition table = tableDefinition(derbyTransactionOwner, tableDescriptor);
         StatementTransaction statementTx = beginStatementTransaction(derbyTransactionOwner, table);
         return Optional.of(new NativeExecutionTableAccess(
                 table,
@@ -149,13 +161,15 @@ public final class DelosNativeTableRegistry {
         synchronized (LOCK) {
             TABLES.clear();
             DERBY_TRANSACTION_SCOPES.clear();
+            CACHED_PROVIDERS.clear();
         }
     }
 
     /** Test-only proof that native execution does not use the retired SQL bridge registry. */
     public static boolean hasRegisteredTableForTesting(String schemaName, String tableName) {
+        VersionedTableMetadata metadata = metadata(schemaName, tableName);
         synchronized (LOCK) {
-            return TABLES.containsKey(metadata(schemaName, tableName));
+            return TABLES.keySet().stream().anyMatch(key -> key.metadata().equals(metadata));
         }
     }
 
@@ -250,15 +264,19 @@ public final class DelosNativeTableRegistry {
         }
     }
 
-    private static TableDefinition tableDefinition(TableDescriptor tableDescriptor) throws SQLException {
+    private static TableDefinition tableDefinition(
+            Object derbyTransactionOwner,
+            TableDescriptor tableDescriptor) throws SQLException {
+        String scopeKey = databaseScope(derbyTransactionOwner);
         VersionedTableMetadata metadata = metadata(tableDescriptor.getSchemaName(), tableDescriptor.getName());
+        NativeTableKey tableKey = new NativeTableKey(scopeKey, metadata);
         synchronized (LOCK) {
-            TableDefinition table = TABLES.get(metadata);
+            TableDefinition table = TABLES.get(tableKey);
             if (table != null) {
                 return table;
             }
 
-            VersionedStorageProvider provider = provider();
+            VersionedStorageProvider provider = provider(scopeKey);
             VersionedTable<Long, List<Object>> providerTable;
             try {
                 providerTable = provider.openTable(metadata);
@@ -270,7 +288,7 @@ public final class DelosNativeTableRegistry {
                     columnsFrom(tableDescriptor),
                     providerTable,
                     provider.transactionCoordinator());
-            TABLES.put(metadata, registered);
+            TABLES.put(tableKey, registered);
             return registered;
         }
     }
@@ -313,13 +331,19 @@ public final class DelosNativeTableRegistry {
                 && PROVIDER_NAME.equals(storageProviderName.trim().toLowerCase(Locale.ROOT));
     }
 
-    private static VersionedStorageProvider provider() throws SQLException {
-        VersionedStorageProvider provider = cachedProvider;
-        if (provider != null) {
-            return provider;
+    private static VersionedStorageProvider provider(String scopeKey) throws SQLException {
+        synchronized (LOCK) {
+            VersionedStorageProvider provider = CACHED_PROVIDERS.get(scopeKey);
+            if (provider != null) {
+                return provider;
+            }
+            VersionedStorageProvider discovered = discoverProvider();
+            VersionedStorageProvider scoped = DEFAULT_DATABASE_SCOPE.equals(scopeKey)
+                    ? discovered
+                    : discovered.openForDatabase(Path.of(scopeKey));
+            CACHED_PROVIDERS.put(scopeKey, scoped);
+            return scoped;
         }
-        cachedProvider = discoverProvider();
-        return cachedProvider;
     }
 
     private static VersionedStorageProvider discoverProvider() throws SQLException {
@@ -328,6 +352,16 @@ public final class DelosNativeTableRegistry {
                 .filter(candidate -> PROVIDER_NAME.equals(candidate.name()))
                 .findFirst()
                 .orElseThrow(() -> sqlException("0A000", "VersionedStorageProvider not discovered: " + PROVIDER_NAME));
+    }
+
+    private static String databaseScope(Object derbyTransactionOwner) {
+        if (derbyTransactionOwner instanceof LanguageConnectionContext lcc) {
+            String dbName = lcc.getDbname();
+            if (dbName != null && !dbName.isBlank()) {
+                return dbName;
+            }
+        }
+        return DEFAULT_DATABASE_SCOPE;
     }
 
     private static StatementTransaction beginStatementTransaction(Object derbyTransactionOwner, TableDefinition table) {
@@ -633,6 +667,13 @@ public final class DelosNativeTableRegistry {
                 }
             }
             return List.copyOf(constraints);
+        }
+    }
+
+    private record NativeTableKey(String databaseScope, VersionedTableMetadata metadata) {
+        private NativeTableKey {
+            databaseScope = Objects.requireNonNull(databaseScope, "databaseScope");
+            metadata = Objects.requireNonNull(metadata, "metadata");
         }
     }
 

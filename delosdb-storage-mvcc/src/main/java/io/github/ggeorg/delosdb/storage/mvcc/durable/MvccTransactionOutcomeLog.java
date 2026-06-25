@@ -271,8 +271,8 @@ public final class MvccTransactionOutcomeLog {
             if (status == MvccTransactionStatus.ABORTED && !commitSequence.equals(MvccCommitSequence.NONE)) {
                 throw new IllegalArgumentException("aborted outcome must not carry a commit sequence");
             }
-            if (status == MvccTransactionStatus.ACTIVE) {
-                throw new IllegalArgumentException("active is not a durable terminal transaction outcome");
+            if (status != MvccTransactionStatus.COMMITTED && status != MvccTransactionStatus.ABORTED) {
+                throw new IllegalArgumentException(status + " is not a durable terminal transaction outcome");
             }
         }
 

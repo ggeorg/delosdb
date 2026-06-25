@@ -4,5 +4,7 @@ package io.github.ggeorg.delosdb.storage.mvcc;
 public enum MvccTransactionStatus {
     ACTIVE,
     COMMITTED,
-    ABORTED
+    ABORTED,
+    /** Recovered transaction that was not durably committed or aborted yet. */
+    RECOVERY_PENDING
 }

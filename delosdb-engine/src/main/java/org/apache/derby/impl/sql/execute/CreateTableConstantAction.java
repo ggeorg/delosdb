@@ -408,7 +408,7 @@ class CreateTableConstantAction extends DDLConstantAction
 			lcc.addDeclaredGlobalTempTable(td);
 		}
 
-        registerNativeDelosTableIfNeeded(sd, td);
+        registerNativeDelosTableIfNeeded(lcc, sd, td);
 
 		// Indicate that the CREATE TABLE statement itself depends on the
 		// table it is creating. Normally such statement dependencies are
@@ -421,7 +421,10 @@ class CreateTableConstantAction extends DDLConstantAction
 
 	}
 
-    private void registerNativeDelosTableIfNeeded(SchemaDescriptor schemaDescriptor, TableDescriptor tableDescriptor)
+    private void registerNativeDelosTableIfNeeded(
+            org.apache.derby.iapi.sql.conn.LanguageConnectionContext lcc,
+            SchemaDescriptor schemaDescriptor,
+            TableDescriptor tableDescriptor)
             throws StandardException
     {
         if (tableType != TableDescriptor.BASE_TABLE_TYPE) {
@@ -443,6 +446,7 @@ class CreateTableConstantAction extends DDLConstantAction
         try
         {
             DelosNativeTableRegistry.registerNativeExecutionTable(
+                    lcc,
                     schemaDescriptor.getSchemaName(),
                     tableDescriptor.getName(),
                     columnNames,

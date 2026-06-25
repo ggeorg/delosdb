@@ -1,5 +1,6 @@
 package io.github.ggeorg.delosdb.spi.storage.versioned;
 
+import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -16,10 +17,18 @@ public interface VersionedStorageProvider {
     VersionedStorageCapabilities capabilities();
 
     /**
-     * Provider-local transaction coordinator used by prototype SQL bridges and
-     * provider tests. This is not yet wired to Derby transaction commit/rollback.
+     * Provider-local transaction coordinator used by prototype SQL bridges,
+     * provider tests, and current Derby transaction lifecycle hooks.
      */
     VersionedTransactionCoordinator transactionCoordinator();
+
+    /**
+     * Opens a provider instance scoped to a Derby database directory. Providers
+     * that do not keep database-local durable state may return {@code this}.
+     */
+    default VersionedStorageProvider openForDatabase(Path databaseDirectory) {
+        return this;
+    }
 
     /**
      * Returns a stable snapshot of tables currently owned by this provider.

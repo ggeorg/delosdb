@@ -22,9 +22,20 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
     private long nextSnapshotLeaseId = 1L;
     private final Map<MvccTransactionId, TransactionState> transactions = new HashMap<>();
     private final Map<Long, MvccCommitSequence> retainedSnapshotWatermarks = new LinkedHashMap<>();
+    private final MvccTransactionStatusStore statusStore;
+
+    public MvccTransactionManager() {
+        this(MvccTransactionStatusStore.disabled());
+    }
+
+    public MvccTransactionManager(MvccTransactionStatusStore statusStore) {
+        this.statusStore = java.util.Objects.requireNonNull(statusStore, "statusStore");
+        recoverDurableStatuses();
+    }
 
     public synchronized MvccTransaction begin() {
         MvccTransactionId id = new MvccTransactionId(nextTransactionId++);
+        statusStore.recordActive(id);
         transactions.put(id, new TransactionState(
                 MvccTransactionStatus.ACTIVE,
                 MvccCommitSequence.NONE,
@@ -81,7 +92,9 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
 
     public synchronized MvccCommitSequence commit(MvccTransaction transaction) {
         TransactionState state = requireActive(transaction);
-        MvccCommitSequence sequence = new MvccCommitSequence(++currentCommitSequence);
+        MvccCommitSequence sequence = new MvccCommitSequence(currentCommitSequence + 1L);
+        statusStore.recordCommitted(transaction.id(), sequence);
+        currentCommitSequence = sequence.value();
         state.status = MvccTransactionStatus.COMMITTED;
         state.commitSequence = sequence;
         return sequence;
@@ -89,6 +102,7 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
 
     public synchronized void abort(MvccTransaction transaction) {
         TransactionState state = requireActive(transaction);
+        statusStore.recordAborted(transaction.id());
         state.status = MvccTransactionStatus.ABORTED;
     }
 
@@ -161,7 +175,7 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
         }
         TransactionState state = transactions.get(transactionId);
         if (state == null) {
-            throw new IllegalArgumentException("unknown transaction id: " + transactionId);
+            return MvccTransactionStatus.RECOVERY_PENDING;
         }
         return state.status;
     }
@@ -173,6 +187,25 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
             return Optional.empty();
         }
         return Optional.of(state.commitSequence);
+    }
+
+    private void recoverDurableStatuses() {
+        Map<MvccTransactionId, MvccTransactionStatusRecord> recovered = statusStore.recoverStatuses();
+        long maxTransactionId = 0L;
+        long maxCommitSequence = 0L;
+        for (MvccTransactionStatusRecord record : recovered.values()) {
+            maxTransactionId = Math.max(maxTransactionId, record.transactionId().value());
+            if (record.status() == MvccTransactionStatus.COMMITTED) {
+                maxCommitSequence = Math.max(maxCommitSequence, record.commitSequence().value());
+            }
+            transactions.put(record.transactionId(), new TransactionState(
+                    record.status(),
+                    record.commitSequence(),
+                    MvccCommitSequence.NONE,
+                    1L));
+        }
+        nextTransactionId = Math.max(nextTransactionId, maxTransactionId + 1L);
+        currentCommitSequence = Math.max(currentCommitSequence, maxCommitSequence);
     }
 
     private MvccSnapshot captureSnapshot(

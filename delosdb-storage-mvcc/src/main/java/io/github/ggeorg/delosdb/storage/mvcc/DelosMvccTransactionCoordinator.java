@@ -15,7 +15,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordi
  * can optionally emit provider-owned recovery-log commit/abort records.</p>
  */
 public final class DelosMvccTransactionCoordinator implements VersionedTransactionCoordinator {
-    private final MvccTransactionManager transactionManager = new MvccTransactionManager();
+    private final MvccTransactionManager transactionManager;
     private static final BooleanSupplier NEVER_SUPPRESS_LOGGING = () -> false;
     private static final TransactionCompletionListener NOOP_LISTENER = new TransactionCompletionListener() {
         @Override
@@ -32,18 +32,27 @@ public final class DelosMvccTransactionCoordinator implements VersionedTransacti
     private final TransactionCompletionListener completionListener;
 
     public DelosMvccTransactionCoordinator() {
-        this(DelosMvccStorageLog.disabled(), NEVER_SUPPRESS_LOGGING);
+        this(DelosMvccStorageLog.disabled(), MvccTransactionStatusStore.disabled(), NEVER_SUPPRESS_LOGGING);
     }
 
     DelosMvccTransactionCoordinator(DelosMvccStorageLog storageLog, BooleanSupplier loggingSuppressed) {
-        this(storageLog, loggingSuppressed, NOOP_LISTENER);
+        this(storageLog, MvccTransactionStatusStore.disabled(), loggingSuppressed, NOOP_LISTENER);
     }
 
     DelosMvccTransactionCoordinator(
             DelosMvccStorageLog storageLog,
+            MvccTransactionStatusStore statusStore,
+            BooleanSupplier loggingSuppressed) {
+        this(storageLog, statusStore, loggingSuppressed, NOOP_LISTENER);
+    }
+
+    DelosMvccTransactionCoordinator(
+            DelosMvccStorageLog storageLog,
+            MvccTransactionStatusStore statusStore,
             BooleanSupplier loggingSuppressed,
             TransactionCompletionListener completionListener) {
         this.storageLog = Objects.requireNonNull(storageLog, "storageLog");
+        this.transactionManager = new MvccTransactionManager(Objects.requireNonNull(statusStore, "statusStore"));
         this.loggingSuppressed = Objects.requireNonNull(loggingSuppressed, "loggingSuppressed");
         this.completionListener = Objects.requireNonNull(completionListener, "completionListener");
     }

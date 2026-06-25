@@ -31,7 +31,11 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
     public static final String PROVIDER_NAME = "delos_mvcc";
 
     private final Map<VersionedTableMetadata, DelosMvccTable<?, ?>> tables = new LinkedHashMap<>();
+    public static final String DATABASE_STORAGE_DIRECTORY_NAME = "delos_mvcc";
+    public static final String TRANSACTION_STATUS_FILE_NAME = "delos-mvcc-tx-status.log";
+
     private final DelosMvccStorageLog storageLog;
+    private final MvccTransactionStatusStore transactionStatusStore;
     private final Path pageBackedStorageDirectory;
     private final DelosMvccTransactionCoordinator transactionCoordinator;
     private final VersionedStorageCapabilities capabilities;
@@ -39,12 +43,32 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
 
     /** Creates the default in-memory prototype provider used by ServiceLoader. */
     public DelosMvccStorageProvider() {
-        this(DelosMvccStorageLog.disabled(), null, false);
+        this(DelosMvccStorageLog.disabled(), MvccTransactionStatusStore.disabled(), null, false);
     }
 
     /** Opens a provider instance backed by the provider-local append-only log. */
     public static DelosMvccStorageProvider open(Path storageDirectory) {
-        return new DelosMvccStorageProvider(DelosMvccStorageLog.open(storageDirectory), null, true);
+        return new DelosMvccStorageProvider(
+                DelosMvccStorageLog.open(storageDirectory),
+                MvccTransactionStatusStore.open(transactionStatusPath(storageDirectory)),
+                null,
+                true);
+    }
+
+    @Override
+    public VersionedStorageProvider openForDatabase(Path databaseDirectory) {
+        Objects.requireNonNull(databaseDirectory, "databaseDirectory");
+        return open(databaseStorageDirectory(databaseDirectory));
+    }
+
+    public static Path databaseStorageDirectory(Path databaseDirectory) {
+        return Objects.requireNonNull(databaseDirectory, "databaseDirectory")
+                .resolve(DATABASE_STORAGE_DIRECTORY_NAME);
+    }
+
+    public static Path transactionStatusPath(Path storageDirectory) {
+        return Objects.requireNonNull(storageDirectory, "storageDirectory")
+                .resolve(TRANSACTION_STATUS_FILE_NAME);
     }
 
     /**
@@ -61,14 +85,24 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
             throw new UncheckedIOException("Could not create delos_mvcc page-backed storage directory: "
                     + storageDirectory, e);
         }
-        return new DelosMvccStorageProvider(DelosMvccStorageLog.disabled(), storageDirectory, false);
+        return new DelosMvccStorageProvider(
+                DelosMvccStorageLog.disabled(),
+                MvccTransactionStatusStore.open(transactionStatusPath(storageDirectory)),
+                storageDirectory,
+                false);
     }
 
-    private DelosMvccStorageProvider(DelosMvccStorageLog storageLog, Path pageBackedStorageDirectory, boolean recover) {
+    private DelosMvccStorageProvider(
+            DelosMvccStorageLog storageLog,
+            MvccTransactionStatusStore transactionStatusStore,
+            Path pageBackedStorageDirectory,
+            boolean recover) {
         this.storageLog = Objects.requireNonNull(storageLog, "storageLog");
+        this.transactionStatusStore = Objects.requireNonNull(transactionStatusStore, "transactionStatusStore");
         this.pageBackedStorageDirectory = pageBackedStorageDirectory;
         this.transactionCoordinator = new DelosMvccTransactionCoordinator(
                 storageLog,
+                transactionStatusStore,
                 this::isRecovering,
                 new DelosMvccTransactionCoordinator.TransactionCompletionListener() {
                     @Override
@@ -90,6 +124,9 @@ public final class DelosMvccStorageProvider implements VersionedStorageProvider 
         capabilityValues.add(VersionedStorageCapabilities.IN_MEMORY_PROTOTYPE);
         if (storageLog.isEnabled()) {
             capabilityValues.add(VersionedStorageCapabilities.APPEND_ONLY_RECOVERY_LOG);
+        }
+        if (transactionStatusStore.isEnabled()) {
+            capabilityValues.add("persistent-mvcc-transaction-status");
         }
         if (pageBackedStorageDirectory != null) {
             capabilityValues.add(VersionedStorageCapabilities.APPEND_ONLY_RECOVERY_LOG);
