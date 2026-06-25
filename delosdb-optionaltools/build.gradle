@@ -55,12 +55,15 @@ sourceSets {
 
 tasks.named('compileJava', JavaCompile) {
     destinationDirectory.set(moduleClassDir)
+    modularity.inferModulePath = false
+    classpath = files()
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
     doFirst {
+        options.compilerArgs.addAll(['--module-path', configurations.compileClasspath.asPath])
         options.compilerArgs.addAll(['--patch-module', "org.apache.derby.engine=${configurations.enginePatchModule.asPath}"])
     }
 }
