@@ -6,7 +6,7 @@
  * It must stay below engine, Derby raw store, and MVCC implementations.</p>
  */
 module io.github.ggeorg.delosdb.storage.io {
-    exports io.github.ggeorg.delosdb.storage.io;
+    requires transitive org.apache.derby.commons;
     exports io.github.ggeorg.delosdb.storage.io.page;
     exports io.github.ggeorg.delosdb.storage.io.volume;
 

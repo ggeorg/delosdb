@@ -16,6 +16,11 @@ java {
     targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
+
+dependencies {
+    api project(':delosdb-commons')
+}
+
 sourceSets {
     main {
         java {
