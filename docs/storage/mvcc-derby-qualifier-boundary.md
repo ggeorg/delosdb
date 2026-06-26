@@ -200,3 +200,11 @@ no bridge/result-set bypass resurrection
 no broad SQL expression model
 no full predicate pushdown framework yet
 ```
+
+
+## MODULE7B update
+
+MODULE7B wires `Qualifier[][]` from `MvccConglomerate.openScan(...)` into
+`MvccScanController` and evaluates qualifiers during normal scan iteration.  The
+scan remains a full table scan with row filtering; this is not index access or
+optimizer work.

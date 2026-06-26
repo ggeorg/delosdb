@@ -62,6 +62,7 @@ public final class MvccScanController implements ScanManager {
     private final MvccTransaction reader;
     private final MvccSnapshot snapshot;
     private MvccScan<Long, StoreDataValue[]> scan;
+    private final FormatableBitSet scanColumnList;
     private Qualifier[][] qualifiers;
     private MvccRow<Long, StoreDataValue[]> current;
     private boolean closed;
@@ -71,12 +72,14 @@ public final class MvccScanController implements ScanManager {
             MvccConglomerate conglomerate,
             TransactionManager transactionManager,
             boolean hold,
+            FormatableBitSet scanColumnList,
             Qualifier[][] qualifiers) {
         OPEN_COUNT.incrementAndGet();
         this.conglomerate = conglomerate;
         this.state = conglomerate.state();
         this.transactionManager = transactionManager;
         this.hold = hold;
+        this.scanColumnList = scanColumnList;
         this.qualifiers = qualifiers;
         this.reader = state.transactions().begin();
         this.snapshot = state.transactions().snapshot(reader);
@@ -238,6 +241,9 @@ public final class MvccScanController implements ScanManager {
         }
         int count = 0;
         while (count < rowArray.length && advanceToNextQualifiedRow()) {
+            if (rowArray[count] == null) {
+                rowArray[count] = newGroupFetchRowTemplate(rowArray);
+            }
             MvccConglomerateController.copyRow(current.value(), rowArray[count], null);
             if (rowlocArray != null) {
                 if (rowlocArray[count] == null) {
@@ -259,6 +265,13 @@ public final class MvccScanController implements ScanManager {
             StoreRowLocation[] oldrowlocArray,
             StoreRowLocation[] newrowlocArray) throws StandardException {
         return fetchNextGroup(rowArray, oldrowlocArray);
+    }
+
+    private StoreDataValue[] newGroupFetchRowTemplate(StoreDataValue[][] rowArray) throws StandardException {
+        if (rowArray.length > 0 && rowArray[0] != null) {
+            return MvccConglomerateController.cloneRow(rowArray[0]);
+        }
+        return MvccConglomerateController.cloneRow(current.value());
     }
 
     @Override

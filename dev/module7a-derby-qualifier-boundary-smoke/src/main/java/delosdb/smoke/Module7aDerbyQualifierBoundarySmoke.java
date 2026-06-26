@@ -71,7 +71,7 @@ public final class Module7aDerbyQualifierBoundarySmoke {
     private static void assertMvccScanCurrentQualifierGapIsMapped() throws Exception {
         String conglom = read("delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java");
         requireContains(conglom, "Qualifier[][] qualifier");
-        requireContains(conglom, "return new MvccScanController(this, xactManager, hold);");
+        requireContains(conglom, "return new MvccScanController(this, xactManager, hold, scanColumnList, qualifier);");
 
         String scan = read("delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java");
         requireContains(scan, "public void reopenScan(");
@@ -79,6 +79,7 @@ public final class Module7aDerbyQualifierBoundarySmoke {
         requireContains(scan, "scan = state.table().openScan(snapshot, state.transactions());");
         requireContains(scan, "public boolean fetchNext(StoreDataValue[] destRow)");
         requireContains(scan, "copyCurrentRow(destRow, null);");
+        requireContains(scan, "private boolean rowQualifies(StoreDataValue[] row)");
     }
 
     private static void assertDeleteAndUpdateMutationSourcesAreMapped() throws Exception {
