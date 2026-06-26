@@ -1,0 +1,2 @@
+ext.delosdbSmokeDescription = 'Runs the MODULE11B inherited MVCC row-directory page-volume persistence smoke.'
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

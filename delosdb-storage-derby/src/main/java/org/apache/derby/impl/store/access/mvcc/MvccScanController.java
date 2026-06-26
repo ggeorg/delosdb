@@ -246,7 +246,7 @@ public final class MvccScanController implements ScanManager {
                 if (rowlocArray[count] == null) {
                     rowlocArray[count] = new MvccRowLocation();
                 }
-                MvccRowLocation.from(rowlocArray[count]).set(current.key(), 0L, -1);
+                MvccRowLocation.from(rowlocArray[count]).copyFrom(state.rowLocationFor(current.key()));
             }
             count++;
         }
@@ -278,7 +278,7 @@ public final class MvccScanController implements ScanManager {
         if (current == null) {
             destination.restoreToNull();
         } else {
-            destination.set(current.key(), 0L, -1);
+            destination.copyFrom(state.rowLocationFor(current.key()));
         }
     }
 
@@ -338,7 +338,7 @@ public final class MvccScanController implements ScanManager {
         }
         StoreDataValue rowLocationColumn = destRow[current.value().length];
         if (rowLocationColumn instanceof StoreRowLocation rowLocation) {
-            MvccRowLocation.from(rowLocation).set(current.key(), 0L, -1);
+            MvccRowLocation.from(rowLocation).copyFrom(state.rowLocationFor(current.key()));
         }
     }
 

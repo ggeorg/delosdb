@@ -41,6 +41,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -49,6 +50,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowDirectoryStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowPayload;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccTable;
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.StoreDataValue;
@@ -135,6 +137,13 @@ final class InheritedMvccPageVolumeStateStore {
             maxRowId = Math.max(maxRowId, rowIdFromKey(head.key()));
         }
         return maxRowId + 1L;
+    }
+
+    Optional<MvccRowDirectoryStore.RowHeadRecord> rowHeadForInheritedRowId(long rowId) {
+        if (!enabled() || rowId <= 0L) {
+            return Optional.empty();
+        }
+        return table.rowDirectoryHeadForRowId(new MvccRowId(rowId));
     }
 
     void persistVisibleRows(List<PersistedRow> visibleRows) {

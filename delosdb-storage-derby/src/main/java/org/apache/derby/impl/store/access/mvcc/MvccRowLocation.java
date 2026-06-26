@@ -64,7 +64,7 @@ public final class MvccRowLocation extends StoreDataValueBase implements StoreRo
     }
 
     public boolean hasLocatorHint() {
-        return locatorPageId > 0L && locatorSlotId >= 0;
+        return rowId > 0L && locatorSlotId >= 0;
     }
 
     public long locatorPageId() {

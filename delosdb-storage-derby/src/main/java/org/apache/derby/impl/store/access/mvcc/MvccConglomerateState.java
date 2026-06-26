@@ -137,6 +137,15 @@ final class MvccConglomerateState {
         return legacySnapshotFile;
     }
 
+    synchronized MvccRowLocation rowLocationFor(long rowId) {
+        return pageVolumeStateStore.rowHeadForInheritedRowId(rowId)
+                .map(head -> new MvccRowLocation(
+                        rowId,
+                        head.headLocator().pageId().value(),
+                        head.headLocator().slotId()))
+                .orElseGet(() -> new MvccRowLocation(rowId));
+    }
+
     synchronized void close() {
         pageVolumeStateStore.close();
     }
