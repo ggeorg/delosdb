@@ -105,6 +105,14 @@ final class MvccConglomerateState {
             if (transactionStatusFile != null) {
                 Files.deleteIfExists(transactionStatusFile);
             }
+            Path pageMutationLogFile = pageVolumeStateStore.pageMutationLogFile();
+            if (pageMutationLogFile != null) {
+                Files.deleteIfExists(pageMutationLogFile);
+            }
+            Path writeAheadLogFile = pageVolumeStateStore.writeAheadLogFile();
+            if (writeAheadLogFile != null) {
+                Files.deleteIfExists(writeAheadLogFile);
+            }
         } catch (IOException e) {
             throw new UncheckedIOException("Could not delete inherited MVCC state for " + key, e);
         }
@@ -116,6 +124,14 @@ final class MvccConglomerateState {
 
     Path rowDirectoryStateFileForTesting() {
         return pageVolumeStateStore.rowDirectoryFile();
+    }
+
+    Path pageMutationLogFileForTesting() {
+        return pageVolumeStateStore.pageMutationLogFile();
+    }
+
+    Path writeAheadLogFileForTesting() {
+        return pageVolumeStateStore.writeAheadLogFile();
     }
 
     /**

@@ -317,6 +317,14 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).rowDirectoryStateFileForTesting();
     }
 
+    public static Path pageMutationLogFileForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageMutationLogFileForTesting();
+    }
+
+    public static Path writeAheadLogFileForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).writeAheadLogFileForTesting();
+    }
+
     public static Path legacySnapshotFileForTesting(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).legacySnapshotFileForTesting();
     }

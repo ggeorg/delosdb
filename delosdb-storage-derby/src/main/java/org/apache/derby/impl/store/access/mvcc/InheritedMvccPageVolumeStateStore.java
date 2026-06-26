@@ -45,6 +45,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 import io.github.ggeorg.delosdb.storage.mvcc.DelosMvccStorageProvider;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowDirectoryStore;
@@ -69,12 +70,20 @@ final class InheritedMvccPageVolumeStateStore {
     private static final MvccCommitSequence LATEST_COMMITTED = new MvccCommitSequence(Long.MAX_VALUE);
 
     private final Path pageFile;
+    private final Path pageMutationLogFile;
+    private final InheritedMvccWriteAheadLog writeAheadLog;
     private final PageBackedMvccTable table;
     private long nextTransactionId;
     private long nextCommitSequence;
 
-    private InheritedMvccPageVolumeStateStore(Path pageFile, PageBackedMvccTable table) {
+    private InheritedMvccPageVolumeStateStore(
+            Path pageFile,
+            Path pageMutationLogFile,
+            InheritedMvccWriteAheadLog writeAheadLog,
+            PageBackedMvccTable table) {
         this.pageFile = pageFile;
+        this.pageMutationLogFile = pageMutationLogFile;
+        this.writeAheadLog = Objects.requireNonNull(writeAheadLog, "writeAheadLog");
         this.table = table;
         long nextSequence = 1L;
         if (table != null) {
@@ -90,14 +99,19 @@ final class InheritedMvccPageVolumeStateStore {
             return disabled();
         }
         try {
-            return new InheritedMvccPageVolumeStateStore(pageFile, PageBackedMvccTable.open(pageFile));
+            Path pageMutationLog = pageMutationLogFileFor(pageFile);
+            return new InheritedMvccPageVolumeStateStore(
+                    pageFile,
+                    pageMutationLog,
+                    InheritedMvccWriteAheadLog.open(databaseDirectory, key),
+                    PageBackedMvccTable.open(pageFile, pageMutationLog));
         } catch (IOException e) {
             throw new UncheckedIOException("Could not open inherited MVCC page-volume state for " + key, e);
         }
     }
 
     static InheritedMvccPageVolumeStateStore disabled() {
-        return new InheritedMvccPageVolumeStateStore(null, null);
+        return new InheritedMvccPageVolumeStateStore(null, null, InheritedMvccWriteAheadLog.disabled(), null);
     }
 
     boolean enabled() {
@@ -110,6 +124,14 @@ final class InheritedMvccPageVolumeStateStore {
 
     Path rowDirectoryFile() {
         return pageFile == null ? null : PageBackedMvccTable.rowDirectoryPath(pageFile);
+    }
+
+    Path pageMutationLogFile() {
+        return pageMutationLogFile;
+    }
+
+    Path writeAheadLogFile() {
+        return writeAheadLog.path();
     }
 
     boolean hasDurableState() {
@@ -158,6 +180,9 @@ final class InheritedMvccPageVolumeStateStore {
         Set<String> liveKeys = visibleRows.stream()
                 .map(row -> keyFor(row.rowId()))
                 .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        long transactionId = nextTransactionId();
+        long commitSequence = nextCommitSequence();
+        boolean beganWalTransaction = false;
         try {
             for (PersistedRow row : visibleRows) {
                 String key = keyFor(row.rowId());
@@ -166,19 +191,46 @@ final class InheritedMvccPageVolumeStateStore {
                     if (table.readPayload(key, LATEST_COMMITTED)
                             .map(payload -> !java.util.Arrays.equals(payload.value(), encoded))
                             .orElse(true)) {
-                        table.updateCommitted(key, encoded, nextTransactionId(), nextCommitSequence());
+                        if (!beganWalTransaction) {
+                            writeAheadLog.appendBegin(transactionId);
+                            beganWalTransaction = true;
+                        }
+                        DelosLogSequenceNumber pageLsn = writeAheadLog.appendUpdateVersion(transactionId, row.rowId());
+                        table.updateCommitted(key, encoded, transactionId, commitSequence, pageLsn);
                     }
                 } else {
-                    table.insertCommitted(key, encoded, nextTransactionId(), nextCommitSequence());
+                    if (!beganWalTransaction) {
+                        writeAheadLog.appendBegin(transactionId);
+                        beganWalTransaction = true;
+                    }
+                    DelosLogSequenceNumber pageLsn = writeAheadLog.appendInsertVersion(transactionId, row.rowId());
+                    table.insertCommitted(key, encoded, transactionId, commitSequence, pageLsn);
                 }
             }
             for (MvccRowDirectoryStore.RowHeadRecord head : existingHeads.values()) {
                 if (!liveKeys.contains(head.key()) && !head.tombstone()) {
-                    table.deleteCommitted(head.key(), nextTransactionId(), nextCommitSequence());
+                    if (!beganWalTransaction) {
+                        writeAheadLog.appendBegin(transactionId);
+                        beganWalTransaction = true;
+                    }
+                    long rowId = rowIdFromKey(head.key());
+                    DelosLogSequenceNumber pageLsn = writeAheadLog.appendDeleteVersion(transactionId, rowId);
+                    table.deleteCommitted(head.key(), transactionId, commitSequence, pageLsn);
                 }
             }
+            if (beganWalTransaction) {
+                writeAheadLog.appendCommit(transactionId, commitSequence);
+            }
         } catch (IOException e) {
+            if (beganWalTransaction) {
+                writeAheadLog.appendAbort(transactionId);
+            }
             throw new UncheckedIOException("Could not persist inherited MVCC state to page volume " + pageFile, e);
+        } catch (RuntimeException e) {
+            if (beganWalTransaction) {
+                writeAheadLog.appendAbort(transactionId);
+            }
+            throw e;
         }
     }
 
@@ -215,6 +267,12 @@ final class InheritedMvccPageVolumeStateStore {
 
     private long nextCommitSequence() {
         return nextCommitSequence++;
+    }
+
+
+    private static Path pageMutationLogFileFor(Path pageFile) {
+        Objects.requireNonNull(pageFile, "pageFile");
+        return pageFile.resolveSibling(pageFile.getFileName() + ".pagemut");
     }
 
     private static Path pageFile(Path databaseDirectory, ContainerKey key) {
