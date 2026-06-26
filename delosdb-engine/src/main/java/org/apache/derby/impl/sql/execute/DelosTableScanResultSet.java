@@ -38,6 +38,7 @@ import org.apache.derby.iapi.sql.execute.NoPutResultSet;
 import org.apache.derby.iapi.sql.dictionary.ColumnDescriptor;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.store.access.Qualifier;
+import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.store.types.DelosPredicate;
 import org.apache.derby.iapi.store.types.DelosPredicateOperator;
 import org.apache.derby.iapi.store.types.DelosProjection;
@@ -151,6 +152,9 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
     static Optional<NoPutResultSet> createIfEnabled(TableScanResultSetParameters params)
             throws StandardException
     {
+        if (isPhysicalMvccConglomerate(params.conglomId)) {
+            return Optional.empty();
+        }
         boolean nativeSelectAllEnabled = Boolean.getBoolean(NATIVE_COUNT_AGGREGATE_PROPERTY);
         boolean nativeOrPredicateEnabled = Boolean.getBoolean(NATIVE_OR_PREDICATES_PROPERTY);
         boolean nativeProjectionVariantsEnabled = Boolean.getBoolean(NATIVE_PROJECTION_VARIANTS_PROPERTY);
@@ -191,6 +195,12 @@ final class DelosTableScanResultSet extends NoPutResultSetImpl
                 nativePredicateScanEnabled,
                 nativeFullScanEnabled,
                 nativeOrPredicateEnabled));
+    }
+
+
+    private static boolean isPhysicalMvccConglomerate(long conglomerateId)
+    {
+        return (conglomerateId & 0x0fL) == ConglomerateFactory.MVCC_FACTORY_ID;
     }
 
     private static boolean isUnqualifiedFullScan(Qualifier[][] qualifiers)

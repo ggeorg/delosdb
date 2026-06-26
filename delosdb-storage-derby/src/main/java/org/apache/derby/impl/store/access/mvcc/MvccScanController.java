@@ -22,6 +22,7 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccRow;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccScan;
@@ -42,10 +43,13 @@ import org.apache.derby.shared.common.error.StandardException;
  * MODULE6D inherited ScanManager preflight for Delos MVCC.
  *
  * <p>The scan opens a statement snapshot against the MVCC kernel and returns
- * visible rows through Derby's inherited ScanController shape. This remains
- * below SQL execution; normal TableScanResultSet routing is not changed here.</p>
+ * visible rows through Derby's inherited ScanController shape. MODULE6F
+ * allows physical MVCC full-table SQL SELECT to reach this controller through
+ * the inherited TableScanResultSet path.</p>
  */
 public final class MvccScanController implements ScanManager {
+    private static final AtomicInteger OPEN_COUNT = new AtomicInteger();
+
     private final MvccConglomerate conglomerate;
     private final MvccConglomerateState state;
     private final TransactionManager transactionManager;
@@ -58,6 +62,7 @@ public final class MvccScanController implements ScanManager {
     private long estimatedRowCount;
 
     MvccScanController(MvccConglomerate conglomerate, TransactionManager transactionManager, boolean hold) {
+        OPEN_COUNT.incrementAndGet();
         this.conglomerate = conglomerate;
         this.state = conglomerate.state();
         this.transactionManager = transactionManager;
@@ -65,6 +70,15 @@ public final class MvccScanController implements ScanManager {
         this.reader = state.transactions().begin();
         this.snapshot = state.transactions().snapshot(reader);
         this.scan = state.table().openScan(snapshot, state.transactions());
+    }
+
+
+    public static void resetOpenCountForTesting() {
+        OPEN_COUNT.set(0);
+    }
+
+    public static int openCountForTesting() {
+        return OPEN_COUNT.get();
     }
 
     public MvccConglomerate conglomerate() {
