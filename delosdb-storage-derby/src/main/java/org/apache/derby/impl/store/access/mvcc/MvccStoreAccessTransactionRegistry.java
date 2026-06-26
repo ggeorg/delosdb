@@ -93,6 +93,18 @@ public final class MvccStoreAccessTransactionRegistry {
         return writers == null ? 0 : writers.size();
     }
 
+    public static synchronized int totalPendingCountForTesting() {
+        int count = 0;
+        for (List<Writer> writers : WRITERS.values()) {
+            count += writers.size();
+        }
+        return count;
+    }
+
+    public static synchronized void clearForTesting() {
+        WRITERS.clear();
+    }
+
     private static synchronized List<Writer> drain(Object derbyTransaction) {
         List<Writer> writers = WRITERS.remove(derbyTransaction);
         if (writers == null || writers.isEmpty()) {

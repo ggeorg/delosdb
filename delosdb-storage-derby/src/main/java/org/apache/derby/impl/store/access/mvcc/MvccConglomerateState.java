@@ -47,6 +47,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTable;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionManager;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
 
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.StoreDataValue;
@@ -56,9 +57,11 @@ import org.apache.derby.shared.common.error.StandardException;
  * Shared state behind the inherited MVCC conglomerate provider.
  *
  * <p>MODULE9A turns the static map into a cache instead of the restart
- * authority. Committed visible rows are snapshotted under the Derby database
- * service directory and reloaded through the inherited MVCC conglomerate state
- * boundary. This is not WAL, a checkpoint engine, or a side SQL bridge.</p>
+ * authority. MODULE9B attaches MVCC transaction status durability to the
+ * inherited Derby transaction lifecycle. Committed visible rows are snapshotted
+ * under the Derby database service directory and transaction outcomes are
+ * recorded beside that provider-owned state. This is not WAL, a checkpoint
+ * engine, or a side SQL bridge.</p>
  */
 final class MvccConglomerateState {
     private static final int SNAPSHOT_MAGIC = 0x444D5631; // DMV1
@@ -66,13 +69,20 @@ final class MvccConglomerateState {
 
     private final ContainerKey key;
     private final Path snapshotFile;
+    private final Path transactionStatusFile;
+    private final MvccTransactionStatusStore transactionStatusStore;
     private final MvccTable<Long, StoreDataValue[]> table = new MvccTable<>();
-    private final MvccTransactionManager transactions = new MvccTransactionManager();
+    private final MvccTransactionManager transactions;
     private long nextRowId = 1L;
 
     MvccConglomerateState(ContainerKey key, Path databaseDirectory) {
         this.key = key;
         this.snapshotFile = snapshotFile(databaseDirectory, key);
+        this.transactionStatusFile = transactionStatusFile(databaseDirectory, key);
+        this.transactionStatusStore = transactionStatusFile == null || key.getContainerId() == 0L
+                ? MvccTransactionStatusStore.disabled()
+                : MvccTransactionStatusStore.open(transactionStatusFile);
+        this.transactions = new MvccTransactionManager(transactionStatusStore);
         loadCommittedSnapshot();
     }
 
@@ -126,15 +136,18 @@ final class MvccConglomerateState {
     }
 
     synchronized void dropDurableState() {
-        if (snapshotFile == null) {
-            return;
-        }
         try {
-            Files.deleteIfExists(snapshotFile);
+            if (snapshotFile != null) {
+                Files.deleteIfExists(snapshotFile);
+            }
+            if (transactionStatusFile != null) {
+                Files.deleteIfExists(transactionStatusFile);
+            }
         } catch (IOException e) {
             throw new UncheckedIOException("Could not delete inherited MVCC state for " + key, e);
         }
     }
+
 
     private void loadCommittedSnapshot() {
         if (snapshotFile == null || !Files.exists(snapshotFile)) {
@@ -196,13 +209,28 @@ final class MvccConglomerateState {
     }
 
     private static Path snapshotFile(Path databaseDirectory, ContainerKey key) {
+        Path directory = inheritedStoreDirectory(databaseDirectory);
+        if (directory == null) {
+            return null;
+        }
+        return directory.resolve("conglomerate-" + key.getSegmentId() + "-" + key.getContainerId() + ".snapshot");
+    }
+
+    private static Path transactionStatusFile(Path databaseDirectory, ContainerKey key) {
+        Path directory = inheritedStoreDirectory(databaseDirectory);
+        if (directory == null) {
+            return null;
+        }
+        return directory.resolve("conglomerate-" + key.getSegmentId() + "-" + key.getContainerId() + ".txstatus");
+    }
+
+    private static Path inheritedStoreDirectory(Path databaseDirectory) {
         if (databaseDirectory == null) {
             return null;
         }
         return databaseDirectory
                 .resolve(DelosMvccStorageProvider.DATABASE_STORAGE_DIRECTORY_NAME)
-                .resolve("inherited-store")
-                .resolve("conglomerate-" + key.getSegmentId() + "-" + key.getContainerId() + ".snapshot");
+                .resolve("inherited-store");
     }
 
     private static void writeValue(DataOutputStream out, StoreDataValue value) throws IOException {
