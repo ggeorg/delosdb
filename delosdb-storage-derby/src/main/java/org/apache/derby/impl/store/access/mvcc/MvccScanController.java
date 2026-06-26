@@ -21,8 +21,6 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -39,9 +37,7 @@ import org.apache.derby.iapi.store.access.ScanInfo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.types.StoreDataValue;
-import org.apache.derby.iapi.store.types.StoreOrderable;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
-import org.apache.derby.iapi.store.types.StoreValueOperations;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
@@ -328,162 +324,7 @@ public final class MvccScanController implements ScanManager {
         if (qualifiers == null || qualifiers.length == 0) {
             return true;
         }
-        for (int group = 0; group < qualifiers.length; group++) {
-            Qualifier[] groupQualifiers = qualifiers[group];
-            if (groupQualifiers == null || groupQualifiers.length == 0) {
-                continue;
-            }
-            boolean groupResult = group == 0;
-            if (group == 0) {
-                for (Qualifier qualifier : groupQualifiers) {
-                    if (qualifier != null && !qualifierMatches(row, qualifier)) {
-                        groupResult = false;
-                        break;
-                    }
-                }
-            } else {
-                groupResult = false;
-                for (Qualifier qualifier : groupQualifiers) {
-                    if (qualifier != null && qualifierMatches(row, qualifier)) {
-                        groupResult = true;
-                        break;
-                    }
-                }
-            }
-            if (!groupResult) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean qualifierMatches(StoreDataValue[] row, Qualifier qualifier) throws StandardException {
-        int columnId = qualifier.getColumnId();
-        if (row == null || columnId < 0 || columnId >= row.length) {
-            return false;
-        }
-        StoreDataValue columnValue = row[columnId];
-        StoreDataValue orderable = qualifier.getOrderable();
-        boolean result = compare(columnValue, qualifier.getOperator(), orderable,
-                qualifier.getOrderedNulls(), qualifier.getUnknownRV());
-        return qualifier.negateCompareResult() ? !result : result;
-    }
-
-    private boolean compare(
-            StoreDataValue left,
-            int operator,
-            StoreDataValue right,
-            boolean orderedNulls,
-            boolean unknownRV) throws StandardException {
-        if (left instanceof StoreValueOperations storeValue) {
-            return storeValue.compare(operator, right, orderedNulls, unknownRV);
-        }
-
-        Boolean reflected = compareReflectively(left, operator, right, orderedNulls, unknownRV);
-        if (reflected != null) {
-            return reflected;
-        }
-
-        return compareObjects(left, operator, right, orderedNulls, unknownRV);
-    }
-
-    private Boolean compareReflectively(
-            StoreDataValue left,
-            int operator,
-            StoreDataValue right,
-            boolean orderedNulls,
-            boolean unknownRV) throws StandardException {
-        if (left == null) {
-            return orderedNulls ? right == null : unknownRV;
-        }
-        for (Method method : left.getClass().getMethods()) {
-            Class<?>[] parameterTypes = method.getParameterTypes();
-            if (!"compare".equals(method.getName())
-                    || method.getReturnType() != boolean.class
-                    || parameterTypes.length != 4
-                    || parameterTypes[0] != int.class
-                    || parameterTypes[2] != boolean.class
-                    || parameterTypes[3] != boolean.class
-                    || right == null
-                    || !parameterTypes[1].isInstance(right)) {
-                continue;
-            }
-            try {
-                return (Boolean) method.invoke(left, operator, right, orderedNulls, unknownRV);
-            } catch (IllegalAccessException e) {
-                throw new IllegalStateException("Cannot access Derby value comparison method", e);
-            } catch (InvocationTargetException e) {
-                Throwable cause = e.getCause();
-                if (cause instanceof StandardException standardException) {
-                    throw standardException;
-                }
-                if (cause instanceof RuntimeException runtimeException) {
-                    throw runtimeException;
-                }
-                throw new IllegalStateException("Derby value comparison failed", cause);
-            }
-        }
-        return null;
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private boolean compareObjects(
-            StoreDataValue left,
-            int operator,
-            StoreDataValue right,
-            boolean orderedNulls,
-            boolean unknownRV) throws StandardException {
-        Object leftObject = objectValue(left);
-        Object rightObject = objectValue(right);
-        if (leftObject == null || rightObject == null) {
-            if (!orderedNulls) {
-                return unknownRV;
-            }
-            int nullComparison = leftObject == rightObject ? 0 : leftObject == null ? -1 : 1;
-            return compareResult(operator, nullComparison);
-        }
-        if (!(leftObject instanceof Comparable comparable)) {
-            return leftObject.equals(rightObject) && operator == StoreOrderable.ORDER_OP_EQUALS;
-        }
-        return compareResult(operator, comparable.compareTo(rightObject));
-    }
-
-    private Object objectValue(StoreDataValue value) throws StandardException {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof StoreValueOperations storeValue) {
-            return storeValue.getObject();
-        }
-        try {
-            Method method = value.getClass().getMethod("getObject");
-            return method.invoke(value);
-        } catch (NoSuchMethodException e) {
-            return value;
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException("Cannot access Derby value object method", e);
-        } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof StandardException standardException) {
-                throw standardException;
-            }
-            if (cause instanceof RuntimeException runtimeException) {
-                throw runtimeException;
-            }
-            throw new IllegalStateException("Derby value object lookup failed", cause);
-        }
-    }
-
-    private boolean compareResult(int operator, int comparison) throws StandardException {
-        return switch (operator) {
-            case StoreOrderable.ORDER_OP_EQUALS -> comparison == 0;
-            case StoreOrderable.ORDER_OP_LESSTHAN -> comparison < 0;
-            case StoreOrderable.ORDER_OP_LESSOREQUALS -> comparison <= 0;
-            case StoreOrderable.ORDER_OP_GREATERTHAN -> comparison > 0;
-            case StoreOrderable.ORDER_OP_GREATEROREQUALS -> comparison >= 0;
-            default -> throw StandardException.newException(
-                    org.apache.derby.shared.common.reference.SQLState.STORE_FEATURE_NOT_IMPLEMENTED);
-        };
+        return RowUtil.qualifyRow(row, qualifiers);
     }
 
     private void copyCurrentRow(StoreDataValue[] destRow, FormatableBitSet validColumns) throws StandardException {
