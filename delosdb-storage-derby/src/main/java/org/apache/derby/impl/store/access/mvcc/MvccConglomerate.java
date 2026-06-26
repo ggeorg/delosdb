@@ -24,6 +24,7 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -60,7 +61,8 @@ import org.apache.derby.shared.common.reference.SQLState;
 public final class MvccConglomerate
         extends GenericConglomerate
         implements StaticCompiledOpenConglomInfo {
-    private static final Map<ContainerKey, MvccConglomerateState> STATES = new ConcurrentHashMap<>();
+    private static final Map<StateIdentity, MvccConglomerateState> STATES = new ConcurrentHashMap<>();
+    private static volatile Path databaseDirectory;
 
     private ContainerKey id;
     private MvccConglomerateState state;
@@ -101,6 +103,8 @@ public final class MvccConglomerate
 
     @Override
     public void drop(TransactionManager xactManager) {
+        state.dropDurableState();
+        STATES.remove(new StateIdentity(databaseDirectory, id));
     }
 
     @Override
@@ -290,8 +294,27 @@ public final class MvccConglomerate
         return false;
     }
 
+    static void configureDatabaseDirectory(Path directory) {
+        databaseDirectory = directory == null ? null : directory.toAbsolutePath().normalize();
+    }
+
+    public static void clearStatesForTesting() {
+        STATES.clear();
+    }
+
+    public static int stateCountForTesting() {
+        return STATES.size();
+    }
+
     private static MvccConglomerateState stateFor(ContainerKey key) {
-        return STATES.computeIfAbsent(key, MvccConglomerateState::new);
+        StateIdentity identity = new StateIdentity(databaseDirectory, key);
+        return STATES.computeIfAbsent(identity, ignored -> new MvccConglomerateState(key, identity.databaseDirectory()));
+    }
+
+    private record StateIdentity(Path databaseDirectory, ContainerKey key) {
+        private StateIdentity {
+            key = java.util.Objects.requireNonNull(key, "key");
+        }
     }
 
     private static StandardException unsupported() {

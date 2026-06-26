@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.nio.file.Path;
 import java.util.Properties;
 
 import org.apache.derby.iapi.services.monitor.ModuleControl;
@@ -28,6 +29,7 @@ import org.apache.derby.iapi.services.monitor.ModuleFactory;
 import org.apache.derby.iapi.services.monitor.ModuleSupportable;
 import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.iapi.services.uuid.UUIDFactory;
+import org.apache.derby.iapi.services.monitor.PersistentService;
 import org.apache.derby.iapi.store.access.AccessFactory;
 import org.apache.derby.iapi.store.access.ColumnOrdering;
 import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
@@ -126,6 +128,12 @@ public final class MvccConglomerateFactory
         ModuleFactory monitor = Monitor.getMonitor();
         UUIDFactory uuidFactory = (UUIDFactory) monitor.getUUIDFactory();
         formatUUID = uuidFactory.recreateUUID(FORMAT_UUID_STRING);
+        String serviceDirectory = startParams.getProperty(PersistentService.ROOT);
+        if (serviceDirectory != null && !serviceDirectory.isBlank()) {
+            MvccConglomerate.configureDatabaseDirectory(Path.of(serviceDirectory));
+        } else {
+            MvccConglomerate.configureDatabaseDirectory(null);
+        }
     }
 
     @Override

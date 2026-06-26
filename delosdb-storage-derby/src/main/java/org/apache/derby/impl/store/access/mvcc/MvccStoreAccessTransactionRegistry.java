@@ -49,7 +49,15 @@ public final class MvccStoreAccessTransactionRegistry {
             Object derbyTransaction,
             MvccTransactionManager manager,
             MvccTransaction transaction) {
-        Writer writer = new Writer(derbyTransaction, manager, transaction);
+        return register(derbyTransaction, manager, transaction, () -> { });
+    }
+
+    public static synchronized Writer register(
+            Object derbyTransaction,
+            MvccTransactionManager manager,
+            MvccTransaction transaction,
+            Runnable afterCommit) {
+        Writer writer = new Writer(derbyTransaction, manager, transaction, afterCommit);
         WRITERS.computeIfAbsent(derbyTransaction, ignored -> new ArrayList<>()).add(writer);
         return writer;
     }
@@ -97,17 +105,24 @@ public final class MvccStoreAccessTransactionRegistry {
         private final Object derbyTransaction;
         private final MvccTransactionManager manager;
         private final MvccTransaction transaction;
+        private final Runnable afterCommit;
         private boolean completed;
 
-        private Writer(Object derbyTransaction, MvccTransactionManager manager, MvccTransaction transaction) {
+        private Writer(
+                Object derbyTransaction,
+                MvccTransactionManager manager,
+                MvccTransaction transaction,
+                Runnable afterCommit) {
             this.derbyTransaction = derbyTransaction;
             this.manager = manager;
             this.transaction = transaction;
+            this.afterCommit = afterCommit == null ? () -> { } : afterCommit;
         }
 
         public void commit() {
             if (!completed) {
                 manager.commit(transaction);
+                afterCommit.run();
                 completed = true;
             }
         }

@@ -267,7 +267,8 @@ public final class MvccConglomerateController implements ConglomerateController 
                 registeredWriter = MvccStoreAccessTransactionRegistry.register(
                         transactionManager,
                         state.transactions(),
-                        writer);
+                        writer,
+                        state::persistCommittedSnapshot);
             }
         }
         return writer;
@@ -281,6 +282,7 @@ public final class MvccConglomerateController implements ConglomerateController 
                 registeredWriter = null;
             } else {
                 state.transactions().commit(writer);
+                state.persistCommittedSnapshot();
             }
             writer = null;
         }

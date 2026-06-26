@@ -1,0 +1,2 @@
+ext.delosdbSmokeDescription = 'Runs the MODULE9A inherited MVCC state ownership boundary smoke.'
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')
