@@ -4,22 +4,22 @@
 
 MODULE6J completed the bridge cutover: `CREATE TABLE ... USING delos_mvcc` now creates an MVCC physical conglomerate, and normal inherited Derby SQL paths reach MVCC storage for `SELECT`, `INSERT`, `DELETE`, and `UPDATE`. The old MVCC `Delos*ResultSet` bypass classes were retired.
 
-That proves routing and in-process behavior. It does not yet prove all inherited SQL correctness.
+MODULE6K restart hardening is split into small proofs because restart correctness is a separate integration boundary from in-process routing.
 
-## Plan 4 sequence
+## MODULE6K restart hardening
 
-### MODULE6K restart hardening
+Each restart proof must close all connections, force a Derby database shutdown, clear in-memory Delos native table registry state, reconnect, and verify through inherited SQL `SELECT`. A simple connection close is not enough.
 
-Keep this split into small proof overlays.
+Status:
 
 1. MODULE6K-1: inherited SQL `INSERT` restart proof.
 2. MODULE6K-2: inherited SQL `UPDATE` restart proof.
 3. MODULE6K-3: inherited SQL `DELETE` restart proof.
-4. MODULE6K-4: restart hardening audit.
+4. MODULE6K-4: inherited SQL CRUD restart audit.
 
-Each restart proof must close all connections, force a Derby database shutdown, clear in-memory Delos native table registry state, reconnect, and verify through inherited SQL `SELECT`. A simple connection close is not enough.
+MODULE6K behavior/restart smokes must be runtime proofs only. Do not add brittle source-string guards to these smokes. Source audits belong in explicit source-map/audit modules such as MODULE6A, MODULE6I, MODULE6J, MODULE7A, and MODULE7F.
 
-### MODULE7 predicate / qualifier correctness
+## Next sequence after MODULE6K
 
 Only after restart hardening is green:
 
