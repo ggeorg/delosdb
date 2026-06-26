@@ -11,6 +11,7 @@ import java.util.List;
 
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.impl.store.access.mvcc.MvccConglomerateController;
+import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistry;
 
 /**
  * MODULE6G smoke: normal Derby SQL INSERT reaches MVCC through the inherited

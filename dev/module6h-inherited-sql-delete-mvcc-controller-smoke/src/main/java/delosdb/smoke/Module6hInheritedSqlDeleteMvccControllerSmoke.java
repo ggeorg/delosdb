@@ -12,6 +12,7 @@ import java.util.List;
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.impl.jdbc.EmbedConnection;
 import org.apache.derby.impl.store.access.mvcc.MvccConglomerateController;
+import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistry;
 
 /**
  * MODULE6H smoke: normal Derby SQL DELETE reaches MVCC through the inherited
