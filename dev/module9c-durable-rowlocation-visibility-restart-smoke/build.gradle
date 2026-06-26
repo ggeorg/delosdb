@@ -1,0 +1,2 @@
+ext.delosdbSmokeDescription = 'Runs the MODULE9C durable RowLocation and visibility restart smoke.'
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')
