@@ -24,9 +24,10 @@ A heap table still creates a heap physical conglomerate.
 A delos_mvcc table now asks Derby store/access for a delos_mvcc physical conglomerate.
 ```
 
-This is still only a preflight. SQL SELECT/INSERT/DELETE/UPDATE may still use
-transitional Delos result-set seams until MODULE6F-MODULE6H prove the inherited
-execution paths.
+MODULE6F-MODULE6H then proved normal Derby SELECT, INSERT, DELETE, and UPDATE
+through inherited store/access paths. MODULE6I retires the old MVCC
+Delos*ResultSet bypass classes and leaves compatibility property names only as
+honesty guards for old smokes.
 
 ## Current physical table creation seam
 
@@ -57,11 +58,14 @@ storage provider. Heap tables still request "heap". delos_mvcc base tables
 request "delos_mvcc".
 ```
 
-Boundary:
+Boundary after MODULE6I:
 
 ```text
-This does not make SQL SELECT use TableScanResultSet -> MvccScanController yet.
-That bridge-killer proof remains MODULE6F.
+CREATE TABLE ... USING delos_mvcc creates an MVCC physical conglomerate.
+Normal SQL SELECT reaches TableScanResultSet -> MvccScanController.
+Normal SQL INSERT reaches InsertResultSet -> RowChangerImpl -> MvccConglomerateController.
+Normal SQL DELETE reaches DeleteResultSet -> RowChangerImpl -> MvccConglomerateController.
+Normal SQL UPDATE reaches UpdateResultSet -> RowChangerImpl -> MvccConglomerateController.
 ```
 
 ## Access method discovery and registration seam
@@ -129,19 +133,12 @@ The real SELECT bridge-killer path is an MVCC Conglomerate.openScan(...) that
 returns an MVCC ScanController. It is not another GenericResultSetFactory bypass.
 ```
 
-Current DelosDB bypass still exists:
+MODULE6I retirement fact:
 
 ```text
-GenericResultSetFactory
-  -> DelosTableScanResultSet.createIfEnabled(...)
-```
-
-Plan implication:
-
-```text
-Do not improve DelosTableScanResultSet for Plan 3 unless the change directly
-helps isolate or remove it. MODULE6F should prove SELECT through inherited
-TableScanResultSet and MVCC ScanController.
+GenericResultSetFactory no longer calls DelosTableScanResultSet.createIfEnabled(...).
+The old DelosTableScanResultSet source file is stale and removed by the MODULE6I cleanup script.
+SELECT now uses inherited TableScanResultSet and MVCC ScanController.
 ```
 
 ## INSERT inherited write seam
@@ -162,18 +159,12 @@ RowChangerImpl.insertRow(...)
 
 `baseCC` is the base table `ConglomerateController`.
 
-Current DelosDB bypass still exists:
+MODULE6I retirement fact:
 
 ```text
-GenericResultSetFactory
-  -> DelosInsertResultSet.createIfEnabled(...)
-```
-
-Plan implication:
-
-```text
-The real INSERT bridge-killer path is MvccConglomerateController.insert(...) and
-insertAndFetchLocation(...), not more DelosInsertResultSet behavior.
+GenericResultSetFactory no longer calls DelosInsertResultSet.createIfEnabled(...).
+The old DelosInsertResultSet source file is stale and removed by the MODULE6I cleanup script.
+INSERT now uses InsertResultSet -> RowChangerImpl -> MvccConglomerateController.
 ```
 
 ## DELETE inherited write seam
@@ -191,19 +182,16 @@ RowChangerImpl.deleteRow(baseRow, baseRowLocation)
   -> baseCC.delete(baseRowLocation)
 ```
 
-Current DelosDB bypass still exists:
+MODULE6I retirement fact:
 
 ```text
-GenericResultSetFactory
-  -> DelosDeleteResultSet.createIfEnabled(...)
+GenericResultSetFactory no longer calls DelosDeleteResultSet.createIfEnabled(...).
+The old DelosDeleteResultSet source file is stale and removed by the MODULE6I cleanup script.
+DELETE now uses DeleteResultSet -> RowChangerImpl -> MvccConglomerateController.
 ```
 
-Plan implication:
-
-```text
 DELETE requires a Derby-visible MVCC RowLocation whose logical identity is the
 stable MvccRowId. A physical page/slot locator can only be a hint.
-```
 
 ## UPDATE inherited write seam
 
@@ -220,20 +208,16 @@ RowChangerImpl.updateRow(oldBaseRow, newBaseRow, baseRowLocation)
   -> baseCC.replace(baseRowLocation, sparseRowArray, changedColumnBitSet)
 ```
 
-Current DelosDB bypass still exists:
+MODULE6I retirement fact:
 
 ```text
-GenericResultSetFactory
-  -> DelosUpdateResultSet.createIfEnabled(...)
+GenericResultSetFactory no longer calls DelosUpdateResultSet.createIfEnabled(...).
+The old DelosUpdateResultSet source file is stale and removed by the MODULE6I cleanup script.
+UPDATE now uses UpdateResultSet -> RowChangerImpl -> MvccConglomerateController.replace(...).
 ```
 
-Plan implication:
-
-```text
-UPDATE must eventually become append-new-version-by-rowId through
-MvccConglomerateController.replace(...), preserving logical row identity and
-performing MVCC visibility/write-conflict checks.
-```
+UPDATE must append a new version by stable rowId, preserving logical row
+identity and performing MVCC visibility/write-conflict checks.
 
 ## RowLocation lifecycle seam
 
@@ -287,9 +271,9 @@ no root Gradle smoke aliases
 no proof-property routing
 ```
 
-## Transitional Delos result-set inventory
+## Retired MVCC Delos result-set inventory
 
-Current transitional result-set seams:
+Retired by MODULE6I:
 
 ```text
 DelosTableScanResultSet
@@ -298,19 +282,13 @@ DelosDeleteResultSet
 DelosUpdateResultSet
 ```
 
-Current caller:
+Retirement facts:
 
 ```text
-GenericResultSetFactory
-```
-
-Policy:
-
-```text
-These classes may remain while inherited store/access proofs are incomplete.
-Do not add new capabilities to them.
-After inherited SELECT/INSERT/DELETE/UPDATE paths are green, shrink or delete
-these classes in a dedicated cleanup milestone.
+GenericResultSetFactory no longer calls their createIfEnabled(...) methods.
+DelosTableScanProviderLookup keeps old proof-property names as literal compatibility constants only.
+legacyNativeMvccCrudProofRoutesEnabledForTesting() remains false.
+A MODULE6I cleanup script removes the stale source files.
 ```
 
 ## Frozen Plan 3 order
@@ -324,7 +302,7 @@ MODULE6E — CREATE TABLE physical conglomerate switch preflight (green target)
 MODULE6F — inherited SELECT through TableScanResultSet
 MODULE6G — inherited INSERT through RowChanger/ConglomerateController
 MODULE6H — inherited DELETE/UPDATE through RowChanger/ConglomerateController
-MODULE6I — shrink/delete transitional Delos result sets
+MODULE6I — shrink/delete transitional Delos result sets (current)
 ```
 
 ## Stop conditions

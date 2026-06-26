@@ -138,18 +138,18 @@ public final class Module6aDerbyStoreAccessBoundarySmoke {
 
         String resultSetFactory = Files.readString(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"));
-        requireContains(resultSetFactory,
+        requireNotContains(resultSetFactory,
                 "DelosTableScanResultSet.createIfEnabled",
-                "MODULE6A records the current SELECT transitional result-set seam");
-        requireContains(resultSetFactory,
+                "MODULE6I retires the old SELECT transitional result-set seam");
+        requireNotContains(resultSetFactory,
                 "DelosInsertResultSet.createIfEnabled",
-                "MODULE6A records the current INSERT transitional result-set seam");
-        requireContains(resultSetFactory,
+                "MODULE6I retires the old INSERT transitional result-set seam");
+        requireNotContains(resultSetFactory,
                 "DelosDeleteResultSet.createIfEnabled",
-                "MODULE6A records the current DELETE transitional result-set seam");
-        requireContains(resultSetFactory,
+                "MODULE6I retires the old DELETE transitional result-set seam");
+        requireNotContains(resultSetFactory,
                 "DelosUpdateResultSet.createIfEnabled",
-                "MODULE6A records the current UPDATE transitional result-set seam");
+                "MODULE6I retires the old UPDATE transitional result-set seam");
     }
 
     private static void assertRuntimeCatalogAndHeapBtreeStillWork() throws Exception {
@@ -208,6 +208,12 @@ public final class Module6aDerbyStoreAccessBoundarySmoke {
     private static void requireContains(String source, String expected, String label) {
         if (source == null || !source.contains(expected)) {
             throw new AssertionError(label + " expected source to contain: " + expected);
+        }
+    }
+
+    private static void requireNotContains(String source, String unexpected, String label) {
+        if (source != null && source.contains(unexpected)) {
+            throw new AssertionError(label + " unexpected source content: " + unexpected);
         }
     }
 }

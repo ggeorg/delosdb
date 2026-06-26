@@ -25,9 +25,8 @@ import org.apache.derby.impl.store.access.mvcc.MvccScanController;
  * TableScanResultSet -> TransactionController.openCompiledScan -> MvccScanController path.
  *
  * <p>This proof intentionally seeds rows through inherited store/access APIs
- * because SQL INSERT is still on the transitional DelosInsertResultSet path.
- * MODULE6G owns inherited SQL INSERT. This smoke must not add a new SQL bridge
- * or proof property.</p>
+ * to keep the SELECT assertion focused. MODULE6G owns inherited SQL INSERT.
+ * This smoke must not add a new SQL bridge or proof property.</p>
  */
 public final class Module6fInheritedSqlSelectMvccScanSmoke {
     private static final String DATABASE_PATH = "build/module6f-inherited-sql-select-mvcc-scan-db";
@@ -55,14 +54,14 @@ public final class Module6fInheritedSqlSelectMvccScanSmoke {
     }
 
     private static void assertSourceInheritedSelectRoute() throws Exception {
-        String delosScan = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosTableScanResultSet.java"));
-        requireContains(delosScan,
-                "isPhysicalMvccConglomerate(params.conglomId)",
-                "MODULE6F must let physical MVCC conglomerates fall through to inherited TableScanResultSet");
-        requireContains(delosScan,
-                "return Optional.empty();",
-                "MODULE6F must not use DelosTableScanResultSet for physical MVCC full scans");
+        String factory = Files.readString(Path.of(
+                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"));
+        requireNotContains(factory,
+                "DelosTableScanResultSet.createIfEnabled",
+                "MODULE6F/MODULE6I must not use a DelosTableScanResultSet factory bypass for MVCC scans");
+        requireContains(factory,
+                "return new TableScanResultSet(params);",
+                "MODULE6F must keep normal table scans on the inherited TableScanResultSet path");
 
         String scanController = Files.readString(Path.of(
                 "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java"));
@@ -193,6 +192,12 @@ public final class Module6fInheritedSqlSelectMvccScanSmoke {
     private static void requireContains(String source, String expected, String label) {
         if (source == null || !source.contains(expected)) {
             throw new AssertionError(label + " expected source to contain: " + expected);
+        }
+    }
+
+    private static void requireNotContains(String source, String unexpected, String label) {
+        if (source != null && source.contains(unexpected)) {
+            throw new AssertionError(label + " unexpected source content: " + unexpected);
         }
     }
 

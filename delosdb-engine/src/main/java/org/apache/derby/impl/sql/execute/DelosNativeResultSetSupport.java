@@ -34,12 +34,12 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * Shared Derby/native boundary helpers for the Delos result-set family.
+ * Shared Derby/native boundary helpers for the remaining Delos heap proof
+ * result-set paths.
  *
- * <p>This class deliberately owns only plumbing: catalog lookup, qualified-name
- * formatting, native table-access opening, and abort cleanup.  Statement-specific
- * behavior remains in {@link DelosTableScanResultSet}, {@link DelosInsertResultSet},
- * {@link DelosDeleteResultSet}, and {@link DelosUpdateResultSet}.</p>
+ * <p>The old MVCC Delos*ResultSet family was retired by MODULE6I after normal
+ * Derby store/access SELECT, INSERT, DELETE, and UPDATE reached MVCC physical
+ * conglomerates directly.</p>
  */
 final class DelosNativeResultSetSupport {
     private DelosNativeResultSetSupport() {

@@ -51,14 +51,14 @@ public final class Module6hInheritedSqlDeleteMvccControllerSmoke {
     }
 
     private static void assertSourceInheritedDeleteRoute() throws Exception {
-        String delosDelete = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DelosDeleteResultSet.java"));
-        requireContains(delosDelete,
-                "isPhysicalMvccConglomerate(targetTable)",
-                "MODULE6H must let physical MVCC conglomerates fall through to inherited DeleteResultSet");
-        requireContains(delosDelete,
-                "return Optional.empty();",
-                "MODULE6H must not use DelosDeleteResultSet for physical MVCC DELETE");
+        String factory = Files.readString(Path.of(
+                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"));
+        requireNotContains(factory,
+                "DelosDeleteResultSet.createIfEnabled",
+                "MODULE6H/MODULE6I must not use a DelosDeleteResultSet factory bypass for MVCC DELETE");
+        requireContains(factory,
+                "return new DeleteResultSet(source, activation );",
+                "MODULE6H must keep normal DELETE on the inherited DeleteResultSet path");
 
         String deleteResultSet = Files.readString(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DeleteResultSet.java"));
@@ -196,6 +196,12 @@ public final class Module6hInheritedSqlDeleteMvccControllerSmoke {
     private static void requireContains(String source, String expected, String label) {
         if (source == null || !source.contains(expected)) {
             throw new AssertionError(label + " expected source to contain: " + expected);
+        }
+    }
+
+    private static void requireNotContains(String source, String unexpected, String label) {
+        if (source != null && source.contains(unexpected)) {
+            throw new AssertionError(label + " unexpected source content: " + unexpected);
         }
     }
 

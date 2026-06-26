@@ -259,8 +259,6 @@ public class GenericResultSetFactory implements ResultSetFactory
                 schemaName,
                 tableName,
                 activation);
-        ResultSet delosInsert = DelosInsertResultSet.createIfEnabled(params).orElse(null);
-        if (delosInsert != null) { return delosInsert; }
         ResultSet heapInsert = DelosHeapInsertResultSet.createIfEnabled(params).orElse(null);
         if (heapInsert != null) { return heapInsert; }
         return new InsertResultSet(params);
@@ -301,8 +299,6 @@ public class GenericResultSetFactory implements ResultSetFactory
 	{
 		Activation activation = source.getActivation();
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
-        ResultSet delosDelete = DelosDeleteResultSet.createIfEnabled(source, activation).orElse(null);
-        if (delosDelete != null) { return delosDelete; }
         ResultSet heapDelete = DelosHeapDeleteResultSet.createIfEnabled(source, activation).orElse(null);
         if (heapDelete != null) { return heapDelete; }
 		return new DeleteResultSet(source, activation );
@@ -363,9 +359,6 @@ public class GenericResultSetFactory implements ResultSetFactory
 			SanityManager.ASSERT(getAuthorizer(activation) != null, "Authorizer is null");
 		}
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
-        ResultSet delosUpdate = DelosUpdateResultSet.createIfEnabled(
-                source, generationClauses, checkGM, activation).orElse(null);
-        if (delosUpdate != null) { return delosUpdate; }
         ResultSet heapUpdate = DelosHeapUpdateResultSet.createIfEnabled(
                 source, generationClauses, checkGM, activation).orElse(null);
         if (heapUpdate != null) { return heapUpdate; }
@@ -945,8 +938,6 @@ public class GenericResultSetFactory implements ResultSetFactory
                 oneRowScan,
                 optimizerEstimatedRowCount,
                 optimizerEstimatedCost);
-        NoPutResultSet delosTableScan = DelosTableScanResultSet.createIfEnabled(params).orElse(null);
-        if (delosTableScan != null) { return delosTableScan; }
         NoPutResultSet heapLiveScan = DelosHeapLiveTableScanResultSet.createIfEnabled(params).orElse(null);
         if (heapLiveScan != null) { return heapLiveScan; }
         NoPutResultSet heapShadowScan = DelosHeapScanShadowResultSet.createIfEnabled(params).orElse(null);
@@ -1079,8 +1070,6 @@ public class GenericResultSetFactory implements ResultSetFactory
                 oneRowScan,
                 optimizerEstimatedRowCount,
                 optimizerEstimatedCost);
-        NoPutResultSet delosTableScan = DelosTableScanResultSet.createIfEnabled(params).orElse(null);
-        if (delosTableScan != null) { return delosTableScan; }
         NoPutResultSet heapLiveScan = DelosHeapLiveTableScanResultSet.createIfEnabled(params).orElse(null);
         if (heapLiveScan != null) { return heapLiveScan; }
         NoPutResultSet heapShadowScan = DelosHeapScanShadowResultSet.createIfEnabled(params).orElse(null);

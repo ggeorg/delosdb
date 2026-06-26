@@ -50,6 +50,7 @@ import org.apache.derby.shared.common.error.StandardException;
 public final class MvccConglomerateController implements ConglomerateController {
     private static final AtomicInteger INSERT_COUNT = new AtomicInteger();
     private static final AtomicInteger DELETE_COUNT = new AtomicInteger();
+    private static final AtomicInteger UPDATE_COUNT = new AtomicInteger();
 
     private final MvccConglomerate conglomerate;
     private final MvccConglomerateState state;
@@ -84,6 +85,14 @@ public final class MvccConglomerateController implements ConglomerateController 
 
     public static int deleteCountForTesting() {
         return DELETE_COUNT.get();
+    }
+
+    public static void resetUpdateCountForTesting() {
+        UPDATE_COUNT.set(0);
+    }
+
+    public static int updateCountForTesting() {
+        return UPDATE_COUNT.get();
     }
 
     public MvccConglomerate conglomerate() {
@@ -206,7 +215,20 @@ public final class MvccConglomerateController implements ConglomerateController 
         MvccRowLocation location = MvccRowLocation.from(loc);
         MvccTransaction transaction = writer();
         MvccSnapshot snapshot = state.transactions().snapshot(transaction);
-        state.table().update(location.rowId(), cloneRow(row), transaction, snapshot, state.transactions());
+        Optional<StoreDataValue[]> visible = state.table().read(
+                location.rowId(),
+                snapshot,
+                state.transactions());
+        if (visible.isEmpty()) {
+            return false;
+        }
+        state.table().update(
+                location.rowId(),
+                replacementRow(visible.get(), row, validColumns),
+                transaction,
+                snapshot,
+                state.transactions());
+        UPDATE_COUNT.incrementAndGet();
         return true;
     }
 
@@ -292,6 +314,23 @@ public final class MvccConglomerateController implements ConglomerateController 
             copy[i] = cloneValue(row[i]);
         }
         return copy;
+    }
+
+    private static StoreDataValue[] replacementRow(
+            StoreDataValue[] current,
+            StoreDataValue[] replacement,
+            FormatableBitSet validColumns) throws StandardException {
+        if (validColumns == null) {
+            return cloneRow(replacement);
+        }
+        StoreDataValue[] merged = cloneRow(current);
+        int nextColumn = -1;
+        while ((nextColumn = validColumns.anySetBit(nextColumn)) >= 0) {
+            if (nextColumn < merged.length && replacement != null && nextColumn < replacement.length) {
+                merged[nextColumn] = cloneValue(replacement[nextColumn]);
+            }
+        }
+        return merged;
     }
 
     static void copyRow(StoreDataValue[] source, StoreDataValue[] destination, FormatableBitSet validColumns)
