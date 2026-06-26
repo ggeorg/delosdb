@@ -21,19 +21,8 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutput;
-import java.io.ObjectOutputStream;
 import java.io.UncheckedIOException;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -55,17 +44,15 @@ import org.apache.derby.shared.common.error.StandardException;
  * Shared state behind the inherited MVCC conglomerate provider.
  *
  * <p>MODULE9A turned the static map into a cache instead of the restart
- * authority. MODULE11A moves the committed-row reload authority from the
- * MODULE9A ad-hoc snapshot file to the existing Delos page-volume backed MVCC
- * table, while still keeping all reads and writes behind the inherited Derby
- * store/access provider.</p>
+ * authority. MODULE11A/11B moved committed-row and row-directory reload
+ * authority to the existing Delos page-volume backed MVCC table, while still
+ * keeping all reads and writes behind the inherited Derby store/access
+ * provider. MODULE11C removes the old MODULE9A snapshot fallback as an
+ * authority.</p>
  */
 final class MvccConglomerateState {
-    private static final int SNAPSHOT_MAGIC = 0x444D5631; // DMV1
-    private static final int SNAPSHOT_VERSION = 1;
-
     private final ContainerKey key;
-    private final Path legacySnapshotFile;
+    private final Path retiredSnapshotFile;
     private final Path transactionStatusFile;
     private final InheritedMvccPageVolumeStateStore pageVolumeStateStore;
     private final MvccTransactionStatusStore transactionStatusStore;
@@ -75,7 +62,7 @@ final class MvccConglomerateState {
 
     MvccConglomerateState(ContainerKey key, Path databaseDirectory) {
         this.key = key;
-        this.legacySnapshotFile = legacySnapshotFile(databaseDirectory, key);
+        this.retiredSnapshotFile = retiredSnapshotFile(databaseDirectory, key);
         this.transactionStatusFile = transactionStatusFile(databaseDirectory, key);
         this.pageVolumeStateStore = InheritedMvccPageVolumeStateStore.open(databaseDirectory, key);
         this.transactionStatusStore = transactionStatusFile == null || key.getContainerId() == 0L
@@ -102,20 +89,18 @@ final class MvccConglomerateState {
     }
 
     /**
-     * Persists the current committed visible state through the MODULE11A
-     * page-volume state store. The method name is retained for the existing
-     * controller/transaction-registry call sites until MODULE11C retires the
-     * old snapshot vocabulary completely.
+     * Persists the current committed visible state through the MODULE11 page-volume
+     * state store. The old MODULE9A snapshot file is no longer a reload authority.
      */
-    synchronized void persistCommittedSnapshot() {
+    synchronized void persistCommittedState() {
         pageVolumeStateStore.persistVisibleRows(visibleRows());
     }
 
     synchronized void dropDurableState() {
         try {
             pageVolumeStateStore.drop();
-            if (legacySnapshotFile != null) {
-                Files.deleteIfExists(legacySnapshotFile);
+            if (retiredSnapshotFile != null) {
+                Files.deleteIfExists(retiredSnapshotFile);
             }
             if (transactionStatusFile != null) {
                 Files.deleteIfExists(transactionStatusFile);
@@ -133,8 +118,12 @@ final class MvccConglomerateState {
         return pageVolumeStateStore.rowDirectoryFile();
     }
 
+    /**
+     * Returns the old MODULE9A snapshot location so smokes can assert that it is
+     * absent or inert. Production reload no longer reads this file.
+     */
     Path legacySnapshotFileForTesting() {
-        return legacySnapshotFile;
+        return retiredSnapshotFile;
     }
 
     synchronized MvccRowLocation rowLocationFor(long rowId) {
@@ -155,11 +144,6 @@ final class MvccConglomerateState {
             hydrateCommittedRows(
                     pageVolumeStateStore.loadVisibleRows(),
                     pageVolumeStateStore.nextInheritedRowId());
-            return;
-        }
-        if (legacySnapshotFile != null && Files.exists(legacySnapshotFile)) {
-            loadLegacyCommittedSnapshot();
-            persistCommittedSnapshot();
         }
     }
 
@@ -185,35 +169,6 @@ final class MvccConglomerateState {
         }
     }
 
-    private void loadLegacyCommittedSnapshot() {
-        try (DataInputStream in = new DataInputStream(Files.newInputStream(legacySnapshotFile))) {
-            int magic = in.readInt();
-            if (magic != SNAPSHOT_MAGIC) {
-                throw new IllegalStateException("Unsupported inherited MVCC state snapshot magic for " + key);
-            }
-            int version = in.readInt();
-            if (version != SNAPSHOT_VERSION) {
-                throw new IllegalStateException("Unsupported inherited MVCC state snapshot version "
-                        + version + " for " + key);
-            }
-            long storedNextRowId = in.readLong();
-            int rowCount = in.readInt();
-            List<InheritedMvccPageVolumeStateStore.PersistedRow> rows = new ArrayList<>();
-            for (int row = 0; row < rowCount; row++) {
-                long rowId = in.readLong();
-                int columnCount = in.readInt();
-                StoreDataValue[] values = new StoreDataValue[columnCount];
-                for (int column = 0; column < columnCount; column++) {
-                    values[column] = readValue(in);
-                }
-                rows.add(new InheritedMvccPageVolumeStateStore.PersistedRow(rowId, values));
-            }
-            hydrateCommittedRows(rows, storedNextRowId);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not load inherited MVCC legacy snapshot for " + key, e);
-        }
-    }
-
     private List<InheritedMvccPageVolumeStateStore.PersistedRow> visibleRows() {
         MvccTransaction reader = transactions.begin();
         try {
@@ -235,7 +190,7 @@ final class MvccConglomerateState {
         }
     }
 
-    private static Path legacySnapshotFile(Path databaseDirectory, ContainerKey key) {
+    private static Path retiredSnapshotFile(Path databaseDirectory, ContainerKey key) {
         Path directory = InheritedMvccPageVolumeStateStore.inheritedStoreDirectory(databaseDirectory);
         if (directory == null) {
             return null;
@@ -251,84 +206,5 @@ final class MvccConglomerateState {
         return directory.resolve("conglomerate-" + key.getSegmentId() + "-" + key.getContainerId() + ".txstatus");
     }
 
-    private static StoreDataValue readValue(DataInputStream in) throws IOException {
-        if (!in.readBoolean()) {
-            return null;
-        }
-        String className = in.readUTF();
-        int length = in.readInt();
-        if (length < 0) {
-            throw new IOException("Negative inherited MVCC value length for " + className + ": " + length);
-        }
-        byte[] encoded = in.readNBytes(length);
-        if (encoded.length != length) {
-            throw new IOException("Short inherited MVCC value read for " + className);
-        }
-        return decodeExternalValue(className, encoded);
-    }
 
-    @SuppressWarnings("unused")
-    private static void writeValue(DataOutputStream out, StoreDataValue value) throws IOException {
-        out.writeBoolean(value != null);
-        if (value == null) {
-            return;
-        }
-        out.writeUTF(value.getClass().getName());
-        byte[] encoded = encodeExternalValue(value);
-        out.writeInt(encoded.length);
-        out.write(encoded);
-    }
-
-    private static byte[] encodeExternalValue(StoreDataValue value) throws IOException {
-        try {
-            Method writeExternal = value.getClass().getMethod("writeExternal", ObjectOutput.class);
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-            try (ObjectOutputStream out = new ObjectOutputStream(bytes)) {
-                writeExternal.invoke(value, out);
-            }
-            return bytes.toByteArray();
-        } catch (NoSuchMethodException e) {
-            throw new IllegalArgumentException("Inherited MVCC persistence requires externalizable store value: "
-                    + value.getClass().getName(), e);
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException("Cannot access store value writer: " + value.getClass().getName(), e);
-        } catch (InvocationTargetException e) {
-            throw unwrapIoOrRuntime(e);
-        }
-    }
-
-    private static StoreDataValue decodeExternalValue(String className, byte[] encoded) throws IOException {
-        try {
-            Class<?> valueClass = Class.forName(className, true, Thread.currentThread().getContextClassLoader());
-            Constructor<?> constructor = valueClass.getDeclaredConstructor();
-            constructor.setAccessible(true);
-            Object instance = constructor.newInstance();
-            if (!(instance instanceof StoreDataValue storeValue)) {
-                throw new IllegalStateException("Inherited MVCC snapshot value is not a StoreDataValue: " + className);
-            }
-            Method readExternal = valueClass.getMethod("readExternal", ObjectInput.class);
-            try (ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(encoded))) {
-                readExternal.invoke(storeValue, in);
-            }
-            return storeValue;
-        } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException e) {
-            throw new IllegalStateException("Cannot restore inherited MVCC store value: " + className, e);
-        } catch (InvocationTargetException e) {
-            throw unwrapIoOrRuntime(e);
-        }
-    }
-
-    private static IOException unwrapIoOrRuntime(InvocationTargetException e) throws IOException {
-        Throwable cause = e.getCause();
-        if (cause instanceof IOException ioException) {
-            return ioException;
-        }
-        if (cause instanceof RuntimeException runtimeException) {
-            throw runtimeException;
-        }
-        if (cause instanceof Error error) {
-            throw error;
-        }
-        throw new IllegalStateException(cause);
-    }
 }

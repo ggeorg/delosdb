@@ -1,0 +1,2 @@
+ext.delosdbSmokeDescription = 'Runs the MODULE11C inherited MVCC retired snapshot authority smoke.'
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')
