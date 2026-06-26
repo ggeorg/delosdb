@@ -1,9 +1,1 @@
-plugins {
-    id 'application'
-}
-
-ext.delosdbSmokeMainClass = 'delosdb.smoke.Module5bNativeTableIdentitySmoke'
-ext.delosdbSmokeDescription = 'Runs the MODULE5B Derby-visible MVCC table identity smoke without the SQL bridge.'
-ext.delosdbSmokeDatabasePath = 'build/module5b-native-table-identity-db'
-
 apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

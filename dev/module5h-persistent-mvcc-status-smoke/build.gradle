@@ -1,9 +1,1 @@
-plugins {
-    id 'application'
-}
-
-ext.delosdbSmokeMainClass = 'delosdb.smoke.Module5hPersistentMvccStatusSmoke'
-ext.delosdbSmokeDescription = 'Runs the MODULE5H persistent MVCC transaction-status smoke.'
-ext.delosdbSmokeDatabasePath = 'build/module5h-persistent-mvcc-status-db'
-
 apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

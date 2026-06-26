@@ -1,9 +1,1 @@
-plugins {
-    id 'application'
-}
-
-ext.delosdbSmokeMainClass = 'delosdb.smoke.Module5jWalPageLsnSmoke'
-ext.delosdbSmokeDescription = 'Runs the MODULE5J minimal WAL/pageLSN skeleton smoke.'
-ext.delosdbSmokeDatabasePath = 'build/module5j-heap-smoke-db'
-
 apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

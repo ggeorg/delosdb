@@ -1,9 +1,1 @@
-plugins {
-    id 'application'
-}
-
-ext.delosdbSmokeMainClass = 'delosdb.smoke.Module5dDerbySelectFullScanSmoke'
-ext.delosdbSmokeDescription = 'Runs the MODULE5D normal Derby SELECT full-scan smoke for delos_mvcc tables.'
-ext.delosdbSmokeDatabasePath = 'build/module5d-derby-select-full-scan-db'
-
 apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

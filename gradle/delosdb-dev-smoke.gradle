@@ -1,6 +1,8 @@
-import org.gradle.api.GradleException
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.compile.JavaCompile
+
+apply plugin: 'java'
+apply plugin: 'application'
 
 version = rootProject.version
 group = rootProject.group
@@ -10,17 +12,27 @@ java {
     targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
-if (!extensions.extraProperties.has('delosdbSmokeMainClass')) {
-    throw new GradleException("${path} must set ext.delosdbSmokeMainClass before applying delosdb-dev-smoke.gradle")
+def defaultSmokeMainClass = {
+    def stem = project.name.endsWith('-smoke')
+            ? project.name.substring(0, project.name.length() - '-smoke'.length())
+            : project.name
+    def simpleName = stem
+            .split('-')
+            .collect { part -> part ? part.substring(0, 1).toUpperCase() + part.substring(1) : '' }
+            .join('') + 'Smoke'
+    "delosdb.smoke.${simpleName}"
 }
 
-def smokeMainClass = extensions.extraProperties.get('delosdbSmokeMainClass').toString()
+def smokeMainClass = extensions.extraProperties.has('delosdbSmokeMainClass')
+        ? extensions.extraProperties.get('delosdbSmokeMainClass').toString()
+        : defaultSmokeMainClass()
 def smokeDescription = extensions.extraProperties.has('delosdbSmokeDescription')
         ? extensions.extraProperties.get('delosdbSmokeDescription').toString()
         : "Runs ${project.name}."
-def smokeDatabasePath = extensions.extraProperties.has('delosdbSmokeDatabasePath')
-        ? extensions.extraProperties.get('delosdbSmokeDatabasePath').toString()
-        : null
+
+def smokeCleanPaths = extensions.extraProperties.has('delosdbSmokeCleanPaths')
+        ? extensions.extraProperties.get('delosdbSmokeCleanPaths')
+        : []
 
 application {
     mainClass = smokeMainClass
@@ -62,9 +74,11 @@ tasks.named('run', JavaExec) {
     group = 'verification'
     description = smokeDescription
     workingDir = rootProject.projectDir
-    if (smokeDatabasePath != null && !smokeDatabasePath.isBlank()) {
+    if (smokeCleanPaths != null && !smokeCleanPaths.isEmpty()) {
         doFirst {
-            delete rootProject.file(smokeDatabasePath)
+            smokeCleanPaths.each { relativePath ->
+                delete rootProject.file(relativePath.toString())
+            }
         }
     }
 }

@@ -1,9 +1,1 @@
-plugins {
-    id 'application'
-}
-
-ext.delosdbSmokeMainClass = 'delosdb.smoke.Module5eDerbyInsertProviderRouteSmoke'
-ext.delosdbSmokeDescription = 'Runs the MODULE5E Derby INSERT provider-identity smoke for delos_mvcc tables.'
-ext.delosdbSmokeDatabasePath = 'build/module5e-derby-insert-provider-route-db'
-
 apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

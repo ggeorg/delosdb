@@ -1,9 +1,1 @@
-plugins {
-    id 'application'
-}
-
-ext.delosdbSmokeMainClass = 'delosdb.smoke.Module5gProviderRouteCrudPreflightSmoke'
-ext.delosdbSmokeDescription = 'Runs the MODULE5G provider-route CRUD preflight smoke for delos_mvcc tables.'
-ext.delosdbSmokeDatabasePath = 'build/module5g-provider-route-crud-preflight-db'
-
 apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

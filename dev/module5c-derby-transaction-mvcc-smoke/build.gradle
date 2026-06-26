@@ -1,9 +1,1 @@
-plugins {
-    id 'application'
-}
-
-ext.delosdbSmokeMainClass = 'delosdb.smoke.Module5cDerbyTransactionMvccSmoke'
-ext.delosdbSmokeDescription = 'Runs the MODULE5C Derby transaction to MVCC transaction-context smoke.'
-ext.delosdbSmokeDatabasePath = 'build/module5c-derby-transaction-mvcc-db'
-
 apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

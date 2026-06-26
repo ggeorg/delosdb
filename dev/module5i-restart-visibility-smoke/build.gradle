@@ -1,9 +1,1 @@
-plugins {
-    id 'application'
-}
-
-ext.delosdbSmokeMainClass = 'delosdb.smoke.Module5iRestartVisibilitySmoke'
-ext.delosdbSmokeDescription = 'Runs the MODULE5I restart visibility smoke using durable MVCC transaction status.'
-ext.delosdbSmokeDatabasePath = 'build/module5i-restart-visibility-db'
-
 apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')
