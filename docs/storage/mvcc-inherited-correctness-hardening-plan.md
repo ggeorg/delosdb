@@ -70,3 +70,23 @@ Implementation boundary:
 - no UPDATE predicate claim yet
 - no non-matching DELETE/UPDATE no-op hardening yet; that belongs to MODULE7E
 - no source-string guards in this behavior smoke
+
+## MODULE7D - UPDATE WHERE equality
+
+Runtime-only predicate mutation proof.
+
+Scope:
+- normal inherited Derby SQL UPDATE over `USING delos_mvcc`
+- equality predicates on committed rows
+- prepared equality predicates
+- rollback keeps the old version visible
+- committed selective update survives real Derby shutdown/reopen
+- non-updated columns are preserved
+- heap and btree compatibility
+
+Implementation boundary:
+- UPDATE uses the qualified inherited scan result stream
+- MVCC scan remains full-scan based
+- qualifier evaluation is row filtering, not index access
+- no non-matching DELETE/UPDATE no-op hardening yet; that belongs to MODULE7E
+- no source-string guards in this behavior smoke
