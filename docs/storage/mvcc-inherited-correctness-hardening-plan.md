@@ -90,3 +90,23 @@ Implementation boundary:
 - qualifier evaluation is row filtering, not index access
 - no non-matching DELETE/UPDATE no-op hardening yet; that belongs to MODULE7E
 - no source-string guards in this behavior smoke
+
+## MODULE7E - non-matching predicate hardening
+
+Runtime-only predicate no-op proof.
+
+Scope:
+- normal inherited Derby SQL SELECT over `USING delos_mvcc` with non-matching equality predicates
+- normal inherited Derby SQL DELETE over `USING delos_mvcc` with non-matching equality predicates
+- normal inherited Derby SQL UPDATE over `USING delos_mvcc` with non-matching equality predicates
+- prepared non-matching DELETE and UPDATE predicates
+- committed no-op DELETE/UPDATE state survives real Derby shutdown/reopen
+- rolled-back no-op DELETE/UPDATE state remains unchanged after real Derby shutdown/reopen
+- heap and btree compatibility
+
+Implementation boundary:
+- MVCC scan remains full-scan based
+- qualifier evaluation is row filtering, not index access
+- no new predicate type beyond equality
+- no source-string guards in this behavior smoke
+- predicate audit / compensation remains MODULE7F
