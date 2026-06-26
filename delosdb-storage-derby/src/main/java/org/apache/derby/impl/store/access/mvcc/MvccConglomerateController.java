@@ -21,6 +21,8 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Optional;
 import java.util.Properties;
 
@@ -31,7 +33,6 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.SpaceInfo;
 import org.apache.derby.iapi.store.types.StoreDataValue;
-import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreValueOperations;
 import org.apache.derby.shared.common.error.StandardException;
@@ -248,9 +249,11 @@ public final class MvccConglomerateController implements ConglomerateController 
             StoreDataValue value = source[sourceColumn++];
             if (destination[i] instanceof StoreValueOperations destinationValue) {
                 destinationValue.setValue(value);
-            } else if (destination[i] instanceof DataValueDescriptor destinationValue
-                    && value instanceof DataValueDescriptor sourceValue) {
-                destinationValue.setValue(sourceValue);
+            } else if (copySqlValueReflectively(destination[i], value)) {
+                // SQL-facing Derby values live in delosdb-engine, while this
+                // module intentionally compiles against the store-neutral
+                // value boundary. Reflection keeps the preflight below the
+                // SQL type module without rejecting inherited SQLInteger rows.
             } else {
                 destination[i] = cloneValue(value);
             }
@@ -264,10 +267,76 @@ public final class MvccConglomerateController implements ConglomerateController 
         if (value instanceof StoreValueOperations operations) {
             return operations.cloneValue(false);
         }
-        if (value instanceof DataValueDescriptor descriptor) {
-            return descriptor.cloneValue(false);
+        StoreDataValue reflected = cloneSqlValueReflectively(value);
+        if (reflected != null) {
+            return reflected;
         }
         throw new IllegalArgumentException("MVCC store/access preflight requires cloneable StoreDataValue: "
                 + value.getClass().getName());
+    }
+
+    private static StoreDataValue cloneSqlValueReflectively(StoreDataValue value) throws StandardException {
+        try {
+            Method cloneValue = value.getClass().getMethod("cloneValue", boolean.class);
+            Object cloned = cloneValue.invoke(value, false);
+            if (cloned instanceof StoreDataValue storeDataValue) {
+                return storeDataValue;
+            }
+            return null;
+        } catch (NoSuchMethodException e) {
+            return null;
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("Cannot access SQL value clone operation on "
+                    + value.getClass().getName(), e);
+        } catch (InvocationTargetException e) {
+            throw unwrapStandardException(e);
+        }
+    }
+
+    private static boolean copySqlValueReflectively(StoreDataValue destination, StoreDataValue source)
+            throws StandardException {
+        if (destination == null || source == null) {
+            return false;
+        }
+        Method setter = findSetValueMethod(destination.getClass(), source.getClass());
+        if (setter == null) {
+            return false;
+        }
+        try {
+            setter.invoke(destination, source);
+            return true;
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("Cannot access SQL value set operation on "
+                    + destination.getClass().getName(), e);
+        } catch (InvocationTargetException e) {
+            throw unwrapStandardException(e);
+        }
+    }
+
+    private static Method findSetValueMethod(Class<?> destinationClass, Class<?> sourceClass) {
+        for (Method method : destinationClass.getMethods()) {
+            if (!"setValue".equals(method.getName()) || method.getParameterCount() != 1) {
+                continue;
+            }
+            Class<?> parameterType = method.getParameterTypes()[0];
+            if (!parameterType.isPrimitive() && parameterType.isAssignableFrom(sourceClass)) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    private static StandardException unwrapStandardException(InvocationTargetException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof StandardException standardException) {
+            return standardException;
+        }
+        if (cause instanceof RuntimeException runtimeException) {
+            throw runtimeException;
+        }
+        if (cause instanceof Error error) {
+            throw error;
+        }
+        throw new IllegalStateException(cause);
     }
 }
