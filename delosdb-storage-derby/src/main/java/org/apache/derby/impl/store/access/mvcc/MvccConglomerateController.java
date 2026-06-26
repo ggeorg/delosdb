@@ -49,6 +49,7 @@ import org.apache.derby.shared.common.error.StandardException;
  */
 public final class MvccConglomerateController implements ConglomerateController {
     private static final AtomicInteger INSERT_COUNT = new AtomicInteger();
+    private static final AtomicInteger DELETE_COUNT = new AtomicInteger();
 
     private final MvccConglomerate conglomerate;
     private final MvccConglomerateState state;
@@ -75,6 +76,14 @@ public final class MvccConglomerateController implements ConglomerateController 
 
     public static int insertCountForTesting() {
         return INSERT_COUNT.get();
+    }
+
+    public static void resetDeleteCountForTesting() {
+        DELETE_COUNT.set(0);
+    }
+
+    public static int deleteCountForTesting() {
+        return DELETE_COUNT.get();
     }
 
     public MvccConglomerate conglomerate() {
@@ -113,6 +122,7 @@ public final class MvccConglomerateController implements ConglomerateController 
         MvccTransaction transaction = writer();
         MvccSnapshot snapshot = state.transactions().snapshot(transaction);
         state.table().delete(location.rowId(), transaction, snapshot, state.transactions());
+        DELETE_COUNT.incrementAndGet();
         return true;
     }
 

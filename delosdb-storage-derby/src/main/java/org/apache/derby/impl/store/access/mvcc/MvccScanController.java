@@ -191,7 +191,7 @@ public final class MvccScanController implements ScanManager {
         if (current == null) {
             throw new IllegalStateException("MVCC scan is not positioned on a row");
         }
-        MvccConglomerateController.copyRow(current.value(), destRow, null);
+        copyCurrentRow(destRow, null);
     }
 
     @Override
@@ -207,7 +207,7 @@ public final class MvccScanController implements ScanManager {
             return false;
         }
         current = scan.row();
-        MvccConglomerateController.copyRow(current.value(), destRow, null);
+        copyCurrentRow(destRow, null);
         return true;
     }
 
@@ -282,6 +282,21 @@ public final class MvccScanController implements ScanManager {
         }
         current = new MvccRow<>(location.rowId(), visible.get());
         return true;
+    }
+
+    private void copyCurrentRow(StoreDataValue[] destRow, FormatableBitSet validColumns) throws StandardException {
+        MvccConglomerateController.copyRow(current.value(), destRow, validColumns);
+        copyCurrentRowLocation(destRow);
+    }
+
+    private void copyCurrentRowLocation(StoreDataValue[] destRow) {
+        if (destRow == null || current == null || destRow.length <= current.value().length) {
+            return;
+        }
+        StoreDataValue rowLocationColumn = destRow[current.value().length];
+        if (rowLocationColumn instanceof StoreRowLocation rowLocation) {
+            MvccRowLocation.from(rowLocation).set(current.key(), 0L, -1);
+        }
     }
 
     @Override

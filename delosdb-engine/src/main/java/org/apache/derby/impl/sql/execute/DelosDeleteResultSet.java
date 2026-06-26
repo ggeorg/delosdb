@@ -31,6 +31,7 @@ import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.ResultSet;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
+import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.store.types.DelosPredicate;
 import org.apache.derby.iapi.store.types.DelosProjection;
 import org.apache.derby.iapi.store.types.DelosRow;
@@ -110,6 +111,9 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
                         activation.getLanguageConnectionContext(),
                         DelosNativeResultSetSupport.qualifiedName(targetTable));
         if (lookup.isEmpty() || lookup.get().isDefaultStorageProvider()) {
+            return Optional.empty();
+        }
+        if (isPhysicalMvccConglomerate(targetTable)) {
             return Optional.empty();
         }
         rejectUnsupportedDerbyDeleteFeatures(constants);
@@ -203,6 +207,13 @@ final class DelosDeleteResultSet extends NoRowsResultSetImpl
     String storageProviderNameForTesting()
     {
         return providerLookup.storageProviderName();
+    }
+
+
+    private static boolean isPhysicalMvccConglomerate(TableDescriptor tableDescriptor)
+            throws StandardException
+    {
+        return (tableDescriptor.getHeapConglomerateId() & 0x0fL) == ConglomerateFactory.MVCC_FACTORY_ID;
     }
 
     private static void rejectUnsupportedDerbyDeleteFeatures(DeleteConstantAction constants)
