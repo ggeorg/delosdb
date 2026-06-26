@@ -31,6 +31,7 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.SpaceInfo;
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreValueOperations;
 import org.apache.derby.shared.common.error.StandardException;
@@ -247,6 +248,9 @@ public final class MvccConglomerateController implements ConglomerateController 
             StoreDataValue value = source[sourceColumn++];
             if (destination[i] instanceof StoreValueOperations destinationValue) {
                 destinationValue.setValue(value);
+            } else if (destination[i] instanceof DataValueDescriptor destinationValue
+                    && value instanceof DataValueDescriptor sourceValue) {
+                destinationValue.setValue(sourceValue);
             } else {
                 destination[i] = cloneValue(value);
             }
@@ -259,6 +263,9 @@ public final class MvccConglomerateController implements ConglomerateController 
         }
         if (value instanceof StoreValueOperations operations) {
             return operations.cloneValue(false);
+        }
+        if (value instanceof DataValueDescriptor descriptor) {
+            return descriptor.cloneValue(false);
         }
         throw new IllegalArgumentException("MVCC store/access preflight requires cloneable StoreDataValue: "
                 + value.getClass().getName());
