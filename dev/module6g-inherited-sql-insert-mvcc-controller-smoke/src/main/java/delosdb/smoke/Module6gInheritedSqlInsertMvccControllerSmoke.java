@@ -58,11 +58,17 @@ public final class Module6gInheritedSqlInsertMvccControllerSmoke {
                 "return Optional.empty();",
                 "MODULE6G must not use DelosInsertResultSet for physical MVCC INSERT");
 
+        String insertResultSet = Files.readString(Path.of(
+                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/InsertResultSet.java"));
+        requireContains(insertResultSet,
+                "rowChanger.insertRow(row, false)",
+                "MODULE6G must keep InsertResultSet on the inherited RowChanger INSERT path");
+
         String rowChanger = Files.readString(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/RowChangerImpl.java"));
         requireContains(rowChanger,
-                "rowChanger.insertRow(row, false)",
-                "MODULE6G must keep the inherited RowChanger INSERT path");
+                "baseCC.insertAndFetchLocation",
+                "MODULE6G must keep RowChangerImpl inserting through ConglomerateController.insertAndFetchLocation");
 
         String controller = Files.readString(Path.of(
                 "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateController.java"));
