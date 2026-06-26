@@ -423,6 +423,12 @@ public abstract class RAMAccessManager
             }
         }
 
+        ConglomerateFactory delosDbFactory = bootDelosDbAccessMethodByFactoryId(factoryId);
+        if (delosDbFactory != null)
+        {
+            return delosDbFactory;
+        }
+
         // just in case language passes in a bad factory id.
 		throw StandardException.newException(
             SQLState.STORE_CONGLOMERATE_DOES_NOT_EXIST, 
@@ -717,6 +723,39 @@ public abstract class RAMAccessManager
         }
         factory.boot(false, conglomProperties);
         return factory;
+    }
+
+    private ConglomerateFactory bootDelosDbAccessMethodByFactoryId(int factoryId)
+            throws StandardException
+    {
+        if (factoryId != ConglomerateFactory.MVCC_FACTORY_ID)
+        {
+            return null;
+        }
+
+        MethodFactory existing = implhash.get(MvccConglomerateFactory.IMPLEMENTATION_ID);
+        if (existing instanceof ConglomerateFactory conglomerateFactory)
+        {
+            registerConglomerateFactory(conglomerateFactory);
+            return conglomerateFactory;
+        }
+
+        Properties conglomProperties = new Properties(serviceProperties);
+        conglomProperties.put(
+                AccessFactoryGlobals.CONGLOM_PROP,
+                MvccConglomerateFactory.IMPLEMENTATION_ID);
+
+        MethodFactory factory = bootDelosDbAccessMethod(
+                MvccConglomerateFactory.IMPLEMENTATION_ID,
+                conglomProperties);
+
+        if (factory instanceof ConglomerateFactory conglomerateFactory)
+        {
+            registerAccessMethod(factory);
+            return conglomerateFactory;
+        }
+
+        return null;
     }
 
 	public LockFactory getLockFactory() {

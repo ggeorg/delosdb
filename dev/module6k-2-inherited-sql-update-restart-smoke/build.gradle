@@ -1,0 +1,3 @@
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')
+
+ext.delosdbSmokeDescription = 'Runs the MODULE6K-2 inherited MVCC SQL UPDATE restart smoke.'
