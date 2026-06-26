@@ -38,13 +38,20 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Native provider-owned table registry for the Derby execution path.
+ * Proof-only native provider-owned table registry for retired Delos ResultSet
+ * paths and explicit provider diagnostics.
  *
- * <p>This is not a SQL router.  It is the catalog-to-provider boundary used
- * after Derby has parsed, bound, and selected a {@code delos_mvcc} table via
- * {@link TableDescriptor} metadata.  G-post extracted this state away from the retired SQL bridge so
- * native ResultSet execution is coupled only to Derby catalog metadata and
- * provider-owned storage.</p>
+ * <p>This is not a SQL router. It is the catalog-to-provider boundary used by
+ * remaining opt-in diagnostics after Derby has parsed, bound, and selected a
+ * {@code delos_mvcc} table via {@link TableDescriptor} metadata.</p>
+ *
+ * <p><strong>MODULE10A bridge status:</strong> no normal
+ * {@code CREATE TABLE ... USING delos_mvcc} or Derby commit/rollback path should
+ * populate or complete this registry anymore. Normal MVCC table state and
+ * transaction outcomes are owned by the inherited store/access provider through
+ * {@code MvccConglomerate} and {@code MvccStoreAccessTransactionRegistry}. Keep
+ * this class only for proof-only provider diagnostics until those callers are
+ * retired.</p>
  */
 @InternalApi
 public final class DelosNativeTableRegistry {

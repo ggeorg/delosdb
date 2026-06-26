@@ -21,7 +21,6 @@
 
 package org.apache.derby.impl.sql.execute;
 
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 import org.apache.derby.iapi.sql.execute.ConstantAction;
 import org.apache.derby.iapi.store.access.TransactionController;
 
@@ -55,9 +54,6 @@ import org.apache.derby.catalog.UUID;
 
 import org.apache.derby.catalog.types.DefaultInfoImpl;
 
-import java.sql.SQLException;
-import java.sql.Types;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
@@ -409,7 +405,6 @@ class CreateTableConstantAction extends DDLConstantAction
 			lcc.addDeclaredGlobalTempTable(td);
 		}
 
-        registerNativeDelosTableIfNeeded(lcc, sd, td);
 
 		// Indicate that the CREATE TABLE statement itself depends on the
 		// table it is creating. Normally such statement dependencies are
@@ -435,58 +430,6 @@ class CreateTableConstantAction extends DDLConstantAction
         return tableType == TableDescriptor.BASE_TABLE_TYPE
                 && storageProviderName != null
                 && "delos_mvcc".equals(storageProviderName.trim().toLowerCase(Locale.ROOT));
-    }
-
-    private void registerNativeDelosTableIfNeeded(
-            org.apache.derby.iapi.sql.conn.LanguageConnectionContext lcc,
-            SchemaDescriptor schemaDescriptor,
-            TableDescriptor tableDescriptor)
-            throws StandardException
-    {
-        if (!isDelosMvccBaseTable()) {
-            return;
-        }
-
-        List<String> columnNames = new ArrayList<String>(columnInfo.length);
-        List<String> typeNames = new ArrayList<String>(columnInfo.length);
-        for (int ix = 0; ix < columnInfo.length; ix++)
-        {
-            columnNames.add(columnInfo[ix].name);
-            typeNames.add(nativeDelosTypeName(columnInfo[ix].dataType));
-        }
-
-        try
-        {
-            DelosNativeTableRegistry.registerNativeExecutionTable(
-                    lcc,
-                    schemaDescriptor.getSchemaName(),
-                    tableDescriptor.getName(),
-                    columnNames,
-                    typeNames);
-        }
-        catch (SQLException e)
-        {
-            throw StandardException.plainWrapException(e);
-        }
-    }
-
-    private String nativeDelosTypeName(DataTypeDescriptor dataType)
-            throws StandardException
-    {
-        int jdbcType = dataType.getTypeId().getJDBCTypeId();
-        if (jdbcType == Types.INTEGER) {
-            return "INTEGER";
-        }
-        if (jdbcType == Types.VARCHAR) {
-            return "VARCHAR(" + dataType.getMaximumWidth() + ")";
-        }
-        if (jdbcType == Types.CHAR) {
-            return "CHAR(" + dataType.getMaximumWidth() + ")";
-        }
-
-        throw StandardException.plainWrapException(new SQLException(
-                "Unsupported delos_mvcc column type: " + dataType.getFullSQLTypeName(),
-                "0A000"));
     }
 
     /** Create a sequence generator for an identity column */
