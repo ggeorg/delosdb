@@ -123,6 +123,7 @@ public final class Module6gInheritedSqlInsertMvccControllerSmoke {
                  Statement readerStatement = reader.createStatement()) {
                 activeStatement.executeUpdate("CREATE TABLE APP." + MVCC_ACTIVE_TABLE + "(id INT) USING delos_mvcc");
                 activeWriter.commit();
+                activeWriter.setAutoCommit(false);
                 activeStatement.executeUpdate("INSERT INTO APP." + MVCC_ACTIVE_TABLE + " VALUES (303)");
                 require(!ids(readerStatement, MVCC_ACTIVE_TABLE).contains(303),
                         "active SQL INSERT must be invisible to another Derby transaction");
