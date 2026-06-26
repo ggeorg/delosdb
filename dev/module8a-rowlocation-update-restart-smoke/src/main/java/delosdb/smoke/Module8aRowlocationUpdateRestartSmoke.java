@@ -13,6 +13,8 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
+import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.SQLInteger;
 import org.apache.derby.iapi.types.SQLVarchar;
 import org.apache.derby.impl.jdbc.EmbedConnection;
@@ -118,13 +120,13 @@ public final class Module8aRowlocationUpdateRestartSmoke {
                     "MODULE8A capture scan must find the inserted MVCC row");
             SmokeUtils.assertEquals(1, ((SQLInteger) row[0]).getInt(),
                     "MODULE8A captured row id must match fixture");
-            SmokeUtils.assertEquals(expectedName, row[1].getString(),
+            SmokeUtils.assertEquals(expectedName, ((DataValueDescriptor) row[1]).getString(),
                     "MODULE8A captured row payload must match fixture");
             StoreRowLocation location = scan.newRowLocationTemplate();
             scan.fetchLocation(location);
             require(!scan.fetchNext(rowTemplate()),
                     "MODULE8A fixture must contain only one visible MVCC row before update");
-            return (StoreRowLocation) location.cloneValue(true);
+            return (StoreRowLocation) StoreTypeUtil.cloneValue(location, true);
         } finally {
             scan.close();
         }
@@ -177,7 +179,7 @@ public final class Module8aRowlocationUpdateRestartSmoke {
                     "MODULE8A old RowLocation must still fetch a visible row after update/restart");
             SmokeUtils.assertEquals(1, ((SQLInteger) row[0]).getInt(),
                     "MODULE8A fetch by old RowLocation must preserve row identity");
-            SmokeUtils.assertEquals("new", row[1].getString(),
+            SmokeUtils.assertEquals("new", ((DataValueDescriptor) row[1]).getString(),
                     "MODULE8A fetch by old RowLocation must return latest committed value");
         } finally {
             controller.close();
@@ -211,7 +213,7 @@ public final class Module8aRowlocationUpdateRestartSmoke {
             scan.fetch(row);
             SmokeUtils.assertEquals(1, ((SQLInteger) row[0]).getInt(),
                     "MODULE8A positionAtRowLocation must preserve row identity");
-            SmokeUtils.assertEquals("new", row[1].getString(),
+            SmokeUtils.assertEquals("new", ((DataValueDescriptor) row[1]).getString(),
                     "MODULE8A positionAtRowLocation must return latest committed value");
         } finally {
             scan.close();
