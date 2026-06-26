@@ -21,9 +21,6 @@
 
 package org.apache.derby.impl.sql.execute;
 
-import java.sql.SQLException;
-
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 import org.apache.derby.catalog.UUID;
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
@@ -34,12 +31,13 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * Shared Derby/native boundary helpers for the remaining Delos heap proof
- * result-set paths.
+ * Shared Derby catalog helpers for the remaining Delos heap proof result-set
+ * paths.
  *
- * <p>The old MVCC Delos*ResultSet family was retired by MODULE6I after normal
+ * <p>The old native-registry MVCC result-set family was retired after normal
  * Derby store/access SELECT, INSERT, DELETE, and UPDATE reached MVCC physical
- * conglomerates directly.</p>
+ * conglomerates directly. These helpers no longer open native registry table
+ * access.</p>
  */
 final class DelosNativeResultSetSupport {
     private DelosNativeResultSetSupport() {
@@ -85,30 +83,5 @@ final class DelosNativeResultSetSupport {
         LanguageConnectionContext lcc = activation.getLanguageConnectionContext();
         DataDictionary dataDictionary = lcc.getDataDictionary();
         return dataDictionary.getTableDescriptor(tableUUID);
-    }
-
-    static DelosNativeTableRegistry.NativeExecutionTableAccess openNativeTableAccess(
-            Activation activation,
-            TableDescriptor tableDescriptor,
-            DelosTableScanProviderLookup.Result providerLookup) throws StandardException, SQLException {
-        return DelosNativeTableRegistry.openNativeExecutionTableAccess(
-                        activation.getLanguageConnectionContext(),
-                        tableDescriptor)
-                .orElseThrow(() -> StandardException.plainWrapException(
-                        new IllegalStateException("No delos_mvcc native table access registered for "
-                                + providerLookup.schemaName() + "." + providerLookup.tableName())));
-    }
-
-    static void abortNativeAccess(
-            DelosNativeTableRegistry.NativeExecutionTableAccess nativeAccess,
-            Throwable failure) {
-        if (nativeAccess == null) {
-            return;
-        }
-        try {
-            nativeAccess.abort();
-        } catch (SQLException abortFailure) {
-            failure.addSuppressed(abortFailure);
-        }
     }
 }
