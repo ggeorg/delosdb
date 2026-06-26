@@ -36,11 +36,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
-import io.github.ggeorg.delosdb.storage.mvcc.DelosMvccStorageProvider;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccRow;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccScan;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
@@ -56,20 +54,20 @@ import org.apache.derby.shared.common.error.StandardException;
 /**
  * Shared state behind the inherited MVCC conglomerate provider.
  *
- * <p>MODULE9A turns the static map into a cache instead of the restart
- * authority. MODULE9B attaches MVCC transaction status durability to the
- * inherited Derby transaction lifecycle. Committed visible rows are snapshotted
- * under the Derby database service directory and transaction outcomes are
- * recorded beside that provider-owned state. This is not WAL, a checkpoint
- * engine, or a side SQL bridge.</p>
+ * <p>MODULE9A turned the static map into a cache instead of the restart
+ * authority. MODULE11A moves the committed-row reload authority from the
+ * MODULE9A ad-hoc snapshot file to the existing Delos page-volume backed MVCC
+ * table, while still keeping all reads and writes behind the inherited Derby
+ * store/access provider.</p>
  */
 final class MvccConglomerateState {
     private static final int SNAPSHOT_MAGIC = 0x444D5631; // DMV1
     private static final int SNAPSHOT_VERSION = 1;
 
     private final ContainerKey key;
-    private final Path snapshotFile;
+    private final Path legacySnapshotFile;
     private final Path transactionStatusFile;
+    private final InheritedMvccPageVolumeStateStore pageVolumeStateStore;
     private final MvccTransactionStatusStore transactionStatusStore;
     private final MvccTable<Long, StoreDataValue[]> table = new MvccTable<>();
     private final MvccTransactionManager transactions;
@@ -77,13 +75,14 @@ final class MvccConglomerateState {
 
     MvccConglomerateState(ContainerKey key, Path databaseDirectory) {
         this.key = key;
-        this.snapshotFile = snapshotFile(databaseDirectory, key);
+        this.legacySnapshotFile = legacySnapshotFile(databaseDirectory, key);
         this.transactionStatusFile = transactionStatusFile(databaseDirectory, key);
+        this.pageVolumeStateStore = InheritedMvccPageVolumeStateStore.open(databaseDirectory, key);
         this.transactionStatusStore = transactionStatusFile == null || key.getContainerId() == 0L
                 ? MvccTransactionStatusStore.disabled()
                 : MvccTransactionStatusStore.open(transactionStatusFile);
         this.transactions = new MvccTransactionManager(transactionStatusStore);
-        loadCommittedSnapshot();
+        loadCommittedState();
     }
 
     ContainerKey key() {
@@ -102,43 +101,21 @@ final class MvccConglomerateState {
         return nextRowId++;
     }
 
+    /**
+     * Persists the current committed visible state through the MODULE11A
+     * page-volume state store. The method name is retained for the existing
+     * controller/transaction-registry call sites until MODULE11C retires the
+     * old snapshot vocabulary completely.
+     */
     synchronized void persistCommittedSnapshot() {
-        if (snapshotFile == null || key.getContainerId() == 0L) {
-            return;
-        }
-        List<PersistedRow> rows = visibleRows();
-        Path tmp = snapshotFile.resolveSibling(snapshotFile.getFileName() + ".tmp");
-        try {
-            Files.createDirectories(snapshotFile.getParent());
-            try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tmp))) {
-                out.writeInt(SNAPSHOT_MAGIC);
-                out.writeInt(SNAPSHOT_VERSION);
-                out.writeLong(nextRowId);
-                out.writeInt(rows.size());
-                for (PersistedRow row : rows) {
-                    out.writeLong(row.rowId());
-                    out.writeInt(row.values().length);
-                    for (StoreDataValue value : row.values()) {
-                        writeValue(out, value);
-                    }
-                }
-            }
-            Files.move(tmp, snapshotFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not persist inherited MVCC state for " + key, e);
-        } finally {
-            try {
-                Files.deleteIfExists(tmp);
-            } catch (IOException ignored) {
-                // Best effort cleanup only. The snapshot file is replaced atomically above.
-            }
-        }
+        pageVolumeStateStore.persistVisibleRows(visibleRows());
     }
 
     synchronized void dropDurableState() {
         try {
-            if (snapshotFile != null) {
-                Files.deleteIfExists(snapshotFile);
+            pageVolumeStateStore.drop();
+            if (legacySnapshotFile != null) {
+                Files.deleteIfExists(legacySnapshotFile);
             }
             if (transactionStatusFile != null) {
                 Files.deleteIfExists(transactionStatusFile);
@@ -148,12 +125,59 @@ final class MvccConglomerateState {
         }
     }
 
+    Path pageVolumeStateFileForTesting() {
+        return pageVolumeStateStore.pageFile();
+    }
 
-    private void loadCommittedSnapshot() {
-        if (snapshotFile == null || !Files.exists(snapshotFile)) {
+    Path rowDirectoryStateFileForTesting() {
+        return pageVolumeStateStore.rowDirectoryFile();
+    }
+
+    Path legacySnapshotFileForTesting() {
+        return legacySnapshotFile;
+    }
+
+    synchronized void close() {
+        pageVolumeStateStore.close();
+    }
+
+    private void loadCommittedState() {
+        if (pageVolumeStateStore.hasDurableState()) {
+            hydrateCommittedRows(
+                    pageVolumeStateStore.loadVisibleRows(),
+                    pageVolumeStateStore.nextInheritedRowId());
             return;
         }
-        try (DataInputStream in = new DataInputStream(Files.newInputStream(snapshotFile))) {
+        if (legacySnapshotFile != null && Files.exists(legacySnapshotFile)) {
+            loadLegacyCommittedSnapshot();
+            persistCommittedSnapshot();
+        }
+    }
+
+    private void hydrateCommittedRows(
+            List<InheritedMvccPageVolumeStateStore.PersistedRow> rows,
+            long storedNextRowId) {
+        if (rows.isEmpty()) {
+            nextRowId = Math.max(nextRowId, storedNextRowId);
+            return;
+        }
+        MvccTransaction hydrator = transactions.begin();
+        try {
+            long maxRowId = 0L;
+            for (InheritedMvccPageVolumeStateStore.PersistedRow row : rows) {
+                table.insert(row.rowId(), row.values(), hydrator);
+                maxRowId = Math.max(maxRowId, row.rowId());
+            }
+            transactions.commit(hydrator);
+            nextRowId = Math.max(storedNextRowId, maxRowId + 1L);
+        } catch (RuntimeException failure) {
+            transactions.abort(hydrator);
+            throw failure;
+        }
+    }
+
+    private void loadLegacyCommittedSnapshot() {
+        try (DataInputStream in = new DataInputStream(Files.newInputStream(legacySnapshotFile))) {
             int magic = in.readInt();
             if (magic != SNAPSHOT_MAGIC) {
                 throw new IllegalStateException("Unsupported inherited MVCC state snapshot magic for " + key);
@@ -165,39 +189,33 @@ final class MvccConglomerateState {
             }
             long storedNextRowId = in.readLong();
             int rowCount = in.readInt();
-            MvccTransaction hydrator = transactions.begin();
-            try {
-                long maxRowId = 0L;
-                for (int row = 0; row < rowCount; row++) {
-                    long rowId = in.readLong();
-                    int columnCount = in.readInt();
-                    StoreDataValue[] values = new StoreDataValue[columnCount];
-                    for (int column = 0; column < columnCount; column++) {
-                        values[column] = readValue(in);
-                    }
-                    table.insert(rowId, values, hydrator);
-                    maxRowId = Math.max(maxRowId, rowId);
+            List<InheritedMvccPageVolumeStateStore.PersistedRow> rows = new ArrayList<>();
+            for (int row = 0; row < rowCount; row++) {
+                long rowId = in.readLong();
+                int columnCount = in.readInt();
+                StoreDataValue[] values = new StoreDataValue[columnCount];
+                for (int column = 0; column < columnCount; column++) {
+                    values[column] = readValue(in);
                 }
-                transactions.commit(hydrator);
-                nextRowId = Math.max(storedNextRowId, maxRowId + 1L);
-            } catch (RuntimeException failure) {
-                transactions.abort(hydrator);
-                throw failure;
+                rows.add(new InheritedMvccPageVolumeStateStore.PersistedRow(rowId, values));
             }
+            hydrateCommittedRows(rows, storedNextRowId);
         } catch (IOException e) {
-            throw new UncheckedIOException("Could not load inherited MVCC state for " + key, e);
+            throw new UncheckedIOException("Could not load inherited MVCC legacy snapshot for " + key, e);
         }
     }
 
-    private List<PersistedRow> visibleRows() {
+    private List<InheritedMvccPageVolumeStateStore.PersistedRow> visibleRows() {
         MvccTransaction reader = transactions.begin();
         try {
             MvccSnapshot snapshot = transactions.snapshot(reader);
-            List<PersistedRow> rows = new ArrayList<>();
+            List<InheritedMvccPageVolumeStateStore.PersistedRow> rows = new ArrayList<>();
             try (MvccScan<Long, StoreDataValue[]> scan = table.openScan(snapshot, transactions)) {
                 while (scan.next()) {
                     MvccRow<Long, StoreDataValue[]> row = scan.row();
-                    rows.add(new PersistedRow(row.key(), MvccConglomerateController.cloneRow(row.value())));
+                    rows.add(new InheritedMvccPageVolumeStateStore.PersistedRow(
+                            row.key(),
+                            MvccConglomerateController.cloneRow(row.value())));
                 }
             } catch (StandardException e) {
                 throw new IllegalStateException("Could not clone inherited MVCC row for persistence", e);
@@ -208,8 +226,8 @@ final class MvccConglomerateState {
         }
     }
 
-    private static Path snapshotFile(Path databaseDirectory, ContainerKey key) {
-        Path directory = inheritedStoreDirectory(databaseDirectory);
+    private static Path legacySnapshotFile(Path databaseDirectory, ContainerKey key) {
+        Path directory = InheritedMvccPageVolumeStateStore.inheritedStoreDirectory(databaseDirectory);
         if (directory == null) {
             return null;
         }
@@ -217,31 +235,11 @@ final class MvccConglomerateState {
     }
 
     private static Path transactionStatusFile(Path databaseDirectory, ContainerKey key) {
-        Path directory = inheritedStoreDirectory(databaseDirectory);
+        Path directory = InheritedMvccPageVolumeStateStore.inheritedStoreDirectory(databaseDirectory);
         if (directory == null) {
             return null;
         }
         return directory.resolve("conglomerate-" + key.getSegmentId() + "-" + key.getContainerId() + ".txstatus");
-    }
-
-    private static Path inheritedStoreDirectory(Path databaseDirectory) {
-        if (databaseDirectory == null) {
-            return null;
-        }
-        return databaseDirectory
-                .resolve(DelosMvccStorageProvider.DATABASE_STORAGE_DIRECTORY_NAME)
-                .resolve("inherited-store");
-    }
-
-    private static void writeValue(DataOutputStream out, StoreDataValue value) throws IOException {
-        out.writeBoolean(value != null);
-        if (value == null) {
-            return;
-        }
-        out.writeUTF(value.getClass().getName());
-        byte[] encoded = encodeExternalValue(value);
-        out.writeInt(encoded.length);
-        out.write(encoded);
     }
 
     private static StoreDataValue readValue(DataInputStream in) throws IOException {
@@ -258,6 +256,18 @@ final class MvccConglomerateState {
             throw new IOException("Short inherited MVCC value read for " + className);
         }
         return decodeExternalValue(className, encoded);
+    }
+
+    @SuppressWarnings("unused")
+    private static void writeValue(DataOutputStream out, StoreDataValue value) throws IOException {
+        out.writeBoolean(value != null);
+        if (value == null) {
+            return;
+        }
+        out.writeUTF(value.getClass().getName());
+        byte[] encoded = encodeExternalValue(value);
+        out.writeInt(encoded.length);
+        out.write(encoded);
     }
 
     private static byte[] encodeExternalValue(StoreDataValue value) throws IOException {
@@ -311,8 +321,5 @@ final class MvccConglomerateState {
             throw error;
         }
         throw new IllegalStateException(cause);
-    }
-
-    private record PersistedRow(long rowId, StoreDataValue[] values) {
     }
 }

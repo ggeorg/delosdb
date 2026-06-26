@@ -299,11 +299,26 @@ public final class MvccConglomerate
     }
 
     public static void clearStatesForTesting() {
+        for (MvccConglomerateState state : STATES.values()) {
+            state.close();
+        }
         STATES.clear();
     }
 
     public static int stateCountForTesting() {
         return STATES.size();
+    }
+
+    public static Path pageVolumeStateFileForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageVolumeStateFileForTesting();
+    }
+
+    public static Path rowDirectoryStateFileForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).rowDirectoryStateFileForTesting();
+    }
+
+    public static Path legacySnapshotFileForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).legacySnapshotFileForTesting();
     }
 
     private static MvccConglomerateState stateFor(ContainerKey key) {
