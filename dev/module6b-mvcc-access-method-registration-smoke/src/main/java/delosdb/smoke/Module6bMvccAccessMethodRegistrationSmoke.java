@@ -14,10 +14,10 @@ import java.sql.Statement;
  * MODULE6B smoke: inherited Derby access-method registration preflight.
  *
  * <p>This smoke proves that Derby's existing {@link AccessFactory} can discover
- * and register a {@code delos_mvcc} access method by implementation id. It does
- * not change CREATE TABLE routing, open an MVCC conglomerate, or route SQL
- * execution through the new factory. Later milestones may add the first MVCC
- * conglomerate skeleton without changing this registration proof.</p>
+ * and register a {@code delos_mvcc} access method by implementation id. Later
+ * milestones may switch delos_mvcc physical table creation to this factory
+ * without changing this registration proof. This smoke still does not route
+ * normal SQL SELECT/INSERT/DELETE/UPDATE through the inherited MVCC store path.</p>
  */
 public final class Module6bMvccAccessMethodRegistrationSmoke {
     private static final String DATABASE_PATH = "build/module6b-mvcc-access-method-registration-db";
@@ -34,7 +34,7 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
             assertSourceRegistrationFacts();
             assertRuntimeClassVisibility();
             assertRuntimeAccessMethodRegistration();
-            assertCreateTableRouteStillUnchanged();
+            assertCreateTableRouteUsesProviderSwitch();
             assertNativeRoutePropertiesAreNotSet();
         } finally {
             clearNativeRouteProperties();
@@ -120,12 +120,18 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
         }
     }
 
-    private static void assertCreateTableRouteStillUnchanged() throws Exception {
+    private static void assertCreateTableRouteUsesProviderSwitch() throws Exception {
         String createTable = Files.readString(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateTableConstantAction.java"));
         requireContains(createTable,
-                "\"heap\", // we're requesting a heap conglomerate",
-                "MODULE6B must not switch CREATE TABLE physical conglomerate creation yet");
+                "physicalConglomerateImplementation()",
+                "CREATE TABLE must now use the MODULE6E provider-aware physical conglomerate selector");
+        requireContains(createTable,
+                "return \"delos_mvcc\"",
+                "delos_mvcc tables must request the registered MVCC access method after MODULE6E");
+        requireContains(createTable,
+                "return \"heap\"",
+                "heap tables must continue to request heap physical conglomerates after MODULE6E");
     }
 
     private static AccessFactory accessFactory(Connection connection) throws Exception {

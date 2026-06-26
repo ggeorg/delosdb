@@ -210,10 +210,11 @@ class CreateTableConstantAction extends DDLConstantAction
 		 * that lets us specify the conglomerate number then
 		 * we will need to handle it here.
 		 */
+		String conglomerateImplementation = physicalConglomerateImplementation();
 		long conglomId = tc.createConglomerate(
-				"heap", // we're requesting a heap conglomerate
+				conglomerateImplementation,
 				template.getRowArray(), // row template
-				null, //column sort order - not required for heap
+				null, // column sort order - not required for heap or MODULE6E MVCC preflight
                 collation_ids,
 				properties, // properties
 				tableType == TableDescriptor.GLOBAL_TEMPORARY_TABLE_TYPE ?
@@ -421,17 +422,28 @@ class CreateTableConstantAction extends DDLConstantAction
 
 	}
 
+    private String physicalConglomerateImplementation()
+    {
+        if (isDelosMvccBaseTable()) {
+            return "delos_mvcc";
+        }
+        return "heap";
+    }
+
+    private boolean isDelosMvccBaseTable()
+    {
+        return tableType == TableDescriptor.BASE_TABLE_TYPE
+                && storageProviderName != null
+                && "delos_mvcc".equals(storageProviderName.trim().toLowerCase(Locale.ROOT));
+    }
+
     private void registerNativeDelosTableIfNeeded(
             org.apache.derby.iapi.sql.conn.LanguageConnectionContext lcc,
             SchemaDescriptor schemaDescriptor,
             TableDescriptor tableDescriptor)
             throws StandardException
     {
-        if (tableType != TableDescriptor.BASE_TABLE_TYPE) {
-            return;
-        }
-        if (storageProviderName == null
-                || !"delos_mvcc".equals(storageProviderName.trim().toLowerCase(Locale.ROOT))) {
+        if (!isDelosMvccBaseTable()) {
             return;
         }
 

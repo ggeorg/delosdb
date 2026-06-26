@@ -17,15 +17,16 @@ Derby execution reaches MVCC by provider identity.
 Final Derby store/access provider integration is still incomplete.
 ```
 
-The remaining contradiction is:
+MODULE6E removes the first physical-creation contradiction:
 
 ```text
-A table can be cataloged as STORAGEPROVIDER = 'delos_mvcc',
-but the physical Derby conglomerate created by CREATE TABLE is still heap.
+A heap table still creates a heap physical conglomerate.
+A delos_mvcc table now asks Derby store/access for a delos_mvcc physical conglomerate.
 ```
 
-That is acceptable as bridge-killer scaffolding only. Plan 3 must remove this
-contradiction one inherited store/access seam at a time.
+This is still only a preflight. SQL SELECT/INSERT/DELETE/UPDATE may still use
+transitional Delos result-set seams until MODULE6F-MODULE6H prove the inherited
+execution paths.
 
 ## Current physical table creation seam
 
@@ -35,11 +36,12 @@ Source file:
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateTableConstantAction.java
 ```
 
-Current fact:
+Current fact after MODULE6E:
 
 ```java
+String conglomerateImplementation = physicalConglomerateImplementation();
 long conglomId = tc.createConglomerate(
-        "heap", // we're requesting a heap conglomerate
+        conglomerateImplementation,
         template.getRowArray(),
         null,
         collation_ids,
@@ -50,17 +52,16 @@ long conglomId = tc.createConglomerate(
 Meaning:
 
 ```text
-CREATE TABLE currently asks Derby store/access for a heap conglomerate.
-The delos_mvcc provider identity is catalog-level metadata, not yet the
-physical access-method implementation used by Derby store/access.
+CREATE TABLE now chooses the physical access-method implementation from the
+storage provider. Heap tables still request "heap". delos_mvcc base tables
+request "delos_mvcc".
 ```
 
-Future attack point:
+Boundary:
 
 ```text
-Only after an MVCC access method exists, delos_mvcc table creation should ask
-TransactionController.createConglomerate("delos_mvcc", ...), while normal heap
-tables continue to ask for "heap".
+This does not make SQL SELECT use TableScanResultSet -> MvccScanController yet.
+That bridge-killer proof remains MODULE6F.
 ```
 
 ## Access method discovery and registration seam
@@ -319,7 +320,7 @@ MODULE6A — Derby store/access boundary map
 MODULE6B — MVCC access-method registration preflight
 MODULE6C — MVCC conglomerate skeleton + logical RowLocation
 MODULE6D — direct store/access MVCC scan proof
-MODULE6E — CREATE TABLE physical conglomerate switch preflight
+MODULE6E — CREATE TABLE physical conglomerate switch preflight (green target)
 MODULE6F — inherited SELECT through TableScanResultSet
 MODULE6G — inherited INSERT through RowChanger/ConglomerateController
 MODULE6H — inherited DELETE/UPDATE through RowChanger/ConglomerateController

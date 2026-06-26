@@ -65,8 +65,8 @@ public final class Module6aDerbyStoreAccessBoundarySmoke {
                 "Final Derby store/access provider integration is still incomplete.",
                 "MODULE6A boundary document must keep the honest status");
         requireContains(document,
-                "physical Derby conglomerate created by CREATE TABLE is still heap",
-                "MODULE6A boundary document must name the heap-conglomerate contradiction");
+                "A delos_mvcc table now asks Derby store/access for a delos_mvcc physical conglomerate",
+                "MODULE6A boundary document must record the MODULE6E physical-conglomerate correction");
         requireContains(document,
                 "MODULE6B — MVCC access-method registration preflight",
                 "MODULE6A boundary document must freeze the next store/access step");
@@ -79,8 +79,14 @@ public final class Module6aDerbyStoreAccessBoundarySmoke {
                 "tc.createConglomerate(",
                 "CREATE TABLE must still enter TransactionController.createConglomerate");
         requireContains(createTable,
-                "\"heap\", // we're requesting a heap conglomerate",
-                "MODULE6A records the current fact that CREATE TABLE still requests heap");
+                "physicalConglomerateImplementation()",
+                "CREATE TABLE must route physical conglomerate creation through the storage-provider implementation selector");
+        requireContains(createTable,
+                "return \"delos_mvcc\"",
+                "MODULE6E records that delos_mvcc tables request an MVCC physical conglomerate");
+        requireContains(createTable,
+                "return \"heap\"",
+                "heap tables must still request heap physical conglomerates");
 
         String tableScan = Files.readString(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/TableScanResultSet.java"));
