@@ -110,3 +110,28 @@ Implementation boundary:
 - no new predicate type beyond equality
 - no source-string guards in this behavior smoke
 - predicate audit / compensation remains MODULE7F
+
+## MODULE7F - predicate audit / compensation
+
+Runtime/documentation predicate audit.
+
+Scope:
+- aggregate SELECT WHERE equality and non-matching equality behavior
+- aggregate DELETE WHERE equality and non-matching equality behavior
+- aggregate UPDATE WHERE equality and non-matching equality behavior
+- verify committed selective DELETE/UPDATE state survives real Derby shutdown/reopen
+- verify rolled-back selective DELETE/UPDATE remains invisible after real Derby shutdown/reopen
+- verify committed non-matching DELETE/UPDATE no-ops survive real Derby shutdown/reopen
+- verify MVCC physical conglomerate identity remains MVCC
+- verify inherited MVCC scan/controller runtime counters are reached
+- verify heap and btree compatibility remains green
+
+Implementation boundary:
+- runtime-only behavior audit
+- no source-string guards in this audit smoke
+- equality qualifiers only
+- MVCC scan remains full-scan based
+- qualifier evaluation is row filtering, not index access
+- no range predicate claim
+- no broad SQL expression support claim
+- no optimizer or index work
