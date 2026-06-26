@@ -134,6 +134,14 @@ final class MvccConglomerateState {
         return pageVolumeStateStore.writeAheadLogFile();
     }
 
+    Path checkpointFileForTesting() {
+        return pageVolumeStateStore.checkpointFile();
+    }
+
+    String checkpointStatusForTesting() {
+        return pageVolumeStateStore.checkpointStatus();
+    }
+
     /**
      * Returns the old MODULE9A snapshot location so smokes can assert that it is
      * absent or inert. Production reload no longer reads this file.

@@ -72,7 +72,9 @@ final class InheritedMvccPageVolumeStateStore {
     private final Path pageFile;
     private final Path pageMutationLogFile;
     private final InheritedMvccWriteAheadLog writeAheadLog;
+    private final InheritedMvccCheckpointStore checkpointStore;
     private final PageBackedMvccTable table;
+    private InheritedMvccCheckpointStore.Status checkpointStatus;
     private long nextTransactionId;
     private long nextCommitSequence;
 
@@ -80,11 +82,15 @@ final class InheritedMvccPageVolumeStateStore {
             Path pageFile,
             Path pageMutationLogFile,
             InheritedMvccWriteAheadLog writeAheadLog,
-            PageBackedMvccTable table) {
+            InheritedMvccCheckpointStore checkpointStore,
+            PageBackedMvccTable table,
+            InheritedMvccCheckpointStore.Status checkpointStatus) {
         this.pageFile = pageFile;
         this.pageMutationLogFile = pageMutationLogFile;
         this.writeAheadLog = Objects.requireNonNull(writeAheadLog, "writeAheadLog");
+        this.checkpointStore = Objects.requireNonNull(checkpointStore, "checkpointStore");
         this.table = table;
+        this.checkpointStatus = Objects.requireNonNull(checkpointStatus, "checkpointStatus");
         long nextSequence = 1L;
         if (table != null) {
             nextSequence = Math.max(nextSequence, table.physicalVersionCount() + 1L);
@@ -100,18 +106,41 @@ final class InheritedMvccPageVolumeStateStore {
         }
         try {
             Path pageMutationLog = pageMutationLogFileFor(pageFile);
+            InheritedMvccWriteAheadLog writeAheadLog = InheritedMvccWriteAheadLog.open(databaseDirectory, key);
+            InheritedMvccCheckpointStore checkpointStore = InheritedMvccCheckpointStore.open(databaseDirectory, key);
+            PageBackedMvccTable table = PageBackedMvccTable.open(pageFile, pageMutationLog);
+            InheritedMvccCheckpointStore.Status checkpointStatus = checkpointStore.validate(
+                    pageFile,
+                    PageBackedMvccTable.rowDirectoryPath(pageFile),
+                    pageMutationLog,
+                    writeAheadLog.path(),
+                    table.durableRowDirectoryHeads(),
+                    table.physicalVersionCount(),
+                    table.logicalRowCount(),
+                    table.durableRowDirectoryHeads().keySet().stream()
+                            .mapToLong(io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId::value)
+                            .max()
+                            .orElse(0L) + 1L);
             return new InheritedMvccPageVolumeStateStore(
                     pageFile,
                     pageMutationLog,
-                    InheritedMvccWriteAheadLog.open(databaseDirectory, key),
-                    PageBackedMvccTable.open(pageFile, pageMutationLog));
+                    writeAheadLog,
+                    checkpointStore,
+                    table,
+                    checkpointStatus);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not open inherited MVCC page-volume state for " + key, e);
         }
     }
 
     static InheritedMvccPageVolumeStateStore disabled() {
-        return new InheritedMvccPageVolumeStateStore(null, null, InheritedMvccWriteAheadLog.disabled(), null);
+        return new InheritedMvccPageVolumeStateStore(
+                null,
+                null,
+                InheritedMvccWriteAheadLog.disabled(),
+                InheritedMvccCheckpointStore.disabled(new ContainerKey(0L, 0L)),
+                null,
+                InheritedMvccCheckpointStore.Status.DISABLED);
     }
 
     boolean enabled() {
@@ -132,6 +161,14 @@ final class InheritedMvccPageVolumeStateStore {
 
     Path writeAheadLogFile() {
         return writeAheadLog.path();
+    }
+
+    Path checkpointFile() {
+        return checkpointStore.path();
+    }
+
+    String checkpointStatus() {
+        return checkpointStatus.name();
     }
 
     boolean hasDurableState() {
@@ -221,6 +258,7 @@ final class InheritedMvccPageVolumeStateStore {
             if (beganWalTransaction) {
                 writeAheadLog.appendCommit(transactionId, commitSequence);
             }
+            rewriteCheckpoint();
         } catch (IOException e) {
             if (beganWalTransaction) {
                 writeAheadLog.appendAbort(transactionId);
@@ -259,6 +297,24 @@ final class InheritedMvccPageVolumeStateStore {
         } catch (IOException e) {
             throw new UncheckedIOException("Could not close inherited MVCC page-volume state " + pageFile, e);
         }
+    }
+
+
+    private void rewriteCheckpoint() {
+        if (!enabled()) {
+            return;
+        }
+        Map<MvccRowId, MvccRowDirectoryStore.RowHeadRecord> heads = table.durableRowDirectoryHeads();
+        checkpointStore.rewrite(
+                pageFile,
+                rowDirectoryFile(),
+                pageMutationLogFile,
+                writeAheadLog.path(),
+                heads.values(),
+                table.physicalVersionCount(),
+                table.logicalRowCount(),
+                heads.keySet().stream().mapToLong(MvccRowId::value).max().orElse(0L) + 1L);
+        checkpointStatus = InheritedMvccCheckpointStore.Status.WRITTEN;
     }
 
     private long nextTransactionId() {

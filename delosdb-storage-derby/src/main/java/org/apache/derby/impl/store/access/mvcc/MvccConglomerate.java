@@ -325,6 +325,14 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).writeAheadLogFileForTesting();
     }
 
+    public static Path checkpointFileForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).checkpointFileForTesting();
+    }
+
+    public static String checkpointStatusForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).checkpointStatusForTesting();
+    }
+
     public static Path legacySnapshotFileForTesting(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).legacySnapshotFileForTesting();
     }
