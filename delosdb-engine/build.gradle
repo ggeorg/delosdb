@@ -218,11 +218,6 @@ tasks.register('derbyJar', Jar) {
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    // Let Gradle build the project artifacts that make up the engine patch
-    // configuration before this compatibility jar expands them. This keeps the
-    // Derby runtime jar aligned with normal project dependency wiring instead of
-    // copying a module's classes directory directly.
-    dependsOn configurations.enginePatch
     from moduleClassDir
     from({ configurations.enginePatch.collect { it.isDirectory() ? it : zipTree(it) } }) {
         include 'org/apache/derby/iapi/store/types/**'

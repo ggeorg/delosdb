@@ -48,6 +48,7 @@ import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.store.access.conglomerate.MethodFactory;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
+import org.apache.derby.impl.store.access.mvcc.MvccConglomerateFactory;
 import org.apache.derby.iapi.services.property.PropertyUtil;
 import org.apache.derby.iapi.store.access.AccessFactory;
 import org.apache.derby.iapi.services.property.PropertyFactory;
@@ -679,6 +680,10 @@ public abstract class RAMAccessManager
 				throw se;
 		}
 
+		if (factory == null) {
+			factory = bootDelosDbAccessMethod(impltype, conglomProperties);
+		}
+
 		conglomProperties = null;
 
 		if (factory != null) {
@@ -688,6 +693,30 @@ public abstract class RAMAccessManager
 
         // No such implementation.
         return null;
+    }
+
+    /**
+     * Boot DelosDB-owned access methods that live in the extracted storage
+     * implementation module. Derby's module monitor is still the first lookup
+     * path above. This narrow fallback keeps MODULE6B in the inherited
+     * RAMAccessManager registration path without growing the SQL result-set
+     * bridge or adding jar-packaging shortcuts.
+     */
+    private MethodFactory bootDelosDbAccessMethod(String impltype, Properties conglomProperties)
+            throws StandardException
+    {
+        if (!MvccConglomerateFactory.IMPLEMENTATION_ID.equals(impltype))
+        {
+            return null;
+        }
+
+        MvccConglomerateFactory factory = new MvccConglomerateFactory();
+        if (!factory.canSupport(conglomProperties))
+        {
+            return null;
+        }
+        factory.boot(false, conglomProperties);
+        return factory;
     }
 
 	public LockFactory getLockFactory() {

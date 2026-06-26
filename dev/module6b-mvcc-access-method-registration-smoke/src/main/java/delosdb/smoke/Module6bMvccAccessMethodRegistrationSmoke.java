@@ -66,6 +66,15 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
         requireContains(modules,
                 "derby.module.access.delos_mvcc=org.apache.derby.impl.store.access.mvcc.MvccConglomerateFactory",
                 "Derby module registry must expose the delos_mvcc access method");
+
+        String ramAccessManager = Files.readString(Path.of(
+                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMAccessManager.java"));
+        requireContains(ramAccessManager,
+                "bootDelosDbAccessMethod(impltype, conglomProperties)",
+                "RAMAccessManager must keep delos_mvcc registration inside the inherited access-method path");
+        requireContains(ramAccessManager,
+                "new MvccConglomerateFactory()",
+                "MODULE6B must register the MVCC access method without derby.jar class-directory stuffing");
     }
 
     private static void assertRuntimeClassVisibility() throws Exception {
