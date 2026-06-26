@@ -134,7 +134,7 @@ public final class MvccConglomerate
 
     @Override
     public DynamicCompiledOpenConglomInfo getDynamicCompiledConglomInfo() {
-        return null;
+        return new MvccDynamicCompiledOpenConglomInfo();
     }
 
     @Override
@@ -158,7 +158,7 @@ public final class MvccConglomerate
             LockingPolicy lockingPolicy,
             StaticCompiledOpenConglomInfo staticInfo,
             DynamicCompiledOpenConglomInfo dynamicInfo) {
-        return new MvccConglomerateController(this, xactManager);
+        return new MvccConglomerateController(this, xactManager, openMode);
     }
 
     @Override
@@ -202,8 +202,8 @@ public final class MvccConglomerate
     }
 
     @Override
-    public StoreCostController openStoreCost(TransactionManager xactManager, Transaction rawtran) throws StandardException {
-        throw unsupported();
+    public StoreCostController openStoreCost(TransactionManager xactManager, Transaction rawtran) {
+        return new MvccStoreCostController(this);
     }
 
     @Override
@@ -297,4 +297,17 @@ public final class MvccConglomerate
     private static StandardException unsupported() {
         return StandardException.newException(SQLState.STORE_FEATURE_NOT_IMPLEMENTED);
     }
+
+    /**
+     * MODULE6F minimal dynamic compiled info.
+     *
+     * <p>Inherited Derby compiled scans require non-null dynamic compiled
+     * information even when this MVCC preflight does not need scratch state yet.
+     * The object intentionally carries no behavior; MvccScanController remains
+     * the authority for row visibility and projection.</p>
+     */
+    private static final class MvccDynamicCompiledOpenConglomInfo
+            implements DynamicCompiledOpenConglomInfo {
+    }
+
 }

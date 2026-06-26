@@ -30,6 +30,7 @@ import java.util.Optional;
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 import org.apache.derby.iapi.sql.ResultSet;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
+import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
 import org.apache.derby.iapi.types.DataValueDescriptor;
@@ -92,7 +93,21 @@ final class DelosInsertResultSet extends NoRowsResultSetImpl
         if (lookup.isEmpty() || lookup.get().isDefaultStorageProvider()) {
             return Optional.empty();
         }
+        TableDescriptor tableDescriptor = DelosNativeResultSetSupport.tableDescriptor(
+                params.activation,
+                lookup.get().schemaName(),
+                lookup.get().tableName(),
+                "Delos native insert route decision");
+        if (isPhysicalMvccConglomerate(tableDescriptor)) {
+            return Optional.empty();
+        }
         return Optional.of(new DelosInsertResultSet(params, lookup.get()));
+    }
+
+
+    private static boolean isPhysicalMvccConglomerate(TableDescriptor tableDescriptor)
+            throws StandardException {
+        return (tableDescriptor.getHeapConglomerateId() & 0x0fL) == ConglomerateFactory.MVCC_FACTORY_ID;
     }
 
     @Override

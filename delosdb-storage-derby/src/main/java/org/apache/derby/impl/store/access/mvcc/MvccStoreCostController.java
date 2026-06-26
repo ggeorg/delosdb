@@ -1,0 +1,127 @@
+/*
+
+   Derby - Class org.apache.derby.impl.store.access.mvcc.MvccStoreCostController
+
+   Licensed to the Apache Software Foundation (ASF) under one or more
+   contributor license agreements.  See the NOTICE file distributed with
+   this work for additional information regarding copyright ownership.
+   The ASF licenses this file to you under the Apache License, Version 2.0
+   (the "License"); you may not use this file except in compliance with
+   the License.  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+ */
+
+package org.apache.derby.impl.store.access.mvcc;
+
+import org.apache.derby.iapi.services.io.FormatableBitSet;
+import org.apache.derby.iapi.store.access.StoreCostController;
+import org.apache.derby.iapi.store.access.StoreCostResult;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.shared.common.error.StandardException;
+
+/**
+ * MODULE6F minimal optimizer cost controller for the MVCC access method.
+ *
+ * <p>This is deliberately conservative. It exists so Derby's inherited
+ * optimizer can prepare a normal {@code TableScanResultSet} against an MVCC
+ * physical conglomerate and then open {@link MvccScanController}. It is not a
+ * final MVCC cost model.</p>
+ */
+final class MvccStoreCostController implements StoreCostController {
+    private final MvccConglomerate conglomerate;
+    private long estimatedRowCount = 1L;
+    private boolean closed;
+
+    MvccStoreCostController(MvccConglomerate conglomerate) {
+        this.conglomerate = conglomerate;
+    }
+
+    @Override
+    public void close() {
+        closed = true;
+    }
+
+    @Override
+    public double getFetchFromRowLocationCost(FormatableBitSet validColumns, int accessType) {
+        ensureOpen();
+        return BASE_CACHED_ROW_FETCH_COST;
+    }
+
+    @Override
+    public double getFetchFromFullKeyCost(FormatableBitSet validColumns, int accessType) {
+        ensureOpen();
+        // MVCC MODULE6F has no index/keyed access path yet, so model this as
+        // a small scan rather than promising true full-key lookup semantics.
+        return BASE_NONGROUPSCAN_ROW_FETCH_COST;
+    }
+
+    @Override
+    public void getScanCost(
+            int scanType,
+            long rowCount,
+            int groupSize,
+            boolean forUpdate,
+            FormatableBitSet scanColumnList,
+            StoreDataValue[] template,
+            StoreDataValue[] startKeyValue,
+            int startSearchOperator,
+            StoreDataValue[] stopKeyValue,
+            int stopSearchOperator,
+            boolean reopenScan,
+            int accessType,
+            StoreCostResult costResult) {
+        ensureOpen();
+        long rows = rowCount >= 0 ? rowCount : estimatedRowCount;
+        if (rows <= 0) {
+            rows = 1L;
+        }
+        double perRow = scanType == STORECOST_SCAN_SET
+                ? BASE_HASHSCAN_ROW_FETCH_COST
+                : BASE_NONGROUPSCAN_ROW_FETCH_COST;
+        if (groupSize > 1) {
+            perRow = BASE_GROUPSCAN_ROW_COST;
+        }
+        double cost = Math.max(1.0d, rows * perRow);
+        if (forUpdate) {
+            cost += rows * BASE_CACHED_ROW_FETCH_COST;
+        }
+        if (reopenScan) {
+            cost += BASE_CACHED_ROW_FETCH_COST;
+        }
+        costResult.setEstimatedRowCount(rows);
+        costResult.setEstimatedCost(cost);
+    }
+
+    @Override
+    public StoreRowLocation newRowLocationTemplate() {
+        ensureOpen();
+        return new MvccRowLocation();
+    }
+
+    @Override
+    public long getEstimatedRowCount() {
+        ensureOpen();
+        return estimatedRowCount;
+    }
+
+    @Override
+    public void setEstimatedRowCount(long count) {
+        ensureOpen();
+        estimatedRowCount = Math.max(0L, count);
+    }
+
+    private void ensureOpen() {
+        if (closed) {
+            throw new IllegalStateException("MVCC cost controller is closed for " + conglomerate.getId());
+        }
+    }
+}

@@ -24,6 +24,7 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Properties;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
@@ -47,16 +48,33 @@ import org.apache.derby.shared.common.error.StandardException;
  * direct store/access proof and not final Derby transaction integration.</p>
  */
 public final class MvccConglomerateController implements ConglomerateController {
+    private static final AtomicInteger INSERT_COUNT = new AtomicInteger();
+
     private final MvccConglomerate conglomerate;
     private final MvccConglomerateState state;
     private final TransactionManager transactionManager;
+    private final boolean completeWithDerbyTransaction;
     private boolean closed;
     private MvccTransaction writer;
+    private MvccStoreAccessTransactionRegistry.Writer registeredWriter;
 
-    MvccConglomerateController(MvccConglomerate conglomerate, TransactionManager transactionManager) {
+    MvccConglomerateController(
+            MvccConglomerate conglomerate,
+            TransactionManager transactionManager,
+            int openMode) {
         this.conglomerate = conglomerate;
         this.state = conglomerate.state();
         this.transactionManager = transactionManager;
+        this.completeWithDerbyTransaction = (openMode & org.apache.derby.iapi.store.access.TransactionController.OPENMODE_FORUPDATE)
+                == org.apache.derby.iapi.store.access.TransactionController.OPENMODE_FORUPDATE;
+    }
+
+    public static void resetInsertCountForTesting() {
+        INSERT_COUNT.set(0);
+    }
+
+    public static int insertCountForTesting() {
+        return INSERT_COUNT.get();
     }
 
     public MvccConglomerate conglomerate() {
@@ -66,7 +84,9 @@ public final class MvccConglomerateController implements ConglomerateController 
     @Override
     public void close() {
         if (!closed) {
-            abortWriterIfActive();
+            if (!completeWithDerbyTransaction) {
+                abortWriterIfActive();
+            }
             closed = true;
             transactionManager.closeMe(this);
         }
@@ -202,6 +222,7 @@ public final class MvccConglomerateController implements ConglomerateController 
     private void insertInternal(StoreDataValue[] row, MvccRowLocation destination) throws StandardException {
         long rowId = state.nextRowId();
         state.table().insert(rowId, cloneRow(row), writer());
+        INSERT_COUNT.incrementAndGet();
         if (destination != null) {
             destination.set(rowId, 0L, -1);
         }
@@ -210,20 +231,38 @@ public final class MvccConglomerateController implements ConglomerateController 
     private MvccTransaction writer() {
         if (writer == null) {
             writer = state.transactions().begin();
+            if (completeWithDerbyTransaction) {
+                registeredWriter = MvccStoreAccessTransactionRegistry.register(
+                        transactionManager,
+                        state.transactions(),
+                        writer);
+            }
         }
         return writer;
     }
 
     private void commitWriterIfActive() {
         if (writer != null) {
-            state.transactions().commit(writer);
+            if (registeredWriter != null) {
+                registeredWriter.commit();
+                MvccStoreAccessTransactionRegistry.complete(registeredWriter);
+                registeredWriter = null;
+            } else {
+                state.transactions().commit(writer);
+            }
             writer = null;
         }
     }
 
     private void abortWriterIfActive() {
         if (writer != null) {
-            state.transactions().abort(writer);
+            if (registeredWriter != null) {
+                registeredWriter.abort();
+                MvccStoreAccessTransactionRegistry.complete(registeredWriter);
+                registeredWriter = null;
+            } else {
+                state.transactions().abort(writer);
+            }
             writer = null;
         }
     }
