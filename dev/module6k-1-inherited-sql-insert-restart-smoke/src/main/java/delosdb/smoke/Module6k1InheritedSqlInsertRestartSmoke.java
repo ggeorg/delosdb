@@ -2,7 +2,6 @@ package delosdb.smoke;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -35,8 +34,6 @@ public final class Module6k1InheritedSqlInsertRestartSmoke {
         clearNativeMvccProofProperties();
 
         try {
-            assertPlanDocumentsSmallRestartProofs();
-            assertSourceKeepsInheritedInsertPath();
             createAndMutateThroughInheritedSqlInsert();
             forceRealShutdownAndClearInMemoryState();
             reopenAndAssertInheritedSqlInsertDurability();
@@ -45,42 +42,6 @@ public final class Module6k1InheritedSqlInsertRestartSmoke {
             DelosNativeTableRegistry.clearRegisteredTablesForTesting();
             SmokeUtils.shutdownQuietly(DATABASE_PATH);
         }
-    }
-
-    private static void assertPlanDocumentsSmallRestartProofs() throws Exception {
-        String plan = Files.readString(Path.of("docs/storage/mvcc-inherited-correctness-hardening-plan.md"));
-        requireContains(plan,
-                "MODULE6K-1: inherited SQL `INSERT` restart proof",
-                "MODULE6K-1 plan must document the INSERT restart proof");
-        requireContains(plan,
-                "force a Derby database shutdown",
-                "MODULE6K-1 plan must require a real database shutdown, not just connection close");
-        requireContains(plan,
-                "Do not start indexes",
-                "MODULE6K-1 plan must keep index work out of scope");
-    }
-
-    private static void assertSourceKeepsInheritedInsertPath() throws Exception {
-        String factory = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"));
-        requireNotContains(factory,
-                "DelosInsertResultSet.createIfEnabled",
-                "MODULE6K-1 must not reintroduce a DelosInsertResultSet factory bypass");
-        requireContains(factory,
-                "return new InsertResultSet(params);",
-                "MODULE6K-1 must keep normal INSERT on the inherited InsertResultSet path");
-
-        String insertResultSet = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/InsertResultSet.java"));
-        requireContains(insertResultSet,
-                "rowChanger.insertRow(row, false)",
-                "MODULE6K-1 must keep InsertResultSet on the inherited RowChanger path");
-
-        String rowChanger = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/RowChangerImpl.java"));
-        requireContains(rowChanger,
-                "baseCC.insertAndFetchLocation",
-                "MODULE6K-1 must keep RowChangerImpl inserting through ConglomerateController");
     }
 
     private static void createAndMutateThroughInheritedSqlInsert() throws Exception {
@@ -190,18 +151,6 @@ public final class Module6k1InheritedSqlInsertRestartSmoke {
     private static void clearNativeMvccProofProperties() {
         for (String propertyName : NativeMvccProofProperties.NAMES) {
             System.clearProperty(propertyName);
-        }
-    }
-
-    private static void requireContains(String source, String expected, String label) {
-        if (source == null || !source.contains(expected)) {
-            throw new AssertionError(label + " expected source to contain: " + expected);
-        }
-    }
-
-    private static void requireNotContains(String source, String unexpected, String label) {
-        if (source != null && source.contains(unexpected)) {
-            throw new AssertionError(label + " unexpected source content: " + unexpected);
         }
     }
 

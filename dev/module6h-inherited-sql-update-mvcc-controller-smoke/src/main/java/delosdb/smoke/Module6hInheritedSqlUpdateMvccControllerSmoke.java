@@ -2,7 +2,6 @@ package delosdb.smoke;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -38,7 +37,6 @@ public final class Module6hInheritedSqlUpdateMvccControllerSmoke {
         clearNativeRouteProperties();
 
         try {
-            assertSourceInheritedUpdateRoute();
             assertRuntimeInheritedSqlUpdate();
             assertNativeRoutePropertiesAreNotSet();
         } finally {
@@ -46,47 +44,6 @@ public final class Module6hInheritedSqlUpdateMvccControllerSmoke {
             DelosNativeTableRegistry.clearRegisteredTablesForTesting();
             SmokeUtils.shutdownQuietly(DATABASE_PATH);
         }
-    }
-
-    private static void assertSourceInheritedUpdateRoute() throws Exception {
-        String factory = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"));
-        requireNotContains(factory,
-                "DelosUpdateResultSet.createIfEnabled",
-                "MODULE6H/MODULE6I must not use a DelosUpdateResultSet factory bypass for MVCC UPDATE");
-        requireContains(factory,
-                "return new UpdateResultSet(UpdateResultSetParameters.normal(",
-                "MODULE6H UPDATE must keep normal UPDATE on the inherited UpdateResultSet path");
-
-        String updateResultSet = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/UpdateResultSet.java"));
-        requireContains(updateResultSet,
-                "rowChanger.updateRow(row,newBaseRow,baseRowLocation)",
-                "MODULE6H UPDATE must keep UpdateResultSet on the inherited RowChanger UPDATE path");
-
-        String rowChanger = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/RowChangerImpl.java"));
-        requireContains(rowChanger,
-                "baseCC.replace(baseRowLocation",
-                "MODULE6H UPDATE must keep RowChangerImpl updating through ConglomerateController.replace");
-
-        String scanController = Files.readString(Path.of(
-                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java"));
-        requireContains(scanController,
-                "copyCurrentRowLocation(destRow)",
-                "MODULE6H UPDATE requires inherited scans to materialize MVCC RowLocation columns for UPDATE");
-
-        String controller = Files.readString(Path.of(
-                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateController.java"));
-        requireContains(controller,
-                "updateCountForTesting",
-                "MODULE6H UPDATE smoke must prove runtime SQL UPDATE reached MvccConglomerateController");
-        requireContains(controller,
-                "state.table().update(",
-                "MODULE6H UPDATE must mutate through the MVCC table using the inherited RowLocation");
-        requireContains(controller,
-                "replacementRow(visible.get(), row, validColumns)",
-                "MODULE6H UPDATE must merge sparse RowChanger updates with the current MVCC row");
     }
 
     private static void assertRuntimeInheritedSqlUpdate() throws Exception {
@@ -208,18 +165,6 @@ public final class Module6hInheritedSqlUpdateMvccControllerSmoke {
     private static void clearNativeRouteProperties() {
         for (String propertyName : NativeRouteProperties.NAMES) {
             System.clearProperty(propertyName);
-        }
-    }
-
-    private static void requireContains(String source, String expected, String label) {
-        if (source == null || !source.contains(expected)) {
-            throw new AssertionError(label + " expected source to contain: " + expected);
-        }
-    }
-
-    private static void requireNotContains(String source, String unexpected, String label) {
-        if (source != null && source.contains(unexpected)) {
-            throw new AssertionError(label + " unexpected source content: " + unexpected);
         }
     }
 

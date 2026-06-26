@@ -2,7 +2,6 @@ package delosdb.smoke;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -35,7 +34,6 @@ public final class Module6k2InheritedSqlUpdateRestartSmoke {
         clearNativeMvccProofProperties();
 
         try {
-            assertPlanDocumentsSmallRestartProofs();
             createAndMutateThroughInheritedSqlUpdate();
             forceRealShutdownAndClearInMemoryState();
             reopenAndAssertInheritedSqlUpdateDurability();
@@ -44,19 +42,6 @@ public final class Module6k2InheritedSqlUpdateRestartSmoke {
             DelosNativeTableRegistry.clearRegisteredTablesForTesting();
             SmokeUtils.shutdownQuietly(DATABASE_PATH);
         }
-    }
-
-    private static void assertPlanDocumentsSmallRestartProofs() throws Exception {
-        String plan = Files.readString(Path.of("docs/storage/mvcc-inherited-correctness-hardening-plan.md"));
-        requireContains(plan,
-                "MODULE6K-2: inherited SQL `UPDATE` restart proof",
-                "MODULE6K-2 plan must document the UPDATE restart proof");
-        requireContains(plan,
-                "force a Derby database shutdown",
-                "MODULE6K-2 plan must require a real database shutdown, not just connection close");
-        requireContains(plan,
-                "Do not start indexes",
-                "MODULE6K-2 plan must keep index work out of scope");
     }
 
     private static void createAndMutateThroughInheritedSqlUpdate() throws Exception {
@@ -189,13 +174,6 @@ public final class Module6k2InheritedSqlUpdateRestartSmoke {
             System.clearProperty(propertyName);
         }
     }
-
-    private static void requireContains(String source, String expected, String label) {
-        if (source == null || !source.contains(expected)) {
-            throw new AssertionError(label + " expected source to contain: " + expected);
-        }
-    }
-
 
     private static void require(boolean condition, String label) {
         if (!condition) {

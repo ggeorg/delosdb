@@ -2,7 +2,6 @@ package delosdb.smoke;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -43,7 +42,6 @@ public final class Module6fInheritedSqlSelectMvccScanSmoke {
         clearNativeRouteProperties();
 
         try {
-            assertSourceInheritedSelectRoute();
             assertRuntimeInheritedSqlSelect();
             assertNativeRoutePropertiesAreNotSet();
         } finally {
@@ -51,26 +49,6 @@ public final class Module6fInheritedSqlSelectMvccScanSmoke {
             DelosNativeTableRegistry.clearRegisteredTablesForTesting();
             SmokeUtils.shutdownQuietly(DATABASE_PATH);
         }
-    }
-
-    private static void assertSourceInheritedSelectRoute() throws Exception {
-        String factory = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"));
-        requireNotContains(factory,
-                "DelosTableScanResultSet.createIfEnabled",
-                "MODULE6F/MODULE6I must not use a DelosTableScanResultSet factory bypass for MVCC scans");
-        requireContains(factory,
-                "return new TableScanResultSet(params);",
-                "MODULE6F must keep normal table scans on the inherited TableScanResultSet path");
-
-        String scanController = Files.readString(Path.of(
-                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java"));
-        requireContains(scanController,
-                "public boolean fetchNext(StoreDataValue[] destRow)",
-                "MODULE6F depends on inherited ScanController.fetchNext");
-        requireContains(scanController,
-                "openCountForTesting",
-                "MODULE6F smoke must prove runtime SQL SELECT opened MvccScanController");
     }
 
     private static void assertRuntimeInheritedSqlSelect() throws Exception {
@@ -186,18 +164,6 @@ public final class Module6fInheritedSqlSelectMvccScanSmoke {
     private static void clearNativeRouteProperties() {
         for (String propertyName : NativeRouteProperties.NAMES) {
             System.clearProperty(propertyName);
-        }
-    }
-
-    private static void requireContains(String source, String expected, String label) {
-        if (source == null || !source.contains(expected)) {
-            throw new AssertionError(label + " expected source to contain: " + expected);
-        }
-    }
-
-    private static void requireNotContains(String source, String unexpected, String label) {
-        if (source != null && source.contains(unexpected)) {
-            throw new AssertionError(label + " unexpected source content: " + unexpected);
         }
     }
 

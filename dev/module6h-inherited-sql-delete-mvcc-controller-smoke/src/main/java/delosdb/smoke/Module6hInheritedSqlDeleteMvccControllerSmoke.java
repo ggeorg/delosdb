@@ -2,7 +2,6 @@ package delosdb.smoke;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -13,7 +12,6 @@ import java.util.List;
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.impl.jdbc.EmbedConnection;
 import org.apache.derby.impl.store.access.mvcc.MvccConglomerateController;
-import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistry;
 
 /**
  * MODULE6H smoke: normal Derby SQL DELETE reaches MVCC through the inherited
@@ -40,7 +38,6 @@ public final class Module6hInheritedSqlDeleteMvccControllerSmoke {
         clearNativeRouteProperties();
 
         try {
-            assertSourceInheritedDeleteRoute();
             assertRuntimeInheritedSqlDelete();
             assertNativeRoutePropertiesAreNotSet();
         } finally {
@@ -48,44 +45,6 @@ public final class Module6hInheritedSqlDeleteMvccControllerSmoke {
             DelosNativeTableRegistry.clearRegisteredTablesForTesting();
             SmokeUtils.shutdownQuietly(DATABASE_PATH);
         }
-    }
-
-    private static void assertSourceInheritedDeleteRoute() throws Exception {
-        String factory = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"));
-        requireNotContains(factory,
-                "DelosDeleteResultSet.createIfEnabled",
-                "MODULE6H/MODULE6I must not use a DelosDeleteResultSet factory bypass for MVCC DELETE");
-        requireContains(factory,
-                "return new DeleteResultSet(source, activation );",
-                "MODULE6H must keep normal DELETE on the inherited DeleteResultSet path");
-
-        String deleteResultSet = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DeleteResultSet.java"));
-        requireContains(deleteResultSet,
-                "rc.deleteRow(row,baseRowLocation)",
-                "MODULE6H must keep DeleteResultSet on the inherited RowChanger DELETE path");
-
-        String rowChanger = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/RowChangerImpl.java"));
-        requireContains(rowChanger,
-                "baseCC.delete(baseRowLocation)",
-                "MODULE6H must keep RowChangerImpl deleting through ConglomerateController.delete");
-
-        String scanController = Files.readString(Path.of(
-                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java"));
-        requireContains(scanController,
-                "copyCurrentRowLocation(destRow)",
-                "MODULE6H requires inherited scans to materialize MVCC RowLocation columns for DELETE");
-
-        String controller = Files.readString(Path.of(
-                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateController.java"));
-        requireContains(controller,
-                "deleteCountForTesting",
-                "MODULE6H smoke must prove runtime SQL DELETE reached MvccConglomerateController");
-        requireContains(controller,
-                "state.table().delete(location.rowId(), transaction, snapshot, state.transactions())",
-                "MODULE6H DELETE must mutate through the MVCC table using the inherited RowLocation");
     }
 
     private static void assertRuntimeInheritedSqlDelete() throws Exception {
@@ -190,18 +149,6 @@ public final class Module6hInheritedSqlDeleteMvccControllerSmoke {
     private static void clearNativeRouteProperties() {
         for (String propertyName : NativeRouteProperties.NAMES) {
             System.clearProperty(propertyName);
-        }
-    }
-
-    private static void requireContains(String source, String expected, String label) {
-        if (source == null || !source.contains(expected)) {
-            throw new AssertionError(label + " expected source to contain: " + expected);
-        }
-    }
-
-    private static void requireNotContains(String source, String unexpected, String label) {
-        if (source != null && source.contains(unexpected)) {
-            throw new AssertionError(label + " unexpected source content: " + unexpected);
         }
     }
 

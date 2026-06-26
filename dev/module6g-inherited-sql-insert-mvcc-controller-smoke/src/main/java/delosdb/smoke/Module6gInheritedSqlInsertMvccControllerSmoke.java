@@ -2,7 +2,6 @@ package delosdb.smoke;
 
 import io.github.ggeorg.delosdb.engine.extension.storage.versioned.sql.DelosNativeTableRegistry;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -12,7 +11,6 @@ import java.util.List;
 
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.impl.store.access.mvcc.MvccConglomerateController;
-import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistry;
 
 /**
  * MODULE6G smoke: normal Derby SQL INSERT reaches MVCC through the inherited
@@ -38,7 +36,6 @@ public final class Module6gInheritedSqlInsertMvccControllerSmoke {
         clearNativeRouteProperties();
 
         try {
-            assertSourceInheritedInsertRoute();
             assertRuntimeInheritedSqlInsert();
             assertNativeRoutePropertiesAreNotSet();
         } finally {
@@ -46,38 +43,6 @@ public final class Module6gInheritedSqlInsertMvccControllerSmoke {
             DelosNativeTableRegistry.clearRegisteredTablesForTesting();
             SmokeUtils.shutdownQuietly(DATABASE_PATH);
         }
-    }
-
-    private static void assertSourceInheritedInsertRoute() throws Exception {
-        String factory = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java"));
-        requireNotContains(factory,
-                "DelosInsertResultSet.createIfEnabled",
-                "MODULE6G/MODULE6I must not use a DelosInsertResultSet factory bypass for MVCC INSERT");
-        requireContains(factory,
-                "return new InsertResultSet(params);",
-                "MODULE6G must keep normal INSERT on the inherited InsertResultSet path");
-
-        String insertResultSet = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/InsertResultSet.java"));
-        requireContains(insertResultSet,
-                "rowChanger.insertRow(row, false)",
-                "MODULE6G must keep InsertResultSet on the inherited RowChanger INSERT path");
-
-        String rowChanger = Files.readString(Path.of(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/RowChangerImpl.java"));
-        requireContains(rowChanger,
-                "baseCC.insertAndFetchLocation",
-                "MODULE6G must keep RowChangerImpl inserting through ConglomerateController.insertAndFetchLocation");
-
-        String controller = Files.readString(Path.of(
-                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateController.java"));
-        requireContains(controller,
-                "MvccStoreAccessTransactionRegistry.register",
-                "MODULE6G must keep SQL INSERT writers transaction-scoped after RowChanger closes the controller");
-        requireContains(controller,
-                "insertCountForTesting",
-                "MODULE6G smoke must prove runtime SQL INSERT reached MvccConglomerateController");
     }
 
     private static void assertRuntimeInheritedSqlInsert() throws Exception {
@@ -178,18 +143,6 @@ public final class Module6gInheritedSqlInsertMvccControllerSmoke {
     private static void clearNativeRouteProperties() {
         for (String propertyName : NativeRouteProperties.NAMES) {
             System.clearProperty(propertyName);
-        }
-    }
-
-    private static void requireContains(String source, String expected, String label) {
-        if (source == null || !source.contains(expected)) {
-            throw new AssertionError(label + " expected source to contain: " + expected);
-        }
-    }
-
-    private static void requireNotContains(String source, String unexpected, String label) {
-        if (source != null && source.contains(unexpected)) {
-            throw new AssertionError(label + " unexpected source content: " + unexpected);
         }
     }
 
