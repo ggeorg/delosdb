@@ -34,6 +34,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.store.access.Qualifier;
+import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.ScanInfo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
@@ -268,10 +269,10 @@ public final class MvccScanController implements ScanManager {
     }
 
     private StoreDataValue[] newGroupFetchRowTemplate(StoreDataValue[][] rowArray) throws StandardException {
-        if (rowArray.length > 0 && rowArray[0] != null) {
-            return MvccConglomerateController.cloneRow(rowArray[0]);
+        if (rowArray.length == 0 || rowArray[0] == null) {
+            throw new IllegalStateException("MVCC bulk scan requires a non-null first row template");
         }
-        return MvccConglomerateController.cloneRow(current.value());
+        return RowUtil.newRowFromTemplatePreservingArrayType(rowArray[0]);
     }
 
     @Override
