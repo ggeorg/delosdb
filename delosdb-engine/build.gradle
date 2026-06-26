@@ -219,6 +219,15 @@ tasks.register('derbyJar', Jar) {
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from moduleClassDir
+    // Include freshly compiled inherited Derby storage classes directly. The
+    // enginePatch configuration may resolve a project jar artifact, while this
+    // compatibility derby.jar must reflect the current compileLegacyDerbyStorage
+    // output in the same build. Keeping this ahead of the patch-jar copy also
+    // lets new access-method classes appear in derby.jar without requiring a
+    // separate delosdb-storage-derby runtime jar.
+    from(project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')) {
+        include 'org/apache/derby/impl/store/**'
+    }
     from({ configurations.enginePatch.collect { it.isDirectory() ? it : zipTree(it) } }) {
         include 'org/apache/derby/iapi/store/types/**'
         include 'org/apache/derby/iapi/store/**'

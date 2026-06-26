@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Statement;
+import java.util.jar.JarFile;
 
 /**
  * MODULE6B smoke: inherited Derby access-method registration preflight.
@@ -32,6 +33,7 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
 
         try {
             assertSourceRegistrationFacts();
+            assertRuntimePackagingFacts();
             assertRuntimeAccessMethodRegistration();
             assertCreateTableRouteStillUnchanged();
             assertNativeRoutePropertiesAreNotSet();
@@ -67,6 +69,17 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
                 "Derby module registry must expose the delos_mvcc access method");
     }
 
+    private static void assertRuntimePackagingFacts() throws Exception {
+        try (JarFile derbyJar = new JarFile("build/libs/derby.jar")) {
+            require(derbyJar.getEntry(
+                    "org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.class") != null,
+                    "derby.jar must include the freshly compiled delos_mvcc access method class");
+            require(derbyJar.getEntry(
+                    "org/apache/derby/iapi/store/access/conglomerate/ConglomerateFactory.class") != null,
+                    "derby.jar must include the patched ConglomerateFactory API");
+        }
+    }
+
     private static void assertRuntimeAccessMethodRegistration() throws Exception {
         SmokeUtils.loadEmbeddedDriver();
         try (Connection connection = SmokeUtils.connect(DATABASE_PATH, true);
@@ -85,7 +98,10 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
 
             require(heap instanceof ConglomerateFactory, "heap access method must still be a ConglomerateFactory");
             require(btree instanceof ConglomerateFactory, "btree access method must still be a ConglomerateFactory");
-            require(mvcc instanceof ConglomerateFactory, "delos_mvcc access method must register as a ConglomerateFactory");
+            require(mvcc != null, "delos_mvcc access method must be discoverable by implementation id");
+            require(mvcc instanceof ConglomerateFactory,
+                    "delos_mvcc access method must register as a ConglomerateFactory, got "
+                            + mvcc.getClass().getName());
 
             ConglomerateFactory mvccFactory = (ConglomerateFactory) mvcc;
             SmokeUtils.assertEquals("delos_mvcc", mvcc.primaryImplementationType(),
