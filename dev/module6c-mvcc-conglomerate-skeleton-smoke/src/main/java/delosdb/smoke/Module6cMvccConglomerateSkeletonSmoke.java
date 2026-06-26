@@ -24,8 +24,9 @@ import org.apache.derby.impl.store.access.mvcc.MvccScanController;
  *
  * <p>This proves the registered {@code delos_mvcc} access method can create an
  * inherited Derby conglomerate skeleton and open inherited scan/controller
- * skeletons. It intentionally does not change CREATE TABLE routing or execute
- * normal SQL through the new access method.</p>
+ * skeletons. Later milestones may switch CREATE TABLE physical routing; this
+ * smoke remains focused on the direct store/access skeleton and does not
+ * execute normal SQL through the new access method.</p>
  */
 public final class Module6cMvccConglomerateSkeletonSmoke {
     private static final String DATABASE_PATH = "build/module6c-mvcc-conglomerate-skeleton-db";
@@ -41,7 +42,7 @@ public final class Module6cMvccConglomerateSkeletonSmoke {
         try {
             assertSourceSkeletonFacts();
             assertRuntimeSkeletonThroughInheritedStoreAccess();
-            assertCreateTableRouteStillUnchanged();
+            assertCreateTableRouteIsWithinPlanBoundary();
             assertNativeRoutePropertiesAreNotSet();
         } finally {
             clearNativeRouteProperties();
@@ -135,12 +136,17 @@ public final class Module6cMvccConglomerateSkeletonSmoke {
         }
     }
 
-    private static void assertCreateTableRouteStillUnchanged() throws Exception {
+    private static void assertCreateTableRouteIsWithinPlanBoundary() throws Exception {
         String createTable = Files.readString(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateTableConstantAction.java"));
-        requireContains(createTable,
-                "\"heap\", // we're requesting a heap conglomerate",
-                "MODULE6C must not switch CREATE TABLE physical conglomerate creation yet");
+        boolean preModule6eHeapOnlyRoute = createTable.contains(
+                "\"heap\", // we're requesting a heap conglomerate");
+        boolean module6ePhysicalProviderRoute = createTable.contains("physicalConglomerateImplementation()")
+                && createTable.contains("return \"delos_mvcc\"")
+                && createTable.contains("return \"heap\"");
+        require(preModule6eHeapOnlyRoute || module6ePhysicalProviderRoute,
+                "MODULE6C smoke must accept either its original heap-only CREATE TABLE boundary "
+                        + "or the later MODULE6E physical provider switch");
     }
 
     private static void assertNativeRoutePropertiesAreNotSet() {
