@@ -1,0 +1,2 @@
+ext.delosdbSmokeDescription = 'Runs the MODULE10E native result-set registry bridge retirement smoke.'
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')
