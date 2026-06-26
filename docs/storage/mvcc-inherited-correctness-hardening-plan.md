@@ -33,3 +33,20 @@ Only after restart hardening is green:
 ## Explicit non-goals for this plan
 
 Do not start indexes, optimizer cost modeling, native I/O, vacuum, distributed storage, Calcite, full SQL expression support, or heap redesign in this plan.
+
+## MODULE7B - SELECT WHERE equality
+
+Runtime-only predicate proof.
+
+Scope:
+- normal inherited Derby SQL SELECT over `USING delos_mvcc`
+- equality predicates on committed rows
+- non-matching equality predicates
+- prepared equality predicates
+- heap and btree compatibility
+
+Implementation boundary:
+- MVCC scan remains full-scan based
+- qualifier evaluation is row filtering, not index access
+- no DELETE/UPDATE predicate claim yet
+- no source-string guards in this behavior smoke

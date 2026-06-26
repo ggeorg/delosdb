@@ -21,6 +21,8 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -36,7 +38,9 @@ import org.apache.derby.iapi.store.access.ScanInfo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreOrderable;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.store.types.StoreValueOperations;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
@@ -49,6 +53,7 @@ import org.apache.derby.shared.common.error.StandardException;
  */
 public final class MvccScanController implements ScanManager {
     private static final AtomicInteger OPEN_COUNT = new AtomicInteger();
+    private static final AtomicInteger QUALIFIER_REJECT_COUNT = new AtomicInteger();
 
     private final MvccConglomerate conglomerate;
     private final MvccConglomerateState state;
@@ -57,16 +62,22 @@ public final class MvccScanController implements ScanManager {
     private final MvccTransaction reader;
     private final MvccSnapshot snapshot;
     private MvccScan<Long, StoreDataValue[]> scan;
+    private Qualifier[][] qualifiers;
     private MvccRow<Long, StoreDataValue[]> current;
     private boolean closed;
     private long estimatedRowCount;
 
-    MvccScanController(MvccConglomerate conglomerate, TransactionManager transactionManager, boolean hold) {
+    MvccScanController(
+            MvccConglomerate conglomerate,
+            TransactionManager transactionManager,
+            boolean hold,
+            Qualifier[][] qualifiers) {
         OPEN_COUNT.incrementAndGet();
         this.conglomerate = conglomerate;
         this.state = conglomerate.state();
         this.transactionManager = transactionManager;
         this.hold = hold;
+        this.qualifiers = qualifiers;
         this.reader = state.transactions().begin();
         this.snapshot = state.transactions().snapshot(reader);
         this.scan = state.table().openScan(snapshot, state.transactions());
@@ -79,6 +90,14 @@ public final class MvccScanController implements ScanManager {
 
     public static int openCountForTesting() {
         return OPEN_COUNT.get();
+    }
+
+    public static void resetQualifierRejectCountForTesting() {
+        QUALIFIER_REJECT_COUNT.set(0);
+    }
+
+    public static int qualifierRejectCountForTesting() {
+        return QUALIFIER_REJECT_COUNT.get();
     }
 
     public MvccConglomerate conglomerate() {
@@ -142,6 +161,7 @@ public final class MvccScanController implements ScanManager {
         scan.close();
         current = null;
         scan = state.table().openScan(snapshot, state.transactions());
+        this.qualifiers = qualifier;
     }
 
     @Override
@@ -151,6 +171,7 @@ public final class MvccScanController implements ScanManager {
         scan.close();
         current = null;
         scan = state.table().openScan(snapshot, state.transactions());
+        this.qualifiers = qualifier;
     }
 
     @Override
@@ -202,11 +223,9 @@ public final class MvccScanController implements ScanManager {
     @Override
     public boolean fetchNext(StoreDataValue[] destRow) throws StandardException {
         ensureOpen();
-        if (!scan.next()) {
-            current = null;
+        if (!advanceToNextQualifiedRow()) {
             return false;
         }
-        current = scan.row();
         copyCurrentRow(destRow, null);
         return true;
     }
@@ -218,8 +237,7 @@ public final class MvccScanController implements ScanManager {
             return 0;
         }
         int count = 0;
-        while (count < rowArray.length && scan.next()) {
-            current = scan.row();
+        while (count < rowArray.length && advanceToNextQualifiedRow()) {
             MvccConglomerateController.copyRow(current.value(), rowArray[count], null);
             if (rowlocArray != null) {
                 if (rowlocArray[count] == null) {
@@ -261,14 +279,9 @@ public final class MvccScanController implements ScanManager {
     }
 
     @Override
-    public boolean next() {
+    public boolean next() throws StandardException {
         ensureOpen();
-        if (!scan.next()) {
-            current = null;
-            return false;
-        }
-        current = scan.row();
-        return true;
+        return advanceToNextQualifiedRow();
     }
 
     @Override
@@ -280,8 +293,189 @@ public final class MvccScanController implements ScanManager {
             current = null;
             return false;
         }
-        current = new MvccRow<>(location.rowId(), visible.get());
+        MvccRow<Long, StoreDataValue[]> positioned = new MvccRow<>(location.rowId(), visible.get());
+        if (!rowQualifies(positioned.value())) {
+            QUALIFIER_REJECT_COUNT.incrementAndGet();
+            current = null;
+            return false;
+        }
+        current = positioned;
         return true;
+    }
+
+    private boolean advanceToNextQualifiedRow() throws StandardException {
+        while (scan.next()) {
+            MvccRow<Long, StoreDataValue[]> candidate = scan.row();
+            if (rowQualifies(candidate.value())) {
+                current = candidate;
+                return true;
+            }
+            QUALIFIER_REJECT_COUNT.incrementAndGet();
+        }
+        current = null;
+        return false;
+    }
+
+    private boolean rowQualifies(StoreDataValue[] row) throws StandardException {
+        if (qualifiers == null || qualifiers.length == 0) {
+            return true;
+        }
+        for (int group = 0; group < qualifiers.length; group++) {
+            Qualifier[] groupQualifiers = qualifiers[group];
+            if (groupQualifiers == null || groupQualifiers.length == 0) {
+                continue;
+            }
+            boolean groupResult = group == 0;
+            if (group == 0) {
+                for (Qualifier qualifier : groupQualifiers) {
+                    if (qualifier != null && !qualifierMatches(row, qualifier)) {
+                        groupResult = false;
+                        break;
+                    }
+                }
+            } else {
+                groupResult = false;
+                for (Qualifier qualifier : groupQualifiers) {
+                    if (qualifier != null && qualifierMatches(row, qualifier)) {
+                        groupResult = true;
+                        break;
+                    }
+                }
+            }
+            if (!groupResult) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean qualifierMatches(StoreDataValue[] row, Qualifier qualifier) throws StandardException {
+        int columnId = qualifier.getColumnId();
+        if (row == null || columnId < 0 || columnId >= row.length) {
+            return false;
+        }
+        StoreDataValue columnValue = row[columnId];
+        StoreDataValue orderable = qualifier.getOrderable();
+        boolean result = compare(columnValue, qualifier.getOperator(), orderable,
+                qualifier.getOrderedNulls(), qualifier.getUnknownRV());
+        return qualifier.negateCompareResult() ? !result : result;
+    }
+
+    private boolean compare(
+            StoreDataValue left,
+            int operator,
+            StoreDataValue right,
+            boolean orderedNulls,
+            boolean unknownRV) throws StandardException {
+        if (left instanceof StoreValueOperations storeValue) {
+            return storeValue.compare(operator, right, orderedNulls, unknownRV);
+        }
+
+        Boolean reflected = compareReflectively(left, operator, right, orderedNulls, unknownRV);
+        if (reflected != null) {
+            return reflected;
+        }
+
+        return compareObjects(left, operator, right, orderedNulls, unknownRV);
+    }
+
+    private Boolean compareReflectively(
+            StoreDataValue left,
+            int operator,
+            StoreDataValue right,
+            boolean orderedNulls,
+            boolean unknownRV) throws StandardException {
+        if (left == null) {
+            return orderedNulls ? right == null : unknownRV;
+        }
+        for (Method method : left.getClass().getMethods()) {
+            Class<?>[] parameterTypes = method.getParameterTypes();
+            if (!"compare".equals(method.getName())
+                    || method.getReturnType() != boolean.class
+                    || parameterTypes.length != 4
+                    || parameterTypes[0] != int.class
+                    || parameterTypes[2] != boolean.class
+                    || parameterTypes[3] != boolean.class
+                    || right == null
+                    || !parameterTypes[1].isInstance(right)) {
+                continue;
+            }
+            try {
+                return (Boolean) method.invoke(left, operator, right, orderedNulls, unknownRV);
+            } catch (IllegalAccessException e) {
+                throw new IllegalStateException("Cannot access Derby value comparison method", e);
+            } catch (InvocationTargetException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof StandardException standardException) {
+                    throw standardException;
+                }
+                if (cause instanceof RuntimeException runtimeException) {
+                    throw runtimeException;
+                }
+                throw new IllegalStateException("Derby value comparison failed", cause);
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private boolean compareObjects(
+            StoreDataValue left,
+            int operator,
+            StoreDataValue right,
+            boolean orderedNulls,
+            boolean unknownRV) throws StandardException {
+        Object leftObject = objectValue(left);
+        Object rightObject = objectValue(right);
+        if (leftObject == null || rightObject == null) {
+            if (!orderedNulls) {
+                return unknownRV;
+            }
+            int nullComparison = leftObject == rightObject ? 0 : leftObject == null ? -1 : 1;
+            return compareResult(operator, nullComparison);
+        }
+        if (!(leftObject instanceof Comparable comparable)) {
+            return leftObject.equals(rightObject) && operator == StoreOrderable.ORDER_OP_EQUALS;
+        }
+        return compareResult(operator, comparable.compareTo(rightObject));
+    }
+
+    private Object objectValue(StoreDataValue value) throws StandardException {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof StoreValueOperations storeValue) {
+            return storeValue.getObject();
+        }
+        try {
+            Method method = value.getClass().getMethod("getObject");
+            return method.invoke(value);
+        } catch (NoSuchMethodException e) {
+            return value;
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("Cannot access Derby value object method", e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof StandardException standardException) {
+                throw standardException;
+            }
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Derby value object lookup failed", cause);
+        }
+    }
+
+    private boolean compareResult(int operator, int comparison) throws StandardException {
+        return switch (operator) {
+            case StoreOrderable.ORDER_OP_EQUALS -> comparison == 0;
+            case StoreOrderable.ORDER_OP_LESSTHAN -> comparison < 0;
+            case StoreOrderable.ORDER_OP_LESSOREQUALS -> comparison <= 0;
+            case StoreOrderable.ORDER_OP_GREATERTHAN -> comparison > 0;
+            case StoreOrderable.ORDER_OP_GREATEROREQUALS -> comparison >= 0;
+            default -> throw StandardException.newException(
+                    org.apache.derby.shared.common.reference.SQLState.STORE_FEATURE_NOT_IMPLEMENTED);
+        };
     }
 
     private void copyCurrentRow(StoreDataValue[] destRow, FormatableBitSet validColumns) throws StandardException {
