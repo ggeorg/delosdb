@@ -9,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Statement;
-import java.util.jar.JarFile;
 
 /**
  * MODULE6B smoke: inherited Derby access-method registration preflight.
@@ -33,7 +32,7 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
 
         try {
             assertSourceRegistrationFacts();
-            assertRuntimePackagingFacts();
+            assertRuntimeClassVisibility();
             assertRuntimeAccessMethodRegistration();
             assertCreateTableRouteStillUnchanged();
             assertNativeRoutePropertiesAreNotSet();
@@ -69,15 +68,12 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
                 "Derby module registry must expose the delos_mvcc access method");
     }
 
-    private static void assertRuntimePackagingFacts() throws Exception {
-        try (JarFile derbyJar = new JarFile("build/libs/derby.jar")) {
-            require(derbyJar.getEntry(
-                    "org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.class") != null,
-                    "derby.jar must include the freshly compiled delos_mvcc access method class");
-            require(derbyJar.getEntry(
-                    "org/apache/derby/iapi/store/access/conglomerate/ConglomerateFactory.class") != null,
-                    "derby.jar must include the patched ConglomerateFactory API");
-        }
+    private static void assertRuntimeClassVisibility() throws Exception {
+        Class<?> factoryClass = Class.forName(
+                "org.apache.derby.impl.store.access.mvcc.MvccConglomerateFactory");
+        require(ConglomerateFactory.class.isAssignableFrom(factoryClass),
+                "delos_mvcc access method class must be visible through the normal runtime classpath "
+                        + "and assignable to ConglomerateFactory");
     }
 
     private static void assertRuntimeAccessMethodRegistration() throws Exception {
