@@ -31,6 +31,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
+import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.access.SpaceInfo;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
@@ -48,12 +49,14 @@ import org.apache.derby.shared.common.error.StandardException;
 public final class MvccConglomerateController implements ConglomerateController {
     private final MvccConglomerate conglomerate;
     private final MvccConglomerateState state;
+    private final TransactionManager transactionManager;
     private boolean closed;
     private MvccTransaction writer;
 
-    MvccConglomerateController(MvccConglomerate conglomerate) {
+    MvccConglomerateController(MvccConglomerate conglomerate, TransactionManager transactionManager) {
         this.conglomerate = conglomerate;
         this.state = conglomerate.state();
+        this.transactionManager = transactionManager;
     }
 
     public MvccConglomerate conglomerate() {
@@ -62,14 +65,20 @@ public final class MvccConglomerateController implements ConglomerateController 
 
     @Override
     public void close() {
-        abortWriterIfActive();
-        closed = true;
+        if (!closed) {
+            abortWriterIfActive();
+            closed = true;
+            transactionManager.closeMe(this);
+        }
     }
 
     @Override
     public boolean closeForEndTransaction(boolean closeHeldScan) {
-        commitWriterIfActive();
-        closed = true;
+        if (!closed) {
+            commitWriterIfActive();
+            closed = true;
+            transactionManager.closeMe(this);
+        }
         return true;
     }
 

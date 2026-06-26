@@ -33,6 +33,7 @@ import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.ScanInfo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
+import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
@@ -47,6 +48,7 @@ import org.apache.derby.shared.common.error.StandardException;
 public final class MvccScanController implements ScanManager {
     private final MvccConglomerate conglomerate;
     private final MvccConglomerateState state;
+    private final TransactionManager transactionManager;
     private final boolean hold;
     private final MvccTransaction reader;
     private final MvccSnapshot snapshot;
@@ -55,9 +57,10 @@ public final class MvccScanController implements ScanManager {
     private boolean closed;
     private long estimatedRowCount;
 
-    MvccScanController(MvccConglomerate conglomerate, boolean hold) {
+    MvccScanController(MvccConglomerate conglomerate, TransactionManager transactionManager, boolean hold) {
         this.conglomerate = conglomerate;
         this.state = conglomerate.state();
+        this.transactionManager = transactionManager;
         this.hold = hold;
         this.reader = state.transactions().begin();
         this.snapshot = state.transactions().snapshot(reader);
@@ -74,6 +77,7 @@ public final class MvccScanController implements ScanManager {
             scan.close();
             state.transactions().abort(reader);
             closed = true;
+            transactionManager.closeMe(this);
         }
     }
 

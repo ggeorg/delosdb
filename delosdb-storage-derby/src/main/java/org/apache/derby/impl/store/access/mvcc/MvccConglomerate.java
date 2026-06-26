@@ -158,7 +158,7 @@ public final class MvccConglomerate
             LockingPolicy lockingPolicy,
             StaticCompiledOpenConglomInfo staticInfo,
             DynamicCompiledOpenConglomInfo dynamicInfo) {
-        return new MvccConglomerateController(this);
+        return new MvccConglomerateController(this, xactManager);
     }
 
     @Override
@@ -178,7 +178,7 @@ public final class MvccConglomerate
             int stopSearchOperator,
             StaticCompiledOpenConglomInfo staticInfo,
             DynamicCompiledOpenConglomInfo dynamicInfo) {
-        return new MvccScanController(this, hold);
+        return new MvccScanController(this, xactManager, hold);
     }
 
     @Override
