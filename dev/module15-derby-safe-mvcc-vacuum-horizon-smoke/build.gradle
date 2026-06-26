@@ -1,0 +1,2 @@
+ext.delosdbSmokeDescription = 'Runs the MODULE15 Derby-safe MVCC vacuum horizon smoke.'
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

@@ -198,11 +198,17 @@ public final class MvccConglomerate
     }
 
     @Override
-    public void purgeConglomerate(TransactionManager xactManager, Transaction rawtran) {
+    public void purgeConglomerate(TransactionManager xactManager, Transaction rawtran) throws StandardException {
+        try {
+            state.vacuumSafely();
+        } catch (RuntimeException e) {
+            throw StandardException.plainWrapException(e);
+        }
     }
 
     @Override
-    public void compressConglomerate(TransactionManager xactManager, Transaction rawtran) {
+    public void compressConglomerate(TransactionManager xactManager, Transaction rawtran) throws StandardException {
+        purgeConglomerate(xactManager, rawtran);
     }
 
     @Override
@@ -331,6 +337,30 @@ public final class MvccConglomerate
 
     public static String checkpointStatusForTesting(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).checkpointStatusForTesting();
+    }
+
+    public static int physicalVersionCountForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).physicalVersionCountForTesting();
+    }
+
+    public static int logicalRowCountForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).logicalRowCountForTesting();
+    }
+
+    public static boolean lastVacuumSkippedForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).lastVacuumOutcomeForTesting().skipped();
+    }
+
+    public static String lastVacuumReasonForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).lastVacuumOutcomeForTesting().reason();
+    }
+
+    public static int lastVacuumRemovedVersionsForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).lastVacuumOutcomeForTesting().removedVersions();
+    }
+
+    public static int lastVacuumRemainingVersionsForTesting(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).lastVacuumOutcomeForTesting().remainingVersions();
     }
 
     public static Path legacySnapshotFileForTesting(int segment, long containerId) {

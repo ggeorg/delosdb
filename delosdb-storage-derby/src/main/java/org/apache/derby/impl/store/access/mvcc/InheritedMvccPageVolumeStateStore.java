@@ -51,6 +51,8 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowDirectoryStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowPayload;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccTable;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccVacuumPlan;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccVacuumResult;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 
 import org.apache.derby.iapi.store.raw.ContainerKey;
@@ -173,6 +175,33 @@ final class InheritedMvccPageVolumeStateStore {
 
     boolean hasDurableState() {
         return enabled() && table.physicalVersionCount() > 0;
+    }
+
+    int physicalVersionCount() {
+        return enabled() ? table.physicalVersionCount() : 0;
+    }
+
+    int logicalRowCount() {
+        return enabled() ? table.logicalRowCount() : 0;
+    }
+
+    VacuumOutcome vacuumSafely(boolean hasRetainedInheritedSnapshot) {
+        if (!enabled()) {
+            return VacuumOutcome.disabled();
+        }
+        if (hasRetainedInheritedSnapshot) {
+            return VacuumOutcome.skipped(
+                    "retained inherited MVCC transaction or scan",
+                    table.physicalVersionCount(),
+                    table.logicalRowCount());
+        }
+        try {
+            MvccVacuumResult result = table.vacuum(MvccVacuumPlan.through(Long.MAX_VALUE));
+            rewriteCheckpoint();
+            return VacuumOutcome.completed(result);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not vacuum inherited MVCC page-volume state " + pageFile, e);
+        }
     }
 
     List<PersistedRow> loadVisibleRows() {
@@ -473,6 +502,34 @@ final class InheritedMvccPageVolumeStateStore {
             throw error;
         }
         throw new IllegalStateException(cause);
+    }
+
+    record VacuumOutcome(
+            boolean enabled,
+            boolean skipped,
+            String reason,
+            int removedVersions,
+            int removedLogicalRows,
+            int remainingVersions,
+            int remainingLogicalRows) {
+        static VacuumOutcome disabled() {
+            return new VacuumOutcome(false, true, "disabled", 0, 0, 0, 0);
+        }
+
+        static VacuumOutcome skipped(String reason, int remainingVersions, int remainingLogicalRows) {
+            return new VacuumOutcome(true, true, reason, 0, 0, remainingVersions, remainingLogicalRows);
+        }
+
+        static VacuumOutcome completed(MvccVacuumResult result) {
+            return new VacuumOutcome(
+                    true,
+                    false,
+                    "completed",
+                    result.removedVersions(),
+                    result.removedLogicalRows(),
+                    result.remainingVersions(),
+                    result.remainingLogicalRows());
+        }
     }
 
     record PersistedRow(long rowId, StoreDataValue[] values) {

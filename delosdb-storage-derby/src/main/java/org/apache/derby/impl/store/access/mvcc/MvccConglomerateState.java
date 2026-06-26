@@ -59,6 +59,8 @@ final class MvccConglomerateState {
     private final MvccTable<Long, StoreDataValue[]> table = new MvccTable<>();
     private final MvccTransactionManager transactions;
     private long nextRowId = 1L;
+    private InheritedMvccPageVolumeStateStore.VacuumOutcome lastVacuumOutcome =
+            InheritedMvccPageVolumeStateStore.VacuumOutcome.disabled();
 
     MvccConglomerateState(ContainerKey key, Path databaseDirectory) {
         this.key = key;
@@ -140,6 +142,25 @@ final class MvccConglomerateState {
 
     String checkpointStatusForTesting() {
         return pageVolumeStateStore.checkpointStatus();
+    }
+
+    synchronized int physicalVersionCountForTesting() {
+        return pageVolumeStateStore.physicalVersionCount();
+    }
+
+    synchronized int logicalRowCountForTesting() {
+        return pageVolumeStateStore.logicalRowCount();
+    }
+
+    synchronized InheritedMvccPageVolumeStateStore.VacuumOutcome lastVacuumOutcomeForTesting() {
+        return lastVacuumOutcome;
+    }
+
+    synchronized InheritedMvccPageVolumeStateStore.VacuumOutcome vacuumSafely() {
+        boolean hasRetainedInheritedSnapshot = transactions.activeTransactionCount() > 0
+                || transactions.retainedSnapshotCount() > 0;
+        lastVacuumOutcome = pageVolumeStateStore.vacuumSafely(hasRetainedInheritedSnapshot);
+        return lastVacuumOutcome;
     }
 
     /**
