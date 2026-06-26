@@ -293,13 +293,7 @@ public final class MvccScanController implements ScanManager {
             current = null;
             return false;
         }
-        MvccRow<Long, StoreDataValue[]> positioned = new MvccRow<>(location.rowId(), visible.get());
-        if (!rowQualifies(positioned.value())) {
-            QUALIFIER_REJECT_COUNT.incrementAndGet();
-            current = null;
-            return false;
-        }
-        current = positioned;
+        current = new MvccRow<>(location.rowId(), visible.get());
         return true;
     }
 
