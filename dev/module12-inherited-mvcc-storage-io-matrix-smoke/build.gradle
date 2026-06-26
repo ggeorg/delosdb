@@ -1,0 +1,2 @@
+ext.delosdbSmokeDescription = 'Runs the MODULE12 inherited MVCC storage-I/O correctness matrix smoke.'
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')
