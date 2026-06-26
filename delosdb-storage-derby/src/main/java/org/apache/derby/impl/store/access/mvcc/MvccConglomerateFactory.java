@@ -38,7 +38,6 @@ import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.shared.common.reference.SQLState;
 
 /**
  * MODULE6B preflight access-method factory for DelosDB MVCC.
@@ -97,14 +96,14 @@ public final class MvccConglomerateFactory
             int[] collationIds,
             Properties properties,
             int temporaryFlag) throws StandardException {
-        throw StandardException.newException(SQLState.STORE_FEATURE_NOT_IMPLEMENTED);
+        return new MvccConglomerate(segment, input_containerid, template, collationIds, temporaryFlag);
     }
 
     @Override
     public Conglomerate readConglomerate(
             TransactionManager xact_mgr,
             ContainerKey container_key) throws StandardException {
-        throw StandardException.newException(SQLState.STORE_FEATURE_NOT_IMPLEMENTED);
+        return new MvccConglomerate(container_key);
     }
 
     @Override

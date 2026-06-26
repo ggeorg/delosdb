@@ -16,8 +16,8 @@ import java.sql.Statement;
  * <p>This smoke proves that Derby's existing {@link AccessFactory} can discover
  * and register a {@code delos_mvcc} access method by implementation id. It does
  * not change CREATE TABLE routing, open an MVCC conglomerate, or route SQL
- * execution through the new factory. MODULE6C owns the first MVCC conglomerate
- * skeleton.</p>
+ * execution through the new factory. Later milestones may add the first MVCC
+ * conglomerate skeleton without changing this registration proof.</p>
  */
 public final class Module6bMvccAccessMethodRegistrationSmoke {
     private static final String DATABASE_PATH = "build/module6b-mvcc-access-method-registration-db";
@@ -52,8 +52,8 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
                 "return ConglomerateFactory.MVCC_FACTORY_ID",
                 "MVCC access method must use the explicit MVCC factory id");
         requireContains(factory,
-                "STORE_FEATURE_NOT_IMPLEMENTED",
-                "MODULE6B factory must not implement create/read conglomerate yet");
+                "new MvccConglomerate",
+                "MODULE6C may now provide the first create/read conglomerate skeleton while keeping registration intact");
 
         String api = Files.readString(Path.of(
                 "delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/ConglomerateFactory.java"));
