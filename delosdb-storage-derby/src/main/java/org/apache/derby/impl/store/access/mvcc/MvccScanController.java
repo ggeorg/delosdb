@@ -21,6 +21,13 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.util.Optional;
+
+import io.github.ggeorg.delosdb.storage.mvcc.MvccRow;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccScan;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
+
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.store.access.Qualifier;
@@ -30,16 +37,31 @@ import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
 
-/** MODULE6C inherited ScanManager skeleton for Delos MVCC. */
+/**
+ * MODULE6D inherited ScanManager preflight for Delos MVCC.
+ *
+ * <p>The scan opens a statement snapshot against the MVCC kernel and returns
+ * visible rows through Derby's inherited ScanController shape. This remains
+ * below SQL execution; normal TableScanResultSet routing is not changed here.</p>
+ */
 public final class MvccScanController implements ScanManager {
     private final MvccConglomerate conglomerate;
+    private final MvccConglomerateState state;
     private final boolean hold;
+    private final MvccTransaction reader;
+    private final MvccSnapshot snapshot;
+    private MvccScan<Long, StoreDataValue[]> scan;
+    private MvccRow<Long, StoreDataValue[]> current;
     private boolean closed;
     private long estimatedRowCount;
 
     MvccScanController(MvccConglomerate conglomerate, boolean hold) {
         this.conglomerate = conglomerate;
+        this.state = conglomerate.state();
         this.hold = hold;
+        this.reader = state.transactions().begin();
+        this.snapshot = state.transactions().snapshot(reader);
+        this.scan = state.table().openScan(snapshot, state.transactions());
     }
 
     public MvccConglomerate conglomerate() {
@@ -48,7 +70,11 @@ public final class MvccScanController implements ScanManager {
 
     @Override
     public void close() {
-        closed = true;
+        if (!closed) {
+            scan.close();
+            state.transactions().abort(reader);
+            closed = true;
+        }
     }
 
     @Override
@@ -95,12 +121,18 @@ public final class MvccScanController implements ScanManager {
             StoreDataValue[] stopKeyValue,
             int stopSearchOperator) {
         ensureOpen();
+        scan.close();
+        current = null;
+        scan = state.table().openScan(snapshot, state.transactions());
     }
 
     @Override
     public void reopenScanByRowLocation(StoreRowLocation startRowLocation, Qualifier[][] qualifier) {
         ensureOpen();
         MvccRowLocation.from(startRowLocation);
+        scan.close();
+        current = null;
+        scan = state.table().openScan(snapshot, state.transactions());
     }
 
     @Override
@@ -127,7 +159,7 @@ public final class MvccScanController implements ScanManager {
     @Override
     public boolean doesCurrentPositionQualify() {
         ensureOpen();
-        return false;
+        return current != null;
     }
 
     @Override
@@ -136,40 +168,72 @@ public final class MvccScanController implements ScanManager {
     }
 
     @Override
-    public void fetch(StoreDataValue[] destRow) {
+    public void fetch(StoreDataValue[] destRow) throws StandardException {
         ensureOpen();
+        if (current == null) {
+            throw new IllegalStateException("MVCC scan is not positioned on a row");
+        }
+        MvccConglomerateController.copyRow(current.value(), destRow, null);
     }
 
     @Override
-    public void fetchWithoutQualify(StoreDataValue[] destRow) {
-        ensureOpen();
+    public void fetchWithoutQualify(StoreDataValue[] destRow) throws StandardException {
+        fetch(destRow);
     }
 
     @Override
-    public boolean fetchNext(StoreDataValue[] destRow) {
+    public boolean fetchNext(StoreDataValue[] destRow) throws StandardException {
         ensureOpen();
-        return false;
+        if (!scan.next()) {
+            current = null;
+            return false;
+        }
+        current = scan.row();
+        MvccConglomerateController.copyRow(current.value(), destRow, null);
+        return true;
     }
 
     @Override
-    public int fetchNextGroup(StoreDataValue[][] rowArray, StoreRowLocation[] rowlocArray) {
+    public int fetchNextGroup(StoreDataValue[][] rowArray, StoreRowLocation[] rowlocArray) throws StandardException {
         ensureOpen();
-        return 0;
+        if (rowArray == null || rowArray.length == 0) {
+            return 0;
+        }
+        int count = 0;
+        while (count < rowArray.length && scan.next()) {
+            current = scan.row();
+            MvccConglomerateController.copyRow(current.value(), rowArray[count], null);
+            if (rowlocArray != null) {
+                if (rowlocArray[count] == null) {
+                    rowlocArray[count] = new MvccRowLocation();
+                }
+                MvccRowLocation.from(rowlocArray[count]).set(current.key(), 0L, -1);
+            }
+            count++;
+        }
+        if (count == 0) {
+            current = null;
+        }
+        return count;
     }
 
     @Override
     public int fetchNextGroup(
             StoreDataValue[][] rowArray,
             StoreRowLocation[] oldrowlocArray,
-            StoreRowLocation[] newrowlocArray) {
-        ensureOpen();
-        return 0;
+            StoreRowLocation[] newrowlocArray) throws StandardException {
+        return fetchNextGroup(rowArray, oldrowlocArray);
     }
 
     @Override
     public void fetchLocation(StoreRowLocation destRowLocation) {
         ensureOpen();
-        MvccRowLocation.from(destRowLocation).restoreToNull();
+        MvccRowLocation destination = MvccRowLocation.from(destRowLocation);
+        if (current == null) {
+            destination.restoreToNull();
+        } else {
+            destination.set(current.key(), 0L, -1);
+        }
     }
 
     @Override
@@ -181,14 +245,25 @@ public final class MvccScanController implements ScanManager {
     @Override
     public boolean next() {
         ensureOpen();
-        return false;
+        if (!scan.next()) {
+            current = null;
+            return false;
+        }
+        current = scan.row();
+        return true;
     }
 
     @Override
     public boolean positionAtRowLocation(StoreRowLocation rowLocation) {
         ensureOpen();
-        MvccRowLocation.from(rowLocation);
-        return false;
+        MvccRowLocation location = MvccRowLocation.from(rowLocation);
+        Optional<StoreDataValue[]> visible = state.table().read(location.rowId(), snapshot, state.transactions());
+        if (visible.isEmpty()) {
+            current = null;
+            return false;
+        }
+        current = new MvccRow<>(location.rowId(), visible.get());
+        return true;
     }
 
     @Override

@@ -24,6 +24,8 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.derby.iapi.services.io.CompressedNumber;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -58,17 +60,22 @@ import org.apache.derby.shared.common.reference.SQLState;
 public final class MvccConglomerate
         extends GenericConglomerate
         implements StaticCompiledOpenConglomInfo {
+    private static final Map<ContainerKey, MvccConglomerateState> STATES = new ConcurrentHashMap<>();
+
     private ContainerKey id;
+    private MvccConglomerateState state;
     private int columnCount;
     private int[] collationIds = new int[0];
     private boolean temporary;
 
     public MvccConglomerate() {
         this.id = new ContainerKey(0L, 0L);
+        this.state = stateFor(id);
     }
 
     MvccConglomerate(int segment, long containerId, StoreDataValue[] template, int[] collationIds, int temporaryFlag) {
         this.id = new ContainerKey(segment, containerId);
+        this.state = stateFor(id);
         this.columnCount = template == null ? 0 : template.length;
         this.collationIds = collationIds == null ? new int[0] : collationIds.clone();
         this.temporary = (temporaryFlag & TransactionController.IS_TEMPORARY) == TransactionController.IS_TEMPORARY;
@@ -76,6 +83,11 @@ public final class MvccConglomerate
 
     MvccConglomerate(ContainerKey key) {
         this.id = key;
+        this.state = stateFor(key);
+    }
+
+    MvccConglomerateState state() {
+        return state;
     }
 
     @Override
@@ -246,6 +258,7 @@ public final class MvccConglomerate
         long segmentId = CompressedNumber.readLong(in);
         long containerId = CompressedNumber.readLong(in);
         id = new ContainerKey(segmentId, containerId);
+        state = stateFor(id);
         columnCount = CompressedNumber.readInt(in);
         int collationCount = CompressedNumber.readInt(in);
         collationIds = new int[collationCount];
@@ -258,6 +271,7 @@ public final class MvccConglomerate
     @Override
     public void restoreToNull() {
         id = new ContainerKey(0L, 0L);
+        state = stateFor(id);
         columnCount = 0;
         collationIds = new int[0];
         temporary = false;
@@ -274,6 +288,10 @@ public final class MvccConglomerate
             }
         }
         return false;
+    }
+
+    private static MvccConglomerateState stateFor(ContainerKey key) {
+        return STATES.computeIfAbsent(key, MvccConglomerateState::new);
     }
 
     private static StandardException unsupported() {
