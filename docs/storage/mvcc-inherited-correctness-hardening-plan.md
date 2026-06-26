@@ -50,3 +50,23 @@ Implementation boundary:
 - qualifier evaluation is row filtering, not index access
 - no DELETE/UPDATE predicate claim yet
 - no source-string guards in this behavior smoke
+
+## MODULE7C - DELETE WHERE equality
+
+Runtime-only predicate mutation proof.
+
+Scope:
+- normal inherited Derby SQL DELETE over `USING delos_mvcc`
+- equality predicates on committed rows
+- prepared equality predicates
+- rollback keeps non-deleted state visible
+- committed selective delete survives real Derby shutdown/reopen
+- heap and btree compatibility
+
+Implementation boundary:
+- DELETE uses the qualified inherited scan result stream
+- MVCC scan remains full-scan based
+- qualifier evaluation is row filtering, not index access
+- no UPDATE predicate claim yet
+- no non-matching DELETE/UPDATE no-op hardening yet; that belongs to MODULE7E
+- no source-string guards in this behavior smoke
