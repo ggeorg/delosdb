@@ -810,7 +810,8 @@ tasks.register('derbyTestSuite') {
 tasks.register('modernRdbmsModelProof') {
     group = 'verification'
     description = 'Runs focused proofs for the DelosDB teachable modern RDBMS model.'
-    dependsOn ':delosdb-tests:runModernRdbmsSelectLifecycleTraceTest'
+    dependsOn ':delosdb-tests:runModernRdbmsSelectLifecycleTraceTest',
+            ':delosdb-tests:runModernRdbmsStorageAccessTraceTest'
 }
 
 tasks.named('check') {

@@ -197,6 +197,33 @@ ROWS_PRODUCED
 EXECUTION_FINISHED
 ```
 
+
+## Storage-provider and access-method proof
+
+MODULE21C keeps the model observational and adds a focused proof for storage-provider and
+access-method facts. The Derby adapter now reports storage access using the DelosDB model enums:
+
+```text
+provider      DERBY_HEAP | DERBY_BTREE | DELOS_MVCC | STORELESS | UNKNOWN
+accessKind    HEAP_SCAN | BTREE_INDEX_SCAN | BTREE_KEYED_LOOKUP | MVCC_SCAN | UNKNOWN
+```
+
+The first proof observes two inherited Derby SELECT paths:
+
+```text
+ordinary table scan      -> DERBY_HEAP  / HEAP_SCAN
+forced btree index scan  -> DERBY_BTREE / BTREE_INDEX_SCAN
+```
+
+The proof does not change the optimizer, costing, storage routing, or row production. It only makes
+the access method chosen by inherited Derby visible through the DelosDB trace model.
+
+Focused task:
+
+```text
+:delosdb-tests:runModernRdbmsStorageAccessTraceTest
+```
+
 ## Mapping to the current system
 
 The model should be backed by adapters over current Derby/DelosDB objects:

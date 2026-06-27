@@ -6,6 +6,7 @@ package io.github.ggeorg.delosdb.engine.rdbms.storage;
 public enum RdbmsStorageAccessKind {
     HEAP_SCAN,
     BTREE_INDEX_SCAN,
+    BTREE_KEYED_LOOKUP,
     MVCC_SCAN,
     INSERT,
     UPDATE,

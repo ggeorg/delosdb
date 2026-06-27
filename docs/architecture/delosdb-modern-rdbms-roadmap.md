@@ -252,11 +252,22 @@ The focused modernRdbmsModelProof task passes without changing query semantics.
 
 ### MODULE21C — Storage-provider and access-method observations
 
+Status: implemented by the storage-access trace proof overlay.
+
 Scope:
 
 ```text
 Expose whether access is Derby heap/btree, Delos MVCC, storeless, or unknown.
-Expose heap scan, index scan, MVCC scan, predicate pushdown, and leftover predicate concepts where available.
+Expose heap scan, btree index scan, keyed lookup, MVCC scan, predicate pushdown, and leftover predicate concepts where available.
+Do not change optimizer behavior, costing, storage routing, or row production.
+```
+
+Expected proof:
+
+```text
+An ordinary SELECT reports DERBY_HEAP / HEAP_SCAN.
+A forced indexed SELECT reports DERBY_BTREE / BTREE_INDEX_SCAN.
+modernRdbmsModelProof includes both the lifecycle proof and storage-access proof.
 ```
 
 Expected proof:

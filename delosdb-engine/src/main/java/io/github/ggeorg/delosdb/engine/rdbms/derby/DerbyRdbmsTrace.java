@@ -2,6 +2,8 @@ package io.github.ggeorg.delosdb.engine.rdbms.derby;
 
 import io.github.ggeorg.delosdb.engine.rdbms.model.RdbmsStatementKind;
 import io.github.ggeorg.delosdb.engine.rdbms.pipeline.RdbmsLifecycleStage;
+import io.github.ggeorg.delosdb.engine.rdbms.storage.RdbmsStorageAccessKind;
+import io.github.ggeorg.delosdb.engine.rdbms.storage.RdbmsStorageProviderKind;
 import io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceEvent;
 import io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceRegistry;
 
@@ -91,10 +93,13 @@ public final class DerbyRdbmsTrace {
             String indexName,
             long conglomerateId,
             boolean keyed,
+            boolean oneRowScan,
             boolean hasQualifiers) {
         if (!RdbmsTraceRegistry.isEnabled()) {
             return;
         }
+        RdbmsStorageAccessKind accessKind = storageAccessKind(keyed, oneRowScan);
+        RdbmsStorageProviderKind providerKind = storageProviderKind(keyed);
         RdbmsTraceRegistry.emit(RdbmsTraceEvent.of(
                 RdbmsLifecycleStage.STORAGE_ACCESSED,
                 "table-scan",
@@ -102,8 +107,10 @@ public final class DerbyRdbmsTrace {
                         "table", safe(tableName),
                         "index", safe(indexName),
                         "conglomerateId", Long.toString(conglomerateId),
-                        "accessKind", keyed ? "BTREE_INDEX_SCAN" : "HEAP_SCAN",
-                        "provider", keyed ? "DERBY_BTREE" : "DERBY_HEAP",
+                        "accessKind", accessKind.name(),
+                        "provider", providerKind.name(),
+                        "keyed", Boolean.toString(keyed),
+                        "oneRowScan", Boolean.toString(oneRowScan),
                         "predicatePushdown", Boolean.toString(hasQualifiers))));
     }
 
@@ -138,6 +145,21 @@ public final class DerbyRdbmsTrace {
                         "rowsThisScan", Long.toString(rowsThisScan),
                         "rowsSeen", Long.toString(rowsSeen),
                         "rowsFiltered", Long.toString(rowsFiltered))));
+    }
+
+
+    static RdbmsStorageAccessKind storageAccessKind(boolean keyed, boolean oneRowScan) {
+        if (keyed && oneRowScan) {
+            return RdbmsStorageAccessKind.BTREE_KEYED_LOOKUP;
+        }
+        if (keyed) {
+            return RdbmsStorageAccessKind.BTREE_INDEX_SCAN;
+        }
+        return RdbmsStorageAccessKind.HEAP_SCAN;
+    }
+
+    static RdbmsStorageProviderKind storageProviderKind(boolean keyed) {
+        return keyed ? RdbmsStorageProviderKind.DERBY_BTREE : RdbmsStorageProviderKind.DERBY_HEAP;
     }
 
     static RdbmsStatementKind statementKind(String sql) {

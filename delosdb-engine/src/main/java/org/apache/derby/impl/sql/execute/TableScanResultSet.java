@@ -337,7 +337,7 @@ class TableScanResultSet extends ScanResultSet
 		DerbyRdbmsTrace.tableScanExecutionStarted(
 				tableName, indexName, conglomId, isKeyed);
 		DerbyRdbmsTrace.storageAccessed(
-				tableName, indexName, conglomId, isKeyed, qualifiers != null);
+				tableName, indexName, conglomId, isKeyed, oneRowScan, qualifiers != null);
 		numOpens++;
 		nextDone = false;
 		openTime += getElapsedMillis(beginTime);
