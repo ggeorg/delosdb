@@ -406,7 +406,7 @@ public final class MvccScanController implements ScanManager {
                 current = new DelosStorageRow(rowId, row);
                 return true;
             }
-            CANDIDATE_INDEX_MvccBridgeDiagnosticsSupport.incrementQualifierRejectCount();
+            MvccBridgeDiagnosticsSupport.incrementCandidateIndexQualifierRejectCount();
             MvccBridgeDiagnosticsSupport.incrementQualifierRejectCount();
         }
         current = null;
