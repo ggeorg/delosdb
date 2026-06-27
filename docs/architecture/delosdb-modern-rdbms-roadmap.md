@@ -1,8 +1,9 @@
 # DelosDB modern RDBMS roadmap
 
 DelosDB's goal is to become an education- and research-friendly modern relational database system
-without becoming a simplified toy database.  The project should remain capable, executable, and
-technically serious while making the major database-system concepts visible and testable.
+without becoming a simplified toy database. The project should remain capable, executable, and
+technically serious while making the major database-system concepts visible, observable, and
+testable.
 
 The strategic direction is:
 
@@ -43,16 +44,16 @@ delosdb-storage-bridge
   temporary Derby access-method compatibility adapter
 ```
 
-This baseline is good enough to continue.  The next phase should not be a broad package rename or a
-large module split.  It should define a DelosDB-owned model that explains the real system and then
-connect that model to real execution paths.
+This baseline is good enough to continue. The next architectural work should not be a broad package
+rename or a large module split. It should define a DelosDB-owned model that explains the real system
+and then connect that model to real execution paths.
 
 ## Design principles
 
 ### Model first, layout second
 
 The future project layout should be driven by proven database concepts and real source dependency
-facts.  A new module or package is justified only when it represents a real subsystem and can be
+facts. A new module or package is justified only when it represents a real subsystem and can be
 connected to executable behavior.
 
 ### Modern does not mean decorative
@@ -63,28 +64,34 @@ execution row flow.
 
 ### Teachable does not mean simplified
 
-The model should reduce conceptual noise, not capability.  DelosDB should remain a serious RDBMS
+The model should reduce conceptual noise, not capability. DelosDB should remain a serious RDBMS
 while making its internals easier to study.
 
 ### Derby traceability is valuable
 
-Inherited Derby packages should not be renamed wholesale.  Keeping Derby-origin package names helps
-compare DelosDB with upstream Derby.  New DelosDB-owned seams and model code should use DelosDB
+Inherited Derby packages should not be renamed wholesale. Keeping Derby-origin package names helps
+compare DelosDB with upstream Derby. New DelosDB-owned seams and model code should use DelosDB
 package names.
 
 ### No fake abstraction layers
 
 Model objects must either explain a real RDBMS concept or adapt or observe a real Derby/DelosDB
-execution point.  Empty future-facing interfaces should be avoided.
+execution point. Empty future-facing interfaces should be avoided.
 
 ### Diagnostics are research tools
 
-Diagnostics and traces are useful when they observe real behavior.  They should not become source
+Diagnostics and traces are useful when they observe real behavior. They should not become source
 assertion guards or audit modules unless explicitly approved.
 
-## Phase 20 — Teachable modern RDBMS model
+### Stability before visibility
 
-Goal: define the model and connect it to real Derby/DelosDB behavior.
+A model that observes broken execution is not useful. Build health, inherited Derby verification,
+static-analysis hardening, and dependency-report accuracy are part of the roadmap because they keep
+later educational and research work grounded in a working system.
+
+## Phase 20 — Stabilization, evidence, and roadmap cleanup
+
+Goal: make the current project baseline trustworthy enough to support the modern RDBMS model work.
 
 ### MODULE20A — Reference study and cleanup
 
@@ -115,7 +122,82 @@ Keep book/reference documentation.
 Remove per-overlay state markdown and stale cleanup/dev artifacts.
 ```
 
-### MODULE20D — Introduce the minimal model and no-op trace API
+### MODULE20D — Storage runtime wiring and dependency-report cleanup
+
+Scope:
+
+```text
+Remove direct build/classes runtime wiring where possible.
+Use declared Gradle artifacts for Derby-compatible runtime packaging.
+Improve module-dependency reporting so it separates real production issues from test/demo noise.
+```
+
+Expected proof:
+
+```text
+Build wiring remains compatible with inherited Derby runtime needs.
+The module report does not overstate source-level storage leakage.
+```
+
+### MODULE20E — MVCC static-analysis hardening
+
+Scope:
+
+```text
+Harden MVCC native deserialization with a JEP 290 filter.
+Use atomic move semantics for row-directory rewrite.
+Compact terminated transaction state behind the retained visibility watermark.
+Document deferred WAL/channel and concurrency work.
+```
+
+Expected proof:
+
+```text
+Focused MVCC hardening tests pass.
+The static-analysis review shows no new findings or regressions.
+```
+
+### MODULE20F — Inherited Derby verification stabilization
+
+Scope:
+
+```text
+Keep runtime smoke checks and inherited Derby tests executable.
+Fix classpath and boot-time provider issues introduced by recent refactoring.
+Do not hide failures by weakening tests.
+```
+
+Expected proof:
+
+```text
+derbyRuntimeSmoke passes.
+derbyTestSuite passes.
+fullVerification passes.
+```
+
+### MODULE20G — Residual MVCC hardening backlog
+
+Scope:
+
+```text
+Track, and where safe address, the residual abort-retention growth issue.
+Track native-serialization retirement as the preferred long-term format fix.
+Keep WAL/group-commit and row-level concurrency as separate later lanes.
+```
+
+Expected proof:
+
+```text
+The MVCC hardening backlog is explicit and ordered.
+Any implementation pass is narrow and does not mix durability, serialization, and concurrency rewrites.
+```
+
+## Phase 21 — Minimal teachable modern RDBMS model
+
+Goal: introduce the first DelosDB-owned model and trace vocabulary inside `delosdb-engine` without
+changing query behavior.
+
+### MODULE21A — Minimal model and no-op trace API
 
 Scope:
 
@@ -126,14 +208,28 @@ Do not change query behavior.
 Do not create a new Gradle module.
 ```
 
+Initial vocabulary:
+
+```text
+statement kind
+query lifecycle stage
+plan node kind
+execution node kind
+storage access kind
+storage provider kind
+transaction/snapshot concept
+trace event
+trace sink
+```
+
 Expected proof:
 
 ```text
 The project builds with the model present.
-No execution path depends on the model yet except harmless no-op plumbing if needed.
+No execution path depends on the model except harmless no-op plumbing if needed.
 ```
 
-### MODULE20E — Prove SELECT lifecycle tracing
+### MODULE21B — SELECT lifecycle trace proof
 
 Scope:
 
@@ -149,7 +245,7 @@ Expected proof:
 A simple SELECT can produce a trace that explains the real path through the engine.
 ```
 
-### MODULE20F — Add storage-provider and access-method observations
+### MODULE21C — Storage-provider and access-method observations
 
 Scope:
 
@@ -164,7 +260,7 @@ Expected proof:
 The same model can explain different storage-provider paths without making the bridge the architecture center.
 ```
 
-### MODULE20G — Add transaction and MVCC observations
+### MODULE21D — Transaction and MVCC observations
 
 Scope:
 
@@ -180,7 +276,7 @@ Expected proof:
 The model explains modern concurrency and durability mechanisms instead of only SQL execution.
 ```
 
-## Phase 21 — Research and education diagnostics
+## Phase 22 — Research and education diagnostics
 
 Goal: make real database behavior observable without turning diagnostics into source guards.
 
@@ -194,7 +290,10 @@ optimizer decision observations
 catalog and type observations
 ```
 
-## Phase 22 — Project layout from proven model
+Diagnostics are successful only when they help a reader or researcher connect a visible event to a
+real Derby/DelosDB execution point.
+
+## Phase 23 — Project layout from the proven model
 
 Goal: use the working model to decide the future project layout.
 
@@ -214,7 +313,7 @@ research diagnostics and examples
 A physical module should be created only when the dependency direction supports it and the module
 represents real code, not a placeholder.
 
-## Phase 23 — MVCC research integration
+## Phase 24 — MVCC research integration
 
 Goal: make native MVCC a first-class modern RDBMS research subsystem.
 
@@ -229,7 +328,10 @@ vacuum horizon
 page/version access
 ```
 
-## Phase 24 — Optimizer and planner experiments
+This phase should build on the model and diagnostics rather than bypassing them. MVCC should become
+visible as a modern database subsystem, not merely as an alternate storage implementation.
+
+## Phase 25 — Optimizer and planner experiments
 
 Goal: enable later experimentation once the model can already observe real query execution.
 
@@ -242,3 +344,6 @@ cost model experiments
 storage-provider-aware planning
 MVCC-aware access path selection
 ```
+
+Optimizer work should start from observation and explanation. Replacement or deep planner rewrites
+should come only after the current Derby planning path is visible through the model.
