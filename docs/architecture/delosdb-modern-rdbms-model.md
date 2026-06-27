@@ -1,10 +1,8 @@
 # DelosDB teachable modern RDBMS model
 
-DelosDB should expose a clean modern database model while continuing to execute through the
-inherited Derby engine and DelosDB storage providers.
-
-The model is not a replacement engine. It is a DelosDB-owned vocabulary for teaching, tracing,
-research, and future project-layout decisions.
+DelosDB should expose a clear modern database model while continuing to execute through inherited
+Derby engine code and DelosDB storage providers.  The model is not a replacement engine.  It is a
+DelosDB-owned vocabulary for education, tracing, research, and future project-layout decisions.
 
 The strategic direction is:
 
@@ -14,7 +12,12 @@ prove it against real Derby/DelosDB execution,
 then use that model to decide the future project layout.
 ```
 
-## Target mental model
+## Mission
+
+DelosDB should be education- and research-friendly without becoming a simplified toy database.  It
+should make real database mechanisms visible while remaining a serious, fully capable, modern RDBMS.
+
+For students, the system should explain the classical SQL pipeline:
 
 ```text
 SQL client / JDBC
@@ -28,8 +31,7 @@ SQL client / JDBC
   -> rows / update counts
 ```
 
-That classical pipeline is necessary but not sufficient. DelosDB should also expose modern database
-mechanisms:
+For research, the same model must expose modern implementation mechanisms:
 
 ```text
 MVCC and snapshot visibility
@@ -48,7 +50,7 @@ runtime diagnostics and tracing
 
 ## Initial package shape
 
-The first implementation should live inside `delosdb-engine`, not in a new module:
+The first implementation should live inside `delosdb-engine`, not in a new Gradle module:
 
 ```text
 io.github.ggeorg.delosdb.engine.rdbms.model
@@ -59,15 +61,17 @@ io.github.ggeorg.delosdb.engine.rdbms.types
 io.github.ggeorg.delosdb.engine.rdbms.execution
 io.github.ggeorg.delosdb.engine.rdbms.storage
 io.github.ggeorg.delosdb.engine.rdbms.transaction
+io.github.ggeorg.delosdb.engine.rdbms.recovery
 io.github.ggeorg.delosdb.engine.rdbms.trace
 io.github.ggeorg.delosdb.engine.rdbms.derby
 ```
 
-Do not create separate Gradle modules for these packages yet.
+Do not create separate Gradle modules for these packages yet.  The first goal is explanation and
+observation, not replacement.
 
-## Core concepts
+## Core model concepts
 
-### Pipeline
+### Pipeline stages
 
 ```text
 SQL_TEXT_RECEIVED
@@ -130,10 +134,10 @@ CHECKPOINT
 VACUUM_HORIZON
 ```
 
-These do not all need full implementation in the first pass. They must, however, remain part of the
-model's direction so the system does not stop at a classical SQL pipeline.
+These concepts do not all need complete implementation in the first pass.  They remain part of the
+model so DelosDB does not stop at a classical SQL pipeline.
 
-## Derby mapping
+## Mapping to the current system
 
 The model should be backed by adapters over current Derby/DelosDB objects:
 
@@ -143,11 +147,11 @@ The model should be backed by adapters over current Derby/DelosDB objects:
 | Compiler / optimizer | `org.apache.derby.impl.sql.compile` |
 | Execution tree | `org.apache.derby.impl.sql.execute` |
 | Catalog / dictionary | `org.apache.derby.impl.sql.catalog`, `org.apache.derby.iapi.sql.dictionary` |
-| SQL values/types | `org.apache.derby.iapi.types` |
+| SQL values and types | `org.apache.derby.iapi.types` |
 | Session / transaction boundary | `org.apache.derby.iapi.sql.conn`, `org.apache.derby.iapi.transaction` |
 | Storage access | `delosdb-storage-api`, `delosdb-derby-store-api`, storage bridge, storage providers |
 | MVCC / visibility | `delosdb-storage-mvcc` and storage diagnostics |
-| WAL / checkpoint / vacuum | native MVCC diagnostics and storage recovery code where available |
+| WAL / checkpoint / vacuum | Native MVCC diagnostics and storage recovery code where available |
 
 ## Research seams
 
@@ -159,7 +163,7 @@ RdbmsTraceSink
 RdbmsTraceRegistry
 ```
 
-A later SELECT trace should answer:
+A SELECT trace should eventually answer:
 
 ```text
 What SQL statement was executed?
@@ -172,32 +176,14 @@ How many rows flowed through the executor?
 Which transaction or visibility boundary applied?
 ```
 
-## Development rule
+## Development rules
 
 Every model object must either:
 
 ```text
 1. Explain a real modern RDBMS concept, or
-2. Adapt/observe a real Derby/DelosDB execution point.
+2. Adapt or observe a real Derby/DelosDB execution point.
 ```
 
 Do not add model classes that are not connected to source facts or planned near-term trace points.
 Do not use the model as a reason to create empty future modules.
-
-## First implementation pass after this study
-
-The next implementation pass should introduce the minimal model and no-op trace API:
-
-```text
-RdbmsStage
-RdbmsStatementKind
-RdbmsPlanNodeKind
-RdbmsStorageProviderKind
-RdbmsStorageAccessKind
-RdbmsTraceEvent
-RdbmsTraceSink
-RdbmsTraceRegistry
-```
-
-That pass should still avoid behavior changes. The following pass should wire one SELECT lifecycle
-observation path.
