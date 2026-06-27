@@ -1,0 +1,2 @@
+ext.delosdbSmokeDescription = 'Runs the MODULE17 Derby-bound MVCC crash-cut recovery smoke.'
+apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')
