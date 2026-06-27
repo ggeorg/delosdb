@@ -1,2 +1,0 @@
-ext.delosdbSmokeDescription = 'Runs the MODULE10A native bridge lifecycle retirement smoke.'
-apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

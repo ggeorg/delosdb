@@ -593,7 +593,7 @@ tasks.register('smokeFromJars', JavaExec) {
     description = 'Runs the embedded JDBC smoke script from the assembled jars in build/libs.'
     classpath = runtimeJars()
     mainClass = 'org.apache.derby.run.run'
-    args 'ij', file('dev/smoke.sql').absolutePath
+    args 'ij', smokeSqlFile.absolutePath
     workingDir = projectDir
     doFirst {
         delete file('build/smoke-db')
@@ -602,11 +602,7 @@ tasks.register('smokeFromJars', JavaExec) {
 
 
 
-// MODULE5 dev smoke projects are discovered from settings.gradle and run by
-// project path, for example:
-//   ./gradlew :module5g-provider-route-crud-preflight-smoke:run
-// Do not add one root alias task per smoke proof.
-
+def smokeSqlFile = file('examples/smoke.sql')
 def distributionBaseName = "delosdb-${delosDbVersion}"
 def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
 def distributionDocFiles = files(
@@ -633,7 +629,7 @@ tasks.register('prepareBinaryDistribution', Copy) {
     from(runtimeJars()) {
         into 'lib'
     }
-    from('dev/smoke.sql') {
+    from(smokeSqlFile) {
         into 'examples'
     }
     doFirst {
@@ -691,7 +687,7 @@ tasks.register('smoke', JavaExec) {
     description = 'Runs a small embedded JDBC create/insert/select script using assembled runtime jars.'
     classpath = runtimeJars()
     mainClass = 'org.apache.derby.run.run'
-    args 'ij', file('dev/smoke.sql').absolutePath
+    args 'ij', smokeSqlFile.absolutePath
     workingDir = projectDir
     doFirst {
         delete file('build/smoke-db')

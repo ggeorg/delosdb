@@ -1,2 +1,0 @@
-ext.delosdbSmokeDescription = 'Runs the MODULE11A inherited MVCC page-volume state backing smoke.'
-apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

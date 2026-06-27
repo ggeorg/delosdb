@@ -36,18 +36,3 @@ include 'delosdb-storeless'
 include 'delosdb-demos'
 include 'delosdb-locales'
 include 'delosdb-buildtools'
-
-// Development smoke proofs live under dev/*-smoke and are included
-// automatically. New smokes should add only their own dev/<name>-smoke
-// directory and build.gradle, not root build.gradle aliases or explicit
-// settings.gradle entries.
-def devDir = file('dev')
-if (devDir.isDirectory()) {
-    devDir.listFiles()
-            .findAll { it.isDirectory() && it.name.endsWith('-smoke') && new File(it, 'build.gradle').isFile() }
-            .sort { left, right -> left.name <=> right.name }
-            .each { smokeDir ->
-                include smokeDir.name
-                project(":${smokeDir.name}").projectDir = smokeDir
-            }
-}

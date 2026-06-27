@@ -1,3 +1,0 @@
-ext.delosdbSmokeMainClass = 'delosdb.smoke.Module13DerbyLifecycleMvccWalPageLsnSmoke'
-ext.delosdbSmokeDescription = 'Runs the MODULE13 Derby-lifecycle-bound MVCC WAL/pageLSN smoke.'
-apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

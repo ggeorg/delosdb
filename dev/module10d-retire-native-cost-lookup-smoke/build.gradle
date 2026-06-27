@@ -1,2 +1,0 @@
-ext.delosdbSmokeDescription = 'Runs the MODULE10D native optimizer cost lookup retirement smoke.'
-apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')

@@ -1,2 +1,0 @@
-ext.delosdbSmokeDescription = 'Runs the MODULE9B Derby transaction lifecycle to MVCC status smoke.'
-apply from: rootProject.file('gradle/delosdb-dev-smoke.gradle')
