@@ -39,7 +39,7 @@ dependencies {
     compileOnly externalModulePath
     compileOnly "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
 
-    enginePatchModule(project(':delosdb-engine-storage-api')) { transitive = false }
+    enginePatchModule(project(':delosdb-storage-api')) { transitive = false }
     enginePatchModule(project(':delosdb-derby-store-api')) { transitive = false }
     enginePatchModule(project(':delosdb-storage-derby')) { transitive = false }
     enginePatchModule(project(':delosdb-storage-bridge')) { transitive = false }

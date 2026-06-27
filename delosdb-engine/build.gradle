@@ -42,7 +42,7 @@ dependencies {
     implementation "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
     compileOnly project(':delosdb-osgi-stub')
 
-    enginePatch project(':delosdb-engine-storage-api')
+    enginePatch project(':delosdb-storage-api')
     enginePatch project(':delosdb-derby-store-api')
     enginePatch project(':delosdb-storage-derby')
     enginePatch project(':delosdb-storage-bridge')
@@ -212,7 +212,7 @@ tasks.named('jar', Jar) {
 tasks.register('derbyJar', Jar) {
     dependsOn tasks.named('compileJava'), tasks.named('processResources'), tasks.named('compileClassSizeCatalog'),
             ':splitEngineMessages', ':generateOdbcMetadata', ':ensureCatalogMetadataResources',
-            ':delosdb-engine-storage-api:compileEngineStorageApi',
+            ':delosdb-storage-api:compileStorageApi',
             ':delosdb-derby-store-api:compileDerbyStoreApi',
             ':delosdb-storage-derby:compileLegacyDerbyStorage',
             ':delosdb-storage-bridge:compileStorageBridge'

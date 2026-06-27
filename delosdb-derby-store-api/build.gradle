@@ -18,7 +18,7 @@ java {
 dependencies {
     api project(':delosdb-commons')
     api project(':delosdb-engine-api')
-    api project(':delosdb-engine-storage-api')
+    api project(':delosdb-storage-api')
 }
 
 sourceSets {

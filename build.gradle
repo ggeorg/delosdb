@@ -231,13 +231,13 @@ tasks.register('generateClassSizeCatalog') {
     // ClassSizeCrawler scans the compiled engine output tree. Gradle 8.14
     // requires every task which writes into that tree to be ordered before
     // this scan, otherwise it reports an implicit dependency problem.
-    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine-api:compileDelosDbEngineApi', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-storage-bridge:compileStorageBridge', 'compileDerbyBuildTools', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
+    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine-api:compileDelosDbEngineApi', ':delosdb-storage-api:compileStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-storage-bridge:compileStorageBridge', 'compileDerbyBuildTools', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
     def outputFile = generatedSourceDir(moduleNames.engineApi).map {
         it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
     }
     inputs.dir(moduleClassDir(moduleNames.engine))
     inputs.dir(moduleClassDir(moduleNames.engineApi))
-    inputs.dir(project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api'))
+    inputs.dir(project(':delosdb-storage-api').layout.buildDirectory.dir('classes/storage-api'))
     inputs.dir(project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api'))
     inputs.dir(project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main'))
     inputs.dir(project(':delosdb-storage-bridge').layout.buildDirectory.dir('classes/main'))
@@ -250,7 +250,7 @@ tasks.register('generateClassSizeCatalog') {
                 moduleClassDir(moduleNames.engineKernel),
                 moduleClassDir(moduleNames.engineApi),
                 moduleClassDir(moduleNames.engine),
-                project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api'),
+                project(':delosdb-storage-api').layout.buildDirectory.dir('classes/storage-api'),
                 project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api'),
                 project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main'),
                 project(':delosdb-storage-bridge').layout.buildDirectory.dir('classes/main')
@@ -561,7 +561,7 @@ def runtimeBuildTasks = [
         ':delosdb-storage-io:compileDelosDbStorageIo',
         ':delosdb-engine-api:compileDelosDbEngineApi',
         ':delosdb-engine-kernel:compileDelosDbEngineKernel',
-        ':delosdb-engine-storage-api:compileEngineStorageApi',
+        ':delosdb-storage-api:compileStorageApi',
         ':delosdb-engine:compileClassSizeCatalog',
         'splitEngineMessages',
         'generateOdbcMetadata',
@@ -573,7 +573,7 @@ tasks.register('compileAll') {
 }
 
 tasks.register('jars') {
-    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-api:delosDbEngineApiJar', ':delosdb-engine-kernel:delosDbEngineKernelJar', ':delosdb-engine-storage-api:engineStorageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
+    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-api:delosDbEngineApiJar', ':delosdb-engine-kernel:delosDbEngineKernelJar', ':delosdb-storage-api:storageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
             ':delosdb-client:derbyClientJar', ':delosdb-tools:derbyToolsJar',
             ':delosdb-server:derbyNetJar', ':delosdb-optionaltools:derbyOptionalToolsJar',
             ':delosdb-runner:derbyRunJar', ':delosdb-osgi-stub:osgiFrameworkStubJar'

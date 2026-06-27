@@ -16,7 +16,7 @@ def runtimeBuildTasks = [
         ':delosdb-engine-api:compileDelosDbEngineApi',
         ':delosdb-storage-io:compileDelosDbStorageIo',
         ':delosdb-engine-kernel:compileDelosDbEngineKernel',
-        ':delosdb-engine-storage-api:compileEngineStorageApi',
+        ':delosdb-storage-api:compileStorageApi',
         ':delosdb-engine:compileClassSizeCatalog',
         'splitEngineMessages',
         'generateOdbcMetadata',
@@ -28,7 +28,7 @@ tasks.register('compileAll') {
 }
 
 tasks.register('jars') {
-    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-api:delosDbEngineApiJar', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-engine-kernel:delosDbEngineKernelJar', ':delosdb-engine-storage-api:engineStorageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
+    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-api:delosDbEngineApiJar', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-engine-kernel:delosDbEngineKernelJar', ':delosdb-storage-api:storageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
             ':delosdb-client:derbyClientJar', ':delosdb-tools:derbyToolsJar',
             ':delosdb-server:derbyNetJar', ':delosdb-optionaltools:derbyOptionalToolsJar',
             ':delosdb-runner:derbyRunJar', ':delosdb-osgi-stub:osgiFrameworkStubJar'

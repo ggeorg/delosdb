@@ -19,7 +19,6 @@ java {
 }
 
 dependencies {
-    api project(':delosdb-mvcc-store-api')
     implementation project(':delosdb-spi')
     api project(':delosdb-storage-io')
     testImplementation project(':delosdb-spi')

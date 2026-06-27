@@ -217,7 +217,7 @@ module org.apache.derby.engine
         org.apache.derby.server,
         org.apache.derby.tests;
 
-    // MODULE3 keeps engine-storage-api classes patched into org.apache.derby.engine
+    // MODULE3 keeps storage-api classes patched into org.apache.derby.engine
     // at runtime. Export the engine-facing store type contracts to Derby tests.
     exports org.apache.derby.iapi.store.types to
         org.apache.derby.tests;
