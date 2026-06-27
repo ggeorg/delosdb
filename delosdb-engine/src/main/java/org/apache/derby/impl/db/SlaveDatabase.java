@@ -36,9 +36,12 @@ import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.jdbc.InternalDriver;
 
 import java.sql.SQLException;
+import java.util.Date;
 import java.util.Properties;
+import org.apache.derby.shared.common.error.ErrorStringBuilder;
 import org.apache.derby.shared.common.reference.MessageId;
-import org.apache.derby.impl.store.replication.ReplicationLogger;
+import org.apache.derby.shared.common.reference.Property;
+import org.apache.derby.iapi.services.property.PropertyUtil;
 
 /**
  * SlaveDatabase is an instance of Database, and is booted instead of
@@ -332,8 +335,7 @@ public class SlaveDatabase extends BasicDatabase {
                 // failing with the error. New connection attempts will just
                 // hang...
 
-                ReplicationLogger rl = new ReplicationLogger(dbname);
-                rl.logError(MessageId.REPLICATION_FATAL_ERROR, e);
+                logReplicationError(MessageId.REPLICATION_FATAL_ERROR, e);
                 
                 if (e instanceof StandardException) {
                     handleShutdown((StandardException)e);
@@ -401,6 +403,35 @@ public class SlaveDatabase extends BasicDatabase {
             // booted yet. Safe to retry later.
             return false;
         }
+    }
+
+    /**
+     * Logs replication startup failure from the engine without importing the
+     * inherited Derby storage replication implementation.
+     */
+    private void logReplicationError(String msgId, Throwable t)
+    {
+        if (!PropertyUtil.getSystemBoolean(Property.REPLICATION_VERBOSE, true))
+        {
+            return;
+        }
+
+        Monitor.logTextMessage(MessageId.REPLICATION_ERROR_BEGIN, new Date());
+
+        if (msgId != null)
+        {
+            Monitor.logTextMessage(msgId, dbname);
+        }
+
+        if (t != null)
+        {
+            ErrorStringBuilder esb = new ErrorStringBuilder(Monitor.getStream().getHeader());
+            esb.stackTrace(t);
+            Monitor.logMessage(esb.get().toString());
+            esb.reset();
+        }
+
+        Monitor.logTextMessage(MessageId.REPLICATION_ERROR_END);
     }
 
     /**

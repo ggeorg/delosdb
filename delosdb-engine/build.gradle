@@ -44,9 +44,13 @@ dependencies {
 
     enginePatch project(':delosdb-storage-api')
     enginePatch project(':delosdb-derby-store-api')
-    enginePatch project(':delosdb-storage-derby')
-    enginePatch project(':delosdb-storage-bridge')
 }
+
+def storageImplementationPatch = files(
+        rootProject.file('delosdb-storage-derby/build/classes/main'),
+        rootProject.file('delosdb-storage-derby/build/resources/main'),
+        rootProject.file('delosdb-storage-bridge/build/classes/main'),
+        rootProject.file('delosdb-storage-bridge/build/resources/main'))
 
 sourceSets {
     main {
@@ -215,7 +219,9 @@ tasks.register('derbyJar', Jar) {
             ':delosdb-storage-api:compileStorageApi',
             ':delosdb-derby-store-api:compileDerbyStoreApi',
             ':delosdb-storage-derby:compileLegacyDerbyStorage',
-            ':delosdb-storage-bridge:compileStorageBridge'
+            ':delosdb-storage-derby:processResources',
+            ':delosdb-storage-bridge:compileStorageBridge',
+            ':delosdb-storage-bridge:processResources'
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -223,8 +229,13 @@ tasks.register('derbyJar', Jar) {
     from({ configurations.enginePatch.collect { it.isDirectory() ? it : zipTree(it) } }) {
         include 'org/apache/derby/iapi/store/types/**'
         include 'org/apache/derby/iapi/store/**'
+        exclude 'META-INF/MANIFEST.MF'
+        exclude 'module-info.class'
+    }
+    from(storageImplementationPatch) {
         include 'org/apache/derby/impl/store/**'
         include 'META-INF/services/org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider'
+        include 'META-INF/services/org.apache.derby.iapi.store.types.StoreRowLocationFactory'
         exclude 'META-INF/MANIFEST.MF'
         exclude 'module-info.class'
     }

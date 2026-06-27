@@ -21,129 +21,79 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
-import java.util.ArrayList;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Map;
-
 import org.apache.derby.iapi.store.types.DelosStorageTable;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
+import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 
 /**
- * MODULE6G transaction-scoped writer registry for inherited MVCC store/access writes.
+ * Compatibility shim for older MVCC bridge callers.
  *
- * <p>Derby closes a {@code ConglomerateController} at statement end, before the
- * language transaction commits or rolls back. MODULE6G therefore cannot treat
- * controller close as MVCC commit/abort for normal SQL INSERT. This registry
- * keeps the controller-local MVCC writer attached to Derby's transaction object
- * and lets {@code GenericLanguageConnectionContext} complete it from the normal
- * Derby commit/rollback lifecycle.</p>
+ * <p>The registry state now lives in the provider-neutral storage-api
+ * {@link DelosStorageTransactionRegistry}. This class remains only so existing
+ * bridge code and smoke fixtures do not need to import engine internals.</p>
  */
 public final class MvccStoreAccessTransactionRegistry {
-    private static final Map<Object, List<Writer>> WRITERS = new IdentityHashMap<>();
-
     private MvccStoreAccessTransactionRegistry() {
     }
 
-    public static synchronized Writer register(
+    public static Writer register(
             Object derbyTransaction,
             DelosStorageTable table,
             DelosStorageTransaction transaction) {
         return register(derbyTransaction, table, transaction, () -> { });
     }
 
-    public static synchronized Writer register(
+    public static Writer register(
             Object derbyTransaction,
             DelosStorageTable table,
             DelosStorageTransaction transaction,
             Runnable afterCommit) {
-        Writer writer = new Writer(derbyTransaction, table, transaction, afterCommit);
-        WRITERS.computeIfAbsent(derbyTransaction, ignored -> new ArrayList<>()).add(writer);
-        return writer;
+        return new Writer(DelosStorageTransactionRegistry.register(
+                derbyTransaction,
+                table,
+                transaction,
+                afterCommit));
     }
 
-    public static synchronized void complete(Writer writer) {
-        if (writer == null) {
-            return;
-        }
-        List<Writer> writers = WRITERS.get(writer.derbyTransaction);
-        if (writers == null) {
-            return;
-        }
-        writers.remove(writer);
-        if (writers.isEmpty()) {
-            WRITERS.remove(writer.derbyTransaction);
+    public static void complete(Writer writer) {
+        if (writer != null) {
+            DelosStorageTransactionRegistry.complete(writer.delegate);
         }
     }
 
     public static void commit(Object derbyTransaction) {
-        for (Writer writer : drain(derbyTransaction)) {
-            writer.commit();
-        }
+        DelosStorageTransactionRegistry.commit(derbyTransaction);
     }
 
     public static void abort(Object derbyTransaction) {
-        for (Writer writer : drain(derbyTransaction)) {
-            writer.abort();
-        }
+        DelosStorageTransactionRegistry.abort(derbyTransaction);
     }
 
-    public static synchronized int pendingCountForTesting(Object derbyTransaction) {
-        List<Writer> writers = WRITERS.get(derbyTransaction);
-        return writers == null ? 0 : writers.size();
+    public static int pendingCountForTesting(Object derbyTransaction) {
+        return DelosStorageTransactionRegistry.pendingCountForTesting(derbyTransaction);
     }
 
-    public static synchronized int totalPendingCountForTesting() {
-        int count = 0;
-        for (List<Writer> writers : WRITERS.values()) {
-            count += writers.size();
-        }
-        return count;
+    public static int totalPendingCountForTesting() {
+        return DelosStorageTransactionRegistry.totalPendingCountForTesting();
     }
 
-    public static synchronized void clearForTesting() {
-        WRITERS.clear();
-    }
-
-    private static synchronized List<Writer> drain(Object derbyTransaction) {
-        List<Writer> writers = WRITERS.remove(derbyTransaction);
-        if (writers == null || writers.isEmpty()) {
-            return List.of();
-        }
-        return List.copyOf(writers);
+    public static void clearForTesting() {
+        DelosStorageTransactionRegistry.clearForTesting();
     }
 
     public static final class Writer {
-        private final Object derbyTransaction;
-        private final DelosStorageTable table;
-        private final DelosStorageTransaction transaction;
-        private final Runnable afterCommit;
-        private boolean completed;
+        private final DelosStorageTransactionRegistry.Writer delegate;
 
-        private Writer(
-                Object derbyTransaction,
-                DelosStorageTable table,
-                DelosStorageTransaction transaction,
-                Runnable afterCommit) {
-            this.derbyTransaction = derbyTransaction;
-            this.table = table;
-            this.transaction = transaction;
-            this.afterCommit = afterCommit == null ? () -> { } : afterCommit;
+        private Writer(DelosStorageTransactionRegistry.Writer delegate) {
+            this.delegate = delegate;
         }
 
         public void commit() {
-            if (!completed) {
-                table.commit(transaction);
-                afterCommit.run();
-                completed = true;
-            }
+            delegate.commit();
         }
 
         public void abort() {
-            if (!completed) {
-                table.abort(transaction);
-                completed = true;
-            }
+            delegate.abort();
         }
     }
 }

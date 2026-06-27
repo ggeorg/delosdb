@@ -29,13 +29,13 @@ import org.apache.derby.iapi.services.io.ArrayInputStream;
 import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocationFactory;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.types.StoreValueOperations;
 import org.apache.derby.iapi.types.DataType;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RefDataValue;
 import org.apache.derby.iapi.types.RowLocation;
-import org.apache.derby.impl.store.access.heap.HeapRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
@@ -55,7 +55,7 @@ public final class EngineStoreRowLocationBridge
 
     public static RowLocation newEngineRowLocation()
     {
-        return new EngineRowLocationAdapter(new HeapRowLocation());
+        return new EngineRowLocationAdapter(StoreRowLocationFactory.newDefaultRowLocation());
     }
 
     public static RowLocation requireEngineRowLocation(Object value)
@@ -134,7 +134,7 @@ public final class EngineStoreRowLocationBridge
         @Override
         public DataValueDescriptor getNewNull()
         {
-            return new EngineRowLocationAdapter(new HeapRowLocation());
+            return new EngineRowLocationAdapter(StoreRowLocationFactory.newDefaultRowLocation());
         }
 
         @Override
@@ -168,7 +168,7 @@ public final class EngineStoreRowLocationBridge
             }
             else
             {
-                storeRowLocation = new HeapRowLocation();
+                storeRowLocation = StoreRowLocationFactory.newDefaultRowLocation();
             }
             return this;
         }

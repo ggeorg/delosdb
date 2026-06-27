@@ -69,6 +69,13 @@ tasks.named('compileJava', JavaCompile) {
         classpath = files()
         options.compilerArgs.addAll(['--module-path', compileModulePath])
         options.compilerArgs.addAll(['--patch-module', "org.apache.derby.engine=${configurations.enginePatchModule.asPath}"])
+        // DataFileVTI is an inherited Derby optional dump tool. It reads raw data
+        // helpers from the storage implementation patched into the engine module
+        // for this compile, without making delosdb-engine export all store internals.
+        options.compilerArgs.addAll([
+                '--add-exports',
+                'org.apache.derby.engine/org.apache.derby.impl.store.raw.data=org.apache.derby.optionaltools'
+        ])
     }
 }
 

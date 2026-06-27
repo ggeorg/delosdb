@@ -21,8 +21,6 @@
 
 package org.apache.derby.impl.sql.conn;
 
-import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistry;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -82,6 +80,7 @@ import org.apache.derby.iapi.sql.execute.ExecutionStmtValidator;
 import org.apache.derby.iapi.sql.execute.RunTimeStatistics;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.XATransactionController;
+import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.transaction.TransactionControl;
 import org.apache.derby.iapi.types.DataValueFactory;
 import org.apache.derby.iapi.util.IdUtil;
@@ -1547,7 +1546,7 @@ public class GenericLanguageConnectionContext
         // now commit the Store transaction
         TransactionController tc = getTransactionExecute();
 
-        MvccStoreAccessTransactionRegistry.commit(tc);
+        DelosStorageTransactionRegistry.commit(tc);
         if ( tc != null && commitStore ) 
         { 
             if (sync)
@@ -1780,7 +1779,7 @@ public class GenericLanguageConnectionContext
         // now rollback the Store transaction
         TransactionController tc = getTransactionExecute();
 
-        MvccStoreAccessTransactionRegistry.abort(tc);
+        DelosStorageTransactionRegistry.abort(tc);
         if (tc != null) 
         {   
             if (xa)

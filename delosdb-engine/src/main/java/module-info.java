@@ -258,25 +258,6 @@ module org.apache.derby.engine
     exports org.apache.derby.impl.sql.catalog to
         org.apache.derby.tests;
 
-    exports org.apache.derby.impl.store.access.btree to
-        org.apache.derby.tests;
-
-    exports org.apache.derby.impl.store.access.btree.index to
-        org.apache.derby.tests;
-
-    exports org.apache.derby.impl.store.access.conglomerate to
-        org.apache.derby.tests;
-
-    exports org.apache.derby.impl.store.access.heap to
-        org.apache.derby.tests;
-
-    exports org.apache.derby.impl.store.raw.data to
-        org.apache.derby.optionaltools,
-        org.apache.derby.tests;
-
-    exports org.apache.derby.impl.store.raw.log to
-        org.apache.derby.tests;
-
     exports org.apache.derby.mbeans to
         java.management,
         org.apache.derby.server;
