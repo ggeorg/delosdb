@@ -37,6 +37,7 @@ import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.transaction.TransactionControl;
 import org.apache.derby.iapi.types.DataTypeDescriptor;
+import org.apache.derby.iapi.types.DeferredConstraintRecorder;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
@@ -44,6 +45,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
  * For INSERT/UPDATE/DELETE impls.  Used to tag them.
  */
 abstract public class DMLWriteResultSet extends NoRowsResultSetImpl
+    implements DeferredConstraintRecorder
 {
 	protected WriteCursorConstantAction constantAction;
 	protected int[] baseRowReadMap;

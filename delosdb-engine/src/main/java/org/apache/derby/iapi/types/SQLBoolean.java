@@ -45,7 +45,6 @@ import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.Row;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.execute.ExecPreparedStatement;
-import org.apache.derby.impl.sql.execute.DMLWriteResultSet;
 
 /**
  * SQLBoolean satisfies the DataValueDescriptor
@@ -895,8 +894,9 @@ public final class SQLBoolean
                 // Just return the false value and validate later,
                 // cf NoRowsResultSetImpl#evaluateCheckConstraints.
                 // and InsertResultSet#evaluateCheckConstraints
-                DMLWriteResultSet rs =  (DMLWriteResultSet)a.getResultSet();
-                rs.rememberConstraint(constrId);
+                DeferredConstraintRecorder recorder =
+                    (DeferredConstraintRecorder)a.getResultSet();
+                recorder.rememberConstraint(constrId);
             }
         }
 

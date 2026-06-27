@@ -127,6 +127,9 @@ module org.apache.derby.engine
     // Store-owned hooks may be implemented by engine-side providers.
     uses org.apache.derby.iapi.store.access.StoreCostControllerWrapper;
 
+    // SQL types resolve engine row-location adapters through a narrow service.
+    uses org.apache.derby.iapi.types.RowLocationServices;
+
     provides org.apache.derby.iapi.services.monitor.MonitorKernelSupport
         with org.apache.derby.impl.services.monitor.EngineMonitorKernelSupport;
 
@@ -138,6 +141,9 @@ module org.apache.derby.engine
 
     provides org.apache.derby.iapi.store.types.StoreTypeSupport
         with org.apache.derby.impl.services.storetypes.EngineStoreTypeSupport;
+
+    provides org.apache.derby.iapi.types.RowLocationServices
+        with org.apache.derby.impl.services.storetypes.EngineRowLocationServices;
 
     provides org.apache.derby.iapi.store.access.StoreCostControllerWrapper
         with io.github.ggeorg.delosdb.engine.extension.cost.StoreCostControllerBridge;

@@ -21,8 +21,6 @@
 
 package org.apache.derby.iapi.types;
 
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
-
 import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.services.io.StoredFormatIds;
@@ -81,7 +79,7 @@ public class SQLRef extends DataType implements RefDataValue
 		if (theValue.isNull())
 			setToNull();
 		else
-			value = EngineStoreRowLocationBridge.requireEngineRowLocation(theValue.getObject());
+			value = RowLocationServicesRegistry.requireRowLocation(theValue.getObject());
 	}
 
 	public int getLength()
@@ -133,7 +131,7 @@ public class SQLRef extends DataType implements RefDataValue
 	 */
 	public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException
 	{
-		value = EngineStoreRowLocationBridge.requireEngineRowLocation(in.readObject());
+		value = RowLocationServicesRegistry.requireRowLocation(in.readObject());
 	}
 
 	/**
@@ -184,7 +182,7 @@ public class SQLRef extends DataType implements RefDataValue
 		if (value == null)
 			return new SQLRef();
 		else
-           return new SQLRef(EngineStoreRowLocationBridge.requireEngineRowLocation(value.cloneValue(false)));
+           return new SQLRef(RowLocationServicesRegistry.requireRowLocation(value.cloneValue(false)));
 	}
 
 	/**
