@@ -53,6 +53,16 @@ def legacyHarnessQuarantineExcludes = [
 def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/demo/toursdb')
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
 
+// Derby's inherited tests compile against the bundled JUnit 3 jar because that
+// is what the upstream test sources import. Gradle's Test worker, however,
+// requires JUnit 4 on the runtime classpath in modern Gradle releases. Keep
+// the two roles separate so the compile-time automatic module remains stable.
+def gradleJUnitRuntime = configurations.create('gradleJUnitRuntime') {
+    canBeConsumed = false
+    canBeResolved = true
+    transitive = true
+}
+
 def thirdPartyTestModules = rootProject.files(
         'tools/java/junit.jar',
         'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
@@ -90,7 +100,8 @@ def testRuntimeClasspath = {
             derbyRuntimeJars,
             testSourceRoot,
             toursDbSourceRoot,
-            thirdPartyTestModules
+            thirdPartyTestModules,
+            gradleJUnitRuntime
     )
 }
 
@@ -121,6 +132,8 @@ configurations {
 }
 
 dependencies {
+    gradleJUnitRuntime 'junit:junit:4.13.2'
+
     testImplementation project(':delosdb-client')
     testImplementation project(':delosdb-commons')
     testImplementation project(':delosdb-derby-store-api')

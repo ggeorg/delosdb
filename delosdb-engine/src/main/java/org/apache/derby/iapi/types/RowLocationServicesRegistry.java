@@ -44,7 +44,8 @@ public final class RowLocationServicesRegistry
 
     private static RowLocationServices load()
     {
-        for (RowLocationServices services : ServiceLoader.load(RowLocationServices.class))
+        ClassLoader loader = RowLocationServices.class.getClassLoader();
+        for (RowLocationServices services : ServiceLoader.load(RowLocationServices.class, loader))
         {
             return services;
         }
