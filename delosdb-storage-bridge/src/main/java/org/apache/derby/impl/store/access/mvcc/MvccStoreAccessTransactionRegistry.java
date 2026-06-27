@@ -69,14 +69,26 @@ public final class MvccStoreAccessTransactionRegistry {
         DelosStorageTransactionRegistry.abort(derbyTransaction);
     }
 
+    /**
+     * @deprecated Use {@link DelosStorageTransactionRegistry} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static int pendingCountForTesting(Object derbyTransaction) {
         return DelosStorageTransactionRegistry.pendingCountForTesting(derbyTransaction);
     }
 
+    /**
+     * @deprecated Use {@link DelosStorageTransactionRegistry} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static int totalPendingCountForTesting() {
         return DelosStorageTransactionRegistry.totalPendingCountForTesting();
     }
 
+    /**
+     * @deprecated Use {@link DelosStorageTransactionRegistry} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static void clearForTesting() {
         DelosStorageTransactionRegistry.clearForTesting();
     }

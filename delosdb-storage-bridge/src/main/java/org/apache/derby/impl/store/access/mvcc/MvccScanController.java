@@ -24,7 +24,6 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
@@ -50,13 +49,6 @@ import org.apache.derby.shared.common.error.StandardException;
  * the inherited TableScanResultSet path.</p>
  */
 public final class MvccScanController implements ScanManager {
-    private static final AtomicInteger OPEN_COUNT = new AtomicInteger();
-    private static final AtomicInteger QUALIFIER_REJECT_COUNT = new AtomicInteger();
-    private static final AtomicInteger CANDIDATE_INDEX_LOOKUP_COUNT = new AtomicInteger();
-    private static final AtomicInteger CANDIDATE_INDEX_ROWID_COUNT = new AtomicInteger();
-    private static final AtomicInteger CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT = new AtomicInteger();
-    private static final AtomicInteger CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT = new AtomicInteger();
-
     private final MvccConglomerate conglomerate;
     private final MvccConglomerateState state;
     private final TransactionManager transactionManager;
@@ -78,7 +70,7 @@ public final class MvccScanController implements ScanManager {
             boolean hold,
             FormatableBitSet scanColumnList,
             Qualifier[][] qualifiers) {
-        OPEN_COUNT.incrementAndGet();
+        MvccBridgeDiagnosticsSupport.incrementOpenCount();
         this.conglomerate = conglomerate;
         this.state = conglomerate.state();
         this.transactionManager = transactionManager;
@@ -96,43 +88,76 @@ public final class MvccScanController implements ScanManager {
     }
 
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static void resetOpenCountForTesting() {
-        OPEN_COUNT.set(0);
+        MvccBridgeDiagnosticsSupport.resetOpenCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static int openCountForTesting() {
-        return OPEN_COUNT.get();
+        return MvccBridgeDiagnosticsSupport.openCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static void resetQualifierRejectCountForTesting() {
-        QUALIFIER_REJECT_COUNT.set(0);
+        MvccBridgeDiagnosticsSupport.resetQualifierRejectCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static int qualifierRejectCountForTesting() {
-        return QUALIFIER_REJECT_COUNT.get();
+        return MvccBridgeDiagnosticsSupport.qualifierRejectCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static void resetCandidateIndexCountsForTesting() {
-        CANDIDATE_INDEX_LOOKUP_COUNT.set(0);
-        CANDIDATE_INDEX_ROWID_COUNT.set(0);
-        CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT.set(0);
-        CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.set(0);
+        MvccBridgeDiagnosticsSupport.resetCandidateIndexCountersForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static int candidateIndexLookupCountForTesting() {
-        return CANDIDATE_INDEX_LOOKUP_COUNT.get();
+        return MvccBridgeDiagnosticsSupport.candidateIndexLookupCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static int candidateIndexRowIdCountForTesting() {
-        return CANDIDATE_INDEX_ROWID_COUNT.get();
+        return MvccBridgeDiagnosticsSupport.candidateIndexRowIdCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static int candidateIndexVisibilityRejectCountForTesting() {
-        return CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT.get();
+        return MvccBridgeDiagnosticsSupport.candidateIndexVisibilityRejectCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static int candidateIndexQualifierRejectCountForTesting() {
-        return CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.get();
+        return MvccBridgeDiagnosticsSupport.candidateIndexQualifierRejectCountForDiagnostics();
     }
 
     public MvccConglomerate conglomerate() {
@@ -362,7 +387,7 @@ public final class MvccScanController implements ScanManager {
                 current = candidate;
                 return true;
             }
-            QUALIFIER_REJECT_COUNT.incrementAndGet();
+            MvccBridgeDiagnosticsSupport.incrementQualifierRejectCount();
         }
         current = null;
         return false;
@@ -373,7 +398,7 @@ public final class MvccScanController implements ScanManager {
             long rowId = candidateRowIds.next();
             Optional<StoreDataValue[]> visible = state.read(rowId, snapshot);
             if (visible.isEmpty()) {
-                CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT.incrementAndGet();
+                MvccBridgeDiagnosticsSupport.incrementCandidateIndexVisibilityRejectCount();
                 continue;
             }
             StoreDataValue[] row = visible.get();
@@ -381,8 +406,8 @@ public final class MvccScanController implements ScanManager {
                 current = new DelosStorageRow(rowId, row);
                 return true;
             }
-            CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.incrementAndGet();
-            QUALIFIER_REJECT_COUNT.incrementAndGet();
+            CANDIDATE_INDEX_MvccBridgeDiagnosticsSupport.incrementQualifierRejectCount();
+            MvccBridgeDiagnosticsSupport.incrementQualifierRejectCount();
         }
         current = null;
         return false;
@@ -398,8 +423,8 @@ public final class MvccScanController implements ScanManager {
         List<Long> rowIds = candidates.get();
         candidateIndexScan = true;
         candidateRowIds = rowIds.iterator();
-        CANDIDATE_INDEX_LOOKUP_COUNT.incrementAndGet();
-        CANDIDATE_INDEX_ROWID_COUNT.addAndGet(rowIds.size());
+        MvccBridgeDiagnosticsSupport.incrementCandidateIndexLookupCount();
+        MvccBridgeDiagnosticsSupport.addCandidateIndexRowIdCount(rowIds.size());
     }
 
     private boolean rowQualifies(StoreDataValue[] row) throws StandardException {

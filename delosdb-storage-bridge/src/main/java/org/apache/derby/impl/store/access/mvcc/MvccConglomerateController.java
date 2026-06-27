@@ -24,7 +24,6 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Properties;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -47,10 +46,6 @@ import org.apache.derby.shared.common.error.StandardException;
  * direct store/access proof and not final Derby transaction integration.</p>
  */
 public final class MvccConglomerateController implements ConglomerateController {
-    private static final AtomicInteger INSERT_COUNT = new AtomicInteger();
-    private static final AtomicInteger DELETE_COUNT = new AtomicInteger();
-    private static final AtomicInteger UPDATE_COUNT = new AtomicInteger();
-
     private final MvccConglomerate conglomerate;
     private final MvccConglomerateState state;
     private final TransactionManager transactionManager;
@@ -70,28 +65,52 @@ public final class MvccConglomerateController implements ConglomerateController 
                 == org.apache.derby.iapi.store.access.TransactionController.OPENMODE_FORUPDATE;
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static void resetInsertCountForTesting() {
-        INSERT_COUNT.set(0);
+        MvccBridgeDiagnosticsSupport.resetInsertCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static int insertCountForTesting() {
-        return INSERT_COUNT.get();
+        return MvccBridgeDiagnosticsSupport.insertCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static void resetDeleteCountForTesting() {
-        DELETE_COUNT.set(0);
+        MvccBridgeDiagnosticsSupport.resetDeleteCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static int deleteCountForTesting() {
-        return DELETE_COUNT.get();
+        return MvccBridgeDiagnosticsSupport.deleteCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static void resetUpdateCountForTesting() {
-        UPDATE_COUNT.set(0);
+        MvccBridgeDiagnosticsSupport.resetUpdateCountForDiagnostics();
     }
 
+    /**
+     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
+     */
+    @Deprecated(forRemoval = true, since = "0.1.0-dev")
     public static int updateCountForTesting() {
-        return UPDATE_COUNT.get();
+        return MvccBridgeDiagnosticsSupport.updateCountForDiagnostics();
     }
 
     public MvccConglomerate conglomerate() {
@@ -130,7 +149,7 @@ public final class MvccConglomerateController implements ConglomerateController 
         DelosStorageTransaction transaction = writer();
         DelosStorageSnapshot snapshot = state.snapshot(transaction);
         state.delete(location.rowId(), transaction, snapshot);
-        DELETE_COUNT.incrementAndGet();
+        MvccBridgeDiagnosticsSupport.incrementDeleteCount();
         return true;
     }
 
@@ -222,7 +241,7 @@ public final class MvccConglomerateController implements ConglomerateController 
                 replacementRow(visible.get(), row, validColumns),
                 transaction,
                 snapshot);
-        UPDATE_COUNT.incrementAndGet();
+        MvccBridgeDiagnosticsSupport.incrementUpdateCount();
         return true;
     }
 
@@ -248,7 +267,7 @@ public final class MvccConglomerateController implements ConglomerateController 
     private void insertInternal(StoreDataValue[] row, MvccRowLocation destination) throws StandardException {
         long rowId = state.nextRowId();
         state.insert(rowId, cloneRow(row), writer());
-        INSERT_COUNT.incrementAndGet();
+        MvccBridgeDiagnosticsSupport.incrementInsertCount();
         if (destination != null) {
             destination.set(rowId, 0L, -1);
         }
