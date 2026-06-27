@@ -119,6 +119,8 @@ module org.apache.derby.engine
         org.apache.derby.tests;
     exports io.github.ggeorg.delosdb.engine.rdbms.storage to
         org.apache.derby.tests;
+    exports io.github.ggeorg.delosdb.engine.rdbms.transaction to
+        org.apache.derby.tests;
 
     // SUPPORT MODULE LOOKUP
     //

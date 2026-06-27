@@ -5,6 +5,7 @@ import io.github.ggeorg.delosdb.engine.rdbms.pipeline.RdbmsLifecycleStage;
 import io.github.ggeorg.delosdb.engine.rdbms.storage.RdbmsStorageAccessKind;
 import io.github.ggeorg.delosdb.engine.rdbms.storage.RdbmsStorageProviderKind;
 import io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceEvent;
+import io.github.ggeorg.delosdb.engine.rdbms.transaction.RdbmsTransactionConcept;
 import io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceRegistry;
 
 import java.util.LinkedHashMap;
@@ -147,6 +148,49 @@ public final class DerbyRdbmsTrace {
                         "rowsFiltered", Long.toString(rowsFiltered))));
     }
 
+
+
+    public static void transactionCommitted(
+            String transactionId,
+            boolean commitStore,
+            boolean sync,
+            int commitFlag,
+            boolean requestedByUser) {
+        if (!RdbmsTraceRegistry.isEnabled()) {
+            return;
+        }
+        RdbmsTraceRegistry.emit(RdbmsTraceEvent.of(
+                RdbmsLifecycleStage.TRANSACTION_COMMITTED,
+                "transaction",
+                attributes(
+                        "concept", RdbmsTransactionConcept.TRANSACTION.name(),
+                        "outcome", "COMMIT",
+                        "provider", "DERBY_TRANSACTION",
+                        "transactionId", safe(transactionId),
+                        "commitStore", Boolean.toString(commitStore),
+                        "sync", Boolean.toString(sync),
+                        "commitFlag", Integer.toString(commitFlag),
+                        "requestedByUser", Boolean.toString(requestedByUser))));
+    }
+
+    public static void transactionRolledBack(
+            String transactionId,
+            boolean xa,
+            boolean requestedByUser) {
+        if (!RdbmsTraceRegistry.isEnabled()) {
+            return;
+        }
+        RdbmsTraceRegistry.emit(RdbmsTraceEvent.of(
+                RdbmsLifecycleStage.TRANSACTION_ROLLED_BACK,
+                "transaction",
+                attributes(
+                        "concept", RdbmsTransactionConcept.TRANSACTION.name(),
+                        "outcome", "ROLLBACK",
+                        "provider", "DERBY_TRANSACTION",
+                        "transactionId", safe(transactionId),
+                        "xa", Boolean.toString(xa),
+                        "requestedByUser", Boolean.toString(requestedByUser))));
+    }
 
     static RdbmsStorageAccessKind storageAccessKind(boolean keyed, boolean oneRowScan) {
         if (keyed && oneRowScan) {

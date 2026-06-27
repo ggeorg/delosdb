@@ -278,18 +278,24 @@ The same model can explain different storage-provider paths without making the b
 
 ### MODULE21D — Transaction and MVCC observations
 
+Status: implemented for inherited Derby transaction boundaries; MVCC visibility/WAL/checkpoint
+observations remain future native-MVCC work.
+
 Scope:
 
 ```text
+Expose user commit and rollback boundaries from the inherited Derby transaction path.
 Expose transaction identity where available.
-Expose snapshot/visibility concepts for MVCC paths.
-Expose WAL/checkpoint/vacuum concepts through existing MVCC diagnostics where available.
+Keep snapshot/visibility, WAL, checkpoint, and vacuum observations as explicit later MVCC work.
+Do not change commit, rollback, locking, logging, isolation, or storage behavior.
 ```
 
 Expected proof:
 
 ```text
-The model explains modern concurrency and durability mechanisms instead of only SQL execution.
+A committed JDBC transaction emits TRANSACTION_COMMITTED.
+A rolled-back JDBC transaction emits TRANSACTION_ROLLED_BACK.
+modernRdbmsModelProof includes the transaction-boundary proof.
 ```
 
 ## Phase 22 — Research and education diagnostics

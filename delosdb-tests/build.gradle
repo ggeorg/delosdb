@@ -313,6 +313,41 @@ tasks.register('runModernRdbmsStorageAccessTraceTest', Test) {
     }
 }
 
+
+
+tasks.register('runModernRdbmsTransactionTraceTest', Test) {
+    group = 'verification'
+    description = 'Proves that the DelosDB modern RDBMS model observes Derby transaction boundaries.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    modularity.inferModulePath = false
+    testClassesDirs = files(derbyTestsClassDir)
+    classpath = testRuntimeClasspath()
+    useJUnit()
+    include 'org/apache/derbyTesting/functionTests/tests/delosdb/ModernRdbmsTransactionTraceTest.class'
+
+    workingDir = layout.buildDirectory.dir('test-work/runModernRdbmsTransactionTraceTest').get().asFile
+    maxHeapSize = '1536m'
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runModernRdbmsTransactionTraceTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runModernRdbmsTransactionTraceTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runModernRdbmsTransactionTraceTest'))
+    }
+
+    doFirst {
+        delete workingDir
+        workingDir.mkdirs()
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
 tasks.register('runWalRecoveryArchitectureProofTest', Test) {
     group = 'verification'
     description = 'Runs focused WAL/restart recovery proof tests for the PostgreSQL-class storage/concurrency campaign.'

@@ -224,6 +224,31 @@ Focused task:
 :delosdb-tests:runModernRdbmsStorageAccessTraceTest
 ```
 
+
+
+## Transaction-boundary proof
+
+MODULE21D adds the first transaction observation point. The model now observes inherited Derby
+commit and rollback boundaries through `GenericLanguageConnectionContext` without changing
+transaction behavior.
+
+The focused proof is:
+
+```text
+:delosdb-tests:runModernRdbmsTransactionTraceTest
+```
+
+The proof executes normal JDBC transactions and asserts that the model observes:
+
+```text
+TRANSACTION_COMMITTED
+TRANSACTION_ROLLED_BACK
+```
+
+The trace attributes identify the event as a `TRANSACTION` concept handled by the inherited
+`DERBY_TRANSACTION` path. Native MVCC snapshot visibility, WAL, checkpoint, and vacuum-horizon
+observations remain later work; this pass only creates the real transaction-boundary seam.
+
 ## Mapping to the current system
 
 The model should be backed by adapters over current Derby/DelosDB objects:
