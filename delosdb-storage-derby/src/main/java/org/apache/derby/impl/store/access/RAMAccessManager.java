@@ -46,9 +46,9 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
+import org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider;
 import org.apache.derby.iapi.store.access.conglomerate.MethodFactory;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
-import org.apache.derby.impl.store.access.mvcc.MvccConglomerateFactory;
 import org.apache.derby.iapi.services.property.PropertyUtil;
 import org.apache.derby.iapi.store.access.AccessFactory;
 import org.apache.derby.iapi.services.property.PropertyFactory;
@@ -72,6 +72,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.ServiceLoader;
 
 import java.io.Serializable;
 
@@ -423,10 +424,10 @@ public abstract class RAMAccessManager
             }
         }
 
-        ConglomerateFactory delosDbFactory = bootDelosDbAccessMethodByFactoryId(factoryId);
-        if (delosDbFactory != null)
+        ConglomerateFactory externalFactory = bootExternalAccessMethodByFactoryId(factoryId);
+        if (externalFactory != null)
         {
-            return delosDbFactory;
+            return externalFactory;
         }
 
         // just in case language passes in a bad factory id.
@@ -687,7 +688,7 @@ public abstract class RAMAccessManager
 		}
 
 		if (factory == null) {
-			factory = bootDelosDbAccessMethod(impltype, conglomProperties);
+			factory = bootExternalAccessMethod(impltype, conglomProperties);
 		}
 
 		conglomProperties = null;
@@ -702,59 +703,52 @@ public abstract class RAMAccessManager
     }
 
     /**
-     * Boot DelosDB-owned access methods that live in the extracted storage
-     * implementation module. Derby's module monitor is still the first lookup
-     * path above. This narrow fallback keeps MODULE6B in the inherited
-     * RAMAccessManager registration path without growing the SQL result-set
-     * bridge or adding jar-packaging shortcuts.
+     * Boot DelosDB-owned or extension-owned access methods without making the
+     * inherited Derby storage implementation depend on a concrete provider.
+     * Derby's module monitor remains the first lookup path above; this fallback
+     * is only for access-method providers discovered through the neutral Derby
+     * store API service hook.
      */
-    private MethodFactory bootDelosDbAccessMethod(String impltype, Properties conglomProperties)
+    private MethodFactory bootExternalAccessMethod(String impltype, Properties conglomProperties)
             throws StandardException
     {
-        if (!MvccConglomerateFactory.IMPLEMENTATION_ID.equals(impltype))
+        for (ExternalAccessMethodProvider provider
+                : ServiceLoader.load(ExternalAccessMethodProvider.class))
         {
-            return null;
-        }
+            if (!provider.supportsImplementation(impltype))
+            {
+                continue;
+            }
 
-        MvccConglomerateFactory factory = new MvccConglomerateFactory();
-        if (!factory.canSupport(conglomProperties))
-        {
-            return null;
+            MethodFactory factory = provider.bootForImplementation(
+                    false, conglomProperties, impltype);
+            if (factory != null)
+            {
+                return factory;
+            }
         }
-        factory.boot(false, conglomProperties);
-        return factory;
+        return null;
     }
 
-    private ConglomerateFactory bootDelosDbAccessMethodByFactoryId(int factoryId)
+    private ConglomerateFactory bootExternalAccessMethodByFactoryId(int factoryId)
             throws StandardException
     {
-        if (factoryId != ConglomerateFactory.MVCC_FACTORY_ID)
+        for (ExternalAccessMethodProvider provider
+                : ServiceLoader.load(ExternalAccessMethodProvider.class))
         {
-            return null;
+            if (!provider.supportsFactoryId(factoryId))
+            {
+                continue;
+            }
+
+            MethodFactory factory = provider.bootForFactoryId(
+                    false, serviceProperties, factoryId);
+            if (factory instanceof ConglomerateFactory conglomerateFactory)
+            {
+                registerAccessMethod(factory);
+                return conglomerateFactory;
+            }
         }
-
-        MethodFactory existing = implhash.get(MvccConglomerateFactory.IMPLEMENTATION_ID);
-        if (existing instanceof ConglomerateFactory conglomerateFactory)
-        {
-            registerConglomerateFactory(conglomerateFactory);
-            return conglomerateFactory;
-        }
-
-        Properties conglomProperties = new Properties(serviceProperties);
-        conglomProperties.put(
-                AccessFactoryGlobals.CONGLOM_PROP,
-                MvccConglomerateFactory.IMPLEMENTATION_ID);
-
-        MethodFactory factory = bootDelosDbAccessMethod(
-                MvccConglomerateFactory.IMPLEMENTATION_ID,
-                conglomProperties);
-
-        if (factory instanceof ConglomerateFactory conglomerateFactory)
-        {
-            registerAccessMethod(factory);
-            return conglomerateFactory;
-        }
-
         return null;
     }
 

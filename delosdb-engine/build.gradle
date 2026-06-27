@@ -46,6 +46,7 @@ dependencies {
     enginePatch project(':delosdb-engine-storage-api')
     enginePatch project(':delosdb-derby-store-api')
     enginePatch project(':delosdb-storage-derby')
+    enginePatch project(':delosdb-derby-mvcc-adapter')
 }
 
 sourceSets {
@@ -214,7 +215,8 @@ tasks.register('derbyJar', Jar) {
             ':splitEngineMessages', ':generateOdbcMetadata', ':ensureCatalogMetadataResources',
             ':delosdb-engine-storage-api:compileEngineStorageApi',
             ':delosdb-derby-store-api:compileDerbyStoreApi',
-            ':delosdb-storage-derby:compileLegacyDerbyStorage'
+            ':delosdb-storage-derby:compileLegacyDerbyStorage',
+            ':delosdb-derby-mvcc-adapter:compileDerbyMvccAdapter'
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -223,7 +225,8 @@ tasks.register('derbyJar', Jar) {
         include 'org/apache/derby/iapi/store/types/**'
         include 'org/apache/derby/iapi/store/**'
         include 'org/apache/derby/impl/store/**'
-        exclude 'META-INF/**'
+        include 'META-INF/services/org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider'
+        exclude 'META-INF/MANIFEST.MF'
         exclude 'module-info.class'
     }
     from(rootProject.ext.delosdbLegalFiles) {

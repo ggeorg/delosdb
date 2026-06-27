@@ -42,6 +42,7 @@ dependencies {
     enginePatchModule(project(':delosdb-engine-storage-api')) { transitive = false }
     enginePatchModule(project(':delosdb-derby-store-api')) { transitive = false }
     enginePatchModule(project(':delosdb-storage-derby')) { transitive = false }
+    enginePatchModule(project(':delosdb-derby-mvcc-adapter')) { transitive = false }
 }
 
 sourceSets {

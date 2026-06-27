@@ -231,7 +231,7 @@ tasks.register('generateClassSizeCatalog') {
     // ClassSizeCrawler scans the compiled engine output tree. Gradle 8.14
     // requires every task which writes into that tree to be ordered before
     // this scan, otherwise it reports an implicit dependency problem.
-    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine-api:compileDelosDbEngineApi', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', 'compileDerbyBuildTools', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
+    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine-api:compileDelosDbEngineApi', ':delosdb-engine-storage-api:compileEngineStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-derby-mvcc-adapter:compileDerbyMvccAdapter', 'compileDerbyBuildTools', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
     def outputFile = generatedSourceDir(moduleNames.engineApi).map {
         it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
     }
@@ -240,6 +240,7 @@ tasks.register('generateClassSizeCatalog') {
     inputs.dir(project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api'))
     inputs.dir(project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api'))
     inputs.dir(project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main'))
+    inputs.dir(project(':delosdb-derby-mvcc-adapter').layout.buildDirectory.dir('classes/main'))
     outputs.file(outputFile)
     doLast {
         def target = outputFile.get().asFile
@@ -251,7 +252,8 @@ tasks.register('generateClassSizeCatalog') {
                 moduleClassDir(moduleNames.engine),
                 project(':delosdb-engine-storage-api').layout.buildDirectory.dir('classes/engine-storage-api'),
                 project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api'),
-                project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
+                project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main'),
+                project(':delosdb-derby-mvcc-adapter').layout.buildDirectory.dir('classes/main')
         ]) {
             systemProperty 'WS', projectDir.absolutePath
             systemProperty 'classDir', moduleClassDir(moduleNames.engine).get().asFile.absolutePath

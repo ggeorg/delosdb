@@ -135,8 +135,9 @@ public final class PageVolumeMvccCheckpointStore {
             Properties properties = new Properties();
             properties.setProperty("magic", MAGIC);
             properties.setProperty("version", VERSION);
-            properties.setProperty("segment", storageId);
-            properties.setProperty("container", storageId);
+            properties.setProperty("storageId", storageId);
+            properties.setProperty("segment", storageSegment(storageId));
+            properties.setProperty("container", storageContainer(storageId));
             properties.setProperty("pageFile", fileName(pageFile));
             properties.setProperty("rowDirectoryFile", fileName(rowDirectoryFile));
             properties.setProperty("pageMutationLogFile", fileName(pageMutationLogFile));
@@ -213,6 +214,33 @@ public final class PageVolumeMvccCheckpointStore {
         digest.update((byte) '\n');
     }
 
+
+    private static String storageSegment(String storageId) {
+        ConglomerateStorageId parsed = ConglomerateStorageId.parse(storageId);
+        return parsed == null ? storageId : parsed.segment();
+    }
+
+    private static String storageContainer(String storageId) {
+        ConglomerateStorageId parsed = ConglomerateStorageId.parse(storageId);
+        return parsed == null ? storageId : parsed.container();
+    }
+
+    private record ConglomerateStorageId(String segment, String container) {
+        private static ConglomerateStorageId parse(String storageId) {
+            if (storageId == null || !storageId.startsWith("conglomerate-")) {
+                return null;
+            }
+            String remainder = storageId.substring("conglomerate-".length());
+            int separator = remainder.indexOf('-');
+            if (separator <= 0 || separator == remainder.length() - 1) {
+                return null;
+            }
+            return new ConglomerateStorageId(
+                    remainder.substring(0, separator),
+                    remainder.substring(separator + 1));
+        }
+    }
+
     public enum Status {
         DISABLED,
         ABSENT,
@@ -239,8 +267,9 @@ public final class PageVolumeMvccCheckpointStore {
                 long nextRowId) throws IOException {
             require("magic", MAGIC);
             require("version", VERSION);
-            require("segment", storageId);
-            require("container", storageId);
+            require("storageId", storageId);
+            require("segment", storageSegment(storageId));
+            require("container", storageContainer(storageId));
             require("pageFile", fileName(pageFile));
             require("rowDirectoryFile", fileName(rowDirectoryFile));
             require("pageMutationLogFile", fileName(pageMutationLogFile));
