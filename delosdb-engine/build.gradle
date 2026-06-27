@@ -236,6 +236,7 @@ tasks.register('derbyJar', Jar) {
         include 'org/apache/derby/impl/store/**'
         include 'META-INF/services/org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider'
         include 'META-INF/services/org.apache.derby.iapi.store.types.StoreRowLocationFactory'
+        include 'META-INF/services/org.apache.derby.iapi.store.types.DelosStorageDiagnostics'
         exclude 'META-INF/MANIFEST.MF'
         exclude 'module-info.class'
     }
