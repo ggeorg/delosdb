@@ -7,7 +7,7 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-// Real Gradle Java module for shared inherited Derby engine/kernel API
+// Real Gradle Java module for shared inherited Derby engine API
 // contracts. The legacy compile/jar task names remain while the wider build is
 // migrated away from custom task wiring.
 def moduleName = 'io.github.ggeorg.delosdb.engine.api'

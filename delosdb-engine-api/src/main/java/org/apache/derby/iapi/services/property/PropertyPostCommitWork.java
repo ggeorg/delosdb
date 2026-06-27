@@ -25,7 +25,7 @@ import org.apache.derby.iapi.services.daemon.Serviceable;
 
 /**
  * Store-facing post-commit hook used by property validation without making
- * the engine kernel depend on the inherited store transaction interfaces.
+ * engine API contracts depend on the inherited store transaction interfaces.
  */
 public interface PropertyPostCommitWork {
     void addPostCommitWork(Serviceable work);

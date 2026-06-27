@@ -26,12 +26,11 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.stream.HeaderPrintWriter;
 
 /**
- * Small engine-owned support seam used while the inherited Derby context
- * service is extracted into the DelosDB engine kernel.
+ * Small engine-owned support seam for the inherited Derby context service.
  *
  * <p>The context package is thread/session-global infrastructure needed by the
  * legacy store. It must not pull the full Derby monitor, property system, or
- * SQL-facing security package into the kernel during B3a. The engine installs
+ * SQL-facing security package into lower-level contracts. The engine installs
  * the real implementation from its monitor package; the fallback exists only so
  * isolated tests and compile-time proofs can construct context services without
  * booting the full engine.</p>

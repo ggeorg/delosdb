@@ -30,7 +30,6 @@ def derbyCompatibilityVersion = '10.17.1.0'
 def moduleNames = [
         osgi         : 'org.osgi.framework',
         commons      : 'org.apache.derby.commons',
-        engineKernel : 'io.github.ggeorg.delosdb.engine.kernel',
         engineApi    : 'io.github.ggeorg.delosdb.engine.api',
         engine       : 'org.apache.derby.engine',
         client       : 'org.apache.derby.client',
@@ -43,7 +42,6 @@ def moduleNames = [
 def moduleProjects = [
         (moduleNames.osgi)         : ':delosdb-osgi-stub',
         (moduleNames.commons)      : ':delosdb-commons',
-        (moduleNames.engineKernel) : ':delosdb-engine-kernel',
         (moduleNames.engineApi)    : ':delosdb-engine-api',
         (moduleNames.engine)       : ':delosdb-engine',
         (moduleNames.client)       : ':delosdb-client',
@@ -60,7 +58,6 @@ def moduleSourceRoots = [
 def runtimeCompileTasks = [
         ':delosdb-commons:compileDerbyCommons',
         ':delosdb-engine-api:compileDelosDbEngineApi',
-        ':delosdb-engine-kernel:compileDelosDbEngineKernel',
         ':delosdb-engine:compileDerbyEngine',
         ':delosdb-client:compileDerbyClient',
         ':delosdb-tools:compileDerbyTools',
@@ -247,7 +244,6 @@ tasks.register('generateClassSizeCatalog') {
         target.parentFile.mkdirs()
         runBuildTool('org.apache.derbyBuild.ClassSizeCrawler', [
                 moduleClassDir(moduleNames.commons),
-                moduleClassDir(moduleNames.engineKernel),
                 moduleClassDir(moduleNames.engineApi),
                 moduleClassDir(moduleNames.engine),
                 project(':delosdb-storage-api').layout.buildDirectory.dir('classes/storage-api'),
@@ -397,7 +393,6 @@ def moduleDirsForRuntime = files(
         project(':delosdb-storage-io').layout.buildDirectory.dir('classes/main'),
         moduleClassDir(moduleNames.osgi),
         moduleClassDir(moduleNames.commons),
-        moduleClassDir(moduleNames.engineKernel),
         moduleClassDir(moduleNames.engineApi),
         moduleClassDir(moduleNames.engine),
         moduleClassDir(moduleNames.client),
@@ -412,7 +407,6 @@ def runtimeJarNames = [
         'delosdb-storage-io.jar',
         'osgi-framework-stub.jar',
         'derbyshared.jar',
-        'delosdb-engine-kernel.jar',
         'delosdb-engine-api.jar',
         'derby.jar',
         'derbyclient.jar',
@@ -560,7 +554,6 @@ def legalFiles = files(legalFileNames.collect { file(it) })
 def runtimeBuildTasks = [
         ':delosdb-storage-io:compileDelosDbStorageIo',
         ':delosdb-engine-api:compileDelosDbEngineApi',
-        ':delosdb-engine-kernel:compileDelosDbEngineKernel',
         ':delosdb-storage-api:compileStorageApi',
         ':delosdb-engine:compileClassSizeCatalog',
         'splitEngineMessages',
@@ -573,7 +566,7 @@ tasks.register('compileAll') {
 }
 
 tasks.register('jars') {
-    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-api:delosDbEngineApiJar', ':delosdb-engine-kernel:delosDbEngineKernelJar', ':delosdb-storage-api:storageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
+    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-api:delosDbEngineApiJar', ':delosdb-storage-api:storageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
             ':delosdb-client:derbyClientJar', ':delosdb-tools:derbyToolsJar',
             ':delosdb-server:derbyNetJar', ':delosdb-optionaltools:derbyOptionalToolsJar',
             ':delosdb-runner:derbyRunJar', ':delosdb-osgi-stub:osgiFrameworkStubJar'

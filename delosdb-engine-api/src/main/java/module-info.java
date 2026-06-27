@@ -1,5 +1,5 @@
 /**
- * Shared inherited Derby engine/kernel API contracts.
+ * Shared inherited Derby engine API contracts.
  */
 @SuppressWarnings("module")
 module io.github.ggeorg.delosdb.engine.api {

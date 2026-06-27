@@ -26,13 +26,11 @@ import java.util.Properties;
 import org.apache.derby.iapi.services.context.ContextKernelSupport;
 
 /**
- * Engine-owned support seam used while the inherited Derby monitor facade is
- * extracted into the DelosDB engine kernel.
+ * Engine-owned support seam for the inherited Derby monitor facade.
  *
  * <p>The monitor API is store-facing boot infrastructure, but its concrete
- * implementation still lives in the engine during B3b. This seam keeps the
- * kernel-owned monitor package from depending upward on FileMonitor,
- * SecurityUtil, or PropertyUtil.</p>
+ * implementation lives in the engine. This seam keeps store-facing contracts
+ * from depending directly on FileMonitor, SecurityUtil, or PropertyUtil.</p>
  */
 public interface MonitorKernelSupport
 {
