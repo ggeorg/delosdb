@@ -21,259 +21,230 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-
-import io.github.ggeorg.delosdb.storage.mvcc.MvccRow;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccScan;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccTable;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionManager;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
-import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
-import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
+import java.util.ServiceLoader;
 
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.raw.ContainerKey;
+import org.apache.derby.iapi.store.types.DelosStorageStore;
+import org.apache.derby.iapi.store.types.DelosStorageTable;
+import org.apache.derby.iapi.store.types.DelosStorageTableKey;
+import org.apache.derby.iapi.store.types.DelosStorageRowHead;
+import org.apache.derby.iapi.store.types.DelosStorageScan;
+import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosStorageTransaction;
+import org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
+import org.apache.derby.iapi.store.types.DelosVacuumOutcome;
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreOrderable;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
  * Shared state behind the inherited MVCC conglomerate provider.
  *
- * <p>MODULE9A turned the static map into a cache instead of the restart
- * authority. MODULE11A/11B moved committed-row and row-directory reload
- * authority to the existing Delos page-volume backed MVCC table, while still
- * keeping all reads and writes behind the inherited Derby store/access
- * provider. MODULE11C removes the old MODULE9A snapshot fallback as an
- * authority.</p>
+ * <p>MODULE17M keeps Derby access-method compatibility here, but routes the
+ * actual MVCC storage operations through {@code delosdb-storage-api}.  The
+ * bridge no longer imports native MVCC implementation classes.</p>
  */
 final class MvccConglomerateState {
+    private static final String MVCC_PROVIDER_NAME = "delos_mvcc";
+
     private final ContainerKey key;
-    private final Path retiredSnapshotFile;
-    private final Path transactionStatusFile;
-    private final PageVolumeMvccStateStore<StoreDataValue[]> pageVolumeStateStore;
-    private final MvccTransactionStatusStore transactionStatusStore;
-    private final MvccTable<Long, StoreDataValue[]> table = new MvccTable<>();
-    private final MvccTransactionManager transactions;
-    private final DerbyMvccCandidateIndex candidateIndex = new DerbyMvccCandidateIndex();
-    private long nextRowId = 1L;
-    private PageVolumeMvccStateStore.VacuumOutcome lastVacuumOutcome =
-            PageVolumeMvccStateStore.VacuumOutcome.disabled();
+    private final DelosStorageTable table;
 
     MvccConglomerateState(ContainerKey key, Path databaseDirectory) {
         this.key = key;
-        this.retiredSnapshotFile = retiredSnapshotFile(databaseDirectory, key);
-        this.transactionStatusFile = transactionStatusFile(databaseDirectory, key);
-        this.pageVolumeStateStore = PageVolumeMvccStateStore.open(
-                databaseDirectory,
-                storageId(key),
-                DerbyMvccRowCodec.INSTANCE);
-        this.transactionStatusStore = transactionStatusFile == null || key.getContainerId() == 0L
-                ? MvccTransactionStatusStore.disabled()
-                : MvccTransactionStatusStore.open(transactionStatusFile);
-        this.transactions = new MvccTransactionManager(transactionStatusStore);
-        loadCommittedState();
+        DelosStorageStore store = providerFactory().openStore(databaseDirectory);
+        this.table = store.openTable(new DelosStorageTableKey(key.getSegmentId(), key.getContainerId()));
     }
 
     ContainerKey key() {
         return key;
     }
 
-    MvccTable<Long, StoreDataValue[]> table() {
+    DelosStorageTable table() {
         return table;
     }
 
-    MvccTransactionManager transactions() {
-        return transactions;
+    DelosStorageTransaction beginTransaction() {
+        return table.beginTransaction();
+    }
+
+    DelosStorageSnapshot snapshot(DelosStorageTransaction transaction) {
+        return table.snapshot(transaction);
+    }
+
+    DelosStorageScan openScan(DelosStorageSnapshot snapshot) throws StandardException {
+        return table.openScan(snapshot);
+    }
+
+    Optional<StoreDataValue[]> read(long rowId, DelosStorageSnapshot snapshot) {
+        return table.read(rowId, snapshot);
+    }
+
+    void insert(long rowId, StoreDataValue[] row, DelosStorageTransaction transaction) {
+        table.insert(rowId, row, transaction);
+    }
+
+    void update(
+            long rowId,
+            StoreDataValue[] replacement,
+            DelosStorageTransaction transaction,
+            DelosStorageSnapshot snapshot) {
+        table.update(rowId, replacement, transaction, snapshot);
+    }
+
+    void delete(long rowId, DelosStorageTransaction transaction, DelosStorageSnapshot snapshot) {
+        table.delete(rowId, transaction, snapshot);
+    }
+
+    void commit(DelosStorageTransaction transaction) {
+        table.commit(transaction);
+    }
+
+    void abort(DelosStorageTransaction transaction) {
+        table.abort(transaction);
     }
 
     synchronized long nextRowId() {
-        return nextRowId++;
+        return table.nextRowId();
     }
 
-    /**
-     * Persists the current committed visible state through the MODULE11 page-volume
-     * state store. The old MODULE9A snapshot file is no longer a reload authority.
-     */
     synchronized void persistCommittedState() {
-        List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = visibleRows();
-        pageVolumeStateStore.persistVisibleRows(rows);
-        candidateIndex.recordVisibleRows(rows);
+        table.persistCommittedState();
     }
 
     synchronized void dropDurableState() {
-        candidateIndex.clear();
-        try {
-            pageVolumeStateStore.drop();
-            if (retiredSnapshotFile != null) {
-                Files.deleteIfExists(retiredSnapshotFile);
-            }
-            if (transactionStatusFile != null) {
-                Files.deleteIfExists(transactionStatusFile);
-            }
-            Path pageMutationLogFile = pageVolumeStateStore.pageMutationLogFile();
-            if (pageMutationLogFile != null) {
-                Files.deleteIfExists(pageMutationLogFile);
-            }
-            Path writeAheadLogFile = pageVolumeStateStore.writeAheadLogFile();
-            if (writeAheadLogFile != null) {
-                Files.deleteIfExists(writeAheadLogFile);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not delete inherited MVCC state for " + key, e);
-        }
+        table.dropDurableState();
     }
 
     Path pageVolumeStateFileForTesting() {
-        return pageVolumeStateStore.pageFile();
+        return table.pageVolumeStateFileForTesting();
     }
 
     Path rowDirectoryStateFileForTesting() {
-        return pageVolumeStateStore.rowDirectoryFile();
+        return table.rowDirectoryStateFileForTesting();
     }
 
     Path pageMutationLogFileForTesting() {
-        return pageVolumeStateStore.pageMutationLogFile();
+        return table.pageMutationLogFileForTesting();
     }
 
     Path writeAheadLogFileForTesting() {
-        return pageVolumeStateStore.writeAheadLogFile();
+        return table.writeAheadLogFileForTesting();
     }
 
     Path checkpointFileForTesting() {
-        return pageVolumeStateStore.checkpointFile();
+        return table.checkpointFileForTesting();
     }
 
     String checkpointStatusForTesting() {
-        return pageVolumeStateStore.checkpointStatus();
+        return table.checkpointStatusForTesting();
     }
 
     synchronized int physicalVersionCountForTesting() {
-        return pageVolumeStateStore.physicalVersionCount();
+        return table.physicalVersionCountForTesting();
     }
 
     synchronized int logicalRowCountForTesting() {
-        return pageVolumeStateStore.logicalRowCount();
+        return table.logicalRowCountForTesting();
     }
 
-    synchronized PageVolumeMvccStateStore.VacuumOutcome lastVacuumOutcomeForTesting() {
-        return lastVacuumOutcome;
+    synchronized DelosVacuumOutcome lastVacuumOutcomeForTesting() {
+        return table.lastVacuumOutcomeForTesting();
     }
 
-    synchronized PageVolumeMvccStateStore.VacuumOutcome vacuumSafely() {
-        boolean hasRetainedInheritedSnapshot = transactions.activeTransactionCount() > 0
-                || transactions.retainedSnapshotCount() > 0;
-        lastVacuumOutcome = pageVolumeStateStore.vacuumSafely(hasRetainedInheritedSnapshot);
-        return lastVacuumOutcome;
+    synchronized DelosVacuumOutcome vacuumSafely() {
+        return table.vacuumSafely();
     }
 
-    /**
-     * Returns the old MODULE9A snapshot location so smokes can assert that it is
-     * absent or inert. Production reload no longer reads this file.
-     */
     Path legacySnapshotFileForTesting() {
-        return retiredSnapshotFile;
+        return table.legacySnapshotFileForTesting();
     }
 
     synchronized MvccRowLocation rowLocationFor(long rowId) {
-        return pageVolumeStateStore.rowHeadForInheritedRowId(rowId)
-                .map(head -> new MvccRowLocation(
-                        rowId,
-                        head.headLocator().pageId().value(),
-                        head.headLocator().slotId()))
-                .orElseGet(() -> new MvccRowLocation(rowId));
+        DelosStorageRowHead head = table.rowHeadFor(rowId);
+        if (head.present()) {
+            return new MvccRowLocation(rowId, head.pageId(), head.slotId());
+        }
+        return new MvccRowLocation(rowId);
     }
 
     synchronized Optional<List<Long>> candidateRowIdsFor(Qualifier[][] qualifiers) {
-        return candidateIndex.candidatesFor(qualifiers);
+        Optional<ColumnValueKey> key = equalityCandidateKey(qualifiers);
+        return key.flatMap(columnValueKey -> table.candidateRowIdsFor(columnValueKey.column(), columnValueKey.value()));
     }
 
     synchronized int candidateIndexKeyCountForTesting() {
-        return candidateIndex.indexedKeyCountForTesting();
+        return table.candidateIndexKeyCountForTesting();
     }
 
     synchronized void close() {
-        pageVolumeStateStore.close();
+        table.close();
     }
 
-    private void loadCommittedState() {
-        if (pageVolumeStateStore.hasDurableState()) {
-            hydrateCommittedRows(
-                    pageVolumeStateStore.loadVisibleRows(),
-                    pageVolumeStateStore.nextInheritedRowId());
+    private static Optional<ColumnValueKey> equalityCandidateKey(Qualifier[][] qualifiers) {
+        if (qualifiers == null) {
+            return Optional.empty();
         }
-    }
-
-    private void hydrateCommittedRows(
-            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows,
-            long storedNextRowId) {
-        candidateIndex.rebuildFromVisibleRows(rows);
-        if (rows.isEmpty()) {
-            nextRowId = Math.max(nextRowId, storedNextRowId);
-            return;
-        }
-        MvccTransaction hydrator = transactions.begin();
-        try {
-            long maxRowId = 0L;
-            for (PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]> row : rows) {
-                table.insert(row.rowId(), row.values(), hydrator);
-                maxRowId = Math.max(maxRowId, row.rowId());
+        for (Qualifier[] andTerm : qualifiers) {
+            if (andTerm == null || andTerm.length != 1 || andTerm[0] == null) {
+                continue;
             }
-            transactions.commit(hydrator);
-            nextRowId = Math.max(storedNextRowId, maxRowId + 1L);
-        } catch (RuntimeException failure) {
-            transactions.abort(hydrator);
-            throw failure;
-        }
-    }
-
-    private List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> visibleRows() {
-        MvccTransaction reader = transactions.begin();
-        try {
-            MvccSnapshot snapshot = transactions.snapshot(reader);
-            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = new ArrayList<>();
-            try (MvccScan<Long, StoreDataValue[]> scan = table.openScan(snapshot, transactions)) {
-                while (scan.next()) {
-                    MvccRow<Long, StoreDataValue[]> row = scan.row();
-                    rows.add(new PageVolumeMvccStateStore.PersistedRow<>(
-                            row.key(),
-                            MvccConglomerateController.cloneRow(row.value())));
+            Qualifier qualifier = andTerm[0];
+            if (qualifier.getColumnId() < 0
+                    || qualifier.getOperator() != StoreOrderable.ORDER_OP_EQUALS
+                    || qualifier.negateCompareResult()) {
+                continue;
+            }
+            try {
+                StoreDataValue orderable = qualifier.getOrderable();
+                if (orderable == null) {
+                    return Optional.empty();
                 }
+                return Optional.of(new ColumnValueKey(qualifier.getColumnId(), valueKey(orderable)));
             } catch (StandardException e) {
-                throw new IllegalStateException("Could not clone inherited MVCC row for persistence", e);
+                return Optional.empty();
             }
-            return List.copyOf(rows);
-        } finally {
-            transactions.abort(reader);
+        }
+        return Optional.empty();
+    }
+
+    private static String valueKey(StoreDataValue value) {
+        try {
+            Method getString = value.getClass().getMethod("getString");
+            Object result = getString.invoke(value);
+            return result == null ? "<null>" : result.toString();
+        } catch (NoSuchMethodException e) {
+            return value.toString();
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("Cannot access store value key operation on "
+                    + value.getClass().getName(), e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            return value.toString();
         }
     }
 
-    private static String storageId(ContainerKey key) {
-        return PageVolumeMvccPaths.conglomerateStorageId(key.getSegmentId(), key.getContainerId());
-    }
-
-    private static Path retiredSnapshotFile(Path databaseDirectory, ContainerKey key) {
-        Path directory = PageVolumeMvccPaths.inheritedStoreDirectory(databaseDirectory);
-        if (directory == null) {
-            return null;
+    private static DelosStorageProviderFactory providerFactory() {
+        for (DelosStorageProviderFactory factory : ServiceLoader.load(DelosStorageProviderFactory.class)) {
+            if (MVCC_PROVIDER_NAME.equals(factory.providerName())) {
+                return factory;
+            }
         }
-        return directory.resolve("conglomerate-" + key.getSegmentId() + "-" + key.getContainerId() + ".snapshot");
+        throw new IllegalStateException("No storage-api provider registered for " + MVCC_PROVIDER_NAME);
     }
 
-    private static Path transactionStatusFile(Path databaseDirectory, ContainerKey key) {
-        Path directory = PageVolumeMvccPaths.inheritedStoreDirectory(databaseDirectory);
-        if (directory == null) {
-            return null;
-        }
-        return directory.resolve("conglomerate-" + key.getSegmentId() + "-" + key.getContainerId() + ".txstatus");
+    private record ColumnValueKey(int column, String value) {
     }
-
-
 }

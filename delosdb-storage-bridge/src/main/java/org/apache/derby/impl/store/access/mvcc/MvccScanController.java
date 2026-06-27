@@ -26,11 +26,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import io.github.ggeorg.delosdb.storage.mvcc.MvccRow;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccScan;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
-
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.store.access.Qualifier;
@@ -38,6 +33,10 @@ import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.ScanInfo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
+import org.apache.derby.iapi.store.types.DelosStorageRow;
+import org.apache.derby.iapi.store.types.DelosStorageScan;
+import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosStorageTransaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
@@ -62,14 +61,14 @@ public final class MvccScanController implements ScanManager {
     private final MvccConglomerateState state;
     private final TransactionManager transactionManager;
     private final boolean hold;
-    private final MvccTransaction reader;
-    private final MvccSnapshot snapshot;
-    private MvccScan<Long, StoreDataValue[]> scan;
+    private final DelosStorageTransaction reader;
+    private final DelosStorageSnapshot snapshot;
+    private DelosStorageScan scan;
     private final FormatableBitSet scanColumnList;
     private Qualifier[][] qualifiers;
     private Iterator<Long> candidateRowIds;
     private boolean candidateIndexScan;
-    private MvccRow<Long, StoreDataValue[]> current;
+    private DelosStorageRow current;
     private boolean closed;
     private long estimatedRowCount;
 
@@ -86,9 +85,13 @@ public final class MvccScanController implements ScanManager {
         this.hold = hold;
         this.scanColumnList = scanColumnList;
         this.qualifiers = qualifiers;
-        this.reader = state.transactions().begin();
-        this.snapshot = state.transactions().snapshot(reader);
-        this.scan = state.table().openScan(snapshot, state.transactions());
+        this.reader = state.beginTransaction();
+        this.snapshot = state.snapshot(reader);
+        try {
+            this.scan = state.openScan(snapshot);
+        } catch (StandardException e) {
+            throw new IllegalStateException("Could not open MVCC storage-api scan", e);
+        }
         resetCandidateIndexScan(qualifiers);
     }
 
@@ -140,7 +143,7 @@ public final class MvccScanController implements ScanManager {
     public void close() {
         if (!closed) {
             scan.close();
-            state.transactions().abort(reader);
+            state.abort(reader);
             closed = true;
             transactionManager.closeMe(this);
         }
@@ -192,7 +195,11 @@ public final class MvccScanController implements ScanManager {
         ensureOpen();
         scan.close();
         current = null;
-        scan = state.table().openScan(snapshot, state.transactions());
+        try {
+            scan = state.openScan(snapshot);
+        } catch (StandardException e) {
+            throw new IllegalStateException("Could not reopen MVCC storage-api scan", e);
+        }
         this.qualifiers = qualifier;
         resetCandidateIndexScan(qualifier);
     }
@@ -203,7 +210,11 @@ public final class MvccScanController implements ScanManager {
         MvccRowLocation.from(startRowLocation);
         scan.close();
         current = null;
-        scan = state.table().openScan(snapshot, state.transactions());
+        try {
+            scan = state.openScan(snapshot);
+        } catch (StandardException e) {
+            throw new IllegalStateException("Could not reopen MVCC storage-api scan", e);
+        }
         this.qualifiers = qualifier;
         resetCandidateIndexScan(qualifier);
     }
@@ -275,12 +286,12 @@ public final class MvccScanController implements ScanManager {
             if (rowArray[count] == null) {
                 rowArray[count] = newGroupFetchRowTemplate(rowArray);
             }
-            MvccConglomerateController.copyRow(current.value(), rowArray[count], null);
+            MvccConglomerateController.copyRow(current.values(), rowArray[count], null);
             if (rowlocArray != null) {
                 if (rowlocArray[count] == null) {
                     rowlocArray[count] = new MvccRowLocation();
                 }
-                MvccRowLocation.from(rowlocArray[count]).copyFrom(state.rowLocationFor(current.key()));
+                MvccRowLocation.from(rowlocArray[count]).copyFrom(state.rowLocationFor(current.rowId()));
             }
             count++;
         }
@@ -312,7 +323,7 @@ public final class MvccScanController implements ScanManager {
         if (current == null) {
             destination.restoreToNull();
         } else {
-            destination.copyFrom(state.rowLocationFor(current.key()));
+            destination.copyFrom(state.rowLocationFor(current.rowId()));
         }
     }
 
@@ -332,12 +343,12 @@ public final class MvccScanController implements ScanManager {
     public boolean positionAtRowLocation(StoreRowLocation rowLocation) {
         ensureOpen();
         MvccRowLocation location = MvccRowLocation.from(rowLocation);
-        Optional<StoreDataValue[]> visible = state.table().read(location.rowId(), snapshot, state.transactions());
+        Optional<StoreDataValue[]> visible = state.read(location.rowId(), snapshot);
         if (visible.isEmpty()) {
             current = null;
             return false;
         }
-        current = new MvccRow<>(location.rowId(), visible.get());
+        current = new DelosStorageRow(location.rowId(), visible.get());
         return true;
     }
 
@@ -346,8 +357,8 @@ public final class MvccScanController implements ScanManager {
             return advanceToNextCandidateRow();
         }
         while (scan.next()) {
-            MvccRow<Long, StoreDataValue[]> candidate = scan.row();
-            if (rowQualifies(candidate.value())) {
+            DelosStorageRow candidate = scan.row();
+            if (rowQualifies(candidate.values())) {
                 current = candidate;
                 return true;
             }
@@ -360,14 +371,14 @@ public final class MvccScanController implements ScanManager {
     private boolean advanceToNextCandidateRow() throws StandardException {
         while (candidateRowIds != null && candidateRowIds.hasNext()) {
             long rowId = candidateRowIds.next();
-            Optional<StoreDataValue[]> visible = state.table().read(rowId, snapshot, state.transactions());
+            Optional<StoreDataValue[]> visible = state.read(rowId, snapshot);
             if (visible.isEmpty()) {
                 CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT.incrementAndGet();
                 continue;
             }
             StoreDataValue[] row = visible.get();
             if (rowQualifies(row)) {
-                current = new MvccRow<>(rowId, row);
+                current = new DelosStorageRow(rowId, row);
                 return true;
             }
             CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.incrementAndGet();
@@ -399,17 +410,17 @@ public final class MvccScanController implements ScanManager {
     }
 
     private void copyCurrentRow(StoreDataValue[] destRow, FormatableBitSet validColumns) throws StandardException {
-        MvccConglomerateController.copyRow(current.value(), destRow, validColumns);
+        MvccConglomerateController.copyRow(current.values(), destRow, validColumns);
         copyCurrentRowLocation(destRow);
     }
 
     private void copyCurrentRowLocation(StoreDataValue[] destRow) {
-        if (destRow == null || current == null || destRow.length <= current.value().length) {
+        if (destRow == null || current == null || destRow.length <= current.values().length) {
             return;
         }
-        StoreDataValue rowLocationColumn = destRow[current.value().length];
+        StoreDataValue rowLocationColumn = destRow[current.values().length];
         if (rowLocationColumn instanceof StoreRowLocation rowLocation) {
-            MvccRowLocation.from(rowLocation).copyFrom(state.rowLocationFor(current.key()));
+            MvccRowLocation.from(rowLocation).copyFrom(state.rowLocationFor(current.rowId()));
         }
     }
 

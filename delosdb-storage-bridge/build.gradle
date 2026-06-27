@@ -25,7 +25,6 @@ dependencies {
     implementation project(':delosdb-storage-api')
     implementation project(':delosdb-derby-store-api')
     implementation project(':delosdb-storage-derby')
-    implementation project(':delosdb-storage-mvcc')
 }
 
 sourceSets {

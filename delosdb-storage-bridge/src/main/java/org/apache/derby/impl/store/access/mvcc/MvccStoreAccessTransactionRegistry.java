@@ -26,8 +26,8 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
-import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionManager;
+import org.apache.derby.iapi.store.types.DelosStorageTable;
+import org.apache.derby.iapi.store.types.DelosStorageTransaction;
 
 /**
  * MODULE6G transaction-scoped writer registry for inherited MVCC store/access writes.
@@ -47,17 +47,17 @@ public final class MvccStoreAccessTransactionRegistry {
 
     public static synchronized Writer register(
             Object derbyTransaction,
-            MvccTransactionManager manager,
-            MvccTransaction transaction) {
-        return register(derbyTransaction, manager, transaction, () -> { });
+            DelosStorageTable table,
+            DelosStorageTransaction transaction) {
+        return register(derbyTransaction, table, transaction, () -> { });
     }
 
     public static synchronized Writer register(
             Object derbyTransaction,
-            MvccTransactionManager manager,
-            MvccTransaction transaction,
+            DelosStorageTable table,
+            DelosStorageTransaction transaction,
             Runnable afterCommit) {
-        Writer writer = new Writer(derbyTransaction, manager, transaction, afterCommit);
+        Writer writer = new Writer(derbyTransaction, table, transaction, afterCommit);
         WRITERS.computeIfAbsent(derbyTransaction, ignored -> new ArrayList<>()).add(writer);
         return writer;
     }
@@ -115,25 +115,25 @@ public final class MvccStoreAccessTransactionRegistry {
 
     public static final class Writer {
         private final Object derbyTransaction;
-        private final MvccTransactionManager manager;
-        private final MvccTransaction transaction;
+        private final DelosStorageTable table;
+        private final DelosStorageTransaction transaction;
         private final Runnable afterCommit;
         private boolean completed;
 
         private Writer(
                 Object derbyTransaction,
-                MvccTransactionManager manager,
-                MvccTransaction transaction,
+                DelosStorageTable table,
+                DelosStorageTransaction transaction,
                 Runnable afterCommit) {
             this.derbyTransaction = derbyTransaction;
-            this.manager = manager;
+            this.table = table;
             this.transaction = transaction;
             this.afterCommit = afterCommit == null ? () -> { } : afterCommit;
         }
 
         public void commit() {
             if (!completed) {
-                manager.commit(transaction);
+                table.commit(transaction);
                 afterCommit.run();
                 completed = true;
             }
@@ -141,7 +141,7 @@ public final class MvccStoreAccessTransactionRegistry {
 
         public void abort() {
             if (!completed) {
-                manager.abort(transaction);
+                table.abort(transaction);
                 completed = true;
             }
         }

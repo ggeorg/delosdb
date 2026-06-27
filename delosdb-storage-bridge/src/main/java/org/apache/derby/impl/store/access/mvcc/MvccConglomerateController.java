@@ -27,13 +27,12 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Properties;
 
-import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
-
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.access.SpaceInfo;
+import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosStorageTransaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreValueOperations;
@@ -57,7 +56,7 @@ public final class MvccConglomerateController implements ConglomerateController 
     private final TransactionManager transactionManager;
     private final boolean completeWithDerbyTransaction;
     private boolean closed;
-    private MvccTransaction writer;
+    private DelosStorageTransaction writer;
     private MvccStoreAccessTransactionRegistry.Writer registeredWriter;
 
     MvccConglomerateController(
@@ -128,9 +127,9 @@ public final class MvccConglomerateController implements ConglomerateController 
     public boolean delete(StoreRowLocation loc) {
         ensureOpen();
         MvccRowLocation location = MvccRowLocation.from(loc);
-        MvccTransaction transaction = writer();
-        MvccSnapshot snapshot = state.transactions().snapshot(transaction);
-        state.table().delete(location.rowId(), transaction, snapshot, state.transactions());
+        DelosStorageTransaction transaction = writer();
+        DelosStorageSnapshot snapshot = state.snapshot(transaction);
+        state.delete(location.rowId(), transaction, snapshot);
         DELETE_COUNT.incrementAndGet();
         return true;
     }
@@ -140,19 +139,18 @@ public final class MvccConglomerateController implements ConglomerateController 
             throws StandardException {
         ensureOpen();
         MvccRowLocation location = MvccRowLocation.from(loc);
-        MvccTransaction reader = state.transactions().begin();
+        DelosStorageTransaction reader = state.beginTransaction();
         try {
-            Optional<StoreDataValue[]> visible = state.table().read(
+            Optional<StoreDataValue[]> visible = state.read(
                     location.rowId(),
-                    state.transactions().snapshot(reader),
-                    state.transactions());
+                    state.snapshot(reader));
             if (visible.isEmpty()) {
                 return false;
             }
             copyRow(visible.get(), destRow, validColumns);
             return true;
         } finally {
-            state.transactions().abort(reader);
+            state.abort(reader);
         }
     }
 
@@ -213,21 +211,17 @@ public final class MvccConglomerateController implements ConglomerateController 
             throws StandardException {
         ensureOpen();
         MvccRowLocation location = MvccRowLocation.from(loc);
-        MvccTransaction transaction = writer();
-        MvccSnapshot snapshot = state.transactions().snapshot(transaction);
-        Optional<StoreDataValue[]> visible = state.table().read(
-                location.rowId(),
-                snapshot,
-                state.transactions());
+        DelosStorageTransaction transaction = writer();
+        DelosStorageSnapshot snapshot = state.snapshot(transaction);
+        Optional<StoreDataValue[]> visible = state.read(location.rowId(), snapshot);
         if (visible.isEmpty()) {
             return false;
         }
-        state.table().update(
+        state.update(
                 location.rowId(),
                 replacementRow(visible.get(), row, validColumns),
                 transaction,
-                snapshot,
-                state.transactions());
+                snapshot);
         UPDATE_COUNT.incrementAndGet();
         return true;
     }
@@ -253,20 +247,20 @@ public final class MvccConglomerateController implements ConglomerateController 
 
     private void insertInternal(StoreDataValue[] row, MvccRowLocation destination) throws StandardException {
         long rowId = state.nextRowId();
-        state.table().insert(rowId, cloneRow(row), writer());
+        state.insert(rowId, cloneRow(row), writer());
         INSERT_COUNT.incrementAndGet();
         if (destination != null) {
             destination.set(rowId, 0L, -1);
         }
     }
 
-    private MvccTransaction writer() {
+    private DelosStorageTransaction writer() {
         if (writer == null) {
-            writer = state.transactions().begin();
+            writer = state.beginTransaction();
             if (completeWithDerbyTransaction) {
                 registeredWriter = MvccStoreAccessTransactionRegistry.register(
                         transactionManager,
-                        state.transactions(),
+                        state.table(),
                         writer,
                         state::persistCommittedState);
             }
@@ -281,7 +275,7 @@ public final class MvccConglomerateController implements ConglomerateController 
                 MvccStoreAccessTransactionRegistry.complete(registeredWriter);
                 registeredWriter = null;
             } else {
-                state.transactions().commit(writer);
+                state.commit(writer);
                 state.persistCommittedState();
             }
             writer = null;
@@ -295,7 +289,7 @@ public final class MvccConglomerateController implements ConglomerateController 
                 MvccStoreAccessTransactionRegistry.complete(registeredWriter);
                 registeredWriter = null;
             } else {
-                state.transactions().abort(writer);
+                state.abort(writer);
             }
             writer = null;
         }
