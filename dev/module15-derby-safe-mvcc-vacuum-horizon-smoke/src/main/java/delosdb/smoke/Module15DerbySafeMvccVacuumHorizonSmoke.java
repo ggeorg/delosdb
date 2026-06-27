@@ -13,6 +13,8 @@ import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
+import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
@@ -20,11 +22,6 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.SQLInteger;
 import org.apache.derby.iapi.types.SQLVarchar;
 import org.apache.derby.impl.jdbc.EmbedConnection;
-import org.apache.derby.impl.store.access.mvcc.MvccConglomerate;
-import org.apache.derby.impl.store.access.mvcc.MvccConglomerateController;
-import org.apache.derby.impl.store.access.mvcc.MvccRowLocation;
-import org.apache.derby.impl.store.access.mvcc.MvccScanController;
-import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistry;
 
 /**
  * MODULE15 smoke: Derby-safe MVCC vacuum horizon.
@@ -38,6 +35,7 @@ import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistr
 public final class Module15DerbySafeMvccVacuumHorizonSmoke {
     private static final String DATABASE_PATH = "build/module15-derby-safe-mvcc-vacuum-horizon-db";
     private static final String MVCC_TABLE = "MODULE15_VACUUM";
+    private static final DelosStorageDiagnostics MVCC_DIAGNOSTICS = DelosStorageDiagnosticsRegistry.mvcc();
 
     private Module15DerbySafeMvccVacuumHorizonSmoke() {
     }
@@ -84,42 +82,42 @@ public final class Module15DerbySafeMvccVacuumHorizonSmoke {
             SmokeUtils.assertEquals(List.of("one-c", "three"), names(statement),
                     "MODULE15 visible names before vacuum must match latest committed MVCC state");
 
-            int beforeVacuumVersions = MvccConglomerate.physicalVersionCountForTesting(0, conglomId);
+            int beforeVacuumVersions = MVCC_DIAGNOSTICS.physicalVersionCountForTesting(0, conglomId);
             require(beforeVacuumVersions >= 5,
                     "MODULE15 fixture must create multiple durable MVCC versions before vacuum, found "
                             + beforeVacuumVersions);
             StoreRowLocation stalePreVacuumLocation = captureRowLocation(connection, conglomId, 1, "one-c");
-            require(MvccRowLocation.from(stalePreVacuumLocation).hasLocatorHint(),
+            require(MVCC_DIAGNOSTICS.hasLocatorHint(stalePreVacuumLocation),
                     "MODULE15 captured RowLocation must carry a page-volume locator hint before vacuum");
 
             assertActiveInheritedScanBlocksVacuum(connection, conglomId, beforeVacuumVersions);
             runInheritedPurge(connection, conglomId);
-            require(!MvccConglomerate.lastVacuumSkippedForTesting(0, conglomId),
+            require(!MVCC_DIAGNOSTICS.lastVacuumSkippedForTesting(0, conglomId),
                     "MODULE15 vacuum must run once retained inherited scan is closed");
-            require(MvccConglomerate.lastVacuumRemovedVersionsForTesting(0, conglomId) > 0,
+            require(MVCC_DIAGNOSTICS.lastVacuumRemovedVersionsForTesting(0, conglomId) > 0,
                     "MODULE15 vacuum must remove obsolete durable versions after horizon release");
-            int afterVacuumVersions = MvccConglomerate.physicalVersionCountForTesting(0, conglomId);
+            int afterVacuumVersions = MVCC_DIAGNOSTICS.physicalVersionCountForTesting(0, conglomId);
             require(afterVacuumVersions < beforeVacuumVersions,
                     "MODULE15 vacuum must reduce physical version count from " + beforeVacuumVersions
                             + " but found " + afterVacuumVersions);
             SmokeUtils.assertEquals(afterVacuumVersions,
-                    MvccConglomerate.lastVacuumRemainingVersionsForTesting(0, conglomId),
+                    MVCC_DIAGNOSTICS.lastVacuumRemainingVersionsForTesting(0, conglomId),
                     "MODULE15 last vacuum result must report the remaining physical versions");
             SmokeUtils.assertEquals(List.of(1, 3), ids(statement),
                     "MODULE15 vacuum must not change visible ids");
             SmokeUtils.assertEquals(List.of("one-c", "three"), names(statement),
                     "MODULE15 vacuum must not change visible names");
-            SmokeUtils.assertEquals("WRITTEN", MvccConglomerate.checkpointStatusForTesting(0, conglomId),
+            SmokeUtils.assertEquals("WRITTEN", MVCC_DIAGNOSTICS.checkpointStatusForTesting(0, conglomId),
                     "MODULE15 vacuum must rewrite Derby-visible MVCC checkpoint metadata");
 
             assertFetchByOldRowLocationReturnsLatest(connection, conglomId, stalePreVacuumLocation);
             assertScanPositionByOldRowLocationReturnsLatest(connection, conglomId, stalePreVacuumLocation);
 
-            require(MvccConglomerateController.updateCountForTesting() >= 2,
+            require(MVCC_DIAGNOSTICS.updateCountForTesting() >= 2,
                     "MODULE15 UPDATEs must reach inherited MvccConglomerateController");
-            require(MvccConglomerateController.deleteCountForTesting() >= 1,
+            require(MVCC_DIAGNOSTICS.deleteCountForTesting() >= 1,
                     "MODULE15 DELETE must reach inherited MvccConglomerateController");
-            require(MvccScanController.openCountForTesting() > 0,
+            require(MVCC_DIAGNOSTICS.scanOpenCountForTesting() > 0,
                     "MODULE15 SELECT/direct scan must reach inherited MvccScanController");
             require(!DelosNativeTableRegistry.hasRegisteredTableForTesting("APP", MVCC_TABLE),
                     "MODULE15 must not resurrect retired native registry bridge");
@@ -146,20 +144,20 @@ public final class Module15DerbySafeMvccVacuumHorizonSmoke {
                 null,
                 0);
         try {
-            require(scan instanceof MvccScanController,
+            require(MVCC_DIAGNOSTICS.isProviderScan(scan),
                     "MODULE15 retained scan must use inherited MvccScanController");
             StoreDataValue[] row = rowTemplate();
             require(scan.fetchNext(row),
                     "MODULE15 retained scan must hold a visible MVCC snapshot before vacuum");
             runInheritedPurge(connection, conglomId);
-            require(MvccConglomerate.lastVacuumSkippedForTesting(0, conglomId),
+            require(MVCC_DIAGNOSTICS.lastVacuumSkippedForTesting(0, conglomId),
                     "MODULE15 active inherited scan must conservatively skip vacuum");
             SmokeUtils.assertContains(
-                    MvccConglomerate.lastVacuumReasonForTesting(0, conglomId),
+                    MVCC_DIAGNOSTICS.lastVacuumReasonForTesting(0, conglomId),
                     "retained inherited MVCC",
                     "MODULE15 skipped vacuum reason must identify retained inherited snapshot");
             SmokeUtils.assertEquals(expectedVersionCount,
-                    MvccConglomerate.physicalVersionCountForTesting(0, conglomId),
+                    MVCC_DIAGNOSTICS.physicalVersionCountForTesting(0, conglomId),
                     "MODULE15 skipped vacuum must not remove versions while scan is open");
         } finally {
             scan.close();
@@ -185,13 +183,13 @@ public final class Module15DerbySafeMvccVacuumHorizonSmoke {
             SmokeUtils.assertEquals(List.of("one-c", "three"), names(statement),
                     "MODULE15 vacuumed restart must keep latest committed visible rows");
             SmokeUtils.assertEquals(state.remainingVersions(),
-                    MvccConglomerate.physicalVersionCountForTesting(0, state.conglomId()),
+                    MVCC_DIAGNOSTICS.physicalVersionCountForTesting(0, state.conglomId()),
                     "MODULE15 restart must preserve compacted physical version count");
-            SmokeUtils.assertEquals("VALID", MvccConglomerate.checkpointStatusForTesting(0, state.conglomId()),
+            SmokeUtils.assertEquals("VALID", MVCC_DIAGNOSTICS.checkpointStatusForTesting(0, state.conglomId()),
                     "MODULE15 vacuumed checkpoint must validate after restart");
             assertFetchByOldRowLocationReturnsLatest(connection, state.conglomId(), state.stalePreVacuumLocation());
             assertScanPositionByOldRowLocationReturnsLatest(connection, state.conglomId(), state.stalePreVacuumLocation());
-            require(MvccScanController.openCountForTesting() > 0,
+            require(MVCC_DIAGNOSTICS.scanOpenCountForTesting() > 0,
                     "MODULE15 post-vacuum restart must reach inherited MvccScanController");
             require(!DelosNativeTableRegistry.hasRegisteredTableForTesting("APP", MVCC_TABLE),
                     "MODULE15 restart must not populate retired native registry bridge");
@@ -218,7 +216,7 @@ public final class Module15DerbySafeMvccVacuumHorizonSmoke {
                 null,
                 0);
         try {
-            require(scan instanceof MvccScanController,
+            require(MVCC_DIAGNOSTICS.isProviderScan(scan),
                     "MODULE15 RowLocation capture must use inherited MvccScanController");
             StoreDataValue[] row = rowTemplate();
             while (scan.fetchNext(row)) {
@@ -282,7 +280,7 @@ public final class Module15DerbySafeMvccVacuumHorizonSmoke {
                 null,
                 0);
         try {
-            require(scan instanceof MvccScanController,
+            require(MVCC_DIAGNOSTICS.isProviderScan(scan),
                     "MODULE15 positionAtRowLocation must use inherited MvccScanController");
             require(scan.positionAtRowLocation(capturedLocation),
                     "MODULE15 stale RowLocation hint must position by rowId after vacuum");
@@ -344,22 +342,19 @@ public final class Module15DerbySafeMvccVacuumHorizonSmoke {
     private static void shutdownAndClearRuntimeState() throws Exception {
         SmokeUtils.shutdown(DATABASE_PATH);
         clearRuntimeState();
-        SmokeUtils.assertEquals(0, MvccConglomerate.stateCountForTesting(),
+        SmokeUtils.assertEquals(0, MVCC_DIAGNOSTICS.runtimeStateCountForTesting(),
                 "MODULE15 restart proof must clear inherited MVCC runtime cache before reopen");
         resetInheritedCounters();
     }
 
     private static void clearRuntimeState() {
         DelosNativeTableRegistry.clearRegisteredTablesForTesting();
-        MvccConglomerate.clearStatesForTesting();
-        MvccStoreAccessTransactionRegistry.clearForTesting();
+        MVCC_DIAGNOSTICS.clearRuntimeStateForTesting();
     }
 
     private static void resetInheritedCounters() {
-        MvccConglomerateController.resetInsertCountForTesting();
-        MvccConglomerateController.resetUpdateCountForTesting();
-        MvccConglomerateController.resetDeleteCountForTesting();
-        MvccScanController.resetOpenCountForTesting();
+        MVCC_DIAGNOSTICS.resetMutationCountersForTesting();
+        MVCC_DIAGNOSTICS.resetScanCountersForTesting();
     }
 
     private static void clearNativeMvccProofProperties() {

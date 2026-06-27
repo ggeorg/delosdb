@@ -10,9 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
-import org.apache.derby.impl.store.access.mvcc.MvccConglomerate;
-import org.apache.derby.impl.store.access.mvcc.MvccScanController;
-import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistry;
+import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 
 /**
  * MODULE16 smoke: Derby-access-compatible MVCC candidate index.
@@ -25,6 +24,7 @@ import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistr
 public final class Module16DerbyAccessCompatibleCandidateIndexSmoke {
     private static final String DATABASE_PATH = "build/module16-derby-access-compatible-candidate-index-db";
     private static final String MVCC_TABLE = "MODULE16_CANDIDATE_INDEX";
+    private static final DelosStorageDiagnostics MVCC_DIAGNOSTICS = DelosStorageDiagnosticsRegistry.mvcc();
 
     private Module16DerbyAccessCompatibleCandidateIndexSmoke() {
     }
@@ -63,13 +63,13 @@ public final class Module16DerbyAccessCompatibleCandidateIndexSmoke {
 
             assertCandidateLookup(statement, "beta", List.of(2),
                     "MODULE16 equality lookup must use candidate index for visible row");
-            require(MvccScanController.candidateIndexRowIdCountForTesting() >= 1,
+            require(MVCC_DIAGNOSTICS.candidateIndexRowIdCountForTesting() >= 1,
                     "MODULE16 candidate index must return at least one logical row id for visible beta lookup");
 
             statement.executeUpdate("UPDATE APP." + MVCC_TABLE + " SET name = 'gamma' WHERE id = 2");
             assertCandidateLookup(statement, "beta", List.of(),
                     "MODULE16 stale update candidate must not return old value");
-            require(MvccScanController.candidateIndexQualifierRejectCountForTesting() > 0,
+            require(MVCC_DIAGNOSTICS.candidateIndexQualifierRejectCountForTesting() > 0,
                     "MODULE16 stale update candidate must be rejected by RowUtil qualification");
             assertCandidateLookup(statement, "gamma", List.of(2),
                     "MODULE16 updated row must be found through candidate index under new key");
@@ -77,7 +77,7 @@ public final class Module16DerbyAccessCompatibleCandidateIndexSmoke {
             statement.executeUpdate("DELETE FROM APP." + MVCC_TABLE + " WHERE name = 'delete-me'");
             assertCandidateLookup(statement, "delete-me", List.of(),
                     "MODULE16 stale delete candidate must not resurrect committed deleted row");
-            require(MvccScanController.candidateIndexVisibilityRejectCountForTesting() > 0,
+            require(MVCC_DIAGNOSTICS.candidateIndexVisibilityRejectCountForTesting() > 0,
                     "MODULE16 stale delete candidate must be rejected by MVCC visibility recheck");
 
             SmokeUtils.assertEquals(List.of(1, 2), ids(statement, "SELECT id FROM APP." + MVCC_TABLE + " ORDER BY id"),
@@ -85,7 +85,7 @@ public final class Module16DerbyAccessCompatibleCandidateIndexSmoke {
             SmokeUtils.assertEquals(List.of("alpha", "gamma"),
                     names(statement, "SELECT name FROM APP." + MVCC_TABLE + " ORDER BY id"),
                     "MODULE16 visible names before restart must match latest committed state");
-            require(MvccScanController.openCountForTesting() > 0,
+            require(MVCC_DIAGNOSTICS.scanOpenCountForTesting() > 0,
                     "MODULE16 SELECTs must reach inherited MvccScanController");
             require(!DelosNativeTableRegistry.hasRegisteredTableForTesting("APP", MVCC_TABLE),
                     "MODULE16 must not resurrect retired native registry bridge");
@@ -101,7 +101,7 @@ public final class Module16DerbyAccessCompatibleCandidateIndexSmoke {
             long reopenedConglomId = baseConglomerateNumber(statement, MVCC_TABLE);
             SmokeUtils.assertEquals(state.conglomId(), reopenedConglomId,
                     "MODULE16 MVCC conglomerate id must remain stable after restart");
-            SmokeUtils.assertEquals("VALID", MvccConglomerate.checkpointStatusForTesting(0, state.conglomId()),
+            SmokeUtils.assertEquals("VALID", MVCC_DIAGNOSTICS.checkpointStatusForTesting(0, state.conglomId()),
                     "MODULE16 inherited MVCC checkpoint must validate after restart");
 
             assertCandidateLookup(statement, "gamma", List.of(2),
@@ -115,7 +115,7 @@ public final class Module16DerbyAccessCompatibleCandidateIndexSmoke {
             SmokeUtils.assertEquals(List.of("alpha", "gamma"),
                     names(statement, "SELECT name FROM APP." + MVCC_TABLE + " ORDER BY id"),
                     "MODULE16 visible names after restart must match committed MVCC state");
-            require(MvccScanController.openCountForTesting() > 0,
+            require(MVCC_DIAGNOSTICS.scanOpenCountForTesting() > 0,
                     "MODULE16 restart checks must reach inherited MvccScanController");
             require(!DelosNativeTableRegistry.hasRegisteredTableForTesting("APP", MVCC_TABLE),
                     "MODULE16 restart must not populate retired native registry bridge");
@@ -124,11 +124,11 @@ public final class Module16DerbyAccessCompatibleCandidateIndexSmoke {
 
     private static void assertCandidateLookup(Statement statement, String name, List<Integer> expectedIds, String label)
             throws Exception {
-        MvccScanController.resetCandidateIndexCountsForTesting();
+        MVCC_DIAGNOSTICS.resetCandidateIndexCountersForTesting();
         List<Integer> actual = ids(statement,
                 "SELECT id FROM APP." + MVCC_TABLE + " WHERE name = '" + name + "' ORDER BY id");
         SmokeUtils.assertEquals(expectedIds, actual, label);
-        require(MvccScanController.candidateIndexLookupCountForTesting() > 0,
+        require(MVCC_DIAGNOSTICS.candidateIndexLookupCountForTesting() > 0,
                 label + " must use the inherited MVCC candidate index");
     }
 
@@ -176,15 +176,12 @@ public final class Module16DerbyAccessCompatibleCandidateIndexSmoke {
     }
 
     private static void resetInheritedCounters() {
-        MvccScanController.resetOpenCountForTesting();
-        MvccScanController.resetQualifierRejectCountForTesting();
-        MvccScanController.resetCandidateIndexCountsForTesting();
+        MVCC_DIAGNOSTICS.resetScanCountersForTesting();
     }
 
     private static void clearRuntimeState() {
         DelosNativeTableRegistry.clearRegisteredTablesForTesting();
-        MvccStoreAccessTransactionRegistry.clearForTesting();
-        MvccConglomerate.clearStatesForTesting();
+        MVCC_DIAGNOSTICS.clearRuntimeStateForTesting();
     }
 
     private static void require(boolean condition, String message) {

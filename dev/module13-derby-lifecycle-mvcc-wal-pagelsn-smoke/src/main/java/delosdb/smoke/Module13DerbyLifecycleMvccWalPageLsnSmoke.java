@@ -19,10 +19,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
-import org.apache.derby.impl.store.access.mvcc.MvccConglomerate;
-import org.apache.derby.impl.store.access.mvcc.MvccConglomerateController;
-import org.apache.derby.impl.store.access.mvcc.MvccScanController;
-import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistry;
+import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 
 /**
  * MODULE13 smoke: Derby-lifecycle-bound minimal MVCC WAL/pageLSN.
@@ -36,6 +34,7 @@ import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistr
 public final class Module13DerbyLifecycleMvccWalPageLsnSmoke {
     private static final String DATABASE_PATH = "build/module13-derby-lifecycle-mvcc-wal-pagelsn-db";
     private static final String MVCC_TABLE = "MODULE13_WAL";
+    private static final DelosStorageDiagnostics MVCC_DIAGNOSTICS = DelosStorageDiagnosticsRegistry.mvcc();
 
     private Module13DerbyLifecycleMvccWalPageLsnSmoke() {
     }
@@ -93,10 +92,10 @@ public final class Module13DerbyLifecycleMvccWalPageLsnSmoke {
             SmokeUtils.assertEquals(List.of("one-new", "rollback-live"), names(statement),
                     "MODULE13 visible names before restart must match committed MVCC state");
 
-            Path pageFile = MvccConglomerate.pageVolumeStateFileForTesting(0, conglomId);
-            Path rowDirectoryFile = MvccConglomerate.rowDirectoryStateFileForTesting(0, conglomId);
-            Path pageMutationLogFile = MvccConglomerate.pageMutationLogFileForTesting(0, conglomId);
-            Path walFile = MvccConglomerate.writeAheadLogFileForTesting(0, conglomId);
+            Path pageFile = MVCC_DIAGNOSTICS.pageVolumeStateFileForTesting(0, conglomId);
+            Path rowDirectoryFile = MVCC_DIAGNOSTICS.rowDirectoryStateFileForTesting(0, conglomId);
+            Path pageMutationLogFile = MVCC_DIAGNOSTICS.pageMutationLogFileForTesting(0, conglomId);
+            Path walFile = MVCC_DIAGNOSTICS.writeAheadLogFileForTesting(0, conglomId);
             assertCompletePageFile(pageFile,
                     "MODULE13 inherited MVCC page-volume state must exist as complete pages before restart");
             assertNonEmptyFile(rowDirectoryFile,
@@ -106,13 +105,13 @@ public final class Module13DerbyLifecycleMvccWalPageLsnSmoke {
             assertNonEmptyFile(walFile,
                     "MODULE13 inherited MVCC write-ahead log must exist before restart");
 
-            require(MvccConglomerateController.insertCountForTesting() >= 3,
+            require(MVCC_DIAGNOSTICS.insertCountForTesting() >= 3,
                     "MODULE13 INSERTs must reach inherited MvccConglomerateController");
-            require(MvccConglomerateController.updateCountForTesting() >= 1,
+            require(MVCC_DIAGNOSTICS.updateCountForTesting() >= 1,
                     "MODULE13 UPDATE must reach inherited MvccConglomerateController");
-            require(MvccConglomerateController.deleteCountForTesting() >= 2,
+            require(MVCC_DIAGNOSTICS.deleteCountForTesting() >= 2,
                     "MODULE13 DELETEs must reach inherited MvccConglomerateController");
-            require(MvccScanController.openCountForTesting() > 0,
+            require(MVCC_DIAGNOSTICS.scanOpenCountForTesting() > 0,
                     "MODULE13 SELECT must reach inherited MvccScanController before restart");
             require(!DelosNativeTableRegistry.hasRegisteredTableForTesting("APP", MVCC_TABLE),
                     "MODULE13 must not resurrect retired native registry bridge");
@@ -172,7 +171,7 @@ public final class Module13DerbyLifecycleMvccWalPageLsnSmoke {
     private static void shutdownAndClearRuntimeState() throws Exception {
         SmokeUtils.shutdown(DATABASE_PATH);
         clearRuntimeState();
-        SmokeUtils.assertEquals(0, MvccConglomerate.stateCountForTesting(),
+        SmokeUtils.assertEquals(0, MVCC_DIAGNOSTICS.runtimeStateCountForTesting(),
                 "MODULE13 restart proof must clear inherited MVCC runtime cache before reopen");
         resetInheritedCounters();
     }
@@ -194,7 +193,7 @@ public final class Module13DerbyLifecycleMvccWalPageLsnSmoke {
                     "MODULE13 page mutation log must remain present after restart");
             assertNonEmptyFile(stateFiles.walFile(),
                     "MODULE13 WAL must remain present after restart");
-            require(MvccScanController.openCountForTesting() > 0,
+            require(MVCC_DIAGNOSTICS.scanOpenCountForTesting() > 0,
                     "MODULE13 post-restart SELECT must reach inherited MvccScanController");
             require(!DelosNativeTableRegistry.hasRegisteredTableForTesting("APP", MVCC_TABLE),
                     "MODULE13 reopen must not populate retired native registry bridge");
@@ -283,15 +282,12 @@ public final class Module13DerbyLifecycleMvccWalPageLsnSmoke {
 
     private static void clearRuntimeState() {
         DelosNativeTableRegistry.clearRegisteredTablesForTesting();
-        MvccConglomerate.clearStatesForTesting();
-        MvccStoreAccessTransactionRegistry.clearForTesting();
+        MVCC_DIAGNOSTICS.clearRuntimeStateForTesting();
     }
 
     private static void resetInheritedCounters() {
-        MvccConglomerateController.resetInsertCountForTesting();
-        MvccConglomerateController.resetUpdateCountForTesting();
-        MvccConglomerateController.resetDeleteCountForTesting();
-        MvccScanController.resetOpenCountForTesting();
+        MVCC_DIAGNOSTICS.resetMutationCountersForTesting();
+        MVCC_DIAGNOSTICS.resetScanCountersForTesting();
     }
 
     private static void clearNativeMvccProofProperties() {

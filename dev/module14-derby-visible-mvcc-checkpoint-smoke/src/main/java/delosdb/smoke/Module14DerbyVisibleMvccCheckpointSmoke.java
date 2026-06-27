@@ -14,10 +14,8 @@ import java.util.List;
 import java.util.Properties;
 
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
-import org.apache.derby.impl.store.access.mvcc.MvccConglomerate;
-import org.apache.derby.impl.store.access.mvcc.MvccConglomerateController;
-import org.apache.derby.impl.store.access.mvcc.MvccScanController;
-import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistry;
+import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 
 /**
  * MODULE14 smoke: Derby-visible MVCC checkpoint and row-directory recovery.
@@ -30,6 +28,7 @@ import org.apache.derby.impl.store.access.mvcc.MvccStoreAccessTransactionRegistr
 public final class Module14DerbyVisibleMvccCheckpointSmoke {
     private static final String DATABASE_PATH = "build/module14-derby-visible-mvcc-checkpoint-db";
     private static final String MVCC_TABLE = "MODULE14_CHECKPOINT";
+    private static final DelosStorageDiagnostics MVCC_DIAGNOSTICS = DelosStorageDiagnosticsRegistry.mvcc();
 
     private Module14DerbyVisibleMvccCheckpointSmoke() {
     }
@@ -91,11 +90,11 @@ public final class Module14DerbyVisibleMvccCheckpointSmoke {
             SmokeUtils.assertEquals(List.of("multi-c", "one-new", "rollback-live"), names(statement),
                     "MODULE14 visible names before restart must match committed MVCC state");
 
-            Path pageFile = MvccConglomerate.pageVolumeStateFileForTesting(0, conglomId);
-            Path rowDirectoryFile = MvccConglomerate.rowDirectoryStateFileForTesting(0, conglomId);
-            Path pageMutationLogFile = MvccConglomerate.pageMutationLogFileForTesting(0, conglomId);
-            Path walFile = MvccConglomerate.writeAheadLogFileForTesting(0, conglomId);
-            Path checkpointFile = MvccConglomerate.checkpointFileForTesting(0, conglomId);
+            Path pageFile = MVCC_DIAGNOSTICS.pageVolumeStateFileForTesting(0, conglomId);
+            Path rowDirectoryFile = MVCC_DIAGNOSTICS.rowDirectoryStateFileForTesting(0, conglomId);
+            Path pageMutationLogFile = MVCC_DIAGNOSTICS.pageMutationLogFileForTesting(0, conglomId);
+            Path walFile = MVCC_DIAGNOSTICS.writeAheadLogFileForTesting(0, conglomId);
+            Path checkpointFile = MVCC_DIAGNOSTICS.checkpointFileForTesting(0, conglomId);
 
             assertCompletePageFile(pageFile,
                     "MODULE14 inherited MVCC page-volume state must exist as complete pages");
@@ -107,17 +106,17 @@ public final class Module14DerbyVisibleMvccCheckpointSmoke {
                     "MODULE14 inherited MVCC WAL must exist");
             assertNonEmptyFile(checkpointFile,
                     "MODULE14 Derby-visible MVCC checkpoint must exist");
-            SmokeUtils.assertEquals("WRITTEN", MvccConglomerate.checkpointStatusForTesting(0, conglomId),
+            SmokeUtils.assertEquals("WRITTEN", MVCC_DIAGNOSTICS.checkpointStatusForTesting(0, conglomId),
                     "MODULE14 checkpoint status must be WRITTEN after inherited DML persists state");
             assertCheckpointMetadata(checkpointFile, conglomId, pageFile, rowDirectoryFile, pageMutationLogFile, walFile);
 
-            require(MvccConglomerateController.insertCountForTesting() >= 4,
+            require(MVCC_DIAGNOSTICS.insertCountForTesting() >= 4,
                     "MODULE14 INSERTs must reach inherited MvccConglomerateController");
-            require(MvccConglomerateController.updateCountForTesting() >= 3,
+            require(MVCC_DIAGNOSTICS.updateCountForTesting() >= 3,
                     "MODULE14 UPDATEs must reach inherited MvccConglomerateController");
-            require(MvccConglomerateController.deleteCountForTesting() >= 2,
+            require(MVCC_DIAGNOSTICS.deleteCountForTesting() >= 2,
                     "MODULE14 DELETEs must reach inherited MvccConglomerateController");
-            require(MvccScanController.openCountForTesting() > 0,
+            require(MVCC_DIAGNOSTICS.scanOpenCountForTesting() > 0,
                     "MODULE14 SELECT must reach inherited MvccScanController before restart");
             require(!DelosNativeTableRegistry.hasRegisteredTableForTesting("APP", MVCC_TABLE),
                     "MODULE14 must not resurrect retired native registry bridge");
@@ -137,12 +136,12 @@ public final class Module14DerbyVisibleMvccCheckpointSmoke {
                     "MODULE14 visible ids must reload from checkpointed inherited MVCC state");
             SmokeUtils.assertEquals(List.of("multi-c", "one-new", "rollback-live"), names(statement),
                     "MODULE14 visible names must reload from checkpointed inherited MVCC state");
-            SmokeUtils.assertEquals("VALID", MvccConglomerate.checkpointStatusForTesting(0, stateFiles.conglomId()),
+            SmokeUtils.assertEquals("VALID", MVCC_DIAGNOSTICS.checkpointStatusForTesting(0, stateFiles.conglomId()),
                     "MODULE14 valid checkpoint must be recognized after inherited restart");
             assertCheckpointMetadata(stateFiles.checkpointFile(), stateFiles.conglomId(),
                     stateFiles.pageFile(), stateFiles.rowDirectoryFile(),
                     stateFiles.pageMutationLogFile(), stateFiles.walFile());
-            require(MvccScanController.openCountForTesting() > 0,
+            require(MVCC_DIAGNOSTICS.scanOpenCountForTesting() > 0,
                     "MODULE14 post-restart SELECT must reach inherited MvccScanController");
             require(!DelosNativeTableRegistry.hasRegisteredTableForTesting("APP", MVCC_TABLE),
                     "MODULE14 checkpoint reopen must not populate retired native registry bridge");
@@ -158,13 +157,13 @@ public final class Module14DerbyVisibleMvccCheckpointSmoke {
                     "MODULE14 corrupt checkpoint fallback must still recover visible ids from page-volume state");
             SmokeUtils.assertEquals(List.of("multi-c", "one-new", "rollback-live"), names(statement),
                     "MODULE14 corrupt checkpoint fallback must still recover visible names from page-volume state");
-            SmokeUtils.assertEquals("FALLBACK", MvccConglomerate.checkpointStatusForTesting(0, stateFiles.conglomId()),
+            SmokeUtils.assertEquals("FALLBACK", MVCC_DIAGNOSTICS.checkpointStatusForTesting(0, stateFiles.conglomId()),
                     "MODULE14 corrupt checkpoint must be ignored with safe fallback");
             assertCompletePageFile(stateFiles.pageFile(),
                     "MODULE14 fallback must leave page-volume state complete-page aligned");
             assertNonEmptyFile(stateFiles.rowDirectoryFile(),
                     "MODULE14 fallback must keep row-directory sidecar available");
-            require(MvccScanController.openCountForTesting() > 0,
+            require(MVCC_DIAGNOSTICS.scanOpenCountForTesting() > 0,
                     "MODULE14 fallback SELECT must reach inherited MvccScanController");
             require(!DelosNativeTableRegistry.hasRegisteredTableForTesting("APP", MVCC_TABLE),
                     "MODULE14 fallback must not populate retired native registry bridge");
@@ -212,7 +211,7 @@ public final class Module14DerbyVisibleMvccCheckpointSmoke {
     private static void shutdownAndClearRuntimeState() throws Exception {
         SmokeUtils.shutdown(DATABASE_PATH);
         clearRuntimeState();
-        SmokeUtils.assertEquals(0, MvccConglomerate.stateCountForTesting(),
+        SmokeUtils.assertEquals(0, MVCC_DIAGNOSTICS.runtimeStateCountForTesting(),
                 "MODULE14 restart proof must clear inherited MVCC runtime cache before reopen");
         resetInheritedCounters();
     }
@@ -272,15 +271,12 @@ public final class Module14DerbyVisibleMvccCheckpointSmoke {
 
     private static void clearRuntimeState() {
         DelosNativeTableRegistry.clearRegisteredTablesForTesting();
-        MvccConglomerate.clearStatesForTesting();
-        MvccStoreAccessTransactionRegistry.clearForTesting();
+        MVCC_DIAGNOSTICS.clearRuntimeStateForTesting();
     }
 
     private static void resetInheritedCounters() {
-        MvccConglomerateController.resetInsertCountForTesting();
-        MvccConglomerateController.resetUpdateCountForTesting();
-        MvccConglomerateController.resetDeleteCountForTesting();
-        MvccScanController.resetOpenCountForTesting();
+        MVCC_DIAGNOSTICS.resetMutationCountersForTesting();
+        MVCC_DIAGNOSTICS.resetScanCountersForTesting();
     }
 
     private static void clearNativeMvccProofProperties() {
