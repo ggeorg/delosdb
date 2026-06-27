@@ -12,6 +12,7 @@ group = rootProject.group
 // migrated away from custom task wiring.
 def moduleName = 'io.github.ggeorg.delosdb.engine.api'
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
+def generatedClassSizeCatalogClassDir = layout.buildDirectory.dir("classes/generated/${moduleName}/class-size-catalog")
 def generatedClassSizeCatalogSource = rootProject.layout.buildDirectory.file("generated/sources/${moduleName}/org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java")
 
 java {
@@ -54,7 +55,11 @@ tasks.register('compileDelosDbEngineApiClassSizeCatalog', JavaCompile) {
             project(':delosdb-commons').tasks.named('jar'),
             project(':delosdb-spi').tasks.named('jar')
     source = files(generatedClassSizeCatalogSource)
-    destinationDirectory.set(moduleClassDir)
+    // Keep the generated catalog out of the normal engine-api source-set
+    // output. Project dependencies consume moduleClassDir transitively; writing
+    // generated classes there makes unrelated storage providers depend on this
+    // compatibility task. The runtime jar still includes the generated class.
+    destinationDirectory.set(generatedClassSizeCatalogClassDir)
     rootProject.ext.delosdbConfigureJavaCompile(delegate, [
             project(':delosdb-commons').tasks.named('jar'),
             project(':delosdb-spi').tasks.named('jar'),
@@ -82,6 +87,7 @@ tasks.register('delosDbEngineApiJar', Jar) {
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(moduleClassDir)
+    from(generatedClassSizeCatalogClassDir)
     from(sourceSets.main.output.resourcesDir)
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
