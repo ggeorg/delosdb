@@ -22,7 +22,6 @@ dependencies {
     implementation project(':delosdb-commons')
     implementation project(':delosdb-spi')
     implementation project(':delosdb-engine-api')
-    implementation project(':delosdb-storage-io')
     implementation project(':delosdb-engine-storage-api')
     implementation project(':delosdb-derby-store-api')
 }
