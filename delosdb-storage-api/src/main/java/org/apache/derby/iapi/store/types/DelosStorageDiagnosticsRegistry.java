@@ -1,0 +1,56 @@
+/*
+
+   Derby - Class org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry
+
+   Licensed to the Apache Software Foundation (ASF) under one or more
+   contributor license agreements.  See the NOTICE file distributed with
+   this work for additional information regarding copyright ownership.
+   The ASF licenses this file to you under the Apache License, Version 2.0
+   (the "License"); you may not use this file except in compliance with
+   the License.  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+ */
+
+package org.apache.derby.iapi.store.types;
+
+import java.util.Locale;
+import java.util.ServiceLoader;
+
+/**
+ * ServiceLoader lookup for storage diagnostics implementations.
+ */
+public final class DelosStorageDiagnosticsRegistry {
+    public static final String MVCC_PROVIDER_ID = "delos_mvcc";
+
+    private DelosStorageDiagnosticsRegistry() {
+    }
+
+    public static DelosStorageDiagnostics mvcc() {
+        return forProvider(MVCC_PROVIDER_ID);
+    }
+
+    public static DelosStorageDiagnostics forProvider(String providerId) {
+        String normalizedProviderId = normalize(providerId);
+        for (DelosStorageDiagnostics diagnostics : ServiceLoader.load(DelosStorageDiagnostics.class)) {
+            if (normalize(diagnostics.providerId()).equals(normalizedProviderId)) {
+                return diagnostics;
+            }
+        }
+        throw new IllegalStateException("No Delos storage diagnostics provider found for " + providerId);
+    }
+
+    private static String normalize(String providerId) {
+        if (providerId == null || providerId.isBlank()) {
+            throw new IllegalArgumentException("provider id must not be blank");
+        }
+        return providerId.trim().toLowerCase(Locale.ROOT);
+    }
+}
