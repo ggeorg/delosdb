@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.impl.store.access.mvcc.InheritedMvccCheckpointStore
+   DelosDB - Class io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccCheckpointStore
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -19,7 +19,7 @@
 
  */
 
-package org.apache.derby.impl.store.access.mvcc;
+package io.github.ggeorg.delosdb.storage.mvcc.store;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -39,43 +39,42 @@ import java.util.stream.Collectors;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowDirectoryStore;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 
-import org.apache.derby.iapi.store.raw.ContainerKey;
 
 /**
  * Small Derby-visible checkpoint metadata store for inherited MVCC tables.
  *
  * <p>MODULE14 deliberately checkpoints the inherited Derby provider boundary,
- * not a side MVCC engine: the checkpoint binds the Derby {@link ContainerKey}
+ * not a side MVCC engine: the checkpoint binds a provider storage id
  * to the page-volume file, row-directory sidecar, mutation log, WAL, and row
- * head digest currently used by {@link MvccConglomerateState}. Version pages and
+ * head digest. Version pages and
  * row-directory records remain the storage authority; this file is a compact
  * recovery contract and validation boundary.</p>
  */
-final class InheritedMvccCheckpointStore {
+public final class PageVolumeMvccCheckpointStore {
     private static final String MAGIC = "DELOS_INHERITED_MVCC_CHECKPOINT";
     private static final String VERSION = "1";
 
     private final Path path;
-    private final ContainerKey key;
+    private final String storageId;
 
-    private InheritedMvccCheckpointStore(Path path, ContainerKey key) {
+    private PageVolumeMvccCheckpointStore(Path path, String storageId) {
         this.path = path;
-        this.key = Objects.requireNonNull(key, "key");
+        this.storageId = Objects.requireNonNull(storageId, "storageId");
     }
 
-    static InheritedMvccCheckpointStore open(Path databaseDirectory, ContainerKey key) {
-        Path file = checkpointFile(databaseDirectory, key);
-        if (file == null || key.getContainerId() == 0L) {
-            return disabled(key);
+    public static PageVolumeMvccCheckpointStore open(Path databaseDirectory, String storageId) {
+        Path file = PageVolumeMvccPaths.checkpointFile(databaseDirectory, storageId);
+        if (file == null || storageId == null || storageId.isBlank()) {
+            return disabled(storageId == null ? "disabled" : storageId);
         }
-        return new InheritedMvccCheckpointStore(file, key);
+        return new PageVolumeMvccCheckpointStore(file, storageId);
     }
 
-    static InheritedMvccCheckpointStore disabled(ContainerKey key) {
-        return new InheritedMvccCheckpointStore(null, key);
+    public static PageVolumeMvccCheckpointStore disabled(String storageId) {
+        return new PageVolumeMvccCheckpointStore(null, storageId == null ? "disabled" : storageId);
     }
 
-    Path path() {
+    public Path path() {
         return path;
     }
 
@@ -83,7 +82,7 @@ final class InheritedMvccCheckpointStore {
         return path != null;
     }
 
-    Status validate(
+    public Status validate(
             Path pageFile,
             Path rowDirectoryFile,
             Path pageMutationLogFile,
@@ -101,7 +100,6 @@ final class InheritedMvccCheckpointStore {
         try {
             Checkpoint checkpoint = readCheckpoint();
             checkpoint.requireMatches(
-                    key,
                     pageFile,
                     rowDirectoryFile,
                     pageMutationLogFile,
@@ -116,7 +114,7 @@ final class InheritedMvccCheckpointStore {
         }
     }
 
-    void rewrite(
+    public void rewrite(
             Path pageFile,
             Path rowDirectoryFile,
             Path pageMutationLogFile,
@@ -137,8 +135,8 @@ final class InheritedMvccCheckpointStore {
             Properties properties = new Properties();
             properties.setProperty("magic", MAGIC);
             properties.setProperty("version", VERSION);
-            properties.setProperty("segment", Long.toString(key.getSegmentId()));
-            properties.setProperty("container", Long.toString(key.getContainerId()));
+            properties.setProperty("segment", storageId);
+            properties.setProperty("container", storageId);
             properties.setProperty("pageFile", fileName(pageFile));
             properties.setProperty("rowDirectoryFile", fileName(rowDirectoryFile));
             properties.setProperty("pageMutationLogFile", fileName(pageMutationLogFile));
@@ -164,7 +162,7 @@ final class InheritedMvccCheckpointStore {
         }
     }
 
-    void delete() throws IOException {
+    public void delete() throws IOException {
         if (enabled()) {
             Files.deleteIfExists(path);
         }
@@ -176,14 +174,6 @@ final class InheritedMvccCheckpointStore {
             properties.load(reader);
         }
         return new Checkpoint(properties);
-    }
-
-    private static Path checkpointFile(Path databaseDirectory, ContainerKey key) {
-        Path directory = InheritedMvccPageVolumeStateStore.inheritedStoreDirectory(databaseDirectory);
-        if (directory == null) {
-            return null;
-        }
-        return directory.resolve("conglomerate-" + key.getSegmentId() + "-" + key.getContainerId() + ".checkpoint");
     }
 
     private static String fileName(Path path) {
@@ -223,7 +213,7 @@ final class InheritedMvccCheckpointStore {
         digest.update((byte) '\n');
     }
 
-    enum Status {
+    public enum Status {
         DISABLED,
         ABSENT,
         WRITTEN,
@@ -231,7 +221,7 @@ final class InheritedMvccCheckpointStore {
         FALLBACK
     }
 
-    private static final class Checkpoint {
+    private final class Checkpoint {
         private final Properties properties;
 
         private Checkpoint(Properties properties) {
@@ -239,7 +229,6 @@ final class InheritedMvccCheckpointStore {
         }
 
         private void requireMatches(
-                ContainerKey key,
                 Path pageFile,
                 Path rowDirectoryFile,
                 Path pageMutationLogFile,
@@ -250,8 +239,8 @@ final class InheritedMvccCheckpointStore {
                 long nextRowId) throws IOException {
             require("magic", MAGIC);
             require("version", VERSION);
-            require("segment", Long.toString(key.getSegmentId()));
-            require("container", Long.toString(key.getContainerId()));
+            require("segment", storageId);
+            require("container", storageId);
             require("pageFile", fileName(pageFile));
             require("rowDirectoryFile", fileName(rowDirectoryFile));
             require("pageMutationLogFile", fileName(pageMutationLogFile));

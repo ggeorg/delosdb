@@ -36,6 +36,8 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTable;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionManager;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
+import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
+import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
 
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.raw.ContainerKey;
@@ -56,20 +58,23 @@ final class MvccConglomerateState {
     private final ContainerKey key;
     private final Path retiredSnapshotFile;
     private final Path transactionStatusFile;
-    private final InheritedMvccPageVolumeStateStore pageVolumeStateStore;
+    private final PageVolumeMvccStateStore<StoreDataValue[]> pageVolumeStateStore;
     private final MvccTransactionStatusStore transactionStatusStore;
     private final MvccTable<Long, StoreDataValue[]> table = new MvccTable<>();
     private final MvccTransactionManager transactions;
-    private final InheritedMvccCandidateIndex candidateIndex = new InheritedMvccCandidateIndex();
+    private final DerbyMvccCandidateIndex candidateIndex = new DerbyMvccCandidateIndex();
     private long nextRowId = 1L;
-    private InheritedMvccPageVolumeStateStore.VacuumOutcome lastVacuumOutcome =
-            InheritedMvccPageVolumeStateStore.VacuumOutcome.disabled();
+    private PageVolumeMvccStateStore.VacuumOutcome lastVacuumOutcome =
+            PageVolumeMvccStateStore.VacuumOutcome.disabled();
 
     MvccConglomerateState(ContainerKey key, Path databaseDirectory) {
         this.key = key;
         this.retiredSnapshotFile = retiredSnapshotFile(databaseDirectory, key);
         this.transactionStatusFile = transactionStatusFile(databaseDirectory, key);
-        this.pageVolumeStateStore = InheritedMvccPageVolumeStateStore.open(databaseDirectory, key);
+        this.pageVolumeStateStore = PageVolumeMvccStateStore.open(
+                databaseDirectory,
+                storageId(key),
+                DerbyMvccRowCodec.INSTANCE);
         this.transactionStatusStore = transactionStatusFile == null || key.getContainerId() == 0L
                 ? MvccTransactionStatusStore.disabled()
                 : MvccTransactionStatusStore.open(transactionStatusFile);
@@ -98,7 +103,7 @@ final class MvccConglomerateState {
      * state store. The old MODULE9A snapshot file is no longer a reload authority.
      */
     synchronized void persistCommittedState() {
-        List<InheritedMvccPageVolumeStateStore.PersistedRow> rows = visibleRows();
+        List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = visibleRows();
         pageVolumeStateStore.persistVisibleRows(rows);
         candidateIndex.recordVisibleRows(rows);
     }
@@ -158,11 +163,11 @@ final class MvccConglomerateState {
         return pageVolumeStateStore.logicalRowCount();
     }
 
-    synchronized InheritedMvccPageVolumeStateStore.VacuumOutcome lastVacuumOutcomeForTesting() {
+    synchronized PageVolumeMvccStateStore.VacuumOutcome lastVacuumOutcomeForTesting() {
         return lastVacuumOutcome;
     }
 
-    synchronized InheritedMvccPageVolumeStateStore.VacuumOutcome vacuumSafely() {
+    synchronized PageVolumeMvccStateStore.VacuumOutcome vacuumSafely() {
         boolean hasRetainedInheritedSnapshot = transactions.activeTransactionCount() > 0
                 || transactions.retainedSnapshotCount() > 0;
         lastVacuumOutcome = pageVolumeStateStore.vacuumSafely(hasRetainedInheritedSnapshot);
@@ -207,7 +212,7 @@ final class MvccConglomerateState {
     }
 
     private void hydrateCommittedRows(
-            List<InheritedMvccPageVolumeStateStore.PersistedRow> rows,
+            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows,
             long storedNextRowId) {
         candidateIndex.rebuildFromVisibleRows(rows);
         if (rows.isEmpty()) {
@@ -217,7 +222,7 @@ final class MvccConglomerateState {
         MvccTransaction hydrator = transactions.begin();
         try {
             long maxRowId = 0L;
-            for (InheritedMvccPageVolumeStateStore.PersistedRow row : rows) {
+            for (PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]> row : rows) {
                 table.insert(row.rowId(), row.values(), hydrator);
                 maxRowId = Math.max(maxRowId, row.rowId());
             }
@@ -229,15 +234,15 @@ final class MvccConglomerateState {
         }
     }
 
-    private List<InheritedMvccPageVolumeStateStore.PersistedRow> visibleRows() {
+    private List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> visibleRows() {
         MvccTransaction reader = transactions.begin();
         try {
             MvccSnapshot snapshot = transactions.snapshot(reader);
-            List<InheritedMvccPageVolumeStateStore.PersistedRow> rows = new ArrayList<>();
+            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = new ArrayList<>();
             try (MvccScan<Long, StoreDataValue[]> scan = table.openScan(snapshot, transactions)) {
                 while (scan.next()) {
                     MvccRow<Long, StoreDataValue[]> row = scan.row();
-                    rows.add(new InheritedMvccPageVolumeStateStore.PersistedRow(
+                    rows.add(new PageVolumeMvccStateStore.PersistedRow<>(
                             row.key(),
                             MvccConglomerateController.cloneRow(row.value())));
                 }
@@ -250,8 +255,12 @@ final class MvccConglomerateState {
         }
     }
 
+    private static String storageId(ContainerKey key) {
+        return PageVolumeMvccPaths.conglomerateStorageId(key.getSegmentId(), key.getContainerId());
+    }
+
     private static Path retiredSnapshotFile(Path databaseDirectory, ContainerKey key) {
-        Path directory = InheritedMvccPageVolumeStateStore.inheritedStoreDirectory(databaseDirectory);
+        Path directory = PageVolumeMvccPaths.inheritedStoreDirectory(databaseDirectory);
         if (directory == null) {
             return null;
         }
@@ -259,7 +268,7 @@ final class MvccConglomerateState {
     }
 
     private static Path transactionStatusFile(Path databaseDirectory, ContainerKey key) {
-        Path directory = InheritedMvccPageVolumeStateStore.inheritedStoreDirectory(databaseDirectory);
+        Path directory = PageVolumeMvccPaths.inheritedStoreDirectory(databaseDirectory);
         if (directory == null) {
             return null;
         }
