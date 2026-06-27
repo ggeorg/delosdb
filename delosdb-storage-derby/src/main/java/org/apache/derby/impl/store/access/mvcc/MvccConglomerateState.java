@@ -27,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccRow;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccScan;
@@ -36,6 +37,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionManager;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
 
+import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.shared.common.error.StandardException;
@@ -58,6 +60,7 @@ final class MvccConglomerateState {
     private final MvccTransactionStatusStore transactionStatusStore;
     private final MvccTable<Long, StoreDataValue[]> table = new MvccTable<>();
     private final MvccTransactionManager transactions;
+    private final InheritedMvccCandidateIndex candidateIndex = new InheritedMvccCandidateIndex();
     private long nextRowId = 1L;
     private InheritedMvccPageVolumeStateStore.VacuumOutcome lastVacuumOutcome =
             InheritedMvccPageVolumeStateStore.VacuumOutcome.disabled();
@@ -95,10 +98,13 @@ final class MvccConglomerateState {
      * state store. The old MODULE9A snapshot file is no longer a reload authority.
      */
     synchronized void persistCommittedState() {
-        pageVolumeStateStore.persistVisibleRows(visibleRows());
+        List<InheritedMvccPageVolumeStateStore.PersistedRow> rows = visibleRows();
+        pageVolumeStateStore.persistVisibleRows(rows);
+        candidateIndex.recordVisibleRows(rows);
     }
 
     synchronized void dropDurableState() {
+        candidateIndex.clear();
         try {
             pageVolumeStateStore.drop();
             if (retiredSnapshotFile != null) {
@@ -180,6 +186,14 @@ final class MvccConglomerateState {
                 .orElseGet(() -> new MvccRowLocation(rowId));
     }
 
+    synchronized Optional<List<Long>> candidateRowIdsFor(Qualifier[][] qualifiers) {
+        return candidateIndex.candidatesFor(qualifiers);
+    }
+
+    synchronized int candidateIndexKeyCountForTesting() {
+        return candidateIndex.indexedKeyCountForTesting();
+    }
+
     synchronized void close() {
         pageVolumeStateStore.close();
     }
@@ -195,6 +209,7 @@ final class MvccConglomerateState {
     private void hydrateCommittedRows(
             List<InheritedMvccPageVolumeStateStore.PersistedRow> rows,
             long storedNextRowId) {
+        candidateIndex.rebuildFromVisibleRows(rows);
         if (rows.isEmpty()) {
             nextRowId = Math.max(nextRowId, storedNextRowId);
             return;

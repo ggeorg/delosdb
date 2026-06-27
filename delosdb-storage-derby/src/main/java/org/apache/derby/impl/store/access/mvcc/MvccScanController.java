@@ -21,6 +21,8 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.util.Iterator;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -51,6 +53,10 @@ import org.apache.derby.shared.common.error.StandardException;
 public final class MvccScanController implements ScanManager {
     private static final AtomicInteger OPEN_COUNT = new AtomicInteger();
     private static final AtomicInteger QUALIFIER_REJECT_COUNT = new AtomicInteger();
+    private static final AtomicInteger CANDIDATE_INDEX_LOOKUP_COUNT = new AtomicInteger();
+    private static final AtomicInteger CANDIDATE_INDEX_ROWID_COUNT = new AtomicInteger();
+    private static final AtomicInteger CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT = new AtomicInteger();
+    private static final AtomicInteger CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT = new AtomicInteger();
 
     private final MvccConglomerate conglomerate;
     private final MvccConglomerateState state;
@@ -61,6 +67,8 @@ public final class MvccScanController implements ScanManager {
     private MvccScan<Long, StoreDataValue[]> scan;
     private final FormatableBitSet scanColumnList;
     private Qualifier[][] qualifiers;
+    private Iterator<Long> candidateRowIds;
+    private boolean candidateIndexScan;
     private MvccRow<Long, StoreDataValue[]> current;
     private boolean closed;
     private long estimatedRowCount;
@@ -81,6 +89,7 @@ public final class MvccScanController implements ScanManager {
         this.reader = state.transactions().begin();
         this.snapshot = state.transactions().snapshot(reader);
         this.scan = state.table().openScan(snapshot, state.transactions());
+        resetCandidateIndexScan(qualifiers);
     }
 
 
@@ -98,6 +107,29 @@ public final class MvccScanController implements ScanManager {
 
     public static int qualifierRejectCountForTesting() {
         return QUALIFIER_REJECT_COUNT.get();
+    }
+
+    public static void resetCandidateIndexCountsForTesting() {
+        CANDIDATE_INDEX_LOOKUP_COUNT.set(0);
+        CANDIDATE_INDEX_ROWID_COUNT.set(0);
+        CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT.set(0);
+        CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.set(0);
+    }
+
+    public static int candidateIndexLookupCountForTesting() {
+        return CANDIDATE_INDEX_LOOKUP_COUNT.get();
+    }
+
+    public static int candidateIndexRowIdCountForTesting() {
+        return CANDIDATE_INDEX_ROWID_COUNT.get();
+    }
+
+    public static int candidateIndexVisibilityRejectCountForTesting() {
+        return CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT.get();
+    }
+
+    public static int candidateIndexQualifierRejectCountForTesting() {
+        return CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.get();
     }
 
     public MvccConglomerate conglomerate() {
@@ -162,6 +194,7 @@ public final class MvccScanController implements ScanManager {
         current = null;
         scan = state.table().openScan(snapshot, state.transactions());
         this.qualifiers = qualifier;
+        resetCandidateIndexScan(qualifier);
     }
 
     @Override
@@ -172,6 +205,7 @@ public final class MvccScanController implements ScanManager {
         current = null;
         scan = state.table().openScan(snapshot, state.transactions());
         this.qualifiers = qualifier;
+        resetCandidateIndexScan(qualifier);
     }
 
     @Override
@@ -308,6 +342,9 @@ public final class MvccScanController implements ScanManager {
     }
 
     private boolean advanceToNextQualifiedRow() throws StandardException {
+        if (candidateIndexScan) {
+            return advanceToNextCandidateRow();
+        }
         while (scan.next()) {
             MvccRow<Long, StoreDataValue[]> candidate = scan.row();
             if (rowQualifies(candidate.value())) {
@@ -318,6 +355,40 @@ public final class MvccScanController implements ScanManager {
         }
         current = null;
         return false;
+    }
+
+    private boolean advanceToNextCandidateRow() throws StandardException {
+        while (candidateRowIds != null && candidateRowIds.hasNext()) {
+            long rowId = candidateRowIds.next();
+            Optional<StoreDataValue[]> visible = state.table().read(rowId, snapshot, state.transactions());
+            if (visible.isEmpty()) {
+                CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT.incrementAndGet();
+                continue;
+            }
+            StoreDataValue[] row = visible.get();
+            if (rowQualifies(row)) {
+                current = new MvccRow<>(rowId, row);
+                return true;
+            }
+            CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.incrementAndGet();
+            QUALIFIER_REJECT_COUNT.incrementAndGet();
+        }
+        current = null;
+        return false;
+    }
+
+    private void resetCandidateIndexScan(Qualifier[][] candidateQualifiers) {
+        Optional<List<Long>> candidates = state.candidateRowIdsFor(candidateQualifiers);
+        if (candidates.isEmpty()) {
+            candidateIndexScan = false;
+            candidateRowIds = null;
+            return;
+        }
+        List<Long> rowIds = candidates.get();
+        candidateIndexScan = true;
+        candidateRowIds = rowIds.iterator();
+        CANDIDATE_INDEX_LOOKUP_COUNT.incrementAndGet();
+        CANDIDATE_INDEX_ROWID_COUNT.addAndGet(rowIds.size());
     }
 
     private boolean rowQualifies(StoreDataValue[] row) throws StandardException {
