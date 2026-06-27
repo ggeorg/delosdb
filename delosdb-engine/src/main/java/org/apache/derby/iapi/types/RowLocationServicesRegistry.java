@@ -20,14 +20,26 @@
  */
 package org.apache.derby.iapi.types;
 
+import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 
 /**
  * Lazy access point for the engine row-location service used by SQL value
  * classes.
+ *
+ * <p>Derby's database boot path creates row-location values while the engine is
+ * still starting.  At that point the service descriptor may not be visible to
+ * every launch shape used by the inherited Derby harness.  The registry
+ * therefore prefers the ServiceLoader provider, but it also has a deterministic
+ * engine-local fallback for the current monolithic embedded-engine runtime.
+ * This keeps boot stable while the row-location/type-system seam remains under
+ * extraction.</p>
  */
 public final class RowLocationServicesRegistry
 {
+    private static final String ENGINE_ROW_LOCATION_SERVICES =
+            "org.apache.derby.impl.services.storetypes.EngineRowLocationServices";
+
     private RowLocationServicesRegistry()
     {
     }
@@ -44,12 +56,62 @@ public final class RowLocationServicesRegistry
 
     private static RowLocationServices load()
     {
+        ServiceConfigurationError serviceLoaderError = null;
+        try
+        {
+            RowLocationServices services = loadFromServiceLoader();
+            if (services != null)
+            {
+                return services;
+            }
+        }
+        catch (ServiceConfigurationError error)
+        {
+            serviceLoaderError = error;
+        }
+
+        try
+        {
+            return loadEngineDefault();
+        }
+        catch (IllegalStateException ise)
+        {
+            if (serviceLoaderError != null)
+            {
+                ise.addSuppressed(serviceLoaderError);
+            }
+            throw ise;
+        }
+    }
+
+    private static RowLocationServices loadFromServiceLoader()
+    {
         ClassLoader loader = RowLocationServices.class.getClassLoader();
         for (RowLocationServices services : ServiceLoader.load(RowLocationServices.class, loader))
         {
             return services;
         }
-        throw new IllegalStateException("No row-location services provider found");
+        return null;
+    }
+
+    private static RowLocationServices loadEngineDefault()
+    {
+        ClassLoader loader = RowLocationServices.class.getClassLoader();
+        try
+        {
+            Class<?> servicesClass = Class.forName(ENGINE_ROW_LOCATION_SERVICES, true, loader);
+            Object services = servicesClass.getConstructor().newInstance();
+            if (services instanceof RowLocationServices rowLocationServices)
+            {
+                return rowLocationServices;
+            }
+            throw new IllegalStateException(
+                    ENGINE_ROW_LOCATION_SERVICES + " does not implement " + RowLocationServices.class.getName());
+        }
+        catch (ReflectiveOperationException | LinkageError error)
+        {
+            throw new IllegalStateException("No row-location services provider found", error);
+        }
     }
 
     private static final class Holder
