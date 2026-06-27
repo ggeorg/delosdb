@@ -7,9 +7,8 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-// Storage bridge for Derby-facing MVCC access-method wiring. This module
-// deliberately sits above inherited Derby storage and native MVCC storage so
-// neither implementation module depends directly on the other.
+// Temporary Derby-facing MVCC access-method adapter. It keeps inherited Derby
+// registration/runtime wiring away from concrete storage provider modules.
 def sourceRoot = file('src/main/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 
@@ -20,11 +19,9 @@ java {
 
 dependencies {
     implementation project(':delosdb-commons')
-    implementation project(':delosdb-spi')
     implementation project(':delosdb-engine-api')
     implementation project(':delosdb-storage-api')
     implementation project(':delosdb-derby-store-api')
-    implementation project(':delosdb-storage-derby')
 }
 
 sourceSets {

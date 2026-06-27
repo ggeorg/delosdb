@@ -46,7 +46,7 @@ import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
-import org.apache.derby.impl.store.access.conglomerate.GenericConglomerate;
+import org.apache.derby.iapi.store.types.StoreDataValueBase;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -59,8 +59,8 @@ import org.apache.derby.shared.common.reference.SQLState;
  * SQL execution or persist data yet.</p>
  */
 public final class MvccConglomerate
-        extends GenericConglomerate
-        implements StaticCompiledOpenConglomInfo {
+        extends StoreDataValueBase
+        implements org.apache.derby.iapi.store.access.conglomerate.Conglomerate, StaticCompiledOpenConglomInfo {
     private static final Map<StateIdentity, MvccConglomerateState> STATES = new ConcurrentHashMap<>();
     private static volatile Path databaseDirectory;
 
@@ -230,7 +230,6 @@ public final class MvccConglomerate
         return new MvccConglomerate();
     }
 
-    @Override
     public String getTypeName() {
         return "MvccConglomerate";
     }

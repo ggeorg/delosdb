@@ -56,6 +56,8 @@ sourceSets {
 }
 
 tasks.named('compileJava', JavaCompile) {
+    dependsOn configurations.enginePatchModule
+    inputs.files(configurations.enginePatchModule).withPropertyName('enginePatchModule')
     destinationDirectory.set(moduleClassDir)
     modularity.inferModulePath = false
     classpath = configurations.compileClasspath
