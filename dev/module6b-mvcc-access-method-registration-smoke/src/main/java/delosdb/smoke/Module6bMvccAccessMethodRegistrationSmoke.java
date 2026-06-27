@@ -63,18 +63,44 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
 
         String modules = Files.readString(Path.of(
                 "delosdb-engine/src/main/java/org/apache/derby/modules.properties"));
-        requireContains(modules,
+        requireNotContains(modules,
                 "derby.module.access.delos_mvcc=org.apache.derby.impl.store.access.mvcc.MvccConglomerateFactory",
-                "Derby module registry must expose the delos_mvcc access method");
+                "delos_mvcc must no longer use direct modules.properties registration");
+        requireNotContains(modules,
+                "cloudscape.config.access.delos_mvcc=all",
+                "delos_mvcc must no longer require direct modules.properties configuration");
+
+        String serviceDescriptor = Files.readString(Path.of(
+                "delosdb-storage-bridge/src/main/resources/META-INF/services/"
+                        + "org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider"));
+        requireContains(serviceDescriptor,
+                "org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider",
+                "bridge must expose delos_mvcc through the neutral ExternalAccessMethodProvider service descriptor");
+
+        String serviceProvider = Files.readString(Path.of(
+                "delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/"
+                        + "DerbyMvccAccessMethodProvider.java"));
+        requireContains(serviceProvider,
+                "implements ExternalAccessMethodProvider",
+                "MVCC access method must be registered through the neutral external provider contract");
+        requireContains(serviceProvider,
+                "supportsImplementation(String implementationId)",
+                "MVCC service provider must advertise implementation-id support");
+        requireContains(serviceProvider,
+                "supportsFactoryId(int factoryId)",
+                "MVCC service provider must advertise factory-id support");
+        requireContains(serviceProvider,
+                "new MvccConglomerateFactory()",
+                "service provider must still boot the Derby ConglomerateFactory adapter");
 
         String ramAccessManager = Files.readString(Path.of(
                 "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMAccessManager.java"));
         requireContains(ramAccessManager,
-                "bootDelosDbAccessMethod(impltype, conglomProperties)",
-                "RAMAccessManager must keep delos_mvcc registration inside the inherited access-method path");
+                "bootExternalAccessMethod(impltype, conglomProperties)",
+                "RAMAccessManager must fall back to the external access-method service hook");
         requireContains(ramAccessManager,
-                "new MvccConglomerateFactory()",
-                "MODULE6B must register the MVCC access method without derby.jar class-directory stuffing");
+                "ServiceLoader.load(ExternalAccessMethodProvider.class)",
+                "RAMAccessManager must discover external access-method providers through ServiceLoader");
     }
 
     private static void assertRuntimeClassVisibility() throws Exception {
@@ -162,6 +188,12 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
     private static void require(boolean condition, String label) {
         if (!condition) {
             throw new AssertionError(label);
+        }
+    }
+
+    private static void requireNotContains(String source, String forbidden, String label) {
+        if (source != null && source.contains(forbidden)) {
+            throw new AssertionError(label + " expected source not to contain: " + forbidden);
         }
     }
 
