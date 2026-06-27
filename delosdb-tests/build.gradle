@@ -132,7 +132,7 @@ configurations {
 }
 
 dependencies {
-    gradleJUnitRuntime 'junit:junit:4.13.2'
+    add('gradleJUnitRuntime', 'junit:junit:4.13.2')
 
     testImplementation project(':delosdb-client')
     testImplementation project(':delosdb-commons')
