@@ -45,6 +45,7 @@ dependencies {
     enginePatch project(':delosdb-engine-storage-api')
     enginePatch project(':delosdb-derby-store-api')
     enginePatch project(':delosdb-storage-derby')
+    enginePatch project(':delosdb-storage-bridge')
 }
 
 sourceSets {
@@ -213,7 +214,8 @@ tasks.register('derbyJar', Jar) {
             ':splitEngineMessages', ':generateOdbcMetadata', ':ensureCatalogMetadataResources',
             ':delosdb-engine-storage-api:compileEngineStorageApi',
             ':delosdb-derby-store-api:compileDerbyStoreApi',
-            ':delosdb-storage-derby:compileLegacyDerbyStorage'
+            ':delosdb-storage-derby:compileLegacyDerbyStorage',
+            ':delosdb-storage-bridge:compileStorageBridge'
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE

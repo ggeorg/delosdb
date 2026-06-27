@@ -52,20 +52,20 @@ public final class Module6cMvccConglomerateSkeletonSmoke {
 
     private static void assertSourceSkeletonFacts() throws Exception {
         require(Files.exists(Path.of(
-                        "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java")),
+                        "delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java")),
                 "MODULE6C must add an MVCC conglomerate skeleton");
         require(Files.exists(Path.of(
-                        "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java")),
+                        "delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java")),
                 "MODULE6C must add an MVCC scan-controller skeleton");
         require(Files.exists(Path.of(
-                        "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateController.java")),
+                        "delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateController.java")),
                 "MODULE6C must add an MVCC conglomerate-controller skeleton");
         require(Files.exists(Path.of(
-                        "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRowLocation.java")),
+                        "delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRowLocation.java")),
                 "MODULE6C must add a logical MVCC row-location skeleton");
 
         String rowLocation = Files.readString(Path.of(
-                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRowLocation.java"));
+                "delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRowLocation.java"));
         requireContains(rowLocation, "private long rowId", "MVCC row location must carry stable logical row id");
         requireContains(rowLocation, "locatorPageId", "MVCC row location may carry locator hint");
         requireContains(rowLocation, "locatorSlotId", "MVCC row location may carry locator hint");

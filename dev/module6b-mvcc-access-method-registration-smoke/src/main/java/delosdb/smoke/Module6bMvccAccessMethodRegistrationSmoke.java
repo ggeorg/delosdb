@@ -44,7 +44,7 @@ public final class Module6bMvccAccessMethodRegistrationSmoke {
 
     private static void assertSourceRegistrationFacts() throws Exception {
         String factory = Files.readString(Path.of(
-                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java"));
+                "delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java"));
         requireContains(factory,
                 "public static final String IMPLEMENTATION_ID = \"delos_mvcc\"",
                 "MVCC access method must use the delos_mvcc implementation id");

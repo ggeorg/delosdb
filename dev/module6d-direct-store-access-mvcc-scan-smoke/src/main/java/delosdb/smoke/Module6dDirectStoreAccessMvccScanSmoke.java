@@ -50,7 +50,7 @@ public final class Module6dDirectStoreAccessMvccScanSmoke {
 
     private static void assertSourceScanFacts() throws Exception {
         String state = Files.readString(Path.of(
-                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java"));
+                "delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java"));
         requireContains(state,
                 "new MvccTable<>",
                 "MODULE6D store/access state must use the MVCC visibility kernel");
@@ -59,7 +59,7 @@ public final class Module6dDirectStoreAccessMvccScanSmoke {
                 "MODULE6D store/access state must own an MVCC transaction manager");
 
         String controller = Files.readString(Path.of(
-                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateController.java"));
+                "delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateController.java"));
         requireContains(controller,
                 "state.table().insert",
                 "inherited MVCC ConglomerateController must feed rows into the MVCC table");
@@ -71,7 +71,7 @@ public final class Module6dDirectStoreAccessMvccScanSmoke {
                 "normal close must abort controller-local MVCC writes in this preflight");
 
         String scan = Files.readString(Path.of(
-                "delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java"));
+                "delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java"));
         requireContains(scan,
                 "state.table().openScan(snapshot, state.transactions())",
                 "inherited MVCC ScanController must open a snapshot against the MVCC table");

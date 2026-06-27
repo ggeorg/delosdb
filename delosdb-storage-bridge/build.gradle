@@ -7,10 +7,9 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-// Real Gradle Java module for inherited Derby storage implementations patched
-// into org.apache.derby.engine, including heap/raw/access/WAL code. Derby-facing
-// MVCC access-method glue lives in delosdb-storage-bridge so this inherited
-// storage module does not depend on native MVCC storage.
+// Storage bridge for Derby-facing MVCC access-method wiring. This module
+// deliberately sits above inherited Derby storage and native MVCC storage so
+// neither implementation module depends directly on the other.
 def sourceRoot = file('src/main/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 
@@ -25,14 +24,15 @@ dependencies {
     implementation project(':delosdb-engine-api')
     implementation project(':delosdb-engine-storage-api')
     implementation project(':delosdb-derby-store-api')
+    implementation project(':delosdb-storage-derby')
+    implementation project(':delosdb-storage-mvcc')
 }
 
 sourceSets {
     main {
         java {
             srcDir sourceRoot
-            include 'org/apache/derby/impl/store/**/*.java'
-            exclude 'module-info.java'
+            include 'org/apache/derby/impl/store/access/mvcc/**/*.java'
             destinationDirectory.set(mainClassDir)
         }
     }
@@ -48,26 +48,26 @@ tasks.named('compileJava', JavaCompile) {
     options.compilerArgs.add('-Xlint:deprecation')
 }
 
-// Compatibility alias used by the existing root build and patch-module tasks.
-tasks.register('compileLegacyDerbyStorage') {
+// Compatibility alias used by root assembly and patch-module tasks.
+tasks.register('compileStorageBridge') {
     dependsOn tasks.named('compileJava')
 }
 
 tasks.named('jar', Jar) {
-    archiveFileName = 'delosdb-storage-derby.jar'
+    archiveFileName = 'delosdb-storage-bridge.jar'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Derby Storage')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Storage Bridge')
     }
 }
 
 // Compatibility runtime jar used by the root `jars` task.
-tasks.register('legacyDerbyStorageJar', Jar) {
+tasks.register('storageBridgeJar', Jar) {
     dependsOn tasks.named('compileJava'), tasks.named('processResources')
-    archiveFileName = 'delosdb-storage-derby.jar'
+    archiveFileName = 'delosdb-storage-bridge.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(mainClassDir)
@@ -76,12 +76,12 @@ tasks.register('legacyDerbyStorageJar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Derby Storage')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Storage Bridge')
     }
 }
 
 tasks.named('assemble') {
-    dependsOn tasks.named('legacyDerbyStorageJar')
+    dependsOn tasks.named('storageBridgeJar')
 }
 
 tasks.named('check') {

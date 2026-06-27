@@ -69,11 +69,11 @@ public final class Module7aDerbyQualifierBoundarySmoke {
     }
 
     private static void assertMvccScanCurrentQualifierGapIsMapped() throws Exception {
-        String conglom = read("delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java");
+        String conglom = read("delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java");
         requireContains(conglom, "Qualifier[][] qualifier");
         requireContains(conglom, "return new MvccScanController(this, xactManager, hold, scanColumnList, qualifier);");
 
-        String scan = read("delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java");
+        String scan = read("delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java");
         requireContains(scan, "public void reopenScan(");
         requireContains(scan, "Qualifier[][] qualifier");
         requireContains(scan, "scan = state.table().openScan(snapshot, state.transactions());");
