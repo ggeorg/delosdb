@@ -38,7 +38,6 @@ configurations {
 dependencies {
     implementation project(':delosdb-commons')
     implementation project(':delosdb-engine-api')
-    implementation project(':delosdb-storage-io')
     implementation project(':delosdb-spi')
     implementation "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
     compileOnly project(':delosdb-osgi-stub')
@@ -46,7 +45,6 @@ dependencies {
     enginePatch project(':delosdb-engine-storage-api')
     enginePatch project(':delosdb-derby-store-api')
     enginePatch project(':delosdb-storage-derby')
-    enginePatch project(':delosdb-derby-mvcc-adapter')
 }
 
 sourceSets {
@@ -215,8 +213,7 @@ tasks.register('derbyJar', Jar) {
             ':splitEngineMessages', ':generateOdbcMetadata', ':ensureCatalogMetadataResources',
             ':delosdb-engine-storage-api:compileEngineStorageApi',
             ':delosdb-derby-store-api:compileDerbyStoreApi',
-            ':delosdb-storage-derby:compileLegacyDerbyStorage',
-            ':delosdb-derby-mvcc-adapter:compileDerbyMvccAdapter'
+            ':delosdb-storage-derby:compileLegacyDerbyStorage'
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE

@@ -21,7 +21,7 @@ java {
 dependencies {
     api project(':delosdb-mvcc-store-api')
     implementation project(':delosdb-spi')
-    implementation project(':delosdb-storage-io')
+    api project(':delosdb-storage-io')
     testImplementation project(':delosdb-spi')
     testImplementation project(':delosdb-storage-io')
     testImplementation "org.junit.platform:junit-platform-console-standalone:${rootProject.ext.junitPlatformConsoleVersion}"

@@ -17,10 +17,6 @@ java {
 }
 
 
-dependencies {
-    api project(':delosdb-commons')
-}
-
 sourceSets {
     main {
         java {

@@ -1,14 +1,11 @@
 /**
  * Low-level DelosDB storage I/O contracts.
  *
- * <p>This module owns both Delos-native page/volume I/O contracts and the
- * inherited Derby VFS compatibility contracts under {@code org.apache.derby.io}.
- * It must stay below engine, Derby raw store, and MVCC implementations.</p>
+ * <p>This module owns Delos-native page/volume I/O contracts only.
+ * Derby VFS contracts live with the inherited engine API because they are
+ * used by engine and store contracts without depending on Delos page I/O.</p>
  */
 module io.github.ggeorg.delosdb.storage.io {
-    requires transitive org.apache.derby.commons;
     exports io.github.ggeorg.delosdb.storage.io.page;
     exports io.github.ggeorg.delosdb.storage.io.volume;
-
-    exports org.apache.derby.io;
 }

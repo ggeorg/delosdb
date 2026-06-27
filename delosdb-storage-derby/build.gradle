@@ -7,9 +7,9 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-// Real Gradle Java module for the inherited Derby heap/raw/access/WAL store
-// implementation. It remains classpath-compiled because derby.jar still patches
-// this implementation into org.apache.derby.engine for Derby compatibility.
+// Real Gradle Java module for Derby storage implementations patched into
+// org.apache.derby.engine, including inherited heap/raw/access/WAL code and
+// the Derby-facing MVCC access method backed by delosdb-storage-mvcc.
 def sourceRoot = file('src/main/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 
@@ -24,6 +24,7 @@ dependencies {
     implementation project(':delosdb-engine-api')
     implementation project(':delosdb-engine-storage-api')
     implementation project(':delosdb-derby-store-api')
+    implementation project(':delosdb-storage-mvcc')
 }
 
 sourceSets {
@@ -59,7 +60,7 @@ tasks.named('jar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Legacy Derby Storage')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Derby Storage')
     }
 }
 
@@ -75,7 +76,7 @@ tasks.register('legacyDerbyStorageJar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Legacy Derby Storage')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Derby Storage')
     }
 }
 
