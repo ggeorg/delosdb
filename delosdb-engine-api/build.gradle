@@ -60,11 +60,20 @@ tasks.register('compileDelosDbEngineApiClassSizeCatalog', JavaCompile) {
     // generated classes there makes unrelated storage providers depend on this
     // compatibility task. The runtime jar still includes the generated class.
     destinationDirectory.set(generatedClassSizeCatalogClassDir)
-    rootProject.ext.delosdbConfigureJavaCompile(delegate, [
-            project(':delosdb-commons').tasks.named('jar'),
-            project(':delosdb-spi').tasks.named('jar'),
-            moduleClassDir
-    ])
+    // Compile this generated package-private Derby helper as a classpath
+    // companion to the already compiled engine-api classes. Do not put
+    // moduleClassDir on this task's module path: the generated source belongs
+    // to the same package as package-private ClassSizeCatalog, so it must see
+    // the main output as local classes, while still writing to an isolated
+    // generated output directory.
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files(moduleClassDir)
+    options.compilerArgs.add('-Xlint:deprecation')
 }
 
 tasks.named('jar', Jar) {
