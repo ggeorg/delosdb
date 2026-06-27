@@ -28,7 +28,7 @@ java {
 
 dependencies {
     implementation project(':delosdb-commons')
-    implementation project(':delosdb-engine-api')
+    implementation project(':delosdb-runtime-api')
 }
 
 sourceSets {

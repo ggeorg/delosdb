@@ -1,8 +1,8 @@
 /**
- * Shared inherited Derby engine API contracts.
+ * Shared inherited Derby runtime API.
  */
 @SuppressWarnings("module")
-module io.github.ggeorg.delosdb.engine.api {
+module io.github.ggeorg.delosdb.runtime.api {
     requires java.base;
     requires java.sql;
     requires java.xml;

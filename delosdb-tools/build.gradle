@@ -34,7 +34,7 @@ java {
 
 dependencies {
     implementation project(':delosdb-commons')
-    compileOnly project(':delosdb-engine-api')
+    compileOnly project(':delosdb-runtime-api')
     compileOnly project(':delosdb-client')
     compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
     compileOnly "org.ow2.asm:asm:${rootProject.ext.asmVersion}"

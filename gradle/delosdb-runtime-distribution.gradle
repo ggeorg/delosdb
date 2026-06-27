@@ -13,7 +13,7 @@ def legalFiles = files(legalFileNames.collect { file(it) })
 
 
 def runtimeBuildTasks = [
-        ':delosdb-engine-api:compileDelosDbEngineApi',
+        ':delosdb-runtime-api:compileDelosDbRuntimeApi',
         ':delosdb-storage-io:compileDelosDbStorageIo',
         ':delosdb-storage-api:compileStorageApi',
         ':delosdb-engine:compileClassSizeCatalog',
@@ -27,7 +27,7 @@ tasks.register('compileAll') {
 }
 
 tasks.register('jars') {
-    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-commons:derbySharedJar', ':delosdb-engine-api:delosDbEngineApiJar', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-storage-api:storageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
+    dependsOn ':delosdb-spi:delosDbSpiJar', ':delosdb-commons:derbySharedJar', ':delosdb-runtime-api:delosDbRuntimeApiJar', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-storage-api:storageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
             ':delosdb-client:derbyClientJar', ':delosdb-tools:derbyToolsJar',
             ':delosdb-server:derbyNetJar', ':delosdb-optionaltools:derbyOptionalToolsJar',
             ':delosdb-runner:derbyRunJar', ':delosdb-osgi-stub:osgiFrameworkStubJar'

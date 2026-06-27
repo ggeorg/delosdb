@@ -37,7 +37,7 @@ configurations {
 
 dependencies {
     implementation project(':delosdb-commons')
-    implementation project(':delosdb-engine-api')
+    implementation project(':delosdb-runtime-api')
     implementation project(':delosdb-spi')
     implementation "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
     compileOnly project(':delosdb-osgi-stub')
@@ -182,9 +182,9 @@ artifacts {
 }
 
 // Compatibility alias retained for existing root build wiring. The generated
-// ClassSizeCatalog belongs to delosdb-engine-api, not to the engine classes task.
+// ClassSizeCatalog belongs to delosdb-runtime-api, not to the engine classes task.
 tasks.register('compileClassSizeCatalog') {
-    dependsOn ':delosdb-engine-api:compileDelosDbEngineApiClassSizeCatalog'
+    dependsOn ':delosdb-runtime-api:compileDelosDbRuntimeApiClassSizeCatalog'
 }
 
 // Compatibility alias retained because older root wiring referred to this task.

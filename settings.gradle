@@ -16,7 +16,7 @@ rootProject.name = 'delosdb'
 
 include 'delosdb-osgi-stub'
 include 'delosdb-commons'
-include 'delosdb-engine-api'
+include 'delosdb-runtime-api'
 include 'delosdb-spi'
 include 'delosdb-storage-io'
 include 'delosdb-storage-api'

@@ -54,7 +54,7 @@ open module org.apache.derby.tests
 
     requires org.apache.derby.commons;
     requires org.apache.derby.engine;
-    requires io.github.ggeorg.delosdb.engine.api;
+    requires io.github.ggeorg.delosdb.runtime.api;
     requires io.github.ggeorg.delosdb.storage.io;
     requires org.apache.derby.server;
     requires org.apache.derby.client;

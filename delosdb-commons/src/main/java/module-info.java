@@ -85,7 +85,7 @@ module org.apache.derby.commons
 
     exports org.apache.derby.shared.common.i18n to
         org.apache.derby.engine,
-        io.github.ggeorg.delosdb.engine.api,
+        io.github.ggeorg.delosdb.runtime.api,
         org.apache.derby.client,
         org.apache.derby.server,
         org.apache.derby.tools,
@@ -93,7 +93,7 @@ module org.apache.derby.commons
 
     exports org.apache.derby.shared.common.info to
         org.apache.derby.engine,
-        io.github.ggeorg.delosdb.engine.api,
+        io.github.ggeorg.delosdb.runtime.api,
         org.apache.derby.client,
         org.apache.derby.server,
         org.apache.derby.tools,
@@ -101,7 +101,7 @@ module org.apache.derby.commons
 
     exports org.apache.derby.shared.common.reference to
         org.apache.derby.engine,
-        io.github.ggeorg.delosdb.engine.api,
+        io.github.ggeorg.delosdb.runtime.api,
         org.apache.derby.client,
         org.apache.derby.server,
         org.apache.derby.tools,
@@ -110,20 +110,20 @@ module org.apache.derby.commons
 
     exports org.apache.derby.shared.common.sanity to
         org.apache.derby.engine,
-        io.github.ggeorg.delosdb.engine.api,
+        io.github.ggeorg.delosdb.runtime.api,
         org.apache.derby.client,
         org.apache.derby.server,
         org.apache.derby.tests;
 
     exports org.apache.derby.shared.common.stream to
         org.apache.derby.engine,
-        io.github.ggeorg.delosdb.engine.api,
+        io.github.ggeorg.delosdb.runtime.api,
         org.apache.derby.server,
         org.apache.derby.tests;
 
     exports org.apache.derby.shared.common.util to
         org.apache.derby.engine,
-        io.github.ggeorg.delosdb.engine.api;
+        io.github.ggeorg.delosdb.runtime.api;
 
     //
     // STANZAS FOR USE WHEN QUERY PLANS ARE GENERATED INTO

@@ -24,7 +24,7 @@ dependencies {
     testImplementation project(':delosdb-commons')
     testImplementation project(':delosdb-derby-store-api')
     testImplementation project(':delosdb-engine')
-    testImplementation project(':delosdb-engine-api')
+    testImplementation project(':delosdb-runtime-api')
     testImplementation project(':delosdb-storage-api')
     testImplementation project(':delosdb-optionaltools')
     testImplementation project(':delosdb-runner')

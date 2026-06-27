@@ -34,7 +34,7 @@ configurations {
 dependencies {
     implementation project(':delosdb-commons')
     implementation project(':delosdb-tools')
-    implementation project(':delosdb-engine-api')
+    implementation project(':delosdb-runtime-api')
     implementation project(':delosdb-storage-io')
     compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
     compileOnly externalModulePath
