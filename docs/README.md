@@ -34,3 +34,6 @@ Per-overlay state files, temporary analysis notes, and obsolete cleanup notes sh
 long-term documentation.  When a topic becomes stable, consolidate it into one of the primary
 architecture documents above.  Keep deeper subsystem notes only when they remain useful as reference
 material.
+
+## Storage
+- [MVCC static-analysis hardening](storage/mvcc-static-analysis-hardening.md)

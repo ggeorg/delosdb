@@ -17,6 +17,15 @@ java {
     targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
+
+configurations {
+    derbyRuntimePatchElements {
+        canBeConsumed = true
+        canBeResolved = false
+        transitive = false
+    }
+}
+
 dependencies {
     implementation project(':delosdb-commons')
     implementation project(':delosdb-runtime-api')
@@ -73,6 +82,13 @@ tasks.register('storageBridgeJar', Jar) {
     }
     manifest {
         attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Storage Bridge')
+    }
+}
+
+
+artifacts {
+    derbyRuntimePatchElements(tasks.named('jar')) {
+        builtBy tasks.named('jar')
     }
 }
 

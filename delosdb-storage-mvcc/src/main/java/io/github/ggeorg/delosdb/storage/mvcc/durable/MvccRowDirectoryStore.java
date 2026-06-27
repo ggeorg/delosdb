@@ -4,8 +4,10 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.channels.FileChannel;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -119,7 +121,22 @@ public final class MvccRowDirectoryStore implements AutoCloseable {
         for (RowHeadRecord record : records) {
             rewrite.recordHead(record);
         }
-        Files.move(rewritePath, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        moveRewriteIntoPlace(rewritePath);
+        forceParentDirectory();
+    }
+
+    private void moveRewriteIntoPlace(Path rewritePath) throws IOException {
+        try {
+            Files.move(rewritePath, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException e) {
+            // Keep the same-directory rewrite path portable for filesystems that do not expose
+            // atomic move through the JDK. The rewrite file was forced before this fallback and
+            // the parent directory is forced afterwards when the platform supports it.
+            Files.move(rewritePath, path, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private void forceParentDirectory() throws IOException {
         try (FileChannel parent = FileChannel.open(path.getParent() == null ? Path.of(".") : path.getParent(), StandardOpenOption.READ)) {
             parent.force(true);
         } catch (IOException ignored) {

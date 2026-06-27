@@ -19,6 +19,15 @@ java {
     targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
+
+configurations {
+    derbyRuntimePatchElements {
+        canBeConsumed = true
+        canBeResolved = false
+        transitive = false
+    }
+}
+
 dependencies {
     implementation project(':delosdb-commons')
     implementation project(':delosdb-spi')
@@ -77,6 +86,13 @@ tasks.register('legacyDerbyStorageJar', Jar) {
     }
     manifest {
         attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Derby Storage')
+    }
+}
+
+
+artifacts {
+    derbyRuntimePatchElements(tasks.named('jar')) {
+        builtBy tasks.named('jar')
     }
 }
 

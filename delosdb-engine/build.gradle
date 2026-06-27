@@ -29,6 +29,11 @@ configurations {
         canBeResolved = true
         transitive = false
     }
+    derbyRuntimePatchArtifacts {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
     derbyEngineClasses {
         canBeConsumed = true
         canBeResolved = false
@@ -44,13 +49,13 @@ dependencies {
 
     enginePatch project(':delosdb-storage-api')
     enginePatch project(':delosdb-derby-store-api')
-}
 
-def storageImplementationPatch = files(
-        rootProject.file('delosdb-storage-derby/build/classes/main'),
-        rootProject.file('delosdb-storage-derby/build/resources/main'),
-        rootProject.file('delosdb-storage-bridge/build/classes/main'),
-        rootProject.file('delosdb-storage-bridge/build/resources/main'))
+    // Runtime-only Derby compatibility payloads. These are copied into the
+    // Derby-compatible derby.jar from declared outgoing artifacts instead of
+    // reaching directly into another project's build/classes directories.
+    derbyRuntimePatchArtifacts project(path: ':delosdb-storage-derby', configuration: 'derbyRuntimePatchElements')
+    derbyRuntimePatchArtifacts project(path: ':delosdb-storage-bridge', configuration: 'derbyRuntimePatchElements')
+}
 
 sourceSets {
     main {
@@ -222,6 +227,7 @@ tasks.register('derbyJar', Jar) {
             ':delosdb-storage-derby:processResources',
             ':delosdb-storage-bridge:compileStorageBridge',
             ':delosdb-storage-bridge:processResources'
+    dependsOn configurations.derbyRuntimePatchArtifacts
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -232,7 +238,7 @@ tasks.register('derbyJar', Jar) {
         exclude 'META-INF/MANIFEST.MF'
         exclude 'module-info.class'
     }
-    from(storageImplementationPatch) {
+    from({ configurations.derbyRuntimePatchArtifacts.collect { zipTree(it) } }) {
         include 'org/apache/derby/impl/store/**'
         include 'META-INF/services/org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider'
         include 'META-INF/services/org.apache.derby.iapi.store.types.StoreRowLocationFactory'
