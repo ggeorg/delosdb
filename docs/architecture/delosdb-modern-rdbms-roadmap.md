@@ -199,6 +199,8 @@ changing query behavior.
 
 ### MODULE21A — Minimal model and no-op trace API
 
+Status: implemented by the first model overlay.
+
 Scope:
 
 ```text
@@ -226,7 +228,7 @@ Expected proof:
 
 ```text
 The project builds with the model present.
-No execution path depends on the model except harmless no-op plumbing if needed.
+No execution path depends on the model; the trace registry defaults to a no-op sink.
 ```
 
 ### MODULE21B — SELECT lifecycle trace proof

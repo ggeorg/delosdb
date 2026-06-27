@@ -137,6 +137,28 @@ VACUUM_HORIZON
 These concepts do not all need complete implementation in the first pass.  They remain part of the
 model so DelosDB does not stop at a classical SQL pipeline.
 
+
+## First implementation slice
+
+MODULE21A introduces the minimal source vocabulary only. It does not wire Derby execution to the
+model yet and does not create a new Gradle module. The first classes are:
+
+```text
+io.github.ggeorg.delosdb.engine.rdbms.model.RdbmsStatementKind
+io.github.ggeorg.delosdb.engine.rdbms.pipeline.RdbmsLifecycleStage
+io.github.ggeorg.delosdb.engine.rdbms.plan.RdbmsPlanNodeKind
+io.github.ggeorg.delosdb.engine.rdbms.execution.RdbmsExecutionNodeKind
+io.github.ggeorg.delosdb.engine.rdbms.storage.RdbmsStorageAccessKind
+io.github.ggeorg.delosdb.engine.rdbms.storage.RdbmsStorageProviderKind
+io.github.ggeorg.delosdb.engine.rdbms.transaction.RdbmsTransactionConcept
+io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceEvent
+io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceSink
+io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceRegistry
+```
+
+The trace registry defaults to a no-op sink. That keeps the model present but behaviorally inert
+until a later overlay wires real SELECT lifecycle events.
+
 ## Mapping to the current system
 
 The model should be backed by adapters over current Derby/DelosDB objects:
