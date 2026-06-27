@@ -82,3 +82,15 @@ tasks.named('run', JavaExec) {
         }
     }
 }
+
+// Dev smoke projects are executable verification fixtures, not shipped
+// application distributions. After storage-api became a real transitive
+// contract of MVCC, the Application plugin's generated distribution archives
+// can see both assembled DelosDB runtime jars and project-dependency jars with
+// the same runtime names. Keep `run` and compilation enabled, but keep the
+// `build` lifecycle from packaging smoke-only applications.
+tasks.matching { task ->
+    task.name in ['distTar', 'distZip', 'installDist', 'assembleDist']
+}.configureEach {
+    enabled = false
+}
