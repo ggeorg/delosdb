@@ -596,10 +596,6 @@ class TableScanResultSet extends ScanResultSet
 		scanRepositioned = false;
 		qualify = true;
 
-		if (result != null)
-		{
-			DerbyRdbmsTrace.rowsProduced(tableName, indexName, rowsThisScan);
-		}
 
 		nextTime += getElapsedMillis(beginTime);
 	    return result;
@@ -658,6 +654,11 @@ class TableScanResultSet extends ScanResultSet
 			scanControllerOpened = false;
 			startPosition = null;
 			stopPosition = null;
+
+			if (rowsThisScan > 0)
+			{
+				DerbyRdbmsTrace.rowsProduced(tableName, indexName, rowsThisScan);
+			}
 
 			DerbyRdbmsTrace.tableScanExecutionFinished(
 					tableName, indexName, rowsThisScan, rowsSeen, rowsFiltered);
