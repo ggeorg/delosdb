@@ -110,6 +110,14 @@ module org.apache.derby.engine
     exports org.apache.derby.security;
 
     //
+    // DelosDB-owned modern RDBMS model packages used by focused proof tests and diagnostics.
+    exports io.github.ggeorg.delosdb.engine.rdbms.model to
+        org.apache.derby.tests;
+    exports io.github.ggeorg.delosdb.engine.rdbms.pipeline to
+        org.apache.derby.tests;
+    exports io.github.ggeorg.delosdb.engine.rdbms.trace to
+        org.apache.derby.tests;
+
     // SUPPORT MODULE LOOKUP
     //
     provides org.apache.derby.shared.api.DerbyModuleAPI

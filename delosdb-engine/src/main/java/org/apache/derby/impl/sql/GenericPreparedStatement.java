@@ -63,6 +63,7 @@ import org.apache.derby.iapi.types.DataTypeUtilities;
 import org.apache.derby.iapi.util.ByteArray;
 import org.apache.derby.impl.sql.compile.CursorNode;
 import org.apache.derby.impl.sql.compile.StatementNode;
+import io.github.ggeorg.delosdb.engine.rdbms.derby.DerbyRdbmsTrace;
 
 /**
  * Basic implementation of prepared statement.
@@ -424,6 +425,8 @@ recompileOutOfDatePlan:
 										  pvsString);
 			}
 
+			DerbyRdbmsTrace.statementReceived(getSource());
+
 			ParameterValueSet pvs = activation.getParameterValueSet();
 
 			/* put it in try block to unlock the PS in any case
@@ -465,6 +468,7 @@ recompileOutOfDatePlan:
             ResultSet resultSet;
 			try {
 	
+				DerbyRdbmsTrace.statementExecutionStarted(getSource());
 				resultSet = activation.execute();
 
 				resultSet.open();

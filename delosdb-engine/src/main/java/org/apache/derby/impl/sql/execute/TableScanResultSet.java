@@ -43,6 +43,7 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import io.github.ggeorg.delosdb.engine.rdbms.derby.DerbyRdbmsTrace;
 
 /**
  * Takes a table and a table filter and returns
@@ -232,6 +233,14 @@ class TableScanResultSet extends ScanResultSet
 		currentRowIsValid = false;
 		scanRepositioned = false;
 		
+		DerbyRdbmsTrace.tableScanPlanned(
+				tableName,
+				indexName,
+				conglomId,
+				forUpdate,
+				oneRowScan,
+				qualifiers != null);
+
 		recordConstructorTime();
     }
 
@@ -325,6 +334,8 @@ class TableScanResultSet extends ScanResultSet
 
 		firstScan = false;
 	    isOpen = true;
+		DerbyRdbmsTrace.tableScanExecutionStarted(
+				tableName, indexName, conglomId, isKeyed);
 		numOpens++;
 		nextDone = false;
 		openTime += getElapsedMillis(beginTime);
@@ -409,6 +420,8 @@ class TableScanResultSet extends ScanResultSet
 									this,
 									scanController.getEstimatedRowCount()
 									);
+		DerbyRdbmsTrace.storageAccessed(
+				tableName, indexName, conglomId, isKeyed, qualifiers != null);
 	}
 
 	/*
@@ -583,6 +596,11 @@ class TableScanResultSet extends ScanResultSet
 		scanRepositioned = false;
 		qualify = true;
 
+		if (result != null)
+		{
+			DerbyRdbmsTrace.rowsProduced(tableName, indexName, rowsThisScan);
+		}
+
 		nextTime += getElapsedMillis(beginTime);
 	    return result;
 	}
@@ -640,6 +658,9 @@ class TableScanResultSet extends ScanResultSet
 			scanControllerOpened = false;
 			startPosition = null;
 			stopPosition = null;
+
+			DerbyRdbmsTrace.tableScanExecutionFinished(
+					tableName, indexName, rowsThisScan, rowsSeen, rowsFiltered);
 
 			super.close();
 

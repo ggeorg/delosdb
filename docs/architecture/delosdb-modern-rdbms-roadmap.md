@@ -233,6 +233,8 @@ No execution path depends on the model; the trace registry defaults to a no-op s
 
 ### MODULE21B — SELECT lifecycle trace proof
 
+Status: implemented by the first execution-wiring overlay.
+
 Scope:
 
 ```text
@@ -245,6 +247,7 @@ Expected proof:
 
 ```text
 A simple SELECT can produce a trace that explains the real path through the engine.
+The focused modernRdbmsModelProof task passes without changing query semantics.
 ```
 
 ### MODULE21C — Storage-provider and access-method observations

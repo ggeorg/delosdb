@@ -21,6 +21,10 @@ public final class RdbmsTraceRegistry {
         return SINK.get();
     }
 
+    public static boolean isEnabled() {
+        return SINK.get() != RdbmsTraceSink.NOOP;
+    }
+
     public static void setSink(RdbmsTraceSink sink) {
         SINK.set(Objects.requireNonNull(sink, "sink"));
     }

@@ -156,8 +156,46 @@ io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceSink
 io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceRegistry
 ```
 
-The trace registry defaults to a no-op sink. That keeps the model present but behaviorally inert
-until a later overlay wires real SELECT lifecycle events.
+The trace registry defaults to a no-op sink. That keeps the model behaviorally inert unless a
+focused test or diagnostic tool installs a sink.
+
+## First execution-wired proof
+
+MODULE21B connects the model to a narrow inherited Derby SELECT path. It observes real execution
+without changing planning, optimization, storage access, locking, or row production behavior.
+
+The first wired Derby adapter is:
+
+```text
+io.github.ggeorg.delosdb.engine.rdbms.derby.DerbyRdbmsTrace
+```
+
+The first real execution points are:
+
+```text
+org.apache.derby.impl.sql.GenericPreparedStatement
+  emits statement lifecycle observations
+
+org.apache.derby.impl.sql.execute.TableScanResultSet
+  emits table-scan plan, storage-access, row-flow, and finish observations
+```
+
+The focused proof is:
+
+```text
+:delosdb-tests:runModernRdbmsSelectLifecycleTraceTest
+```
+
+The proof executes a normal SQL SELECT through Derby JDBC and asserts that the model observes:
+
+```text
+SQL_TEXT_RECEIVED
+EXECUTION_STARTED
+PHYSICAL_PLAN_CREATED
+STORAGE_ACCESSED
+ROWS_PRODUCED
+EXECUTION_FINISHED
+```
 
 ## Mapping to the current system
 

@@ -806,6 +806,13 @@ tasks.register('derbyTestSuite') {
     dependsOn ':delosdb-tests:runDerbyLangSuite'
 }
 
+
+tasks.register('modernRdbmsModelProof') {
+    group = 'verification'
+    description = 'Runs focused proofs for the DelosDB teachable modern RDBMS model.'
+    dependsOn ':delosdb-tests:runModernRdbmsSelectLifecycleTraceTest'
+}
+
 tasks.named('check') {
     dependsOn 'derbyRuntimeSmoke'
 }
@@ -813,7 +820,7 @@ tasks.named('check') {
 tasks.register('fullVerification') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime smokes and the original Derby lang JUnit suite.'
-    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite'
+    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite', 'modernRdbmsModelProof'
 }
 
 tasks.register('test') {
