@@ -336,6 +336,8 @@ class TableScanResultSet extends ScanResultSet
 	    isOpen = true;
 		DerbyRdbmsTrace.tableScanExecutionStarted(
 				tableName, indexName, conglomId, isKeyed);
+		DerbyRdbmsTrace.storageAccessed(
+				tableName, indexName, conglomId, isKeyed, qualifiers != null);
 		numOpens++;
 		nextDone = false;
 		openTime += getElapsedMillis(beginTime);
@@ -420,8 +422,6 @@ class TableScanResultSet extends ScanResultSet
 									this,
 									scanController.getEstimatedRowCount()
 									);
-		DerbyRdbmsTrace.storageAccessed(
-				tableName, indexName, conglomId, isKeyed, qualifiers != null);
 	}
 
 	/*

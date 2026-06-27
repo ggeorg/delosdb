@@ -20,11 +20,15 @@
  */
 package org.apache.derby.iapi.store.types;
 
+import java.util.Iterator;
+import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 
 /** Factory for provider-owned row-location values. */
 public interface StoreRowLocationFactory {
     String DEFAULT_PROVIDER = "derby";
+    String DERBY_HEAP_ROW_LOCATION_CLASS =
+            "org.apache.derby.impl.store.access.heap.HeapRowLocation";
 
     String providerName();
 
@@ -35,11 +39,45 @@ public interface StoreRowLocationFactory {
     }
 
     static StoreRowLocation newRowLocation(String providerName) {
-        for (StoreRowLocationFactory factory : ServiceLoader.load(StoreRowLocationFactory.class)) {
-            if (factory.providerName().equals(providerName)) {
-                return factory.newRowLocation();
+        if (DEFAULT_PROVIDER.equals(providerName)) {
+            return newDefaultDerbyRowLocation();
+        }
+
+        Iterator<StoreRowLocationFactory> factories = ServiceLoader.load(
+                StoreRowLocationFactory.class,
+                StoreRowLocationFactory.class.getClassLoader()).iterator();
+        while (true) {
+            try {
+                if (!factories.hasNext()) {
+                    break;
+                }
+                StoreRowLocationFactory factory = factories.next();
+                if (factory.providerName().equals(providerName)) {
+                    return factory.newRowLocation();
+                }
+            } catch (ServiceConfigurationError error) {
+                throw new IllegalStateException(
+                        "Invalid row-location factory registration", error);
             }
         }
         throw new IllegalStateException("No row-location factory registered for provider " + providerName);
+    }
+
+    private static StoreRowLocation newDefaultDerbyRowLocation() {
+        try {
+            Class<?> rowLocationClass = Class.forName(
+                    DERBY_HEAP_ROW_LOCATION_CLASS,
+                    true,
+                    StoreRowLocationFactory.class.getClassLoader());
+            Object rowLocation = rowLocationClass.getDeclaredConstructor().newInstance();
+            if (rowLocation instanceof StoreRowLocation storeRowLocation) {
+                return storeRowLocation;
+            }
+            throw new IllegalStateException(
+                    DERBY_HEAP_ROW_LOCATION_CLASS + " is not a StoreRowLocation");
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException(
+                    "Unable to create default Derby row location", exception);
+        }
     }
 }
