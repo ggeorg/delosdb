@@ -94,6 +94,20 @@ def testRuntimeClasspath = {
     )
 }
 
+// A small set of inherited Derby unit tests imports store implementation
+// classes directly. Keep that access local to the test module compile instead
+// of re-exporting implementation packages from delosdb-engine.
+def inheritedStoreImplementationExports = [
+        'org.apache.derby.impl.store.access.btree',
+        'org.apache.derby.impl.store.access.btree.index',
+        'org.apache.derby.impl.store.access.conglomerate',
+        'org.apache.derby.impl.store.access.heap',
+        'org.apache.derby.impl.store.raw.data',
+        'org.apache.derby.impl.store.raw.log'
+].collectMany { packageName ->
+    ['--add-exports', "org.apache.derby.engine/${packageName}=org.apache.derby.tests"]
+}
+
 java {
     sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
     targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
@@ -166,7 +180,7 @@ tasks.named('compileTestJava', JavaCompile) {
         options.compilerArgs = [
                 '--module-path', testModulePath().asPath,
                 '-proc:none'
-        ]
+        ] + inheritedStoreImplementationExports
     }
 }
 
