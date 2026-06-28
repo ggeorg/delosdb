@@ -581,6 +581,27 @@ The observation reports the old snapshot's visible row count separately from log
 roadmapVerification includes the MVCC internal-observation proof.
 ```
 
+### MODULE24B — Page-backed MVCC observation proof
+
+Scope:
+
+```text
+Add a read-only observation object for the existing page-backed MVCC prototype.
+Summarize page count, durable row-directory heads, logical rows, physical versions, and
+snapshot-visible rows from PageBackedMvccTable.
+Report mutation-log presence without claiming a real WAL position.
+Keep checkpoint state explicit as NOT_OBSERVED until durable checkpoint metadata exists.
+Do not parse page files directly, change storage routing, or promote MVCC internals to public API.
+```
+
+Expected proof:
+
+```text
+A focused page-backed MVCC observation proof writes committed versions through the durable table path.
+The observation reports page/version and row-directory facts separately from snapshot-visible rows.
+roadmapVerification includes the page-backed MVCC observation proof.
+```
+
 ## Phase 25 — Optimizer and planner experiments
 
 Goal: enable later experimentation once the model can already observe real query execution.

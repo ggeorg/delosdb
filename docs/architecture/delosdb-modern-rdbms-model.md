@@ -175,9 +175,9 @@ The model document names both implemented observations and future concepts. The 
 | Transaction snapshot | Implemented as a native-MVCC internal observation proof. | Module 24A MVCC observation proof. |
 | Visible rows / visibility checks | Implemented as a native-MVCC internal observation proof. | Module 24A MVCC observation proof. |
 | Vacuum horizon | Implemented as a native-MVCC internal observation through oldest retained visibility. | Module 24A MVCC observation proof. |
-| Page/version access | Partly implemented as physical-version counts, not page-level access. | Module 24A internal observation; page-level detail remains later. |
-| WAL/log position | Future native-MVCC internal observation; explicitly not observed by the in-memory path. | Later Phase 24. |
-| Checkpoint state | Future native-MVCC internal observation; explicitly not observed by the in-memory path. | Later Phase 24. |
+| Page/version access | Implemented as selected page-backed MVCC internal observation facts: page count, row-directory heads, logical rows, physical versions, and snapshot-visible rows. | Module 24B page-backed observation proof. |
+| WAL/log position | Not implemented as a real position. Module 24B only observes mutation-log presence for the page-backed prototype. | Later Phase 24. |
+| Checkpoint state | Not implemented as durable checkpoint metadata; observations explicitly report `NOT_OBSERVED`. | Later Phase 24. |
 
 This distinction prevents the model from overclaiming. The vocabulary can describe modern RDBMS
 concepts before every concept is wired to a real execution point, but diagnostics are considered
