@@ -110,9 +110,6 @@ module org.apache.derby.engine
     exports org.apache.derby.security;
 
     //
-    // DelosDB-owned engine trace vocabulary used by focused proof tests and diagnostics.
-    exports io.github.ggeorg.delosdb.engine.trace to
-        org.apache.derby.tests;
 
     // SUPPORT MODULE LOOKUP
     //

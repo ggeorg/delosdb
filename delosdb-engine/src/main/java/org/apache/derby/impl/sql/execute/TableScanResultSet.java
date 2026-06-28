@@ -43,7 +43,6 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
-import io.github.ggeorg.delosdb.engine.trace.DerbyRdbmsTrace;
 
 /**
  * Takes a table and a table filter and returns
@@ -232,14 +231,6 @@ class TableScanResultSet extends ScanResultSet
 		qualify = true;
 		currentRowIsValid = false;
 		scanRepositioned = false;
-		
-		DerbyRdbmsTrace.tableScanPlanned(
-				tableName,
-				indexName,
-				conglomId,
-				forUpdate,
-				oneRowScan,
-				qualifiers != null);
 
 		recordConstructorTime();
     }
@@ -334,10 +325,6 @@ class TableScanResultSet extends ScanResultSet
 
 		firstScan = false;
 	    isOpen = true;
-		DerbyRdbmsTrace.tableScanExecutionStarted(
-				tableName, indexName, conglomId, isKeyed);
-		DerbyRdbmsTrace.storageAccessed(
-				tableName, indexName, conglomId, isKeyed, oneRowScan, qualifiers != null);
 		numOpens++;
 		nextDone = false;
 		openTime += getElapsedMillis(beginTime);
@@ -654,14 +641,6 @@ class TableScanResultSet extends ScanResultSet
 			scanControllerOpened = false;
 			startPosition = null;
 			stopPosition = null;
-
-			if (rowsThisScan > 0)
-			{
-				DerbyRdbmsTrace.rowsProduced(tableName, indexName, rowsThisScan);
-			}
-
-			DerbyRdbmsTrace.tableScanExecutionFinished(
-					tableName, indexName, rowsThisScan, rowsSeen, rowsFiltered);
 
 			super.close();
 

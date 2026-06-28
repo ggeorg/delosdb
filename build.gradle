@@ -807,31 +807,9 @@ tasks.register('derbyTestSuite') {
 }
 
 
-tasks.register('modernRdbmsModelProof') {
-    group = 'verification'
-    description = 'Runs focused proofs for the DelosDB teachable modern RDBMS model.'
-    dependsOn ':delosdb-tests:runModernRdbmsSelectLifecycleTraceTest',
-            ':delosdb-tests:runModernRdbmsStorageAccessTraceTest',
-            ':delosdb-tests:runModernRdbmsTransactionTraceTest',
-            ':delosdb-tests:runModernRdbmsTraceTextOutputTest',
-            ':delosdb-tests:runModernRdbmsTraceSummaryTest',
-            ':delosdb-tests:runModernRdbmsObservedPlanTest'
-}
 
 
-tasks.register('mvccResearchIntegrationProof') {
-    group = 'verification'
-    description = 'Runs focused proofs for native MVCC research observations.'
-    dependsOn ':delosdb-storage-mvcc:runMvccResearchObservationTest',
-            ':delosdb-storage-mvcc:runMvccPageBackedResearchObservationTest',
-            ':delosdb-storage-mvcc:runMvccPageVolumeResearchObservationTest'
-}
 
-tasks.register('roadmapVerification') {
-    group = 'verification'
-    description = 'Runs the fast per-overlay DelosDB roadmap gate.'
-    dependsOn 'modernRdbmsModelProof', 'mvccResearchIntegrationProof', 'derbyRuntimeSmoke'
-}
 
 tasks.named('check') {
     dependsOn 'derbyRuntimeSmoke'
@@ -839,8 +817,8 @@ tasks.named('check') {
 
 tasks.register('fullVerification') {
     group = 'verification'
-    description = 'Runs the fast roadmap gate and the slow inherited Derby lang compatibility suite.'
-    dependsOn 'roadmapVerification', 'derbyTestSuite'
+    description = 'Runs Derby-compatible runtime smoke checks and the inherited Derby lang compatibility suite.'
+    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite'
 }
 
 tasks.register('test') {
