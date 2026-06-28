@@ -637,7 +637,7 @@ roadmapVerification includes the page-volume MVCC observation proof.
 
 ### MODULE24D — MVCC observation closeout and honesty matrix
 
-Status: current closeout pass.
+Status: green.
 
 Scope:
 
@@ -657,14 +657,18 @@ roadmapVerification remains green.
 The module-dependency report remains clean.
 ```
 
-Phase 24's initial observation lane is closed when Module 24D is green. Future MVCC work should be
-opened as a separate proof only when it needs new behavior, such as safe version pruning, WAL replay
-evidence, checkpoint scheduling, or SQL-facing storage routing.
+Phase 24's initial observation lane is closed. Future MVCC work should be opened as a separate
+proof only when it needs new behavior, such as safe version pruning, WAL replay evidence, checkpoint
+scheduling, or SQL-facing storage routing.
 
 
 ## Phase 25 — Optimizer and planner experiments
 
 Goal: enable later experimentation once the model can already observe real query execution.
+
+Phase 25 must start from observation and explanation. The first pass should expose the current Derby
+planning/access outcome in reader-facing terms before any optimizer or planner behavior changes are
+attempted.
 
 Possible directions:
 
@@ -678,3 +682,26 @@ MVCC-aware access path selection
 
 Optimizer work should start from observation and explanation. Replacement or deep planner rewrites
 should come only after the current Derby planning path is visible through the model.
+
+### MODULE25A — Observed plan baseline proof
+
+Status: current pass.
+
+Scope:
+
+```text
+Add a diagnostic-only observed-plan summary derived from already-captured trace events.
+Explain whether a captured SELECT used an observed table-scan or index-scan access path.
+Prove ordinary heap SELECT and forced-index SELECT observations without adding new Derby hooks.
+Do not change optimization, costing, storage routing, execution, or row production.
+Do not introduce a Calcite dependency, planner replacement, or new module.
+```
+
+Expected proof:
+
+```text
+A heap SELECT trace can be summarized as TABLE_SCAN / DERBY_HEAP / HEAP_SCAN.
+A forced-index SELECT trace can be summarized as INDEX_SCAN / DERBY_BTREE / BTREE_INDEX_SCAN
+or BTREE_KEYED_LOOKUP.
+modernRdbmsModelProof includes the observed-plan proof.
+```
