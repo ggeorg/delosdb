@@ -813,7 +813,8 @@ tasks.register('modernRdbmsModelProof') {
     dependsOn ':delosdb-tests:runModernRdbmsSelectLifecycleTraceTest',
             ':delosdb-tests:runModernRdbmsStorageAccessTraceTest',
             ':delosdb-tests:runModernRdbmsTransactionTraceTest',
-            ':delosdb-tests:runModernRdbmsTraceTextOutputTest'
+            ':delosdb-tests:runModernRdbmsTraceTextOutputTest',
+            ':delosdb-tests:runModernRdbmsTraceSummaryTest'
 }
 
 tasks.register('roadmapVerification') {

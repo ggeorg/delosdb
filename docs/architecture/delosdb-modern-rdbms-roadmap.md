@@ -356,12 +356,32 @@ The formatter uses stable attribute ordering and escaping.
 modernRdbmsModelProof includes the trace-text output proof.
 ```
 
+### MODULE22B — Trace summary and row-flow counters
+
+Status: green.
+
+Scope:
+
+```text
+Summarize already-captured modern RDBMS trace events as reader-facing row-flow facts.
+Use the existing SELECT trace stream; do not add new Derby hooks.
+Expose statement kind, execution start/finish, storage provider/access kind, storage-access count,
+rows produced, and optional rows-seen/filtered and transaction outcome fields.
+Do not install global diagnostics, add source guards, change execution behavior, or create a new module.
+```
+
+Expected proof:
+
+```text
+A real SELECT trace can be summarized as statement/storage/row-flow facts.
+Synthetic trace events prove deterministic counter aggregation without depending on a new execution path.
+modernRdbmsModelProof includes the trace-summary proof.
+```
+
 Potential later passes:
 
 ```text
-query lifecycle trace output
-execution row-flow counters
-storage access observations
+storage access report polish
 optimizer decision observations
 catalog and type observations
 ```
