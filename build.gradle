@@ -822,7 +822,8 @@ tasks.register('mvccResearchIntegrationProof') {
     group = 'verification'
     description = 'Runs focused proofs for native MVCC research observations.'
     dependsOn ':delosdb-storage-mvcc:runMvccResearchObservationTest',
-            ':delosdb-storage-mvcc:runMvccPageBackedResearchObservationTest'
+            ':delosdb-storage-mvcc:runMvccPageBackedResearchObservationTest',
+            ':delosdb-storage-mvcc:runMvccPageVolumeResearchObservationTest'
 }
 
 tasks.register('roadmapVerification') {

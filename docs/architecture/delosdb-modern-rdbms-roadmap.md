@@ -602,6 +602,32 @@ The observation reports page/version and row-directory facts separately from sna
 roadmapVerification includes the page-backed MVCC observation proof.
 ```
 
+
+### MODULE24C — Page-volume MVCC checkpoint/WAL observation proof
+
+Scope:
+
+```text
+Add a read-only observation object for the existing page-volume MVCC state-store boundary.
+Summarize page-volume files, checkpoint status, write-ahead-log file state, durable-state presence,
+logical-row count, physical-version count, and next inherited row id from PageVolumeMvccStateStore.
+Expose write-ahead-log file presence without claiming a real WAL replay position.
+Expose checkpoint validation state without changing checkpoint rewrite or recovery behavior.
+Do not parse page, checkpoint, or WAL files directly.
+Do not change Derby-compatible SQL/JDBC behavior, storage routing, MVCC visibility, or recovery.
+Do not promote MVCC internals to public API.
+```
+
+Expected proof:
+
+```text
+A focused page-volume MVCC observation proof persists rows through PageVolumeMvccStateStore.
+The observation reports checkpoint WRITTEN after rewrite and VALID after reopen/validation.
+The observation reports write-ahead-log file presence without reporting a WAL position.
+roadmapVerification includes the page-volume MVCC observation proof.
+```
+
+
 ## Phase 25 — Optimizer and planner experiments
 
 Goal: enable later experimentation once the model can already observe real query execution.
