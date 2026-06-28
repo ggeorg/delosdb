@@ -43,7 +43,7 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
-import io.github.ggeorg.delosdb.engine.rdbms.derby.DerbyRdbmsTrace;
+import io.github.ggeorg.delosdb.engine.trace.DerbyRdbmsTrace;
 
 /**
  * Takes a table and a table filter and returns

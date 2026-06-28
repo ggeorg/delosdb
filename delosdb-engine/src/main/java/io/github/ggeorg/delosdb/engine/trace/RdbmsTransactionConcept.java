@@ -1,4 +1,4 @@
-package io.github.ggeorg.delosdb.engine.rdbms.transaction;
+package io.github.ggeorg.delosdb.engine.trace;
 
 /**
  * Modern transaction and recovery concepts that DelosDB should make observable over time.

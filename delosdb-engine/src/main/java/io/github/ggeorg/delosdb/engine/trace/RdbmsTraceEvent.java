@@ -1,6 +1,4 @@
-package io.github.ggeorg.delosdb.engine.rdbms.trace;
-
-import io.github.ggeorg.delosdb.engine.rdbms.pipeline.RdbmsLifecycleStage;
+package io.github.ggeorg.delosdb.engine.trace;
 
 import java.time.Instant;
 import java.util.Map;

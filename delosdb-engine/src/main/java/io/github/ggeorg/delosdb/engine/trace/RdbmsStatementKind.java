@@ -1,4 +1,4 @@
-package io.github.ggeorg.delosdb.engine.rdbms.model;
+package io.github.ggeorg.delosdb.engine.trace;
 
 /**
  * Teachable statement categories used by the DelosDB modern RDBMS model.

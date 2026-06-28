@@ -4,6 +4,9 @@ plugins {
 
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.bundling.Jar
+import org.gradle.api.tasks.JavaExec
+import java.net.ServerSocket
 
 version = rootProject.version
 group = rootProject.group
@@ -52,6 +55,64 @@ def legacyHarnessQuarantineExcludes = [
 
 def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/demo/toursdb')
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
+def generatedNativeAuthResourceDir = layout.buildDirectory.dir('generated/test-resources/native-auth')
+def generatedNativeAuthWorkDir = layout.buildDirectory.dir('generated/native-auth-test-db')
+
+def isPortAvailable = { int port ->
+    ServerSocket socket = null
+    try {
+        socket = new ServerSocket(port)
+        socket.setReuseAddress(true)
+        return true
+    } catch (IOException ignored) {
+        return false
+    } finally {
+        if (socket != null) {
+            try { socket.close() } catch (IOException ignored) { }
+        }
+    }
+}
+
+def findAvailablePortBlock = {
+    int hash = Math.abs(rootProject.projectDir.absolutePath.hashCode())
+    int start = 20000 + (hash % 20000)
+    int maxPort = 64000
+
+    for (int base = start; base < maxPort - 32; base += 32) {
+        boolean blockAvailable = true
+        for (int offset = 0; offset < 24; offset++) {
+            if (!isPortAvailable(base + offset)) {
+                blockAvailable = false
+                break
+            }
+        }
+        if (blockAvailable) {
+            return base
+        }
+    }
+
+    for (int base = 20000; base < maxPort - 32; base += 32) {
+        boolean blockAvailable = true
+        for (int offset = 0; offset < 24; offset++) {
+            if (!isPortAvailable(base + offset)) {
+                blockAvailable = false
+                break
+            }
+        }
+        if (blockAvailable) {
+            return base
+        }
+    }
+
+    throw new GradleException('Could not find an available Derby test port block')
+}
+
+def derbyLangBasePort = providers.gradleProperty('delosdb.derby.basePort')
+        .orElse(providers.provider { findAvailablePortBlock().toString() })
+
+def derbyLangFailFast = providers.gradleProperty('delosdb.derby.collectAllFailures')
+        .map { !it.toBoolean() }
+        .orElse(true)
 
 // Derby's inherited tests compile against the bundled JUnit 3 jar because that
 // is what the upstream test sources import. Gradle's Test worker, however,
@@ -90,6 +151,13 @@ def derbyRuntimeJars = rootProject.files(
         rootProject.layout.buildDirectory.file('libs/derbyrun.jar')
 )
 
+// NativeAuthenticationServiceTest creates stored procedures while building
+// its jar-backed fixture. That path uses Derby's ASM bytecode backend, so the
+// fixture generator needs ASM at runtime, not only at test compile/runtime.
+def nativeAuthenticationGeneratorClasspath = {
+    rootProject.files(derbyRuntimeJars, rootProject.configurations.delosdbAsm)
+}
+
 def testModulePath = {
     rootProject.files(derbyRuntimeJars, thirdPartyTestModules)
 }
@@ -98,6 +166,7 @@ def testRuntimeClasspath = {
     rootProject.files(
             derbyTestsClassDir,
             derbyRuntimeJars,
+            generatedNativeAuthResourceDir,
             testSourceRoot,
             toursDbSourceRoot,
             thirdPartyTestModules,
@@ -211,16 +280,80 @@ tasks.register('compileDerbyTestsModule') {
     dependsOn tasks.named('compileTestJava')
 }
 
+tasks.register('generateNativeAuthenticationTestDatabase', JavaExec) {
+    group = 'verification'
+    description = 'Generates the native-authentication jar database used by inherited Derby lang tests.'
+    dependsOn ':jars'
+
+    def ijOutput = layout.buildDirectory.file('reports/native-authentication/nast_init.out')
+    def ijError = layout.buildDirectory.file('reports/native-authentication/nast_init.err')
+
+    mainClass = 'org.apache.derby.tools.ij'
+    classpath = nativeAuthenticationGeneratorClasspath()
+    workingDir = generatedNativeAuthWorkDir.get().asFile
+    args file('src/test/java/org/apache/derbyTesting/functionTests/tests/lang/nast_init.sql').absolutePath
+    outputs.upToDateWhen { false }
+    outputs.file(ijOutput)
+    outputs.file(ijError)
+    outputs.dir(generatedNativeAuthWorkDir)
+
+    doFirst {
+        delete generatedNativeAuthWorkDir
+        workingDir.mkdirs()
+        ijOutput.get().asFile.parentFile.mkdirs()
+        standardOutput = new FileOutputStream(ijOutput.get().asFile)
+        errorOutput = new FileOutputStream(ijError.get().asFile)
+    }
+
+    doLast {
+        String combinedOutput = ''
+        if (ijOutput.get().asFile.exists()) {
+            combinedOutput += ijOutput.get().asFile.getText('UTF-8')
+        }
+        if (ijError.get().asFile.exists()) {
+            combinedOutput += '\n' + ijError.get().asFile.getText('UTF-8')
+        }
+        def unexpectedErrors = combinedOutput.readLines().findAll { line ->
+            line.contains('ERROR ') && !line.contains('ERROR XJ015')
+        }
+        if (!unexpectedErrors.isEmpty()) {
+            throw new GradleException(
+                    "Native-authentication fixture generation failed; see ${ijOutput.get().asFile} and ${ijError.get().asFile}; first unexpected error: ${unexpectedErrors.first()}")
+        }
+
+        def plainDatabase = generatedNativeAuthWorkDir.get().dir('nast/nast').asFile
+        def encryptedDatabase = generatedNativeAuthWorkDir.get().dir('nast/nastEncrypted').asFile
+        if (!plainDatabase.isDirectory() || !encryptedDatabase.isDirectory()) {
+            throw new GradleException(
+                    "Native-authentication fixture generation did not create both expected databases under ${generatedNativeAuthWorkDir.get().asFile}")
+        }
+    }
+}
+
+tasks.register('generateNativeAuthenticationTestJar', Jar) {
+    group = 'verification'
+    description = 'Packages the generated native-authentication test database as nast1.jar.'
+    dependsOn tasks.named('generateNativeAuthenticationTestDatabase')
+
+    archiveFileName = 'nast1.jar'
+    destinationDirectory = generatedNativeAuthResourceDir.map {
+        it.dir('org/apache/derbyTesting/functionTests/tests/lang')
+    }
+    from generatedNativeAuthWorkDir.map { it.dir('nast') }
+}
+
+
 tasks.register('runDerbyLangSuite', Test) {
     group = 'verification'
     description = 'Runs the original Derby lang JUnit suite through Gradle using the default bytecode backend.'
-    dependsOn tasks.named('compileTestJava'), ':jars'
+    dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
 
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
     classpath = testRuntimeClasspath()
     useJUnit()
     include 'org/apache/derbyTesting/functionTests/tests/lang/_Suite.class'
+    failFast = derbyLangFailFast.get()
 
     workingDir = layout.buildDirectory.dir('test-work/runDerbyLangSuite').get().asFile
     maxHeapSize = '1536m'
@@ -235,6 +368,8 @@ tasks.register('runDerbyLangSuite', Test) {
     doFirst {
         delete workingDir
         workingDir.mkdirs()
+        systemProperty 'derby.tests.basePort', derbyLangBasePort.get()
+        logger.lifecycle("runDerbyLangSuite using derby.tests.basePort=${derbyLangBasePort.get()} failFast=${failFast}")
     }
 
     testLogging {

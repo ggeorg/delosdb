@@ -1,4 +1,4 @@
-package io.github.ggeorg.delosdb.engine.rdbms.trace;
+package io.github.ggeorg.delosdb.engine.trace;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;

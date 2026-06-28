@@ -1,12 +1,4 @@
-package io.github.ggeorg.delosdb.engine.rdbms.derby;
-
-import io.github.ggeorg.delosdb.engine.rdbms.model.RdbmsStatementKind;
-import io.github.ggeorg.delosdb.engine.rdbms.pipeline.RdbmsLifecycleStage;
-import io.github.ggeorg.delosdb.engine.rdbms.storage.RdbmsStorageAccessKind;
-import io.github.ggeorg.delosdb.engine.rdbms.storage.RdbmsStorageProviderKind;
-import io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceEvent;
-import io.github.ggeorg.delosdb.engine.rdbms.transaction.RdbmsTransactionConcept;
-import io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceRegistry;
+package io.github.ggeorg.delosdb.engine.trace;
 
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -147,8 +139,6 @@ public final class DerbyRdbmsTrace {
                         "rowsSeen", Long.toString(rowsSeen),
                         "rowsFiltered", Long.toString(rowsFiltered))));
     }
-
-
 
     public static void transactionCommitted(
             String transactionId,

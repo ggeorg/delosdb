@@ -63,7 +63,7 @@ import org.apache.derby.iapi.types.DataTypeUtilities;
 import org.apache.derby.iapi.util.ByteArray;
 import org.apache.derby.impl.sql.compile.CursorNode;
 import org.apache.derby.impl.sql.compile.StatementNode;
-import io.github.ggeorg.delosdb.engine.rdbms.derby.DerbyRdbmsTrace;
+import io.github.ggeorg.delosdb.engine.trace.DerbyRdbmsTrace;
 
 /**
  * Basic implementation of prepared statement.

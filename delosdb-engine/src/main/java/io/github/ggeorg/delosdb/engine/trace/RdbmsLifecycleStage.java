@@ -1,4 +1,4 @@
-package io.github.ggeorg.delosdb.engine.rdbms.pipeline;
+package io.github.ggeorg.delosdb.engine.trace;
 
 /**
  * Coarse stages in the lifecycle of a SQL statement in a modern relational database system.

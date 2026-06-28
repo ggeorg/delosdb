@@ -1,4 +1,4 @@
-package io.github.ggeorg.delosdb.engine.rdbms.execution;
+package io.github.ggeorg.delosdb.engine.trace;
 
 /**
  * Coarse executor node categories used in education and trace output.

@@ -19,10 +19,10 @@
 
 package org.apache.derbyTesting.functionTests.tests.delosdb;
 
-import io.github.ggeorg.delosdb.engine.rdbms.model.RdbmsStatementKind;
-import io.github.ggeorg.delosdb.engine.rdbms.pipeline.RdbmsLifecycleStage;
-import io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceEvent;
-import io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceRegistry;
+import io.github.ggeorg.delosdb.engine.trace.RdbmsStatementKind;
+import io.github.ggeorg.delosdb.engine.trace.RdbmsLifecycleStage;
+import io.github.ggeorg.delosdb.engine.trace.RdbmsTraceEvent;
+import io.github.ggeorg.delosdb.engine.trace.RdbmsTraceRegistry;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;

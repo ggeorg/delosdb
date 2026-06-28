@@ -1,4 +1,4 @@
-package io.github.ggeorg.delosdb.engine.rdbms.storage;
+package io.github.ggeorg.delosdb.engine.trace;
 
 /**
  * Storage-provider categories used by DelosDB traces and documentation.

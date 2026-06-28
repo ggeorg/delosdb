@@ -80,7 +80,7 @@ import org.apache.derby.iapi.sql.execute.ExecutionStmtValidator;
 import org.apache.derby.iapi.sql.execute.RunTimeStatistics;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.XATransactionController;
-import io.github.ggeorg.delosdb.engine.rdbms.derby.DerbyRdbmsTrace;
+import io.github.ggeorg.delosdb.engine.trace.DerbyRdbmsTrace;
 
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.transaction.TransactionControl;

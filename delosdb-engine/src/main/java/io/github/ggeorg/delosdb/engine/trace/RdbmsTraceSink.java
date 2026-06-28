@@ -1,4 +1,4 @@
-package io.github.ggeorg.delosdb.engine.rdbms.trace;
+package io.github.ggeorg.delosdb.engine.trace;
 
 /**
  * Consumer for DelosDB modern RDBMS trace events.

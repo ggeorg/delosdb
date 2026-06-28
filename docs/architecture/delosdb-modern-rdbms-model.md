@@ -48,26 +48,21 @@ SQL type conversion, comparison, and null semantics
 runtime diagnostics and tracing
 ```
 
-## Initial package shape
+## Package shape
 
-The first implementation should live inside `delosdb-engine`, not in a new Gradle module:
+The first implementation lives inside `delosdb-engine`, not in a new Gradle module:
 
 ```text
-io.github.ggeorg.delosdb.engine.rdbms.model
-io.github.ggeorg.delosdb.engine.rdbms.pipeline
-io.github.ggeorg.delosdb.engine.rdbms.plan
-io.github.ggeorg.delosdb.engine.rdbms.catalog
-io.github.ggeorg.delosdb.engine.rdbms.types
-io.github.ggeorg.delosdb.engine.rdbms.execution
-io.github.ggeorg.delosdb.engine.rdbms.storage
-io.github.ggeorg.delosdb.engine.rdbms.transaction
-io.github.ggeorg.delosdb.engine.rdbms.recovery
-io.github.ggeorg.delosdb.engine.rdbms.trace
-io.github.ggeorg.delosdb.engine.rdbms.derby
+io.github.ggeorg.delosdb.engine.trace
 ```
 
-Do not create separate Gradle modules for these packages yet.  The first goal is explanation and
-observation, not replacement.
+This is engine-owned internal trace vocabulary, not a public observability API and not provider SPI.
+The package may describe observed storage, plan, execution, and transaction facts from the engine's
+point of view, but storage modules must not depend on `delosdb-engine` in order to emit trace
+events.
+
+The package follows the DelosDB package naming strategy in
+`docs/architecture/delosdb-package-naming-strategy.md`.
 
 ## Core model concepts
 
@@ -144,16 +139,16 @@ MODULE21A introduces the minimal source vocabulary only. It does not wire Derby 
 model yet and does not create a new Gradle module. The first classes are:
 
 ```text
-io.github.ggeorg.delosdb.engine.rdbms.model.RdbmsStatementKind
-io.github.ggeorg.delosdb.engine.rdbms.pipeline.RdbmsLifecycleStage
-io.github.ggeorg.delosdb.engine.rdbms.plan.RdbmsPlanNodeKind
-io.github.ggeorg.delosdb.engine.rdbms.execution.RdbmsExecutionNodeKind
-io.github.ggeorg.delosdb.engine.rdbms.storage.RdbmsStorageAccessKind
-io.github.ggeorg.delosdb.engine.rdbms.storage.RdbmsStorageProviderKind
-io.github.ggeorg.delosdb.engine.rdbms.transaction.RdbmsTransactionConcept
-io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceEvent
-io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceSink
-io.github.ggeorg.delosdb.engine.rdbms.trace.RdbmsTraceRegistry
+io.github.ggeorg.delosdb.engine.trace.RdbmsStatementKind
+io.github.ggeorg.delosdb.engine.trace.RdbmsLifecycleStage
+io.github.ggeorg.delosdb.engine.trace.RdbmsPlanNodeKind
+io.github.ggeorg.delosdb.engine.trace.RdbmsExecutionNodeKind
+io.github.ggeorg.delosdb.engine.trace.RdbmsStorageAccessKind
+io.github.ggeorg.delosdb.engine.trace.RdbmsStorageProviderKind
+io.github.ggeorg.delosdb.engine.trace.RdbmsTransactionConcept
+io.github.ggeorg.delosdb.engine.trace.RdbmsTraceEvent
+io.github.ggeorg.delosdb.engine.trace.RdbmsTraceSink
+io.github.ggeorg.delosdb.engine.trace.RdbmsTraceRegistry
 ```
 
 The trace registry defaults to a no-op sink. That keeps the model behaviorally inert unless a
@@ -167,7 +162,7 @@ without changing planning, optimization, storage access, locking, or row product
 The first wired Derby adapter is:
 
 ```text
-io.github.ggeorg.delosdb.engine.rdbms.derby.DerbyRdbmsTrace
+io.github.ggeorg.delosdb.engine.trace.DerbyRdbmsTrace
 ```
 
 The first real execution points are:

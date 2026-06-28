@@ -815,14 +815,20 @@ tasks.register('modernRdbmsModelProof') {
             ':delosdb-tests:runModernRdbmsTransactionTraceTest'
 }
 
+tasks.register('roadmapVerification') {
+    group = 'verification'
+    description = 'Runs the fast per-overlay DelosDB roadmap gate.'
+    dependsOn 'modernRdbmsModelProof', 'derbyRuntimeSmoke'
+}
+
 tasks.named('check') {
     dependsOn 'derbyRuntimeSmoke'
 }
 
 tasks.register('fullVerification') {
     group = 'verification'
-    description = 'Runs Derby-compatible runtime smokes and the original Derby lang JUnit suite.'
-    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite', 'modernRdbmsModelProof'
+    description = 'Runs the fast roadmap gate and the slow inherited Derby lang compatibility suite.'
+    dependsOn 'roadmapVerification', 'derbyTestSuite'
 }
 
 tasks.register('test') {
