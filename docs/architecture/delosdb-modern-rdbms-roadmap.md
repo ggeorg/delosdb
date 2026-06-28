@@ -430,18 +430,37 @@ the inherited Derby runtime/service substrate module.
 roadmapVerification and the dependency report remain green because the pass is documentation-only.
 ```
 
-### MODULE23B — Runtime/API boundary decision review
+### MODULE23B — Contract boundary audit
 
-Status: planned.
+Status: implemented as a documentation-only decision review.
 
 Scope:
 
 ```text
-Use the contract ownership map to decide whether any module naming, package ownership, or contract
-placement is actually dishonest enough to require a small source move.
+Audit the contract-bearing module boundaries in one pass: runtime API, Derby store API, storage API,
+SPI, engine trace/model vocabulary, MVCC internals, storage bridge, storage-derby, and storage-IO.
+Decide whether any boundary is dishonest enough to require a small source move.
 Do not move Module 21/22 trace vocabulary into delosdb-runtime-api.
 Do not create a model or diagnostics module unless real production consumers require it.
+Do not rename delosdb-runtime-api, move storage contracts, promote MVCC internals, or touch query
+behavior.
 ```
+
+Expected proof:
+
+```text
+docs/architecture/delosdb-contract-boundary-audit.md records the one-pass boundary audit.
+The audit concludes that no Module 23 source move is justified yet.
+roadmapVerification and the dependency report remain green because the pass is documentation-only.
+```
+
+### Phase 23 decision
+
+The Phase 23 evidence says the current layout is honest enough to continue without a source move.
+`delosdb-runtime-api` remains the inherited Derby runtime/service substrate and must not become a
+general bucket for DelosDB contracts. `delosdb-storage-api` remains the DelosDB storage-provider
+contract lane. `engine.trace` remains engine-owned until a real production consumer outside the
+engine requires promotion.
 
 Possible future layout areas:
 
