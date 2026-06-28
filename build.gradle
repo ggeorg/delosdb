@@ -817,10 +817,17 @@ tasks.register('modernRdbmsModelProof') {
             ':delosdb-tests:runModernRdbmsTraceSummaryTest'
 }
 
+
+tasks.register('mvccResearchIntegrationProof') {
+    group = 'verification'
+    description = 'Runs focused proofs for native MVCC research observations.'
+    dependsOn ':delosdb-storage-mvcc:runMvccResearchObservationTest'
+}
+
 tasks.register('roadmapVerification') {
     group = 'verification'
     description = 'Runs the fast per-overlay DelosDB roadmap gate.'
-    dependsOn 'modernRdbmsModelProof', 'derbyRuntimeSmoke'
+    dependsOn 'modernRdbmsModelProof', 'mvccResearchIntegrationProof', 'derbyRuntimeSmoke'
 }
 
 tasks.named('check') {

@@ -557,6 +557,27 @@ page/version access
 This phase should build on the model and diagnostics rather than bypassing them. MVCC should become
 visible as a modern database subsystem, not merely as an alternate storage implementation.
 
+### MODULE24A — MVCC research observation snapshot
+
+Scope:
+
+```text
+Add a read-only MVCC research observation object inside delosdb-storage-mvcc.
+Summarize already-existing transaction snapshot, visible row, version-count, and vacuum-horizon facts.
+Represent WAL/checkpoint as explicitly not observed when the in-memory MVCC path has no such position.
+Do not depend on delosdb-engine trace classes.
+Do not add a new module or promote MVCC internals to public API.
+Do not change transaction, visibility, cleanup, WAL, checkpoint, or row-storage behavior.
+```
+
+Expected proof:
+
+```text
+A focused MVCC proof captures a snapshot before a later commit.
+The observation reports the old snapshot's visible row count separately from logical/physical row state.
+roadmapVerification includes the MVCC research-observation proof.
+```
+
 ## Phase 25 — Optimizer and planner experiments
 
 Goal: enable later experimentation once the model can already observe real query execution.
