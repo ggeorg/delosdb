@@ -38,8 +38,14 @@ delosdb-storage-io
                     heap/raw/btree       page/WAL/checkpoint
 ```
 
-The bridge should not be the abstraction center.  It exists to connect inherited Derby access-method
+The bridge should not be the abstraction center. It exists to connect inherited Derby access-method
 paths to DelosDB storage providers while the source is still being disentangled.
+
+The bridge must not become the shared architecture layer between `delosdb-storage-derby` and
+`delosdb-storage-mvcc`. It must not own provider contracts, common btree/sort code, or the final
+storage-provider shape. The target relationship is the two-provider shape above, where both storage
+providers answer to `delosdb-storage-api` rather than one provider reaching another through the
+bridge.
 
 ## Educational meaning
 
@@ -75,6 +81,7 @@ storage-provider selection from the engine
 ```text
 Do not merge storage back into delosdb-engine.
 Do not make the bridge the shared implementation layer.
+Do not put shared btree, sort, or storage-provider contracts in the bridge.
 Do not create a fake common storage implementation between Derby storage and MVCC.
 Do keep the provider-neutral storage API small and honest.
 Do expose storage behavior through diagnostics and the modern RDBMS model.

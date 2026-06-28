@@ -406,8 +406,8 @@ Before leaving Phase 22, run:
 
 ## Phase 23 — Project layout from the proven model
 
-Status: closed as a no-move layout decision after MODULE23B and the documentation consolidation
-support pass.
+Status: initial layout decision closed after MODULE23B and the documentation consolidation support
+passes. Future layout moves require new evidence from Phase 24 or later work.
 
 Goal: use the working model to decide the future project layout.
 
@@ -484,13 +484,44 @@ docs/architecture/delosdb-contract-boundary-audit.md records the chosen document
 roadmapVerification and the dependency report remain green because the pass is documentation-only.
 ```
 
+### MODULE23C2 — Module 23 documentation tightening support pass
+
+Status: documentation-only support pass.
+
+Scope:
+
+```text
+Tighten the ownership-map versus boundary-audit separation.
+Soften Phase 23 closeout wording from permanent closure to initial no-move layout decision.
+Strengthen the storage-bridge warning so the bridge cannot become the shared architecture layer.
+Add implemented-versus-future status to the modern RDBMS model.
+Clarify the delosdb-storage-api Derby-package compromise.
+Do not move Java sources, create modules, rename packages, promote diagnostics, or touch query,
+storage, MVCC, or optimizer behavior.
+```
+
+Expected proof:
+
+```text
+docs/architecture/delosdb-contract-ownership-map.md is the canonical classification map.
+docs/architecture/delosdb-contract-boundary-audit.md is the decision record.
+docs/architecture/delosdb-modern-rdbms-model.md separates implemented observations from Phase 24 concepts.
+docs/architecture/delosdb-storage-source-map.md states that storage-bridge is not shared storage architecture.
+roadmapVerification and the dependency report remain green because the pass is documentation-only.
+```
+
 ### Phase 23 decision
 
-The Phase 23 evidence says the current layout is honest enough to continue without a source move.
+The initial Phase 23 evidence says the current layout is honest enough to continue without a source
+move. This is not a permanent layout freeze. Future layout moves require new evidence from Phase 24
+or later work.
+
 `delosdb-runtime-api` remains the inherited Derby runtime/service substrate and must not become a
 general bucket for DelosDB contracts. `delosdb-storage-api` remains the DelosDB storage-provider
-contract lane. `engine.trace` remains engine-owned until a real production consumer outside the
-engine requires promotion.
+contract lane, with its current Derby package identity treated as an integration compromise rather
+than a permanent naming model. `engine.trace` remains engine-owned until a real production consumer
+outside the engine requires promotion. `delosdb-storage-bridge` remains temporary compatibility code,
+not the shared architecture layer between Derby storage and native MVCC.
 
 Possible future layout areas:
 

@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This document is the Module 23B follow-up to the contract ownership map. It audits the current
-contract-bearing modules in one pass and records whether their boundaries are honest enough to keep,
-need documentation only, or justify a later source move.
+This document is the Module 23B decision record for the contract ownership map. The ownership map
+classifies surfaces; this audit decides whether the current boundaries are dishonest enough to
+justify a source move now.
 
 This is a decision review, not a refactor. It does not move Java sources, create modules, rename
 packages, promote `engine.trace` to public API, or touch storage, MVCC, optimizer, or query behavior.
@@ -44,7 +44,7 @@ The remaining questions are architectural ownership questions, not broken-build 
 | `delosdb-spi` | DelosDB provider/extension SPI. | Mostly honest SPI boundary. It is separate from runtime substrate and storage contracts. | Keep as-is. | Review overlap with `delosdb-storage-api` later; do not merge now. |
 | `delosdb-engine` / `io.github.ggeorg.delosdb.engine.trace` | Engine-owned model and diagnostic vocabulary proven against real execution. | Correct current home. Not a runtime API and not a public SPI yet. | Keep engine-internal. | Promote only when a real production module outside engine needs it. |
 | `delosdb-storage-mvcc` | Native MVCC implementation and research subsystem. | Implementation boundary is correct. Some concepts may become diagnostics in Phase 24, but they are not API yet. | Keep implementation-internal. | Phase 24 decides how to expose snapshot, WAL, checkpoint, vacuum, and visibility observations. |
-| `delosdb-storage-bridge` | Temporary Derby-facing MVCC access-method adapter. | Honest as compatibility scaffolding. It proves seams but must not define final architecture. | Keep temporary and documented. | Retire or shrink when provider contracts become sufficient. |
+| `delosdb-storage-bridge` | Temporary Derby-facing MVCC access-method adapter. | Honest only as compatibility scaffolding. It must not become the shared architecture layer between Derby storage and native MVCC. | Keep temporary and documented. | Retire or shrink when provider contracts become sufficient. |
 | `delosdb-storage-derby` | Inherited Derby heap/raw/btree implementation. | Honest implementation boundary after the stale JPMS scaffold removal. | Keep as classpath-compiled inherited storage implementation. | Later decide which common btree/sort/raw pieces are shared substrate versus Derby-provider implementation. |
 | `delosdb-storage-io` | DelosDB page/volume support code. | Honest implementation/support boundary, not general runtime API. | Keep as support module. | It may become a stronger low-level storage foundation if MVCC and future providers converge on it. |
 | `delosdb-storeless` | Test/demo provider surface. | Not a contract owner. | Keep only as proof/demo if useful. | Remove if it stops proving provider independence. |
@@ -66,7 +66,10 @@ It has 132 Java source files across 20 packages and is overwhelmingly inherited 
 service substrate. Its role is not “all DelosDB contracts.” Therefore Module 21/22 model and trace
 vocabulary must not be moved here.
 
-One small impurity is that several runtime monitor interfaces import `io.github.ggeorg.delosdb.spi.annotation.LegacyInternal`. This is an annotation dependency, not a runtime contract dependency. It is acceptable for now, but it should remain visible as a possible later annotation cleanup if the project wants a purer Derby-substrate module.
+One small impurity is that several runtime monitor interfaces import
+`io.github.ggeorg.delosdb.spi.annotation.LegacyInternal`. This is an annotation dependency, not a
+runtime contract dependency. It is acceptable for now, but it should remain visible as a possible
+later annotation cleanup if the project wants a purer Derby-substrate module.
 
 Decision:
 
@@ -108,6 +111,14 @@ Decision:
 Keep storage-provider contracts in delosdb-storage-api.
 Document the package identity as transitional/honest-for-integration.
 Do not move these contracts to runtime-api.
+```
+
+Known compromise:
+
+```text
+Existing DelosDB storage contracts may remain in Derby package space while Derby integration
+requires it. New pure DelosDB contracts should not automatically be added under Derby packages
+unless the integration point proves that package placement is necessary.
 ```
 
 ### D23B-3 — Keep `delosdb-derby-store-api` as Derby store substrate
@@ -204,6 +215,23 @@ org.apache.derby.impl.store.access.mvcc
 That is correct for what it currently does: adapt Derby access-method wiring to MVCC/provider
 experiments. It is not the future architecture authority.
 
+The bridge must not become the shared architecture layer between `delosdb-storage-derby` and
+`delosdb-storage-mvcc`. It must not own common storage contracts, shared btree/sort code, or the
+final provider shape. The intended provider relationship remains:
+
+```text
+                         delosdb-storage-api
+                           ↑              ↑
+                           |              |
+              delosdb-storage-derby   delosdb-storage-mvcc
+```
+
+not:
+
+```text
+engine -> delosdb-storage-derby -> delosdb-storage-bridge -> delosdb-storage-mvcc
+```
+
 Decision:
 
 ```text
@@ -219,7 +247,7 @@ The current layout is not perfect, but it is good enough to avoid broad movement
 The most important conclusion is:
 
 ```text
-No Module 23 source move is justified yet.
+No Module 23 source move is justified by the current evidence.
 ```
 
 The current module graph has no missing declared production dependencies, unresolved project imports,
@@ -229,14 +257,15 @@ therefore conceptual and naming-related, not a build integrity failure.
 The chosen follow-up route is documentation closeout:
 
 ```text
-Record that Phase 23 found no immediate source move.
+Record that the initial Phase 23 layout decision found no immediate source move.
 Clarify that delosdb-runtime-api is inherited Derby runtime/service substrate.
 Move next to Phase 24 MVCC research observations unless a concrete production dependency forces a
 layout move first.
 ```
 
 This closeout does not rename `delosdb-runtime-api`; it only prevents the module from becoming a
-catch-all bucket for DelosDB-owned contracts.
+catch-all bucket for DelosDB-owned contracts. Future layout moves require new evidence from Phase 24
+or later work.
 
 ## Deferred candidates
 

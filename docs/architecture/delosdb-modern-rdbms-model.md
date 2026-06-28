@@ -159,6 +159,30 @@ VACUUM_HORIZON
 These concepts do not all need complete implementation in the first pass. They remain part of the
 model so DelosDB does not stop at a classical SQL pipeline.
 
+## Implementation status
+
+The model document names both implemented observations and future concepts. The current status is:
+
+| Area | Status | Current proof or future phase |
+| --- | --- | --- |
+| SELECT lifecycle | Implemented. | Module 21B focused proof. |
+| Heap table scan observation | Implemented. | Module 21C storage-access proof. |
+| Btree index scan observation | Implemented. | Module 21C storage-access proof. |
+| Row-flow counters | Implemented for captured SELECT traces. | Module 22B trace-summary proof. |
+| Commit boundary observation | Implemented for inherited Derby transaction boundaries. | Module 21D transaction proof. |
+| Rollback boundary observation | Implemented for inherited Derby transaction boundaries. | Module 21D transaction proof. |
+| Human-readable trace text | Implemented for captured trace events. | Module 22A trace-text proof. |
+| Transaction snapshot | Future native-MVCC observation. | Phase 24. |
+| Visible rows / visibility checks | Future native-MVCC observation. | Phase 24. |
+| WAL/log position | Future native-MVCC observation. | Phase 24. |
+| Checkpoint state | Future native-MVCC observation. | Phase 24. |
+| Vacuum horizon | Future native-MVCC observation. | Phase 24. |
+| Page/version access | Future native-MVCC observation. | Phase 24. |
+
+This distinction prevents the model from overclaiming. The vocabulary can describe modern RDBMS
+concepts before every concept is wired to a real execution point, but diagnostics are considered
+implemented only when a focused proof observes real Derby/DelosDB behavior.
+
 ## Implementation package
 
 The current classes are:
