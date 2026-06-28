@@ -89,6 +89,27 @@ A model that observes broken execution is not useful. Build health, inherited De
 static-analysis hardening, and dependency-report accuracy are part of the roadmap because they keep
 later educational and research work grounded in a working system.
 
+## Verification lanes
+
+Normal roadmap overlays use the fast verification lane:
+
+```bash
+./gradlew clean
+./gradlew roadmapVerification
+./scripts/module-dependency-tree.py
+```
+
+The inherited Derby compatibility lane is slower and should be run separately:
+
+```bash
+./gradlew fullVerification
+```
+
+`fullVerification` includes inherited Derby suites and compatibility fixtures. It is not the
+per-overlay development loop. The suite generates its native-authentication fixture from the current
+DelosDB runtime, avoids the fixed Derby network-server port when possible, and fails fast by default
+so one fatal setup failure does not cascade through thousands of tests.
+
 ## Phase 20 — Stabilization, evidence, and roadmap cleanup
 
 Goal: make the current project baseline trustworthy enough to support the modern RDBMS model work.
@@ -132,13 +153,6 @@ Use declared Gradle artifacts for Derby-compatible runtime packaging.
 Improve module-dependency reporting so it separates real production issues from test/demo noise.
 ```
 
-Expected proof:
-
-```text
-Build wiring remains compatible with inherited Derby runtime needs.
-The module report does not overstate source-level storage leakage.
-```
-
 ### MODULE20E — MVCC static-analysis hardening
 
 Scope:
@@ -148,13 +162,6 @@ Harden MVCC native deserialization with a JEP 290 filter.
 Use atomic move semantics for row-directory rewrite.
 Compact terminated transaction state behind the retained visibility watermark.
 Document deferred WAL/channel and concurrency work.
-```
-
-Expected proof:
-
-```text
-Focused MVCC hardening tests pass.
-The static-analysis review shows no new findings or regressions.
 ```
 
 ### MODULE20F — Inherited Derby verification stabilization
@@ -167,29 +174,14 @@ Fix classpath and boot-time provider issues introduced by recent refactoring.
 Do not hide failures by weakening tests.
 ```
 
-Expected proof:
-
-```text
-derbyRuntimeSmoke passes.
-derbyTestSuite passes.
-fullVerification passes.
-```
-
 ### MODULE20G — Residual MVCC hardening backlog
 
 Scope:
 
 ```text
-Track, and where safe address, the residual abort-retention growth issue.
+Track residual abort-retention growth until version pruning can prove safe removal.
 Track native-serialization retirement as the preferred long-term format fix.
 Keep WAL/group-commit and row-level concurrency as separate later lanes.
-```
-
-Expected proof:
-
-```text
-The MVCC hardening backlog is explicit and ordered.
-Any implementation pass is narrow and does not mix durability, serialization, and concurrency rewrites.
 ```
 
 ## Phase 21 — Minimal teachable modern RDBMS model
@@ -199,29 +191,15 @@ changing query behavior.
 
 ### MODULE21A — Minimal model and no-op trace API
 
-Status: implemented by the first model overlay.
+Status: green.
 
 Scope:
 
 ```text
-Add the first DelosDB-owned model and trace classes inside delosdb-engine.
+Add the first DelosDB-owned trace vocabulary inside delosdb-engine.
 Keep the API small.
 Do not change query behavior.
 Do not create a new Gradle module.
-```
-
-Initial vocabulary:
-
-```text
-statement kind
-query lifecycle stage
-plan node kind
-execution node kind
-storage access kind
-storage provider kind
-transaction/snapshot concept
-trace event
-trace sink
 ```
 
 Expected proof:
@@ -233,7 +211,7 @@ No execution path depends on the model; the trace registry defaults to a no-op s
 
 ### MODULE21B — SELECT lifecycle trace proof
 
-Status: implemented by the first execution-wiring overlay.
+Status: green.
 
 Scope:
 
@@ -252,7 +230,7 @@ The focused modernRdbmsModelProof task passes without changing query semantics.
 
 ### MODULE21C — Storage-provider and access-method observations
 
-Status: implemented by the storage-access trace proof overlay.
+Status: green.
 
 Scope:
 
@@ -270,10 +248,46 @@ A forced indexed SELECT reports DERBY_BTREE / BTREE_INDEX_SCAN.
 modernRdbmsModelProof includes both the lifecycle proof and storage-access proof.
 ```
 
+### MODULE21D0 — Verification stabilization support pass
+
+Status: implemented as a support pass.
+
+Scope:
+
+```text
+Separate the fast roadmap gate from the slow inherited Derby compatibility gate.
+Generate the native-authentication test fixture from the current DelosDB runtime.
+Avoid fixed localhost:1527 network-server collisions in inherited Derby tests.
+Fail fast by default when inherited Derby setup failures would otherwise cascade.
+```
+
 Expected proof:
 
 ```text
-The same model can explain different storage-provider paths without making the bridge the architecture center.
+roadmapVerification is the normal per-overlay gate.
+fullVerification remains available as a separate inherited compatibility gate.
+```
+
+### MODULE21C3 — Package naming cleanup support pass
+
+Status: implemented as a support pass.
+
+Scope:
+
+```text
+Remove the fake engine.rdbms package tree.
+Collapse internal engine-owned trace vocabulary into io.github.ggeorg.delosdb.engine.trace.
+Document the package naming strategy.
+Do not create a new Gradle module.
+Do not promote trace vocabulary to API or SPI.
+```
+
+Expected proof:
+
+```text
+No source imports remain for io.github.ggeorg.delosdb.engine.rdbms.*.
+The old source directory is deleted.
+roadmapVerification remains green.
 ```
 
 ### MODULE21D — Transaction and MVCC observations
@@ -298,11 +312,36 @@ A rolled-back JDBC transaction emits TRANSACTION_ROLLED_BACK.
 modernRdbmsModelProof includes the transaction-boundary proof.
 ```
 
+## Phase 21 closeout
+
+Before leaving Phase 21, run:
+
+```bash
+./gradlew clean
+./gradlew roadmapVerification
+./scripts/module-dependency-tree.py
+```
+
+Then run the slow inherited compatibility gate separately when needed:
+
+```bash
+./gradlew fullVerification
+```
+
+Phase 21 is closed when the model is small, package ownership is honest, the fast gate is stable,
+and the inherited compatibility lane is no longer used as the per-overlay loop.
+
 ## Phase 22 — Research and education diagnostics
 
 Goal: make real database behavior observable without turning diagnostics into source guards.
 
-Potential passes:
+First candidate pass:
+
+```text
+MODULE22A — human-readable trace output for the existing focused model proof
+```
+
+Potential later passes:
 
 ```text
 query lifecycle trace output
