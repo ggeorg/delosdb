@@ -3,6 +3,7 @@ plugins {
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
+import java.util.zip.ZipFile
 
 version = rootProject.version
 group = rootProject.group
@@ -36,6 +37,21 @@ tasks.named('compileJava', JavaCompile) {
     options.deprecation = false
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
+}
+
+
+def requiredClientMessageResources = [
+        'org/apache/derby/loc/client/clientmessages.properties',
+        'org/apache/derby/loc/client/clientmessages_en.properties'
+]
+
+def assertClientMessageResourcesPresent = { File jarFile ->
+    new ZipFile(jarFile).withCloseable { zip ->
+        def missing = requiredClientMessageResources.findAll { zip.getEntry(it) == null }
+        if (!missing.isEmpty()) {
+            throw new GradleException("${jarFile.name} is missing generated client message resources: ${missing}")
+        }
+    }
 }
 
 def generatedProductInfoResourceDir = layout.buildDirectory.dir('generated/resources/product-info')
@@ -96,6 +112,7 @@ tasks.register('compileDerbyClient') {
 def clientArchiveName = 'derbyclient.jar'
 
 tasks.named('jar', Jar) {
+    dependsOn rootProject.tasks.named('splitEngineMessages')
     archiveFileName = clientArchiveName
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(rootProject.ext.delosdbLegalFiles) {
@@ -104,12 +121,15 @@ tasks.named('jar', Jar) {
     manifest {
         attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Network Client')
     }
+    doLast {
+        assertClientMessageResourcesPresent(archiveFile.get().asFile)
+    }
 }
 
 // Compatibility runtime jar used by the root `jars` task. Keep root Derby
 // resource processing out of the normal Gradle jar consumed by project deps.
 tasks.register('derbyClientJar', Jar) {
-    dependsOn tasks.named('compileJava'), tasks.named('processResources')
+    dependsOn tasks.named('compileJava'), tasks.named('processResources'), rootProject.tasks.named('splitEngineMessages')
     archiveFileName = clientArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -120,6 +140,9 @@ tasks.register('derbyClientJar', Jar) {
     }
     manifest {
         attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Network Client')
+    }
+    doLast {
+        assertClientMessageResourcesPresent(archiveFile.get().asFile)
     }
 }
 
