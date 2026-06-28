@@ -41,6 +41,14 @@ sourceSets {
     }
 }
 
+// The old VersionedStorageProvider execution SPI is quarantined for direct
+// model/proof code only. Do not advertise the MVCC provider through the
+// production ServiceLoader path; Derby integration enters through
+// DelosStorageProviderFactory in delosdb-storage-api.
+tasks.named('processResources') {
+    exclude 'META-INF/services/io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider'
+}
+
 tasks.named('compileJava', JavaCompile) {
     destinationDirectory.set(mainClassDir)
     options.release = rootProject.ext.javaRelease

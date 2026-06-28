@@ -304,7 +304,11 @@ tasks.register('processDerbyResources') {
 }
 
 tasks.register('splitEngineMessages') {
-    dependsOn 'compileDerbyBuildTools', 'processDerbyResources'
+    // This task only needs the Derby build tools. Do not depend on
+    // processDerbyResources here: that task depends on runtime compile tasks,
+    // which can require derbyclient.jar, and derbyclient.jar must depend on
+    // this task so generated client message bundles are packaged.
+    dependsOn 'compileDerbyBuildTools'
     inputs.file('delosdb-engine/src/main/java/org/apache/derby/loc/messages.xml')
     outputs.file(layout.buildDirectory.file('generated/messages/messages_en.properties'))
     outputs.dir(moduleClassDir(moduleNames.engine).map { it.dir('org/apache/derby/loc') })
