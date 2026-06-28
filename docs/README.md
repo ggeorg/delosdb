@@ -15,6 +15,7 @@ RDBMS while preserving enough source traceability to the inherited Derby code.
 | `architecture/delosdb-package-naming-strategy.md` | Rules for package ownership, inherited Derby traceability, and DelosDB-owned package names. |
 | `architecture/delosdb-engine-source-map.md` | How the inherited Derby engine maps to SQL compiler, optimizer, execution, catalog, types, transaction, and runtime services. |
 | `architecture/delosdb-storage-source-map.md` | Current storage layout: storage API, inherited Derby storage, native MVCC, and bridge role. |
+| `architecture/delosdb-mvcc-observation-matrix.md` | Phase 24 MVCC observation status, non-claims, and closeout matrix. |
 | `research/rdbms-reference-architectures.md` | Lessons taken from PostgreSQL, Apache Calcite, and HerdDB. |
 
 ## Supporting documents kept as reference material

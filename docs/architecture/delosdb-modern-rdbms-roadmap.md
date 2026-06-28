@@ -541,25 +541,28 @@ represents real code, not a placeholder.
 
 ## Phase 24 — MVCC research observation proofs
 
-Goal: expose selected read-only facts from the existing native MVCC internals as executable research
-and education proofs while preserving DelosDB's Derby-compatible SQL/JDBC surface.
+Goal: expose selected read-only facts from existing native MVCC internals as executable research and
+education proofs while preserving DelosDB's Derby-compatible SQL/JDBC surface.
 
-Expose:
+Observation targets:
 
 ```text
 transaction snapshot
 visible rows
-WAL/log position
+WAL/log file state
 checkpoint state
-vacuum horizon
+vacuum/visibility horizon
 page/version access
 ```
 
-This phase should build on the model and diagnostics rather than bypassing them. MVCC internals
-should become observable as selected modernization proofs, not as a claim that DelosDB has replaced
-Derby storage or transaction behavior.
+This phase builds on the model and diagnostics rather than bypassing them. MVCC internals become
+observable as selected modernization proofs, not as a claim that DelosDB has replaced Derby storage
+or transaction behavior. The detailed status and non-claims are recorded in
+`docs/architecture/delosdb-mvcc-observation-matrix.md`.
 
 ### MODULE24A — Native MVCC observation proof
+
+Status: green.
 
 Scope:
 
@@ -583,6 +586,8 @@ roadmapVerification includes the MVCC internal-observation proof.
 
 ### MODULE24B — Page-backed MVCC observation proof
 
+Status: green.
+
 Scope:
 
 ```text
@@ -605,6 +610,8 @@ roadmapVerification includes the page-backed MVCC observation proof.
 
 ### MODULE24C — Page-volume MVCC checkpoint/WAL observation proof
 
+Status: green.
+
 Scope:
 
 ```text
@@ -626,6 +633,33 @@ The observation reports checkpoint WRITTEN after rewrite and VALID after reopen/
 The observation reports write-ahead-log file presence without reporting a WAL position.
 roadmapVerification includes the page-volume MVCC observation proof.
 ```
+
+
+### MODULE24D — MVCC observation closeout and honesty matrix
+
+Status: current closeout pass.
+
+Scope:
+
+```text
+Record what the Phase 24 MVCC observation proofs expose and what they intentionally do not claim.
+Add an observation matrix covering transaction snapshots, visible rows, page/version access,
+write-ahead-log file state, checkpoint state, and vacuum/visibility-horizon diagnostics.
+Keep the closeout documentation-only.
+Do not change MVCC behavior, SQL routing, recovery, optimizer behavior, or module boundaries.
+```
+
+Expected proof:
+
+```text
+The MVCC observation matrix documents the current proof coverage and explicit non-claims.
+roadmapVerification remains green.
+The module-dependency report remains clean.
+```
+
+Phase 24's initial observation lane is closed when Module 24D is green. Future MVCC work should be
+opened as a separate proof only when it needs new behavior, such as safe version pruning, WAL replay
+evidence, checkpoint scheduling, or SQL-facing storage routing.
 
 
 ## Phase 25 — Optimizer and planner experiments

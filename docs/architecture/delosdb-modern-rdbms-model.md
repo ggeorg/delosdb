@@ -161,7 +161,9 @@ model so DelosDB does not stop at a classical SQL pipeline.
 
 ## Implementation status
 
-The model document names both implemented observations and future concepts. The current status is:
+The model document names both implemented observations and future concepts. The current status is
+summarized here; the detailed Phase 24 MVCC status and non-claims are recorded in
+`docs/architecture/delosdb-mvcc-observation-matrix.md`.
 
 | Area | Status | Current proof or future phase |
 | --- | --- | --- |
@@ -172,16 +174,35 @@ The model document names both implemented observations and future concepts. The 
 | Commit boundary observation | Implemented for inherited Derby transaction boundaries. | Module 21D transaction proof. |
 | Rollback boundary observation | Implemented for inherited Derby transaction boundaries. | Module 21D transaction proof. |
 | Human-readable trace text | Implemented for captured trace events. | Module 22A trace-text proof. |
-| Transaction snapshot | Implemented as a native-MVCC internal observation proof. | Module 24A MVCC observation proof. |
-| Visible rows / visibility checks | Implemented as a native-MVCC internal observation proof. | Module 24A MVCC observation proof. |
-| Vacuum horizon | Implemented as a native-MVCC internal observation through oldest retained visibility. | Module 24A MVCC observation proof. |
-| Page/version access | Implemented as selected page-backed MVCC internal observation facts: page count, row-directory heads, logical rows, physical versions, and snapshot-visible rows. | Module 24B page-backed observation proof. |
-| WAL/log position | Not implemented as a real replay position. Module 24C observes write-ahead-log file state at the page-volume MVCC state-store boundary. | Later Phase 24 for a real position. |
-| Checkpoint state | Implemented as selected page-volume MVCC checkpoint status observation: `WRITTEN` after rewrite and `VALID` after reopen/validation. | Module 24C page-volume observation proof. |
+| Transaction snapshot | Observed as a native-MVCC internal proof. | Module 24A; not wired to inherited Derby SQL transactions. |
+| Visible rows / visibility checks | Observed for native and page-backed MVCC proof paths. | Modules 24A and 24B; not SQL routing. |
+| Vacuum horizon | Observed as visibility-horizon diagnostics through retained snapshot state. | Module 24A; not a vacuum implementation. |
+| Page/version access | Observed as selected page-backed and page-volume MVCC internal facts. | Modules 24B and 24C; no page-file parsing claim. |
+| WAL/log position | Not implemented as a real replay position. Page-volume observation reports write-ahead-log file state only. | Module 24C; future work for replay position. |
+| Checkpoint state | Observed as selected page-volume checkpoint status: `WRITTEN` after rewrite and `VALID` after reopen/validation. | Module 24C; no scheduler or production recovery policy. |
 
 This distinction prevents the model from overclaiming. The vocabulary can describe modern RDBMS
 concepts before every concept is wired to a real execution point, but diagnostics are considered
 implemented only when a focused proof observes real Derby/DelosDB behavior.
+
+
+## Phase 24 MVCC observation closeout
+
+The MVCC observation proofs intentionally remain inside `delosdb-storage-mvcc`. They expose selected
+internal facts for research and education, but they do not promote MVCC internals into public API and
+do not change the Derby-compatible SQL/JDBC surface.
+
+Current non-claims:
+
+```text
+no production MVCC storage replacement
+no SQL routing to page-volume MVCC
+no WAL replay position
+no group commit
+no checkpoint scheduler
+no vacuum or version-pruning implementation
+no optimizer/provider-aware MVCC planning
+```
 
 ## Implementation package
 
