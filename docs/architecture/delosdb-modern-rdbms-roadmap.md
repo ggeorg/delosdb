@@ -335,10 +335,25 @@ and the inherited compatibility lane is no longer used as the per-overlay loop.
 
 Goal: make real database behavior observable without turning diagnostics into source guards.
 
-First candidate pass:
+### MODULE22A — Human-readable trace output
+
+Status: green.
+
+Scope:
 
 ```text
-MODULE22A — human-readable trace output for the existing focused model proof
+Render already-captured modern RDBMS trace events as deterministic reader-facing text.
+Use the existing focused SELECT proof path.
+Do not install global diagnostics, add source guards, change execution behavior, or create a new module.
+```
+
+Expected proof:
+
+```text
+A real SELECT trace can be formatted as readable text showing statement lifecycle, storage access,
+row production, and execution finish observations.
+The formatter uses stable attribute ordering and escaping.
+modernRdbmsModelProof includes the trace-text output proof.
 ```
 
 Potential later passes:

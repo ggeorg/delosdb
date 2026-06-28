@@ -7,10 +7,12 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-// Real Gradle Java module for inherited Derby storage implementations patched
-// into org.apache.derby.engine, including heap/raw/access/WAL code. Derby-facing
-// MVCC access-method glue lives in delosdb-storage-bridge so this inherited
-// storage module does not depend on native MVCC storage.
+// Gradle subproject for inherited Derby storage implementations patched into
+// org.apache.derby.engine, including heap/raw/access/WAL code. This source set is
+// compiled on the classpath because the current runtime still packages these
+// classes into the Derby engine jar. Derby-facing MVCC access-method glue lives
+// in delosdb-storage-bridge so this inherited storage module does not depend on
+// native MVCC storage.
 def sourceRoot = file('src/main/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 
@@ -41,6 +43,9 @@ sourceSets {
         java {
             srcDir sourceRoot
             include 'org/apache/derby/impl/store/**/*.java'
+            // Defensive only: older checkouts may still contain the removed
+            // JPMS scaffold descriptor. It is not part of this classpath-compiled
+            // inherited storage source set.
             exclude 'module-info.java'
             destinationDirectory.set(mainClassDir)
         }
