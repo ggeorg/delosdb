@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Phase 24 proof that the native MVCC kernel can expose reader-facing research facts without
+ * Phase 24 proof that the native MVCC path can expose reader-facing internal facts without
  * changing storage behavior or depending on the engine trace package.
  */
 public final class MvccResearchObservationTest {

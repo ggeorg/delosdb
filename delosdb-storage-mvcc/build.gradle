@@ -1066,7 +1066,7 @@ tasks.register('runMvccStaticAnalysisHardeningTest', Test) {
 
 tasks.register('runMvccResearchObservationTest', Test) {
     group = 'verification'
-    description = 'Runs Phase 24 MVCC research-observation proof.'
+    description = 'Runs Phase 24 MVCC internal-observation proof.'
     dependsOn 'compileDelosDbStorageMvccTests'
 
     useJUnitPlatform()

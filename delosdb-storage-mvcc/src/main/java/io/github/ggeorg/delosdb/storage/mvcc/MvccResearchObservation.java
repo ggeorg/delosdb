@@ -3,13 +3,13 @@ package io.github.ggeorg.delosdb.storage.mvcc;
 import java.util.Objects;
 
 /**
- * Read-only research snapshot of the native MVCC kernel.
+ * Read-only research observation of the native MVCC path.
  *
  * <p>This class is diagnostic-only. It does not subscribe to engine tracing, does not mutate the
  * transaction table or row store, and does not define a public cross-module observability API. It
- * records the MVCC facts that already exist in the native storage subsystem so Phase 24 can make
- * snapshot, visibility, vacuum-horizon, and version-count concepts visible before adding broader
- * SQL-engine integration.</p>
+ * records the MVCC facts that already exist in the native storage implementation so Phase 24 can make
+ * selected snapshot, visibility, vacuum-horizon, and version-count concepts observable without
+ * claiming broader SQL-engine integration.</p>
  */
 public record MvccResearchObservation(
         String subject,

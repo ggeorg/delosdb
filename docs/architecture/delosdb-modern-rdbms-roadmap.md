@@ -539,9 +539,10 @@ research diagnostics and examples
 A physical module should be created only when the dependency direction supports it and the module
 represents real code, not a placeholder.
 
-## Phase 24 — MVCC research integration
+## Phase 24 — MVCC research observation proofs
 
-Goal: make native MVCC a first-class modern RDBMS research subsystem.
+Goal: expose selected read-only facts from the existing native MVCC internals as executable research
+and education proofs while preserving DelosDB's Derby-compatible SQL/JDBC surface.
 
 Expose:
 
@@ -554,16 +555,18 @@ vacuum horizon
 page/version access
 ```
 
-This phase should build on the model and diagnostics rather than bypassing them. MVCC should become
-visible as a modern database subsystem, not merely as an alternate storage implementation.
+This phase should build on the model and diagnostics rather than bypassing them. MVCC internals
+should become observable as selected modernization proofs, not as a claim that DelosDB has replaced
+Derby storage or transaction behavior.
 
-### MODULE24A — MVCC research observation snapshot
+### MODULE24A — Native MVCC observation proof
 
 Scope:
 
 ```text
-Add a read-only MVCC research observation object inside delosdb-storage-mvcc.
-Summarize already-existing transaction snapshot, visible row, version-count, and vacuum-horizon facts.
+Add a read-only MVCC internal observation object inside delosdb-storage-mvcc.
+Summarize already-existing transaction snapshot, visible-row, version-count, and vacuum-horizon
+facts from the native MVCC path.
 Represent WAL/checkpoint as explicitly not observed when the in-memory MVCC path has no such position.
 Do not depend on delosdb-engine trace classes.
 Do not add a new module or promote MVCC internals to public API.
@@ -573,9 +576,9 @@ Do not change transaction, visibility, cleanup, WAL, checkpoint, or row-storage 
 Expected proof:
 
 ```text
-A focused MVCC proof captures a snapshot before a later commit.
+A focused MVCC internal-observation proof captures a snapshot before a later commit.
 The observation reports the old snapshot's visible row count separately from logical/physical row state.
-roadmapVerification includes the MVCC research-observation proof.
+roadmapVerification includes the MVCC internal-observation proof.
 ```
 
 ## Phase 25 — Optimizer and planner experiments

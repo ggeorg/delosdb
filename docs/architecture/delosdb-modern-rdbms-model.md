@@ -172,12 +172,12 @@ The model document names both implemented observations and future concepts. The 
 | Commit boundary observation | Implemented for inherited Derby transaction boundaries. | Module 21D transaction proof. |
 | Rollback boundary observation | Implemented for inherited Derby transaction boundaries. | Module 21D transaction proof. |
 | Human-readable trace text | Implemented for captured trace events. | Module 22A trace-text proof. |
-| Transaction snapshot | Implemented as a native-MVCC research observation. | Module 24A MVCC observation proof. |
-| Visible rows / visibility checks | Implemented as a native-MVCC research observation. | Module 24A MVCC observation proof. |
-| Vacuum horizon | Implemented as a native-MVCC research observation through oldest retained visibility. | Module 24A MVCC observation proof. |
-| Page/version access | Partly implemented as physical-version counts, not page-level access. | Module 24A; page-level detail remains later. |
-| WAL/log position | Future native-MVCC observation; explicitly not observed by the in-memory path. | Later Phase 24. |
-| Checkpoint state | Future native-MVCC observation; explicitly not observed by the in-memory path. | Later Phase 24. |
+| Transaction snapshot | Implemented as a native-MVCC internal observation proof. | Module 24A MVCC observation proof. |
+| Visible rows / visibility checks | Implemented as a native-MVCC internal observation proof. | Module 24A MVCC observation proof. |
+| Vacuum horizon | Implemented as a native-MVCC internal observation through oldest retained visibility. | Module 24A MVCC observation proof. |
+| Page/version access | Partly implemented as physical-version counts, not page-level access. | Module 24A internal observation; page-level detail remains later. |
+| WAL/log position | Future native-MVCC internal observation; explicitly not observed by the in-memory path. | Later Phase 24. |
+| Checkpoint state | Future native-MVCC internal observation; explicitly not observed by the in-memory path. | Later Phase 24. |
 
 This distinction prevents the model from overclaiming. The vocabulary can describe modern RDBMS
 concepts before every concept is wired to a real execution point, but diagnostics are considered
