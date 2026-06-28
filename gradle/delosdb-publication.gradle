@@ -5,7 +5,9 @@
 // Derby-compatible runtime jar names for now.
 ext.delosdbPublicationMetadata = [
         'delosdb-commons'      : [artifactId: 'delosdb-commons',       jarTask: 'derbySharedJar',        title: 'DelosDB Shared Utilities', dependencies: []],
-        'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'delosDbSpiJar',       title: 'DelosDB SPI Stability Markers', dependencies: []],
+        'delosdb-annotations'  : [artifactId: 'delosdb-annotations',   jarTask: 'delosDbAnnotationsJar', title: 'DelosDB Annotations', dependencies: []],
+        'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'delosDbSpiJar',       title: 'DelosDB SPI', dependencies: ['delosdb-annotations']],
+        'delosdb-versioned-storage-spi': [artifactId: 'delosdb-versioned-storage-spi', jarTask: 'delosDbVersionedStorageSpiJar', title: 'DelosDB Versioned Storage SPI', dependencies: ['delosdb-annotations']],
         'delosdb-engine'       : [artifactId: 'delosdb-engine',        jarTask: 'derbyJar',              title: 'DelosDB Embedded Engine', dependencies: ['delosdb-commons']],
         'delosdb-client'       : [artifactId: 'delosdb-client',        jarTask: 'derbyClientJar',        title: 'DelosDB Network Client', dependencies: ['delosdb-commons']],
         'delosdb-tools'        : [artifactId: 'delosdb-tools',         jarTask: 'derbyToolsJar',         title: 'DelosDB Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-client']],

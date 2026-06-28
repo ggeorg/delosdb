@@ -21,7 +21,7 @@ java {
 
 dependencies {
     api project(':delosdb-commons')
-    api project(':delosdb-spi')
+    api project(':delosdb-annotations')
 }
 
 sourceSets {
@@ -52,7 +52,7 @@ tasks.register('compileDelosDbRuntimeApi') {
 tasks.register('compileDelosDbRuntimeApiClassSizeCatalog', JavaCompile) {
     dependsOn tasks.named('compileJava'), ':delosdb-engine:compileDerbyEngine', ':generateClassSizeCatalog',
             project(':delosdb-commons').tasks.named('jar'),
-            project(':delosdb-spi').tasks.named('jar')
+            project(':delosdb-annotations').tasks.named('jar')
     source = files(generatedClassSizeCatalogSource)
     // Keep the generated catalog out of the normal runtime-api source-set
     // output. Project dependencies consume moduleClassDir transitively; writing

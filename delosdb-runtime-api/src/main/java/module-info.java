@@ -7,7 +7,7 @@ module io.github.ggeorg.delosdb.runtime.api {
     requires java.sql;
     requires java.xml;
     requires org.apache.derby.commons;
-    requires io.github.ggeorg.delosdb.spi;
+    requires io.github.ggeorg.delosdb.annotations;
 
     exports org.apache.derby.io;
 

@@ -14,8 +14,6 @@ import io.github.ggeorg.delosdb.spi.function.FunctionCapabilities;
 import io.github.ggeorg.delosdb.spi.function.FunctionProvider;
 import io.github.ggeorg.delosdb.spi.storage.StorageCapabilities;
 import io.github.ggeorg.delosdb.spi.storage.StorageProvider;
-import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageCapabilities;
-import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
 import io.github.ggeorg.delosdb.spi.type.TypeCapabilities;
 import io.github.ggeorg.delosdb.spi.type.TypeProvider;
 
@@ -137,24 +135,6 @@ public final class BuiltInExtensions {
     }
 
 
-    public static ExtensionDescriptor versionedStorageProviderDescriptor(VersionedStorageProvider provider) {
-        Objects.requireNonNull(provider, "provider");
-        return versionedStorageProviderDescriptor(provider, "discovered", false);
-    }
-
-    public static ExtensionDescriptor versionedStorageProviderDescriptor(
-            VersionedStorageProvider provider,
-            String version,
-            boolean defaultProvider) {
-        Objects.requireNonNull(provider, "provider");
-        return ExtensionDescriptor.enabled(
-                ExtensionType.VERSIONED_STORAGE,
-                provider.name(),
-                version,
-                versionedStorageCapabilityNames(provider.capabilities(), defaultProvider)
-        );
-    }
-
     public static ExtensionDescriptor functionProviderDescriptor(FunctionProvider provider) {
         Objects.requireNonNull(provider, "provider");
         return functionProviderDescriptor(
@@ -262,18 +242,6 @@ public final class BuiltInExtensions {
         return List.copyOf(names);
     }
 
-
-    private static List<String> versionedStorageCapabilityNames(
-            VersionedStorageCapabilities capabilities,
-            boolean defaultProvider) {
-        Objects.requireNonNull(capabilities, "capabilities");
-        List<String> names = new ArrayList<>();
-        if (defaultProvider) {
-            names.add("default-versioned-storage-provider");
-        }
-        names.addAll(capabilities.values());
-        return List.copyOf(names);
-    }
 
     private static List<String> costModelCapabilityNames(CostModelProvider provider, boolean defaultProvider) {
         Objects.requireNonNull(provider, "provider");

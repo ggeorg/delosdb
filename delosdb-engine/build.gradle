@@ -43,6 +43,7 @@ configurations {
 dependencies {
     implementation project(':delosdb-commons')
     implementation project(':delosdb-runtime-api')
+    implementation project(':delosdb-annotations')
     implementation project(':delosdb-spi')
     implementation "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
     compileOnly project(':delosdb-osgi-stub')

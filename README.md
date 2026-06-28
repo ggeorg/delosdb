@@ -8,6 +8,86 @@ DelosDB is not a finished external-plugin product yet. The current mission is to
 keep Derby compatibility boring while turning the engine into a modular,
 inspectable platform for storage, indexing, optimizer, recovery, and MVCC work.
 
+
+## DelosDB direction
+
+DelosDB is intended to become a Derby-compatible, pluggable RDBMS research
+kernel for education and experimentation. The core idea is simple:
+
+```text
+Define the RDBMS block contracts first.
+Keep Derby as the default compatible implementation/adaptation.
+Allow selected alternative implementations for research and student proofs.
+Observe and explain behavior after the contracts and implementations exist.
+```
+
+The center of the project is not tracing, documentation, or one experimental
+storage path. The center is a set of explicit database-system blocks that can be
+studied, adapted, and eventually replaced in small executable proofs.
+
+Primary RDBMS blocks include:
+
+```text
+SQL frontend
+  parser, binder, validator
+
+Catalog
+  schemas, tables, columns, indexes, constraints
+
+Types
+  SQL values, nulls, comparisons, conversions
+
+Planner / optimizer
+  logical plans, physical plans, access paths, costs
+
+Execution
+  operators, scans, filters, joins, row flow
+
+Storage
+  tables, rows, scans, indexes, providers
+
+Transactions and concurrency
+  transaction identity, commit, rollback, isolation, locks, snapshots
+
+Recovery and durability
+  WAL, checkpoints, replay, durable state
+
+Diagnostics
+  trace, explain output, counters, teaching reports
+```
+
+The implementation discipline is:
+
+```text
+1. Define the smallest useful contract for one RDBMS block.
+2. Adapt the inherited Derby implementation to that contract.
+3. Prove the Derby-backed path still works.
+4. Add an alternative implementation only when the contract is real enough.
+5. Prove both paths through the same focused behavior test.
+```
+
+Contract placement should follow the role:
+
+```text
+Internal engine contracts
+  DelosDB-owned RDBMS block contracts used inside the engine.
+
+Provider SPI
+  contracts implemented by pluggable providers such as storage, index,
+  function, type, planner, or teaching/research implementations.
+
+Implementation
+  inherited Derby code or DelosDB-owned adapters that satisfy the contracts.
+
+Diagnostics
+  optional observation and explanation around working contracts and
+  implementations; diagnostics must not define the architecture.
+```
+
+The default implementation remains Derby-compatible. Alternative implementations
+must be introduced one block at a time and must not break the embeddable
+SQL/JDBC surface.
+
 ## Current status
 
 The supported developer path is Gradle-only. The inherited Ant workflow is not

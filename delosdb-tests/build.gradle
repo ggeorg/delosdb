@@ -138,6 +138,7 @@ def thirdPartyTestModules = rootProject.files(
 // The runtime jars are the supported Derby-compatible shape and include the
 // generated/copy-only boot resources and patched store implementation classes.
 def derbyRuntimeJars = rootProject.files(
+        rootProject.layout.buildDirectory.file('libs/delosdb-annotations.jar'),
         rootProject.layout.buildDirectory.file('libs/delosdb-spi.jar'),
         rootProject.layout.buildDirectory.file('libs/osgi-framework-stub.jar'),
         rootProject.layout.buildDirectory.file('libs/derbyshared.jar'),
@@ -213,6 +214,7 @@ dependencies {
     testImplementation project(':delosdb-runner')
     testImplementation project(':delosdb-server')
     testImplementation project(':delosdb-spi')
+    testImplementation project(':delosdb-annotations')
     testImplementation project(':delosdb-storage-io')
     testImplementation project(':delosdb-storage-derby')
     testImplementation project(':delosdb-tools')

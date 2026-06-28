@@ -79,6 +79,7 @@ module org.apache.derby.engine
     
     requires org.apache.derby.commons;
     requires io.github.ggeorg.delosdb.runtime.api;
+    requires io.github.ggeorg.delosdb.annotations;
     requires io.github.ggeorg.delosdb.spi;
 
     //
@@ -95,6 +96,8 @@ module org.apache.derby.engine
     requires static org.osgi.framework;
 
     // DelosDB SPI is required at runtime for internal built-in provider adapters.
+    // The old VersionedStorageProvider execution path is fully quarantined outside
+    // the production engine module; delos_mvcc enters through Derby store/access.
 
     //
     // DERBY PUBLIC API
@@ -121,9 +124,6 @@ module org.apache.derby.engine
     //
     provides java.sql.Driver
         with org.apache.derby.iapi.jdbc.AutoloadedDriver;
-
-    // DelosDB optional storage providers are discovered through ServiceLoader.
-    uses io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
 
     // Store-owned hooks may be implemented by engine-side providers.
     uses org.apache.derby.iapi.store.access.StoreCostControllerWrapper;

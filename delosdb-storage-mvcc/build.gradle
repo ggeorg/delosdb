@@ -19,11 +19,11 @@ java {
 }
 
 dependencies {
-    implementation project(':delosdb-spi')
+    implementation project(':delosdb-versioned-storage-spi')
     implementation project(':delosdb-commons')
     api project(':delosdb-storage-api')
     api project(':delosdb-storage-io')
-    testImplementation project(':delosdb-spi')
+    testImplementation project(':delosdb-versioned-storage-spi')
     testImplementation project(':delosdb-storage-io')
     testImplementation "org.junit.platform:junit-platform-console-standalone:${rootProject.ext.junitPlatformConsoleVersion}"
 }

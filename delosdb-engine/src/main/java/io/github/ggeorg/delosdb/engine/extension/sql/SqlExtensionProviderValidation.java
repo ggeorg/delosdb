@@ -5,7 +5,7 @@ import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderResolver;
 import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
 import io.github.ggeorg.delosdb.engine.extension.storage.StorageProviderResolver;
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.VersionedStorageProviderRegistry;
+import io.github.ggeorg.delosdb.engine.extension.storage.versioned.KnownVersionedStorageProviders;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -51,7 +51,7 @@ public final class SqlExtensionProviderValidation {
             StorageProviderResolver.builtIns().requireEnabled(normalizedName);
             return;
         } catch (ExtensionResolutionException e) {
-            if (isDiscoveredVersionedStorageProvider(normalizedName)) {
+            if (isKnownBridgeStorageProvider(normalizedName)) {
                 return;
             }
             throw unsupportedProvider("CREATE TABLE", normalizedName);
@@ -65,11 +65,11 @@ public final class SqlExtensionProviderValidation {
         return providerName.toLowerCase(Locale.ROOT);
     }
 
-    private static boolean isDiscoveredVersionedStorageProvider(String providerName) {
-        return VersionedStorageProviderRegistry.discovered()
-                .resolver()
-                .findEnabled(providerName)
-                .isPresent();
+    private static boolean isKnownBridgeStorageProvider(String providerName) {
+        // The old ServiceLoader-based VersionedStorageProvider execution path is quarantined.
+        // SQL binding only recognizes reserved bridge provider names here; actual table state
+        // and provider dispatch are owned by the Derby store/access MVCC bridge.
+        return KnownVersionedStorageProviders.isKnownVersionedProvider(providerName);
     }
 
     private static StandardException unsupportedProvider(String statementName, String providerName) {
