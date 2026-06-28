@@ -389,9 +389,59 @@ catalog and type observations
 Diagnostics are successful only when they help a reader or researcher connect a visible event to a
 real Derby/DelosDB execution point.
 
+## Phase 22 closeout
+
+Phase 22 is closed when the readable trace output and trace-summary proofs are green. Later
+diagnostics remain available as future work, but they are not required before starting the layout
+decision phase.
+
+Before leaving Phase 22, run:
+
+```bash
+./gradlew clean
+./gradlew roadmapVerification
+./scripts/module-dependency-tree.py
+```
+
 ## Phase 23 — Project layout from the proven model
 
 Goal: use the working model to decide the future project layout.
+
+### MODULE23A — Contract ownership map
+
+Status: green.
+
+Scope:
+
+```text
+Classify visible API and contract surfaces by ownership and role.
+Separate inherited Derby runtime/store substrate from DelosDB-owned storage contracts, SPI contracts,
+engine model/diagnostic vocabulary, implementation internals, and compatibility adapters.
+Do not move code, create modules, rename packages, promote engine.trace to API/SPI, or touch MVCC,
+storage, optimizer, or query behavior.
+```
+
+Expected proof:
+
+```text
+docs/architecture/delosdb-contract-ownership-map.md records the current ownership map.
+The map states that delosdb-runtime-api is not the home for all DelosDB contracts while it remains
+the inherited Derby runtime/service substrate module.
+roadmapVerification and the dependency report remain green because the pass is documentation-only.
+```
+
+### MODULE23B — Runtime/API boundary decision review
+
+Status: planned.
+
+Scope:
+
+```text
+Use the contract ownership map to decide whether any module naming, package ownership, or contract
+placement is actually dishonest enough to require a small source move.
+Do not move Module 21/22 trace vocabulary into delosdb-runtime-api.
+Do not create a model or diagnostics module unless real production consumers require it.
+```
 
 Possible future layout areas:
 
