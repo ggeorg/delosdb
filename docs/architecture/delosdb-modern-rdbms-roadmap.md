@@ -186,8 +186,8 @@ Keep WAL/group-commit and row-level concurrency as separate later lanes.
 
 ## Phase 21 — Minimal teachable modern RDBMS model
 
-Goal: introduce the first DelosDB-owned model and trace vocabulary inside `delosdb-engine` without
-changing query behavior.
+Goal: introduce the first DelosDB-owned engine/RDBMS model vocabulary inside `delosdb-engine` and
+prove it through trace observations, without changing query behavior.
 
 ### MODULE21A — Minimal model and no-op trace API
 
@@ -196,7 +196,7 @@ Status: green.
 Scope:
 
 ```text
-Add the first DelosDB-owned trace vocabulary inside delosdb-engine.
+Add the first DelosDB-owned RDBMS model vocabulary inside delosdb-engine, with a no-op observation path.
 Keep the API small.
 Do not change query behavior.
 Do not create a new Gradle module.
@@ -276,10 +276,10 @@ Scope:
 
 ```text
 Remove the fake engine.rdbms package tree.
-Collapse internal engine-owned trace vocabulary into io.github.ggeorg.delosdb.engine.trace.
+Collapse the fake engine.rdbms package tree into an internal engine package as a temporary cleanup step.
 Document the package naming strategy.
 Do not create a new Gradle module.
-Do not promote trace vocabulary to API or SPI.
+Do not promote model, trace, or diagnostics vocabulary to API or SPI.
 ```
 
 Expected proof:
@@ -288,6 +288,7 @@ Expected proof:
 No source imports remain for io.github.ggeorg.delosdb.engine.rdbms.*.
 The old source directory is deleted.
 roadmapVerification remains green.
+This collapse is not the final educational model boundary; later code must keep the model visible rather than hiding it under trace.
 ```
 
 ### MODULE21D — Transaction and MVCC observations
@@ -420,8 +421,8 @@ Scope:
 ```text
 Classify visible API and contract surfaces by ownership and role.
 Separate inherited Derby runtime/store substrate from DelosDB-owned storage contracts, SPI contracts,
-engine model/diagnostic vocabulary, implementation internals, and compatibility adapters.
-Do not move code, create modules, rename packages, promote engine.trace to API/SPI, or touch MVCC,
+engine model vocabulary, trace machinery, diagnostics, implementation internals, and compatibility adapters.
+Do not move code, create modules, rename packages, promote engine-owned model/trace/diagnostics to API/SPI, or touch MVCC,
 storage, optimizer, or query behavior.
 ```
 
@@ -442,9 +443,9 @@ Scope:
 
 ```text
 Audit the contract-bearing module boundaries in one pass: runtime API, Derby store API, storage API,
-SPI, engine trace/model vocabulary, MVCC internals, storage bridge, storage-derby, and storage-IO.
+SPI, engine model vocabulary, trace machinery, diagnostics, MVCC internals, storage bridge, storage-derby, and storage-IO.
 Decide whether any boundary is dishonest enough to require a small source move.
-Do not move Module 21/22 trace vocabulary into delosdb-runtime-api.
+Do not move Module 21/22 model, trace, or diagnostics vocabulary into delosdb-runtime-api.
 Do not create a model or diagnostics module unless real production consumers require it.
 Do not rename delosdb-runtime-api, move storage contracts, promote MVCC internals, or touch query
 behavior.
@@ -519,8 +520,8 @@ or later work.
 `delosdb-runtime-api` remains the inherited Derby runtime/service substrate and must not become a
 general bucket for DelosDB contracts. `delosdb-storage-api` remains the DelosDB storage-provider
 contract lane, with its current Derby package identity treated as an integration compromise rather
-than a permanent naming model. `engine.trace` remains engine-owned until a real production consumer
-outside the engine requires promotion. `delosdb-storage-bridge` remains temporary compatibility code,
+than a permanent naming model. Engine-owned model, trace, and diagnostics code remains inside
+`delosdb-engine` until a real production consumer outside the engine requires promotion. `delosdb-storage-bridge` remains temporary compatibility code,
 not the shared architecture layer between Derby storage and native MVCC.
 
 Possible future layout areas:
@@ -571,7 +572,7 @@ Add a read-only MVCC internal observation object inside delosdb-storage-mvcc.
 Summarize already-existing transaction snapshot, visible-row, version-count, and vacuum-horizon
 facts from the native MVCC path.
 Represent WAL/checkpoint as explicitly not observed when the in-memory MVCC path has no such position.
-Do not depend on delosdb-engine trace classes.
+Do not depend on delosdb-engine model, trace, or diagnostics classes.
 Do not add a new module or promote MVCC internals to public API.
 Do not change transaction, visibility, cleanup, WAL, checkpoint, or row-storage behavior.
 ```
@@ -704,4 +705,47 @@ A heap SELECT trace can be summarized as TABLE_SCAN / DERBY_HEAP / HEAP_SCAN.
 A forced-index SELECT trace can be summarized as INDEX_SCAN / DERBY_BTREE / BTREE_INDEX_SCAN
 or BTREE_KEYED_LOOKUP.
 modernRdbmsModelProof includes the observed-plan proof.
+```
+
+### MODULE25B — Restore visible engine model boundary
+
+Status: corrective documentation/design pass before more planner work.
+
+Scope:
+
+```text
+Restore the original architecture: io.github.ggeorg.delosdb.engine owns the RDBMS model vocabulary,
+and Derby code adapts/emits evidence against it.
+Separate model vocabulary from trace machinery and reader-facing diagnostics inside delosdb-engine.
+Do not create a new Gradle module.
+Do not promote the model to delosdb-runtime-api, delosdb-api, or delosdb-spi.
+Do not change optimizer behavior, storage routing, MVCC behavior, or query semantics.
+```
+
+Target package shape:
+
+```text
+io.github.ggeorg.delosdb.engine.model
+  statement, lifecycle, plan, execution, storage, and transaction/recovery concepts
+
+io.github.ggeorg.delosdb.engine.trace
+  trace events, sinks, registry, and Derby hook helpers
+
+io.github.ggeorg.delosdb.engine.diagnostics
+  trace formatter, trace summary, and observed-plan reader-facing reports
+```
+
+Expected proof:
+
+```text
+The same focused model proofs pass after the internal package split.
+No production module outside delosdb-engine depends on the engine model package.
+roadmapVerification and the dependency report remain green.
+```
+
+Reason:
+
+```text
+Trace is an observability mechanism, not an RDBMS building block. The code must make the modern
+RDBMS model visible enough for education, research, and future Derby/Calcite/student adapters.
 ```

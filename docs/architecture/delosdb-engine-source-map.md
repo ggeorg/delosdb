@@ -94,7 +94,27 @@ For now, the preferred approach is:
 
 ```text
 1. Keep inherited Derby SQL engine packages traceable.
-2. Add DelosDB-owned modern RDBMS model and trace packages inside delosdb-engine.
+2. Add DelosDB-owned modern RDBMS model, trace, and diagnostics packages inside delosdb-engine.
 3. Prove the model against real execution paths.
 4. Use the proven model to decide the future project layout.
 ```
+
+
+## DelosDB-owned engine model boundary
+
+The intended DelosDB-owned engine package shape is:
+
+```text
+io.github.ggeorg.delosdb.engine.model
+  RDBMS building-block vocabulary and small contracts
+
+io.github.ggeorg.delosdb.engine.trace
+  trace events, sinks, registry, and Derby execution hook helpers
+
+io.github.ggeorg.delosdb.engine.diagnostics
+  formatter, summary, observed-plan reports, and other reader-facing diagnostic views
+```
+
+Derby code remains in `org.apache.derby.*` packages and adapts to or emits evidence against this
+model. Calcite-inspired experiments or student proofs should also adapt to this model rather than
+inventing parallel terminology. Trace records evidence; it is not the model itself.

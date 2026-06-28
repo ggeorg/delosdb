@@ -9,7 +9,7 @@ RDBMS while preserving enough source traceability to the inherited Derby code.
 | Document | Purpose |
 |---|---|
 | `architecture/delosdb-modern-rdbms-roadmap.md` | Project direction, phases, status, and decision rules. |
-| `architecture/delosdb-modern-rdbms-model.md` | The teachable modern RDBMS model DelosDB implements and observes through real execution. |
+| `architecture/delosdb-modern-rdbms-model.md` | The teachable modern RDBMS model DelosDB is restoring as visible engine model vocabulary, with trace and diagnostics as separate observation layers. |
 | `architecture/delosdb-contract-ownership-map.md` | Phase 23 ownership classification for contract/API surfaces. |
 | `architecture/delosdb-contract-boundary-audit.md` | Phase 23 boundary decision review: no immediate source move is justified. |
 | `architecture/delosdb-package-naming-strategy.md` | Rules for package ownership, inherited Derby traceability, and DelosDB-owned package names. |

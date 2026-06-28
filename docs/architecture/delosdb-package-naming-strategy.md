@@ -120,26 +120,35 @@ Avoid architectural-sounding package names unless the build already enforces tha
 
 Do not use `rdbms` as a package segment. The whole project is an RDBMS.
 
-## Trace and observation code
+## Engine model, trace, and diagnostics code
 
-Engine-owned trace code lives in:
+The DelosDB-owned engine model is not the same thing as tracing. The intended internal package
+shape inside `delosdb-engine` is:
 
 ```text
+io.github.ggeorg.delosdb.engine.model
+  RDBMS building-block vocabulary and small engine model contracts
+
 io.github.ggeorg.delosdb.engine.trace
+  trace events, sinks, registries, and Derby execution hook helpers
+
+io.github.ggeorg.delosdb.engine.diagnostics
+  reader-facing formatters, summaries, and observed-plan reports
 ```
 
-This package is internal to `delosdb-engine`.
+These packages are internal to `delosdb-engine`. They are not public API and not provider SPI.
 
-It may describe observed storage, plan, execution, and transaction facts from the engine's point of
-view.
+`engine.model` names concepts such as statement kind, lifecycle stage, plan node kind, execution
+node kind, storage provider kind, storage access kind, and transaction/recovery concept.
 
-It is not a public observability API.
+`engine.trace` records observations of those concepts from real execution points. Trace is an
+observability mechanism, not an RDBMS building block.
 
-It is not provider SPI.
+`engine.diagnostics` renders or summarizes already-captured observations for students, researchers,
+and focused proofs.
 
-Storage modules must not depend on `delosdb-engine` in order to emit trace events.
-
-If storage providers later need to emit trace events directly, the trace contract must move to the
+Storage modules must not depend on `delosdb-engine` in order to emit trace events. If storage
+providers later need to emit shared trace events directly, the relevant contract must move to the
 correct lower/shared module, such as `delosdb-storage-api`, `delosdb-spi`, or `delosdb-api`,
 depending on the real consumer.
 
@@ -198,12 +207,16 @@ The package tree:
 io.github.ggeorg.delosdb.engine.rdbms.*
 ```
 
-created a fake architecture inside `delosdb-engine`.
+created a fake architecture inside `delosdb-engine` because the whole project is an RDBMS. It was
+collapsed as a cleanup step.
 
-It is collapsed to:
+The corrected internal shape is:
 
 ```text
+io.github.ggeorg.delosdb.engine.model
 io.github.ggeorg.delosdb.engine.trace
+io.github.ggeorg.delosdb.engine.diagnostics
 ```
 
-No behavior change. No new module. No API/SPI promotion. No storage dependency on engine.
+No behavior change. No new module. No API/SPI promotion. No storage dependency on engine. The point
+is to make the RDBMS model visible without pretending it is a public API yet.

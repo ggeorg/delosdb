@@ -89,15 +89,16 @@ Do expose storage behavior through diagnostics and the modern RDBMS model.
 
 ## Relationship to the modern RDBMS model
 
-The modern RDBMS model should observe storage behavior through concepts such as:
+The modern RDBMS model should name storage behavior through model concepts such as:
 
 ```text
 RdbmsStorageProviderKind
 RdbmsStorageAccessKind
 RdbmsTransactionConcept
-RdbmsTraceEvent
-RdbmsTraceSummary
 ```
+
+Trace events may record those model facts, and diagnostics may summarize them, but trace and
+diagnostics are not the storage model themselves.
 
 The first useful storage observations are:
 

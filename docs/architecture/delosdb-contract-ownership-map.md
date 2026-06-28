@@ -23,7 +23,7 @@ move Java sources
 rename modules
 rename packages
 rename Rdbms* trace classes
-promote engine.trace to API or SPI
+promote engine-owned model, trace, or diagnostics code to API or SPI
 touch MVCC behavior
 touch optimizer behavior
 split delosdb-runtime-api
@@ -41,7 +41,9 @@ module just because they are all visible APIs.
 | Inherited Derby store substrate | Derby access/store/raw/btree contract surfaces that remain part of the inherited storage path. | Keep separate from DelosDB storage-provider contracts. |
 | DelosDB storage-provider contracts | DelosDB-owned contracts that let the engine talk to storage providers. | Belong in the storage contract lane, not runtime-api. |
 | DelosDB SPI contracts | Explicit DelosDB extension/provider SPI surfaces. | Keep distinct from Derby substrate and from engine diagnostics. |
-| Engine-owned model/diagnostic vocabulary | Trace/model types proven against real Derby execution but currently owned by delosdb-engine. | Keep internal until real production consumers outside the engine exist. |
+| Engine-owned model vocabulary | RDBMS building-block vocabulary proven through real Derby execution observations. | Keep internal to `delosdb-engine` until real production consumers outside the engine exist. |
+| Engine-owned trace machinery | Event capture, sinks, registry, and Derby hook helpers that record facts about the model. | Keep separate from the model vocabulary; trace is not the model. |
+| Engine-owned diagnostics | Reader-facing formatter, summary, and observed-plan reports derived from captured events. | Keep internal until a real diagnostics/API consumer exists. |
 | DelosDB implementation internals | Native MVCC/page/storage-IO implementation code. | Do not promote to API just because another package wants to observe it. |
 | Compatibility adapters | Temporary code that adapts inherited Derby access paths to DelosDB concepts. | Treat as implementation scaffolding, not a long-term contract home. |
 
@@ -53,7 +55,9 @@ module just because they are all visible APIs.
 | `delosdb-derby-store-api` | Inherited Derby store substrate. | Derby store/access/raw/btree contract lane used by inherited storage and engine paths. | Yes. | Identify later which store interfaces are true substrate versus provider implementation detail. |
 | `delosdb-storage-api` | DelosDB-owned storage contract lane, currently anchored in Derby `org.apache.derby.iapi.store.types` package space for integration. | Provider-neutral table, row, scan, predicate, range, capability, guarantee, transaction, and storage-diagnostics contracts. | Yes, with a known package compromise. | Future package migration to `io.github.ggeorg.delosdb.storage.api` only after consumers stabilize. |
 | `delosdb-spi` | DelosDB-owned SPI. | Extension/provider SPI for storage, versioned storage, index, function, and type providers. | Mostly yes. | Review overlap with `delosdb-storage-api` only when duplicated responsibilities are concrete. |
-| `delosdb-engine` / `io.github.ggeorg.delosdb.engine.trace` | DelosDB-owned engine model/diagnostic vocabulary. | Proven trace events, formatter, summary, lifecycle/storage/transaction concepts, and no-op sink/registry. | Yes. It is engine-owned and not public API/SPI. | Promote only when a real production module outside the engine needs it. |
+| `delosdb-engine` / `io.github.ggeorg.delosdb.engine.model` | DelosDB-owned engine/RDBMS model vocabulary. | Statement, lifecycle, plan, execution, storage, and transaction/recovery concepts that Derby code can adapt to or emit evidence against. | Intended home. If classes still sit under `engine.trace`, that is package drift to correct inside `delosdb-engine`. | Promote only when a real production module outside the engine needs it. |
+| `delosdb-engine` / `io.github.ggeorg.delosdb.engine.trace` | DelosDB-owned trace machinery. | Trace event, sink, registry, and Derby hook helpers. | Yes, but only for observation machinery. It is not the model package. | Keep internal unless shared tracing has real lower-level consumers. |
+| `delosdb-engine` / `io.github.ggeorg.delosdb.engine.diagnostics` | DelosDB-owned diagnostics. | Formatter, summary, observed-plan report, and other reader-facing views over captured events. | Intended home for diagnostics. | Promote only if a real public diagnostics surface is required. |
 | `delosdb-engine` / `org.apache.derby.*` | Inherited Derby engine substrate plus DelosDB hooks. | SQL compilation/execution, JDBC, catalog, dictionary, execution rows, and inherited engine internals. | Yes. | Continue to prefer small observable hooks over package churn. |
 | `delosdb-storage-derby` | Inherited Derby storage implementation. | Heap/raw/btree provider implementation. | Yes. | Later decide which common btree/sort/raw pieces are shared substrate versus Derby-provider implementation. |
 | `delosdb-storage-mvcc` | DelosDB-native implementation. | Native MVCC storage provider, row/version storage, transaction state, persistence, and recovery-related internals. | Yes. | Phase 24 decides which MVCC concepts become observations. |
@@ -69,14 +73,15 @@ module just because they are all visible APIs.
 ### `delosdb-runtime-api` is not the home for all DelosDB contracts
 
 `delosdb-runtime-api` currently exports inherited Derby runtime/service contracts. Its current role is
-substrate extraction, not DelosDB model ownership. Mixing Module 21/22 model/diagnostic vocabulary
+substrate extraction, not DelosDB model ownership. Mixing Module 21/22 engine model, trace, or diagnostics vocabulary
 into it would make both roles less honest.
 
-### `engine.trace` remains engine-owned
+### Engine model, trace, and diagnostics remain engine-owned
 
-The trace vocabulary was deliberately collapsed into `io.github.ggeorg.delosdb.engine.trace` and not
-promoted to API/SPI. It remains the right location until a real production module outside the engine
-needs to consume the same model.
+The DelosDB-owned model should live under `io.github.ggeorg.delosdb.engine.model`, not under
+`engine.trace`. Trace is the observation mechanism; diagnostics are reader-facing derived views. All
+three remain internal to `delosdb-engine` until a real production module outside the engine needs a
+shared contract.
 
 ### Storage contracts belong in the storage lane
 
@@ -118,7 +123,8 @@ engine -> storage-derby -> storage-bridge -> storage-mvcc
 
 Candidate modules such as `delosdb-engine-model`, `delosdb-diagnostics-api`, or a renamed runtime
 substrate module should be considered only when the dependency graph shows real production consumers
-and the new module would remove coupling rather than create a placeholder.
+and the new module would remove coupling rather than create a placeholder. Internal package
+separation inside `delosdb-engine` does not require a new module.
 
 ## Relationship to the boundary audit
 

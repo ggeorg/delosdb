@@ -1,8 +1,9 @@
 # DelosDB teachable modern RDBMS model
 
 DelosDB should expose a clear modern database model while continuing to execute through inherited
-Derby engine code and DelosDB storage providers. The model is not a replacement engine. It is a
-DelosDB-owned vocabulary for education, tracing, research, and future project-layout decisions.
+Derby engine code and DelosDB storage-provider proofs. The model is not a replacement engine. It is
+a DelosDB-owned vocabulary and contract shape for education, tracing, research, and future
+project-layout decisions.
 
 The strategic direction is:
 
@@ -15,9 +16,10 @@ then use that model to decide the future project layout.
 ## Mission
 
 DelosDB should be education- and research-friendly without becoming a simplified toy database. It
-should make real database mechanisms visible while remaining a serious, fully capable, modern RDBMS.
+should make real database mechanisms visible while remaining a Derby-compatible database kernel with
+selected internal modernization proofs.
 
-For students, the system should explain the classical SQL pipeline:
+For students, the model should explain the classical SQL pipeline:
 
 ```text
 SQL client / JDBC
@@ -31,7 +33,7 @@ SQL client / JDBC
   -> rows / update counts
 ```
 
-For research, the same model must expose modern implementation mechanisms:
+For research, the same model should expose modern implementation mechanisms:
 
 ```text
 MVCC and snapshot visibility
@@ -48,23 +50,66 @@ SQL type conversion, comparison, and null semantics
 runtime diagnostics and tracing
 ```
 
-## Package shape
+## Model is not trace
 
-The first implementation lives inside `delosdb-engine`, not in a new Gradle module:
+Trace is an observation mechanism. It is not an RDBMS building block.
+
+The DelosDB engine model should be visible as model vocabulary first. Trace events should record
+facts about that model from real Derby/DelosDB execution points. Diagnostics should render or
+summarize those recorded facts for readers.
+
+The intended in-module package shape is:
 
 ```text
+io.github.ggeorg.delosdb.engine.model
+  DelosDB-owned RDBMS building-block vocabulary and small contracts
+
 io.github.ggeorg.delosdb.engine.trace
+  event capture, sinks, registries, and Derby execution hooks that observe the model
+
+io.github.ggeorg.delosdb.engine.diagnostics
+  reader-facing formatters, summaries, and observed-plan reports derived from captured events
 ```
 
-This is engine-owned internal trace vocabulary, not a public observability API and not provider SPI.
-The package may describe observed storage, plan, execution, and transaction facts from the engine's
-point of view, but storage modules must not depend on `delosdb-engine` in order to emit trace
-events.
+All three packages remain internal to `delosdb-engine` unless a real production consumer proves that
+a lower/shared module or public API is needed. This is not a move to `delosdb-runtime-api`, not a
+provider SPI, and not a new Gradle module.
 
-The package follows the DelosDB package naming strategy in
-`docs/architecture/delosdb-package-naming-strategy.md`.
+Current correction note:
 
-## Core model concepts
+```text
+The previous documentation drifted by describing io.github.ggeorg.delosdb.engine.trace as the
+implementation home of the modern RDBMS model. That is not the intended architecture. engine.trace is
+only the observation layer. MODULE25B restores the documented model/trace/diagnostics separation
+inside delosdb-engine.
+```
+
+## Core RDBMS building blocks
+
+A teachable model should make these building blocks visible, even when some are still only mapped to
+inherited Derby source or future proofs:
+
+| Building block | Meaning in DelosDB |
+| --- | --- |
+| SQL language surface | Statement kinds, predicates, expressions, type behavior, and result/update shape. |
+| Catalog / dictionary | Tables, columns, indexes, schemas, constraints, and metadata lookup. |
+| Planner / optimizer | Logical intent, physical access path, predicates, cost/choice observations. |
+| Execution engine | Runtime operators, scans, filters, joins, row flow, and statement lifecycle. |
+| Storage access | Provider choice, heap scan, btree/index access, MVCC scan, page/version access. |
+| Transactions / concurrency | Transaction identity, commit, rollback, isolation, locks, snapshots. |
+| MVCC / versioning | Snapshots, visible versions, retained visibility horizon, version pruning/vacuum concepts. |
+| Durability / recovery | WAL/log state, checkpoint state, durable replay/recovery concepts. |
+| Diagnostics / observability | Trace events, summaries, reports, and teaching/research views built from real execution. |
+
+## Engine model vocabulary
+
+The first engine-owned model vocabulary should live under:
+
+```text
+io.github.ggeorg.delosdb.engine.model
+```
+
+The current vocabulary includes these concept groups.
 
 ### Pipeline stages
 
@@ -145,10 +190,12 @@ LEFTOVER_PREDICATE
 UNKNOWN
 ```
 
-### Modern transaction and recovery concepts
+### Transaction and recovery concepts
 
 ```text
 TRANSACTION
+COMMIT
+ROLLBACK
 SNAPSHOT
 VISIBILITY_CHECK
 WAL_POSITION
@@ -156,25 +203,54 @@ CHECKPOINT
 VACUUM_HORIZON
 ```
 
-These concepts do not all need complete implementation in the first pass. They remain part of the
-model so DelosDB does not stop at a classical SQL pipeline.
+These concepts do not all have complete implementation yet. They are the vocabulary DelosDB uses to
+explain and measure the real system without claiming that every future mechanism is already wired to
+SQL execution.
+
+## Trace layer
+
+Trace belongs under:
+
+```text
+io.github.ggeorg.delosdb.engine.trace
+```
+
+Its role is to record model facts emitted from real execution points. It should contain event
+capture machinery such as trace events, trace sinks, registries, and Derby hook helpers. It should
+not become the container for the model vocabulary itself.
+
+The trace registry defaults to a no-op sink. That keeps the model behaviorally inert unless a
+focused test or diagnostic tool installs a sink.
+
+## Diagnostics layer
+
+Diagnostics belong under:
+
+```text
+io.github.ggeorg.delosdb.engine.diagnostics
+```
+
+Diagnostics are reader-facing views over already-captured observations: text formatting, summaries,
+row-flow counters, and observed-plan reports. They do not subscribe to traces globally and do not
+affect planning, execution, costing, storage routing, or row production.
 
 ## Implementation status
 
-The model document names both implemented observations and future concepts. The current status is
-summarized here; the detailed Phase 24 MVCC status and non-claims are recorded in
+The model document names both implemented observations and future concepts. The detailed Phase 24
+MVCC status and non-claims are recorded in
 `docs/architecture/delosdb-mvcc-observation-matrix.md`.
 
 | Area | Status | Current proof or future phase |
 | --- | --- | --- |
-| SELECT lifecycle | Implemented. | Module 21B focused proof. |
+| SELECT lifecycle | Implemented as real execution observations. | Module 21B focused proof. |
 | Heap table scan observation | Implemented. | Module 21C storage-access proof. |
 | Btree index scan observation | Implemented. | Module 21C storage-access proof. |
 | Row-flow counters | Implemented for captured SELECT traces. | Module 22B trace-summary proof. |
-| Observed table access plan | Implemented for captured SELECT traces as a Phase 25 baseline observation. | Module 25A observed-plan proof; not an optimizer replacement. |
+| Observed table access plan | Implemented as a diagnostic baseline over captured SELECT traces. | Module 25A observed-plan proof; not an optimizer replacement. |
 | Commit boundary observation | Implemented for inherited Derby transaction boundaries. | Module 21D transaction proof. |
 | Rollback boundary observation | Implemented for inherited Derby transaction boundaries. | Module 21D transaction proof. |
 | Human-readable trace text | Implemented for captured trace events. | Module 22A trace-text proof. |
+| Model/trace/diagnostics package separation | Required correction. | Module 25B restores the intended internal boundary. |
 | Transaction snapshot | Observed as a native-MVCC internal proof. | Module 24A; not wired to inherited Derby SQL transactions. |
 | Visible rows / visibility checks | Observed for native and page-backed MVCC proof paths. | Modules 24A and 24B; not SQL routing. |
 | Vacuum horizon | Observed as visibility-horizon diagnostics through retained snapshot state. | Module 24A; not a vacuum implementation. |
@@ -182,10 +258,9 @@ summarized here; the detailed Phase 24 MVCC status and non-claims are recorded i
 | WAL/log position | Not implemented as a real replay position. Page-volume observation reports write-ahead-log file state only. | Module 24C; future work for replay position. |
 | Checkpoint state | Observed as selected page-volume checkpoint status: `WRITTEN` after rewrite and `VALID` after reopen/validation. | Module 24C; no scheduler or production recovery policy. |
 
-This distinction prevents the model from overclaiming. The vocabulary can describe modern RDBMS
-concepts before every concept is wired to a real execution point, but diagnostics are considered
-implemented only when a focused proof observes real Derby/DelosDB behavior.
-
+This distinction prevents the model from overclaiming. A concept can belong to the model before the
+project has a complete implementation, but diagnostics are considered implemented only when a
+focused proof observes real Derby/DelosDB behavior.
 
 ## Phase 24 MVCC observation closeout
 
@@ -205,31 +280,24 @@ no vacuum or version-pruning implementation
 no optimizer/provider-aware MVCC planning
 ```
 
-## Implementation package
+## Current source placement before MODULE25B
 
-The current classes are:
+Before the Module 25B correction, some model vocabulary, trace machinery, and diagnostics may still
+physically live together under `io.github.ggeorg.delosdb.engine.trace`. That placement is legacy
+roadmap drift, not the intended model boundary.
+
+The intended correction is:
 
 ```text
-io.github.ggeorg.delosdb.engine.trace.RdbmsStatementKind
-io.github.ggeorg.delosdb.engine.trace.RdbmsLifecycleStage
-io.github.ggeorg.delosdb.engine.trace.RdbmsPlanNodeKind
-io.github.ggeorg.delosdb.engine.trace.RdbmsExecutionNodeKind
-io.github.ggeorg.delosdb.engine.trace.RdbmsStorageAccessKind
-io.github.ggeorg.delosdb.engine.trace.RdbmsStorageProviderKind
-io.github.ggeorg.delosdb.engine.trace.RdbmsTransactionConcept
-io.github.ggeorg.delosdb.engine.trace.RdbmsTraceEvent
-io.github.ggeorg.delosdb.engine.trace.RdbmsTraceSink
-io.github.ggeorg.delosdb.engine.trace.RdbmsTraceRegistry
-io.github.ggeorg.delosdb.engine.trace.RdbmsTraceFormatter
-io.github.ggeorg.delosdb.engine.trace.RdbmsTraceSummary
-io.github.ggeorg.delosdb.engine.trace.RdbmsObservedPlan
-io.github.ggeorg.delosdb.engine.trace.DerbyRdbmsTrace
-```
+engine.model
+  RdbMS concept vocabulary and small contracts
 
-The trace registry defaults to a no-op sink. That keeps the model behaviorally inert unless a
-focused test or diagnostic tool installs a sink. The formatter, summary, and observed-plan classes
-are diagnostic-only: they render or aggregate already-captured events and do not subscribe to traces
-or affect planning, execution, costing, storage routing, or row production.
+engine.trace
+  trace event, sink, registry, and Derby hook helpers
+
+engine.diagnostics
+  formatter, summary, and observed-plan report classes
+```
 
 ## Wired inherited Derby execution points
 
@@ -257,18 +325,7 @@ The focused model proof task is:
 ./gradlew modernRdbmsModelProof
 ```
 
-It includes:
-
-```text
-:delosdb-tests:runModernRdbmsSelectLifecycleTraceTest
-:delosdb-tests:runModernRdbmsStorageAccessTraceTest
-:delosdb-tests:runModernRdbmsTransactionTraceTest
-:delosdb-tests:runModernRdbmsTraceTextOutputTest
-:delosdb-tests:runModernRdbmsTraceSummaryTest
-:delosdb-tests:runModernRdbmsObservedPlanTest
-```
-
-The focused proofs verify:
+It includes the focused proofs for:
 
 ```text
 simple SELECT lifecycle observations
