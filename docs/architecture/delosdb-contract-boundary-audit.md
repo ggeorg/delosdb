@@ -226,19 +226,17 @@ The current module graph has no missing declared production dependencies, unreso
 package-owner collisions, or cross-module output-directory backdoors. The architecture pressure is
 therefore conceptual and naming-related, not a build integrity failure.
 
-The safe next action is to close the audit and choose one of two follow-up routes:
+The chosen follow-up route is documentation closeout:
 
 ```text
-Route A — documentation closeout
-  Record that Phase 23 found no immediate source move.
-  Move to Phase 24 MVCC research observations.
-
-Route B — one small naming/documentation cleanup
-  Clarify in docs that delosdb-runtime-api is inherited Derby runtime substrate.
-  Do not rename the module yet.
+Record that Phase 23 found no immediate source move.
+Clarify that delosdb-runtime-api is inherited Derby runtime/service substrate.
+Move next to Phase 24 MVCC research observations unless a concrete production dependency forces a
+layout move first.
 ```
 
-Route A is preferred unless a concrete production dependency forces a layout move.
+This closeout does not rename `delosdb-runtime-api`; it only prevents the module from becoming a
+catch-all bucket for DelosDB-owned contracts.
 
 ## Deferred candidates
 

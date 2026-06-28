@@ -175,12 +175,14 @@ io.github.ggeorg.delosdb.engine.trace.RdbmsTraceEvent
 io.github.ggeorg.delosdb.engine.trace.RdbmsTraceSink
 io.github.ggeorg.delosdb.engine.trace.RdbmsTraceRegistry
 io.github.ggeorg.delosdb.engine.trace.RdbmsTraceFormatter
+io.github.ggeorg.delosdb.engine.trace.RdbmsTraceSummary
 io.github.ggeorg.delosdb.engine.trace.DerbyRdbmsTrace
 ```
 
 The trace registry defaults to a no-op sink. That keeps the model behaviorally inert unless a
-focused test or diagnostic tool installs a sink. The formatter is diagnostic-only: it renders
-already-captured events as deterministic text and does not subscribe to traces or affect execution.
+focused test or diagnostic tool installs a sink. The formatter and summary classes are
+diagnostic-only: they render or aggregate already-captured events and do not subscribe to traces or
+affect execution.
 
 ## Wired inherited Derby execution points
 
@@ -215,6 +217,7 @@ It includes:
 :delosdb-tests:runModernRdbmsStorageAccessTraceTest
 :delosdb-tests:runModernRdbmsTransactionTraceTest
 :delosdb-tests:runModernRdbmsTraceTextOutputTest
+:delosdb-tests:runModernRdbmsTraceSummaryTest
 ```
 
 The focused proofs verify:
@@ -226,6 +229,7 @@ forced btree index scan observations
 commit boundary observations
 rollback boundary observations
 human-readable trace output for captured SELECT events
+reader-facing trace summary and row-flow counters for captured SELECT events
 ```
 
 ## Verification role

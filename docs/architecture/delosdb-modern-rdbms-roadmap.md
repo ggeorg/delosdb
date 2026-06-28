@@ -333,6 +333,8 @@ and the inherited compatibility lane is no longer used as the per-overlay loop.
 
 ## Phase 22 — Research and education diagnostics
 
+Status: closed after MODULE22B.
+
 Goal: make real database behavior observable without turning diagnostics into source guards.
 
 ### MODULE22A — Human-readable trace output
@@ -391,9 +393,8 @@ real Derby/DelosDB execution point.
 
 ## Phase 22 closeout
 
-Phase 22 is closed when the readable trace output and trace-summary proofs are green. Later
-diagnostics remain available as future work, but they are not required before starting the layout
-decision phase.
+Phase 22 is closed: the readable trace output and trace-summary proofs are green. Later diagnostics
+remain available as future work, but they are not required before starting the layout decision phase.
 
 Before leaving Phase 22, run:
 
@@ -404,6 +405,9 @@ Before leaving Phase 22, run:
 ```
 
 ## Phase 23 — Project layout from the proven model
+
+Status: closed as a no-move layout decision after MODULE23B and the documentation consolidation
+support pass.
 
 Goal: use the working model to decide the future project layout.
 
@@ -432,7 +436,7 @@ roadmapVerification and the dependency report remain green because the pass is d
 
 ### MODULE23B — Contract boundary audit
 
-Status: implemented as a documentation-only decision review.
+Status: green.
 
 Scope:
 
@@ -451,6 +455,32 @@ Expected proof:
 ```text
 docs/architecture/delosdb-contract-boundary-audit.md records the one-pass boundary audit.
 The audit concludes that no Module 23 source move is justified yet.
+roadmapVerification and the dependency report remain green because the pass is documentation-only.
+```
+
+
+### MODULE23C — Documentation cleanup and consolidation support pass
+
+Status: documentation-only support pass.
+
+Scope:
+
+```text
+Read the current architecture and storage documents after Phase 22 and Phase 23.
+Remove stale documentation-map references to files that no longer exist.
+Update the modern RDBMS model document for the trace summary proof.
+Consolidate the contract ownership map and boundary audit so the Phase 23 no-move decision is clear.
+Do not move Java sources, create modules, rename packages, promote diagnostics, or touch query,
+storage, MVCC, or optimizer behavior.
+```
+
+Expected proof:
+
+```text
+docs/README.md references only existing long-term documents.
+docs/architecture/delosdb-modern-rdbms-model.md lists the trace-summary proof and class.
+docs/architecture/delosdb-contract-ownership-map.md points to the resolved boundary audit.
+docs/architecture/delosdb-contract-boundary-audit.md records the chosen documentation-closeout route.
 roadmapVerification and the dependency report remain green because the pass is documentation-only.
 ```
 

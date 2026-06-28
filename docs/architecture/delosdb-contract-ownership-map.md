@@ -94,17 +94,24 @@ Candidate modules such as `delosdb-engine-model`, `delosdb-diagnostics-api`, or 
 substrate module should be considered only when the dependency graph shows real production consumers
 and the new module would remove coupling rather than create a placeholder.
 
-## Candidate follow-up questions for Module 23B
+## Module 23B resolution
 
-The next Phase 23 pass should be a decision review, not a source move by default:
+Module 23B audited the contract-bearing boundaries in one pass. The audit resolved the follow-up
+questions from this map without moving source code:
 
 ```text
-Is delosdb-runtime-api honestly named, or should it later become a Derby-runtime-substrate module?
-Is delosdb-storage-api correctly packaged, or only correctly modularized for now?
-Does delosdb-spi overlap with delosdb-storage-api, or do they serve different consumers?
-Should engine.trace remain engine-internal for another phase?
-Which contract movements are actually required by production dependencies?
+delosdb-runtime-api remains inherited Derby runtime/service substrate.
+delosdb-storage-api remains the DelosDB storage-provider contract lane.
+delosdb-derby-store-api remains inherited Derby store substrate.
+delosdb-spi remains separate from storage-api for now.
+engine.trace remains engine-owned diagnostics/model vocabulary.
+MVCC internals remain internal until Phase 24.
+the storage bridge remains temporary compatibility adapter code.
 ```
+
+The resulting decision is that Phase 23 does not currently justify a source move, module split, API
+promotion, or package rename. Future layout work should be driven by new production consumers or by
+Phase 24 MVCC observations, not by conceptual neatness alone.
 
 ## Verification expectation
 

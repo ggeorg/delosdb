@@ -87,8 +87,9 @@ The modern RDBMS model should observe storage behavior through concepts such as:
 ```text
 RdbmsStorageProviderKind
 RdbmsStorageAccessKind
-RdbmsTransactionVisibility
+RdbmsTransactionConcept
 RdbmsTraceEvent
+RdbmsTraceSummary
 ```
 
 The first useful storage observations are:

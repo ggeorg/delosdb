@@ -44,9 +44,11 @@ Stays in delosdb-engine for now:
   org.apache.derby.iapi.services.jmx
 ```
 
-The purpose of `runtime-api` is to expose shared runtime contracts such as context, monitor, lock,
-cache, daemon, timer, UUID, service loading, and runtime I/O contracts.  It should not become a new
-large `engine-api` module.
+The purpose of `runtime-api` is to expose shared inherited runtime contracts such as context,
+monitor, lock, cache, daemon, timer, UUID, service loading, and runtime I/O contracts. It should not
+become a new large `engine-api` module and should not become the general home for DelosDB-owned
+storage, SPI, model, or diagnostic contracts. The Phase 23 contract ownership map and boundary audit
+own that decision.
 
 ## SQL types status
 
