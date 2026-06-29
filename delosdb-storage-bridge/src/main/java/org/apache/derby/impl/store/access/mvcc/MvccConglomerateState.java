@@ -30,14 +30,18 @@ import java.util.ServiceLoader;
 
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.raw.ContainerKey;
-import org.apache.derby.iapi.store.types.DelosStorageStore;
-import org.apache.derby.iapi.store.types.DelosStorageTable;
-import org.apache.derby.iapi.store.types.DelosStorageTableKey;
+import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
+import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
+import org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
 import org.apache.derby.iapi.store.types.DelosStorageRowHead;
+import org.apache.derby.iapi.store.types.DelosStorageRowLocator;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosStorageStore;
+import org.apache.derby.iapi.store.types.DelosStorageTable;
+import org.apache.derby.iapi.store.types.DelosStorageTableDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageTableKey;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
-import org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
 import org.apache.derby.iapi.store.types.DelosVacuumOutcome;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreOrderable;
@@ -55,11 +59,19 @@ final class MvccConglomerateState {
 
     private final ContainerKey key;
     private final DelosStorageTable table;
+    private final DelosStorageMaintenance maintenance;
+    private final DelosStorageRowLocator rowLocator;
+    private final DelosStorageCandidateIndex candidateIndex;
+    private final DelosStorageTableDiagnostics diagnostics;
 
     MvccConglomerateState(ContainerKey key, Path databaseDirectory) {
         this.key = key;
         DelosStorageStore store = providerFactory().openStore(databaseDirectory);
         this.table = store.openTable(new DelosStorageTableKey(key.getSegmentId(), key.getContainerId()));
+        this.maintenance = requireCapability(table, DelosStorageMaintenance.class);
+        this.rowLocator = requireCapability(table, DelosStorageRowLocator.class);
+        this.candidateIndex = requireCapability(table, DelosStorageCandidateIndex.class);
+        this.diagnostics = requireCapability(table, DelosStorageTableDiagnostics.class);
     }
 
     ContainerKey key() {
@@ -115,59 +127,59 @@ final class MvccConglomerateState {
     }
 
     synchronized void persistCommittedState() {
-        table.persistCommittedState();
+        maintenance.persistCommittedState();
     }
 
     synchronized void dropDurableState() {
-        table.dropDurableState();
+        maintenance.dropDurableState();
     }
 
     Path pageVolumeStateFileForTesting() {
-        return table.pageVolumeStateFileForTesting();
+        return diagnostics.pageVolumeStateFileForTesting();
     }
 
     Path rowDirectoryStateFileForTesting() {
-        return table.rowDirectoryStateFileForTesting();
+        return diagnostics.rowDirectoryStateFileForTesting();
     }
 
     Path pageMutationLogFileForTesting() {
-        return table.pageMutationLogFileForTesting();
+        return diagnostics.pageMutationLogFileForTesting();
     }
 
     Path writeAheadLogFileForTesting() {
-        return table.writeAheadLogFileForTesting();
+        return diagnostics.writeAheadLogFileForTesting();
     }
 
     Path checkpointFileForTesting() {
-        return table.checkpointFileForTesting();
+        return diagnostics.checkpointFileForTesting();
     }
 
     String checkpointStatusForTesting() {
-        return table.checkpointStatusForTesting();
+        return diagnostics.checkpointStatusForTesting();
     }
 
     synchronized int physicalVersionCountForTesting() {
-        return table.physicalVersionCountForTesting();
+        return diagnostics.physicalVersionCountForTesting();
     }
 
     synchronized int logicalRowCountForTesting() {
-        return table.logicalRowCountForTesting();
+        return diagnostics.logicalRowCountForTesting();
     }
 
     synchronized DelosVacuumOutcome lastVacuumOutcomeForTesting() {
-        return table.lastVacuumOutcomeForTesting();
+        return diagnostics.lastVacuumOutcomeForTesting();
     }
 
     synchronized DelosVacuumOutcome vacuumSafely() {
-        return table.vacuumSafely();
+        return maintenance.vacuumSafely();
     }
 
     Path legacySnapshotFileForTesting() {
-        return table.legacySnapshotFileForTesting();
+        return diagnostics.legacySnapshotFileForTesting();
     }
 
     synchronized MvccRowLocation rowLocationFor(long rowId) {
-        DelosStorageRowHead head = table.rowHeadFor(rowId);
+        DelosStorageRowHead head = rowLocator.rowHeadFor(rowId);
         if (head.present()) {
             return new MvccRowLocation(rowId, head.pageId(), head.slotId());
         }
@@ -176,11 +188,12 @@ final class MvccConglomerateState {
 
     synchronized Optional<List<Long>> candidateRowIdsFor(Qualifier[][] qualifiers) {
         Optional<ColumnValueKey> key = equalityCandidateKey(qualifiers);
-        return key.flatMap(columnValueKey -> table.candidateRowIdsFor(columnValueKey.column(), columnValueKey.value()));
+        return key.flatMap(columnValueKey -> candidateIndex.candidateRowIdsFor(
+                columnValueKey.column(), columnValueKey.value()));
     }
 
     synchronized int candidateIndexKeyCountForTesting() {
-        return table.candidateIndexKeyCountForTesting();
+        return candidateIndex.candidateIndexKeyCountForTesting();
     }
 
     synchronized void close() {
@@ -234,6 +247,14 @@ final class MvccConglomerateState {
             }
             return value.toString();
         }
+    }
+
+    private static <T> T requireCapability(DelosStorageTable table, Class<T> capability) {
+        if (capability.isInstance(table)) {
+            return capability.cast(table);
+        }
+        throw new IllegalStateException("Storage table " + table.getClass().getName()
+                + " does not implement required capability " + capability.getName());
     }
 
     private static DelosStorageProviderFactory providerFactory() {

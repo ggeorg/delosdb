@@ -20,13 +20,18 @@
  */
 package org.apache.derby.iapi.store.types;
 
-import java.nio.file.Path;
-import java.util.List;
 import java.util.Optional;
 
 import org.apache.derby.shared.common.error.StandardException;
 
-/** Provider-owned storage table operations exposed through the storage-api boundary. */
+/**
+ * Provider-owned storage table operations exposed through the active storage-api boundary.
+ *
+ * <p>This interface is intentionally limited to the runtime row and transaction operations
+ * required by the Derby bridge.  Provider-specific maintenance, locator, candidate-index,
+ * and testing/diagnostic surfaces are exposed through separate optional capability
+ * interfaces in this package.</p>
+ */
 public interface DelosStorageTable extends AutoCloseable {
     DelosStorageTransaction beginTransaction();
 
@@ -52,38 +57,6 @@ public interface DelosStorageTable extends AutoCloseable {
     void abort(DelosStorageTransaction transaction);
 
     long nextRowId();
-
-    void persistCommittedState();
-
-    void dropDurableState();
-
-    DelosStorageRowHead rowHeadFor(long rowId);
-
-    Optional<List<Long>> candidateRowIdsFor(int column, String value);
-
-    int candidateIndexKeyCountForTesting();
-
-    Path pageVolumeStateFileForTesting();
-
-    Path rowDirectoryStateFileForTesting();
-
-    Path pageMutationLogFileForTesting();
-
-    Path writeAheadLogFileForTesting();
-
-    Path checkpointFileForTesting();
-
-    String checkpointStatusForTesting();
-
-    int physicalVersionCountForTesting();
-
-    int logicalRowCountForTesting();
-
-    DelosVacuumOutcome vacuumSafely();
-
-    DelosVacuumOutcome lastVacuumOutcomeForTesting();
-
-    Path legacySnapshotFileForTesting();
 
     @Override
     void close();

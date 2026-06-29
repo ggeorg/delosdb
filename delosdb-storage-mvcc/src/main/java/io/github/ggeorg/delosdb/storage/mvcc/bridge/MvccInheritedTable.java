@@ -21,17 +21,25 @@ import io.github.ggeorg.delosdb.storage.mvcc.store.MvccCandidateIndex;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
 
-import org.apache.derby.iapi.store.types.DelosStorageTable;
+import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
+import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
 import org.apache.derby.iapi.store.types.DelosStorageRowHead;
+import org.apache.derby.iapi.store.types.DelosStorageRowLocator;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosStorageTable;
+import org.apache.derby.iapi.store.types.DelosStorageTableDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
 import org.apache.derby.iapi.store.types.DelosVacuumOutcome;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreValueOperations;
 import org.apache.derby.shared.common.error.StandardException;
 
-final class MvccInheritedTable implements DelosStorageTable {
+final class MvccInheritedTable implements DelosStorageTable,
+        DelosStorageMaintenance,
+        DelosStorageRowLocator,
+        DelosStorageCandidateIndex,
+        DelosStorageTableDiagnostics {
     private final long segmentId;
     private final long containerId;
     private final Path retiredSnapshotFile;
