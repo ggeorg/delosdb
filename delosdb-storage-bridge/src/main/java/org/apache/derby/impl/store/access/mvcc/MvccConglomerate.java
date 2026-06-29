@@ -310,180 +310,60 @@ public final class MvccConglomerate
         STATES.clear();
     }
 
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static void clearStatesForTesting() {
-        clearStatesForDiagnostics();
-    }
-
     static int stateCountForDiagnostics() {
         return STATES.size();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static int stateCountForTesting() {
-        return stateCountForDiagnostics();
     }
 
     static Path pageVolumeStateFileForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageVolumeStateFileForTesting();
     }
 
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static Path pageVolumeStateFileForTesting(int segment, long containerId) {
-        return pageVolumeStateFileForDiagnostics(segment, containerId);
-    }
-
     static Path rowDirectoryStateFileForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).rowDirectoryStateFileForTesting();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static Path rowDirectoryStateFileForTesting(int segment, long containerId) {
-        return rowDirectoryStateFileForDiagnostics(segment, containerId);
     }
 
     static Path pageMutationLogFileForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageMutationLogFileForTesting();
     }
 
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static Path pageMutationLogFileForTesting(int segment, long containerId) {
-        return pageMutationLogFileForDiagnostics(segment, containerId);
-    }
-
     static Path writeAheadLogFileForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).writeAheadLogFileForTesting();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static Path writeAheadLogFileForTesting(int segment, long containerId) {
-        return writeAheadLogFileForDiagnostics(segment, containerId);
     }
 
     static Path checkpointFileForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).checkpointFileForTesting();
     }
 
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static Path checkpointFileForTesting(int segment, long containerId) {
-        return checkpointFileForDiagnostics(segment, containerId);
-    }
-
     static String checkpointStatusForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).checkpointStatusForTesting();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static String checkpointStatusForTesting(int segment, long containerId) {
-        return checkpointStatusForDiagnostics(segment, containerId);
     }
 
     static int physicalVersionCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).physicalVersionCountForTesting();
     }
 
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static int physicalVersionCountForTesting(int segment, long containerId) {
-        return physicalVersionCountForDiagnostics(segment, containerId);
-    }
-
     static int logicalRowCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).logicalRowCountForTesting();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static int logicalRowCountForTesting(int segment, long containerId) {
-        return logicalRowCountForDiagnostics(segment, containerId);
     }
 
     static boolean lastVacuumSkippedForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).lastVacuumOutcomeForTesting().skipped();
     }
 
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static boolean lastVacuumSkippedForTesting(int segment, long containerId) {
-        return lastVacuumSkippedForDiagnostics(segment, containerId);
-    }
-
     static String lastVacuumReasonForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).lastVacuumOutcomeForTesting().reason();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static String lastVacuumReasonForTesting(int segment, long containerId) {
-        return lastVacuumReasonForDiagnostics(segment, containerId);
     }
 
     static int lastVacuumRemovedVersionsForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).lastVacuumOutcomeForTesting().removedVersions();
     }
 
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static int lastVacuumRemovedVersionsForTesting(int segment, long containerId) {
-        return lastVacuumRemovedVersionsForDiagnostics(segment, containerId);
-    }
-
     static int lastVacuumRemainingVersionsForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).lastVacuumOutcomeForTesting().remainingVersions();
     }
 
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static int lastVacuumRemainingVersionsForTesting(int segment, long containerId) {
-        return lastVacuumRemainingVersionsForDiagnostics(segment, containerId);
-    }
-
     static Path legacySnapshotFileForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).legacySnapshotFileForTesting();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static Path legacySnapshotFileForTesting(int segment, long containerId) {
-        return legacySnapshotFileForDiagnostics(segment, containerId);
     }
 
     private static MvccConglomerateState stateFor(ContainerKey key) {

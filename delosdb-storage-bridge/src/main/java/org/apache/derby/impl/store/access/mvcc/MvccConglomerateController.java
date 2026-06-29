@@ -65,54 +65,6 @@ public final class MvccConglomerateController implements ConglomerateController 
                 == org.apache.derby.iapi.store.access.TransactionController.OPENMODE_FORUPDATE;
     }
 
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static void resetInsertCountForTesting() {
-        MvccBridgeDiagnosticsSupport.resetInsertCountForDiagnostics();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static int insertCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.insertCountForDiagnostics();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static void resetDeleteCountForTesting() {
-        MvccBridgeDiagnosticsSupport.resetDeleteCountForDiagnostics();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static int deleteCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.deleteCountForDiagnostics();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static void resetUpdateCountForTesting() {
-        MvccBridgeDiagnosticsSupport.resetUpdateCountForDiagnostics();
-    }
-
-    /**
-     * @deprecated Use {@link MvccStorageDiagnostics} through storage-api diagnostics.
-     */
-    @Deprecated(forRemoval = true, since = "0.1.0-dev")
-    public static int updateCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.updateCountForDiagnostics();
-    }
-
     public MvccConglomerate conglomerate() {
         return conglomerate;
     }
