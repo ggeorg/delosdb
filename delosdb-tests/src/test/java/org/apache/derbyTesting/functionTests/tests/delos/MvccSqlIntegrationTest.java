@@ -29,11 +29,15 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 
 import junit.framework.TestCase;
 
@@ -1521,6 +1525,103 @@ public final class MvccSqlIntegrationTest extends TestCase {
     }
 
 
+    public void testMvccSqlInPlaceCompressVacuumPrunesUpdateVersionsAndPreservesVisibleRowAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-vacuum-update-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_vacuum_update_t (id int primary key, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_vacuum_update_t values (1, 'v1')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection, "update mvcc_vacuum_update_t set name = 'v2' where id = 1"));
+            connection.commit();
+            assertEquals(1, executeUpdate(connection, "update mvcc_vacuum_update_t set name = 'v3' where id = 1"));
+            connection.commit();
+            assertEquals(1, executeUpdate(connection, "update mvcc_vacuum_update_t set name = 'v4' where id = 1"));
+            connection.commit();
+
+            DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+            long containerId = mvccContainerId(connection, "MVCC_VACUUM_UPDATE_T");
+            int versionsBeforeVacuum = diagnostics.physicalVersionCountForTesting(0, containerId);
+            assertTrue("expected multiple MVCC physical versions before vacuum, got " + versionsBeforeVacuum,
+                    versionsBeforeVacuum >= 4);
+
+            inPlaceCompressTable(connection, "MVCC_VACUUM_UPDATE_T");
+            connection.commit();
+
+            assertFalse("vacuum should run when no retained SQL snapshot is active",
+                    diagnostics.lastVacuumSkippedForTesting(0, containerId));
+            assertTrue("vacuum should prune at least one superseded update version",
+                    diagnostics.lastVacuumRemovedVersionsForTesting(0, containerId) >= 1);
+            assertTrue("vacuum should reduce MVCC physical version count",
+                    diagnostics.physicalVersionCountForTesting(0, containerId) < versionsBeforeVacuum);
+            assertEquals("vacuum must preserve one logical row",
+                    1, diagnostics.logicalRowCountForTesting(0, containerId));
+
+            assertRows(connection,
+                    "select id, name from mvcc_vacuum_update_t order by id",
+                    "1|v4");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_vacuum_update_t order by id",
+                    "1|v4");
+        }
+    }
+
+    public void testMvccSqlInPlaceCompressVacuumPrunesDeletedRowsAndPreservesSurvivorAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-vacuum-delete-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_vacuum_delete_t (id int primary key, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_vacuum_delete_t values (1, 'delete-me-1')");
+            executeUpdate(connection, "insert into mvcc_vacuum_delete_t values (2, 'survivor')");
+            executeUpdate(connection, "insert into mvcc_vacuum_delete_t values (3, 'delete-me-3')");
+            connection.commit();
+
+            assertEquals(2, executeUpdate(connection, "delete from mvcc_vacuum_delete_t where id in (1, 3)"));
+            connection.commit();
+
+            DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+            long containerId = mvccContainerId(connection, "MVCC_VACUUM_DELETE_T");
+            int versionsBeforeVacuum = diagnostics.physicalVersionCountForTesting(0, containerId);
+            assertTrue("expected deleted MVCC versions before vacuum, got " + versionsBeforeVacuum,
+                    versionsBeforeVacuum >= 3);
+
+            inPlaceCompressTable(connection, "MVCC_VACUUM_DELETE_T");
+            connection.commit();
+
+            assertFalse("vacuum should run when no retained SQL snapshot is active",
+                    diagnostics.lastVacuumSkippedForTesting(0, containerId));
+            assertTrue("vacuum should prune deleted physical versions",
+                    diagnostics.lastVacuumRemovedVersionsForTesting(0, containerId) >= 1);
+            assertEquals("vacuum must preserve one logical survivor",
+                    1, diagnostics.logicalRowCountForTesting(0, containerId));
+            assertTrue("vacuum should reduce MVCC physical version count",
+                    diagnostics.physicalVersionCountForTesting(0, containerId) < versionsBeforeVacuum);
+
+            assertRows(connection,
+                    "select id, name from mvcc_vacuum_delete_t order by id",
+                    "2|survivor");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_vacuum_delete_t order by id",
+                    "2|survivor");
+        }
+    }
+
+
+
+
 
     public void testCommittedMvccInsertSurvivesProcessHaltAndRecovery() throws Exception {
         String databaseName = databaseName("mvcc-sql-crash-commit-db");
@@ -1767,6 +1868,43 @@ public final class MvccSqlIntegrationTest extends TestCase {
             }
         }
     }
+
+
+    private static DelosStorageDiagnostics mvccDiagnostics() {
+        return DelosStorageDiagnosticsRegistry.mvcc();
+    }
+
+    private static long mvccContainerId(Connection connection, String tableName) throws SQLException {
+        String sql = "select c.conglomeratenumber "
+                + "from sys.sysconglomerates c, sys.systables t, sys.sysschemas s "
+                + "where c.tableid = t.tableid "
+                + "and t.schemaid = s.schemaid "
+                + "and s.schemaname = 'APP' "
+                + "and t.tablename = ? "
+                + "and c.isindex = false";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, tableName);
+            try (ResultSet rs = statement.executeQuery()) {
+                assertTrue("expected MVCC base conglomerate for table " + tableName, rs.next());
+                long containerId = rs.getLong(1);
+                assertFalse("expected one MVCC base conglomerate for table " + tableName, rs.next());
+                return containerId;
+            }
+        }
+    }
+
+    private static void inPlaceCompressTable(Connection connection, String tableName) throws SQLException {
+        executeStatement(connection, "call syscs_util.syscs_inplace_compress_table('APP', '"
+                + tableName
+                + "', 1, 0, 0)");
+    }
+
+    private static void executeStatement(Connection connection, String sql) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(sql);
+        }
+    }
+
 
 
 
