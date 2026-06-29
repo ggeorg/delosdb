@@ -459,6 +459,115 @@ public final class MvccSqlIntegrationTest extends TestCase {
         }
     }
 
+    public void testUncommittedMvccUpdateIsInvisibleAcrossSqlConnections() throws Exception {
+        String databaseName = databaseName("mvcc-sql-concurrent-update-visibility-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_concurrent_update_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_concurrent_update_t values (1, 'before')");
+            connection.commit();
+        }
+
+        try (Connection writer = openDatabase(databaseName, false);
+             Connection reader = openDatabase(databaseName, false)) {
+            writer.setAutoCommit(false);
+
+            assertEquals(1, executeUpdate(writer,
+                    "update mvcc_concurrent_update_t set name = 'after' where id = 1"));
+
+            assertRows(reader,
+                    "select id, name from mvcc_concurrent_update_t where id = 1",
+                    "1|before");
+
+            writer.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_concurrent_update_t where id = 1",
+                    "1|after");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_concurrent_update_t where id = 1",
+                    "1|after");
+        }
+    }
+
+    public void testUncommittedMvccDeleteIsInvisibleAcrossSqlConnections() throws Exception {
+        String databaseName = databaseName("mvcc-sql-concurrent-delete-visibility-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_concurrent_delete_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_concurrent_delete_t values (1, 'survivor')");
+            connection.commit();
+        }
+
+        try (Connection writer = openDatabase(databaseName, false);
+             Connection reader = openDatabase(databaseName, false)) {
+            writer.setAutoCommit(false);
+
+            assertEquals(1, executeUpdate(writer,
+                    "delete from mvcc_concurrent_delete_t where id = 1"));
+
+            assertRows(reader,
+                    "select id, name from mvcc_concurrent_delete_t where id = 1",
+                    "1|survivor");
+
+            writer.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_concurrent_delete_t where id = 1");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_concurrent_delete_t where id = 1");
+        }
+    }
+
+    public void testUncommittedMvccInsertIsInvisibleAcrossSqlConnections() throws Exception {
+        String databaseName = databaseName("mvcc-sql-concurrent-insert-visibility-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_concurrent_insert_t (id int, name varchar(32)) using delos_mvcc");
+            connection.commit();
+        }
+
+        try (Connection writer = openDatabase(databaseName, false);
+             Connection reader = openDatabase(databaseName, false)) {
+            writer.setAutoCommit(false);
+
+            assertEquals(1, executeUpdate(writer,
+                    "insert into mvcc_concurrent_insert_t values (1, 'pending')"));
+
+            assertRows(reader,
+                    "select id, name from mvcc_concurrent_insert_t where id = 1");
+
+            writer.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_concurrent_insert_t where id = 1",
+                    "1|pending");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_concurrent_insert_t where id = 1",
+                    "1|pending");
+        }
+    }
+
+
+
 
 
     private static Connection openDatabase(String databaseName, boolean create) throws SQLException {
