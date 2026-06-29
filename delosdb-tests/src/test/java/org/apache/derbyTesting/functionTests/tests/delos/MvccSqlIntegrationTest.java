@@ -935,10 +935,121 @@ public final class MvccSqlIntegrationTest extends TestCase {
     }
 
 
+    public void testMvccPrimaryKeyRejectsDuplicateCommittedKeyAndSurvivesReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-pk-duplicate-db");
 
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_pk_duplicate_t (id int primary key, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_pk_duplicate_t values (1, 'first')");
+            connection.commit();
 
+            assertDuplicateKey(() -> executeUpdate(connection,
+                    "insert into mvcc_pk_duplicate_t values (1, 'duplicate')"));
+            connection.rollback();
 
+            assertRows(connection,
+                    "select id, name from mvcc_pk_duplicate_t order by id",
+                    "1|first");
+            connection.rollback();
+        }
 
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_pk_duplicate_t order by id",
+                    "1|first");
+        }
+    }
+
+    public void testMvccPrimaryKeyRollbackAllowsReinsertAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-pk-rollback-reinsert-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_pk_rollback_t (id int primary key, name varchar(32)) using delos_mvcc");
+            connection.commit();
+
+            executeUpdate(connection, "insert into mvcc_pk_rollback_t values (1, 'rolled-back')");
+            connection.rollback();
+
+            executeUpdate(connection, "insert into mvcc_pk_rollback_t values (1, 'committed')");
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_pk_rollback_t order by id",
+                    "1|committed");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_pk_rollback_t order by id",
+                    "1|committed");
+        }
+    }
+
+    public void testMvccPrimaryKeyDeleteAllowsReinsertAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-pk-delete-reinsert-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_pk_delete_t (id int primary key, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_pk_delete_t values (1, 'old')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection, "delete from mvcc_pk_delete_t where id = 1"));
+            executeUpdate(connection, "insert into mvcc_pk_delete_t values (1, 'new')");
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_pk_delete_t order by id",
+                    "1|new");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_pk_delete_t order by id",
+                    "1|new");
+        }
+    }
+
+    public void testMvccPrimaryKeyUpdateCannotCreateDuplicateKeyAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-pk-update-duplicate-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_pk_update_t (id int primary key, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_pk_update_t values (1, 'one')");
+            executeUpdate(connection, "insert into mvcc_pk_update_t values (2, 'two')");
+            connection.commit();
+
+            assertDuplicateKey(() -> executeUpdate(connection,
+                    "update mvcc_pk_update_t set id = 1 where id = 2"));
+            connection.rollback();
+
+            assertRows(connection,
+                    "select id, name from mvcc_pk_update_t order by id",
+                    "1|one",
+                    "2|two");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_pk_update_t order by id",
+                    "1|one",
+                    "2|two");
+        }
+    }
 
 
     private static Connection openDatabase(String databaseName, boolean create) throws SQLException {
@@ -994,6 +1105,20 @@ public final class MvccSqlIntegrationTest extends TestCase {
                     containsMessage(expected, "conflict")
                             || containsMessage(expected, "already deleted")
                             || containsMessage(expected, "not visible"));
+        }
+    }
+
+
+    private static void assertDuplicateKey(SqlAction action) throws SQLException {
+        try {
+            action.run();
+            fail("Expected duplicate-key violation");
+        } catch (SQLException expected) {
+            assertTrue("expected duplicate-key violation, got: " + expected,
+                    "23505".equals(expected.getSQLState())
+                            || containsMessage(expected, "duplicate")
+                            || containsMessage(expected, "constraint")
+                            || containsMessage(expected, "primary key"));
         }
     }
 

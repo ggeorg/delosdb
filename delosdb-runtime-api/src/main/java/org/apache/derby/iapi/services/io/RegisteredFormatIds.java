@@ -537,6 +537,7 @@ private static final    String[] TwoByte = {
         /* 476 */       "org.apache.derby.impl.sql.execute.MatchingClauseConstantAction",
         /* 477 */       "org.apache.derby.impl.sql.execute.MergeConstantAction",
         /* 478 */       "org.apache.derby.impl.store.access.mvcc.MvccConglomerate",
+        /* 479 */       "org.apache.derby.impl.store.access.mvcc.MvccRowLocation",
 };
 
     /**

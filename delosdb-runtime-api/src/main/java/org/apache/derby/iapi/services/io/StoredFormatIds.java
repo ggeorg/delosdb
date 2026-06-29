@@ -1469,6 +1469,10 @@ public interface StoredFormatIds {
     /** class org.apache.derby.impl.store.access.mvcc.MvccConglomerate */
     public static final int ACCESS_MVCC_V1_ID =
             (MIN_ID_2 + 478);
+
+    /** class org.apache.derby.impl.store.access.mvcc.MvccRowLocation */
+    public static final int ACCESS_MVCC_ROW_LOCATION_V1_ID =
+            (MIN_ID_2 + 479);
     /******************************************************************
     **
     ** PropertyConglomerate
@@ -1687,7 +1691,7 @@ public interface StoredFormatIds {
      * Make sure this is updated when a new module is added
      */
     public static final int MAX_ID_2 =
-            (MIN_ID_2 + 478);
+            (MIN_ID_2 + 479);
 
     // DO NOT USE 4 BYTE IDS ANYMORE
     static public final int MAX_ID_4 =

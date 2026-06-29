@@ -26,7 +26,6 @@ import java.io.ObjectOutput;
 import java.sql.ResultSet;
 
 import org.apache.derby.iapi.services.io.ArrayInputStream;
-import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreRowLocationFactory;
@@ -262,7 +261,13 @@ public final class EngineStoreRowLocationBridge
         @Override
         public int getTypeFormatId()
         {
-            return StoredFormatIds.ACCESS_HEAP_ROW_LOCATION_V1_ID;
+            if (storeRowLocation instanceof DataValueDescriptor dataValueDescriptor)
+            {
+                return dataValueDescriptor.getTypeFormatId();
+            }
+            throw new IllegalStateException(
+                "Store row location does not expose a Derby format id: "
+                    + storeRowLocation.getClass().getName());
         }
 
         @Override

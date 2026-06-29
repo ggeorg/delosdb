@@ -184,10 +184,7 @@ public final class MvccRowLocation extends StoreDataValueBase implements StoreRo
 
     @Override
     public int getTypeFormatId() {
-        // MODULE6C is not yet a durable row-location format allocation. The
-        // inherited engine requires a format id for StoreDataValue instances;
-        // this skeleton must not be persisted into indexes yet.
-        return StoredFormatIds.ACCESS_HEAP_ROW_LOCATION_V1_ID;
+        return StoredFormatIds.ACCESS_MVCC_ROW_LOCATION_V1_ID;
     }
 
     @Override
@@ -199,14 +196,19 @@ public final class MvccRowLocation extends StoreDataValueBase implements StoreRo
     public void writeExternal(ObjectOutput out) throws IOException {
         CompressedNumber.writeLong(out, rowId);
         CompressedNumber.writeLong(out, locatorPageId);
-        CompressedNumber.writeInt(out, locatorSlotId);
+        // CompressedNumber only accepts non-negative integers.  The MVCC
+        // row-location model uses -1 as the stable "no physical slot hint"
+        // sentinel, and Derby B-tree logging persists row locations for
+        // primary-key/secondary-index rows.  Store the slot as an offset value
+        // so both the sentinel and real non-negative slots are durable.
+        CompressedNumber.writeInt(out, locatorSlotId + 1);
     }
 
     @Override
     public void readExternal(ObjectInput in) throws IOException {
         rowId = CompressedNumber.readLong(in);
         locatorPageId = CompressedNumber.readLong(in);
-        locatorSlotId = CompressedNumber.readInt(in);
+        locatorSlotId = CompressedNumber.readInt(in) - 1;
     }
 
     @Override
