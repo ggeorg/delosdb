@@ -321,6 +321,145 @@ public final class MvccSqlIntegrationTest extends TestCase {
     }
 
 
+    public void testHeapAndMvccTablesCommitInOneSqlTransactionSurvivesReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-mixed-heap-commit-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table heap_mixed_commit_t (id int, name varchar(32))");
+            executeUpdate(connection, "create table mvcc_mixed_commit_t (id int, name varchar(32)) using delos_mvcc");
+            connection.commit();
+
+            executeUpdate(connection, "insert into heap_mixed_commit_t values (1, 'heap')");
+            executeUpdate(connection, "insert into mvcc_mixed_commit_t values (1, 'mvcc')");
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from heap_mixed_commit_t order by id",
+                    "1|heap");
+            assertRows(connection,
+                    "select id, name from mvcc_mixed_commit_t order by id",
+                    "1|mvcc");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from heap_mixed_commit_t order by id",
+                    "1|heap");
+            assertRows(reopened,
+                    "select id, name from mvcc_mixed_commit_t order by id",
+                    "1|mvcc");
+        }
+    }
+
+    public void testHeapAndMvccTablesRollbackInOneSqlTransactionLeavesBothEmptyAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-mixed-heap-rollback-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table heap_mixed_rollback_t (id int, name varchar(32))");
+            executeUpdate(connection, "create table mvcc_mixed_rollback_t (id int, name varchar(32)) using delos_mvcc");
+            connection.commit();
+
+            executeUpdate(connection, "insert into heap_mixed_rollback_t values (1, 'ghost-heap')");
+            executeUpdate(connection, "insert into mvcc_mixed_rollback_t values (1, 'ghost-mvcc')");
+            connection.rollback();
+
+            assertRows(connection,
+                    "select id, name from heap_mixed_rollback_t order by id");
+            assertRows(connection,
+                    "select id, name from mvcc_mixed_rollback_t order by id");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from heap_mixed_rollback_t order by id");
+            assertRows(reopened,
+                    "select id, name from mvcc_mixed_rollback_t order by id");
+        }
+    }
+
+    public void testHeapAndMvccTablesUpdateAndDeleteCommitInOneSqlTransactionSurvivesReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-mixed-heap-update-delete-commit-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table heap_mixed_ud_t (id int, name varchar(32))");
+            executeUpdate(connection, "create table mvcc_mixed_ud_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into heap_mixed_ud_t values (1, 'heap-before')");
+            executeUpdate(connection, "insert into mvcc_mixed_ud_t values (1, 'mvcc-survivor')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "update heap_mixed_ud_t set name = 'heap-after' where id = 1"));
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mvcc_mixed_ud_t where id = 1"));
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from heap_mixed_ud_t order by id",
+                    "1|heap-after");
+            assertRows(connection,
+                    "select id, name from mvcc_mixed_ud_t order by id");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from heap_mixed_ud_t order by id",
+                    "1|heap-after");
+            assertRows(reopened,
+                    "select id, name from mvcc_mixed_ud_t order by id");
+        }
+    }
+
+    public void testHeapAndMvccTablesUpdateAndDeleteRollbackInOneSqlTransactionRestoresBothAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-mixed-heap-update-delete-rollback-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table heap_mixed_ud_rb_t (id int, name varchar(32))");
+            executeUpdate(connection, "create table mvcc_mixed_ud_rb_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into heap_mixed_ud_rb_t values (1, 'heap-before')");
+            executeUpdate(connection, "insert into mvcc_mixed_ud_rb_t values (1, 'mvcc-survivor')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "update heap_mixed_ud_rb_t set name = 'heap-after' where id = 1"));
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mvcc_mixed_ud_rb_t where id = 1"));
+            connection.rollback();
+
+            assertRows(connection,
+                    "select id, name from heap_mixed_ud_rb_t order by id",
+                    "1|heap-before");
+            assertRows(connection,
+                    "select id, name from mvcc_mixed_ud_rb_t order by id",
+                    "1|mvcc-survivor");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from heap_mixed_ud_rb_t order by id",
+                    "1|heap-before");
+            assertRows(reopened,
+                    "select id, name from mvcc_mixed_ud_rb_t order by id",
+                    "1|mvcc-survivor");
+        }
+    }
+
+
 
     private static Connection openDatabase(String databaseName, boolean create) throws SQLException {
         return DriverManager.getConnection("jdbc:derby:" + databaseName + (create ? ";create=true" : ""));
