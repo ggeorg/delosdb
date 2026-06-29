@@ -718,6 +718,7 @@ tasks.register('runMvccPageRecoveryTest', Test) {
     testClassesDirs = files(testClassDir)
     classpath = sourceSets.test.runtimeClasspath
     include '**/MvccPageRecoveryTest.class'
+    include '**/MvccDurableConsistencyCheckTest.class'
 
     binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccPageRecoveryTest'))
     reports {

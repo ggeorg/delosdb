@@ -58,6 +58,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
             MvccRowDirectory directory = MvccRowDirectory.fromStoredRecords(store.loadAll());
             MvccRowDirectoryStore rowDirectory = MvccRowDirectoryStore.open(rowDirectoryPath(path));
             reconcileRowDirectoryWithPages(rowDirectory, directory);
+            MvccDurableConsistencyCheck.check(store, rowDirectory).assertValid();
             return new PageBackedMvccTable(store, directory, log, rowDirectory);
         } catch (RuntimeException | IOException failure) {
             try {
@@ -238,6 +239,14 @@ public final class PageBackedMvccTable implements AutoCloseable {
             return rowDirectoryStore.recoverHeads();
         } catch (IOException e) {
             throw new java.io.UncheckedIOException("Could not recover durable MVCC row-directory heads", e);
+        }
+    }
+
+    public synchronized MvccDurableConsistencyCheck.Result validateConsistency() {
+        try {
+            return MvccDurableConsistencyCheck.check(store, rowDirectoryStore);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException("Could not validate durable MVCC consistency", e);
         }
     }
 
