@@ -29,6 +29,7 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.RowUtil;
+import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.ScanInfo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
@@ -53,6 +54,7 @@ public final class MvccScanController implements ScanManager {
     private final MvccConglomerateState state;
     private final TransactionManager transactionManager;
     private final boolean hold;
+    private final boolean completeWithDerbyTransaction;
     private final DelosStorageTransaction reader;
     private final DelosStorageSnapshot snapshot;
     private DelosStorageScan scan;
@@ -62,12 +64,15 @@ public final class MvccScanController implements ScanManager {
     private boolean candidateIndexScan;
     private DelosStorageRow current;
     private boolean closed;
+    private DelosStorageTransaction writer;
+    private MvccStoreAccessTransactionRegistry.Writer registeredWriter;
     private long estimatedRowCount;
 
     MvccScanController(
             MvccConglomerate conglomerate,
             TransactionManager transactionManager,
             boolean hold,
+            int openMode,
             FormatableBitSet scanColumnList,
             Qualifier[][] qualifiers) {
         MvccBridgeDiagnosticsSupport.incrementOpenCount();
@@ -75,6 +80,8 @@ public final class MvccScanController implements ScanManager {
         this.state = conglomerate.state();
         this.transactionManager = transactionManager;
         this.hold = hold;
+        this.completeWithDerbyTransaction = (openMode & TransactionController.OPENMODE_FORUPDATE)
+                == TransactionController.OPENMODE_FORUPDATE;
         this.scanColumnList = scanColumnList;
         this.qualifiers = qualifiers;
         this.reader = state.beginTransaction();
@@ -97,6 +104,9 @@ public final class MvccScanController implements ScanManager {
         if (!closed) {
             scan.close();
             state.abort(reader);
+            if (!completeWithDerbyTransaction) {
+                abortWriterIfActive();
+            }
             closed = true;
             transactionManager.closeMe(this);
         }
@@ -105,7 +115,13 @@ public final class MvccScanController implements ScanManager {
     @Override
     public boolean closeForEndTransaction(boolean closeHeldScan) {
         if (!hold || closeHeldScan) {
-            close();
+            if (!closed) {
+                scan.close();
+                state.abort(reader);
+                commitWriterIfActive();
+                closed = true;
+                transactionManager.closeMe(this);
+            }
             return true;
         }
         return false;
@@ -185,7 +201,19 @@ public final class MvccScanController implements ScanManager {
     @Override
     public boolean delete() {
         ensureOpen();
-        return false;
+        if (current == null) {
+            return false;
+        }
+        DelosStorageTransaction transaction = writer();
+        DelosStorageSnapshot writeSnapshot = state.snapshot(transaction);
+        if (state.read(current.rowId(), writeSnapshot).isEmpty()) {
+            current = null;
+            return false;
+        }
+        state.delete(current.rowId(), transaction, writeSnapshot);
+        MvccBridgeDiagnosticsSupport.incrementDeleteCount();
+        current = null;
+        return true;
     }
 
     @Override
@@ -378,9 +406,67 @@ public final class MvccScanController implements ScanManager {
     }
 
     @Override
-    public boolean replace(StoreDataValue[] row, FormatableBitSet validColumns) {
+    public boolean replace(StoreDataValue[] row, FormatableBitSet validColumns) throws StandardException {
         ensureOpen();
-        return false;
+        if (current == null) {
+            return false;
+        }
+        DelosStorageTransaction transaction = writer();
+        DelosStorageSnapshot writeSnapshot = state.snapshot(transaction);
+        Optional<StoreDataValue[]> visible = state.read(current.rowId(), writeSnapshot);
+        if (visible.isEmpty()) {
+            current = null;
+            return false;
+        }
+        StoreDataValue[] replacement = MvccConglomerateController.replacementRow(
+                visible.get(),
+                row,
+                validColumns);
+        state.update(current.rowId(), replacement, transaction, writeSnapshot);
+        MvccBridgeDiagnosticsSupport.incrementUpdateCount();
+        current = new DelosStorageRow(current.rowId(), replacement);
+        return true;
+    }
+
+    private DelosStorageTransaction writer() {
+        if (writer == null) {
+            writer = state.beginTransaction();
+            if (completeWithDerbyTransaction) {
+                registeredWriter = MvccStoreAccessTransactionRegistry.register(
+                        transactionManager,
+                        state.table(),
+                        writer,
+                        state::persistCommittedState);
+            }
+        }
+        return writer;
+    }
+
+    private void commitWriterIfActive() {
+        if (writer != null) {
+            if (registeredWriter != null) {
+                registeredWriter.commit();
+                MvccStoreAccessTransactionRegistry.complete(registeredWriter);
+                registeredWriter = null;
+            } else {
+                state.commit(writer);
+                state.persistCommittedState();
+            }
+            writer = null;
+        }
+    }
+
+    private void abortWriterIfActive() {
+        if (writer != null) {
+            if (registeredWriter != null) {
+                registeredWriter.abort();
+                MvccStoreAccessTransactionRegistry.complete(registeredWriter);
+                registeredWriter = null;
+            } else {
+                state.abort(writer);
+            }
+            writer = null;
+        }
     }
 
     private void ensureOpen() {

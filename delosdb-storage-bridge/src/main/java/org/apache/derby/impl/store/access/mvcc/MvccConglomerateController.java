@@ -283,7 +283,7 @@ public final class MvccConglomerateController implements ConglomerateController 
         return copy;
     }
 
-    private static StoreDataValue[] replacementRow(
+    static StoreDataValue[] replacementRow(
             StoreDataValue[] current,
             StoreDataValue[] replacement,
             FormatableBitSet validColumns) throws StandardException {

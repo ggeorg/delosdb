@@ -80,6 +80,113 @@ public final class MvccSqlIntegrationTest extends TestCase {
         }
     }
 
+    public void testCommittedMvccUpdateSurvivesDatabaseShutdownAndReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-update-commit-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_update_commit_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_update_commit_t values (1, 'before')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "update mvcc_update_commit_t set name = 'after' where id = 1"));
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_update_commit_t where id = 1",
+                    "1|after");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_update_commit_t where id = 1",
+                    "1|after");
+        }
+    }
+
+    public void testRolledBackMvccUpdateRestoresCommittedVersionAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-update-rollback-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_update_rollback_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_update_rollback_t values (1, 'before')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "update mvcc_update_rollback_t set name = 'after' where id = 1"));
+            connection.rollback();
+
+            assertRows(connection,
+                    "select id, name from mvcc_update_rollback_t where id = 1",
+                    "1|before");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_update_rollback_t where id = 1",
+                    "1|before");
+        }
+    }
+
+    public void testCommittedMvccDeleteSurvivesDatabaseShutdownAndReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-delete-commit-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_delete_commit_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_delete_commit_t values (1, 'doomed')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mvcc_delete_commit_t where id = 1"));
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_delete_commit_t where id = 1");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_delete_commit_t where id = 1");
+        }
+    }
+
+    public void testRolledBackMvccDeleteRestoresCommittedRowAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-delete-rollback-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_delete_rollback_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_delete_rollback_t values (1, 'survivor')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mvcc_delete_rollback_t where id = 1"));
+            connection.rollback();
+
+            assertRows(connection,
+                    "select id, name from mvcc_delete_rollback_t where id = 1",
+                    "1|survivor");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_delete_rollback_t where id = 1",
+                    "1|survivor");
+        }
+    }
+
+
     private static Connection openDatabase(String databaseName, boolean create) throws SQLException {
         return DriverManager.getConnection("jdbc:derby:" + databaseName + (create ? ";create=true" : ""));
     }
