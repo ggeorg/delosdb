@@ -26,6 +26,7 @@ import java.io.ObjectOutput;
 import java.sql.ResultSet;
 
 import org.apache.derby.iapi.services.io.ArrayInputStream;
+import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreRowLocationFactory;
@@ -133,7 +134,32 @@ public final class EngineStoreRowLocationBridge
         @Override
         public DataValueDescriptor getNewNull()
         {
-            return new EngineRowLocationAdapter(StoreRowLocationFactory.newDefaultRowLocation());
+            return new EngineRowLocationAdapter(newNullStoreRowLocation());
+        }
+
+        private StoreRowLocation newNullStoreRowLocation()
+        {
+            if (!isMvccRowLocation(storeRowLocation))
+            {
+                return StoreRowLocationFactory.newDefaultRowLocation();
+            }
+
+            try
+            {
+                StoreDataValue nullValue = StoreTypeUtil.getNewNull(storeRowLocation);
+                if (nullValue instanceof StoreRowLocation rowLocation)
+                {
+                    return rowLocation;
+                }
+                throw new IllegalStateException(
+                    "MVCC row-location null value is not a StoreRowLocation: "
+                    + nullValue.getClass().getName());
+            }
+            catch (StandardException se)
+            {
+                throw new IllegalStateException(
+                    "Could not create null MVCC row location", se);
+            }
         }
 
         @Override
@@ -261,13 +287,18 @@ public final class EngineStoreRowLocationBridge
         @Override
         public int getTypeFormatId()
         {
-            if (storeRowLocation instanceof DataValueDescriptor dataValueDescriptor)
+            if (isMvccRowLocation(storeRowLocation))
             {
-                return dataValueDescriptor.getTypeFormatId();
+                return StoredFormatIds.ACCESS_MVCC_ROW_LOCATION_V1_ID;
             }
-            throw new IllegalStateException(
-                "Store row location does not expose a Derby format id: "
-                    + storeRowLocation.getClass().getName());
+            return StoredFormatIds.ACCESS_HEAP_ROW_LOCATION_V1_ID;
+        }
+
+        private static boolean isMvccRowLocation(StoreRowLocation rowLocation)
+        {
+            return rowLocation != null
+                && "org.apache.derby.impl.store.access.mvcc.MvccRowLocation".equals(
+                    rowLocation.getClass().getName());
         }
 
         @Override

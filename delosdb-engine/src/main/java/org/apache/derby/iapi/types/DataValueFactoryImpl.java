@@ -57,6 +57,9 @@ import org.apache.derby.iapi.services.context.ContextService;
  */
 public final class DataValueFactoryImpl implements DataValueFactory, ModuleControl
 {
+        private static final String MVCC_ROW_LOCATION_CLASS =
+                "org.apache.derby.impl.store.access.mvcc.MvccRowLocation";
+
         private LocaleFinder localeFinder;
         //BasicDatabase first boots DVF in it's boot method and then sets 
         //this databaseLocale in DVF.
@@ -1131,7 +1134,23 @@ public final class DataValueFactoryImpl implements DataValueFactory, ModuleContr
         // This is an specific implementation of RowLocation, known to be
         // a DTD.  
              return RowLocationServicesRegistry.newRowLocation();
+        case StoredFormatIds.ACCESS_MVCC_ROW_LOCATION_V1_ID:
+             return newMvccRowLocation();
         default:return null;
+        }
+    }
+
+    private static DataValueDescriptor newMvccRowLocation() {
+        try {
+            Class<?> rowLocationClass = Class.forName(
+                    MVCC_ROW_LOCATION_CLASS,
+                    true,
+                    DataValueFactoryImpl.class.getClassLoader());
+            Object rowLocation = rowLocationClass.getDeclaredConstructor().newInstance();
+            return RowLocationServicesRegistry.requireRowLocation(rowLocation);
+        } catch (ReflectiveOperationException | LinkageError error) {
+            throw new IllegalStateException(
+                    "Unable to create MVCC row location value", error);
         }
     }
 
