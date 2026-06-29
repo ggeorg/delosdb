@@ -324,8 +324,19 @@ public final class PageVolumeMvccStateStore<T> {
             if (rowDirectory != null) {
                 Files.deleteIfExists(rowDirectory);
             }
+            if (pageMutationLogFile != null) {
+                Files.deleteIfExists(pageMutationLogFile);
+            }
             if (transactionOutcomeLogFile != null) {
                 Files.deleteIfExists(transactionOutcomeLogFile);
+            }
+            Path wal = writeAheadLog.path();
+            if (wal != null) {
+                Files.deleteIfExists(wal);
+            }
+            Path checkpoint = checkpointStore.path();
+            if (checkpoint != null) {
+                Files.deleteIfExists(checkpoint);
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Could not delete inherited MVCC page-volume state " + pageFile, e);
