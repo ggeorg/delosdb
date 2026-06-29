@@ -1621,6 +1621,100 @@ public final class MvccSqlIntegrationTest extends TestCase {
 
 
 
+    public void testMvccSqlVacuumPreservesActiveRepeatableReadSnapshotAndPrunesAfterReaderEnds() throws Exception {
+        String databaseName = databaseName("mvcc-sql-vacuum-active-reader-db");
+
+        long containerId;
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+
+        try (Connection setup = openDatabase(databaseName, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup, "create table mvcc_vacuum_active_reader_t "
+                    + "(id int primary key, name varchar(32)) using delos_mvcc");
+            executeUpdate(setup, "insert into mvcc_vacuum_active_reader_t values (1, 'v1')");
+            setup.commit();
+            containerId = mvccContainerId(setup, "MVCC_VACUUM_ACTIVE_READER_T");
+        }
+
+        try (Connection reader = openDatabase(databaseName, false);
+             Connection writer = openDatabase(databaseName, false)) {
+            reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            reader.setAutoCommit(false);
+            writer.setAutoCommit(false);
+
+            assertRows(reader,
+                    "select id, name from mvcc_vacuum_active_reader_t where id = 1",
+                    "1|v1");
+
+            assertEquals(1, executeUpdate(writer,
+                    "update mvcc_vacuum_active_reader_t set name = 'v2' where id = 1"));
+            writer.commit();
+            assertEquals(1, executeUpdate(writer,
+                    "update mvcc_vacuum_active_reader_t set name = 'v3' where id = 1"));
+            writer.commit();
+            assertEquals(1, executeUpdate(writer,
+                    "update mvcc_vacuum_active_reader_t set name = 'v4' where id = 1"));
+            writer.commit();
+            assertEquals(1, executeUpdate(writer,
+                    "update mvcc_vacuum_active_reader_t set name = 'v5' where id = 1"));
+            writer.commit();
+
+            assertRows(writer,
+                    "select id, name from mvcc_vacuum_active_reader_t where id = 1",
+                    "1|v5");
+
+            int versionsBeforeActiveVacuum = diagnostics.physicalVersionCountForTesting(0, containerId);
+            assertTrue("expected multiple MVCC physical versions before active-snapshot vacuum, got "
+                    + versionsBeforeActiveVacuum,
+                    versionsBeforeActiveVacuum >= 5);
+
+            inPlaceCompressTable(writer, "MVCC_VACUUM_ACTIVE_READER_T");
+            writer.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_vacuum_active_reader_t where id = 1",
+                    "1|v1");
+            assertRows(writer,
+                    "select id, name from mvcc_vacuum_active_reader_t where id = 1",
+                    "1|v5");
+
+            int versionsWhileReaderActive = diagnostics.physicalVersionCountForTesting(0, containerId);
+            assertTrue("active snapshot vacuum must retain at least the old reader version and latest version, got "
+                    + versionsWhileReaderActive,
+                    versionsWhileReaderActive >= 2);
+            assertEquals("vacuum with active reader must preserve one logical row",
+                    1, diagnostics.logicalRowCountForTesting(0, containerId));
+
+            reader.rollback();
+
+            inPlaceCompressTable(writer, "MVCC_VACUUM_ACTIVE_READER_T");
+            writer.commit();
+
+            assertFalse("vacuum should run after the retained SQL snapshot ends",
+                    diagnostics.lastVacuumSkippedForTesting(0, containerId));
+            assertTrue("final vacuum should prune at least one formerly snapshot-protected version",
+                    diagnostics.lastVacuumRemovedVersionsForTesting(0, containerId) >= 1);
+            assertTrue("final vacuum should reduce versions after active reader ends",
+                    diagnostics.physicalVersionCountForTesting(0, containerId) < versionsWhileReaderActive);
+            assertEquals("final vacuum must preserve one logical row",
+                    1, diagnostics.logicalRowCountForTesting(0, containerId));
+
+            assertRows(writer,
+                    "select id, name from mvcc_vacuum_active_reader_t where id = 1",
+                    "1|v5");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_vacuum_active_reader_t where id = 1",
+                    "1|v5");
+        }
+    }
+
+
+
 
 
     public void testCommittedMvccInsertSurvivesProcessHaltAndRecovery() throws Exception {
