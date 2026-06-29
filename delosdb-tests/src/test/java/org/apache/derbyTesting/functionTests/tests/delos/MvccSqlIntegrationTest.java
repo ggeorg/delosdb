@@ -1634,6 +1634,7 @@ public final class MvccSqlIntegrationTest extends TestCase {
             executeUpdate(setup, "insert into mvcc_vacuum_active_reader_t values (1, 'v1')");
             setup.commit();
             containerId = mvccContainerId(setup, "MVCC_VACUUM_ACTIVE_READER_T");
+            setup.rollback();
         }
 
         try (Connection reader = openDatabase(databaseName, false);
@@ -1702,6 +1703,7 @@ public final class MvccSqlIntegrationTest extends TestCase {
             assertRows(writer,
                     "select id, name from mvcc_vacuum_active_reader_t where id = 1",
                     "1|v5");
+            writer.rollback();
         }
 
         shutdownDatabase(databaseName);
