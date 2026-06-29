@@ -1052,6 +1052,151 @@ public final class MvccSqlIntegrationTest extends TestCase {
     }
 
 
+    public void testMvccSecondaryIndexReflectsCommittedInsertUpdateAndDeleteAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-secondary-index-commit-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_si_commit_t (id int, tag varchar(16), name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create index mvcc_si_commit_tag_idx on mvcc_si_commit_t(tag)");
+            executeUpdate(connection, "insert into mvcc_si_commit_t values (1, 'blue', 'one')");
+            executeUpdate(connection, "insert into mvcc_si_commit_t values (2, 'red', 'two')");
+            executeUpdate(connection, "insert into mvcc_si_commit_t values (3, 'blue', 'three')");
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_si_commit_t --DERBY-PROPERTIES index=mvcc_si_commit_tag_idx\n where tag = 'blue' order by id",
+                    "1|one",
+                    "3|three");
+
+            assertEquals(1, executeUpdate(connection,
+                    "update mvcc_si_commit_t set tag = 'red' where id = 3"));
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_si_commit_t --DERBY-PROPERTIES index=mvcc_si_commit_tag_idx\n where tag = 'blue' order by id",
+                    "1|one");
+            assertRows(connection,
+                    "select id, name from mvcc_si_commit_t --DERBY-PROPERTIES index=mvcc_si_commit_tag_idx\n where tag = 'red' order by id",
+                    "2|two",
+                    "3|three");
+
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mvcc_si_commit_t where id = 1"));
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_si_commit_t --DERBY-PROPERTIES index=mvcc_si_commit_tag_idx\n where tag = 'blue' order by id");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_si_commit_t --DERBY-PROPERTIES index=mvcc_si_commit_tag_idx\n where tag = 'blue' order by id");
+            assertRows(reopened,
+                    "select id, name from mvcc_si_commit_t --DERBY-PROPERTIES index=mvcc_si_commit_tag_idx\n where tag = 'red' order by id",
+                    "2|two",
+                    "3|three");
+        }
+    }
+
+    public void testMvccSecondaryIndexRollbackRestoresIndexedVisibilityAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-secondary-index-rollback-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_si_rollback_t (id int, tag varchar(16), name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create index mvcc_si_rollback_tag_idx on mvcc_si_rollback_t(tag)");
+            executeUpdate(connection, "insert into mvcc_si_rollback_t values (1, 'blue', 'one')");
+            executeUpdate(connection, "insert into mvcc_si_rollback_t values (2, 'red', 'two')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "update mvcc_si_rollback_t set tag = 'blue' where id = 2"));
+            connection.rollback();
+
+            assertRows(connection,
+                    "select id, name from mvcc_si_rollback_t --DERBY-PROPERTIES index=mvcc_si_rollback_tag_idx\n where tag = 'blue' order by id",
+                    "1|one");
+            assertRows(connection,
+                    "select id, name from mvcc_si_rollback_t --DERBY-PROPERTIES index=mvcc_si_rollback_tag_idx\n where tag = 'red' order by id",
+                    "2|two");
+
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mvcc_si_rollback_t where id = 1"));
+            connection.rollback();
+
+            executeUpdate(connection, "insert into mvcc_si_rollback_t values (3, 'blue', 'three')");
+            connection.rollback();
+
+            assertRows(connection,
+                    "select id, name from mvcc_si_rollback_t --DERBY-PROPERTIES index=mvcc_si_rollback_tag_idx\n where tag = 'blue' order by id",
+                    "1|one");
+            assertRows(connection,
+                    "select id, name from mvcc_si_rollback_t --DERBY-PROPERTIES index=mvcc_si_rollback_tag_idx\n where tag = 'red' order by id",
+                    "2|two");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_si_rollback_t --DERBY-PROPERTIES index=mvcc_si_rollback_tag_idx\n where tag = 'blue' order by id",
+                    "1|one");
+            assertRows(reopened,
+                    "select id, name from mvcc_si_rollback_t --DERBY-PROPERTIES index=mvcc_si_rollback_tag_idx\n where tag = 'red' order by id",
+                    "2|two");
+        }
+    }
+
+    public void testMvccSecondaryIndexCanDriveDeleteAndUpdatePredicatesAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-secondary-index-write-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_si_write_t (id int, tag varchar(16), name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create index mvcc_si_write_tag_idx on mvcc_si_write_t(tag)");
+            executeUpdate(connection, "insert into mvcc_si_write_t values (1, 'blue', 'one')");
+            executeUpdate(connection, "insert into mvcc_si_write_t values (2, 'blue', 'two')");
+            executeUpdate(connection, "insert into mvcc_si_write_t values (3, 'red', 'three')");
+            connection.commit();
+
+            assertEquals(2, executeUpdate(connection,
+                    "update mvcc_si_write_t set name = 'seen' where tag = 'blue'"));
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_si_write_t --DERBY-PROPERTIES index=mvcc_si_write_tag_idx\n where tag = 'blue' order by id",
+                    "1|seen",
+                    "2|seen");
+
+            assertEquals(2, executeUpdate(connection,
+                    "delete from mvcc_si_write_t where tag = 'blue'"));
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_si_write_t --DERBY-PROPERTIES index=mvcc_si_write_tag_idx\n where tag = 'blue' order by id");
+            assertRows(connection,
+                    "select id, name from mvcc_si_write_t --DERBY-PROPERTIES index=mvcc_si_write_tag_idx\n where tag = 'red' order by id",
+                    "3|three");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_si_write_t --DERBY-PROPERTIES index=mvcc_si_write_tag_idx\n where tag = 'blue' order by id");
+            assertRows(reopened,
+                    "select id, name from mvcc_si_write_t --DERBY-PROPERTIES index=mvcc_si_write_tag_idx\n where tag = 'red' order by id",
+                    "3|three");
+        }
+    }
+
+
     private static Connection openDatabase(String databaseName, boolean create) throws SQLException {
         return DriverManager.getConnection("jdbc:derby:" + databaseName + (create ? ";create=true" : ""));
     }

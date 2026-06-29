@@ -137,15 +137,13 @@ public final class MvccRowLocation extends StoreDataValueBase implements StoreRo
     @Override
     public int compare(StoreDataValue other) {
         MvccRowLocation that = from(other);
-        int rowCompare = Long.compare(rowId, that.rowId);
-        if (rowCompare != 0) {
-            return rowCompare;
-        }
-        int pageCompare = Long.compare(locatorPageId, that.locatorPageId);
-        if (pageCompare != 0) {
-            return pageCompare;
-        }
-        return Integer.compare(locatorSlotId, that.locatorSlotId);
+        // MVCC row identity is the logical row id.  The page/slot values are
+        // physical locator hints only.  Derby B-tree indexes may persist an
+        // index row before a physical hint exists, then later ask to delete the
+        // same logical row using a row location that includes a current page/slot
+        // hint.  Treating the hint as part of ordering makes the old index row
+        // unreachable during UPDATE/DELETE of secondary-index entries.
+        return Long.compare(rowId, that.rowId);
     }
 
     @Override
@@ -222,17 +220,14 @@ public final class MvccRowLocation extends StoreDataValueBase implements StoreRo
             return false;
         }
         MvccRowLocation that = from(rowLocation);
-        return rowId == that.rowId
-                && locatorPageId == that.locatorPageId
-                && locatorSlotId == that.locatorSlotId;
+        // The optional physical locator hint is not identity.  Equality must
+        // match B-tree ordering and use only the stable logical row id.
+        return rowId == that.rowId;
     }
 
     @Override
     public int hashCode() {
-        int result = Long.hashCode(rowId);
-        result = 31 * result + Long.hashCode(locatorPageId);
-        result = 31 * result + locatorSlotId;
-        return result;
+        return Long.hashCode(rowId);
     }
 
     @Override
