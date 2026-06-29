@@ -567,6 +567,135 @@ public final class MvccSqlIntegrationTest extends TestCase {
     }
 
 
+    public void testConcurrentMvccUpdatesRejectSecondWriterAndPreserveWinnerAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-write-conflict-update-update-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_conflict_update_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_conflict_update_t values (1, 'base')");
+            connection.commit();
+        }
+
+        try (Connection writerA = openDatabase(databaseName, false);
+             Connection writerB = openDatabase(databaseName, false);
+             Connection reader = openDatabase(databaseName, false)) {
+            writerA.setAutoCommit(false);
+            writerB.setAutoCommit(false);
+
+            assertEquals(1, executeUpdate(writerA,
+                    "update mvcc_conflict_update_t set name = 'from_a' where id = 1"));
+
+            assertRows(reader,
+                    "select id, name from mvcc_conflict_update_t where id = 1",
+                    "1|base");
+
+            assertWriteConflict(() -> executeUpdate(writerB,
+                    "update mvcc_conflict_update_t set name = 'from_b' where id = 1"));
+            rollbackAfterExpectedConflict(writerB);
+
+            writerA.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_conflict_update_t where id = 1",
+                    "1|from_a");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_conflict_update_t where id = 1",
+                    "1|from_a");
+        }
+    }
+
+    public void testConcurrentMvccDeleteThenUpdateRejectsSecondWriterAndPreservesDeleteAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-write-conflict-delete-update-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_conflict_delete_update_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_conflict_delete_update_t values (1, 'base')");
+            connection.commit();
+        }
+
+        try (Connection writerA = openDatabase(databaseName, false);
+             Connection writerB = openDatabase(databaseName, false);
+             Connection reader = openDatabase(databaseName, false)) {
+            writerA.setAutoCommit(false);
+            writerB.setAutoCommit(false);
+
+            assertEquals(1, executeUpdate(writerA,
+                    "delete from mvcc_conflict_delete_update_t where id = 1"));
+
+            assertRows(reader,
+                    "select id, name from mvcc_conflict_delete_update_t where id = 1",
+                    "1|base");
+
+            assertWriteConflict(() -> executeUpdate(writerB,
+                    "update mvcc_conflict_delete_update_t set name = 'from_b' where id = 1"));
+            rollbackAfterExpectedConflict(writerB);
+
+            writerA.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_conflict_delete_update_t where id = 1");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_conflict_delete_update_t where id = 1");
+        }
+    }
+
+    public void testConcurrentMvccUpdateThenDeleteRejectsSecondWriterAndPreservesUpdateAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-write-conflict-update-delete-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_conflict_update_delete_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_conflict_update_delete_t values (1, 'base')");
+            connection.commit();
+        }
+
+        try (Connection writerA = openDatabase(databaseName, false);
+             Connection writerB = openDatabase(databaseName, false);
+             Connection reader = openDatabase(databaseName, false)) {
+            writerA.setAutoCommit(false);
+            writerB.setAutoCommit(false);
+
+            assertEquals(1, executeUpdate(writerA,
+                    "update mvcc_conflict_update_delete_t set name = 'from_a' where id = 1"));
+
+            assertRows(reader,
+                    "select id, name from mvcc_conflict_update_delete_t where id = 1",
+                    "1|base");
+
+            assertWriteConflict(() -> executeUpdate(writerB,
+                    "delete from mvcc_conflict_update_delete_t where id = 1"));
+            rollbackAfterExpectedConflict(writerB);
+
+            writerA.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_conflict_update_delete_t where id = 1",
+                    "1|from_a");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_conflict_update_delete_t where id = 1",
+                    "1|from_a");
+        }
+    }
+
+
+
 
 
 
@@ -607,6 +736,52 @@ public final class MvccSqlIntegrationTest extends TestCase {
             }
         }
         assertEquals(List.of(expectedRows), rows);
+    }
+
+
+    private interface SqlAction {
+        void run() throws SQLException;
+    }
+
+    private static void assertWriteConflict(SqlAction action) throws SQLException {
+        try {
+            action.run();
+            fail("Expected a deterministic MVCC write conflict");
+        } catch (SQLException expected) {
+            assertTrue("expected a Derby-wrapped MVCC write conflict, got: " + expected,
+                    containsMessage(expected, "conflict")
+                            || containsMessage(expected, "already deleted")
+                            || containsMessage(expected, "not visible"));
+        }
+    }
+
+
+    private static void rollbackAfterExpectedConflict(Connection connection) throws SQLException {
+        try {
+            connection.rollback();
+        } catch (SQLException e) {
+            if (!"08003".equals(e.getSQLState())) {
+                throw e;
+            }
+        }
+    }
+
+    private static boolean containsMessage(Throwable throwable, String needle) {
+        String lowerNeedle = needle.toLowerCase();
+        for (Throwable current = throwable; current != null; current = nextThrowable(current)) {
+            String message = current.getMessage();
+            if (message != null && message.toLowerCase().contains(lowerNeedle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Throwable nextThrowable(Throwable throwable) {
+        if (throwable instanceof SQLException sqlException && sqlException.getNextException() != null) {
+            return sqlException.getNextException();
+        }
+        return throwable.getCause();
     }
 
     private static String databaseName(String name) {
