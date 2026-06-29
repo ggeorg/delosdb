@@ -643,14 +643,20 @@ tasks.named('check') {
 
 tasks.register('runDelosMvccSqlIntegrationTest', Test) {
     group = 'verification'
-    description = 'Runs real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.'
+    description = 'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.'
     dependsOn tasks.named('compileTestJava'), ':jars'
 
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
     classpath = testRuntimeClasspath()
     useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlIntegrationTest.class'
+    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBasicTest.class'
+    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'
+    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVisibilityTest.class'
+    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlIndexTest.class'
+    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLifecycleTest.class'
+    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVacuumTest.class'
+    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.class'
 
     workingDir = layout.buildDirectory.dir('test-work/runDelosMvccSqlIntegrationTest').get().asFile
     maxHeapSize = '1536m'
