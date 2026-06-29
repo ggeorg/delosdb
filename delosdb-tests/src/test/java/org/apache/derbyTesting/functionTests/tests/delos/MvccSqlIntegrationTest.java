@@ -186,6 +186,141 @@ public final class MvccSqlIntegrationTest extends TestCase {
         }
     }
 
+    public void testTwoMvccTablesCommitInOneSqlTransactionSurvivesReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-two-table-commit-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_tx_a (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_tx_b (id int, name varchar(32)) using delos_mvcc");
+            connection.commit();
+
+            executeUpdate(connection, "insert into mvcc_tx_a values (1, 'left')");
+            executeUpdate(connection, "insert into mvcc_tx_b values (1, 'right')");
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_tx_a order by id",
+                    "1|left");
+            assertRows(connection,
+                    "select id, name from mvcc_tx_b order by id",
+                    "1|right");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_tx_a order by id",
+                    "1|left");
+            assertRows(reopened,
+                    "select id, name from mvcc_tx_b order by id",
+                    "1|right");
+        }
+    }
+
+    public void testTwoMvccTablesRollbackInOneSqlTransactionLeavesBothEmptyAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-two-table-rollback-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_tx_rb_a (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_tx_rb_b (id int, name varchar(32)) using delos_mvcc");
+            connection.commit();
+
+            executeUpdate(connection, "insert into mvcc_tx_rb_a values (1, 'ghost-left')");
+            executeUpdate(connection, "insert into mvcc_tx_rb_b values (1, 'ghost-right')");
+            connection.rollback();
+
+            assertRows(connection,
+                    "select id, name from mvcc_tx_rb_a order by id");
+            assertRows(connection,
+                    "select id, name from mvcc_tx_rb_b order by id");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_tx_rb_a order by id");
+            assertRows(reopened,
+                    "select id, name from mvcc_tx_rb_b order by id");
+        }
+    }
+
+    public void testTwoMvccTablesUpdateAndDeleteCommitInOneSqlTransactionSurvivesReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-two-table-update-delete-commit-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_tx_ud_a (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_tx_ud_b (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_tx_ud_a values (1, 'before')");
+            executeUpdate(connection, "insert into mvcc_tx_ud_b values (1, 'doomed')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "update mvcc_tx_ud_a set name = 'after' where id = 1"));
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mvcc_tx_ud_b where id = 1"));
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_tx_ud_a order by id",
+                    "1|after");
+            assertRows(connection,
+                    "select id, name from mvcc_tx_ud_b order by id");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_tx_ud_a order by id",
+                    "1|after");
+            assertRows(reopened,
+                    "select id, name from mvcc_tx_ud_b order by id");
+        }
+    }
+
+    public void testTwoMvccTablesUpdateAndDeleteRollbackInOneSqlTransactionRestoresBothAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-two-table-update-delete-rollback-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_tx_ud_rb_a (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_tx_ud_rb_b (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_tx_ud_rb_a values (1, 'before')");
+            executeUpdate(connection, "insert into mvcc_tx_ud_rb_b values (1, 'survivor')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "update mvcc_tx_ud_rb_a set name = 'after' where id = 1"));
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mvcc_tx_ud_rb_b where id = 1"));
+            connection.rollback();
+
+            assertRows(connection,
+                    "select id, name from mvcc_tx_ud_rb_a order by id",
+                    "1|before");
+            assertRows(connection,
+                    "select id, name from mvcc_tx_ud_rb_b order by id",
+                    "1|survivor");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_tx_ud_rb_a order by id",
+                    "1|before");
+            assertRows(reopened,
+                    "select id, name from mvcc_tx_ud_rb_b order by id",
+                    "1|survivor");
+        }
+    }
+
+
 
     private static Connection openDatabase(String databaseName, boolean create) throws SQLException {
         return DriverManager.getConnection("jdbc:derby:" + databaseName + (create ? ";create=true" : ""));
