@@ -22,6 +22,9 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -1351,6 +1354,170 @@ public final class MvccSqlIntegrationTest extends TestCase {
         }
     }
 
+
+    public void testConcurrentMvccPrimaryKeyInsertRejectsSecondWriterAndPreservesWinnerAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-concurrent-pk-insert-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_concurrent_pk_t (id int primary key, name varchar(32)) using delos_mvcc");
+            connection.commit();
+        }
+
+        try (Connection writerA = openDatabase(databaseName, false);
+             Connection writerB = openDatabase(databaseName, false);
+             Connection reader = openDatabase(databaseName, false)) {
+            writerA.setAutoCommit(false);
+            writerB.setAutoCommit(false);
+
+            assertEquals(1, executeUpdate(writerA,
+                    "insert into mvcc_concurrent_pk_t values (1, 'from_a')"));
+
+            assertRows(reader,
+                    "select id, name from mvcc_concurrent_pk_t where id = 1");
+
+            assertDuplicateKeyOrWriteConflict(() -> executeUpdate(writerB,
+                    "insert into mvcc_concurrent_pk_t values (1, 'from_b')"));
+            rollbackAfterExpectedConflict(writerB);
+
+            writerA.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_concurrent_pk_t where id = 1",
+                    "1|from_a");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_concurrent_pk_t where id = 1",
+                    "1|from_a");
+        }
+    }
+
+    public void testConcurrentMvccUniqueIndexInsertRejectsSecondWriterAndPreservesWinnerAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-concurrent-unique-insert-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_concurrent_unique_t (id int, email varchar(64), name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create unique index mvcc_concurrent_unique_email_idx on mvcc_concurrent_unique_t(email)");
+            connection.commit();
+        }
+
+        try (Connection writerA = openDatabase(databaseName, false);
+             Connection writerB = openDatabase(databaseName, false);
+             Connection reader = openDatabase(databaseName, false)) {
+            writerA.setAutoCommit(false);
+            writerB.setAutoCommit(false);
+
+            assertEquals(1, executeUpdate(writerA,
+                    "insert into mvcc_concurrent_unique_t values (1, 'a@example.com', 'from_a')"));
+
+            assertRows(reader,
+                    "select id, email from mvcc_concurrent_unique_t --DERBY-PROPERTIES index=mvcc_concurrent_unique_email_idx\n where email = 'a@example.com' order by id");
+
+            assertDuplicateKeyOrWriteConflict(() -> executeUpdate(writerB,
+                    "insert into mvcc_concurrent_unique_t values (2, 'a@example.com', 'from_b')"));
+            rollbackAfterExpectedConflict(writerB);
+
+            writerA.commit();
+
+            assertRows(reader,
+                    "select id, email from mvcc_concurrent_unique_t --DERBY-PROPERTIES index=mvcc_concurrent_unique_email_idx\n where email = 'a@example.com' order by id",
+                    "1|a@example.com");
+            assertRows(reader,
+                    "select id, name from mvcc_concurrent_unique_t order by id",
+                    "1|from_a");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, email from mvcc_concurrent_unique_t --DERBY-PROPERTIES index=mvcc_concurrent_unique_email_idx\n where email = 'a@example.com' order by id",
+                    "1|a@example.com");
+            assertRows(reopened,
+                    "select id, name from mvcc_concurrent_unique_t order by id",
+                    "1|from_a");
+        }
+    }
+
+
+
+    public void testDroppedMvccTableRecreateDoesNotSeeDroppedRowsAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-drop-recreate-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_drop_recreate_t (id int primary key, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_drop_recreate_t values (1, 'dropped')");
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_drop_recreate_t order by id",
+                    "1|dropped");
+
+            executeUpdate(connection, "drop table mvcc_drop_recreate_t");
+            connection.commit();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            reopened.setAutoCommit(false);
+            executeUpdate(reopened, "create table mvcc_drop_recreate_t (id int primary key, name varchar(32)) using delos_mvcc");
+            reopened.commit();
+
+            assertRows(reopened,
+                    "select id, name from mvcc_drop_recreate_t order by id");
+
+            executeUpdate(reopened, "insert into mvcc_drop_recreate_t values (2, 'fresh')");
+            reopened.commit();
+
+            assertRows(reopened,
+                    "select id, name from mvcc_drop_recreate_t order by id",
+                    "2|fresh");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopenedAgain = openDatabase(databaseName, false)) {
+            assertRows(reopenedAgain,
+                    "select id, name from mvcc_drop_recreate_t order by id",
+                    "2|fresh");
+        }
+    }
+
+    public void testDroppedMvccTableRemovesInheritedStateFiles() throws Exception {
+        String databaseName = databaseName("mvcc-sql-drop-cleanup-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_drop_cleanup_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_drop_cleanup_t values (1, 'alpha')");
+            executeUpdate(connection, "insert into mvcc_drop_cleanup_t values (2, 'beta')");
+            connection.commit();
+
+            assertTrue("expected delos_mvcc inherited-store files before DROP TABLE",
+                    inheritedMvccStateFileCount(databaseName) > 0L);
+
+            executeUpdate(connection, "drop table mvcc_drop_cleanup_t");
+            connection.commit();
+        }
+
+        assertEquals("DROP TABLE should remove delos_mvcc inherited-store files",
+                0L,
+                inheritedMvccStateFileCount(databaseName));
+
+        shutdownDatabase(databaseName);
+
+        assertEquals("dropped delos_mvcc inherited-store files should not reappear after reopen",
+                0L,
+                inheritedMvccStateFileCount(databaseName));
+    }
+
     private static Connection openDatabase(String databaseName, boolean create) throws SQLException {
         return DriverManager.getConnection("jdbc:derby:" + databaseName + (create ? ";create=true" : ""));
     }
@@ -1422,6 +1589,23 @@ public final class MvccSqlIntegrationTest extends TestCase {
     }
 
 
+    private static void assertDuplicateKeyOrWriteConflict(SqlAction action) throws SQLException {
+        try {
+            action.run();
+            fail("Expected duplicate-key violation or deterministic MVCC write conflict");
+        } catch (SQLException expected) {
+            assertTrue("expected duplicate-key violation or deterministic MVCC write conflict, got: " + expected,
+                    "23505".equals(expected.getSQLState())
+                            || containsMessage(expected, "duplicate")
+                            || containsMessage(expected, "constraint")
+                            || containsMessage(expected, "primary key")
+                            || containsMessage(expected, "conflict")
+                            || containsMessage(expected, "not visible")
+                            || containsMessage(expected, "lock"));
+        }
+    }
+
+
     private static void rollbackAfterExpectedConflict(Connection connection) throws SQLException {
         try {
             connection.rollback();
@@ -1429,6 +1613,20 @@ public final class MvccSqlIntegrationTest extends TestCase {
             if (!"08003".equals(e.getSQLState())) {
                 throw e;
             }
+        }
+    }
+
+
+
+    private static long inheritedMvccStateFileCount(String databaseName) throws IOException {
+        Path inheritedStore = new File(databaseName).toPath()
+                .resolve("delos_mvcc")
+                .resolve("inherited-store");
+        if (!Files.exists(inheritedStore)) {
+            return 0L;
+        }
+        try (var paths = Files.walk(inheritedStore)) {
+            return paths.filter(Files::isRegularFile).count();
         }
     }
 
