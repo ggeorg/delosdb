@@ -31,6 +31,7 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
@@ -43,6 +44,7 @@ import java.sql.SQLWarning;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -2800,14 +2802,47 @@ public final class NetworkServerControlImpl {
      **/
     private void buildLocalAddressList(InetAddress bindAddr) 
     {
-        localAddresses = new ArrayList<InetAddress>(3);
-        localAddresses.add(bindAddr);
-        
-        try { localAddresses.add(InetAddress.getLocalHost()); }
+        localAddresses = new ArrayList<InetAddress>(8);
+        addLocalAddress(bindAddr);
+
+        // Do not call InetAddress.getLocalHost() here. On some systems,
+        // notably developer machines with slow or misconfigured hostname/DNS
+        // resolution, that call can block long enough for network-server
+        // startup tests to time out. The server only needs a list of local
+        // addresses for admin-command validation, so collect loopback and
+        // interface addresses without resolving the machine hostname.
+        addLocalAddress(InetAddress.getLoopbackAddress());
+
+        try { addLocalAddress(InetAddress.getByName("localhost")); }
         catch(UnknownHostException uhe) { unknownHostException( uhe ); }
-        
-        try { localAddresses.add(InetAddress.getByName("localhost")); }
-        catch(UnknownHostException uhe) { unknownHostException( uhe ); }
+
+        try { addNetworkInterfaceAddresses(); }
+        catch(Exception e) { unknownHostException( e ); }
+    }
+
+    private void addLocalAddress(InetAddress inetAddr)
+    {
+        if ((inetAddr != null) && !localAddresses.contains(inetAddr)) {
+            localAddresses.add(inetAddr);
+        }
+    }
+
+    private void addNetworkInterfaceAddresses() throws Exception
+    {
+        Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+
+        if (interfaces == null) {
+            return;
+        }
+
+        while (interfaces.hasMoreElements()) {
+            NetworkInterface networkInterface = interfaces.nextElement();
+            Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
+
+            while (addresses.hasMoreElements()) {
+                addLocalAddress(addresses.nextElement());
+            }
+        }
     }
     private void unknownHostException( Throwable t )
     {
