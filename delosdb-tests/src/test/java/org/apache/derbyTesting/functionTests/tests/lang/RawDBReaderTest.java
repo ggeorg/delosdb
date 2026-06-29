@@ -60,9 +60,10 @@ public class RawDBReaderTest extends GeneratedColumnsHelper
         "and schemaname != 'SQLJ'\n" +
         "order by schemaname\n";
     private static  final   String      LIST_USER_TABLES =
-        "select tablename from sys.systables\n" +
-        "where tablename not like 'SYS%'\n" +
-        "order by tablename\n";
+        "select s.schemaname, t.tablename from sys.systables t, sys.sysschemas s\n" +
+        "where t.tablename not like 'SYS%'\n" +
+        "and s.schemaid = t.schemaid\n" +
+        "order by s.schemaname, t.tablename\n";
     private static  final   String[][]  NO_ROWS = {};
     private static  final   String[][]  EXPECTED_SCHEMAS =
     {
@@ -73,10 +74,10 @@ public class RawDBReaderTest extends GeneratedColumnsHelper
     };
     private static  final   String[][]  EXPECTED_TABLES =
     {
-        { "T1" },
-        { "T1" },
-        { "T2" },
-        { "T2" },
+        { "RAW11_SCHEMA1", "T1" },
+        { "RAW11_SCHEMA1", "T2" },
+        { "RAW11_SCHEMA2", "T1" },
+        { "RAW11_SCHEMA2", "T2" },
     };
 
         
