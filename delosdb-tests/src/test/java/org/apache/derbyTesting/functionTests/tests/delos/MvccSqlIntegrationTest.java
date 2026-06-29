@@ -1197,6 +1197,160 @@ public final class MvccSqlIntegrationTest extends TestCase {
     }
 
 
+
+    public void testMvccUniqueIndexRejectsDuplicateCommittedValueAndSurvivesReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-unique-duplicate-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_unique_duplicate_t (id int, email varchar(64), name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create unique index mvcc_unique_duplicate_email_idx on mvcc_unique_duplicate_t(email)");
+            executeUpdate(connection, "insert into mvcc_unique_duplicate_t values (1, 'a@example.com', 'alpha')");
+            connection.commit();
+
+            assertDuplicateKey(() -> executeUpdate(connection,
+                    "insert into mvcc_unique_duplicate_t values (2, 'a@example.com', 'duplicate')"));
+            connection.rollback();
+
+            assertRows(connection,
+                    "select id, email from mvcc_unique_duplicate_t --DERBY-PROPERTIES index=mvcc_unique_duplicate_email_idx\n where email = 'a@example.com' order by id",
+                    "1|a@example.com");
+            assertRows(connection,
+                    "select id, name from mvcc_unique_duplicate_t order by id",
+                    "1|alpha");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, email from mvcc_unique_duplicate_t --DERBY-PROPERTIES index=mvcc_unique_duplicate_email_idx\n where email = 'a@example.com' order by id",
+                    "1|a@example.com");
+            assertRows(reopened,
+                    "select id, name from mvcc_unique_duplicate_t order by id",
+                    "1|alpha");
+        }
+    }
+
+    public void testMvccUniqueIndexRollbackAllowsReinsertAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-unique-rollback-reinsert-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_unique_rollback_t (id int, email varchar(64), name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create unique index mvcc_unique_rollback_email_idx on mvcc_unique_rollback_t(email)");
+            connection.commit();
+
+            executeUpdate(connection, "insert into mvcc_unique_rollback_t values (1, 'a@example.com', 'ghost')");
+            connection.rollback();
+
+            executeUpdate(connection, "insert into mvcc_unique_rollback_t values (2, 'a@example.com', 'alpha')");
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, email from mvcc_unique_rollback_t --DERBY-PROPERTIES index=mvcc_unique_rollback_email_idx\n where email = 'a@example.com' order by id",
+                    "2|a@example.com");
+            assertRows(connection,
+                    "select id, name from mvcc_unique_rollback_t order by id",
+                    "2|alpha");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, email from mvcc_unique_rollback_t --DERBY-PROPERTIES index=mvcc_unique_rollback_email_idx\n where email = 'a@example.com' order by id",
+                    "2|a@example.com");
+            assertRows(reopened,
+                    "select id, name from mvcc_unique_rollback_t order by id",
+                    "2|alpha");
+        }
+    }
+
+    public void testMvccUniqueIndexDeleteAllowsReinsertAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-unique-delete-reinsert-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_unique_delete_t (id int, email varchar(64), name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create unique index mvcc_unique_delete_email_idx on mvcc_unique_delete_t(email)");
+            executeUpdate(connection, "insert into mvcc_unique_delete_t values (1, 'a@example.com', 'alpha')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mvcc_unique_delete_t where email = 'a@example.com'"));
+            connection.commit();
+
+            executeUpdate(connection, "insert into mvcc_unique_delete_t values (2, 'a@example.com', 'beta')");
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, email from mvcc_unique_delete_t --DERBY-PROPERTIES index=mvcc_unique_delete_email_idx\n where email = 'a@example.com' order by id",
+                    "2|a@example.com");
+            assertRows(connection,
+                    "select id, name from mvcc_unique_delete_t order by id",
+                    "2|beta");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, email from mvcc_unique_delete_t --DERBY-PROPERTIES index=mvcc_unique_delete_email_idx\n where email = 'a@example.com' order by id",
+                    "2|a@example.com");
+            assertRows(reopened,
+                    "select id, name from mvcc_unique_delete_t order by id",
+                    "2|beta");
+        }
+    }
+
+    public void testMvccUniqueIndexUpdateCannotCreateDuplicateValueAfterReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-unique-update-duplicate-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_unique_update_t (id int, email varchar(64), name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create unique index mvcc_unique_update_email_idx on mvcc_unique_update_t(email)");
+            executeUpdate(connection, "insert into mvcc_unique_update_t values (1, 'a@example.com', 'alpha')");
+            executeUpdate(connection, "insert into mvcc_unique_update_t values (2, 'b@example.com', 'beta')");
+            connection.commit();
+
+            assertDuplicateKey(() -> executeUpdate(connection,
+                    "update mvcc_unique_update_t set email = 'a@example.com' where id = 2"));
+            connection.rollback();
+
+            assertRows(connection,
+                    "select id, email from mvcc_unique_update_t --DERBY-PROPERTIES index=mvcc_unique_update_email_idx\n where email = 'a@example.com' order by id",
+                    "1|a@example.com");
+            assertRows(connection,
+                    "select id, email from mvcc_unique_update_t --DERBY-PROPERTIES index=mvcc_unique_update_email_idx\n where email = 'b@example.com' order by id",
+                    "2|b@example.com");
+            assertRows(connection,
+                    "select id, name from mvcc_unique_update_t order by id",
+                    "1|alpha",
+                    "2|beta");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, email from mvcc_unique_update_t --DERBY-PROPERTIES index=mvcc_unique_update_email_idx\n where email = 'a@example.com' order by id",
+                    "1|a@example.com");
+            assertRows(reopened,
+                    "select id, email from mvcc_unique_update_t --DERBY-PROPERTIES index=mvcc_unique_update_email_idx\n where email = 'b@example.com' order by id",
+                    "2|b@example.com");
+            assertRows(reopened,
+                    "select id, name from mvcc_unique_update_t order by id",
+                    "1|alpha",
+                    "2|beta");
+        }
+    }
+
     private static Connection openDatabase(String databaseName, boolean create) throws SQLException {
         return DriverManager.getConnection("jdbc:derby:" + databaseName + (create ? ";create=true" : ""));
     }
