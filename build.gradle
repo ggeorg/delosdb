@@ -412,6 +412,7 @@ def runtimeJarNames = [
         'delosdb-annotations.jar',
         'delosdb-spi.jar',
         'delosdb-storage-io.jar',
+        'delosdb-storage-mvcc.jar',
         'osgi-framework-stub.jar',
         'derbyshared.jar',
         'delosdb-runtime-api.jar',
@@ -574,7 +575,7 @@ tasks.register('compileAll') {
 }
 
 tasks.register('jars') {
-    dependsOn ':delosdb-annotations:delosDbAnnotationsJar', ':delosdb-spi:delosDbSpiJar', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-commons:derbySharedJar', ':delosdb-runtime-api:delosDbRuntimeApiJar', ':delosdb-storage-api:storageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
+    dependsOn ':delosdb-annotations:delosDbAnnotationsJar', ':delosdb-spi:delosDbSpiJar', ':delosdb-storage-io:delosDbStorageIoJar', ':delosdb-storage-mvcc:delosDbStorageMvccJar', ':delosdb-commons:derbySharedJar', ':delosdb-runtime-api:delosDbRuntimeApiJar', ':delosdb-storage-api:storageApiJar', ':delosdb-derby-store-api:derbyStoreApiJar', ':delosdb-engine:derbyJar',
             ':delosdb-client:derbyClientJar', ':delosdb-tools:derbyToolsJar',
             ':delosdb-server:derbyNetJar', ':delosdb-optionaltools:derbyOptionalToolsJar',
             ':delosdb-runner:derbyRunJar', ':delosdb-osgi-stub:osgiFrameworkStubJar'
@@ -714,7 +715,9 @@ ext.delosdbPublicationMetadata = [
         'delosdb-commons'      : [artifactId: 'delosdb-commons',       jarTask: 'derbySharedJar',        title: 'DelosDB Shared Utilities', dependencies: []],
         'delosdb-annotations'  : [artifactId: 'delosdb-annotations',   jarTask: 'delosDbAnnotationsJar', title: 'DelosDB Annotations', dependencies: []],
         'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'delosDbSpiJar',       title: 'DelosDB SPI', dependencies: ['delosdb-annotations']],
+        'delosdb-storage-io'   : [artifactId: 'delosdb-storage-io',    jarTask: 'delosDbStorageIoJar', title: 'DelosDB Storage IO', dependencies: []],
         'delosdb-versioned-storage-spi': [artifactId: 'delosdb-versioned-storage-spi', jarTask: 'delosDbVersionedStorageSpiJar', title: 'DelosDB Versioned Storage SPI', dependencies: ['delosdb-annotations']],
+        'delosdb-storage-mvcc' : [artifactId: 'delosdb-storage-mvcc',  jarTask: 'delosDbStorageMvccJar', title: 'DelosDB MVCC Storage Provider', dependencies: ['delosdb-storage-io']],
         'delosdb-engine'       : [artifactId: 'delosdb-engine',        jarTask: 'derbyJar',              title: 'DelosDB Embedded Engine', dependencies: ['delosdb-commons']],
         'delosdb-client'       : [artifactId: 'delosdb-client',        jarTask: 'derbyClientJar',        title: 'DelosDB Network Client', dependencies: ['delosdb-commons']],
         'delosdb-tools'        : [artifactId: 'delosdb-tools',         jarTask: 'derbyToolsJar',         title: 'DelosDB Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-client']],
@@ -827,8 +830,8 @@ tasks.named('check') {
 
 tasks.register('fullVerification') {
     group = 'verification'
-    description = 'Runs Derby-compatible runtime smoke checks and the inherited Derby lang compatibility suite.'
-    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite'
+    description = 'Runs Derby-compatible runtime smoke checks, MVCC SQL integration, and the inherited Derby lang compatibility suite.'
+    dependsOn 'derbyRuntimeSmoke', ':delosdb-tests:runDelosMvccSqlIntegrationTest', 'derbyTestSuite'
 }
 
 tasks.register('test') {

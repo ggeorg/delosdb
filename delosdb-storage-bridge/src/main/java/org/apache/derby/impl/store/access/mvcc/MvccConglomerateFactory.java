@@ -57,6 +57,7 @@ public final class MvccConglomerateFactory
     private static final String FORMAT_UUID_STRING = "3FD22170-28F5-4EF4-8C32-EC5FB6E6115B";
 
     private Object formatUUID;
+    private Path databaseDirectory;
 
     @Override
     public Properties defaultProperties() {
@@ -130,13 +131,16 @@ public final class MvccConglomerateFactory
         formatUUID = uuidFactory.recreateUUID(FORMAT_UUID_STRING);
         String serviceDirectory = startParams.getProperty(PersistentService.ROOT);
         if (serviceDirectory != null && !serviceDirectory.isBlank()) {
-            MvccConglomerate.configureDatabaseDirectory(Path.of(serviceDirectory));
+            databaseDirectory = Path.of(serviceDirectory);
         } else {
-            MvccConglomerate.configureDatabaseDirectory(null);
+            databaseDirectory = null;
         }
+        MvccConglomerate.configureDatabaseDirectory(databaseDirectory);
     }
 
     @Override
     public void stop() {
+        MvccConglomerate.clearStatesForDatabase(databaseDirectory);
+        databaseDirectory = null;
     }
 }

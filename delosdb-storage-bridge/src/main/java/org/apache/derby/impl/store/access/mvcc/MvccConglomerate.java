@@ -26,11 +26,13 @@ import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.derby.iapi.services.io.CompressedNumber;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.services.io.Storable;
+import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.store.access.ColumnOrdering;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
@@ -241,8 +243,7 @@ public final class MvccConglomerate
 
     @Override
     public int getTypeFormatId() {
-        // MODULE6C has no durable conglomerate-directory format allocation yet.
-        return 0;
+        return StoredFormatIds.ACCESS_MVCC_V1_ID;
     }
 
     @Override
@@ -301,6 +302,17 @@ public final class MvccConglomerate
 
     static void configureDatabaseDirectory(Path directory) {
         databaseDirectory = directory == null ? null : directory.toAbsolutePath().normalize();
+    }
+
+    static void clearStatesForDatabase(Path directory) {
+        Path normalized = directory == null ? null : directory.toAbsolutePath().normalize();
+        STATES.entrySet().removeIf(entry -> {
+            if (!Objects.equals(entry.getKey().databaseDirectory(), normalized)) {
+                return false;
+            }
+            entry.getValue().close();
+            return true;
+        });
     }
 
     static void clearStatesForDiagnostics() {

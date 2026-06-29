@@ -2,8 +2,6 @@ package io.github.ggeorg.delosdb.storage.mvcc.bridge;
 
 import java.nio.file.Path;
 
-import io.github.ggeorg.delosdb.storage.mvcc.DelosMvccStorageProvider;
-
 import org.apache.derby.iapi.store.types.DelosStorageStore;
 import org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
 
@@ -11,7 +9,7 @@ import org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
 public final class MvccInheritedStorageProviderFactory implements DelosStorageProviderFactory {
     @Override
     public String providerName() {
-        return DelosMvccStorageProvider.PROVIDER_NAME;
+        return "delos_mvcc";
     }
 
     @Override
