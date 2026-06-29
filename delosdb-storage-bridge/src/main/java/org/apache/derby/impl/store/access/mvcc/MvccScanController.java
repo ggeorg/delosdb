@@ -37,6 +37,7 @@ import org.apache.derby.iapi.store.types.DelosStorageRow;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
+import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
@@ -55,6 +56,8 @@ public final class MvccScanController implements ScanManager {
     private final TransactionManager transactionManager;
     private final boolean hold;
     private final boolean completeWithDerbyTransaction;
+    private final boolean transactionScopedReader;
+    private final DelosStorageTransactionRegistry.Reader registeredReader;
     private final DelosStorageTransaction reader;
     private final DelosStorageSnapshot snapshot;
     private DelosStorageScan scan;
@@ -73,6 +76,7 @@ public final class MvccScanController implements ScanManager {
             TransactionManager transactionManager,
             boolean hold,
             int openMode,
+            int isolationLevel,
             FormatableBitSet scanColumnList,
             Qualifier[][] qualifiers) {
         MvccBridgeDiagnosticsSupport.incrementOpenCount();
@@ -84,8 +88,16 @@ public final class MvccScanController implements ScanManager {
                 == TransactionController.OPENMODE_FORUPDATE;
         this.scanColumnList = scanColumnList;
         this.qualifiers = qualifiers;
-        this.reader = state.beginTransaction();
-        this.snapshot = state.snapshot(reader);
+        this.transactionScopedReader = usesTransactionScopedSnapshot(isolationLevel);
+        if (transactionScopedReader) {
+            this.registeredReader = DelosStorageTransactionRegistry.reader(transactionManager, state.table());
+            this.reader = registeredReader.transaction();
+            this.snapshot = registeredReader.snapshot();
+        } else {
+            this.registeredReader = null;
+            this.reader = state.beginTransaction();
+            this.snapshot = state.snapshot(reader);
+        }
         try {
             this.scan = state.openScan(snapshot);
         } catch (StandardException e) {
@@ -103,7 +115,7 @@ public final class MvccScanController implements ScanManager {
     public void close() {
         if (!closed) {
             scan.close();
-            state.abort(reader);
+            closeReaderIfStatementScoped();
             if (!completeWithDerbyTransaction) {
                 abortWriterIfActive();
             }
@@ -117,7 +129,7 @@ public final class MvccScanController implements ScanManager {
         if (!hold || closeHeldScan) {
             if (!closed) {
                 scan.close();
-                state.abort(reader);
+                closeReaderIfStatementScoped();
                 commitWriterIfActive();
                 closed = true;
                 transactionManager.closeMe(this);
@@ -426,6 +438,17 @@ public final class MvccScanController implements ScanManager {
         MvccBridgeDiagnosticsSupport.incrementUpdateCount();
         current = new DelosStorageRow(current.rowId(), replacement);
         return true;
+    }
+
+    private void closeReaderIfStatementScoped() {
+        if (!transactionScopedReader) {
+            state.abort(reader);
+        }
+    }
+
+    private static boolean usesTransactionScopedSnapshot(int isolationLevel) {
+        return isolationLevel == TransactionController.ISOLATION_REPEATABLE_READ
+                || isolationLevel == TransactionController.ISOLATION_SERIALIZABLE;
     }
 
     private DelosStorageTransaction writer() {

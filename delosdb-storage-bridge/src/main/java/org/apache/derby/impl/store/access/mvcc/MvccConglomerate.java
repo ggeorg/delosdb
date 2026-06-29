@@ -184,7 +184,7 @@ public final class MvccConglomerate
             int stopSearchOperator,
             StaticCompiledOpenConglomInfo staticInfo,
             DynamicCompiledOpenConglomInfo dynamicInfo) {
-        return new MvccScanController(this, xactManager, hold, openMode, scanColumnList, qualifier);
+        return new MvccScanController(this, xactManager, hold, openMode, isolationLevel, scanColumnList, qualifier);
     }
 
     @Override

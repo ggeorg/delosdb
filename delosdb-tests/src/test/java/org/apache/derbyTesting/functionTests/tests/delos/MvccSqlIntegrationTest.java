@@ -807,6 +807,134 @@ public final class MvccSqlIntegrationTest extends TestCase {
         }
     }
 
+    public void testRepeatableReadMvccUpdateKeepsStableSnapshotUntilTransactionEnds() throws Exception {
+        String databaseName = databaseName("mvcc-sql-repeatable-read-update-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_rr_update_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_rr_update_t values (1, 'before')");
+            connection.commit();
+        }
+
+        try (Connection reader = openDatabase(databaseName, false);
+             Connection writer = openDatabase(databaseName, false)) {
+            reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            reader.setAutoCommit(false);
+            writer.setAutoCommit(false);
+
+            assertRows(reader,
+                    "select id, name from mvcc_rr_update_t where id = 1",
+                    "1|before");
+
+            assertEquals(1, executeUpdate(writer,
+                    "update mvcc_rr_update_t set name = 'after' where id = 1"));
+            writer.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_rr_update_t where id = 1",
+                    "1|before");
+            reader.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_rr_update_t where id = 1",
+                    "1|after");
+            reader.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_rr_update_t where id = 1",
+                    "1|after");
+        }
+    }
+
+    public void testRepeatableReadMvccDeleteKeepsStableSnapshotUntilTransactionEnds() throws Exception {
+        String databaseName = databaseName("mvcc-sql-repeatable-read-delete-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_rr_delete_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_rr_delete_t values (1, 'survivor')");
+            connection.commit();
+        }
+
+        try (Connection reader = openDatabase(databaseName, false);
+             Connection writer = openDatabase(databaseName, false)) {
+            reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            reader.setAutoCommit(false);
+            writer.setAutoCommit(false);
+
+            assertRows(reader,
+                    "select id, name from mvcc_rr_delete_t where id = 1",
+                    "1|survivor");
+
+            assertEquals(1, executeUpdate(writer,
+                    "delete from mvcc_rr_delete_t where id = 1"));
+            writer.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_rr_delete_t where id = 1",
+                    "1|survivor");
+            reader.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_rr_delete_t where id = 1");
+            reader.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_rr_delete_t where id = 1");
+        }
+    }
+
+    public void testRepeatableReadMvccInsertKeepsStableSnapshotUntilTransactionEnds() throws Exception {
+        String databaseName = databaseName("mvcc-sql-repeatable-read-insert-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_rr_insert_t (id int, name varchar(32)) using delos_mvcc");
+            connection.commit();
+        }
+
+        try (Connection reader = openDatabase(databaseName, false);
+             Connection writer = openDatabase(databaseName, false)) {
+            reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            reader.setAutoCommit(false);
+            writer.setAutoCommit(false);
+
+            assertRows(reader,
+                    "select id, name from mvcc_rr_insert_t where id = 1");
+
+            assertEquals(1, executeUpdate(writer,
+                    "insert into mvcc_rr_insert_t values (1, 'committed')"));
+            writer.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_rr_insert_t where id = 1");
+            reader.commit();
+
+            assertRows(reader,
+                    "select id, name from mvcc_rr_insert_t where id = 1",
+                    "1|committed");
+            reader.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_rr_insert_t where id = 1",
+                    "1|committed");
+        }
+    }
+
+
 
 
 

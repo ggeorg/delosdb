@@ -36,6 +36,7 @@ import java.util.Map;
  */
 public final class DelosStorageTransactionRegistry {
     private static final Map<Object, List<Writer>> WRITERS = new IdentityHashMap<>();
+    private static final Map<Object, Map<DelosStorageTable, Reader>> READERS = new IdentityHashMap<>();
 
     private DelosStorageTransactionRegistry() {
     }
@@ -71,21 +72,41 @@ public final class DelosStorageTransactionRegistry {
         }
     }
 
+    public static synchronized Reader reader(Object ownerTransaction, DelosStorageTable table) {
+        Map<DelosStorageTable, Reader> readers = READERS.computeIfAbsent(
+                ownerTransaction,
+                ignored -> new IdentityHashMap<>());
+        return readers.computeIfAbsent(table, ignored -> {
+            DelosStorageTransaction transaction = table.beginTransaction();
+            DelosStorageSnapshot snapshot = table.snapshot(transaction);
+            return new Reader(ownerTransaction, table, transaction, snapshot);
+        });
+    }
+
     public static void commit(Object ownerTransaction) {
-        for (Writer writer : drain(ownerTransaction)) {
+        for (Writer writer : drainWriters(ownerTransaction)) {
             writer.commit();
+        }
+        for (Reader reader : drainReaders(ownerTransaction)) {
+            reader.close();
         }
     }
 
     public static void abort(Object ownerTransaction) {
-        for (Writer writer : drain(ownerTransaction)) {
+        for (Writer writer : drainWriters(ownerTransaction)) {
             writer.abort();
+        }
+        for (Reader reader : drainReaders(ownerTransaction)) {
+            reader.close();
         }
     }
 
     public static synchronized int pendingCountForTesting(Object ownerTransaction) {
         List<Writer> writers = WRITERS.get(ownerTransaction);
-        return writers == null ? 0 : writers.size();
+        Map<DelosStorageTable, Reader> readers = READERS.get(ownerTransaction);
+        int writerCount = writers == null ? 0 : writers.size();
+        int readerCount = readers == null ? 0 : readers.size();
+        return writerCount + readerCount;
     }
 
     public static synchronized int totalPendingCountForTesting() {
@@ -93,19 +114,66 @@ public final class DelosStorageTransactionRegistry {
         for (List<Writer> writers : WRITERS.values()) {
             count += writers.size();
         }
+        for (Map<DelosStorageTable, Reader> readers : READERS.values()) {
+            count += readers.size();
+        }
         return count;
     }
 
     public static synchronized void clearForTesting() {
         WRITERS.clear();
+        READERS.clear();
     }
 
-    private static synchronized List<Writer> drain(Object ownerTransaction) {
+    private static synchronized List<Writer> drainWriters(Object ownerTransaction) {
         List<Writer> writers = WRITERS.remove(ownerTransaction);
         if (writers == null || writers.isEmpty()) {
             return List.of();
         }
         return List.copyOf(writers);
+    }
+
+    private static synchronized List<Reader> drainReaders(Object ownerTransaction) {
+        Map<DelosStorageTable, Reader> readers = READERS.remove(ownerTransaction);
+        if (readers == null || readers.isEmpty()) {
+            return List.of();
+        }
+        return List.copyOf(readers.values());
+    }
+
+
+    public static final class Reader {
+        private final Object ownerTransaction;
+        private final DelosStorageTable table;
+        private final DelosStorageTransaction transaction;
+        private final DelosStorageSnapshot snapshot;
+        private boolean completed;
+
+        private Reader(
+                Object ownerTransaction,
+                DelosStorageTable table,
+                DelosStorageTransaction transaction,
+                DelosStorageSnapshot snapshot) {
+            this.ownerTransaction = ownerTransaction;
+            this.table = table;
+            this.transaction = transaction;
+            this.snapshot = snapshot;
+        }
+
+        public DelosStorageTransaction transaction() {
+            return transaction;
+        }
+
+        public DelosStorageSnapshot snapshot() {
+            return snapshot;
+        }
+
+        public void close() {
+            if (!completed) {
+                table.abort(transaction);
+                completed = true;
+            }
+        }
     }
 
     public static final class Writer {
