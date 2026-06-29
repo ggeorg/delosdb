@@ -1,6 +1,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
@@ -26,16 +27,19 @@ public final class PageBackedMvccTable implements AutoCloseable {
     private final PageBackedMvccTableStore store;
     private MvccRowDirectory directory;
     private final MvccPageMutationLog mutationLog;
+    private final MvccTransactionOutcomeLog outcomeLog;
     private final MvccRowDirectoryStore rowDirectoryStore;
 
     private PageBackedMvccTable(
             PageBackedMvccTableStore store,
             MvccRowDirectory directory,
             MvccPageMutationLog mutationLog,
+            MvccTransactionOutcomeLog outcomeLog,
             MvccRowDirectoryStore rowDirectoryStore) {
         this.store = Objects.requireNonNull(store, "store");
         this.directory = Objects.requireNonNull(directory, "directory");
         this.mutationLog = mutationLog;
+        this.outcomeLog = outcomeLog;
         this.rowDirectoryStore = Objects.requireNonNull(rowDirectoryStore, "rowDirectoryStore");
     }
 
@@ -48,18 +52,62 @@ public final class PageBackedMvccTable implements AutoCloseable {
      * committed log records before rebuilding the row directory from pages.
      */
     public static PageBackedMvccTable open(Path path, Path mutationLogPath) throws IOException {
+        return openInternal(path, mutationLogPath, null, false);
+    }
+
+    /**
+     * Opens a page-backed table with an optional transaction outcome log. If the
+     * outcome log already exists, recovery treats it as the authority for
+     * deciding which page mutations materialize; otherwise the legacy mutation
+     * log terminal markers are used once for compatibility and future writes
+     * start maintaining the outcome log.
+     */
+    public static PageBackedMvccTable open(
+            Path path,
+            Path mutationLogPath,
+            Path outcomeLogPath) throws IOException {
+        boolean strictRecovery = outcomeLogPath != null && Files.exists(outcomeLogPath);
+        return openInternal(path, mutationLogPath, outcomeLogPath, strictRecovery);
+    }
+
+    /** Opens a table and always requires transaction-outcome-log recovery. */
+    public static PageBackedMvccTable openStrict(
+            Path path,
+            Path mutationLogPath,
+            Path outcomeLogPath) throws IOException {
+        Objects.requireNonNull(mutationLogPath, "mutationLogPath");
+        Objects.requireNonNull(outcomeLogPath, "outcomeLogPath");
+        return openInternal(path, mutationLogPath, outcomeLogPath, true);
+    }
+
+    private static PageBackedMvccTable openInternal(
+            Path path,
+            Path mutationLogPath,
+            Path outcomeLogPath,
+            boolean strictRecovery) throws IOException {
         PageBackedMvccTableStore store = PageBackedMvccTableStore.open(path);
         try {
             MvccPageMutationLog log = null;
+            MvccTransactionOutcomeLog outcomes = outcomeLogPath == null
+                    ? null
+                    : MvccTransactionOutcomeLog.open(outcomeLogPath);
             if (mutationLogPath != null) {
                 log = MvccPageMutationLog.open(mutationLogPath);
-                new MvccPageRecoveryRunner(log, store).recover();
+                MvccPageRecoveryRunner recovery = new MvccPageRecoveryRunner(log, store);
+                if (strictRecovery) {
+                    if (outcomes == null) {
+                        throw new IllegalArgumentException("strict MVCC recovery requires a transaction outcome log");
+                    }
+                    recovery.recoverStrict(outcomes);
+                } else {
+                    recovery.recover();
+                }
             }
             MvccRowDirectory directory = MvccRowDirectory.fromStoredRecords(store.loadAll());
             MvccRowDirectoryStore rowDirectory = MvccRowDirectoryStore.open(rowDirectoryPath(path));
             reconcileRowDirectoryWithPages(rowDirectory, directory);
             MvccDurableConsistencyCheck.check(store, rowDirectory).assertValid();
-            return new PageBackedMvccTable(store, directory, log, rowDirectory);
+            return new PageBackedMvccTable(store, directory, log, outcomes, rowDirectory);
         } catch (RuntimeException | IOException failure) {
             try {
                 store.close();
@@ -292,6 +340,9 @@ public final class PageBackedMvccTable implements AutoCloseable {
         if (mutationLog != null) {
             mutationLog.rewriteCheckpoint(selection.retainedRecords());
         }
+        if (outcomeLog != null) {
+            outcomeLog.rewriteCheckpoint(selection.retainedRecords());
+        }
         directory = MvccRowDirectory.fromStoredRecords(store.rewrite(selection.retainedRecords()));
         rowDirectoryStore.rewriteHeads(directory.headRecords());
         return new MvccVacuumResult(
@@ -425,6 +476,11 @@ public final class PageBackedMvccTable implements AutoCloseable {
             DelosLogSequenceNumber pageLsn) throws IOException {
         if (mutationLog != null) {
             mutationLog.appendVersion(transactionId, record);
+        }
+        if (outcomeLog != null) {
+            outcomeLog.appendCommit(transactionId, commitSequence);
+        }
+        if (mutationLog != null) {
             mutationLog.appendCommit(transactionId, commitSequence);
         }
         return store.append(record, pageLsn);

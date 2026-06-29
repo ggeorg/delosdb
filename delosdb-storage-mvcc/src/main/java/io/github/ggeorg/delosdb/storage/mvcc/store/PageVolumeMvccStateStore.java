@@ -60,6 +60,7 @@ public final class PageVolumeMvccStateStore<T> {
     private final RowCodec<T> rowCodec;
     private final Path pageFile;
     private final Path pageMutationLogFile;
+    private final Path transactionOutcomeLogFile;
     private final PageVolumeMvccWriteAheadLog writeAheadLog;
     private final PageVolumeMvccCheckpointStore checkpointStore;
     private final PageBackedMvccTable table;
@@ -72,6 +73,7 @@ public final class PageVolumeMvccStateStore<T> {
             RowCodec<T> rowCodec,
             Path pageFile,
             Path pageMutationLogFile,
+            Path transactionOutcomeLogFile,
             PageVolumeMvccWriteAheadLog writeAheadLog,
             PageVolumeMvccCheckpointStore checkpointStore,
             PageBackedMvccTable table,
@@ -80,6 +82,7 @@ public final class PageVolumeMvccStateStore<T> {
         this.rowCodec = Objects.requireNonNull(rowCodec, "rowCodec");
         this.pageFile = pageFile;
         this.pageMutationLogFile = pageMutationLogFile;
+        this.transactionOutcomeLogFile = transactionOutcomeLogFile;
         this.writeAheadLog = Objects.requireNonNull(writeAheadLog, "writeAheadLog");
         this.checkpointStore = Objects.requireNonNull(checkpointStore, "checkpointStore");
         this.table = table;
@@ -102,9 +105,10 @@ public final class PageVolumeMvccStateStore<T> {
         }
         try {
             Path pageMutationLog = PageVolumeMvccPaths.pageMutationLogFileFor(pageFile);
+            Path transactionOutcomeLog = PageVolumeMvccPaths.transactionOutcomeLogFileFor(pageFile);
             PageVolumeMvccWriteAheadLog writeAheadLog = PageVolumeMvccWriteAheadLog.open(databaseDirectory, storageId);
             PageVolumeMvccCheckpointStore checkpointStore = PageVolumeMvccCheckpointStore.open(databaseDirectory, storageId);
-            PageBackedMvccTable table = PageBackedMvccTable.open(pageFile, pageMutationLog);
+            PageBackedMvccTable table = PageBackedMvccTable.open(pageFile, pageMutationLog, transactionOutcomeLog);
             PageVolumeMvccCheckpointStore.Status checkpointStatus = checkpointStore.validate(
                     pageFile,
                     PageBackedMvccTable.rowDirectoryPath(pageFile),
@@ -122,6 +126,7 @@ public final class PageVolumeMvccStateStore<T> {
                     rowCodec,
                     pageFile,
                     pageMutationLog,
+                    transactionOutcomeLog,
                     writeAheadLog,
                     checkpointStore,
                     table,
@@ -135,6 +140,7 @@ public final class PageVolumeMvccStateStore<T> {
         return new PageVolumeMvccStateStore<>(
                 "disabled",
                 rowCodec,
+                null,
                 null,
                 null,
                 PageVolumeMvccWriteAheadLog.disabled(),
@@ -157,6 +163,10 @@ public final class PageVolumeMvccStateStore<T> {
 
     public Path pageMutationLogFile() {
         return pageMutationLogFile;
+    }
+
+    public Path transactionOutcomeLogFile() {
+        return transactionOutcomeLogFile;
     }
 
     public Path writeAheadLogFile() {
@@ -313,6 +323,9 @@ public final class PageVolumeMvccStateStore<T> {
             Path rowDirectory = rowDirectoryFile();
             if (rowDirectory != null) {
                 Files.deleteIfExists(rowDirectory);
+            }
+            if (transactionOutcomeLogFile != null) {
+                Files.deleteIfExists(transactionOutcomeLogFile);
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Could not delete inherited MVCC page-volume state " + pageFile, e);

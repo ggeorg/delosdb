@@ -7,8 +7,10 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -85,6 +87,43 @@ public final class MvccTransactionOutcomeLog {
             throw new IllegalArgumentException("fsync boundary id must be positive: " + boundaryId);
         }
         appendLine(RECORD_FSYNC, Long.toString(boundaryId));
+    }
+
+    /**
+     * Rewrites the outcome log to match a compact committed checkpoint image.
+     *
+     * <p>The page mutation checkpoint uses the original creating transaction id
+     * in each VERSION record. Strict recovery therefore needs the outcome log to
+     * retain one committed outcome for every creator transaction that still has a
+     * retained version in the checkpoint image.</p>
+     */
+    public synchronized void rewriteCheckpoint(List<MvccVersionRecord> committedImage) {
+        Objects.requireNonNull(committedImage, "committedImage");
+        Map<MvccTransactionId, MvccCommitSequence> commitSequences = new LinkedHashMap<>();
+        for (MvccVersionRecord record : committedImage) {
+            Objects.requireNonNull(record, "committedImage record");
+            MvccTupleHeader header = record.header();
+            requireRealTransactionId(header.createdByTx());
+            if (header.commitSequence().equals(MvccCommitSequence.NONE)) {
+                throw new IllegalArgumentException("checkpoint image contains uncommitted MVCC version: "
+                        + header.versionId());
+            }
+            MvccCommitSequence existing = commitSequences.putIfAbsent(
+                    header.createdByTx(),
+                    header.commitSequence());
+            if (existing != null && !existing.equals(header.commitSequence())) {
+                throw new IllegalArgumentException("checkpoint image contains conflicting commit sequences for "
+                        + header.createdByTx() + ": " + existing + " and " + header.commitSequence());
+            }
+        }
+
+        StringBuilder content = new StringBuilder();
+        for (Map.Entry<MvccTransactionId, MvccCommitSequence> entry : commitSequences.entrySet()) {
+            appendLine(content, RECORD_COMMIT,
+                    Long.toString(entry.getKey().value()),
+                    Long.toString(entry.getValue().value()));
+        }
+        writeAtomically(content.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     public synchronized Map<MvccTransactionId, Outcome> recoverOutcomes() {
@@ -192,11 +231,8 @@ public final class MvccTransactionOutcomeLog {
     }
 
     private synchronized void appendLine(String type, String... fields) {
-        StringBuilder line = new StringBuilder(LOG_VERSION).append('\t').append(type);
-        for (String field : fields) {
-            line.append('\t').append(field);
-        }
-        line.append('\n');
+        StringBuilder line = new StringBuilder();
+        appendLine(line, type, fields);
         byte[] bytes = line.toString().getBytes(StandardCharsets.UTF_8);
         try (FileChannel channel = FileChannel.open(path,
                 StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
@@ -204,6 +240,39 @@ public final class MvccTransactionOutcomeLog {
             channel.force(true);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not append MVCC transaction outcome record to: " + path, e);
+        }
+    }
+
+    private static void appendLine(StringBuilder content, String type, String... fields) {
+        content.append(LOG_VERSION).append('\t').append(type);
+        for (String field : fields) {
+            content.append('\t').append(field);
+        }
+        content.append('\n');
+    }
+
+    private synchronized void writeAtomically(byte[] bytes) {
+        Path parent = path.getParent();
+        Path temp = parent == null
+                ? path.resolveSibling(path.getFileName() + ".tmp")
+                : parent.resolve(path.getFileName() + ".tmp");
+        try {
+            Files.write(temp, bytes,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE);
+            try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
+            Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException atomicFailure) {
+            try {
+                Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException fallbackFailure) {
+                atomicFailure.addSuppressed(fallbackFailure);
+                throw new UncheckedIOException("Could not rewrite MVCC transaction outcome checkpoint log: "
+                        + path, atomicFailure);
+            }
         }
     }
 

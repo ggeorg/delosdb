@@ -102,13 +102,29 @@ public final class MvccPageMutationLog {
     public synchronized void rewriteCheckpoint(List<MvccVersionRecord> committedImage) {
         Objects.requireNonNull(committedImage, "committedImage");
         StringBuilder content = new StringBuilder();
-        long syntheticTransactionId = 1L;
-        long syntheticCommitSequence = 1L;
+        Map<Long, MvccCommitSequence> commitSequencesByTransaction = new LinkedHashMap<>();
         for (MvccVersionRecord record : committedImage) {
-            appendLine(content, RECORD_VERSION, Long.toString(syntheticTransactionId), encodeRecord(record));
+            Objects.requireNonNull(record, "committedImage record");
+            MvccTupleHeader header = record.header();
+            long transactionId = header.createdByTx().value();
+            requireTransactionId(transactionId);
+            if (header.commitSequence().equals(MvccCommitSequence.NONE)) {
+                throw new IllegalArgumentException("checkpoint image contains uncommitted MVCC version: "
+                        + header.versionId());
+            }
+            MvccCommitSequence existing = commitSequencesByTransaction.putIfAbsent(
+                    transactionId,
+                    header.commitSequence());
+            if (existing != null && !existing.equals(header.commitSequence())) {
+                throw new IllegalArgumentException("checkpoint image contains conflicting commit sequences for tx "
+                        + transactionId + ": " + existing + " and " + header.commitSequence());
+            }
+            appendLine(content, RECORD_VERSION, Long.toString(transactionId), encodeRecord(record));
         }
-        if (!committedImage.isEmpty()) {
-            appendLine(content, RECORD_COMMIT, Long.toString(syntheticTransactionId), Long.toString(syntheticCommitSequence));
+        for (Map.Entry<Long, MvccCommitSequence> entry : commitSequencesByTransaction.entrySet()) {
+            appendLine(content, RECORD_COMMIT,
+                    Long.toString(entry.getKey()),
+                    Long.toString(entry.getValue().value()));
         }
         writeAtomically(content.toString().getBytes(StandardCharsets.UTF_8));
     }

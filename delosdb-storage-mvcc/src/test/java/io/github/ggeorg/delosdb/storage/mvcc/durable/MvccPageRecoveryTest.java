@@ -227,7 +227,7 @@ final class MvccPageRecoveryTest {
         MvccPageMutationLog log = MvccPageMutationLog.open(tempDir.resolve("table.dmvcc.log"));
         log.appendVersion(10L, version("dead:1", "old", 1L, 1L, 0L, 10L, 0L, 0));
         log.appendAbort(10L);
-        MvccVersionRecord committed = version("account:1", "alpha", 2L, 2L, 0L, 11L, 1L, 0);
+        MvccVersionRecord committed = committedVersion("account:1", "alpha", 2L, 2L, 0L, 11L, 1L, 12L, 0);
         log.rewriteCheckpoint(List.of(committed));
 
         try (PageBackedMvccTableStore store = PageBackedMvccTableStore.open(tableFile)) {

@@ -36,6 +36,12 @@ public final class PageVolumeMvccPaths {
         return pageFile.resolveSibling(pageFile.getFileName() + ".pagemut");
     }
 
+
+    public static Path transactionOutcomeLogFileFor(Path pageFile) {
+        Objects.requireNonNull(pageFile, "pageFile");
+        return pageFile.resolveSibling(pageFile.getFileName() + ".txoutcome");
+    }
+
     public static Path writeAheadLogFile(Path databaseDirectory, String storageId) {
         Path directory = inheritedStoreDirectory(databaseDirectory);
         if (directory == null) {
