@@ -233,12 +233,16 @@ tasks.register('generateClassSizeCatalog') {
     def outputFile = generatedSourceDir(moduleNames.runtimeApi).map {
         it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
     }
+    def storageApiClassDir = project(':delosdb-storage-api').layout.buildDirectory.dir('classes/storage-api')
+    def derbyStoreApiClassDir = project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
+    def storageDerbyClassDir = project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
+    def storageBridgeClassDir = project(':delosdb-storage-bridge').layout.buildDirectory.dir('classes/main')
     inputs.dir(moduleClassDir(moduleNames.engine))
     inputs.dir(moduleClassDir(moduleNames.runtimeApi))
-    inputs.dir(project(':delosdb-storage-api').layout.buildDirectory.dir('classes/storage-api'))
-    inputs.dir(project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api'))
-    inputs.dir(project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main'))
-    inputs.dir(project(':delosdb-storage-bridge').layout.buildDirectory.dir('classes/main'))
+    inputs.dir(storageApiClassDir)
+    inputs.dir(derbyStoreApiClassDir)
+    inputs.dir(storageDerbyClassDir)
+    inputs.dir(storageBridgeClassDir)
     outputs.file(outputFile)
     doLast {
         def target = outputFile.get().asFile
@@ -247,10 +251,10 @@ tasks.register('generateClassSizeCatalog') {
                 moduleClassDir(moduleNames.commons),
                 moduleClassDir(moduleNames.runtimeApi),
                 moduleClassDir(moduleNames.engine),
-                project(':delosdb-storage-api').layout.buildDirectory.dir('classes/storage-api'),
-                project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api'),
-                project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main'),
-                project(':delosdb-storage-bridge').layout.buildDirectory.dir('classes/main')
+                storageApiClassDir,
+                derbyStoreApiClassDir,
+                storageDerbyClassDir,
+                storageBridgeClassDir
         ]) {
             systemProperty 'WS', projectDir.absolutePath
             systemProperty 'classDir', moduleClassDir(moduleNames.engine).get().asFile.absolutePath

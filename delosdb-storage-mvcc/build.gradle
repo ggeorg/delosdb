@@ -21,6 +21,7 @@ java {
 dependencies {
     implementation project(':delosdb-versioned-storage-spi')
     implementation project(':delosdb-commons')
+    implementation project(':delosdb-runtime-api')
     api project(':delosdb-storage-api')
     api project(':delosdb-storage-io')
     testImplementation project(':delosdb-versioned-storage-spi')
@@ -102,7 +103,7 @@ tasks.register('runMvccCoreModelTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -128,7 +129,7 @@ tasks.register('runMvccTableScanModelTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -154,7 +155,7 @@ tasks.register('runVersionedStorageProviderSpiTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -180,7 +181,7 @@ tasks.register('runMvccRecoveryLogTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -206,7 +207,7 @@ tasks.register('runDelosMvccProviderOwnedIndexTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -232,7 +233,7 @@ tasks.register('runDelosMvccSnapshotIsolationTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -258,7 +259,7 @@ tasks.register('runMvccSnapshotVisibilityTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -283,7 +284,7 @@ tasks.register('runMvccKernelReviewCloseoutTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -309,7 +310,7 @@ tasks.register('runMvccHistoryPrunedSafetyTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -335,7 +336,7 @@ tasks.register('runMvccVacuumWatermarkTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -361,7 +362,7 @@ tasks.register('runMvccCommandSequenceTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -387,7 +388,7 @@ tasks.register('runMvccStatementSnapshotVisibilityTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -414,7 +415,7 @@ tasks.register('runMvccTransactionOutcomeLogTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -440,7 +441,7 @@ tasks.register('runMvccUnresolvedOutcomeRecoveryTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -467,7 +468,7 @@ tasks.register('runMvccCapturedVisibilitySnapshotTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -492,7 +493,7 @@ tasks.register('runDelosMvccCleanupVacuumTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -518,7 +519,7 @@ tasks.register('runDelosMvccRecoveryHardeningTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -544,7 +545,7 @@ tasks.register('runDelosMvccWriteConflictTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -571,7 +572,7 @@ tasks.register('runDelosMvccIndexStatsTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -597,7 +598,7 @@ tasks.register('runDelosMvccOrderedIndexRangeTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -624,7 +625,7 @@ tasks.register('runDelosMvccOrderedIndexOrderByTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -650,7 +651,7 @@ tasks.register('runMvccPageFileTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -676,7 +677,7 @@ tasks.register('runMvccVersionRecordCodecTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -703,7 +704,7 @@ tasks.register('runMvccOverflowPayloadTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -729,7 +730,7 @@ tasks.register('runPageBackedMvccTableTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -756,7 +757,7 @@ tasks.register('runMvccPageRecoveryTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -782,7 +783,7 @@ tasks.register('runMvccPageMutationLogContractTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -808,7 +809,7 @@ tasks.register('runMvccRecoveryBootProof', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -834,7 +835,7 @@ tasks.register('runMvccDurableIndexVisibilityTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -860,7 +861,7 @@ tasks.register('runMvccDurableIndexRecoveryTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -886,7 +887,7 @@ tasks.register('runMvccVacuumSafetyTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -911,7 +912,7 @@ tasks.register('runMvccVacuumRecoveryTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -937,7 +938,7 @@ tasks.register('runMvccConcurrencyStressTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -963,7 +964,7 @@ tasks.register('runMvccTransactionLockOrderTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -989,7 +990,7 @@ tasks.register('runMvccStoreAdapterSmoke', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -1014,7 +1015,7 @@ tasks.register('runMvccSqlOptInSmoke', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -1040,7 +1041,7 @@ tasks.register('runMvccSqlRecoverySmoke', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -1065,7 +1066,7 @@ tasks.register('runMvccSqlIndexVisibilitySmoke', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -1093,7 +1094,7 @@ tasks.register('runMvccStaticAnalysisHardeningTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }

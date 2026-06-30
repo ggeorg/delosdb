@@ -377,7 +377,7 @@ tasks.register('runDelosServerSchedulerTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -413,7 +413,7 @@ tasks.register('runDerbyLangSuite', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -461,7 +461,7 @@ tasks.register('runWalRecoveryArchitectureProofTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -495,7 +495,7 @@ tasks.register('runTransactionLockingRecoveryProofTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -531,7 +531,7 @@ tasks.register('runBTreeSearchRefactorProofTests', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -565,7 +565,7 @@ tasks.register('runBTreeIndexConcurrencyArchitectureProofTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -600,7 +600,7 @@ tasks.register('runVersionCleanupArchitectureProofTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -633,7 +633,7 @@ tasks.register('runExternalSortJvmPolicyProofTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
@@ -720,7 +720,7 @@ tasks.register('runDelosMvccSqlIntegrationTest', Test) {
 
     testLogging {
         events 'failed'
-        exceptionFormat 'full'
+        exceptionFormat = 'full'
         showStandardStreams = true
     }
 }
