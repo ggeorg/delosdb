@@ -279,6 +279,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public synchronized long pageCacheMaxPageCountForTesting() {
+        return pageVolumeStateStore.pageCacheMaxPageCount();
+    }
+
+    @Override
     public synchronized long pageCacheSizeForTesting() {
         return pageVolumeStateStore.pageCacheSize();
     }
@@ -296,6 +301,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public synchronized long pageCacheWriteCountForTesting() {
         return pageVolumeStateStore.pageCacheWriteCount();
+    }
+
+    @Override
+    public synchronized long pageCacheEvictionCountForTesting() {
+        return pageVolumeStateStore.pageCacheEvictionCount();
     }
 
     @Override

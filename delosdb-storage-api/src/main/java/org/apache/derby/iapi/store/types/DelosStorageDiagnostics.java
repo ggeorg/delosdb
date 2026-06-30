@@ -64,6 +64,8 @@ public interface DelosStorageDiagnostics {
 
     long reusablePageCountForTesting(int segment, long containerId);
 
+    long pageCacheMaxPageCountForTesting(int segment, long containerId);
+
     long pageCacheSizeForTesting(int segment, long containerId);
 
     long pageCacheHitCountForTesting(int segment, long containerId);
@@ -71,6 +73,8 @@ public interface DelosStorageDiagnostics {
     long pageCacheMissCountForTesting(int segment, long containerId);
 
     long pageCacheWriteCountForTesting(int segment, long containerId);
+
+    long pageCacheEvictionCountForTesting(int segment, long containerId);
 
     long pageCacheInvalidationCountForTesting(int segment, long containerId);
 

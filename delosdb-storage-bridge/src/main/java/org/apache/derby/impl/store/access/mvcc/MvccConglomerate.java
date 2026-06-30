@@ -374,6 +374,10 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).reusablePageCountForTesting();
     }
 
+    static long pageCacheMaxPageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheMaxPageCountForTesting();
+    }
+
     static long pageCacheSizeForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageCacheSizeForTesting();
     }
@@ -388,6 +392,10 @@ public final class MvccConglomerate
 
     static long pageCacheWriteCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageCacheWriteCountForTesting();
+    }
+
+    static long pageCacheEvictionCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheEvictionCountForTesting();
     }
 
     static long pageCacheInvalidationCountForDiagnostics(int segment, long containerId) {

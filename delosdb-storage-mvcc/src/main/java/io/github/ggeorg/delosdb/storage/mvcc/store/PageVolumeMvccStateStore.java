@@ -224,6 +224,10 @@ public final class PageVolumeMvccStateStore<T> {
         return enabled() ? table.reusablePageCount() : 0L;
     }
 
+    public long pageCacheMaxPageCount() {
+        return enabled() ? table.pageCacheMaxPageCount() : 0L;
+    }
+
     public long pageCacheSize() {
         return enabled() ? table.pageCacheSize() : 0L;
     }
@@ -238,6 +242,10 @@ public final class PageVolumeMvccStateStore<T> {
 
     public long pageCacheWriteCount() {
         return enabled() ? table.pageCacheWriteCount() : 0L;
+    }
+
+    public long pageCacheEvictionCount() {
+        return enabled() ? table.pageCacheEvictionCount() : 0L;
     }
 
     public long pageCacheInvalidationCount() {

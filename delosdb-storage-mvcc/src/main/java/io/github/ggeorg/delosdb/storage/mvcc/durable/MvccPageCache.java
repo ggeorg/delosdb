@@ -28,6 +28,7 @@ final class MvccPageCache {
     private long hits;
     private long misses;
     private long writes;
+    private long evictions;
     private long invalidations;
 
     MvccPageCache() {
@@ -44,7 +45,7 @@ final class MvccPageCache {
             protected boolean removeEldestEntry(Map.Entry<Long, byte[]> eldest) {
                 boolean remove = size() > MvccPageCache.this.maxPages;
                 if (remove) {
-                    invalidations++;
+                    evictions++;
                 }
                 return remove;
             }
@@ -84,9 +85,17 @@ final class MvccPageCache {
     }
 
     synchronized Snapshot snapshot() {
-        return new Snapshot(pages.size(), hits, misses, writes, invalidations);
+        return new Snapshot(maxPages, pages.size(), hits, misses, writes, evictions, invalidations);
     }
 
-    record Snapshot(long size, long hits, long misses, long writes, long invalidations) {
+
+    record Snapshot(
+            long maxPages,
+            long size,
+            long hits,
+            long misses,
+            long writes,
+            long evictions,
+            long invalidations) {
     }
 }

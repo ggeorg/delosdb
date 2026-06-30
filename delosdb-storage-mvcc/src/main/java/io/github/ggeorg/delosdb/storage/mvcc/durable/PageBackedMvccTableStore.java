@@ -168,6 +168,10 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return reusablePageIds.size();
     }
 
+    public synchronized long pageCacheMaxPageCount() {
+        return pageCache.snapshot().maxPages();
+    }
+
     public synchronized long pageCacheSize() {
         return pageCache.snapshot().size();
     }
@@ -182,6 +186,10 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     public synchronized long pageCacheWriteCount() {
         return pageCache.snapshot().writes();
+    }
+
+    public synchronized long pageCacheEvictionCount() {
+        return pageCache.snapshot().evictions();
     }
 
     public synchronized long pageCacheInvalidationCount() {

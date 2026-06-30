@@ -182,6 +182,10 @@ final class MvccConglomerateState {
         return diagnostics.reusablePageCountForTesting();
     }
 
+    synchronized long pageCacheMaxPageCountForTesting() {
+        return diagnostics.pageCacheMaxPageCountForTesting();
+    }
+
     synchronized long pageCacheSizeForTesting() {
         return diagnostics.pageCacheSizeForTesting();
     }
@@ -196,6 +200,10 @@ final class MvccConglomerateState {
 
     synchronized long pageCacheWriteCountForTesting() {
         return diagnostics.pageCacheWriteCountForTesting();
+    }
+
+    synchronized long pageCacheEvictionCountForTesting() {
+        return diagnostics.pageCacheEvictionCountForTesting();
     }
 
     synchronized long pageCacheInvalidationCountForTesting() {

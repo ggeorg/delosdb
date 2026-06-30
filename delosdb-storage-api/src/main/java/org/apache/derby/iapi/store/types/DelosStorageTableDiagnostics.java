@@ -48,6 +48,8 @@ public interface DelosStorageTableDiagnostics {
 
     long reusablePageCountForTesting();
 
+    long pageCacheMaxPageCountForTesting();
+
     long pageCacheSizeForTesting();
 
     long pageCacheHitCountForTesting();
@@ -55,6 +57,8 @@ public interface DelosStorageTableDiagnostics {
     long pageCacheMissCountForTesting();
 
     long pageCacheWriteCountForTesting();
+
+    long pageCacheEvictionCountForTesting();
 
     long pageCacheInvalidationCountForTesting();
 
