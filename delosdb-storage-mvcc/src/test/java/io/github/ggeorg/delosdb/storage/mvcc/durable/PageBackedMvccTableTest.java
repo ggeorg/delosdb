@@ -181,6 +181,45 @@ final class PageBackedMvccTableTest {
         assertEquals(reusablePagesAfterVacuum, reconciled.reusablePageIds().size());
     }
 
+
+    @Test
+    void corruptReusablePageIndexIsRebuiltFromEmptyPageImagesOnReopen() throws Exception {
+        Path tableFile = tempDir.resolve("corrupt-free-index-table.mvccp");
+        Path reusablePageIndexFile = PageBackedMvccTable.reusablePageIndexPath(tableFile);
+        String largeValue = "x".repeat(2400);
+        long pageCountAfterVacuum;
+        long reusablePagesAfterVacuum;
+
+        try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile)) {
+            table.insertCommitted("account:1", largeValue, 1L, 1L);
+            table.insertCommitted("account:2", largeValue, 1L, 1L);
+            for (int round = 2; round <= 7; round++) {
+                table.updateCommitted("account:1", largeValue + round, round, round);
+                table.updateCommitted("account:2", largeValue + round, round, round);
+            }
+
+            table.vacuum(MvccVacuumPlan.through(Long.MAX_VALUE));
+            pageCountAfterVacuum = table.pageCount();
+            reusablePagesAfterVacuum = table.reusablePageCount();
+            assertTrue(reusablePagesAfterVacuum > 0L, "vacuum should mark whole pages reusable");
+        }
+
+        corruptLastByte(reusablePageIndexFile);
+
+        try (PageBackedMvccTable reopened = PageBackedMvccTable.open(tableFile)) {
+            assertEquals(pageCountAfterVacuum, reopened.pageCount());
+            assertEquals(reusablePagesAfterVacuum, reopened.reusablePageCount(),
+                    "open should rebuild a corrupt reusable-page index from empty page images");
+            assertEquals(largeValue + 7, reopened.read("account:1", new MvccCommitSequence(7L)).orElseThrow());
+            assertEquals(largeValue + 7, reopened.read("account:2", new MvccCommitSequence(7L)).orElseThrow());
+            reopened.validateConsistency().assertValid();
+        }
+
+        MvccReusablePageIndexStore.Snapshot repaired = MvccReusablePageIndexStore.open(reusablePageIndexFile).read();
+        assertEquals(pageCountAfterVacuum, repaired.pageCount());
+        assertEquals(reusablePagesAfterVacuum, repaired.reusablePageIds().size());
+    }
+
     @Test
     void corruptPayloadIsRejectedOnOpen() throws Exception {
         Path tableFile = tempDir.resolve("table.mvccp");
@@ -196,6 +235,16 @@ final class PageBackedMvccTableTest {
         Files.write(tableFile, bytes);
 
         assertThrows(IllegalArgumentException.class, () -> PageBackedMvccTable.open(tableFile));
+    }
+
+
+    private static void corruptLastByte(Path path) throws Exception {
+        byte[] bytes = Files.readAllBytes(path);
+        if (bytes.length == 0) {
+            throw new AssertionError("cannot corrupt empty file: " + path);
+        }
+        bytes[bytes.length - 1] ^= 0x01;
+        Files.write(path, bytes);
     }
 
     private static int indexOf(byte[] haystack, byte[] needle) {

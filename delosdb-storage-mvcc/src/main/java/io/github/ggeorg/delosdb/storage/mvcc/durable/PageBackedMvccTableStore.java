@@ -323,10 +323,10 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         if (!reusablePageIndexStore.exists()) {
             return emptyPages;
         }
-        MvccReusablePageIndexStore.Snapshot indexed = reusablePageIndexStore.read();
+        MvccReusablePageIndexStore.Snapshot indexed = readReusablePageIndexIfValid(reusablePageIndexStore);
         NavigableSet<Long> reconciled = new TreeSet<>();
         long pageCount = pageVolume.pageCount();
-        if (indexed.pageCount() == pageCount) {
+        if (indexed != null && indexed.pageCount() == pageCount) {
             for (Long pageNumber : indexed.reusablePageIds()) {
                 if (emptyPages.contains(pageNumber)) {
                     reconciled.add(pageNumber);
@@ -335,6 +335,15 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         }
         reconciled.addAll(emptyPages);
         return reconciled;
+    }
+
+    private static MvccReusablePageIndexStore.Snapshot readReusablePageIndexIfValid(
+            MvccReusablePageIndexStore reusablePageIndexStore) throws IOException {
+        try {
+            return reusablePageIndexStore.read();
+        } catch (IllegalStateException invalidIndex) {
+            return null;
+        }
     }
 
     private static NavigableSet<Long> scanEmptyPageIds(DelosPageVolume pageVolume) throws IOException {

@@ -114,6 +114,7 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
         }
 
         shutdownDatabase(databaseName);
+        corruptLastByte(reusablePageIndexFile);
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_PAGE_REUSE_T");
@@ -125,6 +126,8 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
                     reusablePageIndexFile, diagnostics.reusablePageIndexFileForTesting(0, reopenedContainerId));
             assertTrue("reopened reusable-page allocation index should exist",
                     Files.exists(diagnostics.reusablePageIndexFileForTesting(0, reopenedContainerId)));
+            assertTrue("reopened reusable-page allocation index should be repaired after checksum damage",
+                    Files.size(diagnostics.reusablePageIndexFileForTesting(0, reopenedContainerId)) > 0L);
             diagnostics.assertConsistentForTesting(0, reopenedContainerId);
             assertRows(reopened,
                     "select id, length(payload) from mvcc_page_reuse_t order by id",
@@ -132,6 +135,16 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
                     "2|2400",
                     "3|512");
         }
+    }
+
+
+    private static void corruptLastByte(Path path) throws Exception {
+        byte[] bytes = Files.readAllBytes(path);
+        if (bytes.length == 0) {
+            throw new AssertionError("cannot corrupt empty file: " + path);
+        }
+        bytes[bytes.length - 1] ^= 0x01;
+        Files.write(path, bytes);
     }
 
     private static void insertPayload(Connection connection, int id, String payload) throws Exception {
