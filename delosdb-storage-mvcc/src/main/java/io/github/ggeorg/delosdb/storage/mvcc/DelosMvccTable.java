@@ -21,7 +21,6 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableStats;
-import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictException;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.DurableMvccSqlRowCodec;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowPayload;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccTable;
@@ -267,8 +266,8 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
         return storageLog.isEnabled() && !loggingSuppressed.getAsBoolean();
     }
 
-    private static VersionedWriteConflictException versionedWriteConflict(MvccWriteConflictException e) {
-        return new VersionedWriteConflictException(e.getMessage(), e);
+    private static RuntimeException versionedWriteConflict(MvccWriteConflictException e) {
+        return VersionedTable.writeConflict(e.getMessage(), e);
     }
 
     private DelosLogSequenceNumber appendInsertVersionIfEnabled(DelosMvccTxContext context, K key) {

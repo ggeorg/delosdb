@@ -7,6 +7,14 @@ import java.util.Optional;
  * Minimal table contract for an experimental versioned storage provider.
  */
 public interface VersionedTable<K, V> {
+    /**
+     * Builds the provider-neutral conflict signal without forcing MVCC adapter
+     * code to import the quarantined concrete exception type directly.
+     */
+    static RuntimeException writeConflict(String message, Throwable cause) {
+        return new VersionedWriteConflictException(message, cause);
+    }
+
     VersionedTableMetadata metadata();
 
     Optional<V> read(K key, TxView view);
