@@ -91,8 +91,16 @@ final class DrdaExtdtaStreamMaterializer {
                 if (memory != null && byteCount + bytesRead > threshold) {
                     spoolFile = Files.createTempFile(
                             "delosdb-drda-extdta-", ".tmp");
-                    OutputStream fileSink = Files.newOutputStream(spoolFile);
-                    memory.writeTo(fileSink);
+                    OutputStream fileSink = null;
+                    try {
+                        fileSink = Files.newOutputStream(spoolFile);
+                        memory.writeTo(fileSink);
+                    } catch (IOException | RuntimeException e) {
+                        closeQuietly(fileSink);
+                        deleteQuietly(spoolFile);
+                        spoolFile = null;
+                        throw e;
+                    }
                     memory = null;
                     sink = fileSink;
                 }

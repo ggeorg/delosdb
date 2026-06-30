@@ -1091,9 +1091,10 @@ public final class NetworkServerControlImpl {
                         // sessionTable and closing the sessions' socket
                         // streams.
 
-                        // Unload driver, then restart the server.
-                        cloudscapeDriver = null;    // so it gets collected.
-                        System.gc();
+                        // Unload driver, then restart the server. The old
+                        // server forced a JVM-wide GC here, but restart cleanup
+                        // should not impose a global collection on the process.
+                        cloudscapeDriver = null;    // so it can be collected.
                     }
 
                     // start the server.

@@ -48,7 +48,6 @@ public void run () {
     public static String getMemInfo() {
     Runtime rt = null;
     rt = Runtime.getRuntime();
-    rt.gc();
     return "total memory: " 
         + rt.totalMemory()
         + " free: "
@@ -64,7 +63,6 @@ public void run () {
     public static long freeMemory() {
         
         Runtime rt =  Runtime.getRuntime();
-        rt.gc();
         return rt.freeMemory();
     }
 

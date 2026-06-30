@@ -8899,15 +8899,17 @@ class DRDAConnThread extends Thread {
             //       <statusByteExpected>/b<byteLength>
             sb.append("t").append(drdaType).append("/i").append(index).
                     append("/").append(streamLOB).
-                    append("/").append(encoding).append("/").
-                    append(stream.readStatusByte). append("/b");
+                    append("/").append(encoding).append("/");
             if (stream == null) {
-                sb.append("NULL");
-            } else if (stream.isLayerBStream()) {
-                sb.append("UNKNOWN_LENGTH");
+                sb.append("NO_STATUS/bNULL");
             } else {
-                sb.append(
-                        ((StandardEXTDTAReaderInputStream)stream).getLength());
+                sb.append(stream.readStatusByte).append("/b");
+                if (stream.isLayerBStream()) {
+                    sb.append("UNKNOWN_LENGTH");
+                } else {
+                    sb.append(
+                            ((StandardEXTDTAReaderInputStream)stream).getLength());
+                }
             }
             trace(sb.toString());
         }
@@ -8920,7 +8922,6 @@ class DRDAConnThread extends Thread {
     public static void showmem() {
         Runtime rt = Runtime.getRuntime();
         Date d = new Date();
-        rt.gc();
         System.out.println("total memory: "
                            + rt.totalMemory()
                            + " free: "
