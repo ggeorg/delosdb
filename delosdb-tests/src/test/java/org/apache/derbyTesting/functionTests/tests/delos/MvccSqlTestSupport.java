@@ -135,7 +135,7 @@ abstract class MvccSqlTestSupport extends TestCase {
         try {
             connection.rollback();
         } catch (SQLException e) {
-            if (!"08003".equals(e.getSQLState())) {
+            if (!"08003".equals(e.getSQLState()) && !"X0Y67".equals(e.getSQLState())) {
                 throw e;
             }
         }

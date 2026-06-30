@@ -32,6 +32,7 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.access.SpaceInfo;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
+import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreValueOperations;
@@ -53,6 +54,7 @@ public final class MvccConglomerateController implements ConglomerateController 
     private boolean closed;
     private DelosStorageTransaction writer;
     private MvccStoreAccessTransactionRegistry.Writer registeredWriter;
+    private boolean writerBorrowedFromRegistry;
 
     MvccConglomerateController(
             MvccConglomerate conglomerate,
@@ -110,7 +112,10 @@ public final class MvccConglomerateController implements ConglomerateController 
             throws StandardException {
         ensureOpen();
         MvccRowLocation location = MvccRowLocation.from(loc);
-        DelosStorageTransaction reader = state.beginTransaction();
+        DelosStorageTransaction activeWriter = DelosStorageTransactionRegistry.activeWriterTransaction(
+                transactionManager,
+                state.table());
+        DelosStorageTransaction reader = activeWriter == null ? state.beginTransaction() : activeWriter;
         try {
             Optional<StoreDataValue[]> visible = state.read(
                     location.rowId(),
@@ -121,7 +126,9 @@ public final class MvccConglomerateController implements ConglomerateController 
             copyRow(visible.get(), destRow, validColumns);
             return true;
         } finally {
-            state.abort(reader);
+            if (activeWriter == null) {
+                state.abort(reader);
+            }
         }
     }
 
@@ -227,6 +234,16 @@ public final class MvccConglomerateController implements ConglomerateController 
 
     private DelosStorageTransaction writer() {
         if (writer == null) {
+            if (completeWithDerbyTransaction) {
+                DelosStorageTransaction activeWriter = DelosStorageTransactionRegistry.activeWriterTransaction(
+                        transactionManager,
+                        state.table());
+                if (activeWriter != null) {
+                    writer = activeWriter;
+                    writerBorrowedFromRegistry = true;
+                    return writer;
+                }
+            }
             writer = state.beginTransaction();
             if (completeWithDerbyTransaction) {
                 registeredWriter = MvccStoreAccessTransactionRegistry.register(
@@ -241,6 +258,11 @@ public final class MvccConglomerateController implements ConglomerateController 
 
     private void commitWriterIfActive() {
         if (writer != null) {
+            if (writerBorrowedFromRegistry) {
+                writer = null;
+                writerBorrowedFromRegistry = false;
+                return;
+            }
             if (registeredWriter != null) {
                 registeredWriter.commit();
                 MvccStoreAccessTransactionRegistry.complete(registeredWriter);
@@ -255,6 +277,11 @@ public final class MvccConglomerateController implements ConglomerateController 
 
     private void abortWriterIfActive() {
         if (writer != null) {
+            if (writerBorrowedFromRegistry) {
+                writer = null;
+                writerBorrowedFromRegistry = false;
+                return;
+            }
             if (registeredWriter != null) {
                 registeredWriter.abort();
                 MvccStoreAccessTransactionRegistry.complete(registeredWriter);

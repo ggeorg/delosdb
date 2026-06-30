@@ -57,6 +57,7 @@ public final class MvccScanController implements ScanManager {
     private final boolean hold;
     private final boolean completeWithDerbyTransaction;
     private final boolean transactionScopedReader;
+    private final boolean readerBorrowedFromWriter;
     private final DelosStorageTransactionRegistry.Reader registeredReader;
     private final DelosStorageTransaction reader;
     private final DelosStorageSnapshot snapshot;
@@ -69,6 +70,7 @@ public final class MvccScanController implements ScanManager {
     private boolean closed;
     private DelosStorageTransaction writer;
     private MvccStoreAccessTransactionRegistry.Writer registeredWriter;
+    private boolean writerBorrowedFromRegistry;
     private long estimatedRowCount;
 
     MvccScanController(
@@ -88,15 +90,27 @@ public final class MvccScanController implements ScanManager {
                 == TransactionController.OPENMODE_FORUPDATE;
         this.scanColumnList = scanColumnList;
         this.qualifiers = qualifiers;
-        this.transactionScopedReader = usesTransactionScopedSnapshot(isolationLevel);
-        if (transactionScopedReader) {
-            this.registeredReader = DelosStorageTransactionRegistry.reader(transactionManager, state.table());
-            this.reader = registeredReader.transaction();
-            this.snapshot = registeredReader.snapshot();
-        } else {
+        DelosStorageTransaction activeWriter = DelosStorageTransactionRegistry.activeWriterTransaction(
+                transactionManager,
+                state.table());
+        if (activeWriter != null) {
+            this.transactionScopedReader = false;
+            this.readerBorrowedFromWriter = true;
             this.registeredReader = null;
-            this.reader = state.beginTransaction();
+            this.reader = activeWriter;
             this.snapshot = state.snapshot(reader);
+        } else {
+            this.transactionScopedReader = usesTransactionScopedSnapshot(isolationLevel);
+            this.readerBorrowedFromWriter = false;
+            if (transactionScopedReader) {
+                this.registeredReader = DelosStorageTransactionRegistry.reader(transactionManager, state.table());
+                this.reader = registeredReader.transaction();
+                this.snapshot = registeredReader.snapshot();
+            } else {
+                this.registeredReader = null;
+                this.reader = state.beginTransaction();
+                this.snapshot = state.snapshot(reader);
+            }
         }
         try {
             this.scan = state.openScan(snapshot);
@@ -441,6 +455,9 @@ public final class MvccScanController implements ScanManager {
     }
 
     private void closeReaderIfStatementScoped() {
+        if (readerBorrowedFromWriter) {
+            return;
+        }
         if (!transactionScopedReader) {
             state.abort(reader);
         }
@@ -453,6 +470,16 @@ public final class MvccScanController implements ScanManager {
 
     private DelosStorageTransaction writer() {
         if (writer == null) {
+            if (completeWithDerbyTransaction) {
+                DelosStorageTransaction activeWriter = DelosStorageTransactionRegistry.activeWriterTransaction(
+                        transactionManager,
+                        state.table());
+                if (activeWriter != null) {
+                    writer = activeWriter;
+                    writerBorrowedFromRegistry = true;
+                    return writer;
+                }
+            }
             writer = state.beginTransaction();
             if (completeWithDerbyTransaction) {
                 registeredWriter = MvccStoreAccessTransactionRegistry.register(
@@ -467,6 +494,11 @@ public final class MvccScanController implements ScanManager {
 
     private void commitWriterIfActive() {
         if (writer != null) {
+            if (writerBorrowedFromRegistry) {
+                writer = null;
+                writerBorrowedFromRegistry = false;
+                return;
+            }
             if (registeredWriter != null) {
                 registeredWriter.commit();
                 MvccStoreAccessTransactionRegistry.complete(registeredWriter);
@@ -481,6 +513,11 @@ public final class MvccScanController implements ScanManager {
 
     private void abortWriterIfActive() {
         if (writer != null) {
+            if (writerBorrowedFromRegistry) {
+                writer = null;
+                writerBorrowedFromRegistry = false;
+                return;
+            }
             if (registeredWriter != null) {
                 registeredWriter.abort();
                 MvccStoreAccessTransactionRegistry.complete(registeredWriter);

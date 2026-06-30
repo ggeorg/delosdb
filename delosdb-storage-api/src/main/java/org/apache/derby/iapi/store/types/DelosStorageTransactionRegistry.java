@@ -88,6 +88,21 @@ public final class DelosStorageTransactionRegistry {
         });
     }
 
+    public static synchronized DelosStorageTransaction activeWriterTransaction(
+            Object ownerTransaction,
+            DelosStorageTable table) {
+        List<Writer> writers = WRITERS.get(ownerTransaction);
+        if (writers == null || writers.isEmpty()) {
+            return null;
+        }
+        for (Writer writer : writers) {
+            if (!writer.completed && writer.table == table) {
+                return writer.transaction;
+            }
+        }
+        return null;
+    }
+
     public static void commit(Object ownerTransaction) {
         clearSavepoints(ownerTransaction);
         for (Writer writer : drainWriters(ownerTransaction)) {
