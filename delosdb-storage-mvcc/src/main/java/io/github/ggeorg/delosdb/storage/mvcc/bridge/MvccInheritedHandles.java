@@ -39,7 +39,8 @@ final class MvccInheritedHandles {
             this.nativeTransaction = Objects.requireNonNull(nativeTransaction, "nativeTransaction");
         }
 
-        MvccTransaction nativeTransaction() {
+        @Override
+        public MvccTransaction nativeTransaction() {
             return nativeTransaction;
         }
 
