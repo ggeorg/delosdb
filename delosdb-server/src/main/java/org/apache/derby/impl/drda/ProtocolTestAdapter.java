@@ -315,6 +315,105 @@ public class ProtocolTestAdapter {
 
     /* Utility methods */
 
+
+
+    /**
+     * Adapter for white-box tests of the DRDA session scheduler.
+     *
+     * <p>The scheduler is intentionally package-private because it is an
+     * implementation seam, not a public API. Tests reach it through this
+     * existing protocol-test adapter instead of exporting more server internals.
+     * </p>
+     */
+    public static final class SchedulerProbe {
+        private final DrdaSessionScheduler scheduler = new DrdaSessionScheduler();
+        private final java.util.Map<Integer, Session> sessions =
+                new java.util.HashMap<Integer, Session>();
+        private volatile boolean shutdown;
+
+        public boolean hasIdleThreadForNewSession() {
+            return scheduler.hasIdleThreadForNewSession();
+        }
+
+        public void enqueue(int connectionNumber) throws Exception {
+            scheduler.enqueue(session(connectionNumber));
+        }
+
+        public int nextSessionId(Integer currentConnectionNumber)
+                throws Exception {
+            Session current = currentConnectionNumber == null
+                    ? null
+                    : session(currentConnectionNumber.intValue());
+            Session next = scheduler.nextSession(current, () -> shutdown);
+            return next == null ? -1 : next.getConnNum();
+        }
+
+        public int waitingSessionCount() {
+            return scheduler.waitingSessionCount();
+        }
+
+        public int idleThreadCount() {
+            return scheduler.idleThreadCountForTesting();
+        }
+
+        public int[] snapshotQueuedSessionIds() {
+            return sessionIds(scheduler.snapshotQueuedSessions());
+        }
+
+        public int[] drainQueuedSessionIds() {
+            return sessionIds(scheduler.drainQueuedSessions());
+        }
+
+        public void requestShutdown() {
+            shutdown = true;
+            scheduler.wakeAll();
+        }
+
+        public void wakeAll() {
+            scheduler.wakeAll();
+        }
+
+        private Session session(int connectionNumber) throws Exception {
+            Integer key = Integer.valueOf(connectionNumber);
+            Session session = sessions.get(key);
+            if (session == null) {
+                session = new Session(
+                        null,
+                        connectionNumber,
+                        new ProbeSocket(),
+                        null,
+                        false);
+                sessions.put(key, session);
+            }
+            return session;
+        }
+
+        private static int[] sessionIds(java.util.List<Session> sessions) {
+            int[] ids = new int[sessions.size()];
+            for (int i = 0; i < sessions.size(); i++) {
+                ids[i] = sessions.get(i).getConnNum();
+            }
+            return ids;
+        }
+    }
+
+    private static final class ProbeSocket extends Socket {
+        private final java.io.InputStream input =
+                new java.io.ByteArrayInputStream(new byte[0]);
+        private final java.io.ByteArrayOutputStream output =
+                new java.io.ByteArrayOutputStream();
+
+        @Override
+        public java.io.InputStream getInputStream() {
+            return input;
+        }
+
+        @Override
+        public java.io.OutputStream getOutputStream() {
+            return output;
+        }
+    }
+
     /**
      * Wraps a protocol exception in a generic I/O exception, since
      * {@code DRDAProtocolException} is package private.

@@ -53,16 +53,19 @@ final class DrdaSessionScheduler {
             return null;
         }
 
+        boolean countedAsIdle = false;
         try {
             if (runQueue.size() == 0) {
                 if (currentSession == null) {
                     while (runQueue.size() == 0) {
                         idleThreads++;
+                        countedAsIdle = true;
                         wait();
+                        idleThreads--;
+                        countedAsIdle = false;
                         if (shutdownRequested.getAsBoolean()) {
                             return null;
                         }
-                        idleThreads--;
                     }
                 } else {
                     return currentSession;
@@ -75,9 +78,11 @@ final class DrdaSessionScheduler {
             }
             return next;
         } catch (InterruptedException e) {
-            // Preserve the inherited scheduler accounting: a waiting thread is
-            // going away, so it no longer counts as available for assignment.
-            idleThreads--;
+            // Preserve the inherited scheduler behavior: a waiting thread is
+            // going away and should no longer count as available.
+            if (countedAsIdle) {
+                idleThreads--;
+            }
             return null;
         }
     }
@@ -94,6 +99,10 @@ final class DrdaSessionScheduler {
 
     synchronized int waitingSessionCount() {
         return runQueue.size();
+    }
+
+    synchronized int idleThreadCountForTesting() {
+        return idleThreads;
     }
 
     synchronized void wakeAll() {
