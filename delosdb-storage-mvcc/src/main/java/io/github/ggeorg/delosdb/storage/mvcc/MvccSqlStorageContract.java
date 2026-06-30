@@ -44,8 +44,8 @@ final class MvccSqlStorageContract {
         return Collections.unmodifiableList(copy);
     }
 
-    private static UnsupportedOperationException unsupported(String component, String supportedShape) {
-        return new UnsupportedOperationException("delos_mvcc " + component
+    private static IllegalArgumentException unsupported(String component, String supportedShape) {
+        return new IllegalArgumentException("delos_mvcc " + component
                 + " currently supports " + supportedShape + " only");
     }
 }
