@@ -374,6 +374,26 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).reusablePageCountForTesting();
     }
 
+    static long pageCacheSizeForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheSizeForTesting();
+    }
+
+    static long pageCacheHitCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheHitCountForTesting();
+    }
+
+    static long pageCacheMissCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheMissCountForTesting();
+    }
+
+    static long pageCacheWriteCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheWriteCountForTesting();
+    }
+
+    static long pageCacheInvalidationCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheInvalidationCountForTesting();
+    }
+
     static int consistencyErrorCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).consistencyErrorCountForTesting();
     }

@@ -182,6 +182,26 @@ final class MvccConglomerateState {
         return diagnostics.reusablePageCountForTesting();
     }
 
+    synchronized long pageCacheSizeForTesting() {
+        return diagnostics.pageCacheSizeForTesting();
+    }
+
+    synchronized long pageCacheHitCountForTesting() {
+        return diagnostics.pageCacheHitCountForTesting();
+    }
+
+    synchronized long pageCacheMissCountForTesting() {
+        return diagnostics.pageCacheMissCountForTesting();
+    }
+
+    synchronized long pageCacheWriteCountForTesting() {
+        return diagnostics.pageCacheWriteCountForTesting();
+    }
+
+    synchronized long pageCacheInvalidationCountForTesting() {
+        return diagnostics.pageCacheInvalidationCountForTesting();
+    }
+
     synchronized int consistencyErrorCountForTesting() {
         return diagnostics.consistencyErrorCountForTesting();
     }

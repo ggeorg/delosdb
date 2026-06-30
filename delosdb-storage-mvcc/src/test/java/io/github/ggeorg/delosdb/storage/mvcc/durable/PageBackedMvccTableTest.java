@@ -108,6 +108,33 @@ final class PageBackedMvccTableTest {
     }
 
 
+
+    @Test
+    void pageCacheTracksReadsWritesAndConsistencyHits() throws Exception {
+        Path tableFile = tempDir.resolve("cache-table.mvccp");
+        try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile)) {
+            table.insertCommitted("account:1", "alpha", 1L, 1L);
+            table.insertCommitted("account:2", "beta", 2L, 2L);
+            assertTrue(table.pageCacheSize() > 0L, "append path should populate the page cache");
+            assertTrue(table.pageCacheWriteCount() > 0L, "append path should publish page writes to the cache");
+            assertTrue(table.pageCacheHitCount() > 0L, "second append should read the cached last page");
+
+            long hitsBeforeConsistency = table.pageCacheHitCount();
+            table.validateConsistency().assertValid();
+            assertTrue(table.pageCacheHitCount() > hitsBeforeConsistency,
+                    "consistency check should read pages through the cache boundary");
+        }
+
+        try (PageBackedMvccTable reopened = PageBackedMvccTable.open(tableFile)) {
+            assertTrue(reopened.pageCacheMissCount() > 0L,
+                    "reopen should hydrate durable pages through cache misses");
+            long hitsBeforeConsistency = reopened.pageCacheHitCount();
+            reopened.validateConsistency().assertValid();
+            assertTrue(reopened.pageCacheHitCount() > hitsBeforeConsistency,
+                    "reopened consistency check should hit the hydrated page cache");
+        }
+    }
+
     @Test
     void committedLargePayloadUsesOverflowPagesAndSurvivesVacuumAndReopen() throws Exception {
         Path tableFile = tempDir.resolve("overflow-table.mvccp");

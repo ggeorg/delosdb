@@ -64,6 +64,16 @@ public interface DelosStorageDiagnostics {
 
     long reusablePageCountForTesting(int segment, long containerId);
 
+    long pageCacheSizeForTesting(int segment, long containerId);
+
+    long pageCacheHitCountForTesting(int segment, long containerId);
+
+    long pageCacheMissCountForTesting(int segment, long containerId);
+
+    long pageCacheWriteCountForTesting(int segment, long containerId);
+
+    long pageCacheInvalidationCountForTesting(int segment, long containerId);
+
     int consistencyErrorCountForTesting(int segment, long containerId);
 
     String consistencySummaryForTesting(int segment, long containerId);

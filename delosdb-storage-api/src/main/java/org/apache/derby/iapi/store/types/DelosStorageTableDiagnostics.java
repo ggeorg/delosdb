@@ -48,6 +48,16 @@ public interface DelosStorageTableDiagnostics {
 
     long reusablePageCountForTesting();
 
+    long pageCacheSizeForTesting();
+
+    long pageCacheHitCountForTesting();
+
+    long pageCacheMissCountForTesting();
+
+    long pageCacheWriteCountForTesting();
+
+    long pageCacheInvalidationCountForTesting();
+
     int consistencyErrorCountForTesting();
 
     String consistencySummaryForTesting();

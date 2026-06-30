@@ -279,6 +279,31 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public synchronized long pageCacheSizeForTesting() {
+        return pageVolumeStateStore.pageCacheSize();
+    }
+
+    @Override
+    public synchronized long pageCacheHitCountForTesting() {
+        return pageVolumeStateStore.pageCacheHitCount();
+    }
+
+    @Override
+    public synchronized long pageCacheMissCountForTesting() {
+        return pageVolumeStateStore.pageCacheMissCount();
+    }
+
+    @Override
+    public synchronized long pageCacheWriteCountForTesting() {
+        return pageVolumeStateStore.pageCacheWriteCount();
+    }
+
+    @Override
+    public synchronized long pageCacheInvalidationCountForTesting() {
+        return pageVolumeStateStore.pageCacheInvalidationCount();
+    }
+
+    @Override
     public synchronized int consistencyErrorCountForTesting() {
         return pageVolumeStateStore.consistencyErrorCount();
     }

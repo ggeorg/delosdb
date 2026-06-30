@@ -118,6 +118,31 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public long pageCacheSizeForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCacheSizeForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageCacheHitCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCacheHitCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageCacheMissCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCacheMissCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageCacheWriteCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCacheWriteCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageCacheInvalidationCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCacheInvalidationCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public int consistencyErrorCountForTesting(int segment, long containerId) {
         return MvccConglomerate.consistencyErrorCountForDiagnostics(segment, containerId);
     }

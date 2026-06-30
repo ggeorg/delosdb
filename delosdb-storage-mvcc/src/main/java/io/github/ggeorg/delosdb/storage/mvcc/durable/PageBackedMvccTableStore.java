@@ -33,6 +33,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     private MvccOverflowPayloadStore overflowStore;
     private final MvccReusablePageIndexStore reusablePageIndexStore;
     private final NavigableSet<Long> reusablePageIds;
+    private final MvccPageCache pageCache;
 
     private PageBackedMvccTableStore(
             Path path,
@@ -40,7 +41,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             DelosPageVolume pageVolume,
             MvccOverflowPayloadStore overflowStore,
             MvccReusablePageIndexStore reusablePageIndexStore,
-            NavigableSet<Long> reusablePageIds) {
+            NavigableSet<Long> reusablePageIds,
+            MvccPageCache pageCache) {
         this.path = Objects.requireNonNull(path, "path");
         this.overflowPath = overflowPath(path);
         this.volumeFactory = Objects.requireNonNull(volumeFactory, "volumeFactory");
@@ -48,6 +50,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         this.overflowStore = Objects.requireNonNull(overflowStore, "overflowStore");
         this.reusablePageIndexStore = Objects.requireNonNull(reusablePageIndexStore, "reusablePageIndexStore");
         this.reusablePageIds = Objects.requireNonNull(reusablePageIds, "reusablePageIds");
+        this.pageCache = Objects.requireNonNull(pageCache, "pageCache");
     }
 
     public static PageBackedMvccTableStore open(Path path) throws IOException {
@@ -63,7 +66,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 pageVolume,
                 MvccOverflowPayloadStore.open(overflowPath(path), FILE_VOLUME_FACTORY),
                 reusablePageIndexStore,
-                reusablePageIds);
+                reusablePageIds,
+                new MvccPageCache());
     }
 
     static PageBackedMvccTableStore open(Path path, DelosPageVolume pageVolume) {
@@ -78,7 +82,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                     pageVolume,
                     MvccOverflowPayloadStore.open(overflowPath(path), FILE_VOLUME_FACTORY),
                     reusablePageIndexStore,
-                    reusablePageIds);
+                    reusablePageIds,
+                    new MvccPageCache());
         } catch (IOException e) {
             throw new UncheckedIOException("Could not open MVCC overflow payload store for " + path, e);
         }
@@ -99,7 +104,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
         DelosPage page = writablePage(encoded.length);
         int slotId = page.appendRecord(encoded);
-        pageVolume.writePage(page.withPageLsn(pageLsn.value()));
+        writePage(page.withPageLsn(pageLsn.value()));
         pageVolume.force();
         return new MvccVersionLocator(page.pageId(), slotId);
     }
@@ -108,7 +113,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         List<StoredVersionRecord> records = new ArrayList<>();
         long count = pageVolume.pageCount();
         for (long pageNumber = 0; pageNumber < count; pageNumber++) {
-            DelosPage page = pageVolume.readPage(new DelosPageId(pageNumber));
+            DelosPage page = readPage(new DelosPageId(pageNumber));
             for (int slot = 0; slot < page.slotCount(); slot++) {
                 byte[] payload = page.readRecord(slot);
                 records.add(readStoredVersionRecord(
@@ -131,7 +136,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 volumeFactory.open(rewritePath),
                 MvccOverflowPayloadStore.open(rewriteOverflowPath, volumeFactory),
                 MvccReusablePageIndexStore.open(reusablePageIndexPath(rewritePath)),
-                new TreeSet<>())) {
+                new TreeSet<>(),
+                new MvccPageCache())) {
             for (MvccVersionRecord record : records) {
                 rewrite.append(record);
             }
@@ -162,10 +168,30 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return reusablePageIds.size();
     }
 
+    public synchronized long pageCacheSize() {
+        return pageCache.snapshot().size();
+    }
+
+    public synchronized long pageCacheHitCount() {
+        return pageCache.snapshot().hits();
+    }
+
+    public synchronized long pageCacheMissCount() {
+        return pageCache.snapshot().misses();
+    }
+
+    public synchronized long pageCacheWriteCount() {
+        return pageCache.snapshot().writes();
+    }
+
+    public synchronized long pageCacheInvalidationCount() {
+        return pageCache.snapshot().invalidations();
+    }
+
     synchronized List<String> reusablePageConsistencyErrors() throws IOException {
         List<String> errors = new ArrayList<>();
         long pageCount = pageVolume.pageCount();
-        NavigableSet<Long> emptyPages = scanEmptyPageIds(pageVolume);
+        NavigableSet<Long> emptyPages = scanEmptyPageIds();
         for (Long pageNumber : reusablePageIds) {
             if (pageNumber == null) {
                 errors.add("reusable-page index contains null page id");
@@ -196,6 +222,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     public synchronized void close() throws IOException {
         IOException failure = null;
         try {
+            pageCache.clear();
             pageVolume.close();
         } catch (IOException e) {
             failure = e;
@@ -278,13 +305,13 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         }
         long count = pageVolume.pageCount();
         if (count == 0) {
-            return pageVolume.allocatePage(DelosPage.DATA_PAGE_TYPE);
+            return allocatePage(DelosPage.DATA_PAGE_TYPE);
         }
-        DelosPage last = pageVolume.readPage(new DelosPageId(count - 1L));
+        DelosPage last = readPage(new DelosPageId(count - 1L));
         if (last.freeBytes() >= encodedRecordLength + SLOT_OVERHEAD_BYTES) {
             return last;
         }
-        return pageVolume.allocatePage(DelosPage.DATA_PAGE_TYPE);
+        return allocatePage(DelosPage.DATA_PAGE_TYPE);
     }
 
     private DelosPage takeReusablePage(int encodedRecordLength) throws IOException {
@@ -293,7 +320,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         java.util.Iterator<Long> ids = reusablePageIds.iterator();
         while (ids.hasNext()) {
             long pageNumber = ids.next();
-            DelosPage page = pageVolume.readPage(new DelosPageId(pageNumber));
+            DelosPage page = readPage(new DelosPageId(pageNumber));
             ids.remove();
             changed = true;
             if (page.slotCount() == 0 && page.freeBytes() >= requiredBytes) {
@@ -313,20 +340,20 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             retainedPageCount = rewriteVolume.pageCount();
             ensurePageCapacity(retainedPageCount);
             for (long pageNumber = 0L; pageNumber < retainedPageCount; pageNumber++) {
-                pageVolume.writePage(rewriteVolume.readPage(new DelosPageId(pageNumber)));
+                writePage(rewriteVolume.readPage(new DelosPageId(pageNumber)));
             }
         }
 
         long pageCount = pageVolume.pageCount();
         for (long pageNumber = retainedPageCount; pageNumber < pageCount; pageNumber++) {
-            pageVolume.writePage(DelosPage.empty(new DelosPageId(pageNumber), DelosPage.DATA_PAGE_TYPE));
+            writePage(DelosPage.empty(new DelosPageId(pageNumber), DelosPage.DATA_PAGE_TYPE));
         }
         pageVolume.force();
     }
 
     private void ensurePageCapacity(long requiredPageCount) throws IOException {
         while (pageVolume.pageCount() < requiredPageCount) {
-            pageVolume.allocatePage(DelosPage.DATA_PAGE_TYPE);
+            allocatePage(DelosPage.DATA_PAGE_TYPE);
         }
     }
 
@@ -370,6 +397,33 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         } catch (IllegalStateException invalidIndex) {
             return null;
         }
+    }
+
+    private DelosPage readPage(DelosPageId pageId) throws IOException {
+        return pageCache.read(pageVolume, pageId);
+    }
+
+    private void writePage(DelosPage page) throws IOException {
+        pageVolume.writePage(page);
+        pageCache.put(page);
+    }
+
+    private DelosPage allocatePage(int pageType) throws IOException {
+        DelosPage page = pageVolume.allocatePage(pageType);
+        pageCache.put(page);
+        return page;
+    }
+
+    private NavigableSet<Long> scanEmptyPageIds() throws IOException {
+        NavigableSet<Long> reusablePages = new TreeSet<>();
+        long count = pageVolume.pageCount();
+        for (long pageNumber = 0L; pageNumber < count; pageNumber++) {
+            DelosPage page = readPage(new DelosPageId(pageNumber));
+            if (page.slotCount() == 0) {
+                reusablePages.add(pageNumber);
+            }
+        }
+        return reusablePages;
     }
 
     private static NavigableSet<Long> scanEmptyPageIds(DelosPageVolume pageVolume) throws IOException {

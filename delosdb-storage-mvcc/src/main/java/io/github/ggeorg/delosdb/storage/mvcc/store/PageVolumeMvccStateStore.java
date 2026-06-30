@@ -224,6 +224,26 @@ public final class PageVolumeMvccStateStore<T> {
         return enabled() ? table.reusablePageCount() : 0L;
     }
 
+    public long pageCacheSize() {
+        return enabled() ? table.pageCacheSize() : 0L;
+    }
+
+    public long pageCacheHitCount() {
+        return enabled() ? table.pageCacheHitCount() : 0L;
+    }
+
+    public long pageCacheMissCount() {
+        return enabled() ? table.pageCacheMissCount() : 0L;
+    }
+
+    public long pageCacheWriteCount() {
+        return enabled() ? table.pageCacheWriteCount() : 0L;
+    }
+
+    public long pageCacheInvalidationCount() {
+        return enabled() ? table.pageCacheInvalidationCount() : 0L;
+    }
+
     public int consistencyErrorCount() {
         return validateConsistency().errors().size();
     }
