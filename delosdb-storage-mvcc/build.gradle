@@ -682,6 +682,32 @@ tasks.register('runMvccVersionRecordCodecTest', Test) {
 }
 
 
+tasks.register('runMvccOverflowPayloadTest', Test) {
+    group = 'verification'
+    description = 'Runs MVCC overflow-payload descriptor/chunk format and page-store tests.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/MvccOverflowPayloadCodecTest.class'
+    include '**/MvccOverflowPayloadStoreTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccOverflowPayloadTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccOverflowPayloadTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccOverflowPayloadTest'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
 
 tasks.register('runPageBackedMvccTableTest', Test) {
     group = 'verification'
@@ -1101,5 +1127,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke', 'runMvccStaticAnalysisHardeningTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runMvccOverflowPayloadTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke', 'runMvccStaticAnalysisHardeningTest'
 }
