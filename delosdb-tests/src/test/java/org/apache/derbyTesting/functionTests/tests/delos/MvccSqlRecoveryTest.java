@@ -122,6 +122,37 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
         }
     }
 
+
+    public void testCorruptMvccPageChecksumFailsCleanlyOnReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-page-checksum-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        Path pageFile;
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            executeUpdate(connection, "create table mvcc_page_checksum_t "
+                    + "(id int primary key, name varchar(40)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_page_checksum_t values "
+                    + "(1, 'alpha'), (2, 'beta')");
+            long containerId = mvccContainerId(connection, "MVCC_PAGE_CHECKSUM_T");
+            pageFile = diagnostics.pageVolumeStateFileForTesting(0, containerId);
+            assertTrue("expected MVCC page file to exist: " + pageFile, Files.exists(pageFile));
+            assertMvccConsistent(diagnostics, containerId);
+        }
+        shutdownDatabase(databaseName);
+
+        byte[] bytes = Files.readAllBytes(pageFile);
+        bytes[128] ^= 0x5a;
+        Files.write(pageFile, bytes, StandardOpenOption.TRUNCATE_EXISTING);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened, "select id, name from mvcc_page_checksum_t order by id");
+            fail("Expected corrupted MVCC page checksum to fail the reopened query");
+        } catch (java.sql.SQLException expected) {
+            assertTrue("expected checksum/corruption failure, got: " + expected,
+                    containsMessage(expected, "checksum") || containsMessage(expected, "corrupt"));
+        }
+    }
+
     private static void runCrashBoundaryWorker(String scenario, String databaseName) throws Exception {
         String java = Paths.get(System.getProperty("java.home"), "bin", "java").toString();
         String classpath = System.getProperty("java.class.path");

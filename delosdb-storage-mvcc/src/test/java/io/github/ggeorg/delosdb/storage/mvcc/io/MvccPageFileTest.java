@@ -107,6 +107,28 @@ public final class MvccPageFileTest {
         }
     }
 
+
+    @Test
+    public void testRejectsChecksumMismatchWhenPageBodyIsCorrupted() throws Exception {
+        Path file = directory.resolve("bad-checksum.mvccp");
+        try (DelosPageVolume pageFile = FileChannelPageVolume.open(file)) {
+            DelosPage page = pageFile.allocatePage(DelosPage.DATA_PAGE_TYPE);
+            page.appendRecord("checksum-protected".getBytes(StandardCharsets.UTF_8));
+            pageFile.writePage(page);
+            pageFile.force();
+        }
+
+        byte[] bytes = Files.readAllBytes(file);
+        bytes[128] ^= 0x5a;
+        Files.write(file, bytes, StandardOpenOption.TRUNCATE_EXISTING);
+
+        try (DelosPageVolume reopened = FileChannelPageVolume.open(file)) {
+            IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                    () -> reopened.readPage(new DelosPageId(0)));
+            assertEquals(true, failure.getMessage().contains("checksum"));
+        }
+    }
+
     @Test
     public void testRejectsOversizedRecord() {
         DelosPage page = DelosPage.empty(new DelosPageId(0));

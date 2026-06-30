@@ -5,11 +5,12 @@ import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.zip.CRC32;
 
 /** Codec for {@link DelosPage} images. */
 public final class DelosPageIo {
     public static final int MAGIC = 0x444D5650; // "DMVP" existing DelosDB page magic.
-    public static final short FORMAT_VERSION = 2;
+    public static final short FORMAT_VERSION = 3;
 
     private static final ByteOrder BYTE_ORDER = ByteOrder.BIG_ENDIAN;
 
@@ -36,6 +37,8 @@ public final class DelosPageIo {
             buffer.putInt(position + 8, slot.flags());
             position += DelosPage.SLOT_SIZE;
         }
+        buffer.putInt(DelosPage.CHECKSUM_OFFSET, 0);
+        buffer.putInt(DelosPage.CHECKSUM_OFFSET, checksum(bytes));
         return bytes;
     }
 
@@ -62,6 +65,7 @@ public final class DelosPageIo {
             throw new IllegalArgumentException(
                     "unsupported page format version " + version + ", expected " + FORMAT_VERSION);
         }
+        verifyChecksum(image);
         int pageType = Short.toUnsignedInt(buffer.getShort(6));
         DelosPageId pageId = new DelosPageId(buffer.getLong(8));
         if (expectedPageId != null && !expectedPageId.equals(pageId)) {
@@ -84,7 +88,7 @@ public final class DelosPageIo {
             throw new IllegalArgumentException(
                     "invalid freeStart " + freeStart + ", expected " + expectedFreeStart);
         }
-        if (freeEnd < freeStart || freeEnd > DelosPage.PAGE_SIZE) {
+        if (freeEnd < freeStart || freeEnd > DelosPage.PAYLOAD_END) {
             throw new IllegalArgumentException("invalid freeEnd: " + freeEnd + ", freeStart=" + freeStart);
         }
 
@@ -97,7 +101,7 @@ public final class DelosPageIo {
             if (length <= 0) {
                 throw new IllegalArgumentException("slot " + index + " has invalid length: " + length);
             }
-            if (offset < freeEnd || offset + length > DelosPage.PAGE_SIZE) {
+            if (offset < freeEnd || offset + length > DelosPage.PAYLOAD_END) {
                 throw new IllegalArgumentException(
                         "slot " + index + " points outside record area: offset=" + offset + ", length=" + length);
             }
@@ -112,5 +116,24 @@ public final class DelosPageIo {
             throw new IllegalArgumentException(name + " outside unsigned short range: " + value);
         }
         return (short) value;
+    }
+
+    private static void verifyChecksum(byte[] image) {
+        ByteBuffer buffer = ByteBuffer.wrap(image).order(BYTE_ORDER);
+        int storedChecksum = buffer.getInt(DelosPage.CHECKSUM_OFFSET);
+        buffer.putInt(DelosPage.CHECKSUM_OFFSET, 0);
+        int computedChecksum = checksum(image);
+        buffer.putInt(DelosPage.CHECKSUM_OFFSET, storedChecksum);
+        if (storedChecksum != computedChecksum) {
+            throw new IllegalArgumentException(
+                    "invalid page checksum: expected 0x" + Integer.toHexString(storedChecksum)
+                            + ", computed 0x" + Integer.toHexString(computedChecksum));
+        }
+    }
+
+    private static int checksum(byte[] image) {
+        CRC32 crc = new CRC32();
+        crc.update(image, 0, DelosPage.CHECKSUM_OFFSET);
+        return (int) crc.getValue();
     }
 }

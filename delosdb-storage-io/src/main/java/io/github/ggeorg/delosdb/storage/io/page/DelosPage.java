@@ -19,6 +19,9 @@ public final class DelosPage {
     static final int HEADER_SIZE = 36;
     static final int SLOT_SIZE = 12;
     static final int ACTIVE_SLOT = 1;
+    static final int CHECKSUM_SIZE = Integer.BYTES;
+    static final int CHECKSUM_OFFSET = PAGE_SIZE - CHECKSUM_SIZE;
+    static final int PAYLOAD_END = CHECKSUM_OFFSET;
 
     private final DelosPageId pageId;
     private final int pageType;
@@ -51,7 +54,7 @@ public final class DelosPage {
     }
 
     public static DelosPage empty(DelosPageId pageId, int pageType) {
-        return new DelosPage(pageId, pageType, 0L, MemorySegment.ofArray(new byte[PAGE_SIZE]), List.of(), PAGE_SIZE);
+        return new DelosPage(pageId, pageType, 0L, MemorySegment.ofArray(new byte[PAGE_SIZE]), List.of(), PAYLOAD_END);
     }
 
     static DelosPage decoded(DelosPageId pageId, int pageType, long pageLsn, byte[] image, List<Slot> slots, int freeEnd) {
@@ -142,7 +145,7 @@ public final class DelosPage {
     }
 
     private void validateLayout() {
-        if (freeEnd < HEADER_SIZE || freeEnd > PAGE_SIZE) {
+        if (freeEnd < HEADER_SIZE || freeEnd > PAYLOAD_END) {
             throw new IllegalArgumentException("invalid page freeEnd: " + freeEnd);
         }
         if (slotTableEnd() > freeEnd) {
@@ -150,7 +153,7 @@ public final class DelosPage {
                     "slot table overlaps record area: slotTableEnd=" + slotTableEnd() + ", freeEnd=" + freeEnd);
         }
         for (Slot slot : slots) {
-            if (slot.offset() < freeEnd || slot.offset() + slot.length() > PAGE_SIZE) {
+            if (slot.offset() < freeEnd || slot.offset() + slot.length() > PAYLOAD_END) {
                 throw new IllegalArgumentException("slot outside record area: " + slot);
             }
             if (slot.length() <= 0) {
