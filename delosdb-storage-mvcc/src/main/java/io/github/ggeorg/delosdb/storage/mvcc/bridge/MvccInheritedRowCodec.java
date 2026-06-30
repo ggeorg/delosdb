@@ -136,18 +136,10 @@ final class MvccInheritedRowCodec implements PageVolumeMvccStateStore.RowCodec<S
 
     private static boolean isUnsupportedDurableFormatId(int formatId) {
         return formatId == StoredFormatIds.SERIALIZABLE_FORMAT_ID
-                || formatId == StoredFormatIds.SQL_USERTYPE_ID_V3
-                || formatId == StoredFormatIds.SQL_BLOB_ID
-                || formatId == StoredFormatIds.SQL_CLOB_ID;
+                || formatId == StoredFormatIds.SQL_USERTYPE_ID_V3;
     }
 
     private static String unsupportedDurableFormatName(int formatId) {
-        if (formatId == StoredFormatIds.SQL_BLOB_ID) {
-            return "BLOB";
-        }
-        if (formatId == StoredFormatIds.SQL_CLOB_ID) {
-            return "CLOB";
-        }
         return "JAVA_OBJECT/UserType";
     }
 
