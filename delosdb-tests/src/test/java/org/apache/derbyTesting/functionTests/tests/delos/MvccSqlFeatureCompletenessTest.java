@@ -155,6 +155,6 @@ public final class MvccSqlFeatureCompletenessTest extends MvccSqlTestSupport {
     private static void assertMvccConsistent(DelosStorageDiagnostics diagnostics, long containerId) {
         diagnostics.assertConsistentForTesting(0, containerId);
         assertEquals("expected no MVCC consistency errors", 0,
-                diagnostics.lastConsistencyErrorCountForTesting(0, containerId));
+                diagnostics.consistencyDiagnosticsForTesting(0, containerId).errorCount());
     }
 }
