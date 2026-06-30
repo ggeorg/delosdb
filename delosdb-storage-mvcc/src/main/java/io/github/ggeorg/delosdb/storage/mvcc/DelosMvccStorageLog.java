@@ -173,7 +173,8 @@ final class DelosMvccStorageLog {
             return;
         }
         append(INSERT, Long.toString(txId), encode(metadata.schemaName()), encode(metadata.tableName()),
-                Long.toString(requireLongKey(key)), encodeValues(requireSqlRowValue(value)));
+                Long.toString(MvccSqlStorageContract.requireLongRowKey(key, "storage log")),
+                encodeValues(MvccSqlStorageContract.requireSqlRowValue(value, "storage log")));
     }
 
     void appendUpdate(VersionedTableMetadata metadata, long txId, Object key, Object value) {
@@ -181,7 +182,8 @@ final class DelosMvccStorageLog {
             return;
         }
         append(UPDATE, Long.toString(txId), encode(metadata.schemaName()), encode(metadata.tableName()),
-                Long.toString(requireLongKey(key)), encodeValues(requireSqlRowValue(value)));
+                Long.toString(MvccSqlStorageContract.requireLongRowKey(key, "storage log")),
+                encodeValues(MvccSqlStorageContract.requireSqlRowValue(value, "storage log")));
     }
 
     void appendDelete(VersionedTableMetadata metadata, long txId, Object key) {
@@ -189,7 +191,7 @@ final class DelosMvccStorageLog {
             return;
         }
         append(DELETE, Long.toString(txId), encode(metadata.schemaName()), encode(metadata.tableName()),
-                Long.toString(requireLongKey(key)));
+                Long.toString(MvccSqlStorageContract.requireLongRowKey(key, "storage log")));
     }
 
     void appendCommit(long txId) {
@@ -335,20 +337,6 @@ final class DelosMvccStorageLog {
         content.append('\n');
     }
 
-    private static long requireLongKey(Object key) {
-        if (key instanceof Long longKey) {
-            return longKey;
-        }
-        throw new UnsupportedOperationException("Durable delos_mvcc recovery currently supports Long row keys only");
-    }
-
-    private static List<Object> requireSqlRowValue(Object value) {
-        if (value instanceof List<?> rawValues) {
-            return copySqlRowValues(rawValues);
-        }
-        throw new UnsupportedOperationException("Durable delos_mvcc recovery currently supports List<Object> row values only");
-    }
-
     private static String encodeValues(List<Object> values) {
         List<String> encoded = new ArrayList<>(values.size());
         for (Object value : values) {
@@ -367,12 +355,6 @@ final class DelosMvccStorageLog {
             values.add(decodeValue(part));
         }
         return Collections.unmodifiableList(values);
-    }
-
-    private static List<Object> copySqlRowValues(List<?> values) {
-        List<Object> copy = new ArrayList<>(values.size());
-        copy.addAll(values);
-        return Collections.unmodifiableList(copy);
     }
 
     private static String encodeValue(Object value) {
@@ -459,7 +441,7 @@ final class DelosMvccStorageLog {
     record CheckpointRow(VersionedTableMetadata metadata, long key, List<Object> values) {
         CheckpointRow {
             metadata = Objects.requireNonNull(metadata, "metadata");
-            values = copySqlRowValues(Objects.requireNonNull(values, "values"));
+            values = MvccSqlStorageContract.copySqlRowValues(Objects.requireNonNull(values, "values"));
         }
     }
 

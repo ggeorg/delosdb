@@ -1105,3 +1105,5 @@ tasks.register('mvccCapturedVisibilitySnapshotProof') {
     description = 'Runs A51 MVCC captured visibility-state snapshot proof.'
     dependsOn 'mvccUnresolvedOutcomeRecoveryProof', ':delosdb-storage-mvcc:runMvccCapturedVisibilitySnapshotTest'
 }
+
+apply from: 'gradle/delosdb-storage-static-analysis.gradle'

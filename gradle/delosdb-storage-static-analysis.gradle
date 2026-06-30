@@ -1,0 +1,168 @@
+import java.nio.charset.StandardCharsets
+
+/*
+ * DelosDB-owned storage/MVCC static-analysis gate.
+ *
+ * This intentionally scopes analysis to DelosDB-owned storage modules and the
+ * Derby storage API fork seam. It does not scan the entire inherited Derby tree.
+ */
+
+def delosStorageStaticSourceRoots = [
+        'delosdb-storage-api/src/main/java',
+        'delosdb-storage-io/src/main/java',
+        'delosdb-storage-mvcc/src/main/java',
+        'delosdb-storage-bridge/src/main/java',
+        'delosdb-derby-store-api/src/main/java'
+]
+
+def delosStorageStaticBaselineFile = file('gradle/static-analysis/delosdb-storage-baseline.txt')
+
+def delosStorageNormalize = { String line ->
+    line == null ? '' : line.trim().replaceAll(/\s+/, ' ')
+}
+
+def delosStorageFinding = { String rule, File sourceFile, int lineNumber, String line ->
+    def relativePath = rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
+    [
+            rule       : rule,
+            path       : relativePath,
+            lineNumber : lineNumber,
+            line       : line,
+            normalized : delosStorageNormalize(line),
+            key        : rule + '|' + relativePath + '|' + delosStorageNormalize(line)
+    ]
+}
+
+def delosStorageLoadBaseline = {
+    if (!delosStorageStaticBaselineFile.exists()) {
+        return [] as Set
+    }
+
+    delosStorageStaticBaselineFile.readLines('UTF-8')
+            .collect { it.trim() }
+            .findAll { it && !it.startsWith('#') }
+            .toSet()
+}
+
+def delosStorageJavaSources = {
+    delosStorageStaticSourceRoots.collect { file(it) }
+            .findAll { it.exists() }
+            .collectMany { root -> fileTree(root) { include '**/*.java' }.files }
+            .sort { a, b -> a.path <=> b.path }
+}
+
+def delosStorageClassifyFindings = {
+    def findings = []
+
+    delosStorageJavaSources().each { sourceFile ->
+        def relativePath = rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
+        def lines = sourceFile.readLines('UTF-8')
+        lines.eachWithIndex { String line, int index ->
+            int lineNumber = index + 1
+
+            if (line.contains('UnsupportedOperationException')) {
+                findings << delosStorageFinding('STORAGE_UNSUPPORTED_OPERATION', sourceFile, lineNumber, line)
+            }
+            if (line.contains('TODO') || line.contains('FIXME') || line.contains('HACK')) {
+                findings << delosStorageFinding('STORAGE_TODO_MARKER', sourceFile, lineNumber, line)
+            }
+            if (line.contains('System.out.') || line.contains('System.err.')) {
+                findings << delosStorageFinding('STORAGE_STDOUT_STDERR', sourceFile, lineNumber, line)
+            }
+            if (relativePath.startsWith('delosdb-storage-mvcc/') && line.contains('io.github.ggeorg.delosdb.spi.storage.versioned')) {
+                findings << delosStorageFinding('MVCC_LEGACY_VERSIONED_SPI_IMPORT', sourceFile, lineNumber, line)
+            }
+
+            // Zero-baseline hard gates for DelosDB-owned storage code.
+            // These are dangerous enough that new uses should be deliberate and reviewed.
+            if (line.contains('Thread.sleep(')) {
+                findings << delosStorageFinding('STORAGE_THREAD_SLEEP', sourceFile, lineNumber, line)
+            }
+            if (line.contains('System.exit(')) {
+                findings << delosStorageFinding('STORAGE_SYSTEM_EXIT', sourceFile, lineNumber, line)
+            }
+            if (line.contains('printStackTrace(')) {
+                findings << delosStorageFinding('STORAGE_PRINT_STACK_TRACE', sourceFile, lineNumber, line)
+            }
+            if (line.contains('new Thread(')) {
+                findings << delosStorageFinding('STORAGE_RAW_THREAD', sourceFile, lineNumber, line)
+            }
+            if (line.contains('.wait(') || line.contains('.notify(') || line.contains('.notifyAll(')) {
+                findings << delosStorageFinding('STORAGE_WAIT_NOTIFY', sourceFile, lineNumber, line)
+            }
+        }
+    }
+
+    findings
+}
+
+tasks.register('delosStorageStaticAnalysis') {
+    group = 'verification'
+    description = 'Runs scoped static analysis over DelosDB-owned storage/MVCC modules.'
+
+    inputs.files(delosStorageJavaSources())
+    inputs.file(delosStorageStaticBaselineFile).optional()
+    outputs.file(layout.buildDirectory.file('reports/delosdb/storage-static-analysis.txt'))
+
+    doLast {
+        def baseline = delosStorageLoadBaseline()
+        def findings = delosStorageClassifyFindings()
+        def newFindings = findings.findAll { !baseline.contains(it.key) }
+
+        def synchronizedCount = 0
+        delosStorageJavaSources().each { sourceFile ->
+            sourceFile.eachLine('UTF-8') { line ->
+                if (line =~ /\bsynchronized\b/) {
+                    synchronizedCount++
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/storage-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB scoped storage/MVCC static analysis')
+            writer.println('================================================')
+            writer.println('Source roots:')
+            delosStorageStaticSourceRoots.each { writer.println('  - ' + it) }
+            writer.println()
+            writer.println('Total findings: ' + findings.size())
+            writer.println('New findings:   ' + newFindings.size())
+            writer.println('synchronized references measured: ' + synchronizedCount)
+            writer.println()
+
+            if (newFindings.isEmpty()) {
+                writer.println('No new findings outside baseline.')
+            } else {
+                writer.println('New findings outside baseline:')
+                newFindings.each { finding ->
+                    writer.println("${finding.rule} ${finding.path}:${finding.lineNumber}: ${finding.normalized}")
+                }
+            }
+
+            writer.println()
+            writer.println('All findings:')
+            findings.each { finding ->
+                writer.println("${finding.rule} ${finding.path}:${finding.lineNumber}: ${finding.normalized}")
+            }
+        }
+
+        if (!newFindings.isEmpty()) {
+            def preview = newFindings.take(20).collect { finding ->
+                "${finding.rule} ${finding.path}:${finding.lineNumber}: ${finding.normalized}"
+            }.join(System.lineSeparator())
+            throw new GradleException(
+                    'DelosDB storage static analysis found ' + newFindings.size() +
+                            ' new finding(s) outside baseline. Report: ' + reportFile +
+                            System.lineSeparator() + preview)
+        }
+
+        logger.lifecycle('DelosDB storage static analysis passed. Report: {}', reportFile)
+    }
+}
+
+tasks.register('s0CloseoutVerification') {
+    group = 'verification'
+    description = 'Runs S0 closeout verification gates that are safe before the next MVCC feature phase.'
+    dependsOn 'delosStorageStaticAnalysis'
+}

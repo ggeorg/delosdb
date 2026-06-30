@@ -1,7 +1,6 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -231,8 +230,8 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
                 io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow<K, V> row = scan.row();
                 rows.add(new DelosMvccStorageLog.CheckpointRow(
                         metadata,
-                        requireCheckpointLongKey(row.key()),
-                        requireCheckpointValues(row.value())));
+                        MvccSqlStorageContract.requireLongRowKey(row.key(), "checkpoint"),
+                        MvccSqlStorageContract.requireSqlRowValue(row.value(), "checkpoint")));
             }
         }
         return List.copyOf(rows);
@@ -294,50 +293,20 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
         }
 
         private void apply(PageBackedMvccTable durableTable, long transactionId, long commitSequence) throws IOException {
-            String durableKey = requireDurableLongKey(key);
+            String durableKey = MvccSqlStorageContract.requireStringRowKey(key, "page-backed SQL storage");
             switch (operation) {
             case "insert" -> durableTable.insertCommitted(
-                    durableKey, DurableMvccSqlRowCodec.encode(requireDurableSqlRowValue(value)), transactionId, commitSequence, pageLsn);
+                    durableKey, DurableMvccSqlRowCodec.encode(MvccSqlStorageContract.requireSqlRowValue(
+                            value, "page-backed SQL storage")),
+                    transactionId, commitSequence, pageLsn);
             case "update" -> durableTable.updateCommitted(
-                    durableKey, DurableMvccSqlRowCodec.encode(requireDurableSqlRowValue(value)), transactionId, commitSequence, pageLsn);
+                    durableKey, DurableMvccSqlRowCodec.encode(MvccSqlStorageContract.requireSqlRowValue(
+                            value, "page-backed SQL storage")),
+                    transactionId, commitSequence, pageLsn);
             case "delete" -> durableTable.deleteCommitted(durableKey, transactionId, commitSequence, pageLsn);
             default -> throw new IllegalStateException("Unsupported durable delos_mvcc operation: " + operation);
             }
         }
-    }
-
-    private static String requireDurableLongKey(Object key) {
-        if (key instanceof Long longKey) {
-            return Long.toString(longKey);
-        }
-        throw new UnsupportedOperationException("page-backed delos_mvcc SQL storage currently supports Long row keys only");
-    }
-
-    private static List<Object> requireDurableSqlRowValue(Object value) {
-        if (value instanceof List<?> values) {
-            return copySqlRowValues(values);
-        }
-        throw new UnsupportedOperationException("page-backed delos_mvcc SQL storage currently supports List<Object> row values only");
-    }
-
-    private static long requireCheckpointLongKey(Object key) {
-        if (key instanceof Long longKey) {
-            return longKey;
-        }
-        throw new UnsupportedOperationException("delos_mvcc checkpoint currently supports Long row keys only");
-    }
-
-    private static List<Object> requireCheckpointValues(Object value) {
-        if (value instanceof List<?> values) {
-            return copySqlRowValues(values);
-        }
-        throw new UnsupportedOperationException("delos_mvcc checkpoint currently supports List<Object> row values only");
-    }
-
-    private static List<Object> copySqlRowValues(List<?> values) {
-        List<Object> copy = new ArrayList<>(values.size());
-        copy.addAll(values);
-        return Collections.unmodifiableList(copy);
     }
 
     private static String normalizeIndexName(String indexName) {

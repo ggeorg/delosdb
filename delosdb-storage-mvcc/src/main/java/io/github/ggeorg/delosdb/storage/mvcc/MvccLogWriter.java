@@ -91,21 +91,21 @@ public class MvccLogWriter {
             MvccTransactionId transactionId,
             VersionedTableMetadata table,
             Object rowKey) {
-        return append(MvccLogRecord.insertVersion(transactionId, table, requireLongKey(rowKey)));
+        return append(MvccLogRecord.insertVersion(transactionId, table, MvccSqlStorageContract.requireLongRowKey(rowKey, "version log")));
     }
 
     public MvccLogRecord appendUpdateVersion(
             MvccTransactionId transactionId,
             VersionedTableMetadata table,
             Object rowKey) {
-        return append(MvccLogRecord.updateVersion(transactionId, table, requireLongKey(rowKey)));
+        return append(MvccLogRecord.updateVersion(transactionId, table, MvccSqlStorageContract.requireLongRowKey(rowKey, "version log")));
     }
 
     public MvccLogRecord appendDeleteVersion(
             MvccTransactionId transactionId,
             VersionedTableMetadata table,
             Object rowKey) {
-        return append(MvccLogRecord.deleteVersion(transactionId, table, requireLongKey(rowKey)));
+        return append(MvccLogRecord.deleteVersion(transactionId, table, MvccSqlStorageContract.requireLongRowKey(rowKey, "version log")));
     }
 
     public MvccLogRecord appendCommit(
@@ -225,13 +225,6 @@ public class MvccLogWriter {
                 : new VersionedTableMetadata(decode(parts[5]), decode(parts[6]));
         Long rowKey = parts[7].isEmpty() ? null : parseLong(parts[7], lineIndex, "row key");
         return new MvccLogRecord(lsn, type, transactionId, commitSequence, table, rowKey);
-    }
-
-    private static long requireLongKey(Object rowKey) {
-        if (rowKey instanceof Long longKey) {
-            return longKey;
-        }
-        throw new UnsupportedOperationException("MODULE5J MVCC log currently supports Long row keys only");
     }
 
     private static long parseLong(String value, int lineIndex, String fieldName) {
