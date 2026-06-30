@@ -1,7 +1,6 @@
 package io.github.ggeorg.delosdb.storage.mvcc.format;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.Objects;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
@@ -13,8 +12,6 @@ public final class MvccVersionRecordCodec {
     public static final short FORMAT_VERSION = 1;
     public static final int HEADER_SIZE = 64;
 
-    private static final ByteOrder BYTE_ORDER = ByteOrder.BIG_ENDIAN;
-
     private MvccVersionRecordCodec() {
     }
 
@@ -22,7 +19,7 @@ public final class MvccVersionRecordCodec {
         Objects.requireNonNull(record, "record");
         byte[] payload = record.payload();
         byte[] bytes = new byte[Math.addExact(HEADER_SIZE, payload.length)];
-        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(BYTE_ORDER);
+        ByteBuffer buffer = MvccBinaryFormat.wrap(bytes);
         MvccTupleHeader header = record.header();
 
         buffer.putInt(MAGIC);
@@ -42,26 +39,13 @@ public final class MvccVersionRecordCodec {
 
     public static MvccVersionRecord decode(byte[] bytes) {
         Objects.requireNonNull(bytes, "bytes");
-        if (bytes.length < HEADER_SIZE) {
-            throw new IllegalArgumentException("MVCC version record is shorter than header: " + bytes.length);
-        }
-
-        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(BYTE_ORDER);
-        int magic = buffer.getInt();
-        if (magic != MAGIC) {
-            throw new IllegalArgumentException("invalid MVCC version-record magic 0x"
-                    + Integer.toHexString(magic) + ", expected 0x" + Integer.toHexString(MAGIC));
-        }
-        short version = buffer.getShort();
-        if (version != FORMAT_VERSION) {
-            throw new IllegalArgumentException("unsupported MVCC version-record format version "
-                    + version + ", expected " + FORMAT_VERSION);
-        }
-        int headerSize = Short.toUnsignedInt(buffer.getShort());
-        if (headerSize != HEADER_SIZE) {
-            throw new IllegalArgumentException("unsupported MVCC version-record header size "
-                    + headerSize + ", expected " + HEADER_SIZE);
-        }
+        ByteBuffer buffer = MvccBinaryFormat.requireHeader(
+                bytes,
+                HEADER_SIZE,
+                MAGIC,
+                FORMAT_VERSION,
+                HEADER_SIZE,
+                "MVCC version-record");
 
         int flags = buffer.getInt();
         MvccVersionRecordFlags.validate(flags);
@@ -70,10 +54,7 @@ public final class MvccVersionRecordCodec {
             throw new IllegalArgumentException("negative MVCC version-record payload length: " + payloadLength);
         }
         int expectedLength = Math.addExact(HEADER_SIZE, payloadLength);
-        if (bytes.length != expectedLength) {
-            throw new IllegalArgumentException("MVCC version-record length mismatch: expected "
-                    + expectedLength + " bytes, found " + bytes.length);
-        }
+        MvccBinaryFormat.requireExactLength(bytes, expectedLength, "MVCC version-record");
 
         MvccTupleHeader header = new MvccTupleHeader(
                 new MvccRowId(buffer.getLong()),

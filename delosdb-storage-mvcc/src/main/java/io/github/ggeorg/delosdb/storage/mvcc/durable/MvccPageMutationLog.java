@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
+
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccTupleHeader;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
@@ -32,6 +34,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordCodec;
  */
 public final class MvccPageMutationLog {
     private static final String LOG_VERSION = "1";
+    private static final String LOG_NAME = "MVCC page mutation log";
     private static final String RECORD_VERSION = "VERSION";
     private static final String RECORD_COMMIT = "COMMIT";
     private static final String RECORD_ABORT = "ABORT";
@@ -143,26 +146,12 @@ public final class MvccPageMutationLog {
             return List.of();
         }
 
-        boolean hasCompleteFinalLine = content.endsWith("\n") || content.endsWith("\r");
-        String[] lines = content.split("\\R", -1);
-        int lastLineIndex = lines.length - 1;
-        if (hasCompleteFinalLine && lastLineIndex >= 0 && lines[lastLineIndex].isEmpty()) {
-            lastLineIndex--;
-        }
-        if (!hasCompleteFinalLine) {
-            lastLineIndex--;
-        }
-
         Map<Long, List<MvccVersionRecord>> versionsByTransaction = new LinkedHashMap<>();
         Map<Long, TerminalState> terminalStates = new LinkedHashMap<>();
         List<Long> terminalOrder = new ArrayList<>();
 
-        for (int index = 0; index <= lastLineIndex; index++) {
-            String line = lines[index].trim();
-            if (line.isEmpty()) {
-                continue;
-            }
-            parseLine(line, index, versionsByTransaction, terminalStates, terminalOrder);
+        for (MvccDurableLineRecords.LineRecord record : MvccDurableLineRecords.completeRecords(content)) {
+            parseLine(record.line(), record.lineIndex(), versionsByTransaction, terminalStates, terminalOrder);
         }
 
         List<MvccVersionRecord> committed = new ArrayList<>();
@@ -203,23 +192,10 @@ public final class MvccPageMutationLog {
             return List.of();
         }
 
-        boolean hasCompleteFinalLine = content.endsWith("\n") || content.endsWith("\r");
-        String[] lines = content.split("\\R", -1);
-        int lastLineIndex = lines.length - 1;
-        if (hasCompleteFinalLine && lastLineIndex >= 0 && lines[lastLineIndex].isEmpty()) {
-            lastLineIndex--;
-        }
-        if (!hasCompleteFinalLine) {
-            lastLineIndex--;
-        }
-
         List<MvccVersionRecord> recovered = new ArrayList<>();
-        for (int index = 0; index <= lastLineIndex; index++) {
-            String line = lines[index].trim();
-            if (line.isEmpty()) {
-                continue;
-            }
-            String[] parts = line.split("\\t", -1);
+        for (MvccDurableLineRecords.LineRecord lineRecord : MvccDurableLineRecords.completeRecords(content)) {
+            int index = lineRecord.lineIndex();
+            String[] parts = MvccDurableLineRecords.tabFields(lineRecord.line());
             require(parts.length >= 2, index, "record has too few fields");
             require(LOG_VERSION.equals(parts[0]), index, "unsupported page mutation log version: " + parts[0]);
             switch (parts[1]) {
@@ -248,7 +224,7 @@ public final class MvccPageMutationLog {
             Map<Long, List<MvccVersionRecord>> versionsByTransaction,
             Map<Long, TerminalState> terminalStates,
             List<Long> terminalOrder) {
-        String[] parts = line.split("\\t", -1);
+        String[] parts = MvccDurableLineRecords.tabFields(line);
         require(parts.length >= 2, lineIndex, "record has too few fields");
         require(LOG_VERSION.equals(parts[0]), lineIndex, "unsupported page mutation log version: " + parts[0]);
         switch (parts[1]) {
@@ -370,11 +346,7 @@ public final class MvccPageMutationLog {
     }
 
     private static long parseLong(String value, int lineIndex, String fieldName) {
-        try {
-            return Long.parseLong(value);
-        } catch (NumberFormatException e) {
-            throw corrupt(lineIndex, "invalid " + fieldName + ": " + value, e);
-        }
+        return MvccDurableLineRecords.parseLong(value, lineIndex, fieldName, LOG_NAME);
     }
 
     private static void requireTransactionId(long transactionId) {
@@ -384,17 +356,15 @@ public final class MvccPageMutationLog {
     }
 
     private static void require(boolean condition, int lineIndex, String message) {
-        if (!condition) {
-            throw corrupt(lineIndex, message);
-        }
+        MvccDurableLineRecords.require(condition, LOG_NAME, lineIndex, message);
     }
 
     private static IllegalStateException corrupt(int lineIndex, String message) {
-        return new IllegalStateException("Corrupt MVCC page mutation log at line " + (lineIndex + 1) + ": " + message);
+        return MvccDurableLineRecords.corrupt(LOG_NAME, lineIndex, message);
     }
 
     private static IllegalStateException corrupt(int lineIndex, String message, Throwable cause) {
-        return new IllegalStateException("Corrupt MVCC page mutation log at line " + (lineIndex + 1) + ": " + message, cause);
+        return MvccDurableLineRecords.corrupt(LOG_NAME, lineIndex, message, cause);
     }
 
     private record TerminalState(boolean committed, MvccCommitSequence commitSequence) {

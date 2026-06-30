@@ -1,7 +1,6 @@
 package io.github.ggeorg.delosdb.storage.mvcc.format;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.Objects;
 import java.util.zip.CRC32;
 
@@ -20,15 +19,13 @@ public final class MvccPageRecordCodec {
     public static final int RECORD_TYPE_VERSION = 1;
     public static final int FLAGS_NONE = 0;
 
-    private static final ByteOrder BYTE_ORDER = ByteOrder.BIG_ENDIAN;
-
     private MvccPageRecordCodec() {
     }
 
     public static byte[] encodeVersionRecord(MvccVersionRecord record) {
         byte[] body = MvccVersionRecordCodec.encode(Objects.requireNonNull(record, "record"));
         byte[] bytes = new byte[Math.addExact(HEADER_SIZE, body.length)];
-        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(BYTE_ORDER);
+        ByteBuffer buffer = MvccBinaryFormat.wrap(bytes);
         buffer.putInt(MAGIC);
         buffer.putShort(FORMAT_VERSION);
         buffer.putShort((short) HEADER_SIZE);
@@ -74,33 +71,17 @@ public final class MvccPageRecordCodec {
 
     public static boolean isPageRecord(byte[] bytes) {
         Objects.requireNonNull(bytes, "bytes");
-        if (bytes.length < Integer.BYTES) {
-            return false;
-        }
-        return ByteBuffer.wrap(bytes).order(BYTE_ORDER).getInt(0) == MAGIC;
+        return MvccBinaryFormat.hasMagic(bytes, MAGIC);
     }
 
     private static DecodedHeader decodeHeader(byte[] bytes) {
-        if (bytes.length < HEADER_SIZE) {
-            throw new IllegalArgumentException("MVCC page record is shorter than header: " + bytes.length);
-        }
-
-        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(BYTE_ORDER);
-        int magic = buffer.getInt();
-        if (magic != MAGIC) {
-            throw new IllegalArgumentException("invalid MVCC page-record magic 0x"
-                    + Integer.toHexString(magic) + ", expected 0x" + Integer.toHexString(MAGIC));
-        }
-        short version = buffer.getShort();
-        if (version != FORMAT_VERSION) {
-            throw new IllegalArgumentException("unsupported MVCC page-record format version "
-                    + version + ", expected " + FORMAT_VERSION);
-        }
-        int headerSize = Short.toUnsignedInt(buffer.getShort());
-        if (headerSize != HEADER_SIZE) {
-            throw new IllegalArgumentException("unsupported MVCC page-record header size "
-                    + headerSize + ", expected " + HEADER_SIZE);
-        }
+        ByteBuffer buffer = MvccBinaryFormat.requireHeader(
+                bytes,
+                HEADER_SIZE,
+                MAGIC,
+                FORMAT_VERSION,
+                HEADER_SIZE,
+                "MVCC page-record");
         int recordType = buffer.getInt();
         int flags = buffer.getInt();
         if (flags != FLAGS_NONE) {
@@ -113,10 +94,7 @@ public final class MvccPageRecordCodec {
         }
         int bodyChecksum = buffer.getInt();
         int expectedLength = Math.addExact(HEADER_SIZE, bodyLength);
-        if (bytes.length != expectedLength) {
-            throw new IllegalArgumentException("MVCC page-record length mismatch: expected "
-                    + expectedLength + " bytes, found " + bytes.length);
-        }
+        MvccBinaryFormat.requireExactLength(bytes, expectedLength, "MVCC page-record");
         byte[] body = new byte[bodyLength];
         buffer.get(body);
         int computedChecksum = checksum(body);

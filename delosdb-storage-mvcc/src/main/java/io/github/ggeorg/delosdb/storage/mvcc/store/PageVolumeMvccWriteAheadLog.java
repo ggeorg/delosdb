@@ -11,6 +11,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 
 /**
  * Provider-local WAL boundary for page-volume MVCC state.
@@ -23,6 +24,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
  */
 public final class PageVolumeMvccWriteAheadLog {
     private static final String LOG_VERSION = "2";
+    private static final String LOG_NAME = "MVCC page-volume WAL";
     private static final PageVolumeMvccWriteAheadLog DISABLED =
             new PageVolumeMvccWriteAheadLog(null, "disabled", 1L, false);
 
@@ -152,23 +154,11 @@ public final class PageVolumeMvccWriteAheadLog {
             return DelosLogSequenceNumber.NONE;
         }
 
-        boolean hasCompleteFinalLine = content.endsWith("\n") || content.endsWith("\r");
-        String[] lines = content.split("\\R", -1);
-        int lastLineIndex = lines.length - 1;
-        if (hasCompleteFinalLine && lastLineIndex >= 0 && lines[lastLineIndex].isEmpty()) {
-            lastLineIndex--;
-        }
-        if (!hasCompleteFinalLine) {
-            lastLineIndex--;
-        }
-
         long lastLsn = DelosLogSequenceNumber.NONE.value();
-        for (int index = 0; index <= lastLineIndex; index++) {
-            String line = lines[index];
-            if (line.isBlank()) {
-                continue;
-            }
-            String[] parts = line.split("\\t", -1);
+        for (MvccDurableLineRecords.LineRecord lineRecord
+                : MvccDurableLineRecords.completeRecords(content, false)) {
+            int index = lineRecord.lineIndex();
+            String[] parts = MvccDurableLineRecords.tabFields(lineRecord.line());
             if (parts.length < 2) {
                 throw corrupt(index, "record must contain at least version and LSN");
             }
@@ -185,18 +175,14 @@ public final class PageVolumeMvccWriteAheadLog {
     }
 
     private static long parseLong(String value, int lineIndex, String fieldName) {
-        try {
-            return Long.parseLong(value);
-        } catch (NumberFormatException e) {
-            throw corrupt(lineIndex, "invalid " + fieldName + ": " + value, e);
-        }
+        return MvccDurableLineRecords.parseLong(value, lineIndex, fieldName, LOG_NAME);
     }
 
     private static IllegalStateException corrupt(int lineIndex, String message) {
-        return new IllegalStateException("Corrupt MVCC page-volume WAL at line " + (lineIndex + 1) + ": " + message);
+        return MvccDurableLineRecords.corrupt(LOG_NAME, lineIndex, message);
     }
 
     private static IllegalStateException corrupt(int lineIndex, String message, Throwable cause) {
-        return new IllegalStateException("Corrupt MVCC page-volume WAL at line " + (lineIndex + 1) + ": " + message, cause);
+        return MvccDurableLineRecords.corrupt(LOG_NAME, lineIndex, message, cause);
     }
 }

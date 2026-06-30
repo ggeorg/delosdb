@@ -13,6 +13,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
+
 /**
  * Small forced append-only transaction-status store for MODULE5H.
  *
@@ -24,6 +26,7 @@ import java.util.Optional;
  */
 public class MvccTransactionStatusStore {
     private static final String LOG_VERSION = "1";
+    private static final String LOG_NAME = "MVCC transaction status store";
     private static final String RECORD_ACTIVE = "ACTIVE";
     private static final String RECORD_COMMIT = "COMMITTED";
     private static final String RECORD_ABORT = "ABORTED";
@@ -120,23 +123,9 @@ public class MvccTransactionStatusStore {
             return Map.of();
         }
 
-        boolean hasCompleteFinalLine = content.endsWith("\n") || content.endsWith("\r");
-        String[] lines = content.split("\\R", -1);
-        int lastLineIndex = lines.length - 1;
-        if (hasCompleteFinalLine && lastLineIndex >= 0 && lines[lastLineIndex].isEmpty()) {
-            lastLineIndex--;
-        }
-        if (!hasCompleteFinalLine) {
-            lastLineIndex--;
-        }
-
         Map<MvccTransactionId, MvccTransactionStatusRecord> statuses = new LinkedHashMap<>();
-        for (int index = 0; index <= lastLineIndex; index++) {
-            String line = lines[index].trim();
-            if (line.isEmpty()) {
-                continue;
-            }
-            parseLine(line, index, statuses);
+        for (MvccDurableLineRecords.LineRecord record : MvccDurableLineRecords.completeRecords(content)) {
+            parseLine(record.line(), record.lineIndex(), statuses);
         }
 
         Map<MvccTransactionId, MvccTransactionStatusRecord> recovered = new LinkedHashMap<>();
@@ -155,7 +144,7 @@ public class MvccTransactionStatusStore {
             String line,
             int lineIndex,
             Map<MvccTransactionId, MvccTransactionStatusRecord> statuses) {
-        String[] parts = line.split("\\t", -1);
+        String[] parts = MvccDurableLineRecords.tabFields(line);
         require(parts.length >= 2, lineIndex, "record has too few fields");
         require(LOG_VERSION.equals(parts[0]), lineIndex, "unsupported transaction status store version: " + parts[0]);
         switch (parts[1]) {
@@ -230,11 +219,7 @@ public class MvccTransactionStatusStore {
     }
 
     private static long parseLong(String value, int lineIndex, String fieldName) {
-        try {
-            return Long.parseLong(value);
-        } catch (NumberFormatException e) {
-            throw corrupt(lineIndex, "invalid " + fieldName + ": " + value, e);
-        }
+        return MvccDurableLineRecords.parseLong(value, lineIndex, fieldName, LOG_NAME);
     }
 
     private static void requireRealTransactionId(MvccTransactionId transactionId) {
@@ -249,18 +234,14 @@ public class MvccTransactionStatusStore {
     }
 
     private static void require(boolean condition, int lineIndex, String message) {
-        if (!condition) {
-            throw corrupt(lineIndex, message);
-        }
+        MvccDurableLineRecords.require(condition, LOG_NAME, lineIndex, message);
     }
 
     private static IllegalStateException corrupt(int lineIndex, String message) {
-        return new IllegalStateException("Corrupt MVCC transaction status store at line "
-                + (lineIndex + 1) + ": " + message);
+        return MvccDurableLineRecords.corrupt(LOG_NAME, lineIndex, message);
     }
 
     private static IllegalStateException corrupt(int lineIndex, String message, Throwable cause) {
-        return new IllegalStateException("Corrupt MVCC transaction status store at line "
-                + (lineIndex + 1) + ": " + message, cause);
+        return MvccDurableLineRecords.corrupt(LOG_NAME, lineIndex, message, cause);
     }
 }

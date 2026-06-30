@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
+
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
 
 /**
@@ -26,6 +28,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
  */
 public class MvccLogWriter {
     private static final String LOG_VERSION = "1";
+    private static final String LOG_NAME = "MVCC log";
 
     private static final MvccLogWriter DISABLED = new MvccLogWriter(null, 1L) {
         @Override
@@ -150,24 +153,12 @@ public class MvccLogWriter {
             return List.of();
         }
 
-        boolean hasCompleteFinalLine = content.endsWith("\n") || content.endsWith("\r");
-        String[] lines = content.split("\\R", -1);
-        int lastLineIndex = lines.length - 1;
-        if (hasCompleteFinalLine && lastLineIndex >= 0 && lines[lastLineIndex].isEmpty()) {
-            lastLineIndex--;
-        }
-        if (!hasCompleteFinalLine) {
-            lastLineIndex--;
-        }
-
         List<MvccLogRecord> records = new ArrayList<>();
         DelosLogSequenceNumber previous = DelosLogSequenceNumber.NONE;
-        for (int index = 0; index <= lastLineIndex; index++) {
-            String line = lines[index];
-            if (line.isBlank()) {
-                continue;
-            }
-            MvccLogRecord record = parseLine(line, index);
+        for (MvccDurableLineRecords.LineRecord lineRecord
+                : MvccDurableLineRecords.completeRecords(content, false)) {
+            int index = lineRecord.lineIndex();
+            MvccLogRecord record = parseLine(lineRecord.line(), index);
             if (record.lsn().compareTo(previous) <= 0) {
                 throw corrupt(index, "LSN must increase monotonically: previous=" + previous
                         + ", current=" + record.lsn());
@@ -207,7 +198,7 @@ public class MvccLogWriter {
     }
 
     private static MvccLogRecord parseLine(String line, int lineIndex) {
-        String[] parts = line.split("\\t", -1);
+        String[] parts = MvccDurableLineRecords.tabFields(line);
         require(parts.length == 8, lineIndex, "record must have 8 fields");
         require(LOG_VERSION.equals(parts[0]), lineIndex, "unsupported MVCC log version: " + parts[0]);
         DelosLogSequenceNumber lsn = new DelosLogSequenceNumber(parseLong(parts[1], lineIndex, "lsn"));
@@ -228,11 +219,7 @@ public class MvccLogWriter {
     }
 
     private static long parseLong(String value, int lineIndex, String fieldName) {
-        try {
-            return Long.parseLong(value);
-        } catch (NumberFormatException e) {
-            throw corrupt(lineIndex, "invalid " + fieldName + ": " + value, e);
-        }
+        return MvccDurableLineRecords.parseLong(value, lineIndex, fieldName, LOG_NAME);
     }
 
     private static String encode(String value) {
@@ -244,16 +231,14 @@ public class MvccLogWriter {
     }
 
     private static void require(boolean condition, int lineIndex, String message) {
-        if (!condition) {
-            throw corrupt(lineIndex, message);
-        }
+        MvccDurableLineRecords.require(condition, LOG_NAME, lineIndex, message);
     }
 
     private static IllegalStateException corrupt(int lineIndex, String message) {
-        return new IllegalStateException("Corrupt MVCC log at line " + (lineIndex + 1) + ": " + message);
+        return MvccDurableLineRecords.corrupt(LOG_NAME, lineIndex, message);
     }
 
     private static IllegalStateException corrupt(int lineIndex, String message, Throwable cause) {
-        return new IllegalStateException("Corrupt MVCC log at line " + (lineIndex + 1) + ": " + message, cause);
+        return MvccDurableLineRecords.corrupt(LOG_NAME, lineIndex, message, cause);
     }
 }

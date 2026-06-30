@@ -1,9 +1,10 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccBinaryFormat;
 
 /**
  * Small version-record payload used when the real row payload is stored in
@@ -14,17 +15,12 @@ public final class MvccOverflowPayloadReferenceCodec {
     public static final short FORMAT_VERSION = 1;
     public static final int HEADER_SIZE = 20;
 
-    private static final ByteOrder BYTE_ORDER = ByteOrder.BIG_ENDIAN;
-
     private MvccOverflowPayloadReferenceCodec() {
     }
 
     public static boolean isOverflowReference(byte[] bytes) {
         Objects.requireNonNull(bytes, "bytes");
-        if (bytes.length < Integer.BYTES) {
-            return false;
-        }
-        return ByteBuffer.wrap(bytes, 0, Integer.BYTES).order(BYTE_ORDER).getInt() == MAGIC;
+        return MvccBinaryFormat.hasMagic(bytes, MAGIC);
     }
 
     public static byte[] encode(Reference reference) {
@@ -34,7 +30,7 @@ public final class MvccOverflowPayloadReferenceCodec {
         byte[] encoded = new byte[Math.addExact(
                 HEADER_SIZE,
                 Math.addExact(keyBytes.length, descriptorBytes.length))];
-        ByteBuffer buffer = ByteBuffer.wrap(encoded).order(BYTE_ORDER);
+        ByteBuffer buffer = MvccBinaryFormat.wrap(encoded);
         buffer.putInt(MAGIC);
         buffer.putShort(FORMAT_VERSION);
         buffer.putShort((short) HEADER_SIZE);
@@ -48,25 +44,13 @@ public final class MvccOverflowPayloadReferenceCodec {
 
     public static Reference decode(byte[] bytes) {
         Objects.requireNonNull(bytes, "bytes");
-        if (bytes.length < HEADER_SIZE) {
-            throw new IllegalArgumentException("MVCC overflow reference is shorter than header: " + bytes.length);
-        }
-        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(BYTE_ORDER);
-        int magic = buffer.getInt();
-        if (magic != MAGIC) {
-            throw new IllegalArgumentException("invalid MVCC overflow reference magic 0x"
-                    + Integer.toHexString(magic) + ", expected 0x" + Integer.toHexString(MAGIC));
-        }
-        short version = buffer.getShort();
-        if (version != FORMAT_VERSION) {
-            throw new IllegalArgumentException("unsupported MVCC overflow reference format version "
-                    + version + ", expected " + FORMAT_VERSION);
-        }
-        int headerSize = Short.toUnsignedInt(buffer.getShort());
-        if (headerSize != HEADER_SIZE) {
-            throw new IllegalArgumentException("unsupported MVCC overflow reference header size "
-                    + headerSize + ", expected " + HEADER_SIZE);
-        }
+        ByteBuffer buffer = MvccBinaryFormat.requireHeader(
+                bytes,
+                HEADER_SIZE,
+                MAGIC,
+                FORMAT_VERSION,
+                HEADER_SIZE,
+                "MVCC overflow reference");
         int keyLength = buffer.getInt();
         int descriptorLength = buffer.getInt();
         int flags = buffer.getInt();
@@ -81,10 +65,7 @@ public final class MvccOverflowPayloadReferenceCodec {
             throw new IllegalArgumentException("unsupported non-zero MVCC overflow reference flags: " + flags);
         }
         int expectedLength = Math.addExact(HEADER_SIZE, Math.addExact(keyLength, descriptorLength));
-        if (bytes.length != expectedLength) {
-            throw new IllegalArgumentException("MVCC overflow reference length mismatch: expected "
-                    + expectedLength + " bytes, found " + bytes.length);
-        }
+        MvccBinaryFormat.requireExactLength(bytes, expectedLength, "MVCC overflow reference");
         byte[] keyBytes = new byte[keyLength];
         byte[] descriptorBytes = new byte[descriptorLength];
         buffer.get(keyBytes);

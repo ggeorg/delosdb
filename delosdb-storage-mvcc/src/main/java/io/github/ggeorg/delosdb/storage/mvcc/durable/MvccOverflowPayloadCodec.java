@@ -1,11 +1,11 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.Objects;
 import java.util.Optional;
 
 import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccBinaryFormat;
 
 /** Binary codec for MVCC overflow-payload descriptors and chunks. */
 public final class MvccOverflowPayloadCodec {
@@ -14,8 +14,6 @@ public final class MvccOverflowPayloadCodec {
     public static final short FORMAT_VERSION = 1;
     public static final int DESCRIPTOR_SIZE = 44;
     public static final int CHUNK_HEADER_SIZE = 52;
-
-    private static final ByteOrder BYTE_ORDER = ByteOrder.BIG_ENDIAN;
     private static final long NO_PAGE_ID = -1L;
     private static final int NO_SLOT_ID = -1;
 
@@ -25,7 +23,7 @@ public final class MvccOverflowPayloadCodec {
     public static byte[] encodeDescriptor(MvccOverflowPayloadDescriptor descriptor) {
         Objects.requireNonNull(descriptor, "descriptor");
         byte[] bytes = new byte[DESCRIPTOR_SIZE];
-        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(BYTE_ORDER);
+        ByteBuffer buffer = MvccBinaryFormat.wrap(bytes);
         buffer.putInt(DESCRIPTOR_MAGIC);
         buffer.putShort(FORMAT_VERSION);
         buffer.putShort((short) DESCRIPTOR_SIZE);
@@ -41,30 +39,14 @@ public final class MvccOverflowPayloadCodec {
 
     public static MvccOverflowPayloadDescriptor decodeDescriptor(byte[] bytes) {
         Objects.requireNonNull(bytes, "bytes");
-        if (bytes.length != DESCRIPTOR_SIZE) {
-            throw new IllegalArgumentException(
-                    "MVCC overflow descriptor length mismatch: expected " + DESCRIPTOR_SIZE
-                            + " bytes, found " + bytes.length);
-        }
-        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(BYTE_ORDER);
-        int magic = buffer.getInt();
-        if (magic != DESCRIPTOR_MAGIC) {
-            throw new IllegalArgumentException(
-                    "invalid MVCC overflow descriptor magic 0x" + Integer.toHexString(magic)
-                            + ", expected 0x" + Integer.toHexString(DESCRIPTOR_MAGIC));
-        }
-        short version = buffer.getShort();
-        if (version != FORMAT_VERSION) {
-            throw new IllegalArgumentException(
-                    "unsupported MVCC overflow descriptor format version " + version
-                            + ", expected " + FORMAT_VERSION);
-        }
-        int headerSize = Short.toUnsignedInt(buffer.getShort());
-        if (headerSize != DESCRIPTOR_SIZE) {
-            throw new IllegalArgumentException(
-                    "unsupported MVCC overflow descriptor header size " + headerSize
-                            + ", expected " + DESCRIPTOR_SIZE);
-        }
+        MvccBinaryFormat.requireExactLength(bytes, DESCRIPTOR_SIZE, "MVCC overflow descriptor");
+        ByteBuffer buffer = MvccBinaryFormat.requireHeader(
+                bytes,
+                DESCRIPTOR_SIZE,
+                DESCRIPTOR_MAGIC,
+                FORMAT_VERSION,
+                DESCRIPTOR_SIZE,
+                "MVCC overflow descriptor");
         long totalLength = buffer.getLong();
         int chunkCount = buffer.getInt();
         long firstPageId = buffer.getLong();
@@ -84,7 +66,7 @@ public final class MvccOverflowPayloadCodec {
         Objects.requireNonNull(chunk, "chunk");
         byte[] payload = chunk.payload();
         byte[] bytes = new byte[Math.addExact(CHUNK_HEADER_SIZE, payload.length)];
-        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(BYTE_ORDER);
+        ByteBuffer buffer = MvccBinaryFormat.wrap(bytes);
         buffer.putInt(CHUNK_MAGIC);
         buffer.putShort(FORMAT_VERSION);
         buffer.putShort((short) CHUNK_HEADER_SIZE);
@@ -103,29 +85,13 @@ public final class MvccOverflowPayloadCodec {
 
     public static MvccOverflowPayloadChunk decodeChunk(byte[] bytes) {
         Objects.requireNonNull(bytes, "bytes");
-        if (bytes.length < CHUNK_HEADER_SIZE) {
-            throw new IllegalArgumentException(
-                    "MVCC overflow chunk is shorter than header: " + bytes.length);
-        }
-        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(BYTE_ORDER);
-        int magic = buffer.getInt();
-        if (magic != CHUNK_MAGIC) {
-            throw new IllegalArgumentException(
-                    "invalid MVCC overflow chunk magic 0x" + Integer.toHexString(magic)
-                            + ", expected 0x" + Integer.toHexString(CHUNK_MAGIC));
-        }
-        short version = buffer.getShort();
-        if (version != FORMAT_VERSION) {
-            throw new IllegalArgumentException(
-                    "unsupported MVCC overflow chunk format version " + version
-                            + ", expected " + FORMAT_VERSION);
-        }
-        int headerSize = Short.toUnsignedInt(buffer.getShort());
-        if (headerSize != CHUNK_HEADER_SIZE) {
-            throw new IllegalArgumentException(
-                    "unsupported MVCC overflow chunk header size " + headerSize
-                            + ", expected " + CHUNK_HEADER_SIZE);
-        }
+        ByteBuffer buffer = MvccBinaryFormat.requireHeader(
+                bytes,
+                CHUNK_HEADER_SIZE,
+                CHUNK_MAGIC,
+                FORMAT_VERSION,
+                CHUNK_HEADER_SIZE,
+                "MVCC overflow chunk");
         int chunkIndex = buffer.getInt();
         int chunkCount = buffer.getInt();
         long totalLength = buffer.getLong();
@@ -141,11 +107,7 @@ public final class MvccOverflowPayloadCodec {
             throw new IllegalArgumentException("MVCC overflow chunk payload length must be positive: " + payloadLength);
         }
         int expectedLength = Math.addExact(CHUNK_HEADER_SIZE, payloadLength);
-        if (bytes.length != expectedLength) {
-            throw new IllegalArgumentException(
-                    "MVCC overflow chunk length mismatch: expected " + expectedLength
-                            + " bytes, found " + bytes.length);
-        }
+        MvccBinaryFormat.requireExactLength(bytes, expectedLength, "MVCC overflow chunk");
         byte[] payload = new byte[payloadLength];
         buffer.get(payload);
         return new MvccOverflowPayloadChunk(
