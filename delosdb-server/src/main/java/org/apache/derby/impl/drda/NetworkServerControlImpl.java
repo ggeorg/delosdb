@@ -4188,7 +4188,6 @@ public final class NetworkServerControlImpl {
             + waitingSessions + "\n\n";
 
         Runtime rt = Runtime.getRuntime();
-        rt.gc();
         long totalmem = rt.totalMemory();
         long freemem = rt.freeMemory();
         s += locallangUtil.getTextMessage("DRDA_RuntimeInfoTotalMemory.I") +

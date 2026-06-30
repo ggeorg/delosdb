@@ -245,6 +245,40 @@ def delosServerClassifyFindings = {
                 findings << delosServerFinding('SERVER_SERVLET_DEPENDENCY', sourceFile, lineNumber, line)
             }
         }
+
+        if (relativePath == 'delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java') {
+            boolean inBuildRuntimeInfo = false
+            boolean sawBuildRuntimeInfoOpeningBrace = false
+            int buildRuntimeInfoBraceDepth = 0
+            lines.eachWithIndex { String line, int index ->
+                int lineNumber = index + 1
+                if (!inBuildRuntimeInfo && line.contains('public String buildRuntimeInfo(')) {
+                    inBuildRuntimeInfo = true
+                    sawBuildRuntimeInfoOpeningBrace = false
+                    buildRuntimeInfoBraceDepth = 0
+                }
+
+                if (inBuildRuntimeInfo) {
+                    if ((line.contains('System.gc(')
+                            || line.contains('Runtime.getRuntime().gc(')
+                            || line.contains('.gc();')
+                            || line.contains('.gc()'))
+                            && !line.trim().startsWith('//')) {
+                        findings << delosServerFinding('SERVER_RUNTIME_INFO_FORCED_GC', sourceFile, lineNumber, line)
+                    }
+
+                    int openingBraces = line.count('{')
+                    int closingBraces = line.count('}')
+                    if (openingBraces > 0) {
+                        sawBuildRuntimeInfoOpeningBrace = true
+                    }
+                    buildRuntimeInfoBraceDepth += openingBraces - closingBraces
+                    if (sawBuildRuntimeInfoOpeningBrace && buildRuntimeInfoBraceDepth <= 0) {
+                        inBuildRuntimeInfo = false
+                    }
+                }
+            }
+        }
     }
 
     findings
