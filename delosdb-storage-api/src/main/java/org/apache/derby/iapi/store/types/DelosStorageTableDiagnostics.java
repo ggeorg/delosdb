@@ -44,6 +44,8 @@ public interface DelosStorageTableDiagnostics {
 
     long overflowPageCountForTesting();
 
+    long reusablePageCountForTesting();
+
     int consistencyErrorCountForTesting();
 
     String consistencySummaryForTesting();

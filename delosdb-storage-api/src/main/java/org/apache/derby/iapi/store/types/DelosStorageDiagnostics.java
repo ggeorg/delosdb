@@ -60,6 +60,8 @@ public interface DelosStorageDiagnostics {
 
     long overflowPageCountForTesting(int segment, long containerId);
 
+    long reusablePageCountForTesting(int segment, long containerId);
+
     int consistencyErrorCountForTesting(int segment, long containerId);
 
     String consistencySummaryForTesting(int segment, long containerId);

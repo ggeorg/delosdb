@@ -216,6 +216,10 @@ public final class PageVolumeMvccStateStore<T> {
         }
     }
 
+    public long reusablePageCount() {
+        return enabled() ? table.reusablePageCount() : 0L;
+    }
+
     public int consistencyErrorCount() {
         return validateConsistency().errors().size();
     }

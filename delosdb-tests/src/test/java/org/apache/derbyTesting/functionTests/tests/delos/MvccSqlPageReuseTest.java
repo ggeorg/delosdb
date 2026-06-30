@@ -26,13 +26,14 @@ import java.sql.PreparedStatement;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
-/** SQL integration tests for page-count reuse after delos_mvcc vacuum compaction. */
+/** SQL integration tests for explicit delos_mvcc free-page reuse after vacuum. */
 public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
-    public void testVacuumCompactsPagesAndNextInsertReusesCompactedFreeSpace() throws Exception {
+    public void testVacuumMarksReusablePagesAndNextInsertConsumesOne() throws Exception {
         String databaseName = databaseName("mvcc-sql-page-reuse-db");
         DelosStorageDiagnostics diagnostics = mvccDiagnostics();
         long containerId;
-        long pagesAfterVacuum;
+        long pagesAfterReuse;
+        long reusablePagesAfterReuse;
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
@@ -47,6 +48,8 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
             assertTrue("expected at least one MVCC page after insert", initialPages >= 1L);
             assertEquals("fresh table should have two physical versions", 2,
                     diagnostics.physicalVersionCountForTesting(0, containerId));
+            assertEquals("fresh table should not start with reusable pages", 0L,
+                    diagnostics.reusablePageCountForTesting(0, containerId));
             diagnostics.assertConsistentForTesting(0, containerId);
 
             for (int round = 1; round <= 5; round++) {
@@ -62,26 +65,36 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
             assertTrue("expected repeated large updates to occupy more pages before vacuum, initial="
                             + initialPages + ", before=" + pagesBeforeVacuum,
                     pagesBeforeVacuum > initialPages);
+            assertEquals("pre-vacuum append-only workload should not expose reusable pages", 0L,
+                    diagnostics.reusablePageCountForTesting(0, containerId));
             diagnostics.assertConsistentForTesting(0, containerId);
 
             inPlaceCompressTable(connection, "MVCC_PAGE_REUSE_T");
             connection.commit();
 
-            pagesAfterVacuum = diagnostics.pageCountForTesting(0, containerId);
+            long pagesAfterVacuum = diagnostics.pageCountForTesting(0, containerId);
+            long reusablePagesAfterVacuum = diagnostics.reusablePageCountForTesting(0, containerId);
             assertFalse("vacuum should not be skipped for the page-reuse workload",
                     diagnostics.lastVacuumSkippedForTesting(0, containerId));
             assertEquals("vacuum should collapse physical versions to the two visible rows",
                     2, diagnostics.physicalVersionCountForTesting(0, containerId));
-            assertTrue("vacuum should compact the MVCC page file, before="
-                            + pagesBeforeVacuum + ", after=" + pagesAfterVacuum,
-                    pagesAfterVacuum < pagesBeforeVacuum);
+            assertEquals("first free-page milestone preserves page-volume capacity instead of truncating it",
+                    pagesBeforeVacuum, pagesAfterVacuum);
+            assertTrue("vacuum should mark compacted-away MVCC pages reusable; pages="
+                            + pagesAfterVacuum + ", reusable=" + reusablePagesAfterVacuum,
+                    reusablePagesAfterVacuum > 0L);
             diagnostics.assertConsistentForTesting(0, containerId);
 
             insertPayload(connection, 3, payload('z', 512));
             connection.commit();
 
-            assertEquals("post-vacuum insert should reuse free bytes in the compacted page file",
-                    pagesAfterVacuum, diagnostics.pageCountForTesting(0, containerId));
+            pagesAfterReuse = diagnostics.pageCountForTesting(0, containerId);
+            reusablePagesAfterReuse = diagnostics.reusablePageCountForTesting(0, containerId);
+            assertEquals("post-vacuum insert should consume a reusable page instead of extending the page volume",
+                    pagesAfterVacuum, pagesAfterReuse);
+            assertTrue("post-vacuum insert should consume at least one reusable page; before="
+                            + reusablePagesAfterVacuum + ", after=" + reusablePagesAfterReuse,
+                    reusablePagesAfterReuse < reusablePagesAfterVacuum);
             assertEquals(3, diagnostics.physicalVersionCountForTesting(0, containerId));
             diagnostics.assertConsistentForTesting(0, containerId);
             assertRows(connection,
@@ -96,8 +109,10 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_PAGE_REUSE_T");
-            assertEquals("reopened table should retain compacted page count",
-                    pagesAfterVacuum, diagnostics.pageCountForTesting(0, reopenedContainerId));
+            assertEquals("reopened table should retain page-volume capacity",
+                    pagesAfterReuse, diagnostics.pageCountForTesting(0, reopenedContainerId));
+            assertEquals("reopened table should recover reusable-page tracking from empty durable pages",
+                    reusablePagesAfterReuse, diagnostics.reusablePageCountForTesting(0, reopenedContainerId));
             diagnostics.assertConsistentForTesting(0, reopenedContainerId);
             assertRows(reopened,
                     "select id, length(payload) from mvcc_page_reuse_t order by id",

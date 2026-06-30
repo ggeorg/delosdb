@@ -20,8 +20,9 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordFlags;
 
 /**
  * Page-backed MVCC table prototype used to move delos_mvcc away from Java-map
- * storage. It stores durable append-only version records in the A1 page file
- * and rebuilds a row directory on open.
+ * storage. It stores durable version records in the A1 page file and rebuilds
+ * a row directory on open. Vacuum can compact live records into existing pages
+ * and mark emptied pages reusable for later writes.
  */
 public final class PageBackedMvccTable implements AutoCloseable {
     private final PageBackedMvccTableStore store;
@@ -381,6 +382,10 @@ public final class PageBackedMvccTable implements AutoCloseable {
 
     public synchronized long overflowPageCount() throws IOException {
         return store.overflowPageCount();
+    }
+
+    public synchronized long reusablePageCount() {
+        return store.reusablePageCount();
     }
 
     @Override

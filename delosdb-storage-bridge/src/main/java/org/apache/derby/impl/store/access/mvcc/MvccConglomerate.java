@@ -366,6 +366,10 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).overflowPageCountForTesting();
     }
 
+    static long reusablePageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).reusablePageCountForTesting();
+    }
+
     static int consistencyErrorCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).consistencyErrorCountForTesting();
     }
