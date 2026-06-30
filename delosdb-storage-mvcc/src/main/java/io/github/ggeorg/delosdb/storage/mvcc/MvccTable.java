@@ -114,6 +114,26 @@ public final class MvccTable<K, V> {
         delete(key, statement.transaction(), statement.snapshot(), catalog, statement.commandSequence());
     }
 
+    public synchronized void rollbackTransactionChangesAfter(
+            MvccTransaction transaction,
+            MvccCommandSequence savepointBoundary) {
+        if (transaction == null) {
+            throw new IllegalArgumentException("transaction must not be null");
+        }
+        if (savepointBoundary == null) {
+            throw new IllegalArgumentException("savepointBoundary must not be null");
+        }
+        Iterator<Map.Entry<K, MvccVersionChain<V>>> iterator = rows.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<K, MvccVersionChain<V>> entry = iterator.next();
+            MvccVersionChain<V> chain = entry.getValue();
+            chain.rollbackTransactionChangesAfter(transaction, savepointBoundary);
+            if (chain.isEmpty()) {
+                iterator.remove();
+            }
+        }
+    }
+
     public synchronized int physicalVersionCount(K key) {
         MvccVersionChain<V> chain = rows.get(key);
         return chain == null ? 0 : chain.versionCount();

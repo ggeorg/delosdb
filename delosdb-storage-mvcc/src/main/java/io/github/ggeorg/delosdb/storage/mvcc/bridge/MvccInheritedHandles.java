@@ -1,8 +1,11 @@
 package io.github.ggeorg.delosdb.storage.mvcc.bridge;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 import io.github.ggeorg.delosdb.storage.mvcc.DelosMvccStorageProvider;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccCommandSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
 
@@ -27,14 +30,79 @@ final class MvccInheritedHandles {
         return mvccSnapshot;
     }
 
-    record Transaction(MvccTransaction nativeTransaction) implements DelosStorageTransaction {
-        Transaction {
-            nativeTransaction = Objects.requireNonNull(nativeTransaction, "nativeTransaction");
+    static final class Transaction implements DelosStorageTransaction {
+        private final MvccTransaction nativeTransaction;
+        private final Map<String, MvccCommandSequence> savepoints = new LinkedHashMap<>();
+        private long nextCommandSequence = 1L;
+
+        Transaction(MvccTransaction nativeTransaction) {
+            this.nativeTransaction = Objects.requireNonNull(nativeTransaction, "nativeTransaction");
+        }
+
+        MvccTransaction nativeTransaction() {
+            return nativeTransaction;
+        }
+
+        MvccCommandSequence nextCommandSequence() {
+            return MvccCommandSequence.of(nextCommandSequence++);
+        }
+
+        void setSavepoint(String savepointName) {
+            savepoints.put(requireSavepointName(savepointName), lastCompletedCommandSequence());
+        }
+
+        MvccCommandSequence rollbackToSavepoint(String savepointName) {
+            String normalizedName = requireSavepointName(savepointName);
+            MvccCommandSequence boundary = savepoints.get(normalizedName);
+            if (boundary == null) {
+                throw new IllegalStateException("Unknown delos_mvcc savepoint: " + normalizedName);
+            }
+            removeSavepointsAfter(normalizedName);
+            nextCommandSequence = boundary.value() + 1L;
+            return boundary;
+        }
+
+        void releaseSavepoint(String savepointName) {
+            String normalizedName = requireSavepointName(savepointName);
+            boolean remove = false;
+            var iterator = savepoints.keySet().iterator();
+            while (iterator.hasNext()) {
+                String current = iterator.next();
+                if (remove || current.equals(normalizedName)) {
+                    iterator.remove();
+                    remove = true;
+                }
+            }
         }
 
         @Override
         public String providerName() {
             return DelosMvccStorageProvider.PROVIDER_NAME;
+        }
+
+        private MvccCommandSequence lastCompletedCommandSequence() {
+            return MvccCommandSequence.of(Math.max(0L, nextCommandSequence - 1L));
+        }
+
+        private void removeSavepointsAfter(String savepointName) {
+            boolean remove = false;
+            var iterator = savepoints.keySet().iterator();
+            while (iterator.hasNext()) {
+                String current = iterator.next();
+                if (remove) {
+                    iterator.remove();
+                } else if (current.equals(savepointName)) {
+                    remove = true;
+                }
+            }
+        }
+
+        private static String requireSavepointName(String savepointName) {
+            String normalizedName = Objects.requireNonNull(savepointName, "savepointName").trim();
+            if (normalizedName.isEmpty()) {
+                throw new IllegalArgumentException("savepointName must not be blank");
+            }
+            return normalizedName;
         }
     }
 

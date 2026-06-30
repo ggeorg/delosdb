@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import io.github.ggeorg.delosdb.storage.mvcc.MvccCommandSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccRow;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccScan;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
@@ -25,6 +26,7 @@ import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
 import org.apache.derby.iapi.store.types.DelosStorageRowHead;
 import org.apache.derby.iapi.store.types.DelosStorageRowLocator;
+import org.apache.derby.iapi.store.types.DelosStorageSavepointParticipant;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageTable;
@@ -39,6 +41,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         DelosStorageMaintenance,
         DelosStorageRowLocator,
         DelosStorageCandidateIndex,
+        DelosStorageSavepointParticipant,
         DelosStorageTableDiagnostics {
     private final long segmentId;
     private final long containerId;
@@ -90,7 +93,8 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public synchronized void insert(long rowId, StoreDataValue[] row, DelosStorageTransaction transaction) {
-        table.insert(rowId, cloneRowUnchecked(row), nativeTransaction(transaction));
+        MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+        table.insert(rowId, cloneRowUnchecked(row), handle.nativeTransaction(), handle.nextCommandSequence());
     }
 
     @Override
@@ -99,7 +103,14 @@ final class MvccInheritedTable implements DelosStorageTable,
             StoreDataValue[] replacement,
             DelosStorageTransaction transaction,
             DelosStorageSnapshot snapshot) {
-        table.update(rowId, cloneRowUnchecked(replacement), nativeTransaction(transaction), nativeSnapshot(snapshot), transactions);
+        MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+        table.update(
+                rowId,
+                cloneRowUnchecked(replacement),
+                handle.nativeTransaction(),
+                nativeSnapshot(snapshot),
+                transactions,
+                handle.nextCommandSequence());
     }
 
     @Override
@@ -107,7 +118,13 @@ final class MvccInheritedTable implements DelosStorageTable,
             long rowId,
             DelosStorageTransaction transaction,
             DelosStorageSnapshot snapshot) {
-        table.delete(rowId, nativeTransaction(transaction), nativeSnapshot(snapshot), transactions);
+        MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+        table.delete(
+                rowId,
+                handle.nativeTransaction(),
+                nativeSnapshot(snapshot),
+                transactions,
+                handle.nextCommandSequence());
     }
 
     @Override
@@ -118,6 +135,23 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public synchronized void abort(DelosStorageTransaction transaction) {
         transactions.abort(nativeTransaction(transaction));
+    }
+
+    @Override
+    public synchronized void setSavepoint(DelosStorageTransaction transaction, String savepointName) {
+        nativeTransactionHandle(transaction).setSavepoint(savepointName);
+    }
+
+    @Override
+    public synchronized void rollbackToSavepoint(DelosStorageTransaction transaction, String savepointName) {
+        MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+        MvccCommandSequence boundary = handle.rollbackToSavepoint(savepointName);
+        table.rollbackTransactionChangesAfter(handle.nativeTransaction(), boundary);
+    }
+
+    @Override
+    public synchronized void releaseSavepoint(DelosStorageTransaction transaction, String savepointName) {
+        nativeTransactionHandle(transaction).releaseSavepoint(savepointName);
     }
 
     @Override
@@ -292,8 +326,12 @@ final class MvccInheritedTable implements DelosStorageTable,
         }
     }
 
+    private static MvccInheritedHandles.Transaction nativeTransactionHandle(DelosStorageTransaction transaction) {
+        return MvccInheritedHandles.transaction(transaction);
+    }
+
     private static MvccTransaction nativeTransaction(DelosStorageTransaction transaction) {
-        return MvccInheritedHandles.transaction(transaction).nativeTransaction();
+        return nativeTransactionHandle(transaction).nativeTransaction();
     }
 
     private static MvccSnapshot nativeSnapshot(DelosStorageSnapshot snapshot) {

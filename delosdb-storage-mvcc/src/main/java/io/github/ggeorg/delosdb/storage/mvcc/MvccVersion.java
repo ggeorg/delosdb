@@ -71,6 +71,22 @@ public final class MvccVersion<V> {
         this.deletedAtCommand = deletedAtCommand;
     }
 
+
+    boolean wasCreatedBy(MvccTransactionId transactionId) {
+        return createdBy.equals(transactionId);
+    }
+
+    boolean wasCreatedAfter(MvccCommandSequence boundary) {
+        return createdAtCommand.compareTo(boundary) > 0;
+    }
+
+    void clearDeletionByAfter(MvccTransactionId transactionId, MvccCommandSequence boundary) {
+        if (deletedBy.equals(transactionId) && deletedAtCommand.compareTo(boundary) > 0) {
+            deletedBy = MvccTransactionId.NONE;
+            deletedAtCommand = MvccCommandSequence.FIRST;
+        }
+    }
+
     boolean wasCreatedByAbortedTransaction(MvccTransactionCatalog catalog) {
         return catalog.statusOf(createdBy) == MvccTransactionStatus.ABORTED;
     }

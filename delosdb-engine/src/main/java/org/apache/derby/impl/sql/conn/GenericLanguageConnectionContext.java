@@ -1846,6 +1846,7 @@ public class GenericLanguageConnectionContext
             else { closeConglomerates = false; }
 
             currentSavepointLevel = tc.rollbackToSavePoint( savepointName, closeConglomerates, kindOfSavepoint );
+            DelosStorageTransactionRegistry.rollbackToSavepoint(tc, savepointName);
         }
 
         if (tc != null && refreshStyle && allDeclaredGlobalTempTables != null)
@@ -1869,6 +1870,7 @@ public class GenericLanguageConnectionContext
         if (tc != null)
         {
             currentSavepointLevel = tc.releaseSavePoint( savepointName, kindOfSavepoint );
+            DelosStorageTransactionRegistry.releaseSavepoint(tc, savepointName);
             //after a release of a savepoint, we need to go through our temp tables list.
             if (allDeclaredGlobalTempTables != null)
                 tempTablesReleaseSavepointLevels();
@@ -1892,6 +1894,7 @@ public class GenericLanguageConnectionContext
         if (tc != null)
         {
             currentSavepointLevel = tc.setSavePoint( savepointName, kindOfSavepoint );
+            DelosStorageTransactionRegistry.setSavepoint(tc, savepointName);
         }
     }
 

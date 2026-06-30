@@ -70,6 +70,26 @@ public final class MvccVersionChain<V> {
         current.markDeletedBy(transaction.id(), catalog, commandSequence);
     }
 
+    public synchronized void rollbackTransactionChangesAfter(
+            MvccTransaction transaction,
+            MvccCommandSequence savepointBoundary) {
+        if (transaction == null) {
+            throw new IllegalArgumentException("transaction must not be null");
+        }
+        if (savepointBoundary == null) {
+            throw new IllegalArgumentException("savepointBoundary must not be null");
+        }
+        Iterator<MvccVersion<V>> iterator = newestFirst.iterator();
+        while (iterator.hasNext()) {
+            MvccVersion<V> version = iterator.next();
+            if (version.wasCreatedBy(transaction.id()) && version.wasCreatedAfter(savepointBoundary)) {
+                iterator.remove();
+            } else {
+                version.clearDeletionByAfter(transaction.id(), savepointBoundary);
+            }
+        }
+    }
+
     public synchronized int versionCount() {
         return newestFirst.size();
     }

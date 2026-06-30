@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Storage-api transaction-scoped writer registry.
@@ -37,6 +38,7 @@ import java.util.Map;
 public final class DelosStorageTransactionRegistry {
     private static final Map<Object, List<Writer>> WRITERS = new IdentityHashMap<>();
     private static final Map<Object, Map<DelosStorageTable, Reader>> READERS = new IdentityHashMap<>();
+    private static final Map<Object, List<SavepointMarker>> SAVEPOINTS = new IdentityHashMap<>();
 
     private DelosStorageTransactionRegistry() {
     }
@@ -54,6 +56,9 @@ public final class DelosStorageTransactionRegistry {
             DelosStorageTransaction transaction,
             Runnable afterCommit) {
         Writer writer = new Writer(ownerTransaction, table, transaction, afterCommit);
+        for (SavepointMarker marker : savepointsFor(ownerTransaction)) {
+            writer.setSavepoint(marker.name());
+        }
         WRITERS.computeIfAbsent(ownerTransaction, ignored -> new ArrayList<>()).add(writer);
         return writer;
     }
@@ -84,6 +89,7 @@ public final class DelosStorageTransactionRegistry {
     }
 
     public static void commit(Object ownerTransaction) {
+        clearSavepoints(ownerTransaction);
         for (Writer writer : drainWriters(ownerTransaction)) {
             writer.commit();
         }
@@ -93,11 +99,49 @@ public final class DelosStorageTransactionRegistry {
     }
 
     public static void abort(Object ownerTransaction) {
+        clearSavepoints(ownerTransaction);
         for (Writer writer : drainWriters(ownerTransaction)) {
             writer.abort();
         }
         for (Reader reader : drainReaders(ownerTransaction)) {
             reader.close();
+        }
+    }
+
+    public static synchronized void setSavepoint(Object ownerTransaction, String savepointName) {
+        String normalizedName = requireSavepointName(savepointName);
+        List<SavepointMarker> savepoints = SAVEPOINTS.computeIfAbsent(
+                ownerTransaction, ignored -> new ArrayList<>());
+        removeSavepointAndFollowing(savepoints, normalizedName);
+        SavepointMarker marker = new SavepointMarker(normalizedName);
+        savepoints.add(marker);
+        for (Writer writer : writersFor(ownerTransaction)) {
+            writer.setSavepoint(normalizedName);
+        }
+    }
+
+    public static synchronized void rollbackToSavepoint(Object ownerTransaction, String savepointName) {
+        String normalizedName = requireSavepointName(savepointName);
+        List<SavepointMarker> savepoints = SAVEPOINTS.get(ownerTransaction);
+        if (savepoints != null) {
+            truncateAfterSavepoint(savepoints, normalizedName);
+        }
+        for (Writer writer : writersFor(ownerTransaction)) {
+            writer.rollbackToSavepoint(normalizedName);
+        }
+    }
+
+    public static synchronized void releaseSavepoint(Object ownerTransaction, String savepointName) {
+        String normalizedName = requireSavepointName(savepointName);
+        List<SavepointMarker> savepoints = SAVEPOINTS.get(ownerTransaction);
+        if (savepoints != null) {
+            removeSavepointAndFollowing(savepoints, normalizedName);
+            if (savepoints.isEmpty()) {
+                SAVEPOINTS.remove(ownerTransaction);
+            }
+        }
+        for (Writer writer : writersFor(ownerTransaction)) {
+            writer.releaseSavepoint(normalizedName);
         }
     }
 
@@ -123,6 +167,7 @@ public final class DelosStorageTransactionRegistry {
     public static synchronized void clearForTesting() {
         WRITERS.clear();
         READERS.clear();
+        SAVEPOINTS.clear();
     }
 
     private static synchronized List<Writer> drainWriters(Object ownerTransaction) {
@@ -133,12 +178,69 @@ public final class DelosStorageTransactionRegistry {
         return List.copyOf(writers);
     }
 
+    private static synchronized List<Writer> writersFor(Object ownerTransaction) {
+        List<Writer> writers = WRITERS.get(ownerTransaction);
+        if (writers == null || writers.isEmpty()) {
+            return List.of();
+        }
+        return List.copyOf(writers);
+    }
+
+    private static synchronized List<SavepointMarker> savepointsFor(Object ownerTransaction) {
+        List<SavepointMarker> savepoints = SAVEPOINTS.get(ownerTransaction);
+        if (savepoints == null || savepoints.isEmpty()) {
+            return List.of();
+        }
+        return List.copyOf(savepoints);
+    }
+
+    private static synchronized void clearSavepoints(Object ownerTransaction) {
+        SAVEPOINTS.remove(ownerTransaction);
+    }
+
     private static synchronized List<Reader> drainReaders(Object ownerTransaction) {
         Map<DelosStorageTable, Reader> readers = READERS.remove(ownerTransaction);
         if (readers == null || readers.isEmpty()) {
             return List.of();
         }
         return List.copyOf(readers.values());
+    }
+
+    private static String requireSavepointName(String savepointName) {
+        String normalizedName = Objects.requireNonNull(savepointName, "savepointName").trim();
+        if (normalizedName.isEmpty()) {
+            throw new IllegalArgumentException("savepointName must not be blank");
+        }
+        return normalizedName;
+    }
+
+    private static void truncateAfterSavepoint(List<SavepointMarker> savepoints, String savepointName) {
+        int index = indexOfSavepoint(savepoints, savepointName);
+        if (index < 0) {
+            return;
+        }
+        while (savepoints.size() > index + 1) {
+            savepoints.remove(savepoints.size() - 1);
+        }
+    }
+
+    private static void removeSavepointAndFollowing(List<SavepointMarker> savepoints, String savepointName) {
+        int index = indexOfSavepoint(savepoints, savepointName);
+        if (index < 0) {
+            return;
+        }
+        while (savepoints.size() > index) {
+            savepoints.remove(savepoints.size() - 1);
+        }
+    }
+
+    private static int indexOfSavepoint(List<SavepointMarker> savepoints, String savepointName) {
+        for (int i = 0; i < savepoints.size(); i++) {
+            if (savepointName.equals(savepoints.get(i).name())) {
+                return i;
+            }
+        }
+        return -1;
     }
 
 
@@ -207,6 +309,30 @@ public final class DelosStorageTransactionRegistry {
                 table.abort(transaction);
                 completed = true;
             }
+        }
+
+        private void setSavepoint(String savepointName) {
+            if (!completed && table instanceof DelosStorageSavepointParticipant participant) {
+                participant.setSavepoint(transaction, savepointName);
+            }
+        }
+
+        private void rollbackToSavepoint(String savepointName) {
+            if (!completed && table instanceof DelosStorageSavepointParticipant participant) {
+                participant.rollbackToSavepoint(transaction, savepointName);
+            }
+        }
+
+        private void releaseSavepoint(String savepointName) {
+            if (!completed && table instanceof DelosStorageSavepointParticipant participant) {
+                participant.releaseSavepoint(transaction, savepointName);
+            }
+        }
+    }
+
+    private record SavepointMarker(String name) {
+        private SavepointMarker {
+            name = requireSavepointName(name);
         }
     }
 }
