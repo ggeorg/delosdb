@@ -197,8 +197,105 @@ tasks.register('delosStorageStaticAnalysis') {
     }
 }
 
+
+def delosServerStaticSourceRoots = [
+        'delosdb-server/src/main/java'
+]
+
+def delosServerJavaSources = {
+    delosServerStaticSourceRoots.collect { file(it) }
+            .findAll { it.exists() }
+            .collectMany { root -> fileTree(root) { include '**/*.java' }.files }
+            .sort { a, b -> a.path <=> b.path }
+}
+
+def delosServerFinding = { String rule, File sourceFile, int lineNumber, String line ->
+    def relativePath = rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
+    [
+            rule       : rule,
+            path       : relativePath,
+            lineNumber : lineNumber,
+            line       : line,
+            normalized : delosStorageNormalize(line)
+    ]
+}
+
+def delosServerClassifyFindings = {
+    def findings = []
+    def netServletPath = 'delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java'
+
+    delosServerJavaSources().each { sourceFile ->
+        def relativePath = rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
+        def lines = sourceFile.readLines('UTF-8')
+        lines.eachWithIndex { String line, int index ->
+            int lineNumber = index + 1
+            def importTarget = delosStorageImportTarget(line)
+            if (importTarget == null) {
+                return
+            }
+
+            if (importTarget.startsWith('org.apache.lucene.') || importTarget.startsWith('org.json.simple.')) {
+                findings << delosServerFinding('SERVER_UNUSED_LEGACY_LIBRARY_IMPORT', sourceFile, lineNumber, line)
+            }
+            if (importTarget.startsWith('io.github.ggeorg.delosdb.storage.mvcc.')) {
+                findings << delosServerFinding('SERVER_MVCC_IMPLEMENTATION_IMPORT', sourceFile, lineNumber, line)
+            }
+            if ((importTarget.startsWith('javax.servlet.') || importTarget.startsWith('jakarta.servlet.'))
+                    && relativePath != netServletPath) {
+                findings << delosServerFinding('SERVER_SERVLET_DEPENDENCY', sourceFile, lineNumber, line)
+            }
+        }
+    }
+
+    findings
+}
+
+tasks.register('delosServerStaticAnalysis') {
+    group = 'verification'
+    description = 'Runs scoped static analysis over the DelosDB network server module.'
+
+    inputs.files(delosServerJavaSources())
+    outputs.file(layout.buildDirectory.file('reports/delosdb/server-static-analysis.txt'))
+
+    doLast {
+        def findings = delosServerClassifyFindings()
+        def reportFile = layout.buildDirectory.file('reports/delosdb/server-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB scoped server static analysis')
+            writer.println('=====================================')
+            writer.println('Source roots:')
+            delosServerStaticSourceRoots.each { writer.println('  - ' + it) }
+            writer.println()
+            writer.println('Total findings: ' + findings.size())
+            writer.println()
+
+            if (findings.isEmpty()) {
+                writer.println('No server boundary violations found.')
+            } else {
+                writer.println('Server boundary violations:')
+                findings.each { finding ->
+                    writer.println("${finding.rule} ${finding.path}:${finding.lineNumber}: ${finding.normalized}")
+                }
+            }
+        }
+
+        if (!findings.isEmpty()) {
+            def preview = findings.take(20).collect { finding ->
+                "${finding.rule} ${finding.path}:${finding.lineNumber}: ${finding.normalized}"
+            }.join(System.lineSeparator())
+            throw new GradleException(
+                    'DelosDB server static analysis found ' + findings.size() +
+                            ' server boundary violation(s). Report: ' + reportFile +
+                            System.lineSeparator() + preview)
+        }
+
+        logger.lifecycle('DelosDB server static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
-    description = 'Runs S0 closeout verification gates that are safe before the next MVCC feature phase.'
-    dependsOn 'delosStorageStaticAnalysis'
+    description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis'
 }

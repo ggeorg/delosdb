@@ -11,12 +11,8 @@ group = rootProject.group
 // through Gradle configurations instead of hard-coded sibling output dirs.
 def moduleName = 'org.apache.derby.server'
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
-def externalModulePath = rootProject.files(
-        'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
-        'tools/java/json_simple-1.1.jar',
-        'tools/java/lucene-analyzers-common.jar',
-        'tools/java/lucene-core.jar',
-        'tools/java/lucene-queryparser.jar'
+def servletModulePath = rootProject.files(
+        'tools/java/geronimo-spec-servlet-2.4-rc4.jar'
 )
 
 java {
@@ -36,7 +32,7 @@ dependencies {
     implementation project(':delosdb-tools')
     implementation project(':delosdb-runtime-api')
     compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
-    compileOnly externalModulePath
+    compileOnly servletModulePath
     compileOnly "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
 
     enginePatchModule(project(':delosdb-storage-api')) { transitive = false }
