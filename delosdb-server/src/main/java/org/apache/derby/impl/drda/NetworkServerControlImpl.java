@@ -329,6 +329,8 @@ public final class NetworkServerControlImpl {
     // in a simple first come, first serve manner - no priorities
     private final DrdaSessionScheduler sessionScheduler =
             new DrdaSessionScheduler();
+    private final DrdaThreading drdaThreading =
+            DrdaThreading.fromSystemProperties();
 
     // known application requesters
     private Map<String, AppRequester> appRequesterTable =
@@ -4079,7 +4081,7 @@ public final class NetworkServerControlImpl {
                     thread = new DRDAConnThread(session, this, getTimeSlice(),
                                                 getLogConnections());
                     threadList.add(thread);
-                    thread.start();
+                    thread.startWith(drdaThreading);
                 }
             }
         }
@@ -4176,6 +4178,10 @@ public final class NetworkServerControlImpl {
     
     int getThreadListSize() {
         return threadList.size();
+    }
+
+    String getThreadModeForTesting() {
+        return drdaThreading.modeName();
     }
     
     int getConnectionNumber() {

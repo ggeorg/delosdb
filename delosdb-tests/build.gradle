@@ -349,7 +349,7 @@ tasks.register('generateNativeAuthenticationTestJar', Jar) {
 
 tasks.register('runDelosServerSchedulerTest', Test) {
     group = 'verification'
-    description = 'Runs focused DRDA session scheduler cleanup and accounting tests.'
+    description = 'Runs focused DRDA session scheduler and threading cleanup tests.'
     dependsOn tasks.named('compileTestJava'), ':jars'
 
     modularity.inferModulePath = false
@@ -357,6 +357,7 @@ tasks.register('runDelosServerSchedulerTest', Test) {
     classpath = testRuntimeClasspath()
     useJUnit()
     include 'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaSessionSchedulerTest.class'
+    include 'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaThreadingTest.class'
 
     workingDir = layout.buildDirectory.dir('test-work/runDelosServerSchedulerTest').get().asFile
     maxHeapSize = '1536m'

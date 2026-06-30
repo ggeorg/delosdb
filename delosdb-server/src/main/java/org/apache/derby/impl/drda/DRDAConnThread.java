@@ -132,6 +132,7 @@ class DRDAConnThread extends Thread {
     private boolean sendWarningsOnCNTQRY = false;   // Send Warnings for SELECT if true
     /** End this thread. */
     private volatile boolean close;
+    private volatile Thread executionThread;
     private static HeaderPrintWriter logStream;
     private AppRequester appRequester;  // pointer to the application requester
                                         // for the session being serviced
@@ -246,6 +247,29 @@ class DRDAConnThread extends Thread {
         this.logConnections = logConnections;
         this.pendingStatementTimeout = -1;
         initialize();
+    }
+
+    /**
+     * Starts this DRDA worker using the configured server threading policy.
+     */
+    void startWith(DrdaThreading threading) {
+        Thread runner = threading.newConnectionWorkerThread(this);
+        executionThread = runner;
+        if (runner == this) {
+            super.start();
+        } else {
+            runner.start();
+        }
+    }
+
+    @Override
+    public void interrupt() {
+        Thread runner = executionThread;
+        if (runner != null && runner != this) {
+            runner.interrupt();
+            return;
+        }
+        super.interrupt();
     }
 
     /**

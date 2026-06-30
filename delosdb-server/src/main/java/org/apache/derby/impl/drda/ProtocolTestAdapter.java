@@ -318,6 +318,68 @@ public class ProtocolTestAdapter {
 
 
     /**
+     * Adapter for white-box tests of the DRDA server threading policy.
+     */
+    public static final class ThreadingProbe {
+        public String propertyName() {
+            return DrdaThreading.THREAD_MODE_PROPERTY;
+        }
+
+        public String platformModeName() {
+            return DrdaThreading.THREAD_MODE_PLATFORM;
+        }
+
+        public String virtualModeName() {
+            return DrdaThreading.THREAD_MODE_VIRTUAL;
+        }
+
+        public boolean usesVirtualWorkers(String propertyValue) {
+            return DrdaThreading.fromPropertyValueForTesting(propertyValue)
+                    .usesVirtualConnectionWorkers();
+        }
+
+        public boolean startedThreadIsVirtual(String propertyValue)
+                throws Exception {
+            DrdaThreading threading =
+                    DrdaThreading.fromPropertyValueForTesting(propertyValue);
+            final java.util.concurrent.CountDownLatch entered =
+                    new java.util.concurrent.CountDownLatch(1);
+            final java.util.concurrent.CountDownLatch release =
+                    new java.util.concurrent.CountDownLatch(1);
+            final java.util.concurrent.atomic.AtomicBoolean virtual =
+                    new java.util.concurrent.atomic.AtomicBoolean(false);
+            final java.util.concurrent.atomic.AtomicReference<Throwable> failure =
+                    new java.util.concurrent.atomic.AtomicReference<Throwable>();
+
+            Thread thread = threading.startThreadForTesting(
+                    "drda-threading-probe",
+                    () -> {
+                        try {
+                            virtual.set(Thread.currentThread().isVirtual());
+                            entered.countDown();
+                            release.await(5L, java.util.concurrent.TimeUnit.SECONDS);
+                        } catch (Throwable t) {
+                            failure.set(t);
+                        }
+                    });
+
+            if (!entered.await(5L, java.util.concurrent.TimeUnit.SECONDS)) {
+                throw new AssertionError("threading probe did not start");
+            }
+            release.countDown();
+            thread.join(5000L);
+            if (thread.isAlive()) {
+                thread.interrupt();
+                throw new AssertionError("threading probe did not stop");
+            }
+            if (failure.get() != null) {
+                throw new AssertionError(failure.get());
+            }
+            return virtual.get();
+        }
+    }
+
+    /**
      * Adapter for white-box tests of the DRDA session scheduler.
      *
      * <p>The scheduler is intentionally package-private because it is an
