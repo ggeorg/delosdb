@@ -288,10 +288,14 @@ public final class PageVolumeMvccStateStore<T> {
         if (!enabled()) {
             return;
         }
-        for (PersistedRow<T> row : visibleRows) {
-            PageBackedMvccTable.requirePayloadFitsSinglePage(
-                    keyFor(row.rowId()),
-                    rowCodec.encode(row.values()));
+        try {
+            for (PersistedRow<T> row : visibleRows) {
+                PageBackedMvccTable.requirePayloadFitsSinglePage(
+                        keyFor(row.rowId()),
+                        rowCodec.encode(row.values()));
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not encode MVCC page-volume state " + pageFile, e);
         }
     }
 
