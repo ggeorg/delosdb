@@ -21,6 +21,7 @@ import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
 import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableStats;
+import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictException;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.DurableMvccSqlRowCodec;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowPayload;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccTable;
@@ -127,7 +128,11 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     @Override
     public void insert(K key, V value, TxContext transaction) {
         DelosMvccTxContext context = requireMvccContext(transaction);
-        table.insert(key, value, context.transaction(), context.commandSequence());
+        try {
+            table.insert(key, value, context.transaction(), context.commandSequence());
+        } catch (MvccWriteConflictException e) {
+            throw versionedWriteConflict(e);
+        }
         DelosLogSequenceNumber versionLsn = appendInsertVersionIfEnabled(context, key);
         recordIndexCandidates(key, value);
         recordDurableChange(context.transactionId(), DurableChange.insert(key, value, versionLsn));
@@ -139,7 +144,11 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     @Override
     public void update(K key, V value, TxContext transaction) {
         DelosMvccTxContext context = requireMvccContext(transaction);
-        table.update(key, value, context.transaction(), context.snapshot(), context.catalog(), context.commandSequence());
+        try {
+            table.update(key, value, context.transaction(), context.snapshot(), context.catalog(), context.commandSequence());
+        } catch (MvccWriteConflictException e) {
+            throw versionedWriteConflict(e);
+        }
         DelosLogSequenceNumber versionLsn = appendUpdateVersionIfEnabled(context, key);
         recordIndexCandidates(key, value);
         recordDurableChange(context.transactionId(), DurableChange.update(key, value, versionLsn));
@@ -151,7 +160,11 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
     @Override
     public void delete(K key, TxContext transaction) {
         DelosMvccTxContext context = requireMvccContext(transaction);
-        table.delete(key, context.transaction(), context.snapshot(), context.catalog(), context.commandSequence());
+        try {
+            table.delete(key, context.transaction(), context.snapshot(), context.catalog(), context.commandSequence());
+        } catch (MvccWriteConflictException e) {
+            throw versionedWriteConflict(e);
+        }
         DelosLogSequenceNumber versionLsn = appendDeleteVersionIfEnabled(context, key);
         recordDurableChange(context.transactionId(), DurableChange.delete(key, versionLsn));
         if (shouldLog()) {
@@ -252,6 +265,10 @@ public final class DelosMvccTable<K, V> implements VersionedTable<K, V> {
 
     private boolean shouldLog() {
         return storageLog.isEnabled() && !loggingSuppressed.getAsBoolean();
+    }
+
+    private static VersionedWriteConflictException versionedWriteConflict(MvccWriteConflictException e) {
+        return new VersionedWriteConflictException(e.getMessage(), e);
     }
 
     private DelosLogSequenceNumber appendInsertVersionIfEnabled(DelosMvccTxContext context, K key) {
