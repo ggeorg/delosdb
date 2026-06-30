@@ -36,11 +36,12 @@ import java.util.stream.Collectors;
 
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccDurableConsistencyCheck;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowDirectoryStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowPayload;
-import io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccTable;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccVacuumPlan;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccVacuumResult;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccTable;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 
 
@@ -191,6 +192,31 @@ public final class PageVolumeMvccStateStore<T> {
 
     public int logicalRowCount() {
         return enabled() ? table.logicalRowCount() : 0;
+    }
+
+    public int consistencyErrorCount() {
+        return validateConsistency().errors().size();
+    }
+
+    public String consistencySummary() {
+        MvccDurableConsistencyCheck.Result result = validateConsistency();
+        if (result.valid()) {
+            return "valid: physicalVersions=" + result.physicalVersions()
+                    + ", logicalRows=" + result.logicalRows()
+                    + ", durableHeads=" + result.durableHeads();
+        }
+        return "invalid: " + String.join("; ", result.errors());
+    }
+
+    public void assertConsistent() {
+        validateConsistency().assertValid();
+    }
+
+    public MvccDurableConsistencyCheck.Result validateConsistency() {
+        if (!enabled()) {
+            return new MvccDurableConsistencyCheck.Result(0, 0, 0, List.of());
+        }
+        return table.validateConsistency();
     }
 
     public VacuumOutcome vacuumSafely(boolean hasRetainedInheritedSnapshot) {

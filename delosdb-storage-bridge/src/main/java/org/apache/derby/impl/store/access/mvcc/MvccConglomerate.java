@@ -358,6 +358,18 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).logicalRowCountForTesting();
     }
 
+    static int consistencyErrorCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).consistencyErrorCountForTesting();
+    }
+
+    static String consistencySummaryForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).consistencySummaryForTesting();
+    }
+
+    static void assertConsistentForDiagnostics(int segment, long containerId) {
+        stateFor(new ContainerKey(segment, containerId)).assertConsistentForTesting();
+    }
+
     static boolean lastVacuumSkippedForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).lastVacuumOutcomeForTesting().skipped();
     }

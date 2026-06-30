@@ -40,6 +40,12 @@ public interface DelosStorageTableDiagnostics {
 
     int logicalRowCountForTesting();
 
+    int consistencyErrorCountForTesting();
+
+    String consistencySummaryForTesting();
+
+    void assertConsistentForTesting();
+
     DelosVacuumOutcome lastVacuumOutcomeForTesting();
 
     Path legacySnapshotFileForTesting();

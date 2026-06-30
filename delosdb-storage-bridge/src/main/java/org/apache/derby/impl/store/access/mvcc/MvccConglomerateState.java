@@ -166,6 +166,18 @@ final class MvccConglomerateState {
         return diagnostics.logicalRowCountForTesting();
     }
 
+    synchronized int consistencyErrorCountForTesting() {
+        return diagnostics.consistencyErrorCountForTesting();
+    }
+
+    synchronized String consistencySummaryForTesting() {
+        return diagnostics.consistencySummaryForTesting();
+    }
+
+    synchronized void assertConsistentForTesting() {
+        diagnostics.assertConsistentForTesting();
+    }
+
     synchronized DelosVacuumOutcome lastVacuumOutcomeForTesting() {
         return diagnostics.lastVacuumOutcomeForTesting();
     }

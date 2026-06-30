@@ -252,6 +252,21 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public synchronized int consistencyErrorCountForTesting() {
+        return pageVolumeStateStore.consistencyErrorCount();
+    }
+
+    @Override
+    public synchronized String consistencySummaryForTesting() {
+        return pageVolumeStateStore.consistencySummary();
+    }
+
+    @Override
+    public synchronized void assertConsistentForTesting() {
+        pageVolumeStateStore.assertConsistent();
+    }
+
+    @Override
     public synchronized DelosVacuumOutcome vacuumSafely() {
         boolean hasRetainedInheritedSnapshot = transactions.activeTransactionCount() > 0
                 || transactions.retainedSnapshotCount() > 0;

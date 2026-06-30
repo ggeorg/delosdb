@@ -56,6 +56,12 @@ public interface DelosStorageDiagnostics {
 
     int logicalRowCountForTesting(int segment, long containerId);
 
+    int consistencyErrorCountForTesting(int segment, long containerId);
+
+    String consistencySummaryForTesting(int segment, long containerId);
+
+    void assertConsistentForTesting(int segment, long containerId);
+
     boolean lastVacuumSkippedForTesting(int segment, long containerId);
 
     String lastVacuumReasonForTesting(int segment, long containerId);

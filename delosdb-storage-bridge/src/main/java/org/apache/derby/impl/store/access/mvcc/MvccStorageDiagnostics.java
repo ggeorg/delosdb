@@ -98,6 +98,21 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public int consistencyErrorCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.consistencyErrorCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public String consistencySummaryForTesting(int segment, long containerId) {
+        return MvccConglomerate.consistencySummaryForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public void assertConsistentForTesting(int segment, long containerId) {
+        MvccConglomerate.assertConsistentForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public boolean lastVacuumSkippedForTesting(int segment, long containerId) {
         return MvccConglomerate.lastVacuumSkippedForDiagnostics(segment, containerId);
     }
