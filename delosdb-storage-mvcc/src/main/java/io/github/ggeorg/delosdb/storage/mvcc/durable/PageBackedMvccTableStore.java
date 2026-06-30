@@ -111,15 +111,10 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     public synchronized List<StoredVersionRecord> loadAll() throws IOException {
         List<StoredVersionRecord> records = new ArrayList<>();
-        long count = pageVolume.pageCount();
-        for (long pageNumber = 0; pageNumber < count; pageNumber++) {
-            DelosPage page = readPage(new DelosPageId(pageNumber));
-            for (int slot = 0; slot < page.slotCount(); slot++) {
-                byte[] payload = page.readRecord(slot);
-                records.add(readStoredVersionRecord(
-                        new MvccVersionLocator(page.pageId(), slot),
-                        MvccPageRecordCodec.decode(payload).versionRecord()));
-            }
+        for (MvccDurablePageScan.SlotRecord slot : scanPages().slotRecords()) {
+            records.add(readStoredVersionRecord(
+                    slot.locator(),
+                    MvccPageRecordCodec.decode(slot.payload()).versionRecord()));
         }
         return records;
     }
@@ -198,50 +193,41 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     synchronized List<String> pageRecordConsistencyErrors() throws IOException {
         List<String> errors = new ArrayList<>();
-        long count = pageVolume.pageCount();
-        for (long pageNumber = 0L; pageNumber < count; pageNumber++) {
-            DelosPage page = readPage(new DelosPageId(pageNumber));
-            for (int slot = 0; slot < page.slotCount(); slot++) {
-                byte[] payload = page.readRecord(slot);
-                try {
-                    MvccPageRecordCodec.decodeVersionRecord(payload);
-                } catch (RuntimeException invalidRecord) {
-                    errors.add("page " + pageNumber + " slot " + slot
-                            + " has invalid MVCC page-record header/body: "
-                            + invalidRecord.getMessage());
-                }
+        for (MvccDurablePageScan.SlotRecord slot : scanPages().slotRecords()) {
+            try {
+                MvccPageRecordCodec.decodeVersionRecord(slot.payload());
+            } catch (RuntimeException invalidRecord) {
+                errors.add("page " + slot.pageId().value() + " slot " + slot.slotId()
+                        + " has invalid MVCC page-record header/body: "
+                        + invalidRecord.getMessage());
             }
         }
         return List.copyOf(errors);
     }
 
-
     synchronized PageRecordStats pageRecordStats() throws IOException {
-        long pageCount = pageVolume.pageCount();
+        MvccDurablePageScan scan = scanPages();
         int slotCount = 0;
         int wrappedRecordCount = 0;
         int legacyRecordCount = 0;
         int versionRecordCount = 0;
         int nonVersionRecordCount = 0;
-        for (long pageNumber = 0L; pageNumber < pageCount; pageNumber++) {
-            DelosPage page = readPage(new DelosPageId(pageNumber));
-            for (int slot = 0; slot < page.slotCount(); slot++) {
-                slotCount++;
-                MvccPageRecordCodec.PageRecordMetadata metadata = MvccPageRecordCodec.metadata(page.readRecord(slot));
-                if (metadata.legacyFormat()) {
-                    legacyRecordCount++;
-                } else {
-                    wrappedRecordCount++;
-                }
-                if (metadata.versionRecord()) {
-                    versionRecordCount++;
-                } else {
-                    nonVersionRecordCount++;
-                }
+        for (MvccDurablePageScan.SlotRecord slot : scan.slotRecords()) {
+            slotCount++;
+            MvccPageRecordCodec.PageRecordMetadata metadata = MvccPageRecordCodec.metadata(slot.payload());
+            if (metadata.legacyFormat()) {
+                legacyRecordCount++;
+            } else {
+                wrappedRecordCount++;
+            }
+            if (metadata.versionRecord()) {
+                versionRecordCount++;
+            } else {
+                nonVersionRecordCount++;
             }
         }
         return new PageRecordStats(
-                pageCount,
+                scan.pageCount(),
                 slotCount,
                 wrappedRecordCount,
                 legacyRecordCount,
@@ -252,7 +238,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     synchronized List<String> reusablePageConsistencyErrors() throws IOException {
         List<String> errors = new ArrayList<>();
         long pageCount = pageVolume.pageCount();
-        NavigableSet<Long> emptyPages = scanEmptyPageIds();
+        NavigableSet<Long> emptyPages = scanPages().emptyPageIds();
         for (Long pageNumber : reusablePageIds) {
             if (pageNumber == null) {
                 errors.add("reusable-page index contains null page id");
@@ -433,7 +419,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             MvccReusablePageIndexStore reusablePageIndexStore) throws IOException {
         Objects.requireNonNull(pageVolume, "pageVolume");
         Objects.requireNonNull(reusablePageIndexStore, "reusablePageIndexStore");
-        NavigableSet<Long> emptyPages = scanEmptyPageIds(pageVolume);
+        NavigableSet<Long> emptyPages = scanPages(pageVolume).emptyPageIds();
         if (!reusablePageIndexStore.exists()) {
             return emptyPages;
         }
@@ -475,30 +461,34 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return page;
     }
 
-    private NavigableSet<Long> scanEmptyPageIds() throws IOException {
-        NavigableSet<Long> reusablePages = new TreeSet<>();
-        long count = pageVolume.pageCount();
-        for (long pageNumber = 0L; pageNumber < count; pageNumber++) {
-            DelosPage page = readPage(new DelosPageId(pageNumber));
-            if (page.slotCount() == 0) {
-                reusablePages.add(pageNumber);
+    private MvccDurablePageScan scanPages() throws IOException {
+        return MvccDurablePageScan.scan(new MvccDurablePageScan.PageSource() {
+            @Override
+            public long pageCount() throws IOException {
+                return pageVolume.pageCount();
             }
-        }
-        return reusablePages;
+
+            @Override
+            public DelosPage readPage(DelosPageId pageId) throws IOException {
+                return PageBackedMvccTableStore.this.readPage(pageId);
+            }
+        });
     }
 
-    private static NavigableSet<Long> scanEmptyPageIds(DelosPageVolume pageVolume) throws IOException {
-        NavigableSet<Long> reusablePages = new TreeSet<>();
-        long count = pageVolume.pageCount();
-        for (long pageNumber = 0L; pageNumber < count; pageNumber++) {
-            DelosPage page = pageVolume.readPage(new DelosPageId(pageNumber));
-            if (page.slotCount() == 0) {
-                reusablePages.add(pageNumber);
+    private static MvccDurablePageScan scanPages(DelosPageVolume pageVolume) throws IOException {
+        Objects.requireNonNull(pageVolume, "pageVolume");
+        return MvccDurablePageScan.scan(new MvccDurablePageScan.PageSource() {
+            @Override
+            public long pageCount() throws IOException {
+                return pageVolume.pageCount();
             }
-        }
-        return reusablePages;
-    }
 
+            @Override
+            public DelosPage readPage(DelosPageId pageId) throws IOException {
+                return pageVolume.readPage(pageId);
+            }
+        });
+    }
 
     public record PageRecordStats(
             long pageCount,
