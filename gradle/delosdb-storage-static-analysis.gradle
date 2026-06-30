@@ -336,8 +336,55 @@ tasks.register('delosServerStaticAnalysis') {
     }
 }
 
+
+
+def delosStaleGradleScripts = [
+        'gradle/delosdb-runtime-distribution.gradle',
+        'gradle/delosdb-verification-aliases.gradle',
+        'gradle/delosdb-publication.gradle'
+]
+
+tasks.register('delosStaleGradleScriptCheck') {
+    group = 'verification'
+    description = 'Fails if obsolete DelosDB Gradle script fragments are present after build-script consolidation.'
+
+    inputs.files(delosStaleGradleScripts.collect { file(it) }.findAll { it.exists() }).optional()
+    outputs.file(layout.buildDirectory.file('reports/delosdb/stale-gradle-scripts.txt'))
+
+    doLast {
+        def staleFiles = delosStaleGradleScripts.collect { file(it) }.findAll { it.exists() }
+        def reportFile = layout.buildDirectory.file('reports/delosdb/stale-gradle-scripts.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB stale Gradle script check')
+            writer.println('=================================')
+            writer.println()
+            if (staleFiles.isEmpty()) {
+                writer.println('No obsolete Gradle script fragments found.')
+            } else {
+                writer.println('Obsolete Gradle script fragments still present:')
+                staleFiles.each { staleFile ->
+                    writer.println('  - ' + rootProject.projectDir.toPath().relativize(staleFile.toPath()).toString().replace(File.separatorChar, '/' as char))
+                }
+                writer.println()
+                writer.println('Run scripts/cleanup-stale-gradle-scripts.sh after applying the cleanup overlay.')
+            }
+        }
+
+        if (!staleFiles.isEmpty()) {
+            def stalePaths = staleFiles.collect {
+                rootProject.projectDir.toPath().relativize(it.toPath()).toString().replace(File.separatorChar, '/' as char)
+            }.join(', ')
+            throw new GradleException('Obsolete DelosDB Gradle script fragment(s) still present: ' + stalePaths +
+                    '. Run scripts/cleanup-stale-gradle-scripts.sh')
+        }
+
+        logger.lifecycle('DelosDB stale Gradle script check passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosStaleGradleScriptCheck'
 }
