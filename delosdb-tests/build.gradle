@@ -660,6 +660,7 @@ tasks.register('runDelosMvccSqlIntegrationTest', Test) {
     include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBloatMeasurementTest.class'
     include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageReuseTest.class'
     include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class'
+    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOverflowLifecycleTest.class'
     include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.class'
     include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypeCoverageTest.class'
     include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.class'

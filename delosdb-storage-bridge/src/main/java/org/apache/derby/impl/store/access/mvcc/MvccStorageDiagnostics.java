@@ -103,6 +103,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public long overflowPageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.overflowPageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public int consistencyErrorCountForTesting(int segment, long containerId) {
         return MvccConglomerate.consistencyErrorCountForDiagnostics(segment, containerId);
     }

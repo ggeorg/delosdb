@@ -37,6 +37,39 @@ final class MvccOverflowPayloadCodecTest {
         assertFalse(decoded.firstChunkLocator().isPresent());
     }
 
+
+    @Test
+    void overflowReferenceRoundTripsKeyAndDescriptor() {
+        MvccOverflowPayloadDescriptor descriptor = new MvccOverflowPayloadDescriptor(
+                12_000L,
+                2,
+                Optional.of(new MvccVersionLocator(new DelosPageId(4L), 1)));
+        MvccOverflowPayloadReferenceCodec.Reference reference =
+                new MvccOverflowPayloadReferenceCodec.Reference("row:44", descriptor);
+
+        byte[] encoded = MvccOverflowPayloadReferenceCodec.encode(reference);
+        MvccOverflowPayloadReferenceCodec.Reference decoded =
+                MvccOverflowPayloadReferenceCodec.decode(encoded);
+
+        assertEquals(reference, decoded);
+    }
+
+    @Test
+    void overflowReferenceRejectsEmptyDescriptorAndBadMagic() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new MvccOverflowPayloadReferenceCodec.Reference("row:44", MvccOverflowPayloadDescriptor.empty()));
+
+        MvccOverflowPayloadDescriptor descriptor = new MvccOverflowPayloadDescriptor(
+                12_000L,
+                2,
+                Optional.of(new MvccVersionLocator(new DelosPageId(4L), 1)));
+        byte[] encoded = MvccOverflowPayloadReferenceCodec.encode(
+                new MvccOverflowPayloadReferenceCodec.Reference("row:44", descriptor));
+        encoded[0] = 0x12;
+
+        assertThrows(IllegalArgumentException.class, () -> MvccOverflowPayloadReferenceCodec.decode(encoded));
+    }
+
     @Test
     void chunkRoundTripsLinkedLocatorAndPayload() {
         byte[] payload = new byte[] {1, 3, 5, 7};

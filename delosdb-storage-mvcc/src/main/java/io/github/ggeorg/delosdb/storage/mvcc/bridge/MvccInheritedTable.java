@@ -131,7 +131,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     public synchronized void commit(DelosStorageTransaction transaction) {
         MvccTransaction nativeTx = nativeTransaction(transaction);
         try {
-            pageVolumeStateStore.requireVisibleRowsFitSinglePageRecords(visibleRows(nativeTx));
+            pageVolumeStateStore.requireVisibleRowsCanBePersisted(visibleRows(nativeTx));
         } catch (RuntimeException failure) {
             abortIfActive(nativeTx, failure);
             throw failure;
@@ -261,6 +261,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public synchronized long pageCountForTesting() {
         return pageVolumeStateStore.pageCount();
+    }
+
+    @Override
+    public synchronized long overflowPageCountForTesting() {
+        return pageVolumeStateStore.overflowPageCount();
     }
 
     @Override

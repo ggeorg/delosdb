@@ -105,6 +105,36 @@ final class PageBackedMvccTableTest {
         }
     }
 
+
+    @Test
+    void committedLargePayloadUsesOverflowPagesAndSurvivesVacuumAndReopen() throws Exception {
+        Path tableFile = tempDir.resolve("overflow-table.mvccp");
+        String largeValue = "x".repeat(16_000);
+        try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile)) {
+            table.insertCommitted("account:1", largeValue, 1L, 1L);
+            assertEquals(largeValue, table.read("account:1", new MvccCommitSequence(1L)).orElseThrow());
+            if (table.overflowPageCount() == 0L) {
+                throw new AssertionError("expected large MVCC payload to allocate overflow pages");
+            }
+            table.validateConsistency().assertValid();
+        }
+
+        try (PageBackedMvccTable reopened = PageBackedMvccTable.open(tableFile)) {
+            assertEquals(largeValue, reopened.read("account:1", new MvccCommitSequence(1L)).orElseThrow());
+            assertEquals(1, reopened.physicalVersionCount("account:1"));
+            assertEquals(1, reopened.logicalRowCount());
+            reopened.validateConsistency().assertValid();
+            reopened.vacuum(MvccVacuumPlan.through(Long.MAX_VALUE));
+            assertEquals(largeValue, reopened.read("account:1", new MvccCommitSequence(1L)).orElseThrow());
+            assertFalse(Files.notExists(PageBackedMvccTable.overflowPath(tableFile)));
+        }
+
+        try (PageBackedMvccTable reopenedAgain = PageBackedMvccTable.open(tableFile)) {
+            assertEquals(largeValue, reopenedAgain.read("account:1", new MvccCommitSequence(1L)).orElseThrow());
+            reopenedAgain.validateConsistency().assertValid();
+        }
+    }
+
     @Test
     void corruptPayloadIsRejectedOnOpen() throws Exception {
         Path tableFile = tempDir.resolve("table.mvccp");

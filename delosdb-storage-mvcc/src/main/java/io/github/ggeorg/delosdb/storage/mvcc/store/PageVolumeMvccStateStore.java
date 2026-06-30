@@ -205,6 +205,17 @@ public final class PageVolumeMvccStateStore<T> {
         }
     }
 
+    public long overflowPageCount() {
+        if (!enabled()) {
+            return 0L;
+        }
+        try {
+            return table.overflowPageCount();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read MVCC overflow page count for " + pageFile, e);
+        }
+    }
+
     public int consistencyErrorCount() {
         return validateConsistency().errors().size();
     }
@@ -283,14 +294,14 @@ public final class PageVolumeMvccStateStore<T> {
         return table.rowDirectoryHeadForRowId(new MvccRowId(rowId));
     }
 
-    public void requireVisibleRowsFitSinglePageRecords(List<PersistedRow<T>> visibleRows) {
+    public void requireVisibleRowsCanBePersisted(List<PersistedRow<T>> visibleRows) {
         Objects.requireNonNull(visibleRows, "visibleRows");
         if (!enabled()) {
             return;
         }
         try {
             for (PersistedRow<T> row : visibleRows) {
-                PageBackedMvccTable.requirePayloadFitsSinglePage(
+                PageBackedMvccTable.requirePayloadCanBeEncoded(
                         keyFor(row.rowId()),
                         rowCodec.encode(row.values()));
             }
@@ -377,6 +388,8 @@ public final class PageVolumeMvccStateStore<T> {
             if (rowDirectory != null) {
                 Files.deleteIfExists(rowDirectory);
             }
+            Path overflow = PageBackedMvccTable.overflowPath(pageFile);
+            Files.deleteIfExists(overflow);
             if (pageMutationLogFile != null) {
                 Files.deleteIfExists(pageMutationLogFile);
             }

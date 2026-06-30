@@ -170,6 +170,10 @@ final class MvccConglomerateState {
         return diagnostics.pageCountForTesting();
     }
 
+    synchronized long overflowPageCountForTesting() {
+        return diagnostics.overflowPageCountForTesting();
+    }
+
     synchronized int consistencyErrorCountForTesting() {
         return diagnostics.consistencyErrorCountForTesting();
     }

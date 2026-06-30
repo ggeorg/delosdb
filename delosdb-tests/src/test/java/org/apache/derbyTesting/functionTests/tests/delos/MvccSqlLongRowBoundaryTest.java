@@ -23,15 +23,17 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
-/** SQL boundary test for delos_mvcc rows that currently exceed one page. */
+/** SQL proof for delos_mvcc rows that require MVCC overflow payload pages. */
 public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
-    public void testOversizedVarcharFailsCleanlyAndLeavesMvccTableUsable() throws Exception {
-        String databaseName = databaseName("mvcc-sql-long-row-boundary-db");
+    public void testLongVarcharUsesOverflowPagesAndSurvivesVacuumAndReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-long-row-overflow-db");
         DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        String largePayload = repeated('x', 16000);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -43,16 +45,21 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
             connection.rollback();
         }
 
-        assertOversizedInsertFailsCleanly(databaseName);
+        try (Connection connection = openDatabase(databaseName, false)) {
+            connection.setAutoCommit(false);
+            insertRow(connection, 1, largePayload);
+            connection.commit();
+
+            assertPayloadRoundTrips(connection, 1, largePayload);
+            assertMvccConsistent(diagnostics, containerId);
+            connection.rollback();
+        }
 
         try (Connection connection = openDatabase(databaseName, false)) {
             connection.setAutoCommit(false);
-            insertRow(connection, 2, "small-after-oversized-failure");
+            executeUpdate(connection, "call SYSCS_UTIL.SYSCS_COMPRESS_TABLE('APP', 'MVCC_LONG_ROW_T', 1)");
             connection.commit();
-
-            assertRows(connection,
-                    "select id, payload from mvcc_long_row_t order by id",
-                    "2|small-after-oversized-failure");
+            assertPayloadRoundTrips(connection, 1, largePayload);
             assertMvccConsistent(diagnostics, containerId);
             connection.rollback();
         }
@@ -62,34 +69,7 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
         try (Connection reopened = openDatabase(databaseName, false)) {
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_LONG_ROW_T");
             assertMvccConsistent(diagnostics, reopenedContainerId);
-            assertRows(reopened,
-                    "select id, payload from mvcc_long_row_t order by id",
-                    "2|small-after-oversized-failure");
-        }
-    }
-
-
-    private static void assertOversizedInsertFailsCleanly(String databaseName) throws SQLException {
-        Connection connection = openDatabase(databaseName, false);
-        try {
-            connection.setAutoCommit(false);
-            assertOversizedRowRejected(() -> {
-                insertRow(connection, 1, repeated('x', 16000));
-                connection.commit();
-            });
-        } finally {
-            rollbackAfterExpectedConflict(connection);
-            closeQuietly(connection);
-        }
-    }
-
-    private static void closeQuietly(Connection connection) throws SQLException {
-        try {
-            connection.close();
-        } catch (SQLException e) {
-            if (!"08003".equals(e.getSQLState()) && !"25001".equals(e.getSQLState())) {
-                throw e;
-            }
+            assertPayloadRoundTrips(reopened, 1, largePayload);
         }
     }
 
@@ -109,16 +89,15 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
         }
     }
 
-    private static void assertOversizedRowRejected(SqlAction action) throws SQLException {
-        try {
-            action.run();
-            fail("Expected delos_mvcc to reject a row that exceeds the current single-page record format");
-        } catch (SQLException expected) {
-            assertTrue("expected clean long-row/overflow boundary failure, got: " + expected,
-                    containsMessage(expected, "too large")
-                            || containsMessage(expected, "one page")
-                            || containsMessage(expected, "overflow")
-                            || containsMessage(expected, "does not fit"));
+    private static void assertPayloadRoundTrips(Connection connection, int id, String expected) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "select payload from mvcc_long_row_t where id = ?")) {
+            statement.setInt(1, id);
+            try (ResultSet rs = statement.executeQuery()) {
+                assertTrue("expected row " + id, rs.next());
+                assertEquals(expected, rs.getString(1));
+                assertFalse("expected only one row for id " + id, rs.next());
+            }
         }
     }
 

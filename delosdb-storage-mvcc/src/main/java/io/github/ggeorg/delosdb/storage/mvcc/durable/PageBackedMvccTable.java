@@ -256,22 +256,12 @@ public final class PageBackedMvccTable implements AutoCloseable {
 
 
     /**
-     * Validates that a payload can be represented by the current single-page
-     * MVCC version-record format without mutating the durable table.
+     * Validates that a payload can be represented by the current MVCC durable
+     * row-payload codec. Large rows may be persisted through overflow pages.
      */
-    public static void requirePayloadFitsSinglePage(String key, byte[] value) {
+    public static void requirePayloadCanBeEncoded(String key, byte[] value) {
         MvccRowPayload payload = new MvccRowPayload(key, value);
-        MvccVersionRecord record = new MvccVersionRecord(
-                new MvccTupleHeader(
-                        new MvccRowId(1L),
-                        new MvccVersionId(1L),
-                        MvccVersionId.NONE,
-                        new MvccTransactionId(1L),
-                        MvccTransactionId.NONE,
-                        new MvccCommitSequence(1L),
-                        0),
-                MvccRowPayloadCodec.encode(payload));
-        PageBackedMvccTableStore.encodeAndRequireSinglePageRecord(record);
+        MvccRowPayloadCodec.encode(payload);
     }
 
     public synchronized Optional<String> read(String key, MvccCommitSequence snapshotSequence) {
@@ -387,6 +377,10 @@ public final class PageBackedMvccTable implements AutoCloseable {
 
     public synchronized long pageCount() throws IOException {
         return store.pageCount();
+    }
+
+    public synchronized long overflowPageCount() throws IOException {
+        return store.overflowPageCount();
     }
 
     @Override
@@ -524,6 +518,10 @@ public final class PageBackedMvccTable implements AutoCloseable {
     public static Path rowDirectoryPath(Path pageFile) {
         Objects.requireNonNull(pageFile, "pageFile");
         return pageFile.resolveSibling(pageFile.getFileName() + ".rowdir");
+    }
+
+    public static Path overflowPath(Path pageFile) {
+        return PageBackedMvccTableStore.overflowPath(pageFile);
     }
 
     private static byte[] stringBytes(String value) {

@@ -29,6 +29,7 @@ final class PageVolumeMvccStateStoreDropTest {
 
         Path pageFile = PageVolumeMvccPaths.pageFile(tempDir, "conglomerate-7-9");
         Path rowDirectoryFile = io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccTable.rowDirectoryPath(pageFile);
+        Path overflowFile = io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccTable.overflowPath(pageFile);
         Path mutationLogFile = PageVolumeMvccPaths.pageMutationLogFileFor(pageFile);
         Path outcomeLogFile = PageVolumeMvccPaths.transactionOutcomeLogFileFor(pageFile);
         Path walFile = PageVolumeMvccPaths.writeAheadLogFile(tempDir, "conglomerate-7-9");
@@ -36,6 +37,7 @@ final class PageVolumeMvccStateStoreDropTest {
 
         assertTrue(Files.exists(pageFile));
         assertTrue(Files.exists(rowDirectoryFile));
+        assertTrue(Files.exists(overflowFile));
         assertTrue(Files.exists(mutationLogFile));
         assertTrue(Files.exists(outcomeLogFile));
         assertTrue(Files.exists(walFile));
@@ -45,6 +47,7 @@ final class PageVolumeMvccStateStoreDropTest {
 
         assertFalse(Files.exists(pageFile));
         assertFalse(Files.exists(rowDirectoryFile));
+        assertFalse(Files.exists(overflowFile));
         assertFalse(Files.exists(mutationLogFile));
         assertFalse(Files.exists(outcomeLogFile));
         assertFalse(Files.exists(walFile));
