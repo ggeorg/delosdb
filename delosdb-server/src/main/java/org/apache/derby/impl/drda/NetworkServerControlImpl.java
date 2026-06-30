@@ -327,11 +327,8 @@ public final class NetworkServerControlImpl {
 
     // queue of sessions waiting for a free thread - the queue is managed
     // in a simple first come, first serve manner - no priorities
-    private List<Session> runQueue =
-            Collections.synchronizedList(new ArrayList<Session>());
-
-    // number of DRDAConnThreads waiting for something to do
-    private int freeThreads;
+    private final DrdaSessionScheduler sessionScheduler =
+            new DrdaSessionScheduler();
 
     // known application requesters
     private Map<String, AppRequester> appRequesterTable =
@@ -968,9 +965,7 @@ public final class NetworkServerControlImpl {
             // Wake up those waiting on sessions, so
             // they can close down
             try{
-                synchronized (runQueue) {
-                    runQueue.notifyAll();
-                }
+                sessionScheduler.wakeAll();
             } catch (Exception exception) {
                 consolePrintAndIgnore("DRDA_UnexpectedException.S", exception, true);
             }
@@ -1081,13 +1076,10 @@ public final class NetworkServerControlImpl {
                     // we're restarting the server (probably after a shutdown
                     // exception), so we need to clean up first.
 
-                        // Close and remove sessions on runQueue.
-                        synchronized (runQueue) {
-                            for (Session s : runQueue) {
-                                s.close();
-                                removeFromSessionTable(s.getConnNum());
-                            }
-                            runQueue.clear();
+                        // Close and remove sessions waiting for a worker.
+                        for (Session s : sessionScheduler.drainQueuedSessions()) {
+                            s.close();
+                            removeFromSessionTable(s.getConnNum());
                         }
 
                         // DERBY-1326: There could be active threads that
@@ -1922,45 +1914,7 @@ public final class NetworkServerControlImpl {
      */
     protected Session getNextSession(Session currentSession)
     {
-        Session retval = null;
-        if (shutdown == true)
-            return retval;
-        synchronized (runQueue)
-        {
-            try {
-                // nobody waiting - go on with current session
-                if (runQueue.size() == 0)
-                {
-                    // no current session - wait for some work
-                    if (currentSession == null)
-                    {
-                        while (runQueue.size() == 0)
-                        {
-                            // This thread has nothing to do now so 
-                            // we will add it to freeThreads
-                            freeThreads++;
-                            runQueue.wait();
-                            if (shutdown == true)
-                                return null;
-                            freeThreads--;
-                        }
-                    }
-                    else
-                        return currentSession;
-                }
-                retval = (Session) runQueue.get(0);
-                runQueue.remove(0);
-                if (currentSession != null)
-                    runQueueAdd(currentSession);
-            } catch (InterruptedException e) {
-            // If for whatever reason (ex. database shutdown) a waiting thread is
-            // interrupted while in this method, that thread is going to be
-            // closed down, so we need to decrement the number of threads
-            // that will be available for use.
-                freeThreads--;
-            }
-        }
-        return retval;
+        return sessionScheduler.nextSession(currentSession, () -> shutdown);
     }
     /**
      * Get the stored application requester or store if we haven't seen it yet
@@ -2438,13 +2392,9 @@ public final class NetworkServerControlImpl {
      *
      * @param clientSession session needing work
      */
-    private void runQueueAdd(Session clientSession)
+    private void enqueueSession(Session clientSession)
     {
-        synchronized(runQueue)
-        {
-            runQueue.add(clientSession);
-            runQueue.notify();
-        }
+        sessionScheduler.enqueue(clientSession);
     }
     /**
      * Go through the arguments and find the command and save the dash arguments
@@ -4109,15 +4059,11 @@ public final class NetworkServerControlImpl {
 
         // Check whether there are enough free threads to service all the
         // threads in the run queue in addition to the newly added session.
-        boolean enoughThreads;
-        synchronized (runQueue) {
-            enoughThreads = (runQueue.size() < freeThreads);
-        }
-        // No need to hold the synchronization on runQueue any longer than
-        // this. Since no other threads can make runQueue grow, and no other
-        // threads will reduce the number of free threads without removing
-        // sessions from runQueue, (runQueue.size() < freeThreads) cannot go
-        // from true to false until addSession() returns.
+        boolean enoughThreads = sessionScheduler.hasIdleThreadForNewSession();
+        // No need to hold the scheduler monitor any longer than this.
+        // addSession() is serialized by the accept thread, and scheduler
+        // capacity cannot move from sufficient to insufficient until this
+        // method returns.
 
         DRDAConnThread thread = null;
 
@@ -4140,7 +4086,7 @@ public final class NetworkServerControlImpl {
 
         // add the session to the run queue if we didn't start a new thread
         if (thread == null) {
-            runQueueAdd(session);
+            enqueueSession(session);
         }
     }
 
@@ -4174,7 +4120,7 @@ public final class NetworkServerControlImpl {
             }
         }
         int waitingSessions = 0;
-        for (Session session : runQueue)
+        for (Session session : sessionScheduler.snapshotQueuedSessions())
         {
                 s += session.buildRuntimeInfo("", locallangUtil);
                 waitingSessions ++;
@@ -4225,7 +4171,7 @@ public final class NetworkServerControlImpl {
     }
 
     int getRunQueueSize() {
-        return runQueue.size();
+        return sessionScheduler.waitingSessionCount();
     }
     
     int getThreadListSize() {
