@@ -20,6 +20,7 @@
  */
 package org.apache.derbyTesting.functionTests.tests.derbynet;
 
+import org.apache.derby.impl.drda.ProtocolTestAdapter.ServerConfigurationProbe;
 import org.apache.derby.impl.drda.ProtocolTestAdapter.ThreadingProbe;
 import org.apache.derbyTesting.junit.BaseTestCase;
 
@@ -32,15 +33,19 @@ public final class DrdaThreadingTest extends BaseTestCase {
     }
 
     public void testThreadModeParsingDefaultsToPlatform() {
-        ThreadingProbe probe = new ThreadingProbe();
+        ServerConfigurationProbe configuration =
+                new ServerConfigurationProbe();
 
-        assertEquals("delos.drda.threadMode", probe.propertyName());
-        assertFalse(probe.usesVirtualWorkers(null));
-        assertFalse(probe.usesVirtualWorkers(""));
-        assertFalse(probe.usesVirtualWorkers("unknown"));
-        assertFalse(probe.usesVirtualWorkers(probe.platformModeName()));
-        assertTrue(probe.usesVirtualWorkers(probe.virtualModeName()));
-        assertTrue(probe.usesVirtualWorkers(" VIRTUAL "));
+        assertEquals("delos.drda.threadMode",
+                configuration.threadModePropertyName());
+        assertFalse(configuration.usesVirtualWorkers(null));
+        assertFalse(configuration.usesVirtualWorkers(""));
+        assertFalse(configuration.usesVirtualWorkers("unknown"));
+        assertFalse(configuration.usesVirtualWorkers(
+                configuration.platformModeName()));
+        assertTrue(configuration.usesVirtualWorkers(
+                configuration.virtualModeName()));
+        assertTrue(configuration.usesVirtualWorkers(" VIRTUAL "));
     }
 
     public void testPlatformModeStartsPlatformThread() throws Exception {

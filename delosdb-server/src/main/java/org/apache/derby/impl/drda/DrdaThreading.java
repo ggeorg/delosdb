@@ -21,8 +21,6 @@
 
 package org.apache.derby.impl.drda;
 
-import java.util.Locale;
-import org.apache.derby.iapi.services.property.PropertyUtil;
 
 /**
  * Centralizes the DRDA server thread creation policy.
@@ -33,36 +31,42 @@ import org.apache.derby.iapi.services.property.PropertyUtil;
  * </p>
  */
 final class DrdaThreading {
-    static final String THREAD_MODE_PROPERTY = "delos.drda.threadMode";
-    static final String THREAD_MODE_PLATFORM = "platform";
-    static final String THREAD_MODE_VIRTUAL = "virtual";
+    static final String THREAD_MODE_PROPERTY =
+            DrdaServerConfiguration.THREAD_MODE_PROPERTY;
+    static final String THREAD_MODE_PLATFORM =
+            DrdaServerConfiguration.THREAD_MODE_PLATFORM;
+    static final String THREAD_MODE_VIRTUAL =
+            DrdaServerConfiguration.THREAD_MODE_VIRTUAL;
 
-    private enum Mode {
-        PLATFORM,
-        VIRTUAL
-    }
+    private final DrdaServerConfiguration.ThreadMode mode;
 
-    private final Mode mode;
-
-    private DrdaThreading(Mode mode) {
+    private DrdaThreading(DrdaServerConfiguration.ThreadMode mode) {
         this.mode = mode;
     }
 
     static DrdaThreading fromSystemProperties() {
-        return fromPropertyValue(PropertyUtil.getSystemProperty(
-                THREAD_MODE_PROPERTY, THREAD_MODE_PLATFORM));
+        return fromConfiguration(
+                DrdaServerConfiguration.fromSystemProperties());
     }
 
     static DrdaThreading platformForTesting() {
-        return new DrdaThreading(Mode.PLATFORM);
+        return new DrdaThreading(
+                DrdaServerConfiguration.ThreadMode.PLATFORM);
     }
 
     static DrdaThreading virtualForTesting() {
-        return new DrdaThreading(Mode.VIRTUAL);
+        return new DrdaThreading(
+                DrdaServerConfiguration.ThreadMode.VIRTUAL);
     }
 
     static DrdaThreading fromPropertyValueForTesting(String value) {
-        return fromPropertyValue(value);
+        return new DrdaThreading(
+                DrdaServerConfiguration.parseThreadModeForTesting(value));
+    }
+
+    static DrdaThreading fromConfiguration(
+            DrdaServerConfiguration configuration) {
+        return new DrdaThreading(configuration.threadMode());
     }
 
     Thread newConnectionWorkerThread(DRDAConnThread worker) {
@@ -84,25 +88,12 @@ final class DrdaThreading {
     }
 
     boolean usesVirtualConnectionWorkers() {
-        return mode == Mode.VIRTUAL;
+        return mode == DrdaServerConfiguration.ThreadMode.VIRTUAL;
     }
 
     String modeName() {
         return usesVirtualConnectionWorkers()
                 ? THREAD_MODE_VIRTUAL
                 : THREAD_MODE_PLATFORM;
-    }
-
-    private static DrdaThreading fromPropertyValue(String value) {
-        if (value == null) {
-            return platformForTesting();
-        }
-
-        String normalized = value.trim().toLowerCase(Locale.ROOT);
-        if (THREAD_MODE_VIRTUAL.equals(normalized)) {
-            return virtualForTesting();
-        }
-
-        return platformForTesting();
     }
 }

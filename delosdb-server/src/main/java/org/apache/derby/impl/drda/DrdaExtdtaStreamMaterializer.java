@@ -40,9 +40,8 @@ import org.apache.derby.shared.common.reference.DRDAConstants;
  */
 final class DrdaExtdtaStreamMaterializer {
     static final String SPOOL_THRESHOLD_PROPERTY =
-            "delos.drda.extdta.spoolThresholdBytes";
+            DrdaServerConfiguration.EXTDTA_SPOOL_THRESHOLD_PROPERTY;
 
-    private static final int DEFAULT_SPOOL_THRESHOLD_BYTES = 1024 * 1024;
     private static final int READ_BUFFER_BYTES = 32 * 1024;
 
     private DrdaExtdtaStreamMaterializer() {
@@ -50,7 +49,10 @@ final class DrdaExtdtaStreamMaterializer {
 
     static MaterializedExtdta materialize(EXTDTAReaderInputStream stream)
             throws IOException {
-        return materialize(stream, configuredSpoolThresholdBytes());
+        return materialize(
+                stream,
+                DrdaServerConfiguration.fromSystemProperties()
+                        .extdtaSpoolThresholdBytes());
     }
 
     static MaterializedExtdta materialize(
@@ -134,22 +136,6 @@ final class DrdaExtdtaStreamMaterializer {
             return Math.min(threshold, READ_BUFFER_BYTES);
         }
         return (int) Math.min((long) threshold, expectedLength);
-    }
-
-    private static int configuredSpoolThresholdBytes() {
-        String value = System.getProperty(SPOOL_THRESHOLD_PROPERTY);
-        if (value == null || value.trim().isEmpty()) {
-            return DEFAULT_SPOOL_THRESHOLD_BYTES;
-        }
-        try {
-            long parsed = Long.parseLong(value.trim());
-            if (parsed < 1L) {
-                return DEFAULT_SPOOL_THRESHOLD_BYTES;
-            }
-            return (int) Math.min(parsed, Integer.MAX_VALUE);
-        } catch (NumberFormatException ignored) {
-            return DEFAULT_SPOOL_THRESHOLD_BYTES;
-        }
     }
 
     private static void closeQuietly(OutputStream stream) {

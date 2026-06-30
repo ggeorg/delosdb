@@ -22,6 +22,7 @@ package org.apache.derbyTesting.functionTests.tests.derbynet;
 
 import java.io.IOException;
 import org.apache.derby.impl.drda.ProtocolTestAdapter.ExtdtaSpoolProbe;
+import org.apache.derby.impl.drda.ProtocolTestAdapter.ServerConfigurationProbe;
 import org.apache.derby.impl.drda.ProtocolTestAdapter.MaterializedProbe;
 import org.apache.derby.shared.common.reference.DRDAConstants;
 import org.apache.derbyTesting.junit.BaseTestCase;
@@ -32,6 +33,27 @@ import org.apache.derbyTesting.junit.BaseTestCase;
 public final class DrdaExtdtaSpoolTest extends BaseTestCase {
     public DrdaExtdtaSpoolTest(String name) {
         super(name);
+    }
+
+
+    public void testExtdtaSpoolThresholdConfigurationParsing() {
+        ServerConfigurationProbe configuration =
+                new ServerConfigurationProbe();
+
+        assertEquals("delos.drda.extdta.spoolThresholdBytes",
+                configuration.extdtaSpoolThresholdPropertyName());
+        assertEquals(4096, configuration.extdtaSpoolThresholdBytes("4096"));
+        assertEquals(Integer.MAX_VALUE,
+                configuration.extdtaSpoolThresholdBytes(
+                        Long.toString(((long) Integer.MAX_VALUE) + 4096L)));
+        assertEquals(configuration.defaultExtdtaSpoolThresholdBytes(),
+                configuration.extdtaSpoolThresholdBytes(null));
+        assertEquals(configuration.defaultExtdtaSpoolThresholdBytes(),
+                configuration.extdtaSpoolThresholdBytes(""));
+        assertEquals(configuration.defaultExtdtaSpoolThresholdBytes(),
+                configuration.extdtaSpoolThresholdBytes("0"));
+        assertEquals(configuration.defaultExtdtaSpoolThresholdBytes(),
+                configuration.extdtaSpoolThresholdBytes("not-a-number"));
     }
 
     public void testSmallExtdtaKeepsInheritedHeapFastPath()

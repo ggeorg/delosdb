@@ -317,6 +317,43 @@ public class ProtocolTestAdapter {
 
 
 
+
+    /**
+     * Adapter for white-box tests of DelosDB-owned DRDA server configuration.
+     */
+    public static final class ServerConfigurationProbe {
+        public String threadModePropertyName() {
+            return DrdaServerConfiguration.THREAD_MODE_PROPERTY;
+        }
+
+        public String extdtaSpoolThresholdPropertyName() {
+            return DrdaServerConfiguration.EXTDTA_SPOOL_THRESHOLD_PROPERTY;
+        }
+
+        public String platformModeName() {
+            return DrdaServerConfiguration.THREAD_MODE_PLATFORM;
+        }
+
+        public String virtualModeName() {
+            return DrdaServerConfiguration.THREAD_MODE_VIRTUAL;
+        }
+
+        public boolean usesVirtualWorkers(String value) {
+            return DrdaThreading.fromPropertyValueForTesting(value)
+                    .usesVirtualConnectionWorkers();
+        }
+
+        public int extdtaSpoolThresholdBytes(String value) {
+            return DrdaServerConfiguration
+                    .parseExtdtaSpoolThresholdBytesForTesting(value);
+        }
+
+        public int defaultExtdtaSpoolThresholdBytes() {
+            return DrdaServerConfiguration
+                    .DEFAULT_EXTDTA_SPOOL_THRESHOLD_BYTES;
+        }
+    }
+
     /**
      * Adapter for white-box tests of the DRDA server threading policy.
      */
