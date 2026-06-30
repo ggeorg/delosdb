@@ -6,6 +6,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 
@@ -236,7 +237,7 @@ final class MvccInheritedRowCodec implements PageVolumeMvccStateStore.RowCodec<S
         }
     }
 
-    private static final class StrictObjectInput implements ObjectInput {
+    private static final class StrictObjectInput extends InputStream implements ObjectInput {
         private final DataInputStream input;
 
         private StrictObjectInput(byte[] bytes) {
@@ -271,6 +272,21 @@ final class MvccInheritedRowCodec implements PageVolumeMvccStateStore.RowCodec<S
         @Override
         public int available() throws IOException {
             return input.available();
+        }
+
+        @Override
+        public synchronized void mark(int readlimit) {
+            input.mark(readlimit);
+        }
+
+        @Override
+        public synchronized void reset() throws IOException {
+            input.reset();
+        }
+
+        @Override
+        public boolean markSupported() {
+            return input.markSupported();
         }
 
         @Override

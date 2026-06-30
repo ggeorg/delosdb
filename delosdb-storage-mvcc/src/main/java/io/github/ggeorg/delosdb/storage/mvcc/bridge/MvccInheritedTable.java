@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -453,12 +454,21 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     private static String valueKey(StoreDataValue value) {
-        try {
-            Method getString = value.getClass().getMethod("getString");
-            Object result = getString.invoke(value);
-            return result == null ? "<null>" : result.toString();
-        } catch (NoSuchMethodException e) {
+        if (value instanceof StoreValueOperations operations) {
+            try {
+                return valueKeyString(operations.getString());
+            } catch (StandardException e) {
+                throw new IllegalStateException("Cannot derive store value key from "
+                        + value.getClass().getName(), e);
+            }
+        }
+        Optional<Method> getString = publicNoArgMethod(value.getClass(), "getString");
+        if (getString.isEmpty()) {
             return value.toString();
+        }
+        try {
+            Object result = getString.get().invoke(value);
+            return valueKeyString(result);
         } catch (IllegalAccessException e) {
             throw new IllegalStateException("Cannot access store value key operation on "
                     + value.getClass().getName(), e);
@@ -472,6 +482,35 @@ final class MvccInheritedTable implements DelosStorageTable,
             }
             return value.toString();
         }
+    }
+
+    private static String valueKeyString(Object value) {
+        return value == null ? "<null>" : value.toString();
+    }
+
+    private static Optional<Method> publicNoArgMethod(Class<?> type, String name) {
+        if (type == null) {
+            return Optional.empty();
+        }
+        for (Class<?> interfaceType : type.getInterfaces()) {
+            Optional<Method> method = publicNoArgMethod(interfaceType, name);
+            if (method.isPresent()) {
+                return method;
+            }
+        }
+        if (Modifier.isPublic(type.getModifiers())) {
+            try {
+                Method method = type.getMethod(name);
+                if (method.getParameterCount() == 0
+                        && Modifier.isPublic(method.getModifiers())
+                        && Modifier.isPublic(method.getDeclaringClass().getModifiers())) {
+                    return Optional.of(method);
+                }
+            } catch (NoSuchMethodException e) {
+                // Keep searching public super types below.
+            }
+        }
+        return publicNoArgMethod(type.getSuperclass(), name);
     }
 
     private static StoreDataValue[] cloneRowUnchecked(StoreDataValue[] row) {
