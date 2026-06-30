@@ -3,6 +3,7 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -104,8 +105,12 @@ public final class PageBackedMvccTable implements AutoCloseable {
                     recovery.recover();
                 }
             }
-            MvccRowDirectory directory = MvccRowDirectory.fromStoredRecords(store.loadAll());
             MvccRowDirectoryStore rowDirectory = MvccRowDirectoryStore.open(rowDirectoryPath(path));
+            List<String> pageRecordErrors = store.pageRecordConsistencyErrors();
+            if (!pageRecordErrors.isEmpty()) {
+                new MvccDurableConsistencyCheck.Result(0, 0, 0, pageRecordErrors).assertValid();
+            }
+            MvccRowDirectory directory = MvccRowDirectory.fromStoredRecords(store.loadAll());
             reconcileRowDirectoryWithPages(rowDirectory, directory);
             MvccDurableConsistencyCheck.check(store, rowDirectory).assertValid();
             return new PageBackedMvccTable(store, directory, log, outcomes, rowDirectory);

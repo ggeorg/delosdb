@@ -29,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.zip.CRC32;
 import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
@@ -125,6 +126,36 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
     }
 
 
+    public void testCorruptMvccPageRecordBodyFailsCleanlyOnReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-page-record-header-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        Path pageFile;
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            executeUpdate(connection, "create table mvcc_page_record_header_t "
+                    + "(id int primary key, name varchar(40)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_page_record_header_t values "
+                    + "(1, 'alpha'), (2, 'beta')");
+            long containerId = mvccContainerId(connection, "MVCC_PAGE_RECORD_HEADER_T");
+            pageFile = diagnostics.pageVolumeStateFileForTesting(0, containerId);
+            assertTrue("expected MVCC page file to exist: " + pageFile, Files.exists(pageFile));
+            assertMvccConsistent(diagnostics, containerId);
+        }
+        shutdownDatabase(databaseName);
+
+        corruptMvccPageRecordBodyButKeepPageChecksumValid(pageFile);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened, "select id, name from mvcc_page_record_header_t order by id");
+            fail("Expected corrupted MVCC page-record body to fail the reopened query");
+        } catch (java.sql.SQLException expected) {
+            assertTrue("expected page-record consistency failure, got: " + expected,
+                    containsMessage(expected, "page-record")
+                            || containsMessage(expected, "Invalid durable MVCC state"));
+        }
+    }
+
+
     public void testCorruptMvccPageChecksumFailsCleanlyOnReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-page-checksum-db");
         DelosStorageDiagnostics diagnostics = mvccDiagnostics();
@@ -181,6 +212,31 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
         diagnostics.assertConsistentForTesting(0, containerId);
     }
 
+    private static void corruptMvccPageRecordBodyButKeepPageChecksumValid(Path pageFile) throws Exception {
+        byte[] bytes = Files.readAllBytes(pageFile);
+        assertTrue("expected at least one complete MVCC page in " + pageFile, bytes.length >= 8192);
+        int pageRecordMagicOffset = indexOf(bytes, new byte[] {0x44, 0x4d, 0x50, 0x52});
+        if (pageRecordMagicOffset < 0) {
+            fail("could not find MVCC page-record magic in page file " + pageFile);
+        }
+        int bodyOffset = pageRecordMagicOffset + 24;
+        assertTrue("expected MVCC page-record body to fit inside page file",
+                bodyOffset >= 0 && bodyOffset < bytes.length);
+        bytes[bodyOffset] ^= 0x5a;
+        recomputePageChecksum(bytes, pageRecordMagicOffset);
+        Files.write(pageFile, bytes, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+    }
+
+    private static void recomputePageChecksum(byte[] bytes, int absoluteOffsetInsidePage) {
+        int pageStart = (absoluteOffsetInsidePage / 8192) * 8192;
+        int checksumOffset = pageStart + 8188;
+        ByteBuffer buffer = ByteBuffer.wrap(bytes);
+        buffer.putInt(checksumOffset, 0);
+        CRC32 crc = new CRC32();
+        crc.update(bytes, pageStart, 8188);
+        buffer.putInt(checksumOffset, (int) crc.getValue());
+    }
+
     private static void corruptPageBodyAndAssertChecksumRejects(Path pageFile) throws Exception {
         byte[] bytes = Files.readAllBytes(pageFile);
         assertTrue("expected at least one complete MVCC page in " + pageFile, bytes.length >= 8192);
@@ -195,6 +251,23 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
                     containsMessage(expected, "checksum"));
         }
     }
+
+    private static int indexOf(byte[] haystack, byte[] needle) {
+        for (int offset = 0; offset <= haystack.length - needle.length; offset++) {
+            boolean match = true;
+            for (int index = 0; index < needle.length; index++) {
+                if (haystack[offset + index] != needle[index]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                return offset;
+            }
+        }
+        return -1;
+    }
+
 
     public static final class CrashBoundaryWorker {
         public static void main(String[] args) {

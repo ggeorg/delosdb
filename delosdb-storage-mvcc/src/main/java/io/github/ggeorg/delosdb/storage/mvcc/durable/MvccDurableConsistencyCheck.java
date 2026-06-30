@@ -35,8 +35,16 @@ public final class MvccDurableConsistencyCheck {
             throws IOException {
         Objects.requireNonNull(store, "store");
         Objects.requireNonNull(rowDirectory, "rowDirectory");
-        Result result = check(store.loadAll(), rowDirectory.recoverHeads());
+        Map<MvccRowId, MvccRowDirectoryStore.RowHeadRecord> durableHeads = rowDirectory.recoverHeads();
+        List<String> pageRecordErrors = store.pageRecordConsistencyErrors();
         List<String> reusablePageErrors = store.reusablePageConsistencyErrors();
+        if (!pageRecordErrors.isEmpty()) {
+            List<String> errors = new ArrayList<>(pageRecordErrors);
+            errors.addAll(reusablePageErrors);
+            return new Result(0, 0, durableHeads.size(), errors);
+        }
+
+        Result result = check(store.loadAll(), durableHeads);
         if (reusablePageErrors.isEmpty()) {
             return result;
         }

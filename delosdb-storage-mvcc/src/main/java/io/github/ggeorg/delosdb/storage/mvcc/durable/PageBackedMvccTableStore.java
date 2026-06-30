@@ -196,6 +196,25 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return pageCache.snapshot().invalidations();
     }
 
+    synchronized List<String> pageRecordConsistencyErrors() throws IOException {
+        List<String> errors = new ArrayList<>();
+        long count = pageVolume.pageCount();
+        for (long pageNumber = 0L; pageNumber < count; pageNumber++) {
+            DelosPage page = readPage(new DelosPageId(pageNumber));
+            for (int slot = 0; slot < page.slotCount(); slot++) {
+                byte[] payload = page.readRecord(slot);
+                try {
+                    MvccPageRecordCodec.decodeVersionRecord(payload);
+                } catch (RuntimeException invalidRecord) {
+                    errors.add("page " + pageNumber + " slot " + slot
+                            + " has invalid MVCC page-record header/body: "
+                            + invalidRecord.getMessage());
+                }
+            }
+        }
+        return List.copyOf(errors);
+    }
+
     synchronized List<String> reusablePageConsistencyErrors() throws IOException {
         List<String> errors = new ArrayList<>();
         long pageCount = pageVolume.pageCount();
