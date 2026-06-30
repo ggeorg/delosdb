@@ -105,6 +105,7 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
             assertRows(connection,
                     "select id, name from mvcc_after_lob_failure_t order by id",
                     "1|ok");
+            connection.rollback();
         }
 
         shutdownDatabase(databaseName);
