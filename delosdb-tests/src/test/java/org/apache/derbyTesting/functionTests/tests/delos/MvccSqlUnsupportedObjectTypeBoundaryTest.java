@@ -141,6 +141,107 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
         }
     }
 
+
+    public void testLargeBlobAndClobRowsUseOverflowPagesThroughVacuumAndReopen() throws Exception {
+        String databaseName = databaseName("mvcc-sql-lob-overflow-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        byte[] originalBlob = blobPayload(40_000, 19);
+        String originalClob = clobPayload(40_000, 'c');
+        byte[] updatedBlob = blobPayload(54_000, 83);
+        String updatedClob = clobPayload(54_000, 'p');
+        byte[] rollbackBlob = blobPayload(48_000, 41);
+        String rollbackClob = clobPayload(48_000, 'r');
+        byte[] deletedBlob = blobPayload(52_000, 101);
+        String deletedClob = clobPayload(52_000, 'd');
+        long containerId;
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_lob_overflow_t ("
+                    + "id int primary key, "
+                    + "blob_payload blob(131072), "
+                    + "clob_payload clob(131072), "
+                    + "note varchar(32)) using delos_mvcc");
+            connection.commit();
+            containerId = mvccContainerId(connection, "MVCC_LOB_OVERFLOW_T");
+
+            insertLobRow(connection, "mvcc_lob_overflow_t", 1, originalBlob, originalClob, "original");
+            insertLobRow(connection, "mvcc_lob_overflow_t", 2, deletedBlob, deletedClob, "delete-me");
+            connection.commit();
+            assertLobRow(connection, "mvcc_lob_overflow_t", 1, originalBlob, originalClob, "original");
+            assertLobRow(connection, "mvcc_lob_overflow_t", 2, deletedBlob, deletedClob, "delete-me");
+            assertMvccConsistent(diagnostics, containerId);
+            connection.rollback();
+        }
+
+        long initialOverflowPages = diagnostics.overflowPageCountForTesting(0, containerId);
+        assertTrue("large materialized BLOB/CLOB rows should allocate MVCC overflow pages",
+                initialOverflowPages > 0L);
+
+        long overflowPagesBeforeVacuum;
+        try (Connection connection = openDatabase(databaseName, false)) {
+            connection.setAutoCommit(false);
+            Savepoint savepoint = connection.setSavepoint("LOB_OVERFLOW_SP");
+            updateLobRow(connection, "mvcc_lob_overflow_t", 1, rollbackBlob, rollbackClob,
+                    "rolled-back-update");
+            insertLobRow(connection, "mvcc_lob_overflow_t", 3, rollbackBlob, rollbackClob,
+                    "rolled-back-insert");
+            executeUpdate(connection, "delete from mvcc_lob_overflow_t where id = 1");
+            connection.rollback(savepoint);
+            connection.releaseSavepoint(savepoint);
+            assertLobRow(connection, "mvcc_lob_overflow_t", 1, originalBlob, originalClob, "original");
+            assertNoLobRow(connection, "mvcc_lob_overflow_t", 3);
+
+            updateLobRow(connection, "mvcc_lob_overflow_t", 1, updatedBlob, updatedClob, "updated");
+            executeUpdate(connection, "delete from mvcc_lob_overflow_t where id = 2");
+            connection.commit();
+
+            assertLobRow(connection, "mvcc_lob_overflow_t", 1, updatedBlob, updatedClob, "updated");
+            assertNoLobRow(connection, "mvcc_lob_overflow_t", 2);
+            assertMvccConsistent(diagnostics, containerId);
+            overflowPagesBeforeVacuum = diagnostics.overflowPageCountForTesting(0, containerId);
+            assertTrue("obsolete large LOB versions should leave overflow pages before vacuum; initial="
+                            + initialOverflowPages + ", beforeVacuum=" + overflowPagesBeforeVacuum,
+                    overflowPagesBeforeVacuum > initialOverflowPages);
+            connection.rollback();
+        }
+
+        long overflowPagesAfterVacuum;
+        try (Connection connection = openDatabase(databaseName, false)) {
+            connection.setAutoCommit(false);
+            inPlaceCompressTable(connection, "MVCC_LOB_OVERFLOW_T");
+            connection.commit();
+
+            assertEquals("in-place compress must keep the MVCC base container stable",
+                    containerId, mvccContainerId(connection, "MVCC_LOB_OVERFLOW_T"));
+            assertFalse("large LOB vacuum should not be skipped",
+                    diagnostics.lastVacuumSkippedForTesting(0, containerId));
+            assertLobRow(connection, "mvcc_lob_overflow_t", 1, updatedBlob, updatedClob, "updated");
+            assertNoLobRow(connection, "mvcc_lob_overflow_t", 2);
+            assertNoLobRow(connection, "mvcc_lob_overflow_t", 3);
+            assertMvccConsistent(diagnostics, containerId);
+            overflowPagesAfterVacuum = diagnostics.overflowPageCountForTesting(0, containerId);
+            assertTrue("vacuum must retain live large LOB overflow chains",
+                    overflowPagesAfterVacuum > 0L);
+            assertTrue("vacuum should drop obsolete large LOB overflow chains; before="
+                            + overflowPagesBeforeVacuum + ", after=" + overflowPagesAfterVacuum,
+                    overflowPagesAfterVacuum < overflowPagesBeforeVacuum);
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            long reopenedContainerId = mvccContainerId(reopened, "MVCC_LOB_OVERFLOW_T");
+            assertEquals("large LOB overflow page count should remain stable after reopen",
+                    overflowPagesAfterVacuum, diagnostics.overflowPageCountForTesting(0, reopenedContainerId));
+            assertMvccConsistent(diagnostics, reopenedContainerId);
+            assertLobRow(reopened, "mvcc_lob_overflow_t", 1, updatedBlob, updatedClob, "updated");
+            assertNoLobRow(reopened, "mvcc_lob_overflow_t", 2);
+            assertNoLobRow(reopened, "mvcc_lob_overflow_t", 3);
+        }
+    }
+
     private static void assertJavaObjectInsertFailsCleanly(String databaseName) throws SQLException {
         Connection connection = openDatabase(databaseName, false);
         try {
@@ -174,8 +275,18 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
             byte[] blobPayload,
             String clobPayload,
             String note) throws SQLException {
+        insertLobRow(connection, "mvcc_lob_minimal_t", id, blobPayload, clobPayload, note);
+    }
+
+    private static void insertLobRow(
+            Connection connection,
+            String tableName,
+            int id,
+            byte[] blobPayload,
+            String clobPayload,
+            String note) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "insert into mvcc_lob_minimal_t values (?, ?, ?, ?)")) {
+                "insert into " + tableName + " values (?, ?, ?, ?)")) {
             statement.setInt(1, id);
             statement.setBytes(2, blobPayload);
             statement.setString(3, clobPayload);
@@ -190,8 +301,18 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
             byte[] blobPayload,
             String clobPayload,
             String note) throws SQLException {
+        updateLobRow(connection, "mvcc_lob_minimal_t", id, blobPayload, clobPayload, note);
+    }
+
+    private static void updateLobRow(
+            Connection connection,
+            String tableName,
+            int id,
+            byte[] blobPayload,
+            String clobPayload,
+            String note) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "update mvcc_lob_minimal_t set blob_payload = ?, clob_payload = ?, note = ? where id = ?")) {
+                "update " + tableName + " set blob_payload = ?, clob_payload = ?, note = ? where id = ?")) {
             statement.setBytes(1, blobPayload);
             statement.setString(2, clobPayload);
             statement.setString(3, note);
@@ -206,8 +327,18 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
             byte[] expectedBlob,
             String expectedClob,
             String expectedNote) throws SQLException {
+        assertLobRow(connection, "mvcc_lob_minimal_t", id, expectedBlob, expectedClob, expectedNote);
+    }
+
+    private static void assertLobRow(
+            Connection connection,
+            String tableName,
+            int id,
+            byte[] expectedBlob,
+            String expectedClob,
+            String expectedNote) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "select blob_payload, clob_payload, note from mvcc_lob_minimal_t where id = ?")) {
+                "select blob_payload, clob_payload, note from " + tableName + " where id = ?")) {
             statement.setInt(1, id);
             try (ResultSet rs = statement.executeQuery()) {
                 assertTrue("expected LOB row " + id, rs.next());
@@ -221,8 +352,12 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
     }
 
     private static void assertNoLobRow(Connection connection, int id) throws SQLException {
+        assertNoLobRow(connection, "mvcc_lob_minimal_t", id);
+    }
+
+    private static void assertNoLobRow(Connection connection, String tableName, int id) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "select id from mvcc_lob_minimal_t where id = ?")) {
+                "select id from " + tableName + " where id = ?")) {
             statement.setInt(1, id);
             try (ResultSet rs = statement.executeQuery()) {
                 assertFalse("expected no LOB row " + id, rs.next());
