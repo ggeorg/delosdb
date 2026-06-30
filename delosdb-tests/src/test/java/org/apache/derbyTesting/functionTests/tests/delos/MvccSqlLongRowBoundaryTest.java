@@ -40,6 +40,7 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
                     + "id int primary key, payload varchar(32672)) using delos_mvcc");
             connection.commit();
             containerId = mvccContainerId(connection, "MVCC_LONG_ROW_T");
+            connection.rollback();
         }
 
         assertOversizedInsertFailsCleanly(databaseName);
@@ -53,6 +54,7 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
                     "select id, payload from mvcc_long_row_t order by id",
                     "2|small-after-oversized-failure");
             assertMvccConsistent(diagnostics, containerId);
+            connection.rollback();
         }
 
         shutdownDatabase(databaseName);
