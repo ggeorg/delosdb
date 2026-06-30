@@ -1,49 +1,57 @@
 # Contributing to DelosDB
 
-DelosDB is in a proof-driven modernization phase. The A44--A52 MVCC semantic
-correctness sprint is closed; choose the next post-A52 lane deliberately before
-opening new work.
+DelosDB is in a proof-driven modernization phase. The project accepts focused, compatibility-preserving changes that are backed by executable gates.
 
 ## Supported local workflow
 
 Use the checked-in Gradle Wrapper from the repository root:
 
-```bash
+```sh
 ./gradlew build
 ./gradlew derbyRuntimeSmoke
 ./gradlew :delosdb-tests:runDerbyLangSuite
 ```
 
-For the broader gate:
+Current focused gates:
 
-```bash
-./gradlew fullVerification
-./dev/modernization-audit.sh --verify
-./dev/benchmark-baseline.sh
+```sh
+./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
+./gradlew :delosdb-tests:runDelosServerSchedulerTest :delosdb-server:compileJava delosServerStaticAnalysis
+./gradlew s0CloseoutVerification
 ```
 
-If a Derby test run was interrupted, run `./gradlew clean` before retrying.
+Full gate:
 
-## Current MVCC workflow
-
-MVCC changes must move in small executable proofs. Current high-value gates:
-
-```bash
-./gradlew mvccDefaultProviderCandidateMatrix
-./gradlew mvccKernelReviewCloseoutProof
-./gradlew mvccHistoryPrunedSafetyProof
-./gradlew mvccVacuumWatermarkProof
-./gradlew mvccCommandSequenceProof
-./gradlew mvccStatementSnapshotVisibilityProof
-./gradlew mvccSqlStatementBoundarySmoke
-./gradlew mvccTransactionOutcomeLogProof
-./gradlew mvccUnresolvedOutcomeRecoveryProof
-./gradlew mvccCapturedVisibilitySnapshotProof
-./gradlew mvccSqlCompatibilityCandidate
+```sh
+./gradlew clean fullVerification :delosdb-storage-mvcc:check
 ```
 
-The post-A52 mission state and next-lane decision point are in
-`docs/MVCC-MISSION.md`.
+If a Derby test run was interrupted, run a clean verification from the repository root.
+
+## Current project lanes
+
+### MVCC storage lane
+
+`delos_mvcc` is explicit and opt-in. Changes must preserve the default Derby-compatible heap path.
+
+Current green MVCC storage work includes typed rows, overflow pages, page checksums, whole-page reuse, reusable-page index recovery, bounded page cache, page-record headers, slot accounting, and storage-layer static gates.
+
+Do not change these boundaries casually:
+
+```text
+Derby heap format remains compatibility-locked.
+DRDA/JDBC wire compatibility remains compatibility-locked.
+JAVA_OBJECT / Derby UDT object values are rejected in delos_mvcc.
+BLOB/CLOB are rejected in delos_mvcc until a deliberate LOB lifecycle design exists.
+```
+
+### Server lane
+
+`delosdb-server` remains a Derby-compatible DRDA server. Server changes should preserve the protocol and compatibility model.
+
+Current green server work includes dependency hygiene, no forced GC in runtimeinfo, isolated session scheduler, scheduler behavior gates, optional virtual-thread worker mode, EXTDTA temp spooling, and centralized DelosDB DRDA server configuration.
+
+Do not replace DRDA with Netty, gRPC, JSON, protobuf, or a new wire protocol inside this module.
 
 ## Contribution rules
 
@@ -51,21 +59,36 @@ The post-A52 mission state and next-lane decision point are in
 - Add or update a smoke/proof when behavior changes.
 - Preserve Derby-compatible heap behavior by default.
 - Do not flip the global default store to `delos_mvcc`.
-- Do not start a new provider family before the post-A52 lane is selected.
-- Do not add a research platform subsystem without a separate post-A52 decision;
-  proof-level observability remains allowed.
+- Do not redesign DRDA/JDBC wire compatibility.
+- Do not import MVCC implementation packages into `delosdb-server`.
+- Do not add Java object serialization to `delosdb-storage-mvcc`.
+- Do not add BLOB/CLOB support to `delos_mvcc` without a full lifecycle design and gate.
+- Use Derby heap/raw-store patterns where useful, but do not lift Derby's log-coupled raw page layer wholesale into MVCC.
+- Prefer small verified changes over mechanical rewrites.
 - Update documentation after the code proof or planning decision is real.
-- Do not add stale checkpoint documents; update the existing roadmap/status docs
-  or delete obsolete docs through an explicit cleanup script.
 - Do not remove Apache license headers or attribution.
 - Do not use Apache Derby branding for modified DelosDB distributions.
 
+## Documentation rules
+
+Root-level Markdown should stay project-facing and current. Technical details belong under `docs/`.
+
+Useful docs:
+
+```text
+docs/BUILDING.md
+docs/DERBY-COMPATIBILITY.md
+docs/MVCC-MISSION.md
+docs/DELOSDB-SERVER.md
+docs/sql-extensions.md
+```
+
+Avoid stale checkpoint documents. Update the maintained status docs instead.
+
 ## Workspace metadata
 
-Developer workspaces may contain `.git/`, `.gradle/`, and `.idea/`. Cleanup
-scripts must not delete them. Overlay ZIPs must not include them.
+Developer workspaces may contain `.git/`, `.gradle/`, `.idea/`, build reports, and local databases. Cleanup scripts must not delete them. Overlay ZIPs and release artifacts must not include them.
 
 ## Style
 
-Preserve inherited Derby style unless the cleanup is deliberate and
-behavior-preserving. Prefer small verified changes over mechanical rewrites.
+Preserve inherited Derby style unless the cleanup is deliberate and behavior-preserving. Prefer small verified changes over broad rewrites.
