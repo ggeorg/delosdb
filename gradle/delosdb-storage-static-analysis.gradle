@@ -33,6 +33,19 @@ def delosStorageFinding = { String rule, File sourceFile, int lineNumber, String
     ]
 }
 
+def delosStorageImportTarget = { String line ->
+    def matcher = line =~ /^\s*import\s+(?:static\s+)?([^;]+);/
+    matcher.find() ? matcher.group(1) : null
+}
+
+def delosStorageIsMvccPath = { String relativePath, String layer ->
+    relativePath.startsWith('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/' + layer + '/')
+}
+
+def delosStorageIsMvccImport = { String importTarget, String layer ->
+    importTarget != null && importTarget.startsWith('io.github.ggeorg.delosdb.storage.mvcc.' + layer + '.')
+}
+
 def delosStorageLoadBaseline = {
     if (!delosStorageStaticBaselineFile.exists()) {
         return [] as Set
@@ -75,6 +88,25 @@ def delosStorageClassifyFindings = {
             if (relativePath.startsWith('delosdb-storage-mvcc/')
                     && (line.contains('ObjectInputStream') || line.contains('ObjectOutputStream'))) {
                 findings << delosStorageFinding('MVCC_JAVA_OBJECT_STREAM', sourceFile, lineNumber, line)
+            }
+
+            def importTarget = delosStorageImportTarget(line)
+            if (importTarget != null) {
+                if (delosStorageIsMvccPath(relativePath, 'format')
+                        && (importTarget.startsWith('org.apache.derby.')
+                        || importTarget.startsWith('java.sql.')
+                        || delosStorageIsMvccImport(importTarget, 'bridge')
+                        || delosStorageIsMvccImport(importTarget, 'durable')
+                        || delosStorageIsMvccImport(importTarget, 'store'))) {
+                    findings << delosStorageFinding('MVCC_FORMAT_LAYER_DEPENDENCY', sourceFile, lineNumber, line)
+                }
+
+                if ((delosStorageIsMvccPath(relativePath, 'durable') || delosStorageIsMvccPath(relativePath, 'store'))
+                        && (importTarget.startsWith('org.apache.derby.')
+                        || importTarget.startsWith('java.sql.')
+                        || delosStorageIsMvccImport(importTarget, 'bridge'))) {
+                    findings << delosStorageFinding('MVCC_DURABLE_LAYER_DEPENDENCY', sourceFile, lineNumber, line)
+                }
             }
 
             // Zero-baseline hard gates for DelosDB-owned storage code.
