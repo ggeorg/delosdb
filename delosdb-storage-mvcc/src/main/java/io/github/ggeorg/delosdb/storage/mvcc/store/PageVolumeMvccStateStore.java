@@ -283,6 +283,18 @@ public final class PageVolumeMvccStateStore<T> {
         return table.rowDirectoryHeadForRowId(new MvccRowId(rowId));
     }
 
+    public void requireVisibleRowsFitSinglePageRecords(List<PersistedRow<T>> visibleRows) {
+        Objects.requireNonNull(visibleRows, "visibleRows");
+        if (!enabled()) {
+            return;
+        }
+        for (PersistedRow<T> row : visibleRows) {
+            PageBackedMvccTable.requirePayloadFitsSinglePage(
+                    keyFor(row.rowId()),
+                    rowCodec.encode(row.values()));
+        }
+    }
+
     public void persistVisibleRows(List<PersistedRow<T>> visibleRows) {
         Objects.requireNonNull(visibleRows, "visibleRows");
         if (!enabled()) {

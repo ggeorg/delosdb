@@ -54,13 +54,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             DelosLogSequenceNumber pageLsn) throws IOException {
         Objects.requireNonNull(record, "record");
         pageLsn = Objects.requireNonNull(pageLsn, "pageLsn");
-        byte[] encoded = MvccVersionRecordCodec.encode(record);
-        int maxRecordBytes = maxSingleRecordBytes();
-        if (encoded.length > maxRecordBytes) {
-            throw new IllegalArgumentException("MVCC version record is too large for one page: "
-                    + encoded.length + " bytes; max=" + maxRecordBytes
-                    + "; overflow/long-row storage is not implemented for delos_mvcc yet");
-        }
+        byte[] encoded = encodeAndRequireSinglePageRecord(record);
 
         DelosPage page = writablePage(encoded.length);
         int slotId = page.appendRecord(encoded);
@@ -112,6 +106,17 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         pageVolume.close();
     }
 
+
+    static byte[] encodeAndRequireSinglePageRecord(MvccVersionRecord record) {
+        byte[] encoded = MvccVersionRecordCodec.encode(Objects.requireNonNull(record, "record"));
+        int maxRecordBytes = maxSingleRecordBytes();
+        if (encoded.length > maxRecordBytes) {
+            throw new IllegalArgumentException("MVCC version record is too large for one page: "
+                    + encoded.length + " bytes; max=" + maxRecordBytes
+                    + "; overflow/long-row storage is not implemented for delos_mvcc yet");
+        }
+        return encoded;
+    }
 
     private static int maxSingleRecordBytes() {
         return DelosPage.empty(new DelosPageId(0L)).freeBytes() - SLOT_OVERHEAD_BYTES;

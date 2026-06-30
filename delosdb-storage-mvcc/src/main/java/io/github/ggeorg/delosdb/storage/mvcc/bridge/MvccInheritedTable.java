@@ -129,7 +129,14 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public synchronized void commit(DelosStorageTransaction transaction) {
-        transactions.commit(nativeTransaction(transaction));
+        MvccTransaction nativeTx = nativeTransaction(transaction);
+        try {
+            pageVolumeStateStore.requireVisibleRowsFitSinglePageRecords(visibleRows(nativeTx));
+        } catch (RuntimeException failure) {
+            abortIfActive(nativeTx, failure);
+            throw failure;
+        }
+        transactions.commit(nativeTx);
     }
 
     @Override
@@ -328,7 +335,15 @@ final class MvccInheritedTable implements DelosStorageTable,
     private List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> visibleRows() {
         MvccTransaction reader = transactions.begin();
         try {
-            MvccSnapshot snapshot = transactions.snapshot(reader);
+            return visibleRows(reader);
+        } finally {
+            transactions.abort(reader);
+        }
+    }
+
+    private List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> visibleRows(MvccTransaction transaction) {
+        try {
+            MvccSnapshot snapshot = transactions.snapshot(transaction);
             List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = new ArrayList<>();
             try (MvccScan<Long, StoreDataValue[]> scan = table.openScan(snapshot, transactions)) {
                 while (scan.next()) {
@@ -341,8 +356,14 @@ final class MvccInheritedTable implements DelosStorageTable,
             return List.copyOf(rows);
         } catch (StandardException e) {
             throw new IllegalStateException("Could not clone inherited MVCC row for persistence", e);
-        } finally {
-            transactions.abort(reader);
+        }
+    }
+
+    private void abortIfActive(MvccTransaction transaction, RuntimeException failure) {
+        try {
+            transactions.abort(transaction);
+        } catch (RuntimeException abortFailure) {
+            failure.addSuppressed(abortFailure);
         }
     }
 
