@@ -162,6 +162,10 @@ public final class PageVolumeMvccStateStore<T> {
         return pageFile == null ? null : PageBackedMvccTable.rowDirectoryPath(pageFile);
     }
 
+    public Path reusablePageIndexFile() {
+        return pageFile == null ? null : PageBackedMvccTable.reusablePageIndexPath(pageFile);
+    }
+
     public Path pageMutationLogFile() {
         return pageMutationLogFile;
     }
@@ -394,6 +398,11 @@ public final class PageVolumeMvccStateStore<T> {
             }
             Path overflow = PageBackedMvccTable.overflowPath(pageFile);
             Files.deleteIfExists(overflow);
+            Path reusablePageIndex = reusablePageIndexFile();
+            if (reusablePageIndex != null) {
+                Files.deleteIfExists(reusablePageIndex);
+                Files.deleteIfExists(reusablePageIndex.resolveSibling(reusablePageIndex.getFileName() + ".rewrite"));
+            }
             if (pageMutationLogFile != null) {
                 Files.deleteIfExists(pageMutationLogFile);
             }

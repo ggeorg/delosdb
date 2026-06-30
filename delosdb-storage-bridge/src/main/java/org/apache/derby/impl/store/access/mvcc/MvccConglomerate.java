@@ -334,6 +334,10 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).rowDirectoryStateFileForTesting();
     }
 
+    static Path reusablePageIndexFileForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).reusablePageIndexFileForTesting();
+    }
+
     static Path pageMutationLogFileForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageMutationLogFileForTesting();
     }

@@ -388,6 +388,10 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return store.reusablePageCount();
     }
 
+    public synchronized Path reusablePageIndexPath() {
+        return store.reusablePageIndexPath();
+    }
+
     @Override
     public synchronized void close() throws IOException {
         IOException failure = null;
@@ -527,6 +531,10 @@ public final class PageBackedMvccTable implements AutoCloseable {
 
     public static Path overflowPath(Path pageFile) {
         return PageBackedMvccTableStore.overflowPath(pageFile);
+    }
+
+    public static Path reusablePageIndexPath(Path pageFile) {
+        return PageBackedMvccTableStore.reusablePageIndexPath(pageFile);
     }
 
     private static byte[] stringBytes(String value) {

@@ -42,6 +42,8 @@ public interface DelosStorageDiagnostics {
 
     Path rowDirectoryStateFileForTesting(int segment, long containerId);
 
+    Path reusablePageIndexFileForTesting(int segment, long containerId);
+
     Path pageMutationLogFileForTesting(int segment, long containerId);
 
     Path writeAheadLogFileForTesting(int segment, long containerId);

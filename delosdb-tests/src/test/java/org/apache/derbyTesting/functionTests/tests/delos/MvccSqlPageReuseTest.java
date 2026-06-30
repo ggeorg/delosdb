@@ -21,6 +21,8 @@
 
 package org.apache.derbyTesting.functionTests.tests.delos;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 
@@ -34,6 +36,7 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
         long containerId;
         long pagesAfterReuse;
         long reusablePagesAfterReuse;
+        Path reusablePageIndexFile;
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
@@ -74,6 +77,7 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
 
             long pagesAfterVacuum = diagnostics.pageCountForTesting(0, containerId);
             long reusablePagesAfterVacuum = diagnostics.reusablePageCountForTesting(0, containerId);
+            reusablePageIndexFile = diagnostics.reusablePageIndexFileForTesting(0, containerId);
             assertFalse("vacuum should not be skipped for the page-reuse workload",
                     diagnostics.lastVacuumSkippedForTesting(0, containerId));
             assertEquals("vacuum should collapse physical versions to the two visible rows",
@@ -83,6 +87,8 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
             assertTrue("vacuum should mark compacted-away MVCC pages reusable; pages="
                             + pagesAfterVacuum + ", reusable=" + reusablePagesAfterVacuum,
                     reusablePagesAfterVacuum > 0L);
+            assertTrue("vacuum should persist the reusable-page allocation index",
+                    Files.exists(reusablePageIndexFile));
             diagnostics.assertConsistentForTesting(0, containerId);
 
             insertPayload(connection, 3, payload('z', 512));
@@ -95,6 +101,8 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
             assertTrue("post-vacuum insert should consume at least one reusable page; before="
                             + reusablePagesAfterVacuum + ", after=" + reusablePagesAfterReuse,
                     reusablePagesAfterReuse < reusablePagesAfterVacuum);
+            assertTrue("reusable-page allocation index should remain durable after reuse",
+                    Files.exists(reusablePageIndexFile));
             assertEquals(3, diagnostics.physicalVersionCountForTesting(0, containerId));
             diagnostics.assertConsistentForTesting(0, containerId);
             assertRows(connection,
@@ -113,6 +121,10 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
                     pagesAfterReuse, diagnostics.pageCountForTesting(0, reopenedContainerId));
             assertEquals("reopened table should recover reusable-page tracking from empty durable pages",
                     reusablePagesAfterReuse, diagnostics.reusablePageCountForTesting(0, reopenedContainerId));
+            assertEquals("reopened table should use the same reusable-page allocation index",
+                    reusablePageIndexFile, diagnostics.reusablePageIndexFileForTesting(0, reopenedContainerId));
+            assertTrue("reopened reusable-page allocation index should exist",
+                    Files.exists(diagnostics.reusablePageIndexFileForTesting(0, reopenedContainerId)));
             diagnostics.assertConsistentForTesting(0, reopenedContainerId);
             assertRows(reopened,
                     "select id, length(payload) from mvcc_page_reuse_t order by id",

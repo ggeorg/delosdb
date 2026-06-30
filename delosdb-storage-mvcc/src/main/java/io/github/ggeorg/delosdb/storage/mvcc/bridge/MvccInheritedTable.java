@@ -229,6 +229,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public Path reusablePageIndexFileForTesting() {
+        return pageVolumeStateStore.reusablePageIndexFile();
+    }
+
+    @Override
     public Path pageMutationLogFileForTesting() {
         return pageVolumeStateStore.pageMutationLogFile();
     }

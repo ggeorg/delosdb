@@ -142,6 +142,10 @@ final class MvccConglomerateState {
         return diagnostics.rowDirectoryStateFileForTesting();
     }
 
+    Path reusablePageIndexFileForTesting() {
+        return diagnostics.reusablePageIndexFileForTesting();
+    }
+
     Path pageMutationLogFileForTesting() {
         return diagnostics.pageMutationLogFileForTesting();
     }

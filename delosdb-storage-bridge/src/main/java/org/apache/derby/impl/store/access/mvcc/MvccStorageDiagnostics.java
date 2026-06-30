@@ -63,6 +63,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public Path reusablePageIndexFileForTesting(int segment, long containerId) {
+        return MvccConglomerate.reusablePageIndexFileForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public Path pageMutationLogFileForTesting(int segment, long containerId) {
         return MvccConglomerate.pageMutationLogFileForDiagnostics(segment, containerId);
     }

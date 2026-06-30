@@ -3,9 +3,11 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.TreeSet;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -133,6 +135,50 @@ final class PageBackedMvccTableTest {
             assertEquals(largeValue, reopenedAgain.read("account:1", new MvccCommitSequence(1L)).orElseThrow());
             reopenedAgain.validateConsistency().assertValid();
         }
+    }
+
+
+    @Test
+    void vacuumPersistsReusablePageIndexAndReconcilesMissingEntriesOnReopen() throws Exception {
+        Path tableFile = tempDir.resolve("free-index-table.mvccp");
+        String largeValue = "x".repeat(2400);
+        long pageCountAfterVacuum;
+        long reusablePagesAfterVacuum;
+
+        try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile)) {
+            table.insertCommitted("account:1", largeValue, 1L, 1L);
+            table.insertCommitted("account:2", largeValue, 1L, 1L);
+            for (int round = 2; round <= 7; round++) {
+                table.updateCommitted("account:1", largeValue + round, round, round);
+                table.updateCommitted("account:2", largeValue + round, round, round);
+            }
+            long pageCountBeforeVacuum = table.pageCount();
+            assertTrue(pageCountBeforeVacuum > 1L, "updates should create multiple MVCC pages");
+
+            table.vacuum(MvccVacuumPlan.through(Long.MAX_VALUE));
+            pageCountAfterVacuum = table.pageCount();
+            reusablePagesAfterVacuum = table.reusablePageCount();
+            assertEquals(pageCountBeforeVacuum, pageCountAfterVacuum);
+            assertTrue(reusablePagesAfterVacuum > 0L, "vacuum should mark whole pages reusable");
+            assertTrue(Files.exists(PageBackedMvccTable.reusablePageIndexPath(tableFile)),
+                    "vacuum should persist the reusable-page sidecar index");
+        }
+
+        MvccReusablePageIndexStore.open(PageBackedMvccTable.reusablePageIndexPath(tableFile))
+                .rewrite(pageCountAfterVacuum, new TreeSet<>());
+
+        try (PageBackedMvccTable reopened = PageBackedMvccTable.open(tableFile)) {
+            assertEquals(reusablePagesAfterVacuum, reopened.reusablePageCount(),
+                    "open should reconcile an incomplete reusable-page index from empty page images");
+            assertEquals(largeValue + 7, reopened.read("account:1", new MvccCommitSequence(7L)).orElseThrow());
+            assertEquals(largeValue + 7, reopened.read("account:2", new MvccCommitSequence(7L)).orElseThrow());
+            reopened.validateConsistency().assertValid();
+        }
+
+        MvccReusablePageIndexStore.Snapshot reconciled = MvccReusablePageIndexStore.open(
+                PageBackedMvccTable.reusablePageIndexPath(tableFile)).read();
+        assertEquals(pageCountAfterVacuum, reconciled.pageCount());
+        assertEquals(reusablePagesAfterVacuum, reconciled.reusablePageIds().size());
     }
 
     @Test

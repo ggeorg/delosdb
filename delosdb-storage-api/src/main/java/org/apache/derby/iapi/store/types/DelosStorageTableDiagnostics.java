@@ -28,6 +28,8 @@ public interface DelosStorageTableDiagnostics {
 
     Path rowDirectoryStateFileForTesting();
 
+    Path reusablePageIndexFileForTesting();
+
     Path pageMutationLogFileForTesting();
 
     Path writeAheadLogFileForTesting();

@@ -31,6 +31,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     private final DelosPageVolumeFactory volumeFactory;
     private DelosPageVolume pageVolume;
     private MvccOverflowPayloadStore overflowStore;
+    private final MvccReusablePageIndexStore reusablePageIndexStore;
     private final NavigableSet<Long> reusablePageIds;
 
     private PageBackedMvccTableStore(
@@ -38,34 +39,46 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             DelosPageVolumeFactory volumeFactory,
             DelosPageVolume pageVolume,
             MvccOverflowPayloadStore overflowStore,
+            MvccReusablePageIndexStore reusablePageIndexStore,
             NavigableSet<Long> reusablePageIds) {
         this.path = Objects.requireNonNull(path, "path");
         this.overflowPath = overflowPath(path);
         this.volumeFactory = Objects.requireNonNull(volumeFactory, "volumeFactory");
         this.pageVolume = Objects.requireNonNull(pageVolume, "pageVolume");
         this.overflowStore = Objects.requireNonNull(overflowStore, "overflowStore");
+        this.reusablePageIndexStore = Objects.requireNonNull(reusablePageIndexStore, "reusablePageIndexStore");
         this.reusablePageIds = Objects.requireNonNull(reusablePageIds, "reusablePageIds");
     }
 
     public static PageBackedMvccTableStore open(Path path) throws IOException {
         Objects.requireNonNull(path, "path");
         DelosPageVolume pageVolume = FILE_VOLUME_FACTORY.open(path);
+        MvccReusablePageIndexStore reusablePageIndexStore = MvccReusablePageIndexStore.open(
+                reusablePageIndexPath(path));
+        NavigableSet<Long> reusablePageIds = recoverReusablePageIds(pageVolume, reusablePageIndexStore);
+        reusablePageIndexStore.rewrite(pageVolume.pageCount(), reusablePageIds);
         return new PageBackedMvccTableStore(
                 path,
                 FILE_VOLUME_FACTORY,
                 pageVolume,
                 MvccOverflowPayloadStore.open(overflowPath(path), FILE_VOLUME_FACTORY),
-                recoverReusablePageIds(pageVolume));
+                reusablePageIndexStore,
+                reusablePageIds);
     }
 
     static PageBackedMvccTableStore open(Path path, DelosPageVolume pageVolume) {
         try {
+            MvccReusablePageIndexStore reusablePageIndexStore = MvccReusablePageIndexStore.open(
+                    reusablePageIndexPath(path));
+            NavigableSet<Long> reusablePageIds = recoverReusablePageIds(pageVolume, reusablePageIndexStore);
+            reusablePageIndexStore.rewrite(pageVolume.pageCount(), reusablePageIds);
             return new PageBackedMvccTableStore(
                     path,
                     FILE_VOLUME_FACTORY,
                     pageVolume,
                     MvccOverflowPayloadStore.open(overflowPath(path), FILE_VOLUME_FACTORY),
-                    recoverReusablePageIds(pageVolume));
+                    reusablePageIndexStore,
+                    reusablePageIds);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not open MVCC overflow payload store for " + path, e);
         }
@@ -117,6 +130,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 volumeFactory,
                 volumeFactory.open(rewritePath),
                 MvccOverflowPayloadStore.open(rewriteOverflowPath, volumeFactory),
+                MvccReusablePageIndexStore.open(reusablePageIndexPath(rewritePath)),
                 new TreeSet<>())) {
             for (MvccVersionRecord record : records) {
                 rewrite.append(record);
@@ -130,6 +144,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             Files.move(rewriteOverflowPath, overflowPath, StandardCopyOption.REPLACE_EXISTING);
         }
         Files.deleteIfExists(rewritePath);
+        MvccReusablePageIndexStore.open(reusablePageIndexPath(rewritePath)).delete();
         overflowStore = MvccOverflowPayloadStore.open(overflowPath, volumeFactory);
         rebuildReusablePageIds();
         return loadAll();
@@ -145,6 +160,10 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     public synchronized long reusablePageCount() {
         return reusablePageIds.size();
+    }
+
+    public synchronized Path reusablePageIndexPath() {
+        return reusablePageIndexStore.path();
     }
 
     @Override
@@ -183,6 +202,11 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     static Path overflowPath(Path pageFile) {
         Objects.requireNonNull(pageFile, "pageFile");
         return pageFile.resolveSibling(pageFile.getFileName() + ".overflow");
+    }
+
+    static Path reusablePageIndexPath(Path pageFile) {
+        Objects.requireNonNull(pageFile, "pageFile");
+        return pageFile.resolveSibling(pageFile.getFileName() + ".free");
     }
 
     private EncodedVersion encodeForPageRecord(MvccVersionRecord record) throws IOException {
@@ -239,14 +263,20 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     private DelosPage takeReusablePage(int encodedRecordLength) throws IOException {
         int requiredBytes = Math.addExact(encodedRecordLength, SLOT_OVERHEAD_BYTES);
+        boolean changed = false;
         java.util.Iterator<Long> ids = reusablePageIds.iterator();
         while (ids.hasNext()) {
             long pageNumber = ids.next();
             DelosPage page = pageVolume.readPage(new DelosPageId(pageNumber));
             ids.remove();
+            changed = true;
             if (page.slotCount() == 0 && page.freeBytes() >= requiredBytes) {
+                persistReusablePageIndex();
                 return page;
             }
+        }
+        if (changed) {
+            persistReusablePageIndex();
         }
         return null;
     }
@@ -276,11 +306,38 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     private void rebuildReusablePageIds() throws IOException {
         reusablePageIds.clear();
-        reusablePageIds.addAll(recoverReusablePageIds(pageVolume));
+        reusablePageIds.addAll(recoverReusablePageIds(pageVolume, reusablePageIndexStore));
+        persistReusablePageIndex();
     }
 
-    private static NavigableSet<Long> recoverReusablePageIds(DelosPageVolume pageVolume) throws IOException {
+    private void persistReusablePageIndex() throws IOException {
+        reusablePageIndexStore.rewrite(pageVolume.pageCount(), reusablePageIds);
+    }
+
+    private static NavigableSet<Long> recoverReusablePageIds(
+            DelosPageVolume pageVolume,
+            MvccReusablePageIndexStore reusablePageIndexStore) throws IOException {
         Objects.requireNonNull(pageVolume, "pageVolume");
+        Objects.requireNonNull(reusablePageIndexStore, "reusablePageIndexStore");
+        NavigableSet<Long> emptyPages = scanEmptyPageIds(pageVolume);
+        if (!reusablePageIndexStore.exists()) {
+            return emptyPages;
+        }
+        MvccReusablePageIndexStore.Snapshot indexed = reusablePageIndexStore.read();
+        NavigableSet<Long> reconciled = new TreeSet<>();
+        long pageCount = pageVolume.pageCount();
+        if (indexed.pageCount() == pageCount) {
+            for (Long pageNumber : indexed.reusablePageIds()) {
+                if (emptyPages.contains(pageNumber)) {
+                    reconciled.add(pageNumber);
+                }
+            }
+        }
+        reconciled.addAll(emptyPages);
+        return reconciled;
+    }
+
+    private static NavigableSet<Long> scanEmptyPageIds(DelosPageVolume pageVolume) throws IOException {
         NavigableSet<Long> reusablePages = new TreeSet<>();
         long count = pageVolume.pageCount();
         for (long pageNumber = 0L; pageNumber < count; pageNumber++) {
