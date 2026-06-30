@@ -68,6 +68,32 @@ public interface DelosStorageTableDiagnostics {
 
     void assertConsistentForTesting();
 
+    default DelosStoragePageDiagnostics pageDiagnosticsForTesting() {
+        return new DelosStoragePageDiagnostics(
+                pageCountForTesting(),
+                overflowPageCountForTesting(),
+                reusablePageCountForTesting(),
+                physicalVersionCountForTesting(),
+                logicalRowCountForTesting());
+    }
+
+    default DelosStoragePageCacheDiagnostics pageCacheDiagnosticsForTesting() {
+        return new DelosStoragePageCacheDiagnostics(
+                pageCacheMaxPageCountForTesting(),
+                pageCacheSizeForTesting(),
+                pageCacheHitCountForTesting(),
+                pageCacheMissCountForTesting(),
+                pageCacheWriteCountForTesting(),
+                pageCacheEvictionCountForTesting(),
+                pageCacheInvalidationCountForTesting());
+    }
+
+    default DelosStorageConsistencyDiagnostics consistencyDiagnosticsForTesting() {
+        return new DelosStorageConsistencyDiagnostics(
+                consistencyErrorCountForTesting(),
+                consistencySummaryForTesting());
+    }
+
     DelosVacuumOutcome lastVacuumOutcomeForTesting();
 
     Path legacySnapshotFileForTesting();

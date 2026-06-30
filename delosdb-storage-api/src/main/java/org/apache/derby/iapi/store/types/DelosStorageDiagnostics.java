@@ -84,6 +84,40 @@ public interface DelosStorageDiagnostics {
 
     void assertConsistentForTesting(int segment, long containerId);
 
+    default DelosStoragePageDiagnostics pageDiagnosticsForTesting(int segment, long containerId) {
+        return new DelosStoragePageDiagnostics(
+                pageCountForTesting(segment, containerId),
+                overflowPageCountForTesting(segment, containerId),
+                reusablePageCountForTesting(segment, containerId),
+                physicalVersionCountForTesting(segment, containerId),
+                logicalRowCountForTesting(segment, containerId));
+    }
+
+    default DelosStoragePageCacheDiagnostics pageCacheDiagnosticsForTesting(int segment, long containerId) {
+        return new DelosStoragePageCacheDiagnostics(
+                pageCacheMaxPageCountForTesting(segment, containerId),
+                pageCacheSizeForTesting(segment, containerId),
+                pageCacheHitCountForTesting(segment, containerId),
+                pageCacheMissCountForTesting(segment, containerId),
+                pageCacheWriteCountForTesting(segment, containerId),
+                pageCacheEvictionCountForTesting(segment, containerId),
+                pageCacheInvalidationCountForTesting(segment, containerId));
+    }
+
+    default DelosStorageConsistencyDiagnostics consistencyDiagnosticsForTesting(int segment, long containerId) {
+        return new DelosStorageConsistencyDiagnostics(
+                consistencyErrorCountForTesting(segment, containerId),
+                consistencySummaryForTesting(segment, containerId));
+    }
+
+    default DelosVacuumOutcome lastVacuumOutcomeForTesting(int segment, long containerId) {
+        return new DelosVacuumOutcome(
+                lastVacuumSkippedForTesting(segment, containerId),
+                lastVacuumReasonForTesting(segment, containerId),
+                lastVacuumRemovedVersionsForTesting(segment, containerId),
+                lastVacuumRemainingVersionsForTesting(segment, containerId));
+    }
+
     boolean lastVacuumSkippedForTesting(int segment, long containerId);
 
     String lastVacuumReasonForTesting(int segment, long containerId);

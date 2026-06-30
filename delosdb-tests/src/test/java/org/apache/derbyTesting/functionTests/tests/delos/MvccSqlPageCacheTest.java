@@ -25,6 +25,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStoragePageCacheDiagnostics;
 
 /** SQL integration tests for the MVCC page-cache lifecycle boundary. */
 public final class MvccSqlPageCacheTest extends MvccSqlTestSupport {
@@ -43,17 +44,17 @@ public final class MvccSqlPageCacheTest extends MvccSqlTestSupport {
             connection.commit();
 
             containerId = mvccContainerId(connection, "MVCC_PAGE_CACHE_T");
-            assertTrue("MVCC page cache should hold at least one durable page",
-                    diagnostics.pageCacheSizeForTesting(0, containerId) > 0L);
+            DelosStoragePageCacheDiagnostics cache = diagnostics.pageCacheDiagnosticsForTesting(0, containerId);
+            assertTrue("MVCC page cache should hold at least one durable page", cache.size() > 0L);
             assertTrue("MVCC append path should publish page writes through the cache boundary",
-                    diagnostics.pageCacheWriteCountForTesting(0, containerId) > 0L);
+                    cache.writeCount() > 0L);
             assertTrue("MVCC append path should reuse the cached last page instead of rereading every append",
-                    diagnostics.pageCacheHitCountForTesting(0, containerId) > 0L);
+                    cache.hitCount() > 0L);
 
-            long hitsBeforeConsistency = diagnostics.pageCacheHitCountForTesting(0, containerId);
+            long hitsBeforeConsistency = cache.hitCount();
             diagnostics.assertConsistentForTesting(0, containerId);
             assertTrue("consistency check should read durable pages through the cache boundary",
-                    diagnostics.pageCacheHitCountForTesting(0, containerId) > hitsBeforeConsistency);
+                    diagnostics.pageCacheDiagnosticsForTesting(0, containerId).hitCount() > hitsBeforeConsistency);
             assertRows(connection,
                     "select id, length(payload) from mvcc_page_cache_t order by id",
                     "1|900",
@@ -69,14 +70,13 @@ public final class MvccSqlPageCacheTest extends MvccSqlTestSupport {
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_PAGE_CACHE_T");
-            assertTrue("reopen should hydrate MVCC pages through the cache boundary",
-                    diagnostics.pageCacheMissCountForTesting(0, reopenedContainerId) > 0L);
-            assertTrue("reopened MVCC table should expose a populated page cache",
-                    diagnostics.pageCacheSizeForTesting(0, reopenedContainerId) > 0L);
-            long hitsBeforeConsistency = diagnostics.pageCacheHitCountForTesting(0, reopenedContainerId);
+            DelosStoragePageCacheDiagnostics cache = diagnostics.pageCacheDiagnosticsForTesting(0, reopenedContainerId);
+            assertTrue("reopen should hydrate MVCC pages through the cache boundary", cache.missCount() > 0L);
+            assertTrue("reopened MVCC table should expose a populated page cache", cache.size() > 0L);
+            long hitsBeforeConsistency = cache.hitCount();
             diagnostics.assertConsistentForTesting(0, reopenedContainerId);
             assertTrue("reopened consistency check should hit the hydrated page cache",
-                    diagnostics.pageCacheHitCountForTesting(0, reopenedContainerId) > hitsBeforeConsistency);
+                    diagnostics.pageCacheDiagnosticsForTesting(0, reopenedContainerId).hitCount() > hitsBeforeConsistency);
             diagnostics.assertConsistentForTesting(0, reopenedContainerId);
             assertRows(reopened,
                     "select id, length(payload) from mvcc_page_cache_t order by id",
@@ -104,22 +104,21 @@ public final class MvccSqlPageCacheTest extends MvccSqlTestSupport {
             connection.commit();
 
             containerId = mvccContainerId(connection, "MVCC_PAGE_CACHE_T");
-            long maxPages = diagnostics.pageCacheMaxPageCountForTesting(0, containerId);
-            assertTrue("MVCC page cache should expose a bounded capacity", maxPages > 0L);
+            DelosStoragePageCacheDiagnostics cache = diagnostics.pageCacheDiagnosticsForTesting(0, containerId);
+            assertTrue("MVCC page cache should expose a bounded capacity", cache.maxPageCount() > 0L);
             assertTrue("MVCC page cache should not grow beyond the bounded capacity",
-                    diagnostics.pageCacheSizeForTesting(0, containerId) <= maxPages);
-            assertTrue("multi-page MVCC workload should evict old page images",
-                    diagnostics.pageCacheEvictionCountForTesting(0, containerId) > 0L);
+                    cache.size() <= cache.maxPageCount());
+            assertTrue("multi-page MVCC workload should evict old page images", cache.evictionCount() > 0L);
 
             assertRows(connection,
                     "select id, length(payload) from mvcc_page_cache_t where id in (1, 75, 150) order by id",
                     "1|7000",
                     "75|7000",
                     "150|7000");
-            long missesBeforeConsistency = diagnostics.pageCacheMissCountForTesting(0, containerId);
+            long missesBeforeConsistency = diagnostics.pageCacheDiagnosticsForTesting(0, containerId).missCount();
             diagnostics.assertConsistentForTesting(0, containerId);
             assertTrue("durable consistency scan should reload evicted MVCC pages on demand",
-                    diagnostics.pageCacheMissCountForTesting(0, containerId) > missesBeforeConsistency);
+                    diagnostics.pageCacheDiagnosticsForTesting(0, containerId).missCount() > missesBeforeConsistency);
             connection.rollback();
         }
 
@@ -127,18 +126,19 @@ public final class MvccSqlPageCacheTest extends MvccSqlTestSupport {
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_PAGE_CACHE_T");
-            long reopenedMaxPages = diagnostics.pageCacheMaxPageCountForTesting(0, reopenedContainerId);
-            assertTrue("reopened MVCC page cache should expose a bounded capacity", reopenedMaxPages > 0L);
+            DelosStoragePageCacheDiagnostics cache = diagnostics.pageCacheDiagnosticsForTesting(0, reopenedContainerId);
+            assertTrue("reopened MVCC page cache should expose a bounded capacity", cache.maxPageCount() > 0L);
             assertRows(reopened,
                     "select id, length(payload) from mvcc_page_cache_t where id in (1, 75, 150) order by id",
                     "1|7000",
                     "75|7000",
                     "150|7000");
             diagnostics.assertConsistentForTesting(0, reopenedContainerId);
+            cache = diagnostics.pageCacheDiagnosticsForTesting(0, reopenedContainerId);
             assertTrue("reopened MVCC page cache should not grow beyond the bounded capacity",
-                    diagnostics.pageCacheSizeForTesting(0, reopenedContainerId) <= reopenedMaxPages);
+                    cache.size() <= cache.maxPageCount());
             assertTrue("reopened bounded MVCC cache should evict while scanning durable pages",
-                    diagnostics.pageCacheEvictionCountForTesting(0, reopenedContainerId) > 0L);
+                    cache.evictionCount() > 0L);
         }
     }
 

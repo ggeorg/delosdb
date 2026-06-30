@@ -27,6 +27,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStoragePageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosVacuumOutcome;
 
 /** SQL integration tests for explicit delos_mvcc free-page reuse after vacuum. */
 public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
@@ -47,12 +49,13 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
             connection.commit();
 
             containerId = mvccContainerId(connection, "MVCC_PAGE_REUSE_T");
-            long initialPages = diagnostics.pageCountForTesting(0, containerId);
+            DelosStoragePageDiagnostics pages = diagnostics.pageDiagnosticsForTesting(0, containerId);
+            long initialPages = pages.pageCount();
             assertTrue("expected at least one MVCC page after insert", initialPages >= 1L);
             assertEquals("fresh table should have two physical versions", 2,
-                    diagnostics.physicalVersionCountForTesting(0, containerId));
+                    pages.physicalVersionCount());
             assertEquals("fresh table should not start with reusable pages", 0L,
-                    diagnostics.reusablePageCountForTesting(0, containerId));
+                    pages.reusablePageCount());
             diagnostics.assertConsistentForTesting(0, containerId);
 
             for (int round = 1; round <= 5; round++) {
@@ -61,27 +64,29 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
                 connection.commit();
             }
 
-            long pagesBeforeVacuum = diagnostics.pageCountForTesting(0, containerId);
-            int versionsBeforeVacuum = diagnostics.physicalVersionCountForTesting(0, containerId);
+            pages = diagnostics.pageDiagnosticsForTesting(0, containerId);
+            long pagesBeforeVacuum = pages.pageCount();
+            int versionsBeforeVacuum = pages.physicalVersionCount();
             assertEquals("two rows updated five times should leave twelve physical versions",
                     12, versionsBeforeVacuum);
             assertTrue("expected repeated large updates to occupy more pages before vacuum, initial="
                             + initialPages + ", before=" + pagesBeforeVacuum,
                     pagesBeforeVacuum > initialPages);
             assertEquals("pre-vacuum append-only workload should not expose reusable pages", 0L,
-                    diagnostics.reusablePageCountForTesting(0, containerId));
+                    pages.reusablePageCount());
             diagnostics.assertConsistentForTesting(0, containerId);
 
             inPlaceCompressTable(connection, "MVCC_PAGE_REUSE_T");
             connection.commit();
 
-            long pagesAfterVacuum = diagnostics.pageCountForTesting(0, containerId);
-            long reusablePagesAfterVacuum = diagnostics.reusablePageCountForTesting(0, containerId);
+            pages = diagnostics.pageDiagnosticsForTesting(0, containerId);
+            long pagesAfterVacuum = pages.pageCount();
+            long reusablePagesAfterVacuum = pages.reusablePageCount();
             reusablePageIndexFile = diagnostics.reusablePageIndexFileForTesting(0, containerId);
-            assertFalse("vacuum should not be skipped for the page-reuse workload",
-                    diagnostics.lastVacuumSkippedForTesting(0, containerId));
+            DelosVacuumOutcome vacuum = diagnostics.lastVacuumOutcomeForTesting(0, containerId);
+            assertFalse("vacuum should not be skipped for the page-reuse workload", vacuum.skipped());
             assertEquals("vacuum should collapse physical versions to the two visible rows",
-                    2, diagnostics.physicalVersionCountForTesting(0, containerId));
+                    2, pages.physicalVersionCount());
             assertEquals("first free-page milestone preserves page-volume capacity instead of truncating it",
                     pagesBeforeVacuum, pagesAfterVacuum);
             assertTrue("vacuum should mark compacted-away MVCC pages reusable; pages="
@@ -94,8 +99,9 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
             insertPayload(connection, 3, payload('z', 512));
             connection.commit();
 
-            pagesAfterReuse = diagnostics.pageCountForTesting(0, containerId);
-            reusablePagesAfterReuse = diagnostics.reusablePageCountForTesting(0, containerId);
+            pages = diagnostics.pageDiagnosticsForTesting(0, containerId);
+            pagesAfterReuse = pages.pageCount();
+            reusablePagesAfterReuse = pages.reusablePageCount();
             assertEquals("post-vacuum insert should consume a reusable page instead of extending the page volume",
                     pagesAfterVacuum, pagesAfterReuse);
             assertTrue("post-vacuum insert should consume at least one reusable page; before="
@@ -103,7 +109,7 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
                     reusablePagesAfterReuse < reusablePagesAfterVacuum);
             assertTrue("reusable-page allocation index should remain durable after reuse",
                     Files.exists(reusablePageIndexFile));
-            assertEquals(3, diagnostics.physicalVersionCountForTesting(0, containerId));
+            assertEquals(3, pages.physicalVersionCount());
             diagnostics.assertConsistentForTesting(0, containerId);
             assertRows(connection,
                     "select id, length(payload) from mvcc_page_reuse_t order by id",
@@ -118,10 +124,11 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_PAGE_REUSE_T");
+            DelosStoragePageDiagnostics pages = diagnostics.pageDiagnosticsForTesting(0, reopenedContainerId);
             assertEquals("reopened table should retain page-volume capacity",
-                    pagesAfterReuse, diagnostics.pageCountForTesting(0, reopenedContainerId));
+                    pagesAfterReuse, pages.pageCount());
             assertEquals("reopened table should recover reusable-page tracking from empty durable pages",
-                    reusablePagesAfterReuse, diagnostics.reusablePageCountForTesting(0, reopenedContainerId));
+                    reusablePagesAfterReuse, pages.reusablePageCount());
             assertEquals("reopened table should use the same reusable-page allocation index",
                     reusablePageIndexFile, diagnostics.reusablePageIndexFileForTesting(0, reopenedContainerId));
             assertTrue("reopened reusable-page allocation index should exist",
