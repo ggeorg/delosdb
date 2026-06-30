@@ -116,9 +116,10 @@ public final class MvccSqlPageCacheTest extends MvccSqlTestSupport {
                     "1|7000",
                     "75|7000",
                     "150|7000");
-            assertTrue("evicted MVCC pages should reload safely on demand",
-                    diagnostics.pageCacheMissCountForTesting(0, containerId) > 0L);
+            long missesBeforeConsistency = diagnostics.pageCacheMissCountForTesting(0, containerId);
             diagnostics.assertConsistentForTesting(0, containerId);
+            assertTrue("durable consistency scan should reload evicted MVCC pages on demand",
+                    diagnostics.pageCacheMissCountForTesting(0, containerId) > missesBeforeConsistency);
             connection.rollback();
         }
 
