@@ -1,4 +1,5 @@
 import java.nio.charset.StandardCharsets
+import java.util.regex.Pattern
 
 /*
  * DelosDB-owned storage/MVCC static-analysis gate.
@@ -383,8 +384,128 @@ tasks.register('delosStaleGradleScriptCheck') {
     }
 }
 
+
+
+def delosDeadCodeCandidateFile = file('gradle/static-analysis/delosdb-dead-code-candidates.txt')
+
+def delosDeadCodeSearchRoots = [
+        'delosdb-storage-api/src/main/java',
+        'delosdb-storage-bridge/src/main/java',
+        'delosdb-storage-mvcc/src/main/java',
+        'delosdb-storage-io/src/main/java',
+        'delosdb-server/src/main/java',
+        'delosdb-client/src/main/java',
+        'delosdb-tools/src/main/java',
+        'delosdb-tests/src/test/java'
+]
+
+def delosDeadCodeSearchFiles = {
+    def includes = ['**/*.java', '**/*.properties', '**/META-INF/services/**', '**/module-info.java']
+    delosDeadCodeSearchRoots.collect { file(it) }
+            .findAll { it.exists() }
+            .collectMany { root ->
+                fileTree(root) {
+                    includes.each { include it }
+                }.files
+            }
+            .sort { a, b -> a.path <=> b.path }
+}
+
+def delosLoadDeadCodeCandidates = {
+    if (!delosDeadCodeCandidateFile.exists()) {
+        return []
+    }
+    delosDeadCodeCandidateFile.readLines('UTF-8')
+            .collect { it.trim() }
+            .findAll { it && !it.startsWith('#') }
+            .collect { line ->
+                def parts = line.split('\\|', 3)
+                if (parts.length < 2) {
+                    throw new GradleException('Malformed dead-code candidate line: ' + line)
+                }
+                [
+                        path  : parts[0].trim(),
+                        symbol: parts[1].trim(),
+                        reason: parts.length == 3 ? parts[2].trim() : ''
+                ]
+            }
+}
+
+tasks.register('delosDeadCodeCandidateReport') {
+    group = 'verification'
+    description = 'Reports curated DelosDB dead-code/stale-code candidates without deleting them.'
+
+    inputs.file(delosDeadCodeCandidateFile).optional()
+    inputs.files(delosDeadCodeSearchFiles())
+    outputs.file(layout.buildDirectory.file('reports/delosdb/dead-code-candidates.txt'))
+
+    doLast {
+        def candidates = delosLoadDeadCodeCandidates()
+        def searchFiles = delosDeadCodeSearchFiles()
+        def reportFile = layout.buildDirectory.file('reports/delosdb/dead-code-candidates.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+
+        def rows = candidates.collect { candidate ->
+            def candidateFile = file(candidate.path)
+            def references = []
+            if (candidateFile.exists()) {
+                searchFiles.findAll { it.exists() && it.canonicalFile != candidateFile.canonicalFile }.each { sourceFile ->
+                    int lineNumber = 0
+                    sourceFile.eachLine('UTF-8') { line ->
+                        lineNumber++
+                        def symbolPattern = ~('(?<![A-Za-z0-9_$])' + Pattern.quote(candidate.symbol) + '(?![A-Za-z0-9_$])')
+                        if (symbolPattern.matcher(line).find()) {
+                            references << [file: sourceFile, lineNumber: lineNumber, line: delosStorageNormalize(line)]
+                        }
+                    }
+                }
+            }
+            [candidate: candidate, exists: candidateFile.exists(), references: references]
+        }
+
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB dead-code / stale-code candidate report')
+            writer.println('================================================')
+            writer.println()
+            writer.println('This is an evidence report, not a deletion gate.')
+            writer.println('ServiceLoader entries, public APIs, JPMS exports, tests, and reflection can make text-only dead-code scans noisy.')
+            writer.println()
+            writer.println('Candidates configured: ' + candidates.size())
+            writer.println()
+
+            rows.each { row ->
+                def candidate = row.candidate
+                writer.println(candidate.path)
+                writer.println('  symbol:     ' + candidate.symbol)
+                writer.println('  exists:     ' + row.exists)
+                writer.println('  references: ' + row.references.size())
+                if (candidate.reason) {
+                    writer.println('  reason:     ' + candidate.reason)
+                }
+                if (row.exists && row.references.isEmpty()) {
+                    writer.println('  status:     deletion-review candidate')
+                } else if (!row.exists) {
+                    writer.println('  status:     already removed or renamed')
+                } else {
+                    writer.println('  status:     referenced; do not delete without deeper review')
+                    row.references.take(10).each { ref ->
+                        def refPath = rootProject.projectDir.toPath().relativize(ref.file.toPath()).toString().replace(File.separatorChar, '/' as char)
+                        writer.println('    - ' + refPath + ':' + ref.lineNumber + ': ' + ref.line)
+                    }
+                    if (row.references.size() > 10) {
+                        writer.println('    ... ' + (row.references.size() - 10) + ' more reference(s) omitted')
+                    }
+                }
+                writer.println()
+            }
+        }
+
+        logger.lifecycle('DelosDB dead-code candidate report written: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosStaleGradleScriptCheck'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport'
 }
