@@ -459,6 +459,113 @@ public class ProtocolTestAdapter {
         }
     }
 
+
+    /**
+     * Adapter for white-box tests of EXTDTA materialization and spooling.
+     */
+    public static final class ExtdtaSpoolProbe {
+        public static final String SPOOL_THRESHOLD_PROPERTY =
+                DrdaExtdtaStreamMaterializer.SPOOL_THRESHOLD_PROPERTY;
+
+        public MaterializedProbe materialize(byte[] bytes, int threshold)
+                throws IOException {
+            return materialize(bytes, threshold,
+                    org.apache.derby.shared.common.reference.DRDAConstants.STREAM_OK);
+        }
+
+        public MaterializedProbe materialize(
+                byte[] bytes,
+                int threshold,
+                byte status) throws IOException {
+            DrdaExtdtaStreamMaterializer.MaterializedExtdta materialized =
+                    DrdaExtdtaStreamMaterializer.materialize(
+                            new ProbeEXTDTAReaderInputStream(bytes, status),
+                            threshold);
+            return new MaterializedProbe(materialized);
+        }
+    }
+
+    public static final class MaterializedProbe {
+        private final DrdaExtdtaStreamMaterializer.MaterializedExtdta materialized;
+
+        private MaterializedProbe(
+                DrdaExtdtaStreamMaterializer.MaterializedExtdta materialized) {
+            this.materialized = materialized;
+        }
+
+        public boolean isSpooled() {
+            return materialized.isSpooled();
+        }
+
+        public long byteLength() {
+            return materialized.byteLength();
+        }
+
+        public boolean temporaryFileExists() {
+            java.nio.file.Path file = materialized.temporaryFileForTesting();
+            return file != null && java.nio.file.Files.exists(file);
+        }
+
+        public byte[] readAllAndClose() throws IOException {
+            try (java.io.InputStream stream = materialized.inputStream()) {
+                return stream.readAllBytes();
+            }
+        }
+
+        public void assertFailsOnRead() throws IOException {
+            try (java.io.InputStream stream = materialized.inputStream()) {
+                stream.read();
+            }
+        }
+    }
+
+    private static final class ProbeEXTDTAReaderInputStream
+            extends EXTDTAReaderInputStream {
+        private final byte[] bytes;
+        private final byte status;
+        private int position;
+        private boolean statusSent;
+
+        private ProbeEXTDTAReaderInputStream(byte[] bytes, byte status) {
+            super(false, true);
+            this.bytes = bytes.clone();
+            this.status = status;
+        }
+
+        @Override
+        public int read() throws IOException {
+            byte[] one = new byte[1];
+            int count = read(one, 0, 1);
+            return count < 0 ? -1 : one[0] & 0xff;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length)
+                throws IOException {
+            if (position < bytes.length) {
+                int count = Math.min(length, bytes.length - position);
+                System.arraycopy(bytes, position, buffer, offset, count);
+                position += count;
+                return count;
+            }
+            if (!statusSent) {
+                statusSent = true;
+                checkStatus(status & 0xff);
+            }
+            return -1;
+        }
+
+        @Override
+        public int available() {
+            return bytes.length - position;
+        }
+
+        @Override
+        protected void onClientSideStreamingError() {
+            position = bytes.length;
+        }
+    }
+
     private static final class ProbeSocket extends Socket {
         private final java.io.InputStream input =
                 new java.io.ByteArrayInputStream(new byte[0]);

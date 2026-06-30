@@ -21,7 +21,6 @@
 package org.apache.derby.impl.drda;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -9379,61 +9378,7 @@ class DRDAConnThread extends Thread {
     private static InputStream
         convertAsByteArrayInputStream( EXTDTAReaderInputStream stream )
         throws IOException {
-
-        // Suppress the exception that may be thrown when reading the status
-        // byte here, we want the embedded statement to fail while executing.
-        stream.setSuppressException(true);
-
-        final int byteArrayLength = 
-            stream instanceof StandardEXTDTAReaderInputStream ?
-            (int) ( ( StandardEXTDTAReaderInputStream ) stream ).getLength() : 
-            1 + stream.available(); // +1 to avoid infinite loop
-
-        // TODO: We will run into OOMEs for large values here.
-        //       Could avoid this by saving value temporarily to disk, for
-        //       instance by using the existing LOB code.
-        PublicBufferOutputStream pbos = 
-            new PublicBufferOutputStream( byteArrayLength );
-
-        byte[] buffer = new byte[Math.min(byteArrayLength, 32*1024)];
-        
-        int c;
-        
-        while( ( c = stream.read( buffer,
-                                  0,
-                                  buffer.length ) ) > -1 ) {
-            pbos.write( buffer, 0, c );
-        }
-
-        // Check if the client driver encountered any errors when reading the
-        // source on the client side.
-        if (stream.isStatusSet() &&
-                stream.getStatus() != DRDAConstants.STREAM_OK) {
-            // Create a stream that will just fail when accessed.
-            return new FailingEXTDTAInputStream(stream.getStatus());
-        } else {
-            return new ByteArrayInputStream( pbos.getBuffer(),
-                                             0,
-                                             pbos.getCount() );
-        }
-
-    }
-    
-    
-    private static class PublicBufferOutputStream extends ByteArrayOutputStream{
-        
-        PublicBufferOutputStream(int size){
-            super(size);
-        }
-        
-        public byte[] getBuffer(){
-            return buf;
-        }
-        
-        public int getCount(){
-            return count;
-        }
-        
+        return DrdaExtdtaStreamMaterializer.materialize(stream).inputStream();
     }
     
     /**

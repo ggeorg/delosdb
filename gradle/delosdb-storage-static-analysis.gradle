@@ -246,6 +246,16 @@ def delosServerClassifyFindings = {
             }
         }
 
+        if (relativePath == 'delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java') {
+            lines.eachWithIndex { String line, int index ->
+                int lineNumber = index + 1
+                if (line.contains('PublicBufferOutputStream')
+                        || line.contains('OOMEs for large values')) {
+                    findings << delosServerFinding('SERVER_EXTDTA_HEAP_BUFFERING', sourceFile, lineNumber, line)
+                }
+            }
+        }
+
         if ((lines.any { it.contains('Thread.ofVirtual(') || it.contains('newVirtualThreadPerTaskExecutor(') })
                 && relativePath != 'delosdb-server/src/main/java/org/apache/derby/impl/drda/DrdaThreading.java') {
             lines.eachWithIndex { String line, int index ->
