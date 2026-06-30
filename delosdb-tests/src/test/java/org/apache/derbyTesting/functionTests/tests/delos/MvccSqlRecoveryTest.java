@@ -35,6 +35,8 @@ import java.util.List;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
+import io.github.ggeorg.delosdb.storage.io.page.DelosPageIo;
+
 /** SQL integration tests for delos_mvcc recovery behavior. */
 public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
     public void testCommittedMvccInsertSurvivesProcessHaltAndRecovery() throws Exception {
@@ -140,9 +142,7 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
         }
         shutdownDatabase(databaseName);
 
-        byte[] bytes = Files.readAllBytes(pageFile);
-        bytes[128] ^= 0x5a;
-        Files.write(pageFile, bytes, StandardOpenOption.TRUNCATE_EXISTING);
+        corruptPageBodyAndAssertChecksumRejects(pageFile);
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             assertRows(reopened, "select id, name from mvcc_page_checksum_t order by id");
@@ -179,6 +179,21 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
         assertEquals("expected valid durable MVCC state, got " + summary,
                 0, diagnostics.consistencyErrorCountForTesting(0, containerId));
         diagnostics.assertConsistentForTesting(0, containerId);
+    }
+
+    private static void corruptPageBodyAndAssertChecksumRejects(Path pageFile) throws Exception {
+        byte[] bytes = Files.readAllBytes(pageFile);
+        assertTrue("expected at least one complete MVCC page in " + pageFile, bytes.length >= 8192);
+        bytes[128] ^= 0x5a;
+        Files.write(pageFile, bytes, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+
+        try {
+            DelosPageIo.decode(java.util.Arrays.copyOf(bytes, 8192));
+            fail("Expected direct MVCC page decode to reject the corrupted checksum");
+        } catch (IllegalArgumentException expected) {
+            assertTrue("expected checksum failure, got: " + expected,
+                    containsMessage(expected, "checksum"));
+        }
     }
 
     public static final class CrashBoundaryWorker {

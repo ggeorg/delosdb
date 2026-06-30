@@ -56,6 +56,10 @@ abstract class MvccSqlTestSupport extends TestCase {
                 throw e;
             }
         }
+        // Keep SQL shutdown/reopen tests honest: after Derby reports a clean
+        // shutdown, force the MVCC bridge diagnostics cache to drop any
+        // same-JVM table state so the next open must hydrate from disk.
+        mvccDiagnostics().clearRuntimeStateForTesting();
     }
 
     protected static int executeUpdate(Connection connection, String sql) throws SQLException {

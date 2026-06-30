@@ -644,7 +644,7 @@ tasks.named('check') {
 tasks.register('runDelosMvccSqlIntegrationTest', Test) {
     group = 'verification'
     description = 'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.'
-    dependsOn tasks.named('compileTestJava'), ':jars'
+    dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
 
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
