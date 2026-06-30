@@ -22,11 +22,12 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
-/** SQL boundary test for delos_mvcc user-defined Java object values. */
+/** SQL boundary tests for delos_mvcc values that need deliberate durable policies. */
 public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestSupport {
     public void testJavaObjectColumnFailsCleanlyAndDoesNotPoisonMvccRuntime() throws Exception {
         String databaseName = databaseName("mvcc-sql-java-object-boundary-db");
@@ -76,6 +77,47 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
         }
     }
 
+    public void testBlobAndClobColumnsFailCleanlyAndDoNotPoisonMvccRuntime() throws Exception {
+        String databaseName = databaseName("mvcc-sql-lob-boundary-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_blob_boundary_t ("
+                    + "id int primary key, payload blob(1024)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_clob_boundary_t ("
+                    + "id int primary key, payload clob(1024)) using delos_mvcc");
+            connection.commit();
+        }
+
+        assertBlobInsertFailsCleanly(databaseName);
+        assertClobInsertFailsCleanly(databaseName);
+
+        long normalContainerId;
+        try (Connection connection = openDatabase(databaseName, false)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_after_lob_failure_t ("
+                    + "id int primary key, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_after_lob_failure_t values (1, 'ok')");
+            connection.commit();
+            normalContainerId = mvccContainerId(connection, "MVCC_AFTER_LOB_FAILURE_T");
+            assertMvccConsistent(diagnostics, normalContainerId);
+            assertRows(connection,
+                    "select id, name from mvcc_after_lob_failure_t order by id",
+                    "1|ok");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            long reopenedContainerId = mvccContainerId(reopened, "MVCC_AFTER_LOB_FAILURE_T");
+            assertMvccConsistent(diagnostics, reopenedContainerId);
+            assertRows(reopened,
+                    "select id, name from mvcc_after_lob_failure_t order by id",
+                    "1|ok");
+        }
+    }
+
     private static void assertJavaObjectInsertFailsCleanly(String databaseName) throws SQLException {
         Connection connection = openDatabase(databaseName, false);
         try {
@@ -99,6 +141,56 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
                     containsMessage(expected, "JAVA_OBJECT")
                             || containsMessage(expected, "UserType")
                             || containsMessage(expected, "serialization")
+                            || containsMessage(expected, "not supported"));
+        }
+    }
+
+    private static void assertBlobInsertFailsCleanly(String databaseName) throws SQLException {
+        Connection connection = openDatabase(databaseName, false);
+        try {
+            connection.setAutoCommit(false);
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "insert into mvcc_blob_boundary_t values (?, ?)")) {
+                statement.setInt(1, 1);
+                statement.setBytes(2, new byte[] {1, 2, 3, 4});
+                assertUnsupportedLobRejected(() -> {
+                    statement.executeUpdate();
+                    connection.commit();
+                }, "BLOB");
+            }
+        } finally {
+            rollbackAfterExpectedConflict(connection);
+            closeQuietly(connection);
+        }
+    }
+
+    private static void assertClobInsertFailsCleanly(String databaseName) throws SQLException {
+        Connection connection = openDatabase(databaseName, false);
+        try {
+            connection.setAutoCommit(false);
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "insert into mvcc_clob_boundary_t values (?, ?)")) {
+                statement.setInt(1, 1);
+                statement.setString(2, "unsupported-clob-payload");
+                assertUnsupportedLobRejected(() -> {
+                    statement.executeUpdate();
+                    connection.commit();
+                }, "CLOB");
+            }
+        } finally {
+            rollbackAfterExpectedConflict(connection);
+            closeQuietly(connection);
+        }
+    }
+
+    private static void assertUnsupportedLobRejected(SqlAction action, String typeName) throws SQLException {
+        try {
+            action.run();
+            fail("Expected delos_mvcc to reject " + typeName + " durable row values");
+        } catch (SQLException expected) {
+            assertTrue("expected clean " + typeName + " boundary failure, got: " + expected,
+                    containsMessage(expected, typeName)
+                            || containsMessage(expected, "LOB")
                             || containsMessage(expected, "not supported"));
         }
     }

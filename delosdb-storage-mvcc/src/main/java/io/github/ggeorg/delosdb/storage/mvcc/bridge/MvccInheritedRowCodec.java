@@ -89,10 +89,10 @@ final class MvccInheritedRowCodec implements PageVolumeMvccStateStore.RowCodec<S
                     "Inherited MVCC row value is not Derby-storable: " + value.getClass().getName());
         }
         int formatId = storable.getTypeFormatId();
-        if (formatId == StoredFormatIds.SERIALIZABLE_FORMAT_ID
-                || formatId == StoredFormatIds.SQL_USERTYPE_ID_V3) {
+        if (isUnsupportedDurableFormatId(formatId)) {
             throw new IllegalArgumentException(
-                    "JAVA_OBJECT/UserType columns are not supported by the delos_mvcc durable row codec: "
+                    unsupportedDurableFormatName(formatId)
+                            + " columns are not supported by the delos_mvcc durable row codec: "
                             + value.getClass().getName());
         }
         FormatIdUtil.writeFormatIdInteger(output, formatId);
@@ -108,9 +108,10 @@ final class MvccInheritedRowCodec implements PageVolumeMvccStateStore.RowCodec<S
         if (formatId == StoredFormatIds.NULL_FORMAT_ID) {
             return null;
         }
-        if (formatId == StoredFormatIds.SERIALIZABLE_FORMAT_ID
-                || formatId == StoredFormatIds.SQL_USERTYPE_ID_V3) {
-            throw new IllegalStateException("Inherited MVCC row column uses unsupported JAVA_OBJECT/UserType format id");
+        if (isUnsupportedDurableFormatId(formatId)) {
+            throw new IllegalStateException("Inherited MVCC row column uses unsupported "
+                    + unsupportedDurableFormatName(formatId)
+                    + " format id");
         }
         Object instance;
         try {
@@ -131,6 +132,23 @@ final class MvccInheritedRowCodec implements PageVolumeMvccStateStore.RowCodec<S
         }
         storable.readExternal(input);
         return value;
+    }
+
+    private static boolean isUnsupportedDurableFormatId(int formatId) {
+        return formatId == StoredFormatIds.SERIALIZABLE_FORMAT_ID
+                || formatId == StoredFormatIds.SQL_USERTYPE_ID_V3
+                || formatId == StoredFormatIds.SQL_BLOB_ID
+                || formatId == StoredFormatIds.SQL_CLOB_ID;
+    }
+
+    private static String unsupportedDurableFormatName(int formatId) {
+        if (formatId == StoredFormatIds.SQL_BLOB_ID) {
+            return "BLOB";
+        }
+        if (formatId == StoredFormatIds.SQL_CLOB_ID) {
+            return "CLOB";
+        }
+        return "JAVA_OBJECT/UserType";
     }
 
     private static final class StrictObjectOutput implements ObjectOutput {
