@@ -40,13 +40,12 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
                     + "id int primary key, payload varchar(32672)) using delos_mvcc");
             connection.commit();
             containerId = mvccContainerId(connection, "MVCC_LONG_ROW_T");
+        }
 
-            assertOversizedRowRejected(() -> {
-                insertRow(connection, 1, repeated('x', 16000));
-                connection.commit();
-            });
-            connection.rollback();
+        assertOversizedInsertFailsCleanly(databaseName);
 
+        try (Connection connection = openDatabase(databaseName, false)) {
+            connection.setAutoCommit(false);
             insertRow(connection, 2, "small-after-oversized-failure");
             connection.commit();
 
@@ -64,6 +63,31 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
             assertRows(reopened,
                     "select id, payload from mvcc_long_row_t order by id",
                     "2|small-after-oversized-failure");
+        }
+    }
+
+
+    private static void assertOversizedInsertFailsCleanly(String databaseName) throws SQLException {
+        Connection connection = openDatabase(databaseName, false);
+        try {
+            connection.setAutoCommit(false);
+            assertOversizedRowRejected(() -> {
+                insertRow(connection, 1, repeated('x', 16000));
+                connection.commit();
+            });
+        } finally {
+            rollbackAfterExpectedConflict(connection);
+            closeQuietly(connection);
+        }
+    }
+
+    private static void closeQuietly(Connection connection) throws SQLException {
+        try {
+            connection.close();
+        } catch (SQLException e) {
+            if (!"08003".equals(e.getSQLState()) && !"25001".equals(e.getSQLState())) {
+                throw e;
+            }
         }
     }
 
