@@ -89,9 +89,11 @@ final class MvccInheritedRowCodec implements PageVolumeMvccStateStore.RowCodec<S
                     "Inherited MVCC row value is not Derby-storable: " + value.getClass().getName());
         }
         int formatId = storable.getTypeFormatId();
-        if (formatId == StoredFormatIds.SERIALIZABLE_FORMAT_ID) {
+        if (formatId == StoredFormatIds.SERIALIZABLE_FORMAT_ID
+                || formatId == StoredFormatIds.SQL_USERTYPE_ID_V3) {
             throw new IllegalArgumentException(
-                    "Inherited MVCC row value uses Java serialization format id: " + value.getClass().getName());
+                    "JAVA_OBJECT/UserType columns are not supported by the delos_mvcc durable row codec: "
+                            + value.getClass().getName());
         }
         FormatIdUtil.writeFormatIdInteger(output, formatId);
         boolean isNull = storable.isNull();
@@ -106,8 +108,9 @@ final class MvccInheritedRowCodec implements PageVolumeMvccStateStore.RowCodec<S
         if (formatId == StoredFormatIds.NULL_FORMAT_ID) {
             return null;
         }
-        if (formatId == StoredFormatIds.SERIALIZABLE_FORMAT_ID) {
-            throw new IllegalStateException("Inherited MVCC row column uses Java serialization format id");
+        if (formatId == StoredFormatIds.SERIALIZABLE_FORMAT_ID
+                || formatId == StoredFormatIds.SQL_USERTYPE_ID_V3) {
+            throw new IllegalStateException("Inherited MVCC row column uses unsupported JAVA_OBJECT/UserType format id");
         }
         Object instance;
         try {

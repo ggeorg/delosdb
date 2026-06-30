@@ -8,6 +8,7 @@ import java.io.Serializable;
 import java.util.HashMap;
 
 import org.apache.derby.iapi.services.io.Storable;
+import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.junit.jupiter.api.Test;
 
@@ -45,6 +46,16 @@ final class MvccInheritedRowCodecFilterTest {
         assertThrows(IllegalStateException.class, () -> MvccInheritedRowCodec.INSTANCE.encode(row));
     }
 
+    @Test
+    void userTypeFormatIdIsRejectedEvenWhenNull() {
+        StoreDataValue[] row = {new NullUserTypeStoreValue()};
+
+        IllegalArgumentException failure = assertThrows(
+                IllegalArgumentException.class,
+                () -> MvccInheritedRowCodec.INSTANCE.encode(row));
+        assertEquals(true, failure.getMessage().contains("JAVA_OBJECT"));
+    }
+
     private static byte[] serialize(Object value) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
@@ -55,6 +66,31 @@ final class MvccInheritedRowCodecFilterTest {
 
     private static final class NonStorableStoreValue implements StoreDataValue, Serializable {
         private static final long serialVersionUID = 1L;
+    }
+
+    private static final class NullUserTypeStoreValue implements StoreDataValue, Storable {
+        @Override
+        public boolean isNull() {
+            return true;
+        }
+
+        @Override
+        public void restoreToNull() {
+        }
+
+        @Override
+        public int getTypeFormatId() {
+            return StoredFormatIds.SQL_USERTYPE_ID_V3;
+        }
+
+        @Override
+        public void writeExternal(ObjectOutput out) {
+            throw new AssertionError("UserType format ids must be rejected before writeExternal");
+        }
+
+        @Override
+        public void readExternal(java.io.ObjectInput in) {
+        }
     }
 
     private static final class ObjectSerializingStoreValue implements StoreDataValue, Storable {
