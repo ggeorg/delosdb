@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccPageRecordCodec;
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordCodec;
 
 final class PageBackedMvccTableTest {
     @TempDir
@@ -32,6 +34,27 @@ final class PageBackedMvccTableTest {
             assertEquals("alpha", reopened.read("account:1", new MvccCommitSequence(1L)).orElseThrow());
             assertEquals(1, reopened.logicalRowCount());
             assertEquals(1, reopened.physicalVersionCount("account:1"));
+        }
+    }
+
+    @Test
+    void committedInsertUsesMvccPageRecordHeaderAndSurvivesReopen() throws Exception {
+        Path tableFile = tempDir.resolve("record-header-table.mvccp");
+        try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile)) {
+            table.insertCommitted("account:1", "alpha", 1L, 1L);
+            table.validateConsistency().assertValid();
+        }
+
+        byte[] bytes = Files.readAllBytes(tableFile);
+        int pageRecordMagicOffset = indexOf(bytes, magicBytes(MvccPageRecordCodec.MAGIC));
+        int versionRecordMagicOffset = indexOf(bytes, magicBytes(MvccVersionRecordCodec.MAGIC));
+        assertTrue(pageRecordMagicOffset >= 0, "MVCC page slot should carry a page-record header");
+        assertTrue(versionRecordMagicOffset > pageRecordMagicOffset,
+                "legacy version-record bytes should be wrapped after the page-record header");
+
+        try (PageBackedMvccTable reopened = PageBackedMvccTable.open(tableFile)) {
+            assertEquals("alpha", reopened.read("account:1", new MvccCommitSequence(1L)).orElseThrow());
+            reopened.validateConsistency().assertValid();
         }
     }
 
@@ -323,6 +346,15 @@ final class PageBackedMvccTableTest {
         }
         bytes[bytes.length - 1] ^= 0x01;
         Files.write(path, bytes);
+    }
+
+    private static byte[] magicBytes(int magic) {
+        return new byte[] {
+                (byte) ((magic >>> 24) & 0xff),
+                (byte) ((magic >>> 16) & 0xff),
+                (byte) ((magic >>> 8) & 0xff),
+                (byte) (magic & 0xff)
+        };
     }
 
     private static int indexOf(byte[] haystack, byte[] needle) {

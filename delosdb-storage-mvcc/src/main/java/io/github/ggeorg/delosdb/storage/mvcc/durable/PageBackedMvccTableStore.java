@@ -17,8 +17,8 @@ import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolume;
 import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactories;
 import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactory;
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccPageRecordCodec;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
-import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordCodec;
 
 /** Page-backed store for durable MVCC version records with vacuum-created page reuse. */
 public final class PageBackedMvccTableStore implements AutoCloseable {
@@ -118,7 +118,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 byte[] payload = page.readRecord(slot);
                 records.add(readStoredVersionRecord(
                         new MvccVersionLocator(page.pageId(), slot),
-                        MvccVersionRecordCodec.decode(payload)));
+                        MvccPageRecordCodec.decodeVersionRecord(payload)));
             }
         }
         return records;
@@ -251,10 +251,10 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
 
     static byte[] encodeAndRequireSinglePageRecord(MvccVersionRecord record) {
-        byte[] encoded = MvccVersionRecordCodec.encode(Objects.requireNonNull(record, "record"));
+        byte[] encoded = MvccPageRecordCodec.encodeVersionRecord(Objects.requireNonNull(record, "record"));
         int maxRecordBytes = maxSingleRecordBytes();
         if (encoded.length > maxRecordBytes) {
-            throw new IllegalArgumentException("MVCC version record is too large for one page: "
+            throw new IllegalArgumentException("MVCC page record is too large for one page: "
                     + encoded.length + " bytes; max=" + maxRecordBytes);
         }
         return encoded;
@@ -271,7 +271,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     }
 
     private EncodedVersion encodeForPageRecord(MvccVersionRecord record) throws IOException {
-        byte[] encoded = MvccVersionRecordCodec.encode(Objects.requireNonNull(record, "record"));
+        byte[] encoded = MvccPageRecordCodec.encodeVersionRecord(Objects.requireNonNull(record, "record"));
         if (encoded.length <= maxSingleRecordBytes()) {
             return new EncodedVersion(record, encoded);
         }
