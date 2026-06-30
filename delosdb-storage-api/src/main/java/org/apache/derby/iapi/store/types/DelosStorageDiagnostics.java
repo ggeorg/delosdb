@@ -56,6 +56,8 @@ public interface DelosStorageDiagnostics {
 
     int logicalRowCountForTesting(int segment, long containerId);
 
+    long pageCountForTesting(int segment, long containerId);
+
     int consistencyErrorCountForTesting(int segment, long containerId);
 
     String consistencySummaryForTesting(int segment, long containerId);

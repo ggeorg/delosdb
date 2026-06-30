@@ -194,6 +194,17 @@ public final class PageVolumeMvccStateStore<T> {
         return enabled() ? table.logicalRowCount() : 0;
     }
 
+    public long pageCount() {
+        if (!enabled()) {
+            return 0L;
+        }
+        try {
+            return table.pageCount();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read MVCC page count for " + pageFile, e);
+        }
+    }
+
     public int consistencyErrorCount() {
         return validateConsistency().errors().size();
     }

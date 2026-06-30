@@ -40,6 +40,8 @@ public interface DelosStorageTableDiagnostics {
 
     int logicalRowCountForTesting();
 
+    long pageCountForTesting();
+
     int consistencyErrorCountForTesting();
 
     String consistencySummaryForTesting();
