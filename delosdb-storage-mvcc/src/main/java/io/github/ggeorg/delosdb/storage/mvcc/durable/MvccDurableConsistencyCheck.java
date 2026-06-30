@@ -35,7 +35,14 @@ public final class MvccDurableConsistencyCheck {
             throws IOException {
         Objects.requireNonNull(store, "store");
         Objects.requireNonNull(rowDirectory, "rowDirectory");
-        return check(store.loadAll(), rowDirectory.recoverHeads());
+        Result result = check(store.loadAll(), rowDirectory.recoverHeads());
+        List<String> reusablePageErrors = store.reusablePageConsistencyErrors();
+        if (reusablePageErrors.isEmpty()) {
+            return result;
+        }
+        List<String> errors = new ArrayList<>(result.errors());
+        errors.addAll(reusablePageErrors);
+        return new Result(result.physicalVersions(), result.logicalRows(), result.durableHeads(), errors);
     }
 
     public static Result check(

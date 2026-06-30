@@ -162,6 +162,32 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return reusablePageIds.size();
     }
 
+    synchronized List<String> reusablePageConsistencyErrors() throws IOException {
+        List<String> errors = new ArrayList<>();
+        long pageCount = pageVolume.pageCount();
+        NavigableSet<Long> emptyPages = scanEmptyPageIds(pageVolume);
+        for (Long pageNumber : reusablePageIds) {
+            if (pageNumber == null) {
+                errors.add("reusable-page index contains null page id");
+                continue;
+            }
+            if (pageNumber < 0L || pageNumber >= pageCount) {
+                errors.add("reusable-page index contains out-of-range page "
+                        + pageNumber + " for pageCount=" + pageCount);
+                continue;
+            }
+            if (!emptyPages.contains(pageNumber)) {
+                errors.add("reusable-page index marks non-empty page " + pageNumber + " reusable");
+            }
+        }
+        for (Long emptyPage : emptyPages) {
+            if (!reusablePageIds.contains(emptyPage)) {
+                errors.add("empty MVCC page " + emptyPage + " is missing from reusable-page index");
+            }
+        }
+        return List.copyOf(errors);
+    }
+
     public synchronized Path reusablePageIndexPath() {
         return reusablePageIndexStore.path();
     }

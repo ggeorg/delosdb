@@ -221,6 +221,57 @@ final class PageBackedMvccTableTest {
     }
 
     @Test
+    void staleReusablePageIndexDropsConsumedPagesOnReopen() throws Exception {
+        Path tableFile = tempDir.resolve("stale-free-index-table.mvccp");
+        Path reusablePageIndexFile = PageBackedMvccTable.reusablePageIndexPath(tableFile);
+        String largeValue = "x".repeat(2400);
+        long pageCountAfterReuse;
+        long consumedPageId;
+        TreeSet<Long> reusablePagesAfterReuse;
+
+        try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile)) {
+            table.insertCommitted("account:1", largeValue, 1L, 1L);
+            table.insertCommitted("account:2", largeValue, 1L, 1L);
+            for (int round = 2; round <= 7; round++) {
+                table.updateCommitted("account:1", largeValue + round, round, round);
+                table.updateCommitted("account:2", largeValue + round, round, round);
+            }
+
+            table.vacuum(MvccVacuumPlan.through(Long.MAX_VALUE));
+            MvccReusablePageIndexStore.Snapshot afterVacuum = MvccReusablePageIndexStore.open(
+                    reusablePageIndexFile).read();
+            assertTrue(!afterVacuum.reusablePageIds().isEmpty(), "vacuum should create reusable pages");
+            consumedPageId = afterVacuum.reusablePageIds().first();
+
+            table.insertCommitted("account:3", "small", 8L, 8L);
+            pageCountAfterReuse = table.pageCount();
+            MvccReusablePageIndexStore.Snapshot afterReuse = MvccReusablePageIndexStore.open(
+                    reusablePageIndexFile).read();
+            reusablePagesAfterReuse = new TreeSet<>(afterReuse.reusablePageIds());
+            assertFalse(reusablePagesAfterReuse.contains(consumedPageId),
+                    "consumed page must be removed from the allocation index immediately");
+            table.validateConsistency().assertValid();
+        }
+
+        TreeSet<Long> staleReusablePages = new TreeSet<>(reusablePagesAfterReuse);
+        staleReusablePages.add(consumedPageId);
+        MvccReusablePageIndexStore.open(reusablePageIndexFile).rewrite(pageCountAfterReuse, staleReusablePages);
+
+        try (PageBackedMvccTable reopened = PageBackedMvccTable.open(tableFile)) {
+            assertEquals(pageCountAfterReuse, reopened.pageCount());
+            assertEquals(reusablePagesAfterReuse.size(), reopened.reusablePageCount(),
+                    "open should discard valid-but-stale reusable-page entries for consumed pages");
+            assertEquals("small", reopened.read("account:3", new MvccCommitSequence(8L)).orElseThrow());
+            reopened.validateConsistency().assertValid();
+        }
+
+        MvccReusablePageIndexStore.Snapshot repaired = MvccReusablePageIndexStore.open(reusablePageIndexFile).read();
+        assertFalse(repaired.reusablePageIds().contains(consumedPageId),
+                "repaired allocation index must not list a page containing live data");
+        assertEquals(reusablePagesAfterReuse, repaired.reusablePageIds());
+    }
+
+    @Test
     void corruptPayloadIsRejectedOnOpen() throws Exception {
         Path tableFile = tempDir.resolve("table.mvccp");
         try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile)) {
