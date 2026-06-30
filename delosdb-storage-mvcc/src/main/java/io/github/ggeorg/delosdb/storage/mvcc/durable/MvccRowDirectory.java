@@ -11,6 +11,7 @@ import java.util.Optional;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccTupleHeader;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
 
@@ -198,6 +199,25 @@ public final class MvccRowDirectory {
             payload = Objects.requireNonNull(payload, "payload");
         }
 
+        StoredVersion withPreviousVersionId(MvccVersionId previousVersionId) {
+            Objects.requireNonNull(previousVersionId, "previousVersionId");
+            if (record.header().previousVersionId().equals(previousVersionId)) {
+                return this;
+            }
+            MvccTupleHeader header = record.header();
+            MvccVersionRecord rewritten = new MvccVersionRecord(
+                    new MvccTupleHeader(
+                            header.rowId(),
+                            header.versionId(),
+                            previousVersionId,
+                            header.createdByTx(),
+                            header.deletedByTx(),
+                            header.commitSequence(),
+                            header.flags()),
+                    record.payload());
+            return new StoredVersion(locator, rewritten, payload);
+        }
+
         boolean isCommittedVisibleTo(MvccCommitSequence snapshotSequence) {
             MvccCommitSequence commitSequence = record.header().commitSequence();
             return !commitSequence.equals(MvccCommitSequence.NONE)
@@ -297,7 +317,24 @@ public final class MvccRowDirectory {
             }
             retained.sort(Comparator.comparingLong(
                     (StoredVersion version) -> version.record().header().versionId().value()).reversed());
-            return retained;
+            return retainedWithClosedPreviousChain(retained);
+        }
+
+        /**
+         * Vacuum may discard committed versions from the middle or tail of a row's
+         * historical chain. The retained records are about to become the new durable
+         * table image, so their previous-version links must be rebased to the
+         * retained predecessor instead of pointing at removed physical records.
+         */
+        private List<StoredVersion> retainedWithClosedPreviousChain(List<StoredVersion> retained) {
+            List<StoredVersion> closed = new ArrayList<>(retained.size());
+            for (int i = 0; i < retained.size(); i++) {
+                MvccVersionId previousVersionId = i + 1 < retained.size()
+                        ? retained.get(i + 1).record().header().versionId()
+                        : MvccVersionId.NONE;
+                closed.add(retained.get(i).withPreviousVersionId(previousVersionId));
+            }
+            return closed;
         }
 
         private int versionCount() {

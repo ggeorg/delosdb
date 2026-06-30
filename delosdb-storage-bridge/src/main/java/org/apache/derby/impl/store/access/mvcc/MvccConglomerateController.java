@@ -329,15 +329,14 @@ public final class MvccConglomerateController implements ConglomerateController 
 
     static void copyRow(StoreDataValue[] source, StoreDataValue[] destination, FormatableBitSet validColumns)
             throws StandardException {
-        if (destination == null) {
+        if (destination == null || source == null) {
             return;
         }
-        int sourceColumn = 0;
         for (int i = 0; i < destination.length && i < source.length; i++) {
             if (validColumns != null && !validColumns.isSet(i)) {
                 continue;
             }
-            StoreDataValue value = source[sourceColumn++];
+            StoreDataValue value = source[i];
             if (destination[i] instanceof StoreValueOperations destinationValue) {
                 destinationValue.setValue(value);
             } else if (copySqlValueReflectively(destination[i], value)) {

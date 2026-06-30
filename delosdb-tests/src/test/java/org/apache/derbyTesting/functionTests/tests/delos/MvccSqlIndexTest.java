@@ -196,6 +196,54 @@ public final class MvccSqlIndexTest extends MvccSqlTestSupport {
     }
 
 
+    public void testMvccIndexedColumnUpdateWithPrimaryAndUniqueIndexes() throws Exception {
+        String databaseName = databaseName("mvcc-sql-indexed-column-update-with-constraints-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table mvcc_index_projection_t "
+                    + "(id int primary key, email varchar(64) unique, tag varchar(16), name varchar(32)) "
+                    + "using delos_mvcc");
+            executeUpdate(connection, "create index mvcc_index_projection_tag_idx on mvcc_index_projection_t(tag)");
+            executeUpdate(connection, "insert into mvcc_index_projection_t values "
+                    + "(1, 'a@example.com', 'blue', 'alpha')");
+            executeUpdate(connection, "insert into mvcc_index_projection_t values "
+                    + "(2, 'b@example.com', 'red', 'beta')");
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "update mvcc_index_projection_t set tag = 'green', name = 'alpha-v2' where id = 1"));
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from mvcc_index_projection_t --DERBY-PROPERTIES index=mvcc_index_projection_tag_idx\n "
+                            + "where tag = 'blue' order by id");
+            assertRows(connection,
+                    "select id, name from mvcc_index_projection_t --DERBY-PROPERTIES index=mvcc_index_projection_tag_idx\n "
+                            + "where tag = 'green' order by id",
+                    "1|alpha-v2");
+            assertRows(connection,
+                    "select id, email, tag, name from mvcc_index_projection_t order by id",
+                    "1|a@example.com|green|alpha-v2",
+                    "2|b@example.com|red|beta");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_index_projection_t --DERBY-PROPERTIES index=mvcc_index_projection_tag_idx\n "
+                            + "where tag = 'green' order by id",
+                    "1|alpha-v2");
+            assertRows(reopened,
+                    "select id, email, tag, name from mvcc_index_projection_t order by id",
+                    "1|a@example.com|green|alpha-v2",
+                    "2|b@example.com|red|beta");
+        }
+    }
+
+
     public void testMvccSecondaryIndexRollbackRestoresIndexedVisibilityAfterReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-secondary-index-rollback-db");
 

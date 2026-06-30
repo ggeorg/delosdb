@@ -22,11 +22,18 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.io.File;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
 /** SQL integration tests for delos_mvcc recovery behavior. */
 public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
@@ -85,6 +92,36 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
     }
 
 
+
+
+    public void testVacuumedMvccTableRecoversWhenProcessHaltsWithStaleCheckpointMetadata() throws Exception {
+        String databaseName = databaseName("mvcc-sql-crash-vacuum-checkpoint-db");
+
+        runCrashBoundaryWorker("vacuum-stale-checkpoint", databaseName);
+
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            long containerId = mvccContainerId(reopened, "MVCC_CRASH_VACUUM_T");
+            assertRows(reopened,
+                    "select id, name, tag from mvcc_crash_vacuum_t order by id",
+                    "1|alpha-v3|green",
+                    "3|gamma-v2|green",
+                    "4|delta|blue");
+            assertRows(reopened,
+                    "select id, name from mvcc_crash_vacuum_t --DERBY-PROPERTIES index=mvcc_crash_vacuum_tag_idx\n "
+                            + "where tag = 'green' order by id",
+                    "1|alpha-v3",
+                    "3|gamma-v2");
+            assertEquals("stale checkpoint metadata should force recovery to validate durable page state directly",
+                    "FALLBACK", diagnostics.checkpointStatusForTesting(0, containerId));
+            assertEquals("vacuum should leave exactly the three visible rows as durable versions",
+                    3, diagnostics.physicalVersionCountForTesting(0, containerId));
+            assertEquals("vacuum should preserve the three logical survivors",
+                    3, diagnostics.logicalRowCountForTesting(0, containerId));
+            assertMvccConsistent(diagnostics, containerId);
+        }
+    }
+
     private static void runCrashBoundaryWorker(String scenario, String databaseName) throws Exception {
         String java = Paths.get(System.getProperty("java.home"), "bin", "java").toString();
         String classpath = System.getProperty("java.class.path");
@@ -102,6 +139,15 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         int exitCode = process.waitFor();
         assertEquals("Crash-boundary worker failed. Output:\n" + output, 0, exitCode);
+    }
+
+
+
+    private static void assertMvccConsistent(DelosStorageDiagnostics diagnostics, long containerId) {
+        String summary = diagnostics.consistencySummaryForTesting(0, containerId);
+        assertEquals("expected valid durable MVCC state, got " + summary,
+                0, diagnostics.consistencyErrorCountForTesting(0, containerId));
+        diagnostics.assertConsistentForTesting(0, containerId);
     }
 
     public static final class CrashBoundaryWorker {
@@ -131,6 +177,9 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
                 break;
             case "uncommitted-mixed-insert":
                 uncommittedMixedInsert(databaseName);
+                break;
+            case "vacuum-stale-checkpoint":
+                vacuumWithStaleCheckpoint(databaseName);
                 break;
             default:
                 throw new IllegalArgumentException("unknown crash-boundary scenario: " + scenario);
@@ -166,6 +215,84 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
             executeUpdate(connection, "insert into mvcc_crash_mixed_commit_t values (1, 'mvcc-committed')");
             connection.commit();
             Runtime.getRuntime().halt(0);
+        }
+
+
+
+        private static void vacuumWithStaleCheckpoint(String databaseName) throws Exception {
+            try (Connection connection = openDatabase(databaseName, true)) {
+                connection.setAutoCommit(false);
+                executeUpdate(connection, "create table mvcc_crash_vacuum_t "
+                        + "(id int primary key, name varchar(32), tag varchar(16)) using delos_mvcc");
+                executeUpdate(connection, "create index mvcc_crash_vacuum_tag_idx on mvcc_crash_vacuum_t(tag)");
+                executeUpdate(connection, "insert into mvcc_crash_vacuum_t values (1, 'alpha', 'blue')");
+                executeUpdate(connection, "insert into mvcc_crash_vacuum_t values (2, 'beta', 'red')");
+                executeUpdate(connection, "insert into mvcc_crash_vacuum_t values (3, 'gamma', 'blue')");
+                executeUpdate(connection, "insert into mvcc_crash_vacuum_t values (4, 'delta', 'blue')");
+                connection.commit();
+
+                requireOneRow(executeUpdate(connection,
+                        "update mvcc_crash_vacuum_t set name = 'alpha-v2', tag = 'green' where id = 1"),
+                        "alpha-v2 update");
+                connection.commit();
+                requireOneRow(executeUpdate(connection,
+                        "update mvcc_crash_vacuum_t set name = 'alpha-v3' where id = 1"),
+                        "alpha-v3 update");
+                requireOneRow(executeUpdate(connection,
+                        "update mvcc_crash_vacuum_t set name = 'gamma-v2', tag = 'green' where id = 3"),
+                        "gamma-v2 update");
+                requireOneRow(executeUpdate(connection,
+                        "delete from mvcc_crash_vacuum_t where id = 2"),
+                        "delete beta");
+                connection.commit();
+
+                long containerId = mvccContainerId(connection, "MVCC_CRASH_VACUUM_T");
+                DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+                if (diagnostics.physicalVersionCountForTesting(0, containerId)
+                        <= diagnostics.logicalRowCountForTesting(0, containerId)) {
+                    throw new IllegalStateException("expected superseded versions before vacuum");
+                }
+                Path checkpoint = diagnostics.checkpointFileForTesting(0, containerId);
+                if (checkpoint == null || !Files.exists(checkpoint)) {
+                    throw new IllegalStateException("expected inherited MVCC checkpoint file: " + checkpoint);
+                }
+                byte[] staleCheckpoint = Files.readAllBytes(checkpoint);
+
+                inPlaceCompressTable(connection, "MVCC_CRASH_VACUUM_T");
+                connection.commit();
+
+                if (diagnostics.physicalVersionCountForTesting(0, containerId) != 3) {
+                    throw new IllegalStateException("vacuum should reduce the page-volume to the three visible survivors");
+                }
+                if (diagnostics.logicalRowCountForTesting(0, containerId) != 3) {
+                    throw new IllegalStateException("vacuum should keep three logical survivors");
+                }
+                diagnostics.assertConsistentForTesting(0, containerId);
+
+                writeAndForce(checkpoint, staleCheckpoint);
+                Runtime.getRuntime().halt(0);
+            }
+        }
+
+
+
+
+
+        private static void requireOneRow(int updatedRows, String action) {
+            if (updatedRows != 1) {
+                throw new IllegalStateException(action + " should affect one row, got " + updatedRows);
+            }
+        }
+
+        private static void writeAndForce(Path path, byte[] bytes) throws Exception {
+            try (FileChannel channel = FileChannel.open(
+                    path,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE)) {
+                channel.write(ByteBuffer.wrap(bytes));
+                channel.force(true);
+            }
         }
 
         private static void uncommittedMixedInsert(String databaseName) throws Exception {
