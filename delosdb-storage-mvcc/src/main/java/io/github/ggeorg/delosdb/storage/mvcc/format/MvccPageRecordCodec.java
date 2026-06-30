@@ -40,11 +40,47 @@ public final class MvccPageRecordCodec {
         return bytes;
     }
 
-    public static MvccVersionRecord decodeVersionRecord(byte[] bytes) {
+    public static PageRecord decode(byte[] bytes) {
         Objects.requireNonNull(bytes, "bytes");
         if (!isPageRecord(bytes)) {
-            return MvccVersionRecordCodec.decode(bytes);
+            MvccVersionRecord legacy = MvccVersionRecordCodec.decode(bytes);
+            return new PageRecord(PageRecordMetadata.legacyVersionRecord(bytes.length), legacy);
         }
+
+        DecodedHeader header = decodeHeader(bytes);
+        if (header.metadata().recordType() != RECORD_TYPE_VERSION) {
+            throw new IllegalArgumentException("unsupported MVCC page-record type "
+                    + header.metadata().recordType());
+        }
+        return new PageRecord(header.metadata(), MvccVersionRecordCodec.decode(header.body()));
+    }
+
+    public static MvccVersionRecord decodeVersionRecord(byte[] bytes) {
+        return decode(bytes).versionRecord();
+    }
+
+    public static PageRecordMetadata metadata(byte[] bytes) {
+        Objects.requireNonNull(bytes, "bytes");
+        if (!isPageRecord(bytes)) {
+            return PageRecordMetadata.legacyVersionRecord(bytes.length);
+        }
+        return decodeHeader(bytes).metadata();
+    }
+
+    public static int encodedLength(MvccVersionRecord record) {
+        Objects.requireNonNull(record, "record");
+        return Math.addExact(HEADER_SIZE, record.encodedLength());
+    }
+
+    public static boolean isPageRecord(byte[] bytes) {
+        Objects.requireNonNull(bytes, "bytes");
+        if (bytes.length < Integer.BYTES) {
+            return false;
+        }
+        return ByteBuffer.wrap(bytes).order(BYTE_ORDER).getInt(0) == MAGIC;
+    }
+
+    private static DecodedHeader decodeHeader(byte[] bytes) {
         if (bytes.length < HEADER_SIZE) {
             throw new IllegalArgumentException("MVCC page record is shorter than header: " + bytes.length);
         }
@@ -66,9 +102,6 @@ public final class MvccPageRecordCodec {
                     + headerSize + ", expected " + HEADER_SIZE);
         }
         int recordType = buffer.getInt();
-        if (recordType != RECORD_TYPE_VERSION) {
-            throw new IllegalArgumentException("unsupported MVCC page-record type " + recordType);
-        }
         int flags = buffer.getInt();
         if (flags != FLAGS_NONE) {
             throw new IllegalArgumentException("unsupported MVCC page-record flags 0x"
@@ -92,25 +125,49 @@ public final class MvccPageRecordCodec {
                     + Integer.toHexString(bodyChecksum) + ", computed 0x"
                     + Integer.toHexString(computedChecksum));
         }
-        return MvccVersionRecordCodec.decode(body);
-    }
-
-    public static int encodedLength(MvccVersionRecord record) {
-        Objects.requireNonNull(record, "record");
-        return Math.addExact(HEADER_SIZE, record.encodedLength());
-    }
-
-    public static boolean isPageRecord(byte[] bytes) {
-        Objects.requireNonNull(bytes, "bytes");
-        if (bytes.length < Integer.BYTES) {
-            return false;
-        }
-        return ByteBuffer.wrap(bytes).order(BYTE_ORDER).getInt(0) == MAGIC;
+        return new DecodedHeader(
+                new PageRecordMetadata(false, recordType, flags, bodyLength, bodyChecksum),
+                body);
     }
 
     private static int checksum(byte[] bytes) {
         CRC32 crc = new CRC32();
         crc.update(bytes, 0, bytes.length);
         return (int) crc.getValue();
+    }
+
+    private record DecodedHeader(PageRecordMetadata metadata, byte[] body) {
+        private DecodedHeader {
+            metadata = Objects.requireNonNull(metadata, "metadata");
+            body = Objects.requireNonNull(body, "body");
+        }
+    }
+
+    public record PageRecord(PageRecordMetadata metadata, MvccVersionRecord versionRecord) {
+        public PageRecord {
+            metadata = Objects.requireNonNull(metadata, "metadata");
+            versionRecord = Objects.requireNonNull(versionRecord, "versionRecord");
+        }
+    }
+
+    public record PageRecordMetadata(
+            boolean legacyFormat,
+            int recordType,
+            int flags,
+            int bodyLength,
+            int bodyChecksum) {
+        public PageRecordMetadata {
+            if (bodyLength < 0) {
+                throw new IllegalArgumentException("bodyLength must not be negative: " + bodyLength);
+            }
+        }
+
+        static PageRecordMetadata legacyVersionRecord(int bodyLength) {
+            return new PageRecordMetadata(true, RECORD_TYPE_VERSION, FLAGS_NONE, bodyLength, 0);
+        }
+
+        public boolean versionRecord() {
+            return recordType == RECORD_TYPE_VERSION;
+        }
     }
 }

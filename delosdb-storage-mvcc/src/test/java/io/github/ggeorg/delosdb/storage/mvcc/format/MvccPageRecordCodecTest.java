@@ -44,6 +44,38 @@ final class MvccPageRecordCodecTest {
         assertEquals(record, MvccPageRecordCodec.decodeVersionRecord(legacy));
     }
 
+
+    @Test
+    void metadataDistinguishesWrappedVersionRecordsFromLegacyRecords() {
+        MvccVersionRecord record = sampleRecord();
+        byte[] wrapped = MvccPageRecordCodec.encodeVersionRecord(record);
+        byte[] legacy = MvccVersionRecordCodec.encode(record);
+
+        MvccPageRecordCodec.PageRecordMetadata wrappedMetadata = MvccPageRecordCodec.metadata(wrapped);
+        assertFalse(wrappedMetadata.legacyFormat());
+        assertTrue(wrappedMetadata.versionRecord());
+        assertEquals(MvccPageRecordCodec.RECORD_TYPE_VERSION, wrappedMetadata.recordType());
+        assertEquals(MvccPageRecordCodec.FLAGS_NONE, wrappedMetadata.flags());
+        assertEquals(record.encodedLength(), wrappedMetadata.bodyLength());
+
+        MvccPageRecordCodec.PageRecordMetadata legacyMetadata = MvccPageRecordCodec.metadata(legacy);
+        assertTrue(legacyMetadata.legacyFormat());
+        assertTrue(legacyMetadata.versionRecord());
+        assertEquals(legacy.length, legacyMetadata.bodyLength());
+    }
+
+    @Test
+    void decodeExposesRecordMetadataBesideVersionRecord() {
+        MvccVersionRecord record = sampleRecord();
+
+        MvccPageRecordCodec.PageRecord decoded = MvccPageRecordCodec.decode(
+                MvccPageRecordCodec.encodeVersionRecord(record));
+
+        assertEquals(record, decoded.versionRecord());
+        assertFalse(decoded.metadata().legacyFormat());
+        assertTrue(decoded.metadata().versionRecord());
+    }
+
     @Test
     void pageRecordRejectsChecksumDamageBeforeVersionDecode() {
         byte[] encoded = MvccPageRecordCodec.encodeVersionRecord(sampleRecord());

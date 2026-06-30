@@ -118,7 +118,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 byte[] payload = page.readRecord(slot);
                 records.add(readStoredVersionRecord(
                         new MvccVersionLocator(page.pageId(), slot),
-                        MvccPageRecordCodec.decodeVersionRecord(payload)));
+                        MvccPageRecordCodec.decode(payload).versionRecord()));
             }
         }
         return records;
@@ -213,6 +213,40 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             }
         }
         return List.copyOf(errors);
+    }
+
+
+    synchronized PageRecordStats pageRecordStats() throws IOException {
+        long pageCount = pageVolume.pageCount();
+        int slotCount = 0;
+        int wrappedRecordCount = 0;
+        int legacyRecordCount = 0;
+        int versionRecordCount = 0;
+        int nonVersionRecordCount = 0;
+        for (long pageNumber = 0L; pageNumber < pageCount; pageNumber++) {
+            DelosPage page = readPage(new DelosPageId(pageNumber));
+            for (int slot = 0; slot < page.slotCount(); slot++) {
+                slotCount++;
+                MvccPageRecordCodec.PageRecordMetadata metadata = MvccPageRecordCodec.metadata(page.readRecord(slot));
+                if (metadata.legacyFormat()) {
+                    legacyRecordCount++;
+                } else {
+                    wrappedRecordCount++;
+                }
+                if (metadata.versionRecord()) {
+                    versionRecordCount++;
+                } else {
+                    nonVersionRecordCount++;
+                }
+            }
+        }
+        return new PageRecordStats(
+                pageCount,
+                slotCount,
+                wrappedRecordCount,
+                legacyRecordCount,
+                versionRecordCount,
+                nonVersionRecordCount);
     }
 
     synchronized List<String> reusablePageConsistencyErrors() throws IOException {
@@ -463,6 +497,36 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             }
         }
         return reusablePages;
+    }
+
+
+    public record PageRecordStats(
+            long pageCount,
+            int slotCount,
+            int wrappedRecordCount,
+            int legacyRecordCount,
+            int versionRecordCount,
+            int nonVersionRecordCount) {
+        public PageRecordStats {
+            if (pageCount < 0L) {
+                throw new IllegalArgumentException("pageCount must not be negative: " + pageCount);
+            }
+            if (slotCount < 0 || wrappedRecordCount < 0 || legacyRecordCount < 0
+                    || versionRecordCount < 0 || nonVersionRecordCount < 0) {
+                throw new IllegalArgumentException("MVCC page-record stats must not contain negative counts");
+            }
+            if (wrappedRecordCount + legacyRecordCount != slotCount) {
+                throw new IllegalArgumentException("wrapped + legacy record counts must equal slot count");
+            }
+            if (versionRecordCount + nonVersionRecordCount != slotCount) {
+                throw new IllegalArgumentException("version + non-version record counts must equal slot count");
+            }
+        }
+
+        public boolean containsOnlyWrappedVersionRecords() {
+            return slotCount == wrappedRecordCount && slotCount == versionRecordCount && legacyRecordCount == 0
+                    && nonVersionRecordCount == 0;
+        }
     }
 
     private record EncodedVersion(MvccVersionRecord record, byte[] bytes) {

@@ -421,6 +421,31 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return store.pageCacheInvalidationCount();
     }
 
+
+    public synchronized PageBackedMvccTableStore.PageRecordStats pageRecordStats() {
+        try {
+            return store.pageRecordStats();
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException("Could not collect MVCC page-record stats", e);
+        }
+    }
+
+    public synchronized int pageRecordSlotCount() {
+        return pageRecordStats().slotCount();
+    }
+
+    public synchronized int wrappedPageRecordCount() {
+        return pageRecordStats().wrappedRecordCount();
+    }
+
+    public synchronized int legacyPageRecordCount() {
+        return pageRecordStats().legacyRecordCount();
+    }
+
+    public synchronized int nonVersionPageRecordCount() {
+        return pageRecordStats().nonVersionRecordCount();
+    }
+
     public synchronized Path reusablePageIndexPath() {
         return store.reusablePageIndexPath();
     }

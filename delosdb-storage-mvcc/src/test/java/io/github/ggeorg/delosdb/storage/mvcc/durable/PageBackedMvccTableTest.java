@@ -58,6 +58,44 @@ final class PageBackedMvccTableTest {
         }
     }
 
+
+    @Test
+    void pageRecordStatsAccountForWrappedVersionSlotsAcrossVacuumAndReopen() throws Exception {
+        Path tableFile = tempDir.resolve("record-stats-table.mvccp");
+        PageBackedMvccTableStore.PageRecordStats statsAfterVacuum;
+        try (PageBackedMvccTable table = PageBackedMvccTable.open(tableFile)) {
+            table.insertCommitted("account:1", "alpha", 1L, 1L);
+            table.updateCommitted("account:1", "beta", 2L, 2L);
+            table.insertCommitted("account:2", "gamma", 3L, 3L);
+            table.deleteCommitted("account:2", 4L, 4L);
+
+            PageBackedMvccTableStore.PageRecordStats beforeVacuum = table.pageRecordStats();
+            assertEquals(table.physicalVersionCount(), beforeVacuum.slotCount());
+            assertEquals(beforeVacuum.slotCount(), beforeVacuum.wrappedRecordCount());
+            assertEquals(0, beforeVacuum.legacyRecordCount());
+            assertEquals(beforeVacuum.slotCount(), beforeVacuum.versionRecordCount());
+            assertEquals(0, beforeVacuum.nonVersionRecordCount());
+            assertTrue(beforeVacuum.containsOnlyWrappedVersionRecords());
+
+            table.vacuum(MvccVacuumPlan.through(Long.MAX_VALUE));
+            statsAfterVacuum = table.pageRecordStats();
+            assertEquals(table.physicalVersionCount(), statsAfterVacuum.slotCount());
+            assertEquals(statsAfterVacuum.slotCount(), statsAfterVacuum.wrappedRecordCount());
+            assertEquals(0, statsAfterVacuum.legacyRecordCount());
+            assertEquals(statsAfterVacuum.slotCount(), statsAfterVacuum.versionRecordCount());
+            assertEquals(0, statsAfterVacuum.nonVersionRecordCount());
+            assertTrue(statsAfterVacuum.containsOnlyWrappedVersionRecords());
+            table.validateConsistency().assertValid();
+        }
+
+        try (PageBackedMvccTable reopened = PageBackedMvccTable.open(tableFile)) {
+            assertEquals(statsAfterVacuum, reopened.pageRecordStats());
+            assertEquals("beta", reopened.read("account:1", new MvccCommitSequence(4L)).orElseThrow());
+            assertFalse(reopened.read("account:2", new MvccCommitSequence(4L)).isPresent());
+            reopened.validateConsistency().assertValid();
+        }
+    }
+
     @Test
     void uncommittedInsertIsInvisibleAfterReopen() throws Exception {
         Path tableFile = tempDir.resolve("table.mvccp");
