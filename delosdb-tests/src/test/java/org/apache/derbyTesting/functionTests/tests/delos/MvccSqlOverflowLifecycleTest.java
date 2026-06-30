@@ -110,9 +110,11 @@ public final class MvccSqlOverflowLifecycleTest extends MvccSqlTestSupport {
         long overflowPagesAfterVacuum;
         try (Connection connection = openDatabase(databaseName, false)) {
             connection.setAutoCommit(false);
-            executeUpdate(connection, "call SYSCS_UTIL.SYSCS_COMPRESS_TABLE('APP', 'MVCC_OVERFLOW_LIFECYCLE_T', 1)");
+            inPlaceCompressTable(connection, "MVCC_OVERFLOW_LIFECYCLE_T");
             connection.commit();
 
+            assertEquals("in-place compress must keep the MVCC base container stable",
+                    containerId, mvccContainerId(connection, "MVCC_OVERFLOW_LIFECYCLE_T"));
             assertPayloadRoundTrips(connection, 1, committedLongD);
             assertPayloadRoundTrips(connection, 2, committedLongC);
             assertPayloadRoundTrips(connection, 3, "now-short");
