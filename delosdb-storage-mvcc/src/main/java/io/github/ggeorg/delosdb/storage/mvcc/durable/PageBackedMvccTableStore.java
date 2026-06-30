@@ -55,8 +55,11 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         Objects.requireNonNull(record, "record");
         pageLsn = Objects.requireNonNull(pageLsn, "pageLsn");
         byte[] encoded = MvccVersionRecordCodec.encode(record);
-        if (encoded.length > maxSingleRecordBytes()) {
-            throw new IllegalArgumentException("MVCC version record is too large for one page: " + encoded.length);
+        int maxRecordBytes = maxSingleRecordBytes();
+        if (encoded.length > maxRecordBytes) {
+            throw new IllegalArgumentException("MVCC version record is too large for one page: "
+                    + encoded.length + " bytes; max=" + maxRecordBytes
+                    + "; overflow/long-row storage is not implemented for delos_mvcc yet");
         }
 
         DelosPage page = writablePage(encoded.length);
