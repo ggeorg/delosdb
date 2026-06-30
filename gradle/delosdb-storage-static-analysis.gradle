@@ -72,6 +72,10 @@ def delosStorageClassifyFindings = {
             if (relativePath.startsWith('delosdb-storage-mvcc/') && line.contains('io.github.ggeorg.delosdb.spi.storage.versioned')) {
                 findings << delosStorageFinding('MVCC_LEGACY_VERSIONED_SPI_IMPORT', sourceFile, lineNumber, line)
             }
+            if (relativePath.startsWith('delosdb-storage-mvcc/')
+                    && (line.contains('ObjectInputStream') || line.contains('ObjectOutputStream'))) {
+                findings << delosStorageFinding('MVCC_JAVA_OBJECT_STREAM', sourceFile, lineNumber, line)
+            }
 
             // Zero-baseline hard gates for DelosDB-owned storage code.
             // These are dangerous enough that new uses should be deliberate and reviewed.
