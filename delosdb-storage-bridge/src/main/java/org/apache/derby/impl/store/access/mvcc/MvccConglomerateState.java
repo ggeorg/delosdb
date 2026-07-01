@@ -102,10 +102,6 @@ final class MvccConglomerateState {
         return committedRead.canReadCommittedImage(snapshot);
     }
 
-    List<DelosStorageRow> committedImageRows(DelosStorageSnapshot snapshot) {
-        return committedRead.committedImageRows(snapshot);
-    }
-
     DelosStorageScan openCommittedImageScan(DelosStorageSnapshot snapshot) throws StandardException {
         return committedRead.openCommittedImageScan(snapshot);
     }

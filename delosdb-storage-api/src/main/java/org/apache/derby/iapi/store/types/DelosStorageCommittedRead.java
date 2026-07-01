@@ -20,7 +20,6 @@
  */
 package org.apache.derby.iapi.store.types;
 
-import java.util.List;
 import java.util.Optional;
 
 import org.apache.derby.shared.common.error.StandardException;
@@ -38,12 +37,6 @@ public interface DelosStorageCommittedRead {
      * committed image and can therefore be served from committed storage.
      */
     boolean canReadCommittedImage(DelosStorageSnapshot snapshot);
-
-    /**
-     * Materializes the committed rows for {@code snapshot}. The returned list is
-     * the caller's stable read image and must not reflect later commits.
-     */
-    List<DelosStorageRow> committedImageRows(DelosStorageSnapshot snapshot);
 
     DelosStorageScan openCommittedImageScan(DelosStorageSnapshot snapshot) throws StandardException;
 

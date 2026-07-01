@@ -113,18 +113,6 @@ final class MvccInheritedTable implements DelosStorageTable,
 
 
     @Override
-    public List<DelosStorageRow> committedImageRows(DelosStorageSnapshot snapshot) {
-        return readLocked(() -> {
-            if (!canReadCommittedImageUnlocked(snapshot)) {
-                throw new IllegalStateException("MVCC committed image is newer than snapshot");
-            }
-            return pageVolumeStateStore.loadVisibleRows().stream()
-                    .map(row -> new DelosStorageRow(row.rowId(), row.values()))
-                    .toList();
-        });
-    }
-
-    @Override
     public DelosStorageScan openCommittedImageScan(DelosStorageSnapshot snapshot) {
         return readLocked(() -> {
             if (!canReadCommittedImageUnlocked(snapshot)) {
