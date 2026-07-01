@@ -31,8 +31,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
@@ -346,22 +344,6 @@ public final class PageVolumeMvccStateStore<T> {
         return table.rowDirectoryHeadForRowId(new MvccRowId(rowId));
     }
 
-    public void requireVisibleRowsCanBePersisted(List<PersistedRow<T>> visibleRows) {
-        Objects.requireNonNull(visibleRows, "visibleRows");
-        if (!enabled()) {
-            return;
-        }
-        try {
-            for (PersistedRow<T> row : visibleRows) {
-                PageBackedMvccTable.requirePayloadCanBeEncoded(
-                        keyFor(row.rowId()),
-                        rowCodec.encode(row.values()));
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not encode MVCC page-volume state " + pageFile, e);
-        }
-    }
-
     public void requireChangedRowsCanBePersisted(List<PersistedChange<T>> changes) {
         Objects.requireNonNull(changes, "changes");
         if (!enabled()) {
@@ -377,73 +359,6 @@ public final class PageVolumeMvccStateStore<T> {
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Could not encode changed MVCC page-volume state " + pageFile, e);
-        }
-    }
-
-    public void persistVisibleRows(List<PersistedRow<T>> visibleRows) {
-        Objects.requireNonNull(visibleRows, "visibleRows");
-        if (!enabled()) {
-            return;
-        }
-        Map<String, MvccRowDirectoryStore.RowHeadRecord> existingHeads = new LinkedHashMap<>();
-        for (MvccRowDirectoryStore.RowHeadRecord head : table.durableRowDirectoryHeads().values()) {
-            existingHeads.put(head.key(), head);
-        }
-        Set<String> liveKeys = visibleRows.stream()
-                .map(row -> keyFor(row.rowId()))
-                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
-        long transactionId = nextTransactionId();
-        long commitSequence = nextCommitSequence();
-        boolean beganWalTransaction = false;
-        try {
-            for (PersistedRow<T> row : visibleRows) {
-                String key = keyFor(row.rowId());
-                byte[] encoded = rowCodec.encode(row.values());
-                if (existingHeads.containsKey(key)) {
-                    if (table.readPayload(key, LATEST_COMMITTED)
-                            .map(payload -> !java.util.Arrays.equals(payload.value(), encoded))
-                            .orElse(true)) {
-                        if (!beganWalTransaction) {
-                            writeAheadLog.appendBegin(transactionId);
-                            beganWalTransaction = true;
-                        }
-                        DelosLogSequenceNumber pageLsn = writeAheadLog.appendUpdateVersion(transactionId, row.rowId());
-                        table.updateCommitted(key, encoded, transactionId, commitSequence, pageLsn);
-                    }
-                } else {
-                    if (!beganWalTransaction) {
-                        writeAheadLog.appendBegin(transactionId);
-                        beganWalTransaction = true;
-                    }
-                    DelosLogSequenceNumber pageLsn = writeAheadLog.appendInsertVersion(transactionId, row.rowId());
-                    table.insertCommitted(key, encoded, transactionId, commitSequence, pageLsn);
-                }
-            }
-            for (MvccRowDirectoryStore.RowHeadRecord head : existingHeads.values()) {
-                if (!liveKeys.contains(head.key()) && !head.tombstone()) {
-                    if (!beganWalTransaction) {
-                        writeAheadLog.appendBegin(transactionId);
-                        beganWalTransaction = true;
-                    }
-                    long rowId = rowIdFromKey(head.key());
-                    DelosLogSequenceNumber pageLsn = writeAheadLog.appendDeleteVersion(transactionId, rowId);
-                    table.deleteCommitted(head.key(), transactionId, commitSequence, pageLsn);
-                }
-            }
-            if (beganWalTransaction) {
-                writeAheadLog.appendCommit(transactionId, commitSequence);
-            }
-            rewriteCheckpoint();
-        } catch (IOException e) {
-            if (beganWalTransaction) {
-                writeAheadLog.appendAbort(transactionId);
-            }
-            throw new UncheckedIOException("Could not persist inherited MVCC state to page volume " + pageFile, e);
-        } catch (RuntimeException e) {
-            if (beganWalTransaction) {
-                writeAheadLog.appendAbort(transactionId);
-            }
-            throw e;
         }
     }
 

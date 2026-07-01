@@ -22,9 +22,9 @@ final class PageVolumeMvccStateStoreDropTest {
                 tempDir,
                 "conglomerate-7-9",
                 new StringListCodec());
-        store.persistVisibleRows(List.of(
-                new PageVolumeMvccStateStore.PersistedRow<>(1L, List.of("alpha")),
-                new PageVolumeMvccStateStore.PersistedRow<>(2L, List.of("bravo"))));
+        store.persistChangedRows(List.of(
+                PageVolumeMvccStateStore.PersistedChange.upsert(1L, List.of("alpha")),
+                PageVolumeMvccStateStore.PersistedChange.upsert(2L, List.of("bravo"))));
         store.close();
 
         Path pageFile = PageVolumeMvccPaths.pageFile(tempDir, "conglomerate-7-9");
