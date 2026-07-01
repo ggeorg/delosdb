@@ -63,6 +63,7 @@ public final class MvccSqlConcurrentStressTest extends MvccSqlTestSupport {
             connection.commit();
             containerId = mvccContainerId(connection, "MVCC_CONCURRENT_STRESS_T");
             diagnostics.assertConsistentForTesting(0, containerId);
+            connection.rollback();
         }
 
         CountDownLatch start = new CountDownLatch(1);
