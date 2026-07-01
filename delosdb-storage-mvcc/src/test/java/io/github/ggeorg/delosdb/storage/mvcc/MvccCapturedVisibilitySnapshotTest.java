@@ -27,8 +27,10 @@ public final class MvccCapturedVisibilitySnapshotTest {
         MvccTransaction reader = txManager.begin();
         MvccSnapshot snapshot = txManager.snapshot(reader);
         MvccCapturedVisibility captured = txManager.captureVisibility(snapshot);
-        assertTrue(captured.knownTransactionCount() >= 3,
-                "captured visibility records the transaction-state table at snapshot time");
+        assertTrue(captured.knownTransactionCount() >= 2,
+                "captured visibility records active transaction state at snapshot time");
+        assertEquals(new MvccTransactionId(1L), captured.compactedTransactionIdThrough(),
+                "captured visibility carries compacted committed seed transaction metadata");
         assertEquals(snapshot.owner(), captured.owner());
         assertEquals(snapshot.visibleThrough(), captured.visibleThrough());
         assertEquals(snapshot.visibleThroughCommand(), captured.ownerVisibleThroughCommand());
