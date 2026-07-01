@@ -1,1 +1,2 @@
+org.apache.derby.impl.store.access.provider.DerbyHeapStorageDiagnostics
 org.apache.derby.impl.store.access.mvcc.MvccStorageDiagnostics

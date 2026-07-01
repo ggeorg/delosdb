@@ -151,6 +151,11 @@ abstract class MvccSqlTestSupport extends TestCase {
     }
 
     protected static long mvccContainerId(Connection connection, String tableName) throws SQLException {
+        return baseContainerId(connection, tableName, "MVCC");
+    }
+
+    protected static long baseContainerId(Connection connection, String tableName, String providerDescription)
+            throws SQLException {
         String sql = "select c.conglomeratenumber "
                 + "from sys.sysconglomerates c, sys.systables t, sys.sysschemas s "
                 + "where c.tableid = t.tableid "
@@ -161,9 +166,11 @@ abstract class MvccSqlTestSupport extends TestCase {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, tableName);
             try (ResultSet rs = statement.executeQuery()) {
-                assertTrue("expected MVCC base conglomerate for table " + tableName, rs.next());
+                assertTrue("expected " + providerDescription + " base conglomerate for table " + tableName,
+                        rs.next());
                 long containerId = rs.getLong(1);
-                assertFalse("expected one MVCC base conglomerate for table " + tableName, rs.next());
+                assertFalse("expected one " + providerDescription + " base conglomerate for table " + tableName,
+                        rs.next());
                 return containerId;
             }
         }

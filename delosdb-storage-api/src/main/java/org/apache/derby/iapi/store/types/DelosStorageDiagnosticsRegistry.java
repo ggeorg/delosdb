@@ -21,6 +21,7 @@
 
 package org.apache.derby.iapi.store.types;
 
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.ServiceLoader;
 
@@ -29,6 +30,7 @@ import java.util.ServiceLoader;
  */
 public final class DelosStorageDiagnosticsRegistry {
     public static final String MVCC_PROVIDER_ID = "delos_mvcc";
+    public static final String HEAP_PROVIDER_ID = "derby_heap";
 
     private DelosStorageDiagnosticsRegistry() {
     }
@@ -37,12 +39,22 @@ public final class DelosStorageDiagnosticsRegistry {
         return forProvider(MVCC_PROVIDER_ID);
     }
 
+    public static DelosStorageDiagnostics heap() {
+        return forProvider(HEAP_PROVIDER_ID);
+    }
+
     public static DelosStorageInspector mvccInspector() {
         return inspectorForProvider(MVCC_PROVIDER_ID);
     }
 
     public static DelosStorageInspection inspectMvcc(int segment, long containerId) {
         return inspect(MVCC_PROVIDER_ID, segment, containerId);
+    }
+
+    public static DelosStorageInspection inspectHeap(Path databaseDirectory, int segment, long containerId) {
+        DelosStorageDiagnostics diagnostics = heap();
+        diagnostics.setDatabaseDirectoryForTesting(databaseDirectory);
+        return DelosStorageInspection.fromDiagnostics(diagnostics, segment, containerId);
     }
 
     public static DelosStorageInspection inspect(String providerId, int segment, long containerId) {

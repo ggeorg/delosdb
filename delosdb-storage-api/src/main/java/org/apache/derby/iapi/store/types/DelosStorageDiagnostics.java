@@ -34,6 +34,16 @@ import java.nio.file.Path;
 public interface DelosStorageDiagnostics {
     String providerId();
 
+    /**
+     * Optional database-directory context for file-based compatibility inspectors.
+     * Providers which do not need a database directory may ignore this hook.
+     */
+    default void setDatabaseDirectoryForTesting(Path databaseDirectory) {
+    }
+
+    default void clearDatabaseDirectoryForTesting() {
+    }
+
     void clearRuntimeStateForTesting();
 
     int runtimeStateCountForTesting();
