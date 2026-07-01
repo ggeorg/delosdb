@@ -230,11 +230,6 @@ final class MvccInheritedTable implements DelosStorageTable,
         return writeLocked(() -> nextRowId++);
     }
 
-    @Override
-    public void persistCommittedState() {
-        writeLocked(this::persistCommittedStateUnlocked);
-    }
-
     private void persistCommittedStateUnlocked() {
         List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = visibleRows();
         pageVolumeStateStore.persistVisibleRows(rows);

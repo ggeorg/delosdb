@@ -22,8 +22,6 @@ package org.apache.derby.iapi.store.types;
 
 /** Maintenance operations for storage tables that support durable state and pruning. */
 public interface DelosStorageMaintenance {
-    void persistCommittedState();
-
     void dropDurableState();
 
     DelosVacuumOutcome vacuumSafely();

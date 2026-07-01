@@ -146,10 +146,6 @@ final class MvccConglomerateState {
         return table.nextRowId();
     }
 
-    synchronized void persistCommittedState() {
-        maintenance.persistCommittedState();
-    }
-
     synchronized void dropDurableState() {
         maintenance.dropDurableState();
     }

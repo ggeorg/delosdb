@@ -40,8 +40,8 @@ final class MvccInheritedTransactionLifecycleTest {
 
         DelosStorageTransaction accountsTx = accounts.beginTransaction();
         DelosStorageTransaction ledgerTx = ledger.beginTransaction();
-        DelosStorageTransactionRegistry.register(derbyTransaction, accounts, accountsTx, accounts::persistCommittedState);
-        DelosStorageTransactionRegistry.register(derbyTransaction, ledger, ledgerTx, ledger::persistCommittedState);
+        DelosStorageTransactionRegistry.register(derbyTransaction, accounts, accountsTx);
+        DelosStorageTransactionRegistry.register(derbyTransaction, ledger, ledgerTx);
 
         accounts.insert(1L, row("alice", "100"), accountsTx);
         ledger.insert(1L, row("entry", "created"), ledgerTx);
@@ -69,8 +69,8 @@ final class MvccInheritedTransactionLifecycleTest {
 
         DelosStorageTransaction accountsTx = accounts.beginTransaction();
         DelosStorageTransaction ledgerTx = ledger.beginTransaction();
-        DelosStorageTransactionRegistry.register(derbyTransaction, accounts, accountsTx, accounts::persistCommittedState);
-        DelosStorageTransactionRegistry.register(derbyTransaction, ledger, ledgerTx, ledger::persistCommittedState);
+        DelosStorageTransactionRegistry.register(derbyTransaction, accounts, accountsTx);
+        DelosStorageTransactionRegistry.register(derbyTransaction, ledger, ledgerTx);
 
         accounts.insert(1L, row("bob", "200"), accountsTx);
         ledger.insert(1L, row("entry", "rolled-back"), ledgerTx);
@@ -96,14 +96,14 @@ final class MvccInheritedTransactionLifecycleTest {
         Object firstDerbyTransaction = new Object();
         MvccInheritedTable table = table(3, 301);
         DelosStorageTransaction first = table.beginTransaction();
-        DelosStorageTransactionRegistry.register(firstDerbyTransaction, table, first, table::persistCommittedState);
+        DelosStorageTransactionRegistry.register(firstDerbyTransaction, table, first);
         table.insert(1L, row("stable", "before"), first);
         DelosStorageTransactionRegistry.commit(firstDerbyTransaction);
 
         Object secondDerbyTransaction = new Object();
         DelosStorageTransaction second = table.beginTransaction();
         DelosStorageSnapshot secondSnapshot = table.snapshot(second);
-        DelosStorageTransactionRegistry.register(secondDerbyTransaction, table, second, table::persistCommittedState);
+        DelosStorageTransactionRegistry.register(secondDerbyTransaction, table, second);
         table.update(1L, row("unstable", "after"), second, secondSnapshot);
         DelosStorageTransactionRegistry.abort(secondDerbyTransaction);
         table.close();

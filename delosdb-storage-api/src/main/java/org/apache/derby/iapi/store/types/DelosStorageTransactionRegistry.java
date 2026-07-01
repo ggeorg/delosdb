@@ -47,15 +47,7 @@ public final class DelosStorageTransactionRegistry {
             Object ownerTransaction,
             DelosStorageTable table,
             DelosStorageTransaction transaction) {
-        return register(ownerTransaction, table, transaction, () -> { });
-    }
-
-    public static synchronized Writer register(
-            Object ownerTransaction,
-            DelosStorageTable table,
-            DelosStorageTransaction transaction,
-            Runnable afterCommit) {
-        Writer writer = new Writer(ownerTransaction, table, transaction, afterCommit);
+        Writer writer = new Writer(ownerTransaction, table, transaction);
         for (SavepointMarker marker : savepointsFor(ownerTransaction)) {
             writer.setSavepoint(marker.name());
         }
@@ -297,24 +289,20 @@ public final class DelosStorageTransactionRegistry {
         private final Object ownerTransaction;
         private final DelosStorageTable table;
         private final DelosStorageTransaction transaction;
-        private final Runnable afterCommit;
         private boolean completed;
 
         private Writer(
                 Object ownerTransaction,
                 DelosStorageTable table,
-                DelosStorageTransaction transaction,
-                Runnable afterCommit) {
+                DelosStorageTransaction transaction) {
             this.ownerTransaction = ownerTransaction;
             this.table = table;
             this.transaction = transaction;
-            this.afterCommit = afterCommit == null ? () -> { } : afterCommit;
         }
 
         public void commit() {
             if (!completed) {
                 table.commit(transaction);
-                afterCommit.run();
                 completed = true;
             }
         }

@@ -40,19 +40,10 @@ public final class MvccStoreAccessTransactionRegistry {
             Object derbyTransaction,
             DelosStorageTable table,
             DelosStorageTransaction transaction) {
-        return register(derbyTransaction, table, transaction, () -> { });
-    }
-
-    public static Writer register(
-            Object derbyTransaction,
-            DelosStorageTable table,
-            DelosStorageTransaction transaction,
-            Runnable afterCommit) {
         return new Writer(DelosStorageTransactionRegistry.register(
                 derbyTransaction,
                 table,
-                transaction,
-                afterCommit));
+                transaction));
     }
 
     public static void complete(Writer writer) {
