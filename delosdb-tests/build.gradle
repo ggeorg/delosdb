@@ -346,41 +346,55 @@ tasks.register('generateNativeAuthenticationTestJar', Jar) {
 }
 
 
+def registerDelosFocusedTest = { String taskName,
+                                String descriptionText,
+                                List<String> includePatterns,
+                                Map<String, String> jvmSystemProperties = [:] ->
+    tasks.register(taskName, Test) {
+        group = 'verification'
+        description = descriptionText
+        dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
 
-tasks.register('runDelosServerSchedulerTest', Test) {
-    group = 'verification'
-    description = 'Runs focused DRDA server scheduler, threading, and EXTDTA cleanup tests.'
-    dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
+        modularity.inferModulePath = false
+        testClassesDirs = files(derbyTestsClassDir)
+        classpath = testRuntimeClasspath()
+        useJUnit()
+        includePatterns.each { pattern -> include pattern }
 
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaSessionSchedulerTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaThreadingTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaExtdtaSpoolTest.class'
+        workingDir = layout.buildDirectory.dir("test-work/${taskName}").get().asFile
+        maxHeapSize = '1536m'
+        jvmSystemProperties.each { key, value -> systemProperty key, value }
+        binaryResultsDirectory.set(layout.buildDirectory.dir("test-results/binary/${taskName}"))
+        reports {
+            junitXml.required.set(true)
+            junitXml.outputLocation.set(layout.buildDirectory.dir("test-results/${taskName}"))
+            html.required.set(true)
+            html.outputLocation.set(layout.buildDirectory.dir("reports/tests/${taskName}"))
+        }
 
-    workingDir = layout.buildDirectory.dir('test-work/runDelosServerSchedulerTest').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosServerSchedulerTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosServerSchedulerTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosServerSchedulerTest'))
-    }
+        doFirst {
+            delete workingDir
+            workingDir.mkdirs()
+        }
 
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
+        testLogging {
+            events 'failed'
+            exceptionFormat = 'full'
+            showStandardStreams = true
+        }
     }
 }
+
+
+
+registerDelosFocusedTest(
+        'runDelosServerSchedulerTest',
+        'Runs focused DRDA server scheduler, threading, and EXTDTA cleanup tests.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaSessionSchedulerTest.class',
+                'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaThreadingTest.class',
+                'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaExtdtaSpoolTest.class'
+        ])
 
 tasks.register('runDerbyLangSuite', Test) {
     group = 'verification'
@@ -672,131 +686,48 @@ tasks.named('assemble') {
     dependsOn tasks.named('compileTestJava')
 }
 
-tasks.register('runDelosMvccDrdaConcurrentNetworkClientTest', Test) {
-    group = 'verification'
-    description = 'Runs the concurrent DRDA/JDBC network-client stress gate for delos_mvcc.'
-    dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
-
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaConcurrentNetworkClientTest.class'
-
-    workingDir = layout.buildDirectory.dir('test-work/runDelosMvccDrdaConcurrentNetworkClientTest').get().asFile
-    maxHeapSize = '1536m'
-    systemProperty 'delos.drda.threadMode', 'virtual'
-    systemProperty 'delos.drda.extdta.spoolThresholdBytes', '32768'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccDrdaConcurrentNetworkClientTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccDrdaConcurrentNetworkClientTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccDrdaConcurrentNetworkClientTest'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
+registerDelosFocusedTest(
+        'runDelosMvccDrdaConcurrentNetworkClientTest',
+        'Runs the concurrent DRDA/JDBC network-client stress gate for delos_mvcc.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaConcurrentNetworkClientTest.class'],
+        [
+                'delos.drda.threadMode': 'virtual',
+                'delos.drda.extdta.spoolThresholdBytes': '32768'
+        ])
 
 tasks.named('check') {
     dependsOn tasks.named('compileTestJava')
 }
 
 
-tasks.register('runDelosMvccSqlIntegrationTest', Test) {
-    group = 'verification'
-    description = 'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.'
-    dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
+registerDelosFocusedTest(
+        'runDelosMvccSqlIntegrationTest',
+        'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBasicTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVisibilityTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlIndexTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLifecycleTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVacuumTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConsistencyCheckTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBloatMeasurementTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageReuseTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageCacheTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOverflowLifecycleTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypeCoverageTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSavepointTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlFeatureCompletenessTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConcurrentStressTest.class'
+        ])
 
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBasicTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVisibilityTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlIndexTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLifecycleTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVacuumTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConsistencyCheckTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBloatMeasurementTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageReuseTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageCacheTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOverflowLifecycleTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypeCoverageTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSavepointTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlFeatureCompletenessTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConcurrentStressTest.class'
-
-    workingDir = layout.buildDirectory.dir('test-work/runDelosMvccSqlIntegrationTest').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccSqlIntegrationTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccSqlIntegrationTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccSqlIntegrationTest'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runDelosMvccDrdaNetworkClientTest', Test) {
-    group = 'verification'
-    description = 'Runs the focused DRDA/JDBC network-client integration gate for delos_mvcc.'
-    dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
-
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class'
-
-    workingDir = layout.buildDirectory.dir('test-work/runDelosMvccDrdaNetworkClientTest').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccDrdaNetworkClientTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccDrdaNetworkClientTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccDrdaNetworkClientTest'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
+registerDelosFocusedTest(
+        'runDelosMvccDrdaNetworkClientTest',
+        'Runs the focused DRDA/JDBC network-client integration gate for delos_mvcc.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class'])
 
 tasks.named('check') {
     dependsOn tasks.named('runDelosMvccSqlIntegrationTest'), tasks.named('runDelosMvccDrdaNetworkClientTest'), tasks.named('runDelosMvccDrdaConcurrentNetworkClientTest')
