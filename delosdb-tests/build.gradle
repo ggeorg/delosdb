@@ -720,6 +720,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSavepointTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlFeatureCompletenessTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlHeapParityTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConcurrentStressTest.class'
         ])
 
