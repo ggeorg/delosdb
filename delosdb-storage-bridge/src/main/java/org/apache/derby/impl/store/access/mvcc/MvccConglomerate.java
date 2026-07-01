@@ -367,6 +367,10 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).pageBackedVisibleRowSummariesForTesting();
     }
 
+    static int lastCommittedChangedRowCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).lastCommittedChangedRowCountForTesting();
+    }
+
     static int candidateIndexKeyCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).candidateIndexKeyCountForTesting();
     }

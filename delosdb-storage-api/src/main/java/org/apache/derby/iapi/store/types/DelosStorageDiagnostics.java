@@ -73,6 +73,10 @@ public interface DelosStorageDiagnostics {
         return List.of();
     }
 
+    default int lastCommittedChangedRowCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
     long pageCountForTesting(int segment, long containerId);
 
     long overflowPageCountForTesting(int segment, long containerId);

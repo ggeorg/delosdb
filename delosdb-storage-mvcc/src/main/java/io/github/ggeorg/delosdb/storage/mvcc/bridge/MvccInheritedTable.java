@@ -63,6 +63,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final Lock readLock = tableLock.readLock();
     private final Lock writeLock = tableLock.writeLock();
     private long nextRowId = 1L;
+    private int lastCommittedChangedRowCount;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
@@ -148,7 +149,9 @@ final class MvccInheritedTable implements DelosStorageTable,
     public void insert(long rowId, StoreDataValue[] row, DelosStorageTransaction transaction) {
         writeLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
-            table.insert(rowId, cloneRowUnchecked(row), handle.nativeTransaction(), handle.nextCommandSequence());
+            MvccCommandSequence commandSequence = handle.nextCommandSequence();
+            table.insert(rowId, cloneRowUnchecked(row), handle.nativeTransaction(), commandSequence);
+            handle.recordChangedRow(rowId, commandSequence);
         });
     }
 
@@ -160,13 +163,15 @@ final class MvccInheritedTable implements DelosStorageTable,
             DelosStorageSnapshot snapshot) {
         writeLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            MvccCommandSequence commandSequence = handle.nextCommandSequence();
             table.update(
                     rowId,
                     cloneRowUnchecked(replacement),
                     handle.nativeTransaction(),
                     nativeSnapshot(snapshot),
                     transactions,
-                    handle.nextCommandSequence());
+                    commandSequence);
+            handle.recordChangedRow(rowId, commandSequence);
         });
     }
 
@@ -177,33 +182,44 @@ final class MvccInheritedTable implements DelosStorageTable,
             DelosStorageSnapshot snapshot) {
         writeLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            MvccCommandSequence commandSequence = handle.nextCommandSequence();
             table.delete(
                     rowId,
                     handle.nativeTransaction(),
                     nativeSnapshot(snapshot),
                     transactions,
-                    handle.nextCommandSequence());
+                    commandSequence);
+            handle.recordChangedRow(rowId, commandSequence);
         });
     }
 
     @Override
     public void commit(DelosStorageTransaction transaction) {
         writeLocked(() -> {
-            MvccTransaction nativeTx = nativeTransaction(transaction);
+            MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            MvccTransaction nativeTx = handle.nativeTransaction();
+            List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes = changedRows(handle, nativeTx);
             try {
-                pageVolumeStateStore.requireVisibleRowsCanBePersisted(visibleRows(nativeTx));
+                pageVolumeStateStore.requireChangedRowsCanBePersisted(changes);
             } catch (RuntimeException failure) {
                 abortIfActive(nativeTx, failure);
+                handle.clearChangedRows();
                 throw failure;
             }
             transactions.commit(nativeTx);
-            persistCommittedStateUnlocked();
+            persistCommittedChangesUnlocked(changes);
+            lastCommittedChangedRowCount = changes.size();
+            handle.clearChangedRows();
         });
     }
 
     @Override
     public void abort(DelosStorageTransaction transaction) {
-        writeLocked(() -> transactions.abort(nativeTransaction(transaction)));
+        writeLocked(() -> {
+            MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            transactions.abort(handle.nativeTransaction());
+            handle.clearChangedRows();
+        });
     }
 
     @Override
@@ -234,6 +250,12 @@ final class MvccInheritedTable implements DelosStorageTable,
         List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = visibleRows();
         pageVolumeStateStore.persistVisibleRows(rows);
         candidateIndex.rebuildFromVisibleRows(toCandidateRows(rows));
+    }
+
+    private void persistCommittedChangesUnlocked(
+            List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes) {
+        pageVolumeStateStore.persistChangedRows(changes);
+        candidateIndex.rebuildFromVisibleRows(toCandidateRows(visibleRows()));
     }
 
     @Override
@@ -281,6 +303,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public int candidateIndexKeyCountForTesting() {
         return readLocked(candidateIndex::indexedKeyCountForTesting);
+    }
+
+    @Override
+    public int lastCommittedChangedRowCountForTesting() {
+        return readLocked(() -> lastCommittedChangedRowCount);
     }
 
     @Override
@@ -523,6 +550,28 @@ final class MvccInheritedTable implements DelosStorageTable,
             return List.copyOf(rows);
         } catch (StandardException e) {
             throw new IllegalStateException("Could not clone inherited MVCC row for persistence", e);
+        }
+    }
+
+    private List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changedRows(
+            MvccInheritedHandles.Transaction handle,
+            MvccTransaction transaction) {
+        try {
+            MvccSnapshot snapshot = transactions.snapshot(transaction);
+            List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes = new ArrayList<>();
+            for (Long rowId : handle.changedRowIds()) {
+                Optional<StoreDataValue[]> visible = table.read(rowId, snapshot, transactions);
+                if (visible.isPresent()) {
+                    changes.add(PageVolumeMvccStateStore.PersistedChange.upsert(
+                            rowId,
+                            cloneRow(visible.get())));
+                } else {
+                    changes.add(PageVolumeMvccStateStore.PersistedChange.delete(rowId));
+                }
+            }
+            return List.copyOf(changes);
+        } catch (StandardException e) {
+            throw new IllegalStateException("Could not clone changed inherited MVCC row for persistence", e);
         }
     }
 

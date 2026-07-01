@@ -362,6 +362,24 @@ public final class PageVolumeMvccStateStore<T> {
         }
     }
 
+    public void requireChangedRowsCanBePersisted(List<PersistedChange<T>> changes) {
+        Objects.requireNonNull(changes, "changes");
+        if (!enabled()) {
+            return;
+        }
+        try {
+            for (PersistedChange<T> change : changes) {
+                if (!change.delete()) {
+                    PageBackedMvccTable.requirePayloadCanBeEncoded(
+                            keyFor(change.rowId()),
+                            rowCodec.encode(change.values()));
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not encode changed MVCC page-volume state " + pageFile, e);
+        }
+    }
+
     public void persistVisibleRows(List<PersistedRow<T>> visibleRows) {
         Objects.requireNonNull(visibleRows, "visibleRows");
         if (!enabled()) {
@@ -421,6 +439,70 @@ public final class PageVolumeMvccStateStore<T> {
                 writeAheadLog.appendAbort(transactionId);
             }
             throw new UncheckedIOException("Could not persist inherited MVCC state to page volume " + pageFile, e);
+        } catch (RuntimeException e) {
+            if (beganWalTransaction) {
+                writeAheadLog.appendAbort(transactionId);
+            }
+            throw e;
+        }
+    }
+
+    public void persistChangedRows(List<PersistedChange<T>> changes) {
+        Objects.requireNonNull(changes, "changes");
+        if (!enabled() || changes.isEmpty()) {
+            return;
+        }
+        Map<String, MvccRowDirectoryStore.RowHeadRecord> existingHeads = new LinkedHashMap<>();
+        for (MvccRowDirectoryStore.RowHeadRecord head : table.durableRowDirectoryHeads().values()) {
+            existingHeads.put(head.key(), head);
+        }
+        long transactionId = nextTransactionId();
+        long commitSequence = nextCommitSequence();
+        boolean beganWalTransaction = false;
+        try {
+            for (PersistedChange<T> change : changes) {
+                String key = keyFor(change.rowId());
+                MvccRowDirectoryStore.RowHeadRecord existingHead = existingHeads.get(key);
+                if (change.delete()) {
+                    if (existingHead != null && !existingHead.tombstone()) {
+                        if (!beganWalTransaction) {
+                            writeAheadLog.appendBegin(transactionId);
+                            beganWalTransaction = true;
+                        }
+                        DelosLogSequenceNumber pageLsn = writeAheadLog.appendDeleteVersion(transactionId, change.rowId());
+                        table.deleteCommitted(key, transactionId, commitSequence, pageLsn);
+                    }
+                    continue;
+                }
+                byte[] encoded = rowCodec.encode(change.values());
+                if (existingHead == null) {
+                    if (!beganWalTransaction) {
+                        writeAheadLog.appendBegin(transactionId);
+                        beganWalTransaction = true;
+                    }
+                    DelosLogSequenceNumber pageLsn = writeAheadLog.appendInsertVersion(transactionId, change.rowId());
+                    table.insertCommitted(key, encoded, transactionId, commitSequence, pageLsn);
+                } else if (existingHead.tombstone() || table.readPayload(key, LATEST_COMMITTED)
+                        .map(payload -> !java.util.Arrays.equals(payload.value(), encoded))
+                        .orElse(true)) {
+                    if (!beganWalTransaction) {
+                        writeAheadLog.appendBegin(transactionId);
+                        beganWalTransaction = true;
+                    }
+                    DelosLogSequenceNumber pageLsn = writeAheadLog.appendUpdateVersion(transactionId, change.rowId());
+                    table.updateCommitted(key, encoded, transactionId, commitSequence, pageLsn);
+                }
+            }
+            if (beganWalTransaction) {
+                writeAheadLog.appendCommit(transactionId, commitSequence);
+                rewriteCheckpoint();
+            }
+        } catch (IOException e) {
+            if (beganWalTransaction) {
+                writeAheadLog.appendAbort(transactionId);
+            }
+            throw new UncheckedIOException("Could not persist inherited MVCC changed rows to page volume "
+                    + pageFile, e);
         } catch (RuntimeException e) {
             if (beganWalTransaction) {
                 writeAheadLog.appendAbort(transactionId);
@@ -554,6 +636,25 @@ public final class PageVolumeMvccStateStore<T> {
                     result.removedLogicalRows(),
                     result.remainingVersions(),
                     result.remainingLogicalRows());
+        }
+    }
+
+    public record PersistedChange<T>(long rowId, T values, boolean delete) {
+        public PersistedChange {
+            if (rowId <= 0L) {
+                throw new IllegalArgumentException("MVCC row id must be positive: " + rowId);
+            }
+            if (!delete) {
+                values = Objects.requireNonNull(values, "values");
+            }
+        }
+
+        public static <T> PersistedChange<T> upsert(long rowId, T values) {
+            return new PersistedChange<>(rowId, values, false);
+        }
+
+        public static <T> PersistedChange<T> delete(long rowId) {
+            return new PersistedChange<>(rowId, null, true);
         }
     }
 

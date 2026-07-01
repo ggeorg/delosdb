@@ -1,6 +1,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc.bridge;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -33,6 +34,7 @@ final class MvccInheritedHandles {
     static final class Transaction implements DelosStorageTransaction {
         private final MvccTransaction nativeTransaction;
         private final Map<String, MvccCommandSequence> savepoints = new LinkedHashMap<>();
+        private final Map<Long, MvccCommandSequence> changedRows = new LinkedHashMap<>();
         private long nextCommandSequence = 1L;
 
         Transaction(MvccTransaction nativeTransaction) {
@@ -52,6 +54,21 @@ final class MvccInheritedHandles {
             savepoints.put(requireSavepointName(savepointName), lastCompletedCommandSequence());
         }
 
+        void recordChangedRow(long rowId, MvccCommandSequence commandSequence) {
+            if (rowId <= 0L) {
+                throw new IllegalArgumentException("rowId must be positive: " + rowId);
+            }
+            changedRows.putIfAbsent(rowId, Objects.requireNonNull(commandSequence, "commandSequence"));
+        }
+
+        List<Long> changedRowIds() {
+            return List.copyOf(changedRows.keySet());
+        }
+
+        void clearChangedRows() {
+            changedRows.clear();
+        }
+
         MvccCommandSequence rollbackToSavepoint(String savepointName) {
             String normalizedName = requireSavepointName(savepointName);
             MvccCommandSequence boundary = savepoints.get(normalizedName);
@@ -59,6 +76,7 @@ final class MvccInheritedHandles {
                 throw new IllegalStateException("Unknown delos_mvcc savepoint: " + normalizedName);
             }
             removeSavepointsAfter(normalizedName);
+            removeChangedRowsAfter(boundary);
             nextCommandSequence = boundary.value() + 1L;
             return boundary;
         }
@@ -83,6 +101,16 @@ final class MvccInheritedHandles {
 
         private MvccCommandSequence lastCompletedCommandSequence() {
             return MvccCommandSequence.of(Math.max(0L, nextCommandSequence - 1L));
+        }
+
+        private void removeChangedRowsAfter(MvccCommandSequence boundary) {
+            var iterator = changedRows.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<Long, MvccCommandSequence> entry = iterator.next();
+                if (entry.getValue().compareTo(boundary) > 0) {
+                    iterator.remove();
+                }
+            }
         }
 
         private void removeSavepointsAfter(String savepointName) {
