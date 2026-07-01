@@ -339,6 +339,117 @@ tasks.register('delosServerStaticAnalysis') {
 
 
 
+def delosHeapCompatibilityStaticSourceRoots = [
+        'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap',
+        'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree',
+        'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw'
+]
+
+def delosHeapCompatibilityJavaSources = {
+    delosHeapCompatibilityStaticSourceRoots.collect { file(it) }
+            .findAll { it.exists() }
+            .collectMany { root -> fileTree(root) { include '**/*.java' }.files }
+            .sort { a, b -> a.path <=> b.path }
+}
+
+def delosHeapCompatibilityFinding = { String rule, File sourceFile, int lineNumber, String line ->
+    def relativePath = rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
+    [
+            rule       : rule,
+            path       : relativePath,
+            lineNumber : lineNumber,
+            line       : line,
+            normalized : delosStorageNormalize(line)
+    ]
+}
+
+def delosHeapCompatibilityClassifyFindings = {
+    def findings = []
+
+    delosHeapCompatibilityJavaSources().each { sourceFile ->
+        def lines = sourceFile.readLines('UTF-8')
+        lines.eachWithIndex { String line, int index ->
+            int lineNumber = index + 1
+            def importTarget = delosStorageImportTarget(line)
+
+            if (importTarget != null) {
+                if (importTarget.startsWith('io.github.ggeorg.delosdb.storage.mvcc.')) {
+                    findings << delosHeapCompatibilityFinding('HEAP_MVCC_IMPLEMENTATION_IMPORT', sourceFile, lineNumber, line)
+                }
+                if (importTarget.startsWith('io.github.ggeorg.delosdb.spi.storage.versioned.')) {
+                    findings << delosHeapCompatibilityFinding('HEAP_VERSIONED_QUARANTINE_IMPORT', sourceFile, lineNumber, line)
+                }
+                if (importTarget.startsWith('org.apache.derby.impl.drda.')
+                        || importTarget.startsWith('org.apache.derby.drda.')
+                        || importTarget.startsWith('javax.servlet.')
+                        || importTarget.startsWith('jakarta.servlet.')) {
+                    findings << delosHeapCompatibilityFinding('HEAP_SERVER_OR_DRDA_DEPENDENCY', sourceFile, lineNumber, line)
+                }
+                if (importTarget.startsWith('java.lang.foreign.')) {
+                    findings << delosHeapCompatibilityFinding('HEAP_FOREIGN_MEMORY_API', sourceFile, lineNumber, line)
+                }
+            }
+
+            if (line.contains('ObjectInputStream') || line.contains('ObjectOutputStream')) {
+                findings << delosHeapCompatibilityFinding('HEAP_OBJECT_STREAM_SITE', sourceFile, lineNumber, line)
+            }
+            if (line.contains('java.lang.foreign.')) {
+                findings << delosHeapCompatibilityFinding('HEAP_FOREIGN_MEMORY_API', sourceFile, lineNumber, line)
+            }
+        }
+    }
+
+    findings
+}
+
+tasks.register('delosHeapCompatibilityStaticAnalysis') {
+    group = 'verification'
+    description = 'Protects Derby-compatible heap/raw-store core from MVCC, quarantine, protocol, and foreign-memory drift.'
+
+    inputs.files(delosHeapCompatibilityJavaSources())
+    outputs.file(layout.buildDirectory.file('reports/delosdb/heap-compatibility-static-analysis.txt'))
+
+    doLast {
+        def findings = delosHeapCompatibilityClassifyFindings()
+        def reportFile = layout.buildDirectory.file('reports/delosdb/heap-compatibility-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB Derby heap compatibility static analysis')
+            writer.println('================================================')
+            writer.println('Source roots:')
+            delosHeapCompatibilityStaticSourceRoots.each { writer.println('  - ' + it) }
+            writer.println()
+            writer.println('Total findings: ' + findings.size())
+            writer.println()
+
+            if (findings.isEmpty()) {
+                writer.println('No heap compatibility boundary violations found.')
+            } else {
+                writer.println('Heap compatibility boundary violations:')
+                findings.each { finding ->
+                    writer.println("${finding.rule} ${finding.path}:${finding.lineNumber}: ${finding.normalized}")
+                }
+            }
+            writer.println()
+            writer.println('Allowed DelosDB compatibility seams are intentionally outside this deny-list gate,')
+            writer.println('including provider adapters, cost tuning hooks, and LegacyInternal annotations.')
+        }
+
+        if (!findings.isEmpty()) {
+            def preview = findings.take(20).collect { finding ->
+                "${finding.rule} ${finding.path}:${finding.lineNumber}: ${finding.normalized}"
+            }.join(System.lineSeparator())
+            throw new GradleException(
+                    'DelosDB heap compatibility static analysis found ' + findings.size() +
+                            ' boundary violation(s). Report: ' + reportFile +
+                            System.lineSeparator() + preview)
+        }
+
+        logger.lifecycle('DelosDB heap compatibility static analysis passed. Report: {}', reportFile)
+    }
+}
+
+
 def delosStaleGradleScripts = [
         'gradle/delosdb-runtime-distribution.gradle',
         'gradle/delosdb-verification-aliases.gradle',
@@ -511,5 +622,5 @@ tasks.register('delosDeadCodeCandidateReport') {
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport'
 }
