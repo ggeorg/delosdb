@@ -115,6 +115,7 @@ public final class MvccSqlHeapParityTest extends MvccSqlTestSupport {
                     summary(2, "beta-u", 20, "2.75", betaCommitted, 0),
                     summary(5, "epsilon", 50, "5.55", epsilonCommitted, 5));
             assertMvccConsistent(diagnostics, mvccContainerId);
+            connection.commit();
         }
 
         shutdownDatabase(databaseName);
@@ -251,14 +252,17 @@ public final class MvccSqlHeapParityTest extends MvccSqlTestSupport {
             while (rs.next()) {
                 BigDecimal amount = rs.getBigDecimal(4);
                 String payload = rs.getString(5);
-                int flag = rs.getInt(6);
+                Object flagValue = rs.getObject(6);
+                Integer flag = flagValue == null
+                        ? null
+                        : Integer.valueOf(((Number) flagValue).intValue());
                 rows.add(summary(
                         rs.getInt(1),
                         rs.getString(2),
                         rs.getInt(3),
                         amount == null ? "NULL" : amount.toPlainString(),
                         payload,
-                        rs.wasNull() ? null : flag));
+                        flag));
             }
         }
         return rows;
