@@ -717,6 +717,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapStorageInspectorTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlCandidateIndexRefreshTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLogicalRowIdentityTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlHotIndexSuppressionTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOverflowLifecycleTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.class',

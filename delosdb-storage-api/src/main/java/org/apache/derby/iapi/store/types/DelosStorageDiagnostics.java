@@ -158,6 +158,10 @@ public interface DelosStorageDiagnostics {
 
     int candidateIndexRowIdCountForTesting();
 
+    default int candidateIndexKeyCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
     int candidateIndexVisibilityRejectCountForTesting();
 
     int candidateIndexQualifierRejectCountForTesting();

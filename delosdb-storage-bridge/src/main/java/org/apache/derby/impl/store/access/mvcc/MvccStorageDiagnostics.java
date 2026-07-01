@@ -243,6 +243,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public int candidateIndexKeyCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.candidateIndexKeyCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public int candidateIndexVisibilityRejectCountForTesting() {
         return MvccBridgeDiagnosticsSupport.candidateIndexVisibilityRejectCountForDiagnostics();
     }
