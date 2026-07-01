@@ -25,11 +25,12 @@ public final class MvccCapturedVisibility implements MvccTransactionCatalog {
     private final MvccTransactionId compactedTransactionIdThrough;
     private final MvccCommitSequence compactedCommittedVisibleThrough;
     private final Set<MvccTransactionId> compactedAbortedTransactions;
+    private final Map<MvccTransactionId, MvccCommitSequence> compactedCommittedSequences;
 
     MvccCapturedVisibility(
             MvccSnapshot snapshot,
             Map<MvccTransactionId, CapturedTransaction> transactions) {
-        this(snapshot, transactions, MvccTransactionId.NONE, MvccCommitSequence.NONE, Set.of());
+        this(snapshot, transactions, MvccTransactionId.NONE, MvccCommitSequence.NONE, Set.of(), Map.of());
     }
 
     MvccCapturedVisibility(
@@ -37,7 +38,8 @@ public final class MvccCapturedVisibility implements MvccTransactionCatalog {
             Map<MvccTransactionId, CapturedTransaction> transactions,
             MvccTransactionId compactedTransactionIdThrough,
             MvccCommitSequence compactedCommittedVisibleThrough,
-            Set<MvccTransactionId> compactedAbortedTransactions) {
+            Set<MvccTransactionId> compactedAbortedTransactions,
+            Map<MvccTransactionId, MvccCommitSequence> compactedCommittedSequences) {
         Objects.requireNonNull(snapshot, "snapshot");
         this.owner = snapshot.owner();
         this.visibleThrough = snapshot.visibleThrough();
@@ -52,6 +54,9 @@ public final class MvccCapturedVisibility implements MvccTransactionCatalog {
         this.compactedAbortedTransactions = Set.copyOf(new TreeSet<>(Objects.requireNonNull(
                 compactedAbortedTransactions,
                 "compactedAbortedTransactions")));
+        this.compactedCommittedSequences = Map.copyOf(new TreeMap<>(Objects.requireNonNull(
+                compactedCommittedSequences,
+                "compactedCommittedSequences")));
     }
 
     public MvccTransactionId owner() {
@@ -102,7 +107,8 @@ public final class MvccCapturedVisibility implements MvccTransactionCatalog {
         }
         if (transactionId.compareTo(compactedTransactionIdThrough) <= 0
                 && !compactedAbortedTransactions.contains(transactionId)) {
-            return Optional.of(compactedCommittedVisibleThrough);
+            MvccCommitSequence compactedExact = compactedCommittedSequences.get(transactionId);
+            return Optional.of(compactedExact == null ? compactedCommittedVisibleThrough : compactedExact);
         }
         return Optional.empty();
     }

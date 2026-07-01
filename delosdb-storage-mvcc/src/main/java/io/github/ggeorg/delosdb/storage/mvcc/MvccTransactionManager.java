@@ -26,6 +26,7 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
     private final Map<MvccTransactionId, TransactionState> activeTransactions = new HashMap<>();
     private final Map<MvccTransactionId, TransactionOutcome> retainedOutcomes = new HashMap<>();
     private final Set<MvccTransactionId> compactedAbortedTransactions = new LinkedHashSet<>();
+    private final Map<MvccTransactionId, MvccCommitSequence> compactedCommittedSequences = new LinkedHashMap<>();
     private final Map<Long, MvccCommitSequence> retainedSnapshotWatermarks = new LinkedHashMap<>();
     private final MvccTransactionStatusStore statusStore;
     public MvccTransactionManager() {
@@ -193,7 +194,8 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
                 captured,
                 compactedTransactionIdThrough,
                 compactedCommittedVisibleThrough,
-                compactedAbortedTransactions);
+                compactedAbortedTransactions,
+                compactedCommittedSequences);
     }
 
     @Override
@@ -227,7 +229,8 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
         }
         if (transactionId.compareTo(compactedTransactionIdThrough) <= 0
                 && !compactedAbortedTransactions.contains(transactionId)) {
-            return Optional.of(compactedCommittedVisibleThrough);
+            MvccCommitSequence compactedExact = compactedCommittedSequences.get(transactionId);
+            return Optional.of(compactedExact == null ? compactedCommittedVisibleThrough : compactedExact);
         }
         return Optional.empty();
     }
@@ -296,9 +299,11 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
             if (outcome.status == MvccTransactionStatus.ABORTED
                     || outcome.status == MvccTransactionStatus.RECOVERY_PENDING) {
                 compactedAbortedTransactions.add(transactionId);
-            } else if (outcome.status == MvccTransactionStatus.COMMITTED
-                    && outcome.commitSequence.compareTo(compactedCommittedMax) > 0) {
-                compactedCommittedMax = outcome.commitSequence;
+            } else if (outcome.status == MvccTransactionStatus.COMMITTED) {
+                compactedCommittedSequences.put(transactionId, outcome.commitSequence);
+                if (outcome.commitSequence.compareTo(compactedCommittedMax) > 0) {
+                    compactedCommittedMax = outcome.commitSequence;
+                }
             }
             retainedOutcomes.remove(transactionId);
             compactedTransactionIdThrough = transactionId;

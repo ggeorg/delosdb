@@ -31,6 +31,28 @@ final class MvccTransactionTableCompactionTest {
         txManager.abort(reader);
     }
 
+
+    @Test
+    void compactedCommittedOutcomesKeepExactCommitSequences() {
+        MvccTransactionManager txManager = new MvccTransactionManager();
+
+        MvccTransaction first = txManager.begin();
+        MvccTransaction second = txManager.begin();
+        MvccCommitSequence secondCommit = txManager.commit(second);
+        MvccCommitSequence firstCommit = txManager.commit(first);
+
+        assertEquals(0, txManager.retainedTransactionOutcomeCount());
+        assertEquals(new MvccTransactionId(2L), txManager.compactedTransactionIdThrough());
+        assertEquals(firstCommit, txManager.commitSequenceOf(first.id()).orElseThrow());
+        assertEquals(secondCommit, txManager.commitSequenceOf(second.id()).orElseThrow());
+
+        MvccTransaction reader = txManager.begin();
+        MvccCapturedVisibility captured = txManager.captureVisibility(txManager.snapshot(reader));
+        assertEquals(firstCommit, captured.commitSequenceOf(first.id()).orElseThrow());
+        assertEquals(secondCommit, captured.commitSequenceOf(second.id()).orElseThrow());
+        txManager.abort(reader);
+    }
+
     @Test
     void activeTransactionBlocksCompactionPastItsSnapshotBoundary() {
         MvccTransactionManager txManager = new MvccTransactionManager();
