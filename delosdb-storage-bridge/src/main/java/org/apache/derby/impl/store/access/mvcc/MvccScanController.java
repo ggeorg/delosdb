@@ -396,6 +396,11 @@ public final class MvccScanController implements ScanManager {
     }
 
     private void resetCandidateIndexScan(Qualifier[][] candidateQualifiers) {
+        if (!canUseCommittedCandidateIndex()) {
+            candidateIndexScan = false;
+            candidateRowIds = null;
+            return;
+        }
         Optional<List<Long>> candidates = state.candidateRowIdsFor(candidateQualifiers);
         if (candidates.isEmpty()) {
             candidateIndexScan = false;
@@ -407,6 +412,20 @@ public final class MvccScanController implements ScanManager {
         candidateRowIds = rowIds.iterator();
         MvccBridgeDiagnosticsSupport.incrementCandidateIndexLookupCount();
         MvccBridgeDiagnosticsSupport.addCandidateIndexRowIdCount(rowIds.size());
+    }
+
+    /**
+     * The inherited MVCC candidate index is rebuilt from the current committed
+     * visible image. It is therefore a safe narrowing structure only for
+     * statement-scoped reads over the current committed image. Transaction-
+     * scoped snapshots may still need rows whose current committed key was
+     * updated or deleted after the snapshot was captured, and scans borrowing an
+     * active writer must also see uncommitted same-transaction writes that are
+     * not part of the committed candidate index. Those cases must fall back to
+     * the full MVCC scan and let row-version visibility decide.
+     */
+    private boolean canUseCommittedCandidateIndex() {
+        return !transactionScopedReader && !readerBorrowedFromWriter;
     }
 
     private boolean rowQualifies(StoreDataValue[] row) throws StandardException {
