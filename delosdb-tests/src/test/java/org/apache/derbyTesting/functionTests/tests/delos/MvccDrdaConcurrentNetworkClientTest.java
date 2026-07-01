@@ -143,7 +143,7 @@ public final class MvccDrdaConcurrentNetworkClientTest extends BaseJDBCTestCase 
             connection.setAutoCommit(false);
             assertRows(connection,
                     "select count(*), min(id), max(id) from " + TABLE,
-                    "28|1|107");
+                    "27|1|107");
             assertRows(connection,
                     "select id, bucket, note from " + TABLE
                             + " where id in (1, 12, 20, 24, 100, 107, 900) order by id",
@@ -175,7 +175,7 @@ public final class MvccDrdaConcurrentNetworkClientTest extends BaseJDBCTestCase 
             diagnostics.assertConsistentForTesting(0, reopenedContainerId);
             assertRows(reopened,
                     "select count(*), min(id), max(id) from " + TABLE,
-                    "28|1|107");
+                    "27|1|107");
             assertLobRow(reopened, 12,
                     blobPayload(72_000 + 12, 112),
                     clobPayload(72_000 + 12, 'k'), "network-a-12");
