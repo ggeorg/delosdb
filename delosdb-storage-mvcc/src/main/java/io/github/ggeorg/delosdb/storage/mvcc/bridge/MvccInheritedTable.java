@@ -197,6 +197,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 throw failure;
             }
             transactions.commit(nativeTx);
+            persistCommittedStateUnlocked();
         });
     }
 
@@ -231,11 +232,13 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public void persistCommittedState() {
-        writeLocked(() -> {
-            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = visibleRows();
-            pageVolumeStateStore.persistVisibleRows(rows);
-            candidateIndex.rebuildFromVisibleRows(toCandidateRows(rows));
-        });
+        writeLocked(this::persistCommittedStateUnlocked);
+    }
+
+    private void persistCommittedStateUnlocked() {
+        List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = visibleRows();
+        pageVolumeStateStore.persistVisibleRows(rows);
+        candidateIndex.rebuildFromVisibleRows(toCandidateRows(rows));
     }
 
     @Override

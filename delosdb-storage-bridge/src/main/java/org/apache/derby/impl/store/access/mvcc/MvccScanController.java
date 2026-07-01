@@ -541,8 +541,7 @@ public final class MvccScanController implements ScanManager {
                 registeredWriter = MvccStoreAccessTransactionRegistry.register(
                         transactionManager,
                         state.table(),
-                        writer,
-                        state::persistCommittedState);
+                        writer);
             }
         }
         return writer;
@@ -561,7 +560,6 @@ public final class MvccScanController implements ScanManager {
                 registeredWriter = null;
             } else {
                 state.commit(writer);
-                state.persistCommittedState();
             }
             writer = null;
         }
