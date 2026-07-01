@@ -704,7 +704,6 @@ tasks.register('runDelosMvccSqlIntegrationTest', Test) {
     include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSavepointTest.class'
     include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlFeatureCompletenessTest.class'
     include 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConcurrentStressTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class'
 
     workingDir = layout.buildDirectory.dir('test-work/runDelosMvccSqlIntegrationTest').get().asFile
     maxHeapSize = '1536m'
@@ -729,6 +728,40 @@ tasks.register('runDelosMvccSqlIntegrationTest', Test) {
 }
 
 
+tasks.register('runDelosMvccDrdaNetworkClientTest', Test) {
+    group = 'verification'
+    description = 'Runs the focused DRDA/JDBC network-client integration gate for delos_mvcc.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
+
+    modularity.inferModulePath = false
+    testClassesDirs = files(derbyTestsClassDir)
+    classpath = testRuntimeClasspath()
+    useJUnit()
+    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class'
+
+    workingDir = layout.buildDirectory.dir('test-work/runDelosMvccDrdaNetworkClientTest').get().asFile
+    maxHeapSize = '1536m'
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccDrdaNetworkClientTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccDrdaNetworkClientTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccDrdaNetworkClientTest'))
+    }
+
+    doFirst {
+        delete workingDir
+        workingDir.mkdirs()
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat = 'full'
+        showStandardStreams = true
+    }
+}
+
+
 tasks.named('check') {
-    dependsOn tasks.named('runDelosMvccSqlIntegrationTest')
+    dependsOn tasks.named('runDelosMvccSqlIntegrationTest'), tasks.named('runDelosMvccDrdaNetworkClientTest')
 }
