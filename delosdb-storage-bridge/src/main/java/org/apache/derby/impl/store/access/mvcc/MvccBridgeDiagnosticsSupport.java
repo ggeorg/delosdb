@@ -41,6 +41,8 @@ final class MvccBridgeDiagnosticsSupport {
     private static final AtomicInteger CANDIDATE_INDEX_ROWID_COUNT = new AtomicInteger();
     private static final AtomicInteger CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT = new AtomicInteger();
     private static final AtomicInteger CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT = new AtomicInteger();
+    private static final AtomicInteger PAGE_BACKED_COMMITTED_SCAN_COUNT = new AtomicInteger();
+    private static final AtomicInteger PAGE_BACKED_COMMITTED_READ_COUNT = new AtomicInteger();
 
     private MvccBridgeDiagnosticsSupport() {
     }
@@ -91,6 +93,7 @@ final class MvccBridgeDiagnosticsSupport {
         OPEN_COUNT.set(0);
         resetQualifierRejectCountForDiagnostics();
         resetCandidateIndexCountersForDiagnostics();
+        resetPageBackedCommittedReadCountersForDiagnostics();
     }
 
     static void resetOpenCountForDiagnostics() {
@@ -155,4 +158,26 @@ final class MvccBridgeDiagnosticsSupport {
     static int candidateIndexQualifierRejectCountForDiagnostics() {
         return CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.get();
     }
+
+    static void resetPageBackedCommittedReadCountersForDiagnostics() {
+        PAGE_BACKED_COMMITTED_SCAN_COUNT.set(0);
+        PAGE_BACKED_COMMITTED_READ_COUNT.set(0);
+    }
+
+    static void incrementPageBackedCommittedScanCount() {
+        PAGE_BACKED_COMMITTED_SCAN_COUNT.incrementAndGet();
+    }
+
+    static int pageBackedCommittedScanCountForDiagnostics() {
+        return PAGE_BACKED_COMMITTED_SCAN_COUNT.get();
+    }
+
+    static void incrementPageBackedCommittedReadCount() {
+        PAGE_BACKED_COMMITTED_READ_COUNT.incrementAndGet();
+    }
+
+    static int pageBackedCommittedReadCountForDiagnostics() {
+        return PAGE_BACKED_COMMITTED_READ_COUNT.get();
+    }
+
 }

@@ -171,6 +171,14 @@ public interface DelosStorageDiagnostics {
 
     int candidateIndexQualifierRejectCountForTesting();
 
+    default int pageBackedCommittedScanCountForTesting() {
+        return 0;
+    }
+
+    default int pageBackedCommittedReadCountForTesting() {
+        return 0;
+    }
+
     void clearTransactionsForTesting();
 
     boolean isProviderScan(Object scanController);

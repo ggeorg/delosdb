@@ -22,7 +22,9 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -66,6 +68,8 @@ public final class MvccScanController implements ScanManager {
     private Qualifier[][] qualifiers;
     private Iterator<Long> candidateRowIds;
     private boolean candidateIndexScan;
+    private boolean pageBackedCommittedRead;
+    private Map<Long, StoreDataValue[]> pageBackedCommittedRowsById;
     private DelosStorageRow current;
     private boolean closed;
     private DelosStorageTransaction writer;
@@ -113,7 +117,7 @@ public final class MvccScanController implements ScanManager {
             }
         }
         try {
-            this.scan = state.openScan(snapshot);
+            openStorageScan();
         } catch (StandardException e) {
             throw new IllegalStateException("Could not open MVCC storage-api scan", e);
         }
@@ -191,7 +195,7 @@ public final class MvccScanController implements ScanManager {
         scan.close();
         current = null;
         try {
-            scan = state.openScan(snapshot);
+            openStorageScan();
         } catch (StandardException e) {
             throw new IllegalStateException("Could not reopen MVCC storage-api scan", e);
         }
@@ -206,12 +210,32 @@ public final class MvccScanController implements ScanManager {
         scan.close();
         current = null;
         try {
-            scan = state.openScan(snapshot);
+            openStorageScan();
         } catch (StandardException e) {
             throw new IllegalStateException("Could not reopen MVCC storage-api scan", e);
         }
         this.qualifiers = qualifier;
         resetCandidateIndexScan(qualifier);
+    }
+
+    private void openStorageScan() throws StandardException {
+        pageBackedCommittedRead = false;
+        pageBackedCommittedRowsById = null;
+        if (canUseCurrentCommittedOptimization()) {
+            try {
+                List<DelosStorageRow> rows = state.committedImageRows(snapshot);
+                pageBackedCommittedRowsById = committedRowsById(rows);
+                scan = new PageBackedCommittedRowsScan(rows);
+                pageBackedCommittedRead = true;
+                MvccBridgeDiagnosticsSupport.incrementPageBackedCommittedScanCount();
+                return;
+            } catch (IllegalStateException staleCommittedImage) {
+                // A commit advanced the current committed image after the
+                // statement snapshot was captured. Fall back to the MVCC
+                // version-chain scan, which can evaluate the captured snapshot.
+            }
+        }
+        scan = state.openScan(snapshot);
     }
 
     @Override
@@ -350,7 +374,7 @@ public final class MvccScanController implements ScanManager {
     public boolean positionAtRowLocation(StoreRowLocation rowLocation) {
         ensureOpen();
         MvccRowLocation location = MvccRowLocation.from(rowLocation);
-        Optional<StoreDataValue[]> visible = state.read(location.rowId(), snapshot);
+        Optional<StoreDataValue[]> visible = readCurrentCommittedOrSnapshot(location.rowId());
         if (visible.isEmpty()) {
             current = null;
             return false;
@@ -378,7 +402,7 @@ public final class MvccScanController implements ScanManager {
     private boolean advanceToNextCandidateRow() throws StandardException {
         while (candidateRowIds != null && candidateRowIds.hasNext()) {
             long rowId = candidateRowIds.next();
-            Optional<StoreDataValue[]> visible = state.read(rowId, snapshot);
+            Optional<StoreDataValue[]> visible = readCurrentCommittedOrSnapshot(rowId);
             if (visible.isEmpty()) {
                 MvccBridgeDiagnosticsSupport.incrementCandidateIndexVisibilityRejectCount();
                 continue;
@@ -393,6 +417,15 @@ public final class MvccScanController implements ScanManager {
         }
         current = null;
         return false;
+    }
+
+    private Optional<StoreDataValue[]> readCurrentCommittedOrSnapshot(long rowId) {
+        if (pageBackedCommittedRead) {
+            MvccBridgeDiagnosticsSupport.incrementPageBackedCommittedReadCount();
+            StoreDataValue[] row = pageBackedCommittedRowsById == null ? null : pageBackedCommittedRowsById.get(rowId);
+            return row == null ? Optional.empty() : Optional.of(row.clone());
+        }
+        return state.read(rowId, snapshot);
     }
 
     private void resetCandidateIndexScan(Qualifier[][] candidateQualifiers) {
@@ -425,6 +458,10 @@ public final class MvccScanController implements ScanManager {
      * the full MVCC scan and let row-version visibility decide.
      */
     private boolean canUseCommittedCandidateIndex() {
+        return pageBackedCommittedRead;
+    }
+
+    private boolean canUseCurrentCommittedOptimization() {
         return !transactionScopedReader && !readerBorrowedFromWriter;
     }
 
@@ -551,6 +588,46 @@ public final class MvccScanController implements ScanManager {
     private void ensureOpen() {
         if (closed) {
             throw new IllegalStateException("MVCC scan controller is closed");
+        }
+    }
+
+    private static Map<Long, StoreDataValue[]> committedRowsById(List<DelosStorageRow> rows) {
+        Map<Long, StoreDataValue[]> byId = new LinkedHashMap<>();
+        for (DelosStorageRow row : rows) {
+            byId.put(row.rowId(), row.values());
+        }
+        return byId;
+    }
+
+    private static final class PageBackedCommittedRowsScan implements DelosStorageScan {
+        private final Iterator<DelosStorageRow> rows;
+        private DelosStorageRow current;
+
+        private PageBackedCommittedRowsScan(List<DelosStorageRow> rows) {
+            this.rows = rows.iterator();
+        }
+
+        @Override
+        public boolean next() {
+            if (!rows.hasNext()) {
+                current = null;
+                return false;
+            }
+            current = rows.next();
+            return true;
+        }
+
+        @Override
+        public DelosStorageRow row() {
+            if (current == null) {
+                throw new IllegalStateException("page-backed committed scan is not positioned on a row");
+            }
+            return current;
+        }
+
+        @Override
+        public void close() {
+            current = null;
         }
     }
 }

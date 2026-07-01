@@ -27,7 +27,9 @@ import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
 
 import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
+import org.apache.derby.iapi.store.types.DelosStorageCommittedRead;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
+import org.apache.derby.iapi.store.types.DelosStorageRow;
 import org.apache.derby.iapi.store.types.DelosStorageRowHead;
 import org.apache.derby.iapi.store.types.DelosStorageRowLocator;
 import org.apache.derby.iapi.store.types.DelosStorageSavepointParticipant;
@@ -45,6 +47,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         DelosStorageMaintenance,
         DelosStorageRowLocator,
         DelosStorageCandidateIndex,
+        DelosStorageCommittedRead,
         DelosStorageSavepointParticipant,
         DelosStorageTableDiagnostics {
     private final long segmentId;
@@ -96,6 +99,49 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public Optional<StoreDataValue[]> read(long rowId, DelosStorageSnapshot snapshot) {
         return readLocked(() -> table.read(rowId, nativeSnapshot(snapshot), transactions));
+    }
+
+
+    @Override
+    public boolean canReadCommittedImage(DelosStorageSnapshot snapshot) {
+        return readLocked(() -> {
+            MvccSnapshot nativeSnapshot = nativeSnapshot(snapshot);
+            return nativeSnapshot.visibleThrough().equals(transactions.newestCommitSequence());
+        });
+    }
+
+
+    @Override
+    public List<DelosStorageRow> committedImageRows(DelosStorageSnapshot snapshot) {
+        return readLocked(() -> {
+            if (!canReadCommittedImageUnlocked(snapshot)) {
+                throw new IllegalStateException("MVCC committed image is newer than snapshot");
+            }
+            return pageVolumeStateStore.loadVisibleRows().stream()
+                    .map(row -> new DelosStorageRow(row.rowId(), row.values()))
+                    .toList();
+        });
+    }
+
+    @Override
+    public DelosStorageScan openCommittedImageScan(DelosStorageSnapshot snapshot) {
+        return readLocked(() -> {
+            if (!canReadCommittedImageUnlocked(snapshot)) {
+                throw new IllegalStateException("MVCC committed image is newer than snapshot");
+            }
+            return new MvccPageBackedCommittedScan(pageVolumeStateStore.loadVisibleRows());
+        });
+    }
+
+    @Override
+    public Optional<StoreDataValue[]> readCommittedImage(long rowId, DelosStorageSnapshot snapshot) {
+        return readLocked(() -> {
+            if (!canReadCommittedImageUnlocked(snapshot)) {
+                return Optional.empty();
+            }
+            return pageVolumeStateStore.loadVisibleRow(rowId)
+                    .map(PageVolumeMvccStateStore.PersistedRow::values);
+        });
     }
 
     @Override
@@ -380,6 +426,12 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public void close() {
         writeLocked(pageVolumeStateStore::close);
+    }
+
+
+    private boolean canReadCommittedImageUnlocked(DelosStorageSnapshot snapshot) {
+        MvccSnapshot nativeSnapshot = nativeSnapshot(snapshot);
+        return nativeSnapshot.visibleThrough().equals(transactions.newestCommitSequence());
     }
 
     private <T> T readLocked(Supplier<T> operation) {

@@ -31,8 +31,10 @@ import java.util.ServiceLoader;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
+import org.apache.derby.iapi.store.types.DelosStorageCommittedRead;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
 import org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
+import org.apache.derby.iapi.store.types.DelosStorageRow;
 import org.apache.derby.iapi.store.types.DelosStorageRowHead;
 import org.apache.derby.iapi.store.types.DelosStorageRowLocator;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
@@ -62,6 +64,7 @@ final class MvccConglomerateState {
     private final DelosStorageMaintenance maintenance;
     private final DelosStorageRowLocator rowLocator;
     private final DelosStorageCandidateIndex candidateIndex;
+    private final DelosStorageCommittedRead committedRead;
     private final DelosStorageTableDiagnostics diagnostics;
 
     MvccConglomerateState(ContainerKey key, Path databaseDirectory) {
@@ -71,6 +74,7 @@ final class MvccConglomerateState {
         this.maintenance = requireCapability(table, DelosStorageMaintenance.class);
         this.rowLocator = requireCapability(table, DelosStorageRowLocator.class);
         this.candidateIndex = requireCapability(table, DelosStorageCandidateIndex.class);
+        this.committedRead = requireCapability(table, DelosStorageCommittedRead.class);
         this.diagnostics = requireCapability(table, DelosStorageTableDiagnostics.class);
     }
 
@@ -92,6 +96,22 @@ final class MvccConglomerateState {
 
     DelosStorageScan openScan(DelosStorageSnapshot snapshot) throws StandardException {
         return table.openScan(snapshot);
+    }
+
+    boolean canReadCommittedImage(DelosStorageSnapshot snapshot) {
+        return committedRead.canReadCommittedImage(snapshot);
+    }
+
+    List<DelosStorageRow> committedImageRows(DelosStorageSnapshot snapshot) {
+        return committedRead.committedImageRows(snapshot);
+    }
+
+    DelosStorageScan openCommittedImageScan(DelosStorageSnapshot snapshot) throws StandardException {
+        return committedRead.openCommittedImageScan(snapshot);
+    }
+
+    Optional<StoreDataValue[]> readCommittedImage(long rowId, DelosStorageSnapshot snapshot) {
+        return committedRead.readCommittedImage(rowId, snapshot);
     }
 
     Optional<StoreDataValue[]> read(long rowId, DelosStorageSnapshot snapshot) {

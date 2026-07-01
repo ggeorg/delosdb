@@ -264,6 +264,16 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public int pageBackedCommittedScanCountForTesting() {
+        return MvccBridgeDiagnosticsSupport.pageBackedCommittedScanCountForDiagnostics();
+    }
+
+    @Override
+    public int pageBackedCommittedReadCountForTesting() {
+        return MvccBridgeDiagnosticsSupport.pageBackedCommittedReadCountForDiagnostics();
+    }
+
+    @Override
     public void clearTransactionsForTesting() {
         DelosStorageTransactionRegistry.clearForTesting();
     }

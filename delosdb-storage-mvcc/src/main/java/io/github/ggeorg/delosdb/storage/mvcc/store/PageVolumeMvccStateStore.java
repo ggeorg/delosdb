@@ -312,6 +312,22 @@ public final class PageVolumeMvccStateStore<T> {
         }
     }
 
+    public Optional<PersistedRow<T>> loadVisibleRow(long rowId) {
+        if (!enabled() || rowId <= 0L) {
+            return Optional.empty();
+        }
+        try {
+            Optional<MvccRowPayload> payload = table.readPayload(keyFor(rowId), LATEST_COMMITTED);
+            if (payload.isEmpty()) {
+                return Optional.empty();
+            }
+            return Optional.of(new PersistedRow<>(rowId, rowCodec.decode(payload.get().value())));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not decode MVCC page-volume row "
+                    + rowId + " from " + pageFile, e);
+        }
+    }
+
     public long nextInheritedRowId() {
         if (!enabled()) {
             return 1L;
