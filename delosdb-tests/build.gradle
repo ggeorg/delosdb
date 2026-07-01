@@ -672,6 +672,42 @@ tasks.named('assemble') {
     dependsOn tasks.named('compileTestJava')
 }
 
+tasks.register('runDelosMvccDrdaConcurrentNetworkClientTest', Test) {
+    group = 'verification'
+    description = 'Runs the concurrent DRDA/JDBC network-client stress gate for delos_mvcc.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
+
+    modularity.inferModulePath = false
+    testClassesDirs = files(derbyTestsClassDir)
+    classpath = testRuntimeClasspath()
+    useJUnit()
+    include 'org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaConcurrentNetworkClientTest.class'
+
+    workingDir = layout.buildDirectory.dir('test-work/runDelosMvccDrdaConcurrentNetworkClientTest').get().asFile
+    maxHeapSize = '1536m'
+    systemProperty 'delos.drda.threadMode', 'virtual'
+    systemProperty 'delos.drda.extdta.spoolThresholdBytes', '32768'
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccDrdaConcurrentNetworkClientTest'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccDrdaConcurrentNetworkClientTest'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccDrdaConcurrentNetworkClientTest'))
+    }
+
+    doFirst {
+        delete workingDir
+        workingDir.mkdirs()
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat = 'full'
+        showStandardStreams = true
+    }
+}
+
+
 tasks.named('check') {
     dependsOn tasks.named('compileTestJava')
 }
@@ -763,5 +799,5 @@ tasks.register('runDelosMvccDrdaNetworkClientTest', Test) {
 
 
 tasks.named('check') {
-    dependsOn tasks.named('runDelosMvccSqlIntegrationTest'), tasks.named('runDelosMvccDrdaNetworkClientTest')
+    dependsOn tasks.named('runDelosMvccSqlIntegrationTest'), tasks.named('runDelosMvccDrdaNetworkClientTest'), tasks.named('runDelosMvccDrdaConcurrentNetworkClientTest')
 }
