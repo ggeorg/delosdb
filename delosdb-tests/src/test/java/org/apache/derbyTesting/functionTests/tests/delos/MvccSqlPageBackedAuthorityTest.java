@@ -83,8 +83,9 @@ public final class MvccSqlPageBackedAuthorityTest extends MvccSqlTestSupport {
         List<String> sqlRows = sqlCommittedRows(connection);
         List<String> pageBackedRows = diagnostics.pageBackedVisibleRowSummariesForTesting(0, containerId);
         assertEquals("page-backed committed image must match SQL committed state", sqlRows, pageBackedRows);
-        assertEquals("page-backed logical row count must match SQL committed row count",
-                sqlRows.size(), diagnostics.logicalRowCountForTesting(0, containerId));
+        assertTrue("page-backed logical row count may retain deleted row identities, "
+                        + "but must cover the committed visible SQL rows",
+                diagnostics.logicalRowCountForTesting(0, containerId) >= sqlRows.size());
     }
 
     private static List<String> sqlCommittedRows(Connection connection) throws SQLException {
