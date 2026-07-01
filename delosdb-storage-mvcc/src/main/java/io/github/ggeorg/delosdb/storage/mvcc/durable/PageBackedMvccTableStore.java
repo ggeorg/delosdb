@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.TreeSet;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import io.github.ggeorg.delosdb.storage.io.page.DelosPage;
 import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
@@ -34,6 +35,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     private final MvccReusablePageIndexStore reusablePageIndexStore;
     private final NavigableSet<Long> reusablePageIds;
     private final MvccPageCache pageCache;
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     private PageBackedMvccTableStore(
             Path path,
@@ -89,11 +91,17 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         }
     }
 
-    public synchronized MvccVersionLocator append(MvccVersionRecord record) throws IOException {
+    public MvccVersionLocator append(MvccVersionRecord record) throws IOException {
         return append(record, DelosLogSequenceNumber.NONE);
     }
 
-    public synchronized MvccVersionLocator append(
+    public MvccVersionLocator append(
+            MvccVersionRecord record,
+            DelosLogSequenceNumber pageLsn) throws IOException {
+        return writeLockedIo(() -> appendUnlocked(record, pageLsn));
+    }
+
+    private MvccVersionLocator appendUnlocked(
             MvccVersionRecord record,
             DelosLogSequenceNumber pageLsn) throws IOException {
         Objects.requireNonNull(record, "record");
@@ -109,7 +117,11 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return new MvccVersionLocator(page.pageId(), slotId);
     }
 
-    public synchronized List<StoredVersionRecord> loadAll() throws IOException {
+    public List<StoredVersionRecord> loadAll() throws IOException {
+        return readLockedIo(this::loadAllUnlocked);
+    }
+
+    private List<StoredVersionRecord> loadAllUnlocked() throws IOException {
         List<StoredVersionRecord> records = new ArrayList<>();
         for (MvccDurablePageScan.SlotRecord slot : scanPages().slotRecords()) {
             records.add(readStoredVersionRecord(
@@ -119,173 +131,183 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return records;
     }
 
-    public synchronized List<StoredVersionRecord> rewrite(List<MvccVersionRecord> records) throws IOException {
-        Objects.requireNonNull(records, "records");
-        Path rewritePath = path.resolveSibling(path.getFileName() + ".rewrite");
-        Path rewriteOverflowPath = overflowPath(rewritePath);
-        Files.deleteIfExists(rewritePath);
-        Files.deleteIfExists(rewriteOverflowPath);
-        try (PageBackedMvccTableStore rewrite = new PageBackedMvccTableStore(
-                rewritePath,
-                volumeFactory,
-                volumeFactory.open(rewritePath),
-                MvccOverflowPayloadStore.open(rewriteOverflowPath, volumeFactory),
-                MvccReusablePageIndexStore.open(reusablePageIndexPath(rewritePath)),
-                new TreeSet<>(),
-                new MvccPageCache())) {
-            for (MvccVersionRecord record : records) {
-                rewrite.append(record);
+    public List<StoredVersionRecord> rewrite(List<MvccVersionRecord> records) throws IOException {
+        return writeLockedIo(() -> {
+            Objects.requireNonNull(records, "records");
+            Path rewritePath = path.resolveSibling(path.getFileName() + ".rewrite");
+            Path rewriteOverflowPath = overflowPath(rewritePath);
+            Files.deleteIfExists(rewritePath);
+            Files.deleteIfExists(rewriteOverflowPath);
+            try (PageBackedMvccTableStore rewrite = new PageBackedMvccTableStore(
+                    rewritePath,
+                    volumeFactory,
+                    volumeFactory.open(rewritePath),
+                    MvccOverflowPayloadStore.open(rewriteOverflowPath, volumeFactory),
+                    MvccReusablePageIndexStore.open(reusablePageIndexPath(rewritePath)),
+                    new TreeSet<>(),
+                    new MvccPageCache())) {
+                for (MvccVersionRecord record : records) {
+                    rewrite.append(record);
+                }
             }
-        }
 
-        installRewritePages(rewritePath);
-        overflowStore.close();
-        Files.deleteIfExists(overflowPath);
-        if (Files.exists(rewriteOverflowPath)) {
-            Files.move(rewriteOverflowPath, overflowPath, StandardCopyOption.REPLACE_EXISTING);
-        }
-        Files.deleteIfExists(rewritePath);
-        MvccReusablePageIndexStore.open(reusablePageIndexPath(rewritePath)).delete();
-        overflowStore = MvccOverflowPayloadStore.open(overflowPath, volumeFactory);
-        rebuildReusablePageIds();
-        return loadAll();
-    }
-
-    public synchronized long pageCount() throws IOException {
-        return pageVolume.pageCount();
-    }
-
-    public synchronized long overflowPageCount() throws IOException {
-        return overflowStore.pageCount();
-    }
-
-    public synchronized long reusablePageCount() {
-        return reusablePageIds.size();
-    }
-
-    public synchronized long pageCacheMaxPageCount() {
-        return pageCache.snapshot().maxPages();
-    }
-
-    public synchronized long pageCacheSize() {
-        return pageCache.snapshot().size();
-    }
-
-    public synchronized long pageCacheHitCount() {
-        return pageCache.snapshot().hits();
-    }
-
-    public synchronized long pageCacheMissCount() {
-        return pageCache.snapshot().misses();
-    }
-
-    public synchronized long pageCacheWriteCount() {
-        return pageCache.snapshot().writes();
-    }
-
-    public synchronized long pageCacheEvictionCount() {
-        return pageCache.snapshot().evictions();
-    }
-
-    public synchronized long pageCacheInvalidationCount() {
-        return pageCache.snapshot().invalidations();
-    }
-
-    synchronized List<String> pageRecordConsistencyErrors() throws IOException {
-        List<String> errors = new ArrayList<>();
-        for (MvccDurablePageScan.SlotRecord slot : scanPages().slotRecords()) {
-            try {
-                MvccPageRecordCodec.decodeVersionRecord(slot.payload());
-            } catch (RuntimeException invalidRecord) {
-                errors.add("page " + slot.pageId().value() + " slot " + slot.slotId()
-                        + " has invalid MVCC page-record header/body: "
-                        + invalidRecord.getMessage());
+            installRewritePages(rewritePath);
+            overflowStore.close();
+            Files.deleteIfExists(overflowPath);
+            if (Files.exists(rewriteOverflowPath)) {
+                Files.move(rewriteOverflowPath, overflowPath, StandardCopyOption.REPLACE_EXISTING);
             }
-        }
-        return List.copyOf(errors);
+            Files.deleteIfExists(rewritePath);
+            MvccReusablePageIndexStore.open(reusablePageIndexPath(rewritePath)).delete();
+            overflowStore = MvccOverflowPayloadStore.open(overflowPath, volumeFactory);
+            rebuildReusablePageIds();
+            return loadAllUnlocked();
+        });
     }
 
-    synchronized PageRecordStats pageRecordStats() throws IOException {
-        MvccDurablePageScan scan = scanPages();
-        int slotCount = 0;
-        int wrappedRecordCount = 0;
-        int legacyRecordCount = 0;
-        int versionRecordCount = 0;
-        int nonVersionRecordCount = 0;
-        for (MvccDurablePageScan.SlotRecord slot : scan.slotRecords()) {
-            slotCount++;
-            MvccPageRecordCodec.PageRecordMetadata metadata = MvccPageRecordCodec.metadata(slot.payload());
-            if (metadata.legacyFormat()) {
-                legacyRecordCount++;
-            } else {
-                wrappedRecordCount++;
-            }
-            if (metadata.versionRecord()) {
-                versionRecordCount++;
-            } else {
-                nonVersionRecordCount++;
-            }
-        }
-        return new PageRecordStats(
-                scan.pageCount(),
-                slotCount,
-                wrappedRecordCount,
-                legacyRecordCount,
-                versionRecordCount,
-                nonVersionRecordCount);
+    public long pageCount() throws IOException {
+        return readLockedIo(() -> pageVolume.pageCount());
     }
 
-    synchronized List<String> reusablePageConsistencyErrors() throws IOException {
-        List<String> errors = new ArrayList<>();
-        long pageCount = pageVolume.pageCount();
-        NavigableSet<Long> emptyPages = scanPages().emptyPageIds();
-        for (Long pageNumber : reusablePageIds) {
-            if (pageNumber == null) {
-                errors.add("reusable-page index contains null page id");
-                continue;
-            }
-            if (pageNumber < 0L || pageNumber >= pageCount) {
-                errors.add("reusable-page index contains out-of-range page "
-                        + pageNumber + " for pageCount=" + pageCount);
-                continue;
-            }
-            if (!emptyPages.contains(pageNumber)) {
-                errors.add("reusable-page index marks non-empty page " + pageNumber + " reusable");
-            }
-        }
-        for (Long emptyPage : emptyPages) {
-            if (!reusablePageIds.contains(emptyPage)) {
-                errors.add("empty MVCC page " + emptyPage + " is missing from reusable-page index");
-            }
-        }
-        return List.copyOf(errors);
+    public long overflowPageCount() throws IOException {
+        return readLockedIo(() -> overflowStore.pageCount());
     }
 
-    public synchronized Path reusablePageIndexPath() {
-        return reusablePageIndexStore.path();
+    public long reusablePageCount() {
+        return readLockedUnchecked(() -> (long) reusablePageIds.size());
+    }
+
+    public long pageCacheMaxPageCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().maxPages());
+    }
+
+    public long pageCacheSize() {
+        return readLockedUnchecked(() -> pageCache.snapshot().size());
+    }
+
+    public long pageCacheHitCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().hits());
+    }
+
+    public long pageCacheMissCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().misses());
+    }
+
+    public long pageCacheWriteCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().writes());
+    }
+
+    public long pageCacheEvictionCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().evictions());
+    }
+
+    public long pageCacheInvalidationCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().invalidations());
+    }
+
+    List<String> pageRecordConsistencyErrors() throws IOException {
+        return readLockedIo(() -> {
+            List<String> errors = new ArrayList<>();
+            for (MvccDurablePageScan.SlotRecord slot : scanPages().slotRecords()) {
+                try {
+                    MvccPageRecordCodec.decodeVersionRecord(slot.payload());
+                } catch (RuntimeException invalidRecord) {
+                    errors.add("page " + slot.pageId().value() + " slot " + slot.slotId()
+                            + " has invalid MVCC page-record header/body: "
+                            + invalidRecord.getMessage());
+                }
+            }
+            return List.copyOf(errors);
+        });
+    }
+
+    PageRecordStats pageRecordStats() throws IOException {
+        return readLockedIo(() -> {
+            MvccDurablePageScan scan = scanPages();
+            int slotCount = 0;
+            int wrappedRecordCount = 0;
+            int legacyRecordCount = 0;
+            int versionRecordCount = 0;
+            int nonVersionRecordCount = 0;
+            for (MvccDurablePageScan.SlotRecord slot : scan.slotRecords()) {
+                slotCount++;
+                MvccPageRecordCodec.PageRecordMetadata metadata = MvccPageRecordCodec.metadata(slot.payload());
+                if (metadata.legacyFormat()) {
+                    legacyRecordCount++;
+                } else {
+                    wrappedRecordCount++;
+                }
+                if (metadata.versionRecord()) {
+                    versionRecordCount++;
+                } else {
+                    nonVersionRecordCount++;
+                }
+            }
+            return new PageRecordStats(
+                    scan.pageCount(),
+                    slotCount,
+                    wrappedRecordCount,
+                    legacyRecordCount,
+                    versionRecordCount,
+                    nonVersionRecordCount);
+        });
+    }
+
+    List<String> reusablePageConsistencyErrors() throws IOException {
+        return readLockedIo(() -> {
+            List<String> errors = new ArrayList<>();
+            long pageCount = pageVolume.pageCount();
+            NavigableSet<Long> emptyPages = scanPages().emptyPageIds();
+            for (Long pageNumber : reusablePageIds) {
+                if (pageNumber == null) {
+                    errors.add("reusable-page index contains null page id");
+                    continue;
+                }
+                if (pageNumber < 0L || pageNumber >= pageCount) {
+                    errors.add("reusable-page index contains out-of-range page "
+                            + pageNumber + " for pageCount=" + pageCount);
+                    continue;
+                }
+                if (!emptyPages.contains(pageNumber)) {
+                    errors.add("reusable-page index marks non-empty page " + pageNumber + " reusable");
+                }
+            }
+            for (Long emptyPage : emptyPages) {
+                if (!reusablePageIds.contains(emptyPage)) {
+                    errors.add("empty MVCC page " + emptyPage + " is missing from reusable-page index");
+                }
+            }
+            return List.copyOf(errors);
+        });
+    }
+
+    public Path reusablePageIndexPath() {
+        return readLockedUnchecked(() -> reusablePageIndexStore.path());
     }
 
     @Override
-    public synchronized void close() throws IOException {
-        IOException failure = null;
-        try {
-            pageCache.clear();
-            pageVolume.close();
-        } catch (IOException e) {
-            failure = e;
-        }
-        try {
-            overflowStore.close();
-        } catch (IOException e) {
-            if (failure == null) {
+    public void close() throws IOException {
+        writeLockedIo(() -> {
+            IOException failure = null;
+            try {
+                pageCache.clear();
+                pageVolume.close();
+            } catch (IOException e) {
                 failure = e;
-            } else {
-                failure.addSuppressed(e);
             }
-        }
-        if (failure != null) {
-            throw failure;
-        }
+            try {
+                overflowStore.close();
+            } catch (IOException e) {
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
+        });
     }
 
 
@@ -488,6 +510,52 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 return pageVolume.readPage(pageId);
             }
         });
+    }
+
+    private <T> T readLockedIo(IoSupplier<T> action) throws IOException {
+        lock.readLock().lock();
+        try {
+            return action.get();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    private <T> T readLockedUnchecked(java.util.function.Supplier<T> action) {
+        lock.readLock().lock();
+        try {
+            return action.get();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    private <T> T writeLockedIo(IoSupplier<T> action) throws IOException {
+        lock.writeLock().lock();
+        try {
+            return action.get();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    private void writeLockedIo(IoRunnable action) throws IOException {
+        lock.writeLock().lock();
+        try {
+            action.run();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    @FunctionalInterface
+    private interface IoSupplier<T> {
+        T get() throws IOException;
+    }
+
+    @FunctionalInterface
+    private interface IoRunnable {
+        void run() throws IOException;
     }
 
     public record PageRecordStats(
