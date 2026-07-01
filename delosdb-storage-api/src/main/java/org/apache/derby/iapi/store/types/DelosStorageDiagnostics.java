@@ -22,6 +22,7 @@
 package org.apache.derby.iapi.store.types;
 
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Provider-neutral diagnostics surface for storage-provider smoke fixtures.
@@ -67,6 +68,10 @@ public interface DelosStorageDiagnostics {
     int physicalVersionCountForTesting(int segment, long containerId);
 
     int logicalRowCountForTesting(int segment, long containerId);
+
+    default List<String> pageBackedVisibleRowSummariesForTesting(int segment, long containerId) {
+        return List.of();
+    }
 
     long pageCountForTesting(int segment, long containerId);
 

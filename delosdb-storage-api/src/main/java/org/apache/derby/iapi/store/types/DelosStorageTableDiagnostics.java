@@ -21,6 +21,7 @@
 package org.apache.derby.iapi.store.types;
 
 import java.nio.file.Path;
+import java.util.List;
 
 /** Testing and diagnostic surface for a concrete provider-owned storage table. */
 public interface DelosStorageTableDiagnostics {
@@ -41,6 +42,14 @@ public interface DelosStorageTableDiagnostics {
     int physicalVersionCountForTesting();
 
     int logicalRowCountForTesting();
+
+    /**
+     * Stable diagnostic summaries of rows visible in the provider-owned page-backed
+     * committed image.  This is a testing/inspection hook, not a production row API.
+     */
+    default List<String> pageBackedVisibleRowSummariesForTesting() {
+        return List.of();
+    }
 
     long pageCountForTesting();
 

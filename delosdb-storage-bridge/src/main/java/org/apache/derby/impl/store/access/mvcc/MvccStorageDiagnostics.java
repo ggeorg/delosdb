@@ -22,6 +22,7 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
@@ -100,6 +101,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public int logicalRowCountForTesting(int segment, long containerId) {
         return MvccConglomerate.logicalRowCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public List<String> pageBackedVisibleRowSummariesForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageBackedVisibleRowSummariesForDiagnostics(segment, containerId);
     }
 
     @Override

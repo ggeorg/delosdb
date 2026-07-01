@@ -170,6 +170,10 @@ final class MvccConglomerateState {
         return diagnostics.logicalRowCountForTesting();
     }
 
+    synchronized List<String> pageBackedVisibleRowSummariesForTesting() {
+        return diagnostics.pageBackedVisibleRowSummariesForTesting();
+    }
+
     synchronized long pageCountForTesting() {
         return diagnostics.pageCountForTesting();
     }

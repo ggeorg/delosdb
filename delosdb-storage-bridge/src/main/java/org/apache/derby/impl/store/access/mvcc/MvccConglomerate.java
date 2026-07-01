@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -360,6 +361,10 @@ public final class MvccConglomerate
 
     static int logicalRowCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).logicalRowCountForTesting();
+    }
+
+    static List<String> pageBackedVisibleRowSummariesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageBackedVisibleRowSummariesForTesting();
     }
 
     static int candidateIndexKeyCountForDiagnostics(int segment, long containerId) {

@@ -285,6 +285,14 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public List<String> pageBackedVisibleRowSummariesForTesting() {
+        return readLocked(() -> pageVolumeStateStore.loadVisibleRows().stream()
+                .map(row -> row.rowId() + "|" + String.join("|", valueKeys(row.values())))
+                .sorted()
+                .toList());
+    }
+
+    @Override
     public long pageCountForTesting() {
         return readLocked(pageVolumeStateStore::pageCount);
     }
