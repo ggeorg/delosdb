@@ -719,6 +719,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLogicalRowIdentityTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlHotIndexSuppressionTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedAuthorityTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedCommitIsolationTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedCommittedReadTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOverflowLifecycleTest.class',
