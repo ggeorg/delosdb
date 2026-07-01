@@ -3,7 +3,7 @@ package io.github.ggeorg.delosdb.storage.mvcc.store;
 import java.nio.file.Path;
 import java.util.Objects;
 
-import io.github.ggeorg.delosdb.storage.mvcc.DelosMvccStorageProvider;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccStorageNames;
 
 /** Shared page-volume file naming for inherited MVCC storage state. */
 public final class PageVolumeMvccPaths {
@@ -19,7 +19,7 @@ public final class PageVolumeMvccPaths {
             return null;
         }
         return databaseDirectory
-                .resolve(DelosMvccStorageProvider.DATABASE_STORAGE_DIRECTORY_NAME)
+                .resolve(MvccStorageNames.DATABASE_STORAGE_DIRECTORY_NAME)
                 .resolve("inherited-store");
     }
 

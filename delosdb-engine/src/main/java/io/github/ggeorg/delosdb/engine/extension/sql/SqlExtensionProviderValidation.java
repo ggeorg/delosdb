@@ -5,7 +5,6 @@ import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderResolver;
 import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
 import io.github.ggeorg.delosdb.engine.extension.storage.StorageProviderResolver;
-import io.github.ggeorg.delosdb.engine.extension.storage.versioned.KnownVersionedStorageProviders;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -22,6 +21,8 @@ import java.util.Locale;
  */
 @InternalApi
 public final class SqlExtensionProviderValidation {
+    private static final String DELOS_MVCC_STORAGE_PROVIDER = "delos_mvcc";
+
     private SqlExtensionProviderValidation() {
     }
 
@@ -66,10 +67,9 @@ public final class SqlExtensionProviderValidation {
     }
 
     private static boolean isKnownBridgeStorageProvider(String providerName) {
-        // The old ServiceLoader-based VersionedStorageProvider execution path is quarantined.
-        // SQL binding only recognizes reserved bridge provider names here; actual table state
-        // and provider dispatch are owned by the Derby store/access MVCC bridge.
-        return KnownVersionedStorageProviders.isKnownVersionedProvider(providerName);
+        // SQL binding recognizes reserved bridge provider names here; actual table
+        // state and provider dispatch are owned by the Derby store/access bridge.
+        return DELOS_MVCC_STORAGE_PROVIDER.equals(providerName);
     }
 
     private static StandardException unsupportedProvider(String statementName, String providerName) {

@@ -96,8 +96,8 @@ module org.apache.derby.engine
     requires static org.osgi.framework;
 
     // DelosDB SPI is required at runtime for internal built-in provider adapters.
-    // The old VersionedStorageProvider execution path is fully quarantined outside
-    // the production engine module; delos_mvcc enters through Derby store/access.
+    // delos_mvcc enters through the Derby store/access bridge, not through a
+    // stand-alone versioned-storage SPI.
 
     //
     // DERBY PUBLIC API

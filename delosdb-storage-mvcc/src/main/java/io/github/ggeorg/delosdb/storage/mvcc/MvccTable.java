@@ -7,9 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
 import java.util.function.Supplier;
-
-import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;
 
 /**
  * In-memory logical table used to prove MVCC semantics before any Derby heap,
@@ -176,7 +175,7 @@ public final class MvccTable<K, V> {
     public boolean mayHaveVisibleIndexedValue(
             K key,
             Object indexKey,
-            VersionedIndexKeyExtractor<V> extractor,
+            Function<V, Object> extractor,
             MvccCommitSequence oldestVisibleThrough,
             MvccTransactionCatalog catalog) {
         return readLocked(() -> {

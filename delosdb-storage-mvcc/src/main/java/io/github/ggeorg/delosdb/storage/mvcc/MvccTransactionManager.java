@@ -7,7 +7,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.BooleanSupplier;
 
 /**
  * Small transaction table for the experimental MVCC kernel.
@@ -28,38 +27,19 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
     private final Map<MvccTransactionId, TransactionOutcome> retainedOutcomes = new HashMap<>();
     private final Set<MvccTransactionId> compactedAbortedTransactions = new LinkedHashSet<>();
     private final Map<Long, MvccCommitSequence> retainedSnapshotWatermarks = new LinkedHashMap<>();
-    private static final BooleanSupplier NEVER_SUPPRESS_LOGGING = () -> false;
-
     private final MvccTransactionStatusStore statusStore;
-    private final MvccLogWriter logWriter;
-    private final BooleanSupplier loggingSuppressed;
-
     public MvccTransactionManager() {
         this(MvccTransactionStatusStore.disabled());
     }
 
     public MvccTransactionManager(MvccTransactionStatusStore statusStore) {
-        this(statusStore, MvccLogWriter.disabled());
-    }
-
-    public MvccTransactionManager(MvccTransactionStatusStore statusStore, MvccLogWriter logWriter) {
-        this(statusStore, logWriter, NEVER_SUPPRESS_LOGGING);
-    }
-
-    public MvccTransactionManager(
-            MvccTransactionStatusStore statusStore,
-            MvccLogWriter logWriter,
-            BooleanSupplier loggingSuppressed) {
         this.statusStore = Objects.requireNonNull(statusStore, "statusStore");
-        this.logWriter = Objects.requireNonNull(logWriter, "logWriter");
-        this.loggingSuppressed = Objects.requireNonNull(loggingSuppressed, "loggingSuppressed");
         recoverDurableStatuses();
         compactRetainedOutcomes();
     }
 
     public synchronized MvccTransaction begin() {
         MvccTransactionId id = new MvccTransactionId(nextTransactionId++);
-        appendBeginIfEnabled(id);
         statusStore.recordActive(id);
         activeTransactions.put(id, new TransactionState(
                 new MvccCommitSequence(currentCommitSequence),
@@ -116,7 +96,6 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
     public synchronized MvccCommitSequence commit(MvccTransaction transaction) {
         requireActive(transaction);
         MvccCommitSequence sequence = new MvccCommitSequence(currentCommitSequence + 1L);
-        appendCommitIfEnabled(transaction.id(), sequence);
         statusStore.recordCommitted(transaction.id(), sequence);
         currentCommitSequence = sequence.value();
         activeTransactions.remove(transaction.id());
@@ -127,7 +106,6 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
 
     public synchronized void abort(MvccTransaction transaction) {
         requireActive(transaction);
-        appendAbortIfEnabled(transaction.id());
         statusStore.recordAborted(transaction.id());
         activeTransactions.remove(transaction.id());
         retainedOutcomes.put(transaction.id(), TransactionOutcome.aborted());
@@ -269,24 +247,6 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
         }
         nextTransactionId = Math.max(nextTransactionId, maxTransactionId + 1L);
         currentCommitSequence = Math.max(currentCommitSequence, maxCommitSequence);
-    }
-
-    private void appendBeginIfEnabled(MvccTransactionId transactionId) {
-        if (!loggingSuppressed.getAsBoolean()) {
-            logWriter.appendBegin(transactionId);
-        }
-    }
-
-    private void appendCommitIfEnabled(MvccTransactionId transactionId, MvccCommitSequence sequence) {
-        if (!loggingSuppressed.getAsBoolean()) {
-            logWriter.appendCommit(transactionId, sequence);
-        }
-    }
-
-    private void appendAbortIfEnabled(MvccTransactionId transactionId) {
-        if (!loggingSuppressed.getAsBoolean()) {
-            logWriter.appendAbort(transactionId);
-        }
     }
 
     private MvccSnapshot captureSnapshot(

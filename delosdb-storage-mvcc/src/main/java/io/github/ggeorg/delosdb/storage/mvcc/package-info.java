@@ -1,8 +1,9 @@
 /**
- * Experimental MVCC storage module for DelosDB.
+ * MVCC storage module for DelosDB.
  *
- * <p>This package contains the in-memory MVCC kernel and its first adapter to
- * the {@code VersionedStorageProvider} SPI. It remains deliberately independent
- * of Derby heap, B-tree, locking, and log internals.</p>
+ * <p>This package contains the MVCC kernel used by the Derby-integrated
+ * {@code delos_mvcc} storage path. The old stand-alone versioned-storage
+ * prototype path has been removed; production SQL entry is through the Derby
+ * store/access bridge and {@code DelosStorageProviderFactory}.</p>
  */
 package io.github.ggeorg.delosdb.storage.mvcc;

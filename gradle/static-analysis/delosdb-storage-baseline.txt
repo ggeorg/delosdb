@@ -1,77 +1,9 @@
 # DelosDB scoped storage/MVCC static-analysis baseline.
 # Format: RULE|relative/path.java|normalized source line
 # Keep this file small. New findings fail delosStorageStaticAnalysis until fixed or deliberately baselined.
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccIndex.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxView;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccIndex.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccIndex.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccIndex.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccIndex.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexStats;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccIndex.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccScan.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccScan.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageLog.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageCapabilities;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageProvider.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStoreAdapter.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxView;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableStats;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow<K, V> row = scan.row();
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTransactionCoordinator.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTransactionCoordinator.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTransactionCoordinator;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTxContext.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTxContext.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxView;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTxView.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxView;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccLogRecord.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccLogWriter.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageProvider.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageProvider.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageProvider.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableMetadata;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageRow.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxView;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndex;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexMetadata;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexStats;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedRow;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedScan;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTable;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedTableStats;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedWriteConflictException;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTransaction.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxContext;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStorageTransaction.java|import io.github.ggeorg.delosdb.spi.storage.versioned.TxView;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccTable.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;
-MVCC_LEGACY_VERSIONED_SPI_IMPORT|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccVersionChain.java|import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;
 STORAGE_STDOUT_STDERR|delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/ConglomPropertyQueryable.java|* System.out.println(
 STORAGE_STDOUT_STDERR|delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/ContainerHandle.java|* System.out.println(
 STORAGE_STDOUT_STDERR|delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/StreamContainerHandle.java|* System.out.println(
 STORAGE_TODO_MARKER|delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/BackingStoreHashtable.java|(int[]) null, //TODO-COLLATION, set non default collation if necessary.
 STORAGE_TODO_MARKER|delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/TransactionController.java|* TODO - work in progress to support this locking mode in the 5.1
 STORAGE_UNSUPPORTED_OPERATION|delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/StoreDataValueBase.java|throw new UnsupportedOperationException(getClass().getName());
-STORAGE_UNSUPPORTED_OPERATION|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSqlOptInSession.java|throw new UnsupportedOperationException("Unsupported MVCC opt-in SQL smoke statement: " + sql);
-STORAGE_UNSUPPORTED_OPERATION|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageLog.java|throw new UnsupportedOperationException("Durable delos_mvcc recovery currently supports List<Object> row values only");
-STORAGE_UNSUPPORTED_OPERATION|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageLog.java|throw new UnsupportedOperationException("Durable delos_mvcc recovery currently supports Long row keys only");
-STORAGE_UNSUPPORTED_OPERATION|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccStorageLog.java|throw new UnsupportedOperationException("Unsupported durable delos_mvcc value type: " + value.getClass().getName());
-STORAGE_UNSUPPORTED_OPERATION|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|throw new UnsupportedOperationException("delos_mvcc checkpoint currently supports List<Object> row values only");
-STORAGE_UNSUPPORTED_OPERATION|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|throw new UnsupportedOperationException("delos_mvcc checkpoint currently supports Long row keys only");
-STORAGE_UNSUPPORTED_OPERATION|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|throw new UnsupportedOperationException("page-backed delos_mvcc SQL storage currently supports List<Object> row values only");
-STORAGE_UNSUPPORTED_OPERATION|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccTable.java|throw new UnsupportedOperationException("page-backed delos_mvcc SQL storage currently supports Long row keys only");
-STORAGE_UNSUPPORTED_OPERATION|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccLogWriter.java|throw new UnsupportedOperationException("MODULE5J MVCC log currently supports Long row keys only");

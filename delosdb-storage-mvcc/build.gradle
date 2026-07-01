@@ -19,12 +19,10 @@ java {
 }
 
 dependencies {
-    implementation project(':delosdb-versioned-storage-spi')
     implementation project(':delosdb-commons')
     implementation project(':delosdb-runtime-api')
     api project(':delosdb-storage-api')
     api project(':delosdb-storage-io')
-    testImplementation project(':delosdb-versioned-storage-spi')
     testImplementation project(':delosdb-storage-io')
     testImplementation "org.junit.platform:junit-platform-console-standalone:${rootProject.ext.junitPlatformConsoleVersion}"
 }
@@ -42,13 +40,6 @@ sourceSets {
     }
 }
 
-// The old VersionedStorageProvider execution SPI is quarantined for direct
-// model/proof code only. Do not advertise the MVCC provider through the
-// production ServiceLoader path; Derby integration enters through
-// DelosStorageProviderFactory in delosdb-storage-api.
-tasks.named('processResources') {
-    exclude 'META-INF/services/io.github.ggeorg.delosdb.spi.storage.versioned.VersionedStorageProvider'
-}
 
 tasks.named('compileJava', JavaCompile) {
     destinationDirectory.set(mainClassDir)
@@ -125,110 +116,6 @@ tasks.register('runMvccTableScanModelTest', Test) {
         junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccTableScanModelTest'))
         html.required.set(true)
         html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccTableScanModelTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runVersionedStorageProviderSpiTest', Test) {
-    group = 'verification'
-    description = 'Runs the experimental DelosDB MVCC VersionedStorageProvider SPI tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/VersionedStorageProviderSpiTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runVersionedStorageProviderSpiTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runVersionedStorageProviderSpiTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runVersionedStorageProviderSpiTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runMvccRecoveryLogTest', Test) {
-    group = 'verification'
-    description = 'Runs the experimental DelosDB MVCC provider recovery-log tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/DelosMvccRecoveryLogTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccRecoveryLogTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccRecoveryLogTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccRecoveryLogTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runDelosMvccProviderOwnedIndexTest', Test) {
-    group = 'verification'
-    description = 'Runs the experimental DelosDB MVCC provider-owned index tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/DelosMvccProviderOwnedIndexTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccProviderOwnedIndexTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccProviderOwnedIndexTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccProviderOwnedIndexTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runDelosMvccSnapshotIsolationTest', Test) {
-    group = 'verification'
-    description = 'Runs Phase 9 experimental DelosDB MVCC snapshot-isolation tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/DelosMvccSnapshotIsolationTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccSnapshotIsolationTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccSnapshotIsolationTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccSnapshotIsolationTest'))
     }
 
     testLogging {
@@ -394,7 +281,6 @@ tasks.register('runMvccStatementSnapshotVisibilityTest', Test) {
 }
 
 
-
 tasks.register('runMvccTransactionOutcomeLogTest', Test) {
     group = 'verification'
     description = 'Runs A49 MVCC durable transaction outcome-log tests.'
@@ -447,7 +333,6 @@ tasks.register('runMvccUnresolvedOutcomeRecoveryTest', Test) {
 }
 
 
-
 tasks.register('runMvccCapturedVisibilitySnapshotTest', Test) {
     group = 'verification'
     description = 'Runs A51 MVCC captured visibility-state snapshot tests.'
@@ -464,163 +349,6 @@ tasks.register('runMvccCapturedVisibilitySnapshotTest', Test) {
         junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccCapturedVisibilitySnapshotTest'))
         html.required.set(true)
         html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccCapturedVisibilitySnapshotTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-tasks.register('runDelosMvccCleanupVacuumTest', Test) {
-    group = 'verification'
-    description = 'Runs Phase 10 experimental DelosDB MVCC cleanup/vacuum tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/DelosMvccCleanupVacuumTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccCleanupVacuumTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccCleanupVacuumTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccCleanupVacuumTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runDelosMvccRecoveryHardeningTest', Test) {
-    group = 'verification'
-    description = 'Runs Phase 11 experimental DelosDB MVCC recovery hardening tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/DelosMvccRecoveryHardeningTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccRecoveryHardeningTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccRecoveryHardeningTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccRecoveryHardeningTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runDelosMvccWriteConflictTest', Test) {
-    group = 'verification'
-    description = 'Runs Phase 12 experimental DelosDB MVCC write-conflict tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/DelosMvccWriteConflictTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccWriteConflictTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccWriteConflictTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccWriteConflictTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-
-tasks.register('runDelosMvccIndexStatsTest', Test) {
-    group = 'verification'
-    description = 'Runs Phase 13 experimental DelosDB MVCC index statistics tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/DelosMvccIndexStatsTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccIndexStatsTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccIndexStatsTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccIndexStatsTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runDelosMvccOrderedIndexRangeTest', Test) {
-    group = 'verification'
-    description = 'Runs Phase 14 experimental DelosDB MVCC ordered-index range tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/DelosMvccOrderedIndexRangeTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccOrderedIndexRangeTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccOrderedIndexRangeTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccOrderedIndexRangeTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-
-tasks.register('runDelosMvccOrderedIndexOrderByTest', Test) {
-    group = 'verification'
-    description = 'Runs Phase 15 experimental DelosDB MVCC ordered-index ORDER BY tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/DelosMvccOrderedIndexOrderByTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccOrderedIndexOrderByTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccOrderedIndexOrderByTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccOrderedIndexOrderByTest'))
     }
 
     testLogging {
@@ -815,264 +543,6 @@ tasks.register('runMvccRecoveryBootProof', Test) {
 }
 
 
-tasks.register('runMvccDurableIndexVisibilityTest', Test) {
-    group = 'verification'
-    description = 'Runs MVCC-5 durable index tuple visibility tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/MvccDurableIndexVisibilityTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccDurableIndexVisibilityTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccDurableIndexVisibilityTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccDurableIndexVisibilityTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runMvccDurableIndexRecoveryTest', Test) {
-    group = 'verification'
-    description = 'Runs MVCC-6 durable index recovery replay tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/MvccDurableIndexRecoveryTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccDurableIndexRecoveryTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccDurableIndexRecoveryTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccDurableIndexRecoveryTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runMvccVacuumSafetyTest', Test) {
-    group = 'verification'
-    description = 'Runs MVCC-7 vacuum safety-window tests.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/MvccVacuumSafetyTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccVacuumSafetyTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccVacuumSafetyTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccVacuumSafetyTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-tasks.register('runMvccVacuumRecoveryTest', Test) {
-    group = 'verification'
-    description = 'Runs MVCC-8 vacuum/recovery interaction proof.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/MvccVacuumRecoveryTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccVacuumRecoveryTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccVacuumRecoveryTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccVacuumRecoveryTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runMvccConcurrencyStressTest', Test) {
-    group = 'verification'
-    description = 'Runs MVCC-9 deterministic concurrent readers/writers stress proof.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/MvccConcurrencyStressTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccConcurrencyStressTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccConcurrencyStressTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccConcurrencyStressTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runMvccTransactionLockOrderTest', Test) {
-    group = 'verification'
-    description = 'Runs MVCC-18 transaction/catalog/table/index lock-order proof.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/MvccTransactionLockOrderTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccTransactionLockOrderTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccTransactionLockOrderTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccTransactionLockOrderTest'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runMvccStoreAdapterSmoke', Test) {
-    group = 'verification'
-    description = 'Runs MVCC-11 opt-in store adapter smoke proof.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/MvccStoreAdapterSmokeTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccStoreAdapterSmoke'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccStoreAdapterSmoke'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccStoreAdapterSmoke'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-tasks.register('runMvccSqlOptInSmoke', Test) {
-    group = 'verification'
-    description = 'Runs MVCC-12 SQL-shaped opt-in storage smoke proof.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/MvccSqlOptInSmokeTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccSqlOptInSmoke'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccSqlOptInSmoke'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccSqlOptInSmoke'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runMvccSqlRecoverySmoke', Test) {
-    group = 'verification'
-    description = 'Runs MVCC-13 SQL-shaped opt-in recovery smoke proof.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/MvccSqlRecoverySmokeTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccSqlRecoverySmoke'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccSqlRecoverySmoke'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccSqlRecoverySmoke'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-tasks.register('runMvccSqlIndexVisibilitySmoke', Test) {
-    group = 'verification'
-    description = 'Runs MVCC-14 SQL-shaped primary-key/index visibility smoke proof.'
-    dependsOn 'compileDelosDbStorageMvccTests'
-
-    useJUnitPlatform()
-    testClassesDirs = files(testClassDir)
-    classpath = sourceSets.test.runtimeClasspath
-    include '**/MvccSqlIndexVisibilitySmokeTest.class'
-
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runMvccSqlIndexVisibilitySmoke'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runMvccSqlIndexVisibilitySmoke'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runMvccSqlIndexVisibilitySmoke'))
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-
 tasks.register('runMvccStaticAnalysisHardeningTest', Test) {
     group = 'verification'
     description = 'Runs MVCC static-analysis hardening proofs.'
@@ -1100,12 +570,6 @@ tasks.register('runMvccStaticAnalysisHardeningTest', Test) {
 }
 
 
-
-
-
-
-
-
 tasks.named('jar', Jar) {
     archiveFileName = 'delosdb-storage-mvcc.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
@@ -1128,5 +592,6 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runMvccOverflowPayloadTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke', 'runMvccStaticAnalysisHardeningTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runMvccHistoryPrunedSafetyTest', 'runMvccVacuumWatermarkTest', 'runMvccCommandSequenceTest', 'runMvccStatementSnapshotVisibilityTest', 'runMvccTransactionOutcomeLogTest', 'runMvccUnresolvedOutcomeRecoveryTest', 'runMvccCapturedVisibilitySnapshotTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runMvccOverflowPayloadTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccStaticAnalysisHardeningTest'
 }
+

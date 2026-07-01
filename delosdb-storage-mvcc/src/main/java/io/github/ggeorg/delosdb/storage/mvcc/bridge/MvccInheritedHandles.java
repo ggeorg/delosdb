@@ -4,7 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-import io.github.ggeorg.delosdb.storage.mvcc.DelosMvccStorageProvider;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccStorageNames;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommandSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
@@ -78,7 +78,7 @@ final class MvccInheritedHandles {
 
         @Override
         public String providerName() {
-            return DelosMvccStorageProvider.PROVIDER_NAME;
+            return MvccStorageNames.PROVIDER_NAME;
         }
 
         private MvccCommandSequence lastCompletedCommandSequence() {
@@ -114,7 +114,7 @@ final class MvccInheritedHandles {
 
         @Override
         public String providerName() {
-            return DelosMvccStorageProvider.PROVIDER_NAME;
+            return MvccStorageNames.PROVIDER_NAME;
         }
     }
 }

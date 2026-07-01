@@ -17,8 +17,8 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
  * Provider-local WAL boundary for page-volume MVCC state.
  *
  * <p>This log is intentionally local to the inherited Derby-facing MVCC state
- * store. It must not depend on the quarantined {@code VersionedStorageProvider}
- * SPI. The authoritative recovery path for page-backed MVCC is the page mutation
+ * store. It must not depend on the removed stand-alone versioned-storage
+ * prototype SPI. The authoritative recovery path for page-backed MVCC is the page mutation
  * log plus the transaction outcome log; this class only provides forced write
  * boundaries and page LSNs for the inherited state-store materialization path.</p>
  */

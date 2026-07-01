@@ -6,9 +6,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
 import java.util.function.Supplier;
-
-import io.github.ggeorg.delosdb.spi.storage.versioned.VersionedIndexKeyExtractor;
 
 /**
  * Newest-first version chain for one logical row. The chain is intentionally
@@ -138,14 +137,14 @@ public final class MvccVersionChain<V> {
 
     public boolean mayHaveVisibleIndexedValue(
             Object indexKey,
-            VersionedIndexKeyExtractor<V> extractor,
+            Function<V, Object> extractor,
             MvccCommitSequence oldestVisibleThrough,
             MvccTransactionCatalog catalog) {
         return readLocked(() -> {
             Objects.requireNonNull(extractor, "extractor");
             for (MvccVersion<V> version : newestFirst) {
                 if (!MvccVisibility.isSafeToPrune(version, oldestVisibleThrough, catalog)
-                        && Objects.equals(indexKey, extractor.extract(version.value()))) {
+                        && Objects.equals(indexKey, extractor.apply(version.value()))) {
                     return true;
                 }
             }
