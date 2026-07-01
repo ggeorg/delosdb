@@ -392,6 +392,7 @@ def delosDeadCodeSearchRoots = [
         'delosdb-storage-api/src/main/java',
         'delosdb-storage-bridge/src/main/java',
         'delosdb-storage-mvcc/src/main/java',
+        'delosdb-storage-mvcc/src/test/java',
         'delosdb-storage-io/src/main/java',
         'delosdb-server/src/main/java',
         'delosdb-client/src/main/java',
@@ -471,6 +472,9 @@ tasks.register('delosDeadCodeCandidateReport') {
             writer.println('ServiceLoader entries, public APIs, JPMS exports, tests, and reflection can make text-only dead-code scans noisy.')
             writer.println()
             writer.println('Candidates configured: ' + candidates.size())
+            writer.println()
+            writer.println('Search roots:')
+            delosDeadCodeSearchRoots.each { writer.println('  - ' + it) }
             writer.println()
 
             rows.each { row ->
