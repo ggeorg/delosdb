@@ -10,6 +10,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommandSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccRow;
@@ -53,6 +56,9 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final MvccTable<Long, StoreDataValue[]> table = new MvccTable<>();
     private final MvccTransactionManager transactions;
     private final MvccCandidateIndex candidateIndex = new MvccCandidateIndex();
+    private final ReentrantReadWriteLock tableLock = new ReentrantReadWriteLock();
+    private final Lock readLock = tableLock.readLock();
+    private final Lock writeLock = tableLock.writeLock();
     private long nextRowId = 1L;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
@@ -73,283 +79,335 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
-    public synchronized DelosStorageTransaction beginTransaction() {
-        return new MvccInheritedHandles.Transaction(transactions.begin());
+    public DelosStorageTransaction beginTransaction() {
+        return writeLocked(() -> new MvccInheritedHandles.Transaction(transactions.begin()));
     }
 
     @Override
-    public synchronized DelosStorageSnapshot snapshot(DelosStorageTransaction transaction) {
-        return new MvccInheritedHandles.Snapshot(transactions.snapshot(nativeTransaction(transaction)));
+    public DelosStorageSnapshot snapshot(DelosStorageTransaction transaction) {
+        return readLocked(() -> new MvccInheritedHandles.Snapshot(transactions.snapshot(nativeTransaction(transaction))));
     }
 
     @Override
-    public synchronized DelosStorageScan openScan(DelosStorageSnapshot snapshot) {
-        return new MvccInheritedScan(table.openScan(nativeSnapshot(snapshot), transactions));
+    public DelosStorageScan openScan(DelosStorageSnapshot snapshot) {
+        return readLocked(() -> new MvccInheritedScan(table.openScan(nativeSnapshot(snapshot), transactions)));
     }
 
     @Override
-    public synchronized Optional<StoreDataValue[]> read(long rowId, DelosStorageSnapshot snapshot) {
-        return table.read(rowId, nativeSnapshot(snapshot), transactions);
+    public Optional<StoreDataValue[]> read(long rowId, DelosStorageSnapshot snapshot) {
+        return readLocked(() -> table.read(rowId, nativeSnapshot(snapshot), transactions));
     }
 
     @Override
-    public synchronized void insert(long rowId, StoreDataValue[] row, DelosStorageTransaction transaction) {
-        MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
-        table.insert(rowId, cloneRowUnchecked(row), handle.nativeTransaction(), handle.nextCommandSequence());
+    public void insert(long rowId, StoreDataValue[] row, DelosStorageTransaction transaction) {
+        writeLocked(() -> {
+            MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            table.insert(rowId, cloneRowUnchecked(row), handle.nativeTransaction(), handle.nextCommandSequence());
+        });
     }
 
     @Override
-    public synchronized void update(
+    public void update(
             long rowId,
             StoreDataValue[] replacement,
             DelosStorageTransaction transaction,
             DelosStorageSnapshot snapshot) {
-        MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
-        table.update(
-                rowId,
-                cloneRowUnchecked(replacement),
-                handle.nativeTransaction(),
-                nativeSnapshot(snapshot),
-                transactions,
-                handle.nextCommandSequence());
+        writeLocked(() -> {
+            MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            table.update(
+                    rowId,
+                    cloneRowUnchecked(replacement),
+                    handle.nativeTransaction(),
+                    nativeSnapshot(snapshot),
+                    transactions,
+                    handle.nextCommandSequence());
+        });
     }
 
     @Override
-    public synchronized void delete(
+    public void delete(
             long rowId,
             DelosStorageTransaction transaction,
             DelosStorageSnapshot snapshot) {
-        MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
-        table.delete(
-                rowId,
-                handle.nativeTransaction(),
-                nativeSnapshot(snapshot),
-                transactions,
-                handle.nextCommandSequence());
+        writeLocked(() -> {
+            MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            table.delete(
+                    rowId,
+                    handle.nativeTransaction(),
+                    nativeSnapshot(snapshot),
+                    transactions,
+                    handle.nextCommandSequence());
+        });
     }
 
     @Override
-    public synchronized void commit(DelosStorageTransaction transaction) {
-        MvccTransaction nativeTx = nativeTransaction(transaction);
-        try {
-            pageVolumeStateStore.requireVisibleRowsCanBePersisted(visibleRows(nativeTx));
-        } catch (RuntimeException failure) {
-            abortIfActive(nativeTx, failure);
-            throw failure;
-        }
-        transactions.commit(nativeTx);
-    }
-
-    @Override
-    public synchronized void abort(DelosStorageTransaction transaction) {
-        transactions.abort(nativeTransaction(transaction));
-    }
-
-    @Override
-    public synchronized void setSavepoint(DelosStorageTransaction transaction, String savepointName) {
-        nativeTransactionHandle(transaction).setSavepoint(savepointName);
-    }
-
-    @Override
-    public synchronized void rollbackToSavepoint(DelosStorageTransaction transaction, String savepointName) {
-        MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
-        MvccCommandSequence boundary = handle.rollbackToSavepoint(savepointName);
-        table.rollbackTransactionChangesAfter(handle.nativeTransaction(), boundary);
-    }
-
-    @Override
-    public synchronized void releaseSavepoint(DelosStorageTransaction transaction, String savepointName) {
-        nativeTransactionHandle(transaction).releaseSavepoint(savepointName);
-    }
-
-    @Override
-    public synchronized long nextRowId() {
-        return nextRowId++;
-    }
-
-    @Override
-    public synchronized void persistCommittedState() {
-        List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = visibleRows();
-        pageVolumeStateStore.persistVisibleRows(rows);
-        candidateIndex.recordVisibleRows(toCandidateRows(rows));
-    }
-
-    @Override
-    public synchronized void dropDurableState() {
-        candidateIndex.clear();
-        try {
-            pageVolumeStateStore.drop();
-            if (retiredSnapshotFile != null) {
-                Files.deleteIfExists(retiredSnapshotFile);
+    public void commit(DelosStorageTransaction transaction) {
+        writeLocked(() -> {
+            MvccTransaction nativeTx = nativeTransaction(transaction);
+            try {
+                pageVolumeStateStore.requireVisibleRowsCanBePersisted(visibleRows(nativeTx));
+            } catch (RuntimeException failure) {
+                abortIfActive(nativeTx, failure);
+                throw failure;
             }
-            if (transactionStatusFile != null) {
-                Files.deleteIfExists(transactionStatusFile);
-            }
-            Path pageMutationLogFile = pageVolumeStateStore.pageMutationLogFile();
-            if (pageMutationLogFile != null) {
-                Files.deleteIfExists(pageMutationLogFile);
-            }
-            Path writeAheadLogFile = pageVolumeStateStore.writeAheadLogFile();
-            if (writeAheadLogFile != null) {
-                Files.deleteIfExists(writeAheadLogFile);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not delete inherited MVCC state for "
-                    + segmentId + ":" + containerId, e);
-        }
+            transactions.commit(nativeTx);
+        });
     }
 
     @Override
-    public synchronized DelosStorageRowHead rowHeadFor(long rowId) {
-        return pageVolumeStateStore.rowHeadForInheritedRowId(rowId)
+    public void abort(DelosStorageTransaction transaction) {
+        writeLocked(() -> transactions.abort(nativeTransaction(transaction)));
+    }
+
+    @Override
+    public void setSavepoint(DelosStorageTransaction transaction, String savepointName) {
+        writeLocked(() -> nativeTransactionHandle(transaction).setSavepoint(savepointName));
+    }
+
+    @Override
+    public void rollbackToSavepoint(DelosStorageTransaction transaction, String savepointName) {
+        writeLocked(() -> {
+            MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            MvccCommandSequence boundary = handle.rollbackToSavepoint(savepointName);
+            table.rollbackTransactionChangesAfter(handle.nativeTransaction(), boundary);
+        });
+    }
+
+    @Override
+    public void releaseSavepoint(DelosStorageTransaction transaction, String savepointName) {
+        writeLocked(() -> nativeTransactionHandle(transaction).releaseSavepoint(savepointName));
+    }
+
+    @Override
+    public long nextRowId() {
+        return writeLocked(() -> nextRowId++);
+    }
+
+    @Override
+    public void persistCommittedState() {
+        writeLocked(() -> {
+            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = visibleRows();
+            pageVolumeStateStore.persistVisibleRows(rows);
+            candidateIndex.recordVisibleRows(toCandidateRows(rows));
+        });
+    }
+
+    @Override
+    public void dropDurableState() {
+        writeLocked(() -> {
+            candidateIndex.clear();
+            try {
+                pageVolumeStateStore.drop();
+                if (retiredSnapshotFile != null) {
+                    Files.deleteIfExists(retiredSnapshotFile);
+                }
+                if (transactionStatusFile != null) {
+                    Files.deleteIfExists(transactionStatusFile);
+                }
+                Path pageMutationLogFile = pageVolumeStateStore.pageMutationLogFile();
+                if (pageMutationLogFile != null) {
+                    Files.deleteIfExists(pageMutationLogFile);
+                }
+                Path writeAheadLogFile = pageVolumeStateStore.writeAheadLogFile();
+                if (writeAheadLogFile != null) {
+                    Files.deleteIfExists(writeAheadLogFile);
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException("Could not delete inherited MVCC state for "
+                        + segmentId + ":" + containerId, e);
+            }
+        });
+    }
+
+    @Override
+    public DelosStorageRowHead rowHeadFor(long rowId) {
+        return readLocked(() -> pageVolumeStateStore.rowHeadForInheritedRowId(rowId)
                 .map(head -> DelosStorageRowHead.present(
                         rowId,
                         head.headLocator().pageId().value(),
                         head.headLocator().slotId()))
-                .orElseGet(() -> DelosStorageRowHead.absent(rowId));
+                .orElseGet(() -> DelosStorageRowHead.absent(rowId)));
     }
 
     @Override
-    public synchronized Optional<List<Long>> candidateRowIdsFor(int column, String value) {
-        return candidateIndex.candidatesFor(column, value);
+    public Optional<List<Long>> candidateRowIdsFor(int column, String value) {
+        return readLocked(() -> candidateIndex.candidatesFor(column, value));
     }
 
     @Override
-    public synchronized int candidateIndexKeyCountForTesting() {
-        return candidateIndex.indexedKeyCountForTesting();
+    public int candidateIndexKeyCountForTesting() {
+        return readLocked(candidateIndex::indexedKeyCountForTesting);
     }
 
     @Override
     public Path pageVolumeStateFileForTesting() {
-        return pageVolumeStateStore.pageFile();
+        return readLocked(pageVolumeStateStore::pageFile);
     }
 
     @Override
     public Path rowDirectoryStateFileForTesting() {
-        return pageVolumeStateStore.rowDirectoryFile();
+        return readLocked(pageVolumeStateStore::rowDirectoryFile);
     }
 
     @Override
     public Path reusablePageIndexFileForTesting() {
-        return pageVolumeStateStore.reusablePageIndexFile();
+        return readLocked(pageVolumeStateStore::reusablePageIndexFile);
     }
 
     @Override
     public Path pageMutationLogFileForTesting() {
-        return pageVolumeStateStore.pageMutationLogFile();
+        return readLocked(pageVolumeStateStore::pageMutationLogFile);
     }
 
     @Override
     public Path writeAheadLogFileForTesting() {
-        return pageVolumeStateStore.writeAheadLogFile();
+        return readLocked(pageVolumeStateStore::writeAheadLogFile);
     }
 
     @Override
     public Path checkpointFileForTesting() {
-        return pageVolumeStateStore.checkpointFile();
+        return readLocked(pageVolumeStateStore::checkpointFile);
     }
 
     @Override
     public String checkpointStatusForTesting() {
-        return pageVolumeStateStore.checkpointStatus();
+        return readLocked(pageVolumeStateStore::checkpointStatus);
     }
 
     @Override
-    public synchronized int physicalVersionCountForTesting() {
-        return pageVolumeStateStore.physicalVersionCount();
+    public int physicalVersionCountForTesting() {
+        return readLocked(pageVolumeStateStore::physicalVersionCount);
     }
 
     @Override
-    public synchronized int logicalRowCountForTesting() {
-        return pageVolumeStateStore.logicalRowCount();
+    public int logicalRowCountForTesting() {
+        return readLocked(pageVolumeStateStore::logicalRowCount);
     }
 
     @Override
-    public synchronized long pageCountForTesting() {
-        return pageVolumeStateStore.pageCount();
+    public long pageCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageCount);
     }
 
     @Override
-    public synchronized long overflowPageCountForTesting() {
-        return pageVolumeStateStore.overflowPageCount();
+    public long overflowPageCountForTesting() {
+        return readLocked(pageVolumeStateStore::overflowPageCount);
     }
 
     @Override
-    public synchronized long reusablePageCountForTesting() {
-        return pageVolumeStateStore.reusablePageCount();
+    public long reusablePageCountForTesting() {
+        return readLocked(pageVolumeStateStore::reusablePageCount);
     }
 
     @Override
-    public synchronized long pageCacheMaxPageCountForTesting() {
-        return pageVolumeStateStore.pageCacheMaxPageCount();
+    public long pageCacheMaxPageCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageCacheMaxPageCount);
     }
 
     @Override
-    public synchronized long pageCacheSizeForTesting() {
-        return pageVolumeStateStore.pageCacheSize();
+    public long pageCacheSizeForTesting() {
+        return readLocked(pageVolumeStateStore::pageCacheSize);
     }
 
     @Override
-    public synchronized long pageCacheHitCountForTesting() {
-        return pageVolumeStateStore.pageCacheHitCount();
+    public long pageCacheHitCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageCacheHitCount);
     }
 
     @Override
-    public synchronized long pageCacheMissCountForTesting() {
-        return pageVolumeStateStore.pageCacheMissCount();
+    public long pageCacheMissCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageCacheMissCount);
     }
 
     @Override
-    public synchronized long pageCacheWriteCountForTesting() {
-        return pageVolumeStateStore.pageCacheWriteCount();
+    public long pageCacheWriteCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageCacheWriteCount);
     }
 
     @Override
-    public synchronized long pageCacheEvictionCountForTesting() {
-        return pageVolumeStateStore.pageCacheEvictionCount();
+    public long pageCacheEvictionCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageCacheEvictionCount);
     }
 
     @Override
-    public synchronized long pageCacheInvalidationCountForTesting() {
-        return pageVolumeStateStore.pageCacheInvalidationCount();
+    public long pageCacheInvalidationCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageCacheInvalidationCount);
     }
 
     @Override
-    public synchronized int consistencyErrorCountForTesting() {
-        return pageVolumeStateStore.consistencyErrorCount();
+    public int consistencyErrorCountForTesting() {
+        return readLocked(pageVolumeStateStore::consistencyErrorCount);
     }
 
     @Override
-    public synchronized String consistencySummaryForTesting() {
-        return pageVolumeStateStore.consistencySummary();
+    public String consistencySummaryForTesting() {
+        return readLocked(pageVolumeStateStore::consistencySummary);
     }
 
     @Override
-    public synchronized void assertConsistentForTesting() {
-        pageVolumeStateStore.assertConsistent();
+    public void assertConsistentForTesting() {
+        readLocked(pageVolumeStateStore::assertConsistent);
     }
 
     @Override
-    public synchronized DelosVacuumOutcome vacuumSafely() {
-        boolean hasRetainedInheritedSnapshot = transactions.activeTransactionCount() > 0
-                || transactions.retainedSnapshotCount() > 0;
-        lastVacuumOutcome = vacuumOutcome(pageVolumeStateStore.vacuumSafely(hasRetainedInheritedSnapshot));
-        return lastVacuumOutcome;
+    public DelosVacuumOutcome vacuumSafely() {
+        return writeLocked(() -> {
+            boolean hasRetainedInheritedSnapshot = transactions.activeTransactionCount() > 0
+                    || transactions.retainedSnapshotCount() > 0;
+            lastVacuumOutcome = vacuumOutcome(pageVolumeStateStore.vacuumSafely(hasRetainedInheritedSnapshot));
+            return lastVacuumOutcome;
+        });
     }
 
     @Override
-    public synchronized DelosVacuumOutcome lastVacuumOutcomeForTesting() {
-        return lastVacuumOutcome;
+    public DelosVacuumOutcome lastVacuumOutcomeForTesting() {
+        return readLocked(() -> lastVacuumOutcome);
     }
 
     @Override
     public Path legacySnapshotFileForTesting() {
-        return retiredSnapshotFile;
+        return readLocked(() -> retiredSnapshotFile);
     }
 
     @Override
-    public synchronized void close() {
-        pageVolumeStateStore.close();
+    public void close() {
+        writeLocked(pageVolumeStateStore::close);
+    }
+
+    private <T> T readLocked(Supplier<T> operation) {
+        readLock.lock();
+        try {
+            return operation.get();
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    private void readLocked(Runnable operation) {
+        readLock.lock();
+        try {
+            operation.run();
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    private <T> T writeLocked(Supplier<T> operation) {
+        writeLock.lock();
+        try {
+            return operation.get();
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    private void writeLocked(Runnable operation) {
+        writeLock.lock();
+        try {
+            operation.run();
+        } finally {
+            writeLock.unlock();
+        }
     }
 
     private void loadCommittedState() {
