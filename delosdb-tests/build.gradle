@@ -713,6 +713,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBloatMeasurementTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageReuseTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageCacheTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlStorageInspectorTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOverflowLifecycleTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.class',

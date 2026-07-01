@@ -37,6 +37,22 @@ public final class DelosStorageDiagnosticsRegistry {
         return forProvider(MVCC_PROVIDER_ID);
     }
 
+    public static DelosStorageInspector mvccInspector() {
+        return inspectorForProvider(MVCC_PROVIDER_ID);
+    }
+
+    public static DelosStorageInspection inspectMvcc(int segment, long containerId) {
+        return inspect(MVCC_PROVIDER_ID, segment, containerId);
+    }
+
+    public static DelosStorageInspection inspect(String providerId, int segment, long containerId) {
+        return inspectorForProvider(providerId).inspect(segment, containerId);
+    }
+
+    public static DelosStorageInspector inspectorForProvider(String providerId) {
+        return DelosStorageInspector.fromDiagnostics(forProvider(providerId));
+    }
+
     public static DelosStorageDiagnostics forProvider(String providerId) {
         String normalizedProviderId = normalize(providerId);
         for (DelosStorageDiagnostics diagnostics : ServiceLoader.load(DelosStorageDiagnostics.class)) {
