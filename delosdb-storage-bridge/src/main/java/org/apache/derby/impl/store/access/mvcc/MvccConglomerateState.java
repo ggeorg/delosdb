@@ -621,7 +621,7 @@ final class MvccConglomerateState {
     }
 
     private static Optional<ColumnRangeKey> rangeCandidateKey(Qualifier[][] qualifiers) {
-        if (qualifiers == null || qualifiers.length != 1 || qualifiers[0] == null || qualifiers[0].length == 0) {
+        if (qualifiers == null || qualifiers.length == 0) {
             return Optional.empty();
         }
         int column = -1;
@@ -631,52 +631,64 @@ final class MvccConglomerateState {
         boolean upperInclusive = true;
         boolean sawRangeBound = false;
 
-        for (Qualifier qualifier : qualifiers[0]) {
-            if (qualifier == null || qualifier.getColumnId() < 0 || qualifier.negateCompareResult()) {
+        for (int andTermIndex = 0; andTermIndex < qualifiers.length; andTermIndex++) {
+            Qualifier[] andTerm = qualifiers[andTermIndex];
+            if (andTerm == null || andTerm.length == 0) {
                 return Optional.empty();
             }
-            if (column == -1) {
-                column = qualifier.getColumnId();
-            } else if (column != qualifier.getColumnId()) {
+            if (andTermIndex > 0 && andTerm.length != 1) {
+                // Additional Derby qualifier groups are OR terms. A group with
+                // more than one alternative is not a simple single-column range,
+                // so keep the existing full/candidate fallback path.
                 return Optional.empty();
             }
-            String value;
-            try {
-                StoreDataValue orderable = qualifier.getOrderable();
-                if (orderable == null) {
+            for (Qualifier qualifier : andTerm) {
+                if (qualifier == null || qualifier.getColumnId() < 0 || qualifier.negateCompareResult()) {
                     return Optional.empty();
                 }
-                value = valueKey(orderable);
-            } catch (StandardException e) {
-                return Optional.empty();
-            }
-            switch (qualifier.getOperator()) {
-                case StoreOrderable.ORDER_OP_GREATERTHAN -> {
-                    BoundChoice choice = chooseLowerBound(lowerValue, lowerInclusive, value, false);
-                    lowerValue = choice.value();
-                    lowerInclusive = choice.inclusive();
-                    sawRangeBound = true;
-                }
-                case StoreOrderable.ORDER_OP_GREATEROREQUALS -> {
-                    BoundChoice choice = chooseLowerBound(lowerValue, lowerInclusive, value, true);
-                    lowerValue = choice.value();
-                    lowerInclusive = choice.inclusive();
-                    sawRangeBound = true;
-                }
-                case StoreOrderable.ORDER_OP_LESSTHAN -> {
-                    BoundChoice choice = chooseUpperBound(upperValue, upperInclusive, value, false);
-                    upperValue = choice.value();
-                    upperInclusive = choice.inclusive();
-                    sawRangeBound = true;
-                }
-                case StoreOrderable.ORDER_OP_LESSOREQUALS -> {
-                    BoundChoice choice = chooseUpperBound(upperValue, upperInclusive, value, true);
-                    upperValue = choice.value();
-                    upperInclusive = choice.inclusive();
-                    sawRangeBound = true;
-                }
-                default -> {
+                if (column == -1) {
+                    column = qualifier.getColumnId();
+                } else if (column != qualifier.getColumnId()) {
                     return Optional.empty();
+                }
+                String value;
+                try {
+                    StoreDataValue orderable = qualifier.getOrderable();
+                    if (orderable == null) {
+                        return Optional.empty();
+                    }
+                    value = valueKey(orderable);
+                } catch (StandardException e) {
+                    return Optional.empty();
+                }
+                switch (qualifier.getOperator()) {
+                    case StoreOrderable.ORDER_OP_GREATERTHAN -> {
+                        BoundChoice choice = chooseLowerBound(lowerValue, lowerInclusive, value, false);
+                        lowerValue = choice.value();
+                        lowerInclusive = choice.inclusive();
+                        sawRangeBound = true;
+                    }
+                    case StoreOrderable.ORDER_OP_GREATEROREQUALS -> {
+                        BoundChoice choice = chooseLowerBound(lowerValue, lowerInclusive, value, true);
+                        lowerValue = choice.value();
+                        lowerInclusive = choice.inclusive();
+                        sawRangeBound = true;
+                    }
+                    case StoreOrderable.ORDER_OP_LESSTHAN -> {
+                        BoundChoice choice = chooseUpperBound(upperValue, upperInclusive, value, false);
+                        upperValue = choice.value();
+                        upperInclusive = choice.inclusive();
+                        sawRangeBound = true;
+                    }
+                    case StoreOrderable.ORDER_OP_LESSOREQUALS -> {
+                        BoundChoice choice = chooseUpperBound(upperValue, upperInclusive, value, true);
+                        upperValue = choice.value();
+                        upperInclusive = choice.inclusive();
+                        sawRangeBound = true;
+                    }
+                    default -> {
+                        return Optional.empty();
+                    }
                 }
             }
         }

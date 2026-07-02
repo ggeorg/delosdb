@@ -20,12 +20,18 @@
  */
 package org.apache.derby.iapi.store.types;
 
-/** SQL-neutral ordering constants and marker for store-facing values. */
+/**
+ * SQL-neutral ordering constants and marker for store-facing values.
+ *
+ * <p>The numeric values intentionally match Derby's inherited
+ * {@code org.apache.derby.iapi.types.Orderable} constants because storage
+ * qualifiers cross the DelosDB storage boundary using those existing values.</p>
+ */
 public interface StoreOrderable
 {
+    int ORDER_OP_LESSTHAN = 1;
     int ORDER_OP_EQUALS = 2;
-    int ORDER_OP_LESSTHAN = -1;
-    int ORDER_OP_LESSOREQUALS = -2;
-    int ORDER_OP_GREATERTHAN = 1;
-    int ORDER_OP_GREATEROREQUALS = -3;
+    int ORDER_OP_LESSOREQUALS = 3;
+    int ORDER_OP_GREATERTHAN = 4;
+    int ORDER_OP_GREATEROREQUALS = 5;
 }
