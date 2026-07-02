@@ -406,6 +406,14 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).legacyWriteFrontShadowMutationCountForTesting();
     }
 
+    static int legacyWriteFrontShadowBypassCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).legacyWriteFrontShadowBypassCountForTesting();
+    }
+
+    static boolean legacyWriteFrontShadowEnabledForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).legacyWriteFrontShadowEnabledForTesting();
+    }
+
     static int legacyWriteFrontQuarantineViolationCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).legacyWriteFrontQuarantineViolationCountForTesting();
     }

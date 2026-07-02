@@ -154,6 +154,16 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public int legacyWriteFrontShadowBypassCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.legacyWriteFrontShadowBypassCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public boolean legacyWriteFrontShadowEnabledForTesting(int segment, long containerId) {
+        return MvccConglomerate.legacyWriteFrontShadowEnabledForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public int legacyWriteFrontQuarantineViolationCountForTesting(int segment, long containerId) {
         return MvccConglomerate.legacyWriteFrontQuarantineViolationCountForDiagnostics(segment, containerId);
     }

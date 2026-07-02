@@ -87,6 +87,14 @@ public interface DelosStorageTableDiagnostics {
         return 0;
     }
 
+    default int legacyWriteFrontShadowBypassCountForTesting() {
+        return 0;
+    }
+
+    default boolean legacyWriteFrontShadowEnabledForTesting() {
+        return false;
+    }
+
     default int legacyWriteFrontQuarantineViolationCountForTesting() {
         return 0;
     }

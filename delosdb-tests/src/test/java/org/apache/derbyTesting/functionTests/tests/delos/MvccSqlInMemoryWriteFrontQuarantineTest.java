@@ -204,8 +204,11 @@ public final class MvccSqlInMemoryWriteFrontQuarantineTest extends MvccSqlTestSu
         assertEquals("SQL writes should append provider intents before the inherited shadow can mutate",
                 startingProviderFirstWrites + expectedSuccessfulWrites,
                 diagnostics.providerFirstWriteAppendCountForTesting(0, containerId));
-        assertEquals("the inherited in-memory write front should be touched only as a guarded shadow",
-                startingShadowWrites + expectedSuccessfulWrites,
+        int expectedShadowWrites = diagnostics.legacyWriteFrontShadowEnabledForTesting(0, containerId)
+                ? startingShadowWrites + expectedSuccessfulWrites
+                : startingShadowWrites;
+        assertEquals("the inherited in-memory write front should either be bypassed or touched only as a shadow",
+                expectedShadowWrites,
                 diagnostics.legacyWriteFrontShadowMutationCountForTesting(0, containerId));
         assertEquals("normal SQL writes must not trip the inherited write-front quarantine guard",
                 startingQuarantineViolations,

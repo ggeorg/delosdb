@@ -86,6 +86,11 @@ final class MvccInheritedHandles {
             return !writeIntents.isEmpty();
         }
 
+        boolean hasWriteIntentForRow(long rowId) {
+            List<WriteIntent> history = writeIntents.get(rowId);
+            return history != null && !history.isEmpty();
+        }
+
         java.util.Optional<WriteIntent> latestVisibleWriteIntent(
                 long rowId,
                 MvccCommandSequence visibleThroughCommand) {

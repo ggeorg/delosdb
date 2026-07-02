@@ -21,6 +21,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTable;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionManager;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccWriteConflictException;
 import io.github.ggeorg.delosdb.storage.mvcc.store.MvccCandidateIndex;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
@@ -49,6 +50,8 @@ final class MvccInheritedTable implements DelosStorageTable,
         DelosStorageCommittedRead,
         DelosStorageSavepointParticipant,
         DelosStorageTableDiagnostics {
+    private static final String LEGACY_WRITE_FRONT_SHADOW_PROPERTY = "delosdb.mvcc.legacyWriteFrontShadow";
+
     private final long segmentId;
     private final long containerId;
     private final Path retiredSnapshotFile;
@@ -68,6 +71,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private List<String> lastCommittedWriteIntentPayloadSummaries = List.of();
     private int providerFirstWriteAppendCount;
     private int legacyWriteFrontShadowMutationCount;
+    private int legacyWriteFrontShadowBypassCount;
     private int legacyWriteFrontQuarantineViolationCount;
     private int providerFirstWriteAppendFailureRollbackCount;
     private int transactionLocalWriteIntentReadCount;
@@ -204,13 +208,13 @@ final class MvccInheritedTable implements DelosStorageTable,
             MvccCommandSequence commandSequence = handle.nextCommandSequence();
             StoreDataValue[] rowVersion = cloneRowUnchecked(row);
             recordProviderFirstUpsertWriteIntent(handle, rowId, rowVersion, commandSequence);
-            try {
-                table.insert(rowId, cloneRowUnchecked(rowVersion), handle.nativeTransaction(), commandSequence);
-                recordLegacyWriteFrontShadowMutation(handle, rowId, commandSequence, false);
-            } catch (RuntimeException | Error failure) {
-                rollbackProviderFirstCommand(handle, commandSequence);
-                throw failure;
-            }
+            recordOrBypassLegacyWriteFrontShadowMutation(
+                    handle,
+                    rowId,
+                    rowVersion,
+                    commandSequence,
+                    false,
+                    null);
         });
     }
 
@@ -224,21 +228,16 @@ final class MvccInheritedTable implements DelosStorageTable,
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
             MvccCommandSequence commandSequence = handle.nextCommandSequence();
             StoreDataValue[] rowVersion = cloneRowUnchecked(replacement);
-            touchPageBackedBaseRowForWrite(rowId, snapshot);
+            requireProviderVisibleRowForWrite(rowId, snapshot, "update");
+            requireNoOtherActiveProviderWriter(handle, rowId, "update");
             recordProviderFirstUpsertWriteIntent(handle, rowId, rowVersion, commandSequence);
-            try {
-                table.update(
-                        rowId,
-                        cloneRowUnchecked(rowVersion),
-                        handle.nativeTransaction(),
-                        nativeSnapshot(snapshot),
-                        transactions,
-                        commandSequence);
-                recordLegacyWriteFrontShadowMutation(handle, rowId, commandSequence, false);
-            } catch (RuntimeException | Error failure) {
-                rollbackProviderFirstCommand(handle, commandSequence);
-                throw failure;
-            }
+            recordOrBypassLegacyWriteFrontShadowMutation(
+                    handle,
+                    rowId,
+                    rowVersion,
+                    commandSequence,
+                    false,
+                    snapshot);
         });
     }
 
@@ -250,20 +249,16 @@ final class MvccInheritedTable implements DelosStorageTable,
         writeLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
             MvccCommandSequence commandSequence = handle.nextCommandSequence();
-            touchPageBackedBaseRowForWrite(rowId, snapshot);
+            requireProviderVisibleRowForWrite(rowId, snapshot, "delete");
+            requireNoOtherActiveProviderWriter(handle, rowId, "delete");
             recordProviderFirstDeleteWriteIntent(handle, rowId, commandSequence);
-            try {
-                table.delete(
-                        rowId,
-                        handle.nativeTransaction(),
-                        nativeSnapshot(snapshot),
-                        transactions,
-                        commandSequence);
-                recordLegacyWriteFrontShadowMutation(handle, rowId, commandSequence, true);
-            } catch (RuntimeException | Error failure) {
-                rollbackProviderFirstCommand(handle, commandSequence);
-                throw failure;
-            }
+            recordOrBypassLegacyWriteFrontShadowMutation(
+                    handle,
+                    rowId,
+                    null,
+                    commandSequence,
+                    true,
+                    snapshot);
         });
     }
 
@@ -345,6 +340,61 @@ final class MvccInheritedTable implements DelosStorageTable,
             MvccCommandSequence commandSequence) {
         handle.recordDeleteWriteIntent(rowId, commandSequence);
         providerFirstWriteAppendCount++;
+    }
+
+
+    private void recordOrBypassLegacyWriteFrontShadowMutation(
+            MvccInheritedHandles.Transaction handle,
+            long rowId,
+            StoreDataValue[] rowVersion,
+            MvccCommandSequence commandSequence,
+            boolean delete,
+            DelosStorageSnapshot snapshot) {
+        if (!legacyWriteFrontShadowEnabled()) {
+            recordLegacyWriteFrontShadowBypass(handle, rowId, commandSequence, delete);
+            return;
+        }
+        try {
+            if (delete) {
+                table.delete(
+                        rowId,
+                        handle.nativeTransaction(),
+                        nativeSnapshot(snapshot),
+                        transactions,
+                        commandSequence);
+            } else if (snapshot == null) {
+                table.insert(rowId, cloneRowUnchecked(rowVersion), handle.nativeTransaction(), commandSequence);
+            } else {
+                table.update(
+                        rowId,
+                        cloneRowUnchecked(rowVersion),
+                        handle.nativeTransaction(),
+                        nativeSnapshot(snapshot),
+                        transactions,
+                        commandSequence);
+            }
+            recordLegacyWriteFrontShadowMutation(handle, rowId, commandSequence, delete);
+        } catch (RuntimeException | Error failure) {
+            rollbackProviderFirstCommand(handle, commandSequence);
+            throw failure;
+        }
+    }
+
+    private void recordLegacyWriteFrontShadowBypass(
+            MvccInheritedHandles.Transaction handle,
+            long rowId,
+            MvccCommandSequence commandSequence,
+            boolean delete) {
+        if (!handle.hasAppendedWriteIntent(rowId, commandSequence, delete)) {
+            legacyWriteFrontQuarantineViolationCount++;
+            throw new IllegalStateException("Inherited MVCC write-front bypass attempted "
+                    + "without a matching provider-first write intent for row " + rowId);
+        }
+        legacyWriteFrontShadowBypassCount++;
+    }
+
+    private static boolean legacyWriteFrontShadowEnabled() {
+        return Boolean.getBoolean(LEGACY_WRITE_FRONT_SHADOW_PROPERTY);
     }
 
     private void recordLegacyWriteFrontShadowMutation(
@@ -469,6 +519,16 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public int legacyWriteFrontShadowMutationCountForTesting() {
         return readLocked(() -> legacyWriteFrontShadowMutationCount);
+    }
+
+    @Override
+    public int legacyWriteFrontShadowBypassCountForTesting() {
+        return readLocked(() -> legacyWriteFrontShadowBypassCount);
+    }
+
+    @Override
+    public boolean legacyWriteFrontShadowEnabledForTesting() {
+        return readLocked(MvccInheritedTable::legacyWriteFrontShadowEnabled);
     }
 
     @Override
@@ -667,13 +727,47 @@ final class MvccInheritedTable implements DelosStorageTable,
 
 
 
-    private void touchPageBackedBaseRowForWrite(long rowId, DelosStorageSnapshot snapshot) {
-        if (!canReadCommittedImageUnlocked(snapshot)) {
+
+    private void requireNoOtherActiveProviderWriter(
+            MvccInheritedHandles.Transaction handle,
+            long rowId,
+            String operation) {
+        for (MvccInheritedHandles.Transaction activeTransaction : activeTransactions) {
+            if (activeTransaction != handle && activeTransaction.hasWriteIntentForRow(rowId)) {
+                throw new MvccWriteConflictException("provider write conflict: row "
+                        + rowId + " has another active writer during " + operation);
+            }
+        }
+    }
+
+    private void requireProviderVisibleRowForWrite(
+            long rowId,
+            DelosStorageSnapshot snapshot,
+            String operation) {
+        Optional<MvccInheritedHandles.Transaction.WriteIntent> writeIntent = latestWriteIntent(rowId, snapshot);
+        if (writeIntent.isPresent()) {
+            if (!writeIntent.get().delete()) {
+                return;
+            }
+            throw missingProviderVisibleRowForWrite(rowId, operation);
+        }
+        if (canReadCommittedImageUnlocked(snapshot)) {
+            if (pageVolumeStateStore.loadVisibleRow(rowId).isPresent()) {
+                transactionLocalPageBackedBaseReadCount++;
+                return;
+            }
+            throw missingProviderVisibleRowForWrite(rowId, operation);
+        }
+        pageBackedHistoricalSnapshotReadCount++;
+        if (pageVolumeStateStore.loadVisibleRow(rowId, nativeSnapshot(snapshot).visibleThrough()).isPresent()) {
             return;
         }
-        if (pageVolumeStateStore.loadVisibleRow(rowId).isPresent()) {
-            transactionLocalPageBackedBaseReadCount++;
-        }
+        throw missingProviderVisibleRowForWrite(rowId, operation);
+    }
+
+    private static MvccWriteConflictException missingProviderVisibleRowForWrite(long rowId, String operation) {
+        return new MvccWriteConflictException("provider write conflict: logical row is not visible for "
+                + operation + ": " + rowId);
     }
 
     private Optional<List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>>> writeIntentOverlayRows(

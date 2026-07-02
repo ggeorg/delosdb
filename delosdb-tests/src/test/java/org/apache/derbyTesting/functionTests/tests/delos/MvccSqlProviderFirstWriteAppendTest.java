@@ -242,8 +242,11 @@ public final class MvccSqlProviderFirstWriteAppendTest extends MvccSqlTestSuppor
         assertEquals("SQL write mutations should append provider intents first",
                 startingProviderFirstWrites + expectedSuccessfulWrites,
                 diagnostics.providerFirstWriteAppendCountForTesting(0, containerId));
-        assertEquals("the inherited in-memory write front should be touched only as a shadow after provider append",
-                startingShadowWrites + expectedSuccessfulWrites,
+        int expectedShadowWrites = diagnostics.legacyWriteFrontShadowEnabledForTesting(0, containerId)
+                ? startingShadowWrites + expectedSuccessfulWrites
+                : startingShadowWrites;
+        assertEquals("the inherited in-memory write front should either be bypassed or touched only as a shadow",
+                expectedShadowWrites,
                 diagnostics.legacyWriteFrontShadowMutationCountForTesting(0, containerId));
         assertEquals("successful SQL writes should not need provider-first failure rewind",
                 startingFailureRollbacks,
