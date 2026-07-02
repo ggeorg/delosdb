@@ -96,17 +96,24 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
                     Files.exists(reusablePageIndexFile));
             diagnostics.assertConsistentForTesting(0, containerId);
 
+            long fsmNonLastHitsBeforeReuseInsert = diagnostics.freeSpaceMapNonLastHitCountForTesting(0, containerId);
+
             insertPayload(connection, 3, payload('z', 2400));
             connection.commit();
 
             pages = diagnostics.pageDiagnosticsForTesting(0, containerId);
             pagesAfterReuse = pages.pageCount();
             reusablePagesAfterReuse = pages.reusablePageCount();
-            assertEquals("post-vacuum insert should consume a reusable page instead of extending the page volume",
+            long fsmNonLastHitsAfterReuseInsert = diagnostics.freeSpaceMapNonLastHitCountForTesting(0, containerId);
+            boolean consumedReusablePage = reusablePagesAfterReuse < reusablePagesAfterVacuum;
+            boolean reusedPartialPage = fsmNonLastHitsAfterReuseInsert > fsmNonLastHitsBeforeReuseInsert;
+            assertEquals("post-vacuum insert should reuse existing MVCC page capacity instead of extending the page volume",
                     pagesAfterVacuum, pagesAfterReuse);
-            assertTrue("post-vacuum insert should consume at least one reusable page; before="
-                            + reusablePagesAfterVacuum + ", after=" + reusablePagesAfterReuse,
-                    reusablePagesAfterReuse < reusablePagesAfterVacuum);
+            assertTrue("post-vacuum insert should reuse either a vacuum-empty page or earlier partial-page free space; reusable before="
+                            + reusablePagesAfterVacuum + ", reusable after=" + reusablePagesAfterReuse
+                            + ", fsm non-last hits before=" + fsmNonLastHitsBeforeReuseInsert
+                            + ", fsm non-last hits after=" + fsmNonLastHitsAfterReuseInsert,
+                    consumedReusablePage || reusedPartialPage);
             assertTrue("reusable-page allocation index should remain durable after reuse",
                     Files.exists(reusablePageIndexFile));
             assertEquals(3, pages.physicalVersionCount());
