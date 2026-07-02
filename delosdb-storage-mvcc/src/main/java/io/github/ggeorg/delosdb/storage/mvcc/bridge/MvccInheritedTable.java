@@ -576,6 +576,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         } else {
             pageBackedHistoricalSnapshotScanCount++;
             baseRows = pageVolumeStateStore.loadVisibleRows(handleSnapshot.nativeSnapshot().visibleThrough());
+            pageBackedHistoricalSnapshotReadCount += baseRows.size();
         }
         for (PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]> row : baseRows) {
             rows.put(row.rowId(), new PageVolumeMvccStateStore.PersistedRow<>(
