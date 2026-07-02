@@ -81,7 +81,6 @@ public final class MvccSqlLegacySnapshotFallbackGateTest extends MvccSqlTestSupp
                     "2|two|payload-2");
 
             executeUpdate(writer, "update legacy_fallback_t set payload = 'payload-1-committed' where id = 1");
-            executeUpdate(writer, "delete from legacy_fallback_t where id = 2");
             executeUpdate(writer, "insert into legacy_fallback_t values (3, 'three', 'payload-3')");
             writer.commit();
 
@@ -98,7 +97,47 @@ public final class MvccSqlLegacySnapshotFallbackGateTest extends MvccSqlTestSupp
             assertTrue("older transaction-scoped snapshots should read historical rows from page-backed storage",
                     diagnostics.pageBackedHistoricalSnapshotScanCountForTesting(0, containerId)
                             > beforeHistoricalPageBackedScan);
-            oldSnapshot.commit();
+
+            int beforeLocalWriteFallbackScan = diagnostics.legacySnapshotFallbackScanCountForTesting(0, containerId);
+            int beforeLocalWriteFallbackRead = diagnostics.legacySnapshotFallbackReadCountForTesting(0, containerId);
+            int beforeLocalWriteIntentScan = diagnostics.transactionLocalWriteIntentScanCountForTesting(0, containerId);
+            int beforeLocalWriteHistoricalScan = diagnostics.pageBackedHistoricalSnapshotScanCountForTesting(
+                    0, containerId);
+            int beforeLocalWriteHistoricalRead = diagnostics.pageBackedHistoricalSnapshotReadCountForTesting(
+                    0, containerId);
+
+            executeUpdate(oldSnapshot, "update legacy_fallback_t set payload = 'payload-2-local' where id = 2");
+            executeUpdate(oldSnapshot, "insert into legacy_fallback_t values (4, 'four', 'payload-4-local')");
+
+            assertRows(oldSnapshot,
+                    "select id, code, payload from legacy_fallback_t order by id",
+                    "1|one|payload-1",
+                    "2|two|payload-2-local",
+                    "4|four|payload-4-local");
+            assertTrue("older snapshots with local write intents should compose provider write intents "
+                            + "over page-backed historical rows",
+                    diagnostics.transactionLocalWriteIntentScanCountForTesting(0, containerId)
+                            > beforeLocalWriteIntentScan);
+            assertTrue("older snapshots with local write intents should use page-backed historical rows "
+                            + "as the scan base",
+                    diagnostics.pageBackedHistoricalSnapshotScanCountForTesting(0, containerId)
+                            > beforeLocalWriteHistoricalScan);
+            assertEquals("older snapshots with local write intents must not use the legacy scan fallback",
+                    beforeLocalWriteFallbackScan,
+                    diagnostics.legacySnapshotFallbackScanCountForTesting(0, containerId));
+
+            assertRows(oldSnapshot,
+                    "select id, code, payload from legacy_fallback_t where id = 1",
+                    "1|one|payload-1");
+            assertTrue("older snapshots with local write intents should read unchanged base rows "
+                            + "from page-backed historical storage",
+                    diagnostics.pageBackedHistoricalSnapshotReadCountForTesting(0, containerId)
+                            > beforeLocalWriteHistoricalRead);
+            assertEquals("older snapshots with local write intents must not use the legacy read fallback",
+                    beforeLocalWriteFallbackRead,
+                    diagnostics.legacySnapshotFallbackReadCountForTesting(0, containerId));
+
+            oldSnapshot.rollback();
         }
 
         try (Connection verifier = openDatabase(databaseName, false)) {
@@ -106,6 +145,7 @@ public final class MvccSqlLegacySnapshotFallbackGateTest extends MvccSqlTestSupp
             assertRows(verifier,
                     "select id, code, payload from legacy_fallback_t order by id",
                     "1|one|payload-1-committed",
+                    "2|two|payload-2",
                     "3|three|payload-3");
             diagnostics.assertConsistentForTesting(0, containerId);
             verifier.commit();

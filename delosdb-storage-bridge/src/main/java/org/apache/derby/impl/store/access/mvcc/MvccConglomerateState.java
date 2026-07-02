@@ -94,6 +94,12 @@ final class MvccConglomerateState {
         return table.snapshot(transaction);
     }
 
+    DelosStorageSnapshot snapshot(
+            DelosStorageTransaction transaction,
+            DelosStorageSnapshot visibilitySnapshot) {
+        return table.snapshot(transaction, visibilitySnapshot);
+    }
+
     DelosStorageScan openScan(DelosStorageSnapshot snapshot) throws StandardException {
         return table.openScan(snapshot);
     }

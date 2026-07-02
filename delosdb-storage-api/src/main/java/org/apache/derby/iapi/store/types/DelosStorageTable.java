@@ -37,6 +37,17 @@ public interface DelosStorageTable extends AutoCloseable {
 
     DelosStorageSnapshot snapshot(DelosStorageTransaction transaction);
 
+    /**
+     * Create a provider snapshot for {@code transaction} using the visibility
+     * horizon captured by {@code visibilitySnapshot}. Providers that do not
+     * need transaction-local overlays may use the normal current snapshot.
+     */
+    default DelosStorageSnapshot snapshot(
+            DelosStorageTransaction transaction,
+            DelosStorageSnapshot visibilitySnapshot) {
+        return snapshot(transaction);
+    }
+
     DelosStorageScan openScan(DelosStorageSnapshot snapshot) throws StandardException;
 
     Optional<StoreDataValue[]> read(long rowId, DelosStorageSnapshot snapshot);

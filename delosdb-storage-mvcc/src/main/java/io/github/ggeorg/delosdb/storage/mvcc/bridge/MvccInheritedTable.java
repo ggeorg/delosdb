@@ -107,6 +107,16 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public DelosStorageSnapshot snapshot(
+            DelosStorageTransaction transaction,
+            DelosStorageSnapshot visibilitySnapshot) {
+        return readLocked(() -> {
+            MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            return new MvccInheritedHandles.Snapshot(handle, nativeSnapshot(visibilitySnapshot));
+        });
+    }
+
+    @Override
     public DelosStorageScan openScan(DelosStorageSnapshot snapshot) {
         return readLocked(() -> {
             Optional<List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>>> writeIntentRows =
@@ -119,13 +129,9 @@ final class MvccInheritedTable implements DelosStorageTable,
                 transactionLocalPageBackedBaseScanCount++;
                 return new MvccPageBackedCommittedScan(pageVolumeStateStore.loadVisibleRows());
             }
-            if (!nativeSnapshotHandle(snapshot).transaction().hasWriteIntents()) {
-                pageBackedHistoricalSnapshotScanCount++;
-                return new MvccPageBackedCommittedScan(
-                        pageVolumeStateStore.loadVisibleRows(nativeSnapshot(snapshot).visibleThrough()));
-            }
-            legacySnapshotFallbackScanCount++;
-            return new MvccInheritedScan(table.openScan(nativeSnapshot(snapshot), transactions));
+            pageBackedHistoricalSnapshotScanCount++;
+            return new MvccPageBackedCommittedScan(
+                    pageVolumeStateStore.loadVisibleRows(nativeSnapshot(snapshot).visibleThrough()));
         });
     }
 
@@ -147,14 +153,10 @@ final class MvccInheritedTable implements DelosStorageTable,
                         .map(PageVolumeMvccStateStore.PersistedRow::values)
                         .map(MvccInheritedTable::cloneRowUnchecked);
             }
-            if (!nativeSnapshotHandle(snapshot).transaction().hasWriteIntents()) {
-                pageBackedHistoricalSnapshotReadCount++;
-                return pageVolumeStateStore.loadVisibleRow(rowId, nativeSnapshot(snapshot).visibleThrough())
-                        .map(PageVolumeMvccStateStore.PersistedRow::values)
-                        .map(MvccInheritedTable::cloneRowUnchecked);
-            }
-            legacySnapshotFallbackReadCount++;
-            return table.read(rowId, nativeSnapshot(snapshot), transactions);
+            pageBackedHistoricalSnapshotReadCount++;
+            return pageVolumeStateStore.loadVisibleRow(rowId, nativeSnapshot(snapshot).visibleThrough())
+                    .map(PageVolumeMvccStateStore.PersistedRow::values)
+                    .map(MvccInheritedTable::cloneRowUnchecked);
         });
     }
 
@@ -563,12 +565,19 @@ final class MvccInheritedTable implements DelosStorageTable,
             DelosStorageSnapshot snapshot) {
         MvccInheritedHandles.Snapshot handleSnapshot = nativeSnapshotHandle(snapshot);
         MvccInheritedHandles.Transaction handle = handleSnapshot.transaction();
-        if (!handle.hasWriteIntents() || !canReadCommittedImageUnlocked(snapshot)) {
+        if (!handle.hasWriteIntents()) {
             return Optional.empty();
         }
         java.util.LinkedHashMap<Long, PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows =
                 new java.util.LinkedHashMap<>();
-        for (PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]> row : pageVolumeStateStore.loadVisibleRows()) {
+        List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> baseRows;
+        if (canReadCommittedImageUnlocked(snapshot)) {
+            baseRows = pageVolumeStateStore.loadVisibleRows();
+        } else {
+            pageBackedHistoricalSnapshotScanCount++;
+            baseRows = pageVolumeStateStore.loadVisibleRows(handleSnapshot.nativeSnapshot().visibleThrough());
+        }
+        for (PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]> row : baseRows) {
             rows.put(row.rowId(), new PageVolumeMvccStateStore.PersistedRow<>(
                     row.rowId(), cloneRowUnchecked(row.values())));
         }

@@ -94,14 +94,18 @@ public final class MvccScanController implements ScanManager {
         DelosStorageTransaction activeWriter = DelosStorageTransactionRegistry.activeWriterTransaction(
                 transactionManager,
                 state.table());
+        this.transactionScopedReader = usesTransactionScopedSnapshot(isolationLevel);
         if (activeWriter != null) {
-            this.transactionScopedReader = false;
             this.readerBorrowedFromWriter = true;
-            this.registeredReader = null;
             this.reader = activeWriter;
-            this.snapshot = state.snapshot(reader);
+            if (transactionScopedReader) {
+                this.registeredReader = DelosStorageTransactionRegistry.reader(transactionManager, state.table());
+                this.snapshot = state.snapshot(reader, registeredReader.snapshot());
+            } else {
+                this.registeredReader = null;
+                this.snapshot = state.snapshot(reader);
+            }
         } else {
-            this.transactionScopedReader = usesTransactionScopedSnapshot(isolationLevel);
             this.readerBorrowedFromWriter = false;
             if (transactionScopedReader) {
                 this.registeredReader = DelosStorageTransactionRegistry.reader(transactionManager, state.table());
