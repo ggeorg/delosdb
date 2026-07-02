@@ -419,8 +419,13 @@ public final class MvccScanController implements ScanManager {
 
     private Optional<StoreDataValue[]> readCurrentCommittedOrSnapshot(long rowId) {
         if (pageBackedCommittedRead) {
+            MvccBridgeDiagnosticsSupport.incrementRowIdFastPathReadCount();
             MvccBridgeDiagnosticsSupport.incrementPageBackedCommittedReadCount();
-            return state.readCommittedImage(rowId, snapshot);
+            Optional<StoreDataValue[]> visible = state.readCommittedImage(rowId, snapshot);
+            if (visible.isPresent()) {
+                MvccBridgeDiagnosticsSupport.incrementRowIdFastPathHitCount();
+                return visible;
+            }
         }
         return state.read(rowId, snapshot);
     }

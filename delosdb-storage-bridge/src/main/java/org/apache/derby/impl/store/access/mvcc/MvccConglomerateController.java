@@ -117,9 +117,11 @@ public final class MvccConglomerateController implements ConglomerateController 
                 state.table());
         DelosStorageTransaction reader = activeWriter == null ? state.beginTransaction() : activeWriter;
         try {
-            Optional<StoreDataValue[]> visible = state.read(
+            DelosStorageSnapshot snapshot = state.snapshot(reader);
+            Optional<StoreDataValue[]> visible = readByRowIdFastPathOrSnapshot(
                     location.rowId(),
-                    state.snapshot(reader));
+                    snapshot,
+                    activeWriter == null);
             if (visible.isEmpty()) {
                 return false;
             }
@@ -130,6 +132,22 @@ public final class MvccConglomerateController implements ConglomerateController 
                 state.abort(reader);
             }
         }
+    }
+
+    private Optional<StoreDataValue[]> readByRowIdFastPathOrSnapshot(
+            long rowId,
+            DelosStorageSnapshot snapshot,
+            boolean statementScopedReader) {
+        if (statementScopedReader && state.canReadCommittedImage(snapshot)) {
+            MvccBridgeDiagnosticsSupport.incrementRowIdFastPathReadCount();
+            MvccBridgeDiagnosticsSupport.incrementPageBackedCommittedReadCount();
+            Optional<StoreDataValue[]> visible = state.readCommittedImage(rowId, snapshot);
+            if (visible.isPresent()) {
+                MvccBridgeDiagnosticsSupport.incrementRowIdFastPathHitCount();
+                return visible;
+            }
+        }
+        return state.read(rowId, snapshot);
     }
 
     @Override

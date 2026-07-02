@@ -389,6 +389,16 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public int rowIdFastPathReadCountForTesting() {
+        return MvccBridgeDiagnosticsSupport.rowIdFastPathReadCountForDiagnostics();
+    }
+
+    @Override
+    public int rowIdFastPathHitCountForTesting() {
+        return MvccBridgeDiagnosticsSupport.rowIdFastPathHitCountForDiagnostics();
+    }
+
+    @Override
     public void clearTransactionsForTesting() {
         DelosStorageTransactionRegistry.clearForTesting();
     }

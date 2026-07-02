@@ -729,6 +729,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlInMemoryWriteFrontQuarantineTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlInMemoryWriteFrontBypassTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlInMemoryWriteFrontRemovalTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRowIdFastPathTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlWriteIntentReadTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedBaseReadTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedTransactionScanTest.class',

@@ -43,6 +43,8 @@ final class MvccBridgeDiagnosticsSupport {
     private static final AtomicInteger CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT = new AtomicInteger();
     private static final AtomicInteger PAGE_BACKED_COMMITTED_SCAN_COUNT = new AtomicInteger();
     private static final AtomicInteger PAGE_BACKED_COMMITTED_READ_COUNT = new AtomicInteger();
+    private static final AtomicInteger ROW_ID_FAST_PATH_READ_COUNT = new AtomicInteger();
+    private static final AtomicInteger ROW_ID_FAST_PATH_HIT_COUNT = new AtomicInteger();
 
     private MvccBridgeDiagnosticsSupport() {
     }
@@ -162,6 +164,7 @@ final class MvccBridgeDiagnosticsSupport {
     static void resetPageBackedCommittedReadCountersForDiagnostics() {
         PAGE_BACKED_COMMITTED_SCAN_COUNT.set(0);
         PAGE_BACKED_COMMITTED_READ_COUNT.set(0);
+        resetRowIdFastPathCountersForDiagnostics();
     }
 
     static void incrementPageBackedCommittedScanCount() {
@@ -178,6 +181,27 @@ final class MvccBridgeDiagnosticsSupport {
 
     static int pageBackedCommittedReadCountForDiagnostics() {
         return PAGE_BACKED_COMMITTED_READ_COUNT.get();
+    }
+
+    static void resetRowIdFastPathCountersForDiagnostics() {
+        ROW_ID_FAST_PATH_READ_COUNT.set(0);
+        ROW_ID_FAST_PATH_HIT_COUNT.set(0);
+    }
+
+    static void incrementRowIdFastPathReadCount() {
+        ROW_ID_FAST_PATH_READ_COUNT.incrementAndGet();
+    }
+
+    static int rowIdFastPathReadCountForDiagnostics() {
+        return ROW_ID_FAST_PATH_READ_COUNT.get();
+    }
+
+    static void incrementRowIdFastPathHitCount() {
+        ROW_ID_FAST_PATH_HIT_COUNT.incrementAndGet();
+    }
+
+    static int rowIdFastPathHitCountForDiagnostics() {
+        return ROW_ID_FAST_PATH_HIT_COUNT.get();
     }
 
 }

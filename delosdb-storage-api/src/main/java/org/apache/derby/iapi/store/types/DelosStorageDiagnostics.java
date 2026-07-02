@@ -271,6 +271,14 @@ public interface DelosStorageDiagnostics {
         return 0;
     }
 
+    default int rowIdFastPathReadCountForTesting() {
+        return 0;
+    }
+
+    default int rowIdFastPathHitCountForTesting() {
+        return 0;
+    }
+
     void clearTransactionsForTesting();
 
     boolean isProviderScan(Object scanController);
