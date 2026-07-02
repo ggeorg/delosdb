@@ -329,15 +329,14 @@ final class PageBackedMvccTableTest {
             MvccReusablePageIndexStore.Snapshot afterVacuum = MvccReusablePageIndexStore.open(
                     reusablePageIndexFile).read();
             assertTrue(!afterVacuum.reusablePageIds().isEmpty(), "vacuum should create reusable pages");
-            consumedPageId = afterVacuum.reusablePageIds().first();
-
-            table.insertCommitted("account:3", "small", 8L, 8L);
+            MvccIndexTuple inserted = table.insertCommitted("account:3", "small", 8L, 8L);
+            consumedPageId = inserted.versionLocator().pageId().value();
             pageCountAfterReuse = table.pageCount();
             MvccReusablePageIndexStore.Snapshot afterReuse = MvccReusablePageIndexStore.open(
                     reusablePageIndexFile).read();
             reusablePagesAfterReuse = new TreeSet<>(afterReuse.reusablePageIds());
             assertFalse(reusablePagesAfterReuse.contains(consumedPageId),
-                    "consumed page must be removed from the allocation index immediately");
+                    "page containing the inserted record must not be listed in the allocation index");
             table.validateConsistency().assertValid();
         }
 
