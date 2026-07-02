@@ -69,6 +69,9 @@ final class MvccInheritedTable implements DelosStorageTable,
     private int transactionLocalWriteIntentReadCount;
     private int transactionLocalWriteIntentScanCount;
     private int transactionLocalPageBackedBaseReadCount;
+    private int transactionLocalPageBackedBaseScanCount;
+    private int legacySnapshotFallbackReadCount;
+    private int legacySnapshotFallbackScanCount;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
@@ -109,6 +112,11 @@ final class MvccInheritedTable implements DelosStorageTable,
                 transactionLocalWriteIntentScanCount++;
                 return new MvccPageBackedCommittedScan(writeIntentRows.get());
             }
+            if (canReadCommittedImageUnlocked(snapshot)) {
+                transactionLocalPageBackedBaseScanCount++;
+                return new MvccPageBackedCommittedScan(pageVolumeStateStore.loadVisibleRows());
+            }
+            legacySnapshotFallbackScanCount++;
             return new MvccInheritedScan(table.openScan(nativeSnapshot(snapshot), transactions));
         });
     }
@@ -131,6 +139,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                         .map(PageVolumeMvccStateStore.PersistedRow::values)
                         .map(MvccInheritedTable::cloneRowUnchecked);
             }
+            legacySnapshotFallbackReadCount++;
             return table.read(rowId, nativeSnapshot(snapshot), transactions);
         });
     }
@@ -354,6 +363,21 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public int transactionLocalPageBackedBaseReadCountForTesting() {
         return readLocked(() -> transactionLocalPageBackedBaseReadCount);
+    }
+
+    @Override
+    public int transactionLocalPageBackedBaseScanCountForTesting() {
+        return readLocked(() -> transactionLocalPageBackedBaseScanCount);
+    }
+
+    @Override
+    public int legacySnapshotFallbackReadCountForTesting() {
+        return readLocked(() -> legacySnapshotFallbackReadCount);
+    }
+
+    @Override
+    public int legacySnapshotFallbackScanCountForTesting() {
+        return readLocked(() -> legacySnapshotFallbackScanCount);
     }
 
     @Override

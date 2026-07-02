@@ -75,6 +75,18 @@ public interface DelosStorageTableDiagnostics {
         return 0;
     }
 
+    default int transactionLocalPageBackedBaseScanCountForTesting() {
+        return 0;
+    }
+
+    default int legacySnapshotFallbackReadCountForTesting() {
+        return 0;
+    }
+
+    default int legacySnapshotFallbackScanCountForTesting() {
+        return 0;
+    }
+
     long pageCountForTesting();
 
     long overflowPageCountForTesting();

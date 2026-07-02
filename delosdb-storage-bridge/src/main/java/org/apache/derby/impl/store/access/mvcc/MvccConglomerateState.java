@@ -210,6 +210,18 @@ final class MvccConglomerateState {
         return diagnostics.transactionLocalPageBackedBaseReadCountForTesting();
     }
 
+    synchronized int transactionLocalPageBackedBaseScanCountForTesting() {
+        return diagnostics.transactionLocalPageBackedBaseScanCountForTesting();
+    }
+
+    synchronized int legacySnapshotFallbackReadCountForTesting() {
+        return diagnostics.legacySnapshotFallbackReadCountForTesting();
+    }
+
+    synchronized int legacySnapshotFallbackScanCountForTesting() {
+        return diagnostics.legacySnapshotFallbackScanCountForTesting();
+    }
+
     synchronized long pageCountForTesting() {
         return diagnostics.pageCountForTesting();
     }

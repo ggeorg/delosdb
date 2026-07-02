@@ -97,6 +97,18 @@ public interface DelosStorageDiagnostics {
         return 0;
     }
 
+    default int transactionLocalPageBackedBaseScanCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default int legacySnapshotFallbackReadCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default int legacySnapshotFallbackScanCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
     long pageCountForTesting(int segment, long containerId);
 
     long overflowPageCountForTesting(int segment, long containerId);
