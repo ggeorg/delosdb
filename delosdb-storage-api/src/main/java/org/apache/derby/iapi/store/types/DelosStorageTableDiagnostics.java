@@ -33,6 +33,8 @@ public interface DelosStorageTableDiagnostics {
 
     Path freeSpaceMapFileForTesting();
 
+    Path visibilityMapFileForTesting();
+
     Path pageMutationLogFileForTesting();
 
     Path writeAheadLogFileForTesting();
@@ -173,6 +175,28 @@ public interface DelosStorageTableDiagnostics {
         return java.util.List.of();
     }
 
+    long visibilityMapPageCountForTesting();
+
+    long visibilityMapOldVersionPageCountForTesting();
+
+    long visibilityMapPrunablePageCountForTesting();
+
+    long visibilityMapTombstonePageCountForTesting();
+
+    long visibilityMapAllVisiblePageCountForTesting();
+
+    long visibilityMapOverflowPageCountForTesting();
+
+    long visibilityMapNeedsCheckerPageCountForTesting();
+
+    long visibilityMapUpdateCountForTesting();
+
+    long visibilityMapRebuildCountForTesting();
+
+    default java.util.List<String> visibilityMapPageSummariesForTesting() {
+        return java.util.List.of();
+    }
+
     long pageCacheMaxPageCountForTesting();
 
     long pageCacheSizeForTesting();
@@ -213,6 +237,19 @@ public interface DelosStorageTableDiagnostics {
                 freeSpaceMapStaleEntryCountForTesting(),
                 freeSpaceMapUpdateCountForTesting(),
                 freeSpaceMapRebuildCountForTesting());
+    }
+
+    default DelosStorageVisibilityDiagnostics visibilityDiagnosticsForTesting() {
+        return new DelosStorageVisibilityDiagnostics(
+                visibilityMapPageCountForTesting(),
+                visibilityMapOldVersionPageCountForTesting(),
+                visibilityMapPrunablePageCountForTesting(),
+                visibilityMapTombstonePageCountForTesting(),
+                visibilityMapAllVisiblePageCountForTesting(),
+                visibilityMapOverflowPageCountForTesting(),
+                visibilityMapNeedsCheckerPageCountForTesting(),
+                visibilityMapUpdateCountForTesting(),
+                visibilityMapRebuildCountForTesting());
     }
 
     default DelosStoragePageCacheDiagnostics pageCacheDiagnosticsForTesting() {

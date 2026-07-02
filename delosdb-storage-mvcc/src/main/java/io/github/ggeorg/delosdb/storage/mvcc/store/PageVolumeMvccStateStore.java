@@ -168,6 +168,10 @@ public final class PageVolumeMvccStateStore<T> {
         return pageFile == null ? null : PageBackedMvccTable.freeSpaceMapPath(pageFile);
     }
 
+    public Path visibilityMapFile() {
+        return pageFile == null ? null : PageBackedMvccTable.visibilityMapPath(pageFile);
+    }
+
     public Path pageMutationLogFile() {
         return pageMutationLogFile;
     }
@@ -264,6 +268,46 @@ public final class PageVolumeMvccStateStore<T> {
 
     public List<String> freeSpaceMapPageSummaries() {
         return enabled() ? table.freeSpaceMapPageSummaries() : List.of();
+    }
+
+    public long visibilityMapPageCount() {
+        return enabled() ? table.visibilityMapPageCount() : 0L;
+    }
+
+    public long visibilityMapOldVersionPageCount() {
+        return enabled() ? table.visibilityMapOldVersionPageCount() : 0L;
+    }
+
+    public long visibilityMapPrunablePageCount() {
+        return enabled() ? table.visibilityMapPrunablePageCount() : 0L;
+    }
+
+    public long visibilityMapTombstonePageCount() {
+        return enabled() ? table.visibilityMapTombstonePageCount() : 0L;
+    }
+
+    public long visibilityMapAllVisiblePageCount() {
+        return enabled() ? table.visibilityMapAllVisiblePageCount() : 0L;
+    }
+
+    public long visibilityMapOverflowPageCount() {
+        return enabled() ? table.visibilityMapOverflowPageCount() : 0L;
+    }
+
+    public long visibilityMapNeedsCheckerPageCount() {
+        return enabled() ? table.visibilityMapNeedsCheckerPageCount() : 0L;
+    }
+
+    public long visibilityMapUpdateCount() {
+        return enabled() ? table.visibilityMapUpdateCount() : 0L;
+    }
+
+    public long visibilityMapRebuildCount() {
+        return enabled() ? table.visibilityMapRebuildCount() : 0L;
+    }
+
+    public List<String> visibilityMapPageSummaries() {
+        return enabled() ? table.visibilityMapPageSummaries() : List.of();
     }
 
     public long pageCacheMaxPageCount() {
@@ -510,6 +554,11 @@ public final class PageVolumeMvccStateStore<T> {
             if (freeSpaceMap != null) {
                 Files.deleteIfExists(freeSpaceMap);
                 Files.deleteIfExists(freeSpaceMap.resolveSibling(freeSpaceMap.getFileName() + ".rewrite"));
+            }
+            Path visibilityMap = visibilityMapFile();
+            if (visibilityMap != null) {
+                Files.deleteIfExists(visibilityMap);
+                Files.deleteIfExists(visibilityMap.resolveSibling(visibilityMap.getFileName() + ".rewrite"));
             }
             if (pageMutationLogFile != null) {
                 Files.deleteIfExists(pageMutationLogFile);

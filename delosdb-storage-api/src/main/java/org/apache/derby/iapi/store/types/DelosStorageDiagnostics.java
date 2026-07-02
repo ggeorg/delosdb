@@ -59,6 +59,10 @@ public interface DelosStorageDiagnostics {
         return null;
     }
 
+    default Path visibilityMapFileForTesting(int segment, long containerId) {
+        return null;
+    }
+
     Path pageMutationLogFileForTesting(int segment, long containerId);
 
     Path writeAheadLogFileForTesting(int segment, long containerId);
@@ -215,6 +219,46 @@ public interface DelosStorageDiagnostics {
         return List.of();
     }
 
+    default long visibilityMapPageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long visibilityMapOldVersionPageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long visibilityMapPrunablePageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long visibilityMapTombstonePageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long visibilityMapAllVisiblePageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long visibilityMapOverflowPageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long visibilityMapNeedsCheckerPageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long visibilityMapUpdateCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long visibilityMapRebuildCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default List<String> visibilityMapPageSummariesForTesting(int segment, long containerId) {
+        return List.of();
+    }
+
     long pageCacheMaxPageCountForTesting(int segment, long containerId);
 
     long pageCacheSizeForTesting(int segment, long containerId);
@@ -255,6 +299,19 @@ public interface DelosStorageDiagnostics {
                 freeSpaceMapStaleEntryCountForTesting(segment, containerId),
                 freeSpaceMapUpdateCountForTesting(segment, containerId),
                 freeSpaceMapRebuildCountForTesting(segment, containerId));
+    }
+
+    default DelosStorageVisibilityDiagnostics visibilityDiagnosticsForTesting(int segment, long containerId) {
+        return new DelosStorageVisibilityDiagnostics(
+                visibilityMapPageCountForTesting(segment, containerId),
+                visibilityMapOldVersionPageCountForTesting(segment, containerId),
+                visibilityMapPrunablePageCountForTesting(segment, containerId),
+                visibilityMapTombstonePageCountForTesting(segment, containerId),
+                visibilityMapAllVisiblePageCountForTesting(segment, containerId),
+                visibilityMapOverflowPageCountForTesting(segment, containerId),
+                visibilityMapNeedsCheckerPageCountForTesting(segment, containerId),
+                visibilityMapUpdateCountForTesting(segment, containerId),
+                visibilityMapRebuildCountForTesting(segment, containerId));
     }
 
     default DelosStoragePageCacheDiagnostics pageCacheDiagnosticsForTesting(int segment, long containerId) {

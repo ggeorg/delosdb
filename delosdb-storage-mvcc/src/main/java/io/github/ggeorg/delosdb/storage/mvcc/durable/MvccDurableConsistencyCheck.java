@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -33,27 +34,130 @@ public final class MvccDurableConsistencyCheck {
 
     public static Result check(PageBackedMvccTableStore store, MvccRowDirectoryStore rowDirectory)
             throws IOException {
+        return check(store, rowDirectory, null);
+    }
+
+    public static Result check(
+            PageBackedMvccTableStore store,
+            MvccRowDirectoryStore rowDirectory,
+            MvccVisibilityMapStore visibilityMap) throws IOException {
         Objects.requireNonNull(store, "store");
         Objects.requireNonNull(rowDirectory, "rowDirectory");
         Map<MvccRowId, MvccRowDirectoryStore.RowHeadRecord> durableHeads = rowDirectory.recoverHeads();
         List<String> pageRecordErrors = store.pageRecordConsistencyErrors();
         List<String> reusablePageErrors = store.reusablePageConsistencyErrors();
         List<String> freeSpaceMapErrors = store.freeSpaceMapConsistencyErrors();
+        List<String> visibilityMapErrors = visibilityMap == null
+                ? List.of()
+                : visibilityMapConsistencyErrors(store, durableHeads, visibilityMap);
         if (!pageRecordErrors.isEmpty()) {
             List<String> errors = new ArrayList<>(pageRecordErrors);
             errors.addAll(reusablePageErrors);
             errors.addAll(freeSpaceMapErrors);
+            errors.addAll(visibilityMapErrors);
             return new Result(0, 0, durableHeads.size(), errors);
         }
 
         Result result = check(store.loadAll(), durableHeads);
-        if (reusablePageErrors.isEmpty() && freeSpaceMapErrors.isEmpty()) {
+        if (reusablePageErrors.isEmpty() && freeSpaceMapErrors.isEmpty() && visibilityMapErrors.isEmpty()) {
             return result;
         }
         List<String> errors = new ArrayList<>(result.errors());
         errors.addAll(reusablePageErrors);
         errors.addAll(freeSpaceMapErrors);
+        errors.addAll(visibilityMapErrors);
         return new Result(result.physicalVersions(), result.logicalRows(), result.durableHeads(), errors);
+    }
+
+    private static List<String> visibilityMapConsistencyErrors(
+            PageBackedMvccTableStore store,
+            Map<MvccRowId, MvccRowDirectoryStore.RowHeadRecord> durableHeads,
+            MvccVisibilityMapStore visibilityMap) throws IOException {
+        if (!visibilityMap.exists()) {
+            return List.of("visibility map sidecar is missing");
+        }
+        MvccVisibilityMapStore.Snapshot snapshot;
+        try {
+            snapshot = visibilityMap.read();
+        } catch (IllegalStateException invalid) {
+            return List.of("visibility map is invalid: " + invalid.getMessage());
+        }
+        long pageCount = store.pageCount();
+        NavigableMap<Long, MvccVisibilityMapStore.PageState> expected = visibilityMapFor(
+                pageCount,
+                store.loadAll(),
+                durableHeads.values());
+        List<String> errors = new ArrayList<>();
+        if (snapshot.pageCount() != pageCount) {
+            errors.add("visibility map pageCount=" + snapshot.pageCount()
+                    + " but page volume has pageCount=" + pageCount);
+        }
+        if (!snapshot.pageStates().equals(expected)) {
+            errors.add("visibility map does not match current page images");
+        }
+        return List.copyOf(errors);
+    }
+
+    private static NavigableMap<Long, MvccVisibilityMapStore.PageState> visibilityMapFor(
+            long pageCount,
+            Collection<PageBackedMvccTableStore.StoredVersionRecord> records,
+            Collection<MvccRowDirectoryStore.RowHeadRecord> heads) {
+        NavigableMap<Long, VisibilityAccumulator> accumulators = new java.util.TreeMap<>();
+        for (long page = 0L; page < pageCount; page++) {
+            accumulators.put(page, new VisibilityAccumulator());
+        }
+        Map<MvccRowId, MvccVersionId> headVersionByRow = heads.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        MvccRowDirectoryStore.RowHeadRecord::rowId,
+                        MvccRowDirectoryStore.RowHeadRecord::headVersionId));
+        for (PageBackedMvccTableStore.StoredVersionRecord stored : records) {
+            long page = stored.locator().pageId().value();
+            VisibilityAccumulator accumulator = accumulators.computeIfAbsent(page, ignored -> new VisibilityAccumulator());
+            MvccTupleHeader header = stored.record().header();
+            boolean oldVersion = !Objects.equals(headVersionByRow.get(header.rowId()), header.versionId());
+            boolean tombstone = header.isTombstone();
+            boolean committed = !header.commitSequence().equals(io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence.NONE);
+            boolean overflowReference = MvccOverflowPayloadReferenceCodec.isOverflowReference(stored.record().payload());
+            accumulator.add(oldVersion, oldVersion || tombstone, tombstone, committed, overflowReference);
+        }
+        NavigableMap<Long, MvccVisibilityMapStore.PageState> states = new java.util.TreeMap<>();
+        for (var entry : accumulators.entrySet()) {
+            states.put(entry.getKey(), entry.getValue().toPageState());
+        }
+        return states;
+    }
+
+    private static final class VisibilityAccumulator {
+        private int flags;
+        private int versionCount;
+        private boolean allRecordsCommitted = true;
+
+        private void add(boolean oldVersion, boolean prunable, boolean tombstone, boolean committed, boolean overflowReference) {
+            versionCount++;
+            if (oldVersion) {
+                flags |= MvccVisibilityMapStore.HAS_OLD_VERSIONS;
+            }
+            if (prunable) {
+                flags |= MvccVisibilityMapStore.HAS_PRUNABLE_VERSIONS;
+            }
+            if (tombstone) {
+                flags |= MvccVisibilityMapStore.HAS_TOMBSTONES;
+            }
+            if (overflowReference) {
+                flags |= MvccVisibilityMapStore.HAS_OVERFLOW_REFERENCES;
+            }
+            allRecordsCommitted &= committed;
+        }
+
+        private MvccVisibilityMapStore.PageState toPageState() {
+            int visibleFlags = flags;
+            if (versionCount > 0
+                    && allRecordsCommitted
+                    && (visibleFlags & MvccVisibilityMapStore.HAS_PRUNABLE_VERSIONS) == 0) {
+                visibleFlags |= MvccVisibilityMapStore.ALL_VISIBLE;
+            }
+            return new MvccVisibilityMapStore.PageState(visibleFlags, versionCount);
+        }
     }
 
     public static Result check(

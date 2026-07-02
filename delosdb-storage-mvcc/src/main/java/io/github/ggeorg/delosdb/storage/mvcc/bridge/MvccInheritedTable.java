@@ -517,6 +517,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public Path visibilityMapFileForTesting() {
+        return readLocked(pageVolumeStateStore::visibilityMapFile);
+    }
+
+    @Override
     public Path pageMutationLogFileForTesting() {
         return readLocked(pageVolumeStateStore::pageMutationLogFile);
     }
@@ -617,6 +622,56 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public List<String> freeSpaceMapPageSummariesForTesting() {
         return readLocked(pageVolumeStateStore::freeSpaceMapPageSummaries);
+    }
+
+    @Override
+    public long visibilityMapPageCountForTesting() {
+        return readLocked(pageVolumeStateStore::visibilityMapPageCount);
+    }
+
+    @Override
+    public long visibilityMapOldVersionPageCountForTesting() {
+        return readLocked(pageVolumeStateStore::visibilityMapOldVersionPageCount);
+    }
+
+    @Override
+    public long visibilityMapPrunablePageCountForTesting() {
+        return readLocked(pageVolumeStateStore::visibilityMapPrunablePageCount);
+    }
+
+    @Override
+    public long visibilityMapTombstonePageCountForTesting() {
+        return readLocked(pageVolumeStateStore::visibilityMapTombstonePageCount);
+    }
+
+    @Override
+    public long visibilityMapAllVisiblePageCountForTesting() {
+        return readLocked(pageVolumeStateStore::visibilityMapAllVisiblePageCount);
+    }
+
+    @Override
+    public long visibilityMapOverflowPageCountForTesting() {
+        return readLocked(pageVolumeStateStore::visibilityMapOverflowPageCount);
+    }
+
+    @Override
+    public long visibilityMapNeedsCheckerPageCountForTesting() {
+        return readLocked(pageVolumeStateStore::visibilityMapNeedsCheckerPageCount);
+    }
+
+    @Override
+    public long visibilityMapUpdateCountForTesting() {
+        return readLocked(pageVolumeStateStore::visibilityMapUpdateCount);
+    }
+
+    @Override
+    public long visibilityMapRebuildCountForTesting() {
+        return readLocked(pageVolumeStateStore::visibilityMapRebuildCount);
+    }
+
+    @Override
+    public List<String> visibilityMapPageSummariesForTesting() {
+        return readLocked(pageVolumeStateStore::visibilityMapPageSummaries);
     }
 
     @Override

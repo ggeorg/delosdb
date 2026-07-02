@@ -74,6 +74,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public Path visibilityMapFileForTesting(int segment, long containerId) {
+        return MvccConglomerate.visibilityMapFileForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public Path pageMutationLogFileForTesting(int segment, long containerId) {
         return MvccConglomerate.pageMutationLogFileForDiagnostics(segment, containerId);
     }
@@ -291,6 +296,56 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public List<String> freeSpaceMapPageSummariesForTesting(int segment, long containerId) {
         return MvccConglomerate.freeSpaceMapPageSummariesForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long visibilityMapPageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.visibilityMapPageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long visibilityMapOldVersionPageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.visibilityMapOldVersionPageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long visibilityMapPrunablePageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.visibilityMapPrunablePageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long visibilityMapTombstonePageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.visibilityMapTombstonePageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long visibilityMapAllVisiblePageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.visibilityMapAllVisiblePageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long visibilityMapOverflowPageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.visibilityMapOverflowPageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long visibilityMapNeedsCheckerPageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.visibilityMapNeedsCheckerPageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long visibilityMapUpdateCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.visibilityMapUpdateCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long visibilityMapRebuildCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.visibilityMapRebuildCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public List<String> visibilityMapPageSummariesForTesting(int segment, long containerId) {
+        return MvccConglomerate.visibilityMapPageSummariesForDiagnostics(segment, containerId);
     }
 
     @Override

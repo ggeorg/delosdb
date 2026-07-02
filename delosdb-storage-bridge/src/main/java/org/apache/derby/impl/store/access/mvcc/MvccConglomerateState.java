@@ -168,6 +168,10 @@ final class MvccConglomerateState {
         return diagnostics.freeSpaceMapFileForTesting();
     }
 
+    Path visibilityMapFileForTesting() {
+        return diagnostics.visibilityMapFileForTesting();
+    }
+
     Path pageMutationLogFileForTesting() {
         return diagnostics.pageMutationLogFileForTesting();
     }
@@ -338,6 +342,46 @@ final class MvccConglomerateState {
 
     synchronized List<String> freeSpaceMapPageSummariesForTesting() {
         return diagnostics.freeSpaceMapPageSummariesForTesting();
+    }
+
+    synchronized long visibilityMapPageCountForTesting() {
+        return diagnostics.visibilityMapPageCountForTesting();
+    }
+
+    synchronized long visibilityMapOldVersionPageCountForTesting() {
+        return diagnostics.visibilityMapOldVersionPageCountForTesting();
+    }
+
+    synchronized long visibilityMapPrunablePageCountForTesting() {
+        return diagnostics.visibilityMapPrunablePageCountForTesting();
+    }
+
+    synchronized long visibilityMapTombstonePageCountForTesting() {
+        return diagnostics.visibilityMapTombstonePageCountForTesting();
+    }
+
+    synchronized long visibilityMapAllVisiblePageCountForTesting() {
+        return diagnostics.visibilityMapAllVisiblePageCountForTesting();
+    }
+
+    synchronized long visibilityMapOverflowPageCountForTesting() {
+        return diagnostics.visibilityMapOverflowPageCountForTesting();
+    }
+
+    synchronized long visibilityMapNeedsCheckerPageCountForTesting() {
+        return diagnostics.visibilityMapNeedsCheckerPageCountForTesting();
+    }
+
+    synchronized long visibilityMapUpdateCountForTesting() {
+        return diagnostics.visibilityMapUpdateCountForTesting();
+    }
+
+    synchronized long visibilityMapRebuildCountForTesting() {
+        return diagnostics.visibilityMapRebuildCountForTesting();
+    }
+
+    synchronized List<String> visibilityMapPageSummariesForTesting() {
+        return diagnostics.visibilityMapPageSummariesForTesting();
     }
 
     synchronized long pageCacheMaxPageCountForTesting() {

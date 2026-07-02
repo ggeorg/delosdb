@@ -343,6 +343,10 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapFileForTesting();
     }
 
+    static Path visibilityMapFileForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).visibilityMapFileForTesting();
+    }
+
     static Path pageMutationLogFileForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageMutationLogFileForTesting();
     }
@@ -520,6 +524,46 @@ public final class MvccConglomerate
 
     static List<String> freeSpaceMapPageSummariesForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapPageSummariesForTesting();
+    }
+
+    static long visibilityMapPageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).visibilityMapPageCountForTesting();
+    }
+
+    static long visibilityMapOldVersionPageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).visibilityMapOldVersionPageCountForTesting();
+    }
+
+    static long visibilityMapPrunablePageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).visibilityMapPrunablePageCountForTesting();
+    }
+
+    static long visibilityMapTombstonePageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).visibilityMapTombstonePageCountForTesting();
+    }
+
+    static long visibilityMapAllVisiblePageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).visibilityMapAllVisiblePageCountForTesting();
+    }
+
+    static long visibilityMapOverflowPageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).visibilityMapOverflowPageCountForTesting();
+    }
+
+    static long visibilityMapNeedsCheckerPageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).visibilityMapNeedsCheckerPageCountForTesting();
+    }
+
+    static long visibilityMapUpdateCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).visibilityMapUpdateCountForTesting();
+    }
+
+    static long visibilityMapRebuildCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).visibilityMapRebuildCountForTesting();
+    }
+
+    static List<String> visibilityMapPageSummariesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).visibilityMapPageSummariesForTesting();
     }
 
     static long pageCacheMaxPageCountForDiagnostics(int segment, long containerId) {
