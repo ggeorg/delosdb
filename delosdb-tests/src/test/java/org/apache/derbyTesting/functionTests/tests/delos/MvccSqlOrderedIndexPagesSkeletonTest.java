@@ -23,6 +23,7 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.nio.file.Files;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -105,6 +106,47 @@ public final class MvccSqlOrderedIndexPagesSkeletonTest extends MvccSqlTestSuppo
                     diagnostics.orderedIndexDistinctKeyCountForTesting(0, containerId));
             assertOrdered("reopened ordered index summaries should remain sorted",
                     diagnostics.orderedIndexEntrySummariesForTesting(0, containerId));
+            diagnostics.assertConsistentForTesting(0, containerId);
+        }
+    }
+
+    public void testOversizedValuesDoNotBreakShadowOrderedIndexRebuild() throws Exception {
+        String databaseName = databaseName("mvcc-ordered-index-oversized-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        long containerId;
+        String largePayload = "x".repeat(20000);
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table ordered_index_large_t "
+                    + "(id int primary key, payload long varchar) using delos_mvcc");
+            connection.commit();
+            containerId = mvccContainerId(connection, "ORDERED_INDEX_LARGE_T");
+            connection.rollback();
+
+            try (PreparedStatement insert = connection.prepareStatement(
+                    "insert into ordered_index_large_t values (?, ?)")) {
+                insert.setInt(1, 1);
+                insert.setString(2, largePayload);
+                insert.executeUpdate();
+            }
+            connection.commit();
+
+            assertRows(connection, "select id, length(payload) from ordered_index_large_t", "1|20000");
+            assertTrue("oversized ordered-index value should be represented by a bounded surrogate key",
+                    containsSummary(diagnostics.orderedIndexEntrySummariesForTesting(0, containerId), "<oversized:"));
+            assertTrue("ordered index sidecar should remain durable after oversized value commit",
+                    Files.exists(diagnostics.orderedIndexPagesFileForTesting(0, containerId)));
+            diagnostics.assertConsistentForTesting(0, containerId);
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened, "select id, length(payload) from ordered_index_large_t", "1|20000");
+            assertTrue("reopened ordered-index summaries should preserve bounded oversized surrogate",
+                    containsSummary(diagnostics.orderedIndexEntrySummariesForTesting(0, containerId), "<oversized:"));
             diagnostics.assertConsistentForTesting(0, containerId);
         }
     }

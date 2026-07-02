@@ -3,6 +3,8 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -201,13 +203,52 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
     }
 
     public record Entry(int column, String key, long rowId) {
+        private static final int OVERSIZED_PREFIX_CHARS = 128;
+
         public Entry {
             if (column < 0) {
                 throw new IllegalArgumentException("ordered index column must be non-negative: " + column);
             }
-            key = Objects.requireNonNull(key, "key");
+            key = normalizeKey(Objects.requireNonNull(key, "key"));
             if (rowId <= 0L) {
                 throw new IllegalArgumentException("ordered index row id must be positive: " + rowId);
+            }
+        }
+
+        private static String normalizeKey(String key) {
+            byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
+            if (encodedLength(keyBytes.length) + SLOT_OVERHEAD_BYTES <= maxPayloadBytes()) {
+                return key;
+            }
+            String prefix = key.substring(0, Math.min(key.length(), OVERSIZED_PREFIX_CHARS));
+            String normalized = "<oversized:" + keyBytes.length + ":" + sha256Hex(keyBytes) + ":" + prefix + ">";
+            byte[] normalizedBytes = normalized.getBytes(StandardCharsets.UTF_8);
+            if (encodedLength(normalizedBytes.length) + SLOT_OVERHEAD_BYTES <= maxPayloadBytes()) {
+                return normalized;
+            }
+            return "<oversized:" + keyBytes.length + ":" + sha256Hex(keyBytes) + ">";
+        }
+
+        private static int encodedLength(int keyLength) {
+            return Integer.BYTES
+                    + Short.BYTES
+                    + Integer.BYTES
+                    + Long.BYTES
+                    + Integer.BYTES
+                    + keyLength;
+        }
+
+        private static String sha256Hex(byte[] bytes) {
+            try {
+                byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
+                StringBuilder builder = new StringBuilder(digest.length * 2);
+                for (byte value : digest) {
+                    builder.append(Character.forDigit((value >>> 4) & 0x0f, 16));
+                    builder.append(Character.forDigit(value & 0x0f, 16));
+                }
+                return builder.toString();
+            } catch (NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-256 is required for ordered MVCC index key normalization", e);
             }
         }
     }
