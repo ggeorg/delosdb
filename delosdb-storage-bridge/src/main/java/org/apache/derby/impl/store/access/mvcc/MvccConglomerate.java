@@ -351,6 +351,10 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).purgeQueueFileForTesting();
     }
 
+    static Path orderedIndexPagesFileForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexPagesFileForTesting();
+    }
+
     static Path pageMutationLogFileForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageMutationLogFileForTesting();
     }
@@ -640,6 +644,26 @@ public final class MvccConglomerate
 
     static List<String> purgeQueueEntrySummariesForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).purgeQueueEntrySummariesForTesting();
+    }
+
+    static long orderedIndexPageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexPageCountForTesting();
+    }
+
+    static long orderedIndexEntryCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexEntryCountForTesting();
+    }
+
+    static int orderedIndexDistinctKeyCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexDistinctKeyCountForTesting();
+    }
+
+    static long orderedIndexRebuildCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexRebuildCountForTesting();
+    }
+
+    static List<String> orderedIndexEntrySummariesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexEntrySummariesForTesting();
     }
 
     static long pageCacheMaxPageCountForDiagnostics(int segment, long containerId) {

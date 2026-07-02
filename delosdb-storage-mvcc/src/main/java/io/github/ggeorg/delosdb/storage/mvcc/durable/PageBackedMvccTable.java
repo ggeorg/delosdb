@@ -951,6 +951,11 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return pageFile.resolveSibling(pageFile.getFileName() + ".purge");
     }
 
+    public static Path orderedIndexPagesPath(Path pageFile) {
+        Objects.requireNonNull(pageFile, "pageFile");
+        return pageFile.resolveSibling(pageFile.getFileName() + ".oindex");
+    }
+
     private void rebuildVisibilityMap() throws IOException {
         visibilityMapPageStates = visibilityMapFor(store.pageCount(), store.loadAll(), directory.headRecords());
         visibilityMapStore.rewrite(store.pageCount(), visibilityMapPageStates);

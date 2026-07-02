@@ -84,6 +84,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public Path orderedIndexPagesFileForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexPagesFileForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public Path pageMutationLogFileForTesting(int segment, long containerId) {
         return MvccConglomerate.pageMutationLogFileForDiagnostics(segment, containerId);
     }
@@ -441,6 +446,31 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public java.util.List<String> purgeQueueEntrySummariesForTesting(int segment, long containerId) {
         return MvccConglomerate.purgeQueueEntrySummariesForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long orderedIndexPageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexPageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long orderedIndexEntryCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexEntryCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public int orderedIndexDistinctKeyCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexDistinctKeyCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long orderedIndexRebuildCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexRebuildCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public java.util.List<String> orderedIndexEntrySummariesForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexEntrySummariesForDiagnostics(segment, containerId);
     }
 
     @Override

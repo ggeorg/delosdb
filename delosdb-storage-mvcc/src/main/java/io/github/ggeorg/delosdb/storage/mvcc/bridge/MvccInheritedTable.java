@@ -527,6 +527,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public Path orderedIndexPagesFileForTesting() {
+        return readLocked(pageVolumeStateStore::orderedIndexPagesFile);
+    }
+
+    @Override
     public Path pageMutationLogFileForTesting() {
         return readLocked(pageVolumeStateStore::pageMutationLogFile);
     }
@@ -767,6 +772,31 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public List<String> purgeQueueEntrySummariesForTesting() {
         return readLocked(pageVolumeStateStore::purgeQueueEntrySummaries);
+    }
+
+    @Override
+    public long orderedIndexPageCountForTesting() {
+        return readLocked(pageVolumeStateStore::orderedIndexPageCount);
+    }
+
+    @Override
+    public long orderedIndexEntryCountForTesting() {
+        return readLocked(pageVolumeStateStore::orderedIndexEntryCount);
+    }
+
+    @Override
+    public int orderedIndexDistinctKeyCountForTesting() {
+        return readLocked(pageVolumeStateStore::orderedIndexDistinctKeyCount);
+    }
+
+    @Override
+    public long orderedIndexRebuildCountForTesting() {
+        return readLocked(pageVolumeStateStore::orderedIndexRebuildCount);
+    }
+
+    @Override
+    public List<String> orderedIndexEntrySummariesForTesting() {
+        return readLocked(pageVolumeStateStore::orderedIndexEntrySummaries);
     }
 
     @Override
@@ -1016,6 +1046,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private void rebuildCandidateIndexFromPageBackedRows(
             List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows) {
         candidateIndex.rebuildFromVisibleRows(toCandidateRows(rows));
+        pageVolumeStateStore.rebuildOrderedIndexPages(toOrderedIndexEntries(rows));
         pageBackedCandidateIndexRebuildCount++;
     }
 
@@ -1110,6 +1141,21 @@ final class MvccInheritedTable implements DelosStorageTable,
             candidates.add(new MvccCandidateIndex.CandidateRow(row.rowId(), valueKeys(row.values())));
         }
         return List.copyOf(candidates);
+    }
+
+    private static List<PageVolumeMvccStateStore.OrderedIndexEntry> toOrderedIndexEntries(
+            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows) {
+        if (rows == null) {
+            return List.of();
+        }
+        List<PageVolumeMvccStateStore.OrderedIndexEntry> entries = new ArrayList<>();
+        for (PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]> row : rows) {
+            List<String> keys = valueKeys(row.values());
+            for (int column = 0; column < keys.size(); column++) {
+                entries.add(new PageVolumeMvccStateStore.OrderedIndexEntry(column, keys.get(column), row.rowId()));
+            }
+        }
+        return List.copyOf(entries);
     }
 
     private static List<String> valueKeys(StoreDataValue[] values) {

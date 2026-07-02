@@ -67,6 +67,10 @@ public interface DelosStorageDiagnostics {
         return null;
     }
 
+    default Path orderedIndexPagesFileForTesting(int segment, long containerId) {
+        return null;
+    }
+
     Path pageMutationLogFileForTesting(int segment, long containerId);
 
     Path writeAheadLogFileForTesting(int segment, long containerId);
@@ -333,6 +337,34 @@ public interface DelosStorageDiagnostics {
 
     default List<String> purgeQueueEntrySummariesForTesting(int segment, long containerId) {
         return List.of();
+    }
+
+    default long orderedIndexPageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long orderedIndexEntryCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default int orderedIndexDistinctKeyCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default long orderedIndexRebuildCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default List<String> orderedIndexEntrySummariesForTesting(int segment, long containerId) {
+        return List.of();
+    }
+
+    default DelosStorageOrderedIndexDiagnostics orderedIndexDiagnosticsForTesting(int segment, long containerId) {
+        return new DelosStorageOrderedIndexDiagnostics(
+                orderedIndexPageCountForTesting(segment, containerId),
+                orderedIndexEntryCountForTesting(segment, containerId),
+                orderedIndexDistinctKeyCountForTesting(segment, containerId),
+                orderedIndexRebuildCountForTesting(segment, containerId));
     }
 
     long pageCacheMaxPageCountForTesting(int segment, long containerId);

@@ -35,6 +35,7 @@ import java.util.Optional;
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccDurableConsistencyCheck;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccOrderedIndexPageStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowDirectoryStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowPayload;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccVacuumPlan;
@@ -63,6 +64,7 @@ public final class PageVolumeMvccStateStore<T> {
     private final PageVolumeMvccWriteAheadLog writeAheadLog;
     private final PageVolumeMvccCheckpointStore checkpointStore;
     private final PageBackedMvccTable table;
+    private final MvccOrderedIndexPageStore orderedIndexPageStore;
     private PageVolumeMvccCheckpointStore.Status checkpointStatus;
     private long nextTransactionId;
     private long nextCommitSequence;
@@ -76,6 +78,7 @@ public final class PageVolumeMvccStateStore<T> {
             PageVolumeMvccWriteAheadLog writeAheadLog,
             PageVolumeMvccCheckpointStore checkpointStore,
             PageBackedMvccTable table,
+            MvccOrderedIndexPageStore orderedIndexPageStore,
             PageVolumeMvccCheckpointStore.Status checkpointStatus) {
         this.storageId = storageId;
         this.rowCodec = Objects.requireNonNull(rowCodec, "rowCodec");
@@ -85,6 +88,7 @@ public final class PageVolumeMvccStateStore<T> {
         this.writeAheadLog = Objects.requireNonNull(writeAheadLog, "writeAheadLog");
         this.checkpointStore = Objects.requireNonNull(checkpointStore, "checkpointStore");
         this.table = table;
+        this.orderedIndexPageStore = orderedIndexPageStore;
         this.checkpointStatus = Objects.requireNonNull(checkpointStatus, "checkpointStatus");
         long nextSequence = 1L;
         if (table != null) {
@@ -108,6 +112,8 @@ public final class PageVolumeMvccStateStore<T> {
             PageVolumeMvccWriteAheadLog writeAheadLog = PageVolumeMvccWriteAheadLog.open(databaseDirectory, storageId);
             PageVolumeMvccCheckpointStore checkpointStore = PageVolumeMvccCheckpointStore.open(databaseDirectory, storageId);
             PageBackedMvccTable table = PageBackedMvccTable.open(pageFile, pageMutationLog, transactionOutcomeLog);
+            MvccOrderedIndexPageStore orderedIndexPageStore = MvccOrderedIndexPageStore.open(
+                    PageBackedMvccTable.orderedIndexPagesPath(pageFile));
             PageVolumeMvccCheckpointStore.Status checkpointStatus = checkpointStore.validate(
                     pageFile,
                     PageBackedMvccTable.rowDirectoryPath(pageFile),
@@ -129,6 +135,7 @@ public final class PageVolumeMvccStateStore<T> {
                     writeAheadLog,
                     checkpointStore,
                     table,
+                    orderedIndexPageStore,
                     checkpointStatus);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not open MVCC page-volume state for " + storageId, e);
@@ -144,6 +151,7 @@ public final class PageVolumeMvccStateStore<T> {
                 null,
                 PageVolumeMvccWriteAheadLog.disabled(),
                 PageVolumeMvccCheckpointStore.disabled("disabled"),
+                null,
                 null,
                 PageVolumeMvccCheckpointStore.Status.DISABLED);
     }
@@ -174,6 +182,10 @@ public final class PageVolumeMvccStateStore<T> {
 
     public Path purgeQueueFile() {
         return pageFile == null ? null : PageBackedMvccTable.purgeQueuePath(pageFile);
+    }
+
+    public Path orderedIndexPagesFile() {
+        return pageFile == null ? null : PageBackedMvccTable.orderedIndexPagesPath(pageFile);
     }
 
     public Path pageMutationLogFile() {
@@ -384,6 +396,75 @@ public final class PageVolumeMvccStateStore<T> {
 
     public List<String> purgeQueueEntrySummaries() {
         return enabled() ? table.purgeQueueEntrySummaries() : List.of();
+    }
+
+    public void rebuildOrderedIndexPages(List<OrderedIndexEntry> entries) {
+        if (!enabled() || orderedIndexPageStore == null) {
+            return;
+        }
+        try {
+            List<MvccOrderedIndexPageStore.Entry> durableEntries = new ArrayList<>();
+            for (OrderedIndexEntry entry : Objects.requireNonNull(entries, "entries")) {
+                durableEntries.add(new MvccOrderedIndexPageStore.Entry(
+                        entry.column(), entry.key(), entry.rowId()));
+            }
+            orderedIndexPageStore.rewrite(durableEntries);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not rebuild MVCC ordered index pages "
+                    + orderedIndexPagesFile(), e);
+        }
+    }
+
+    public long orderedIndexPageCount() {
+        if (!enabled() || orderedIndexPageStore == null) {
+            return 0L;
+        }
+        try {
+            return orderedIndexPageStore.pageCount();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read MVCC ordered index page count for "
+                    + orderedIndexPagesFile(), e);
+        }
+    }
+
+    public long orderedIndexEntryCount() {
+        if (!enabled() || orderedIndexPageStore == null) {
+            return 0L;
+        }
+        try {
+            return orderedIndexPageStore.entryCount();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read MVCC ordered index entry count for "
+                    + orderedIndexPagesFile(), e);
+        }
+    }
+
+    public int orderedIndexDistinctKeyCount() {
+        if (!enabled() || orderedIndexPageStore == null) {
+            return 0;
+        }
+        try {
+            return orderedIndexPageStore.distinctKeyCount();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read MVCC ordered index distinct key count for "
+                    + orderedIndexPagesFile(), e);
+        }
+    }
+
+    public long orderedIndexRebuildCount() {
+        return enabled() && orderedIndexPageStore != null ? orderedIndexPageStore.rebuildCount() : 0L;
+    }
+
+    public List<String> orderedIndexEntrySummaries() {
+        if (!enabled() || orderedIndexPageStore == null) {
+            return List.of();
+        }
+        try {
+            return orderedIndexPageStore.entrySummaries();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read MVCC ordered index entries for "
+                    + orderedIndexPagesFile(), e);
+        }
     }
 
     public long pageCacheMaxPageCount() {
@@ -614,6 +695,9 @@ public final class PageVolumeMvccStateStore<T> {
         }
         try {
             table.close();
+            if (orderedIndexPageStore != null) {
+                orderedIndexPageStore.close();
+            }
             Files.deleteIfExists(pageFile);
             Path rowDirectory = rowDirectoryFile();
             if (rowDirectory != null) {
@@ -641,6 +725,10 @@ public final class PageVolumeMvccStateStore<T> {
                 Files.deleteIfExists(purgeQueue);
                 Files.deleteIfExists(purgeQueue.resolveSibling(purgeQueue.getFileName() + ".rewrite"));
             }
+            Path orderedIndexPages = orderedIndexPagesFile();
+            if (orderedIndexPages != null) {
+                Files.deleteIfExists(orderedIndexPages);
+            }
             if (pageMutationLogFile != null) {
                 Files.deleteIfExists(pageMutationLogFile);
             }
@@ -666,6 +754,9 @@ public final class PageVolumeMvccStateStore<T> {
         }
         try {
             table.close();
+            if (orderedIndexPageStore != null) {
+                orderedIndexPageStore.close();
+            }
         } catch (IOException e) {
             throw new UncheckedIOException("Could not close inherited MVCC page-volume state " + pageFile, e);
         }
@@ -714,6 +805,18 @@ public final class PageVolumeMvccStateStore<T> {
             return Long.parseLong(key.substring(ROW_KEY_PREFIX.length()));
         } catch (NumberFormatException e) {
             throw new IllegalStateException("Invalid inherited MVCC page-volume row key: " + key, e);
+        }
+    }
+
+    public record OrderedIndexEntry(int column, String key, long rowId) {
+        public OrderedIndexEntry {
+            if (column < 0) {
+                throw new IllegalArgumentException("ordered index column must be non-negative: " + column);
+            }
+            key = Objects.requireNonNull(key, "key");
+            if (rowId <= 0L) {
+                throw new IllegalArgumentException("ordered index row id must be positive: " + rowId);
+            }
         }
     }
 

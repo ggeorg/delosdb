@@ -176,6 +176,10 @@ final class MvccConglomerateState {
         return diagnostics.purgeQueueFileForTesting();
     }
 
+    Path orderedIndexPagesFileForTesting() {
+        return diagnostics.orderedIndexPagesFileForTesting();
+    }
+
     Path pageMutationLogFileForTesting() {
         return diagnostics.pageMutationLogFileForTesting();
     }
@@ -458,6 +462,26 @@ final class MvccConglomerateState {
 
     synchronized List<String> purgeQueueEntrySummariesForTesting() {
         return diagnostics.purgeQueueEntrySummariesForTesting();
+    }
+
+    synchronized long orderedIndexPageCountForTesting() {
+        return diagnostics.orderedIndexPageCountForTesting();
+    }
+
+    synchronized long orderedIndexEntryCountForTesting() {
+        return diagnostics.orderedIndexEntryCountForTesting();
+    }
+
+    synchronized int orderedIndexDistinctKeyCountForTesting() {
+        return diagnostics.orderedIndexDistinctKeyCountForTesting();
+    }
+
+    synchronized long orderedIndexRebuildCountForTesting() {
+        return diagnostics.orderedIndexRebuildCountForTesting();
+    }
+
+    synchronized List<String> orderedIndexEntrySummariesForTesting() {
+        return diagnostics.orderedIndexEntrySummariesForTesting();
     }
 
     synchronized long pageCacheMaxPageCountForTesting() {
