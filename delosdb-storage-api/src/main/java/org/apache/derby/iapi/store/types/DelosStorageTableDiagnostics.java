@@ -95,6 +95,14 @@ public interface DelosStorageTableDiagnostics {
         return 0;
     }
 
+    default int pageBackedCandidateIndexRebuildCountForTesting() {
+        return 0;
+    }
+
+    default int legacyCandidateIndexRebuildCountForTesting() {
+        return 0;
+    }
+
     long pageCountForTesting();
 
     long overflowPageCountForTesting();

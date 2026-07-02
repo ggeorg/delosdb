@@ -16,8 +16,6 @@ import java.util.function.Supplier;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommandSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccRow;
-import io.github.ggeorg.delosdb.storage.mvcc.MvccScan;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTable;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
@@ -73,6 +71,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private int transactionLocalPageBackedBaseScanCount;
     private int pageBackedHistoricalSnapshotReadCount;
     private int pageBackedHistoricalSnapshotScanCount;
+    private int pageBackedCandidateIndexRebuildCount;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
@@ -300,7 +299,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes,
             MvccCommitSequence commitSequence) {
         pageVolumeStateStore.persistChangedRows(changes, commitSequence);
-        candidateIndex.rebuildFromVisibleRows(toCandidateRows(visibleRows()));
+        rebuildCandidateIndexFromPageBackedCommittedRows();
     }
 
     @Override
@@ -393,6 +392,16 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public int pageBackedHistoricalSnapshotScanCountForTesting() {
         return readLocked(() -> pageBackedHistoricalSnapshotScanCount);
+    }
+
+    @Override
+    public int pageBackedCandidateIndexRebuildCountForTesting() {
+        return readLocked(() -> pageBackedCandidateIndexRebuildCount);
+    }
+
+    @Override
+    public int legacyCandidateIndexRebuildCountForTesting() {
+        return 0;
     }
 
 
@@ -658,7 +667,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private void hydrateCommittedRows(
             List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows,
             long storedNextRowId) {
-        candidateIndex.rebuildFromVisibleRows(toCandidateRows(rows));
+        rebuildCandidateIndexFromPageBackedRows(rows);
         if (rows.isEmpty()) {
             nextRowId = Math.max(nextRowId, storedNextRowId);
             return;
@@ -678,31 +687,14 @@ final class MvccInheritedTable implements DelosStorageTable,
         }
     }
 
-    private List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> visibleRows() {
-        MvccTransaction reader = transactions.begin();
-        try {
-            return visibleRows(reader);
-        } finally {
-            transactions.abort(reader);
-        }
+    private void rebuildCandidateIndexFromPageBackedCommittedRows() {
+        rebuildCandidateIndexFromPageBackedRows(pageVolumeStateStore.loadVisibleRows());
     }
 
-    private List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> visibleRows(MvccTransaction transaction) {
-        try {
-            MvccSnapshot snapshot = transactions.snapshot(transaction);
-            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows = new ArrayList<>();
-            try (MvccScan<Long, StoreDataValue[]> scan = table.openScan(snapshot, transactions)) {
-                while (scan.next()) {
-                    MvccRow<Long, StoreDataValue[]> row = scan.row();
-                    rows.add(new PageVolumeMvccStateStore.PersistedRow<>(
-                            row.key(),
-                            cloneRow(row.value())));
-                }
-            }
-            return List.copyOf(rows);
-        } catch (StandardException e) {
-            throw new IllegalStateException("Could not clone inherited MVCC row for persistence", e);
-        }
+    private void rebuildCandidateIndexFromPageBackedRows(
+            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows) {
+        candidateIndex.rebuildFromVisibleRows(toCandidateRows(rows));
+        pageBackedCandidateIndexRebuildCount++;
     }
 
     private List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changedRows(

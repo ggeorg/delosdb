@@ -117,6 +117,14 @@ public interface DelosStorageDiagnostics {
         return 0;
     }
 
+    default int pageBackedCandidateIndexRebuildCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default int legacyCandidateIndexRebuildCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
     long pageCountForTesting(int segment, long containerId);
 
     long overflowPageCountForTesting(int segment, long containerId);

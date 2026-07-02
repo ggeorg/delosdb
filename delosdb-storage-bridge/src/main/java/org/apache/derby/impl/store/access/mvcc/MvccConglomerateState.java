@@ -236,6 +236,14 @@ final class MvccConglomerateState {
         return diagnostics.legacySnapshotFallbackScanCountForTesting();
     }
 
+    synchronized int pageBackedCandidateIndexRebuildCountForTesting() {
+        return diagnostics.pageBackedCandidateIndexRebuildCountForTesting();
+    }
+
+    synchronized int legacyCandidateIndexRebuildCountForTesting() {
+        return diagnostics.legacyCandidateIndexRebuildCountForTesting();
+    }
+
     synchronized long pageCountForTesting() {
         return diagnostics.pageCountForTesting();
     }

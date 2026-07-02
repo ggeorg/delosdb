@@ -729,6 +729,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedTransactionScanTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLegacySnapshotFallbackGateTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlNoLegacySnapshotFallbackCloseoutTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedCandidateIndexRebuildTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedCommittedReadTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOverflowLifecycleTest.class',

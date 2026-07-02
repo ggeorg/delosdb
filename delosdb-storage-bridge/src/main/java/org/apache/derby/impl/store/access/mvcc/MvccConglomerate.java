@@ -411,6 +411,14 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).legacySnapshotFallbackScanCountForTesting();
     }
 
+    static int pageBackedCandidateIndexRebuildCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageBackedCandidateIndexRebuildCountForTesting();
+    }
+
+    static int legacyCandidateIndexRebuildCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).legacyCandidateIndexRebuildCountForTesting();
+    }
+
     static int candidateIndexKeyCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).candidateIndexKeyCountForTesting();
     }
