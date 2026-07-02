@@ -44,6 +44,7 @@ public final class MvccSqlNoLegacySnapshotFallbackCloseoutTest extends MvccSqlTe
 
             assertEquals(0, diagnostics.legacySnapshotFallbackReadCountForTesting(0, containerId));
             assertEquals(0, diagnostics.legacySnapshotFallbackScanCountForTesting(0, containerId));
+            setup.commit();
         }
 
         try (Connection current = openDatabase(databaseName, false)) {
