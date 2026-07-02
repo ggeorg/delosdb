@@ -85,6 +85,22 @@ public interface DelosStorageDiagnostics {
         return List.of();
     }
 
+    default int activeProviderWriteAppendCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default List<String> activeProviderWriteAppendPayloadSummariesForTesting(int segment, long containerId) {
+        return List.of();
+    }
+
+    default int activeProviderSurvivingWriteIntentCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default List<String> activeProviderSurvivingWriteIntentPayloadSummariesForTesting(int segment, long containerId) {
+        return List.of();
+    }
+
     default int transactionLocalWriteIntentReadCountForTesting(int segment, long containerId) {
         return 0;
     }

@@ -379,6 +379,25 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).lastCommittedWriteIntentPayloadSummariesForTesting();
     }
 
+    static int activeProviderWriteAppendCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).activeProviderWriteAppendCountForTesting();
+    }
+
+    static List<String> activeProviderWriteAppendPayloadSummariesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).activeProviderWriteAppendPayloadSummariesForTesting();
+    }
+
+    static int activeProviderSurvivingWriteIntentCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).activeProviderSurvivingWriteIntentCountForTesting();
+    }
+
+    static List<String> activeProviderSurvivingWriteIntentPayloadSummariesForDiagnostics(
+            int segment,
+            long containerId) {
+        return stateFor(new ContainerKey(segment, containerId))
+                .activeProviderSurvivingWriteIntentPayloadSummariesForTesting();
+    }
+
     static int transactionLocalWriteIntentReadCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).transactionLocalWriteIntentReadCountForTesting();
     }

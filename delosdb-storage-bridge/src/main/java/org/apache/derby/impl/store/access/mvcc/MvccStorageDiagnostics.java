@@ -124,6 +124,26 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public int activeProviderWriteAppendCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.activeProviderWriteAppendCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public List<String> activeProviderWriteAppendPayloadSummariesForTesting(int segment, long containerId) {
+        return MvccConglomerate.activeProviderWriteAppendPayloadSummariesForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public int activeProviderSurvivingWriteIntentCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.activeProviderSurvivingWriteIntentCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public List<String> activeProviderSurvivingWriteIntentPayloadSummariesForTesting(int segment, long containerId) {
+        return MvccConglomerate.activeProviderSurvivingWriteIntentPayloadSummariesForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public int transactionLocalWriteIntentReadCountForTesting(int segment, long containerId) {
         return MvccConglomerate.transactionLocalWriteIntentReadCountForDiagnostics(segment, containerId);
     }

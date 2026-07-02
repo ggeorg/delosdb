@@ -37,6 +37,7 @@ final class MvccInheritedHandles {
         private final MvccTransaction nativeTransaction;
         private final Map<String, MvccCommandSequence> savepoints = new LinkedHashMap<>();
         private final Map<Long, List<WriteIntent>> writeIntents = new LinkedHashMap<>();
+        private final List<WriteIntent> appendedWriteIntents = new ArrayList<>();
         private long nextCommandSequence = 1L;
 
         Transaction(MvccTransaction nativeTransaction) {
@@ -77,6 +78,10 @@ final class MvccInheritedHandles {
             return List.copyOf(latest);
         }
 
+        List<WriteIntent> appendedWriteIntents() {
+            return List.copyOf(appendedWriteIntents);
+        }
+
         boolean hasWriteIntents() {
             return !writeIntents.isEmpty();
         }
@@ -101,8 +106,13 @@ final class MvccInheritedHandles {
             return writeIntents().size();
         }
 
+        int appendedWriteIntentCount() {
+            return appendedWriteIntents.size();
+        }
+
         void clearWriteIntents() {
             writeIntents.clear();
+            appendedWriteIntents.clear();
         }
 
         MvccCommandSequence rollbackToSavepoint(String savepointName) {
@@ -140,6 +150,7 @@ final class MvccInheritedHandles {
         }
 
         private void removeWriteIntentsAfter(MvccCommandSequence boundary) {
+            appendedWriteIntents.removeIf(intent -> intent.commandSequence().compareTo(boundary) > 0);
             var iterator = writeIntents.entrySet().iterator();
             while (iterator.hasNext()) {
                 List<WriteIntent> history = iterator.next().getValue();
@@ -151,6 +162,7 @@ final class MvccInheritedHandles {
         }
 
         private void recordWriteIntent(WriteIntent intent) {
+            appendedWriteIntents.add(intent);
             writeIntents.computeIfAbsent(intent.rowId(), ignored -> new ArrayList<>()).add(intent);
         }
 
