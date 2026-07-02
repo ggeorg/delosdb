@@ -200,6 +200,39 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         });
     }
 
+    List<StoredVersionRecord> rewritePage(long pageId, List<MvccVersionRecord> retainedPageRecords) throws IOException {
+        return writeLockedIo(() -> {
+            Objects.requireNonNull(retainedPageRecords, "retainedPageRecords");
+            long pageCount = pageVolume.pageCount();
+            if (pageId < 0L || pageId >= pageCount) {
+                throw new IllegalArgumentException("page id out of range for page-local MVCC prune: "
+                        + pageId + ", pageCount=" + pageCount);
+            }
+            DelosPage page = DelosPage.empty(new DelosPageId(pageId), DelosPage.DATA_PAGE_TYPE);
+            for (MvccVersionRecord record : retainedPageRecords) {
+                EncodedVersion encodedVersion = encodeForPageRecord(record);
+                byte[] encoded = encodedVersion.bytes();
+                int requiredBytes = Math.addExact(encoded.length, SLOT_OVERHEAD_BYTES);
+                if (page.freeBytes() < requiredBytes) {
+                    throw new IllegalStateException("retained MVCC records no longer fit on page " + pageId
+                            + " during page-local prune; required=" + requiredBytes
+                            + ", free=" + page.freeBytes());
+                }
+                page.appendRecord(encoded);
+            }
+            writePage(page);
+            if (page.slotCount() == 0) {
+                reusablePageIds.add(pageId);
+            } else {
+                reusablePageIds.remove(pageId);
+            }
+            persistReusablePageIndex();
+            updateFreeSpaceMap(page);
+            pageVolume.force();
+            return loadAllUnlocked();
+        });
+    }
+
     public long pageCount() throws IOException {
         return readLockedIo(() -> pageVolume.pageCount());
     }

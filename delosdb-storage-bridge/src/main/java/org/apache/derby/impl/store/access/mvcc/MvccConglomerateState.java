@@ -384,6 +384,22 @@ final class MvccConglomerateState {
         return diagnostics.visibilityMapPageSummariesForTesting();
     }
 
+    synchronized long pageLocalPruneAttemptCountForTesting() {
+        return diagnostics.pageLocalPruneAttemptCountForTesting();
+    }
+
+    synchronized long pageLocalPruneSuccessCountForTesting() {
+        return diagnostics.pageLocalPruneSuccessCountForTesting();
+    }
+
+    synchronized long pageLocalPruneFallbackCountForTesting() {
+        return diagnostics.pageLocalPruneFallbackCountForTesting();
+    }
+
+    synchronized long pageLocalPruneRemovedVersionCountForTesting() {
+        return diagnostics.pageLocalPruneRemovedVersionCountForTesting();
+    }
+
     synchronized long pageCacheMaxPageCountForTesting() {
         return diagnostics.pageCacheMaxPageCountForTesting();
     }

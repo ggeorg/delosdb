@@ -259,6 +259,22 @@ public interface DelosStorageDiagnostics {
         return List.of();
     }
 
+    default long pageLocalPruneAttemptCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageLocalPruneSuccessCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageLocalPruneFallbackCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageLocalPruneRemovedVersionCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
     long pageCacheMaxPageCountForTesting(int segment, long containerId);
 
     long pageCacheSizeForTesting(int segment, long containerId);

@@ -197,6 +197,22 @@ public interface DelosStorageTableDiagnostics {
         return java.util.List.of();
     }
 
+    default long pageLocalPruneAttemptCountForTesting() {
+        return 0L;
+    }
+
+    default long pageLocalPruneSuccessCountForTesting() {
+        return 0L;
+    }
+
+    default long pageLocalPruneFallbackCountForTesting() {
+        return 0L;
+    }
+
+    default long pageLocalPruneRemovedVersionCountForTesting() {
+        return 0L;
+    }
+
     long pageCacheMaxPageCountForTesting();
 
     long pageCacheSizeForTesting();

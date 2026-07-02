@@ -675,6 +675,26 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public long pageLocalPruneAttemptCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageLocalPruneAttemptCount);
+    }
+
+    @Override
+    public long pageLocalPruneSuccessCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageLocalPruneSuccessCount);
+    }
+
+    @Override
+    public long pageLocalPruneFallbackCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageLocalPruneFallbackCount);
+    }
+
+    @Override
+    public long pageLocalPruneRemovedVersionCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageLocalPruneRemovedVersionCount);
+    }
+
+    @Override
     public long pageCacheMaxPageCountForTesting() {
         return readLocked(pageVolumeStateStore::pageCacheMaxPageCount);
     }

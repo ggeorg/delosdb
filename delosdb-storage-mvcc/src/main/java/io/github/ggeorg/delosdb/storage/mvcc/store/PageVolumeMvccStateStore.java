@@ -310,6 +310,22 @@ public final class PageVolumeMvccStateStore<T> {
         return enabled() ? table.visibilityMapPageSummaries() : List.of();
     }
 
+    public long pageLocalPruneAttemptCount() {
+        return enabled() ? table.pageLocalPruneAttemptCount() : 0L;
+    }
+
+    public long pageLocalPruneSuccessCount() {
+        return enabled() ? table.pageLocalPruneSuccessCount() : 0L;
+    }
+
+    public long pageLocalPruneFallbackCount() {
+        return enabled() ? table.pageLocalPruneFallbackCount() : 0L;
+    }
+
+    public long pageLocalPruneRemovedVersionCount() {
+        return enabled() ? table.pageLocalPruneRemovedVersionCount() : 0L;
+    }
+
     public long pageCacheMaxPageCount() {
         return enabled() ? table.pageCacheMaxPageCount() : 0L;
     }

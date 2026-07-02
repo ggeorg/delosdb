@@ -566,6 +566,22 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).visibilityMapPageSummariesForTesting();
     }
 
+    static long pageLocalPruneAttemptCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageLocalPruneAttemptCountForTesting();
+    }
+
+    static long pageLocalPruneSuccessCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageLocalPruneSuccessCountForTesting();
+    }
+
+    static long pageLocalPruneFallbackCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageLocalPruneFallbackCountForTesting();
+    }
+
+    static long pageLocalPruneRemovedVersionCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageLocalPruneRemovedVersionCountForTesting();
+    }
+
     static long pageCacheMaxPageCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageCacheMaxPageCountForTesting();
     }

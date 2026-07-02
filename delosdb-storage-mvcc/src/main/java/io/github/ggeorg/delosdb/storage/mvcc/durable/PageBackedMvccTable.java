@@ -4,10 +4,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
 
@@ -37,6 +39,10 @@ public final class PageBackedMvccTable implements AutoCloseable {
     private NavigableMap<Long, MvccVisibilityMapStore.PageState> visibilityMapPageStates;
     private long visibilityMapUpdateCount;
     private long visibilityMapRebuildCount;
+    private long pageLocalPruneAttemptCount;
+    private long pageLocalPruneSuccessCount;
+    private long pageLocalPruneFallbackCount;
+    private long pageLocalPruneRemovedVersionCount;
 
     private PageBackedMvccTable(
             PageBackedMvccTableStore store,
@@ -370,6 +376,15 @@ public final class PageBackedMvccTable implements AutoCloseable {
                     directory.physicalVersionCount(),
                     directory.logicalRowCount());
         }
+        if (tryPageLocalPrune(selection)) {
+            return new MvccVacuumResult(
+                    selection.removedVersions(),
+                    0,
+                    selection.removedLogicalRows(),
+                    directory.physicalVersionCount(),
+                    directory.logicalRowCount());
+        }
+        pageLocalPruneFallbackCount++;
         if (mutationLog != null) {
             mutationLog.rewriteCheckpoint(selection.retainedRecords());
         }
@@ -558,6 +573,22 @@ public final class PageBackedMvccTable implements AutoCloseable {
                 .toList();
     }
 
+    public synchronized long pageLocalPruneAttemptCount() {
+        return pageLocalPruneAttemptCount;
+    }
+
+    public synchronized long pageLocalPruneSuccessCount() {
+        return pageLocalPruneSuccessCount;
+    }
+
+    public synchronized long pageLocalPruneFallbackCount() {
+        return pageLocalPruneFallbackCount;
+    }
+
+    public synchronized long pageLocalPruneRemovedVersionCount() {
+        return pageLocalPruneRemovedVersionCount;
+    }
+
     @Override
     public synchronized void close() throws IOException {
         IOException failure = null;
@@ -578,6 +609,76 @@ public final class PageBackedMvccTable implements AutoCloseable {
         if (failure != null) {
             throw failure;
         }
+    }
+
+    private boolean tryPageLocalPrune(MvccRowDirectory.VacuumSelection selection) throws IOException {
+        pageLocalPruneAttemptCount++;
+        List<PageBackedMvccTableStore.StoredVersionRecord> currentRecords = store.loadAll();
+        PageLocalPruneCandidate candidate = pageLocalPruneCandidate(currentRecords, selection.retainedRecords());
+        if (candidate == null) {
+            return false;
+        }
+        if (mutationLog != null) {
+            mutationLog.rewriteCheckpoint(selection.retainedRecords());
+        }
+        if (outcomeLog != null) {
+            outcomeLog.rewriteCheckpoint(selection.retainedRecords());
+        }
+        directory = MvccRowDirectory.fromStoredRecords(
+                store.rewritePage(candidate.pageId(), candidate.retainedPageRecords()));
+        rowDirectoryStore.rewriteHeads(directory.headRecords());
+        rebuildVisibilityMap();
+        pageLocalPruneSuccessCount++;
+        pageLocalPruneRemovedVersionCount += selection.removedVersions();
+        return true;
+    }
+
+    private static PageLocalPruneCandidate pageLocalPruneCandidate(
+            List<PageBackedMvccTableStore.StoredVersionRecord> currentRecords,
+            List<MvccVersionRecord> retainedRecords) {
+        Map<MvccVersionId, PageBackedMvccTableStore.StoredVersionRecord> currentByVersion = new LinkedHashMap<>();
+        Map<MvccVersionId, MvccVersionRecord> retainedByVersion = new LinkedHashMap<>();
+        for (PageBackedMvccTableStore.StoredVersionRecord current : currentRecords) {
+            currentByVersion.put(current.record().header().versionId(), current);
+        }
+        for (MvccVersionRecord retained : retainedRecords) {
+            retainedByVersion.put(retained.header().versionId(), retained);
+        }
+        Set<MvccVersionId> removedVersionIds = new java.util.LinkedHashSet<>(currentByVersion.keySet());
+        removedVersionIds.removeAll(retainedByVersion.keySet());
+        if (removedVersionIds.isEmpty()) {
+            return null;
+        }
+        Long prunePageId = null;
+        for (MvccVersionId removedVersionId : removedVersionIds) {
+            PageBackedMvccTableStore.StoredVersionRecord removed = currentByVersion.get(removedVersionId);
+            if (removed == null) {
+                return null;
+            }
+            long pageId = removed.locator().pageId().value();
+            if (prunePageId == null) {
+                prunePageId = pageId;
+            } else if (prunePageId.longValue() != pageId) {
+                return null;
+            }
+        }
+        if (prunePageId == null) {
+            return null;
+        }
+        List<MvccVersionRecord> retainedForPage = new java.util.ArrayList<>();
+        for (PageBackedMvccTableStore.StoredVersionRecord current : currentRecords) {
+            MvccVersionId versionId = current.record().header().versionId();
+            MvccVersionRecord retained = retainedByVersion.get(versionId);
+            if (retained == null) {
+                continue;
+            }
+            if (current.locator().pageId().value() == prunePageId) {
+                retainedForPage.add(retained);
+            } else if (!current.record().equals(retained)) {
+                return null;
+            }
+        }
+        return new PageLocalPruneCandidate(prunePageId, retainedForPage);
     }
 
     private MvccRowId rowIdForExistingKey(String key, String operation) {
@@ -778,6 +879,12 @@ public final class PageBackedMvccTable implements AutoCloseable {
             flags.add("empty");
         }
         return String.join("+", flags) + ",versions=" + state.versionCount();
+    }
+
+    private record PageLocalPruneCandidate(long pageId, List<MvccVersionRecord> retainedPageRecords) {
+        private PageLocalPruneCandidate {
+            retainedPageRecords = List.copyOf(Objects.requireNonNull(retainedPageRecords, "retainedPageRecords"));
+        }
     }
 
     private static final class VisibilityAccumulator {
