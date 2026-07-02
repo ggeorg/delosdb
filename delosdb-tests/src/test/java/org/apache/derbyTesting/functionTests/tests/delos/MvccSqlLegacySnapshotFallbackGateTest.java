@@ -25,9 +25,9 @@ import java.sql.Connection;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
-/** SQL gate proving the legacy in-memory MVCC scan path is retained only for old snapshots. */
+/** SQL gate proving old snapshots now use page-backed historical reads instead of the legacy fallback. */
 public final class MvccSqlLegacySnapshotFallbackGateTest extends MvccSqlTestSupport {
-    public void testLegacySnapshotFallbackIsQuarantinedToOldSnapshots() throws Exception {
+    public void testLegacySnapshotFallbackIsReplacedByPageBackedHistoricalSnapshots() throws Exception {
         String databaseName = databaseName("mvcc-legacy-snapshot-fallback-db");
         DelosStorageDiagnostics diagnostics = mvccDiagnostics();
         long containerId;
@@ -86,13 +86,18 @@ public final class MvccSqlLegacySnapshotFallbackGateTest extends MvccSqlTestSupp
             writer.commit();
 
             int beforeOldSnapshotFallback = diagnostics.legacySnapshotFallbackScanCountForTesting(0, containerId);
+            int beforeHistoricalPageBackedScan = diagnostics.pageBackedHistoricalSnapshotScanCountForTesting(
+                    0, containerId);
             assertRows(oldSnapshot,
                     "select id, code, payload from legacy_fallback_t order by id",
                     "1|one|payload-1",
                     "2|two|payload-2");
-            assertTrue("older transaction-scoped snapshots still require the legacy version-chain fallback "
-                            + "until page-backed historical snapshot reads are promoted",
-                    diagnostics.legacySnapshotFallbackScanCountForTesting(0, containerId) > beforeOldSnapshotFallback);
+            assertEquals("older transaction-scoped snapshots should no longer use the legacy in-memory fallback",
+                    beforeOldSnapshotFallback,
+                    diagnostics.legacySnapshotFallbackScanCountForTesting(0, containerId));
+            assertTrue("older transaction-scoped snapshots should read historical rows from page-backed storage",
+                    diagnostics.pageBackedHistoricalSnapshotScanCountForTesting(0, containerId)
+                            > beforeHistoricalPageBackedScan);
             oldSnapshot.commit();
         }
 

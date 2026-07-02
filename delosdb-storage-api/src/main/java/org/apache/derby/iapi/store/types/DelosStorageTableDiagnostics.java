@@ -79,6 +79,14 @@ public interface DelosStorageTableDiagnostics {
         return 0;
     }
 
+    default int pageBackedHistoricalSnapshotReadCountForTesting() {
+        return 0;
+    }
+
+    default int pageBackedHistoricalSnapshotScanCountForTesting() {
+        return 0;
+    }
+
     default int legacySnapshotFallbackReadCountForTesting() {
         return 0;
     }

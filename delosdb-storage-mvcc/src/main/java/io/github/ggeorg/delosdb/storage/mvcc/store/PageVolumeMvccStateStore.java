@@ -295,12 +295,17 @@ public final class PageVolumeMvccStateStore<T> {
     }
 
     public List<PersistedRow<T>> loadVisibleRows() {
+        return loadVisibleRows(LATEST_COMMITTED);
+    }
+
+    public List<PersistedRow<T>> loadVisibleRows(MvccCommitSequence visibleThrough) {
+        Objects.requireNonNull(visibleThrough, "visibleThrough");
         if (!enabled()) {
             return List.of();
         }
         try {
             List<PersistedRow<T>> rows = new ArrayList<>();
-            for (MvccRowPayload payload : table.visibleRows(LATEST_COMMITTED)) {
+            for (MvccRowPayload payload : table.visibleRows(visibleThrough)) {
                 rows.add(new PersistedRow<>(rowIdFromKey(payload.key()), rowCodec.decode(payload.value())));
             }
             rows.sort(java.util.Comparator.comparingLong(PersistedRow::rowId));
@@ -311,11 +316,16 @@ public final class PageVolumeMvccStateStore<T> {
     }
 
     public Optional<PersistedRow<T>> loadVisibleRow(long rowId) {
+        return loadVisibleRow(rowId, LATEST_COMMITTED);
+    }
+
+    public Optional<PersistedRow<T>> loadVisibleRow(long rowId, MvccCommitSequence visibleThrough) {
+        Objects.requireNonNull(visibleThrough, "visibleThrough");
         if (!enabled() || rowId <= 0L) {
             return Optional.empty();
         }
         try {
-            Optional<MvccRowPayload> payload = table.readPayload(keyFor(rowId), LATEST_COMMITTED);
+            Optional<MvccRowPayload> payload = table.readPayload(keyFor(rowId), visibleThrough);
             if (payload.isEmpty()) {
                 return Optional.empty();
             }
@@ -363,7 +373,14 @@ public final class PageVolumeMvccStateStore<T> {
     }
 
     public void persistChangedRows(List<PersistedChange<T>> changes) {
+        persistChangedRows(changes, nextCommitSequence());
+    }
+
+    public void persistChangedRows(
+            List<PersistedChange<T>> changes,
+            MvccCommitSequence commitSequence) {
         Objects.requireNonNull(changes, "changes");
+        Objects.requireNonNull(commitSequence, "commitSequence");
         if (!enabled() || changes.isEmpty()) {
             return;
         }
@@ -372,7 +389,6 @@ public final class PageVolumeMvccStateStore<T> {
             existingHeads.put(head.key(), head);
         }
         long transactionId = nextTransactionId();
-        long commitSequence = nextCommitSequence();
         boolean beganWalTransaction = false;
         try {
             for (PersistedChange<T> change : changes) {

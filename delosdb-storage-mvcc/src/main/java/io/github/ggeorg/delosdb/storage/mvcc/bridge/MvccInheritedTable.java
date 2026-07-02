@@ -15,6 +15,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommandSequence;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccRow;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccScan;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
@@ -70,6 +71,8 @@ final class MvccInheritedTable implements DelosStorageTable,
     private int transactionLocalWriteIntentScanCount;
     private int transactionLocalPageBackedBaseReadCount;
     private int transactionLocalPageBackedBaseScanCount;
+    private int pageBackedHistoricalSnapshotReadCount;
+    private int pageBackedHistoricalSnapshotScanCount;
     private int legacySnapshotFallbackReadCount;
     private int legacySnapshotFallbackScanCount;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
@@ -116,6 +119,11 @@ final class MvccInheritedTable implements DelosStorageTable,
                 transactionLocalPageBackedBaseScanCount++;
                 return new MvccPageBackedCommittedScan(pageVolumeStateStore.loadVisibleRows());
             }
+            if (!nativeSnapshotHandle(snapshot).transaction().hasWriteIntents()) {
+                pageBackedHistoricalSnapshotScanCount++;
+                return new MvccPageBackedCommittedScan(
+                        pageVolumeStateStore.loadVisibleRows(nativeSnapshot(snapshot).visibleThrough()));
+            }
             legacySnapshotFallbackScanCount++;
             return new MvccInheritedScan(table.openScan(nativeSnapshot(snapshot), transactions));
         });
@@ -136,6 +144,12 @@ final class MvccInheritedTable implements DelosStorageTable,
             if (canReadCommittedImageUnlocked(snapshot)) {
                 transactionLocalPageBackedBaseReadCount++;
                 return pageVolumeStateStore.loadVisibleRow(rowId)
+                        .map(PageVolumeMvccStateStore.PersistedRow::values)
+                        .map(MvccInheritedTable::cloneRowUnchecked);
+            }
+            if (!nativeSnapshotHandle(snapshot).transaction().hasWriteIntents()) {
+                pageBackedHistoricalSnapshotReadCount++;
+                return pageVolumeStateStore.loadVisibleRow(rowId, nativeSnapshot(snapshot).visibleThrough())
                         .map(PageVolumeMvccStateStore.PersistedRow::values)
                         .map(MvccInheritedTable::cloneRowUnchecked);
             }
@@ -240,8 +254,8 @@ final class MvccInheritedTable implements DelosStorageTable,
                 handle.clearWriteIntents();
                 throw failure;
             }
-            transactions.commit(nativeTx);
-            persistCommittedChangesUnlocked(changes);
+            MvccCommitSequence commitSequence = transactions.commit(nativeTx);
+            persistCommittedChangesUnlocked(changes, commitSequence);
             lastCommittedChangedRowCount = changes.size();
             lastCommittedWriteIntentCount = handle.writeIntentCount();
             lastCommittedWriteIntentPayloadSummaries = writeIntentPayloadSummaries(changes);
@@ -283,8 +297,9 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     private void persistCommittedChangesUnlocked(
-            List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes) {
-        pageVolumeStateStore.persistChangedRows(changes);
+            List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes,
+            MvccCommitSequence commitSequence) {
+        pageVolumeStateStore.persistChangedRows(changes, commitSequence);
         candidateIndex.rebuildFromVisibleRows(toCandidateRows(visibleRows()));
     }
 
@@ -368,6 +383,16 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public int transactionLocalPageBackedBaseScanCountForTesting() {
         return readLocked(() -> transactionLocalPageBackedBaseScanCount);
+    }
+
+    @Override
+    public int pageBackedHistoricalSnapshotReadCountForTesting() {
+        return readLocked(() -> pageBackedHistoricalSnapshotReadCount);
+    }
+
+    @Override
+    public int pageBackedHistoricalSnapshotScanCountForTesting() {
+        return readLocked(() -> pageBackedHistoricalSnapshotScanCount);
     }
 
     @Override

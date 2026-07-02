@@ -101,6 +101,14 @@ public interface DelosStorageDiagnostics {
         return 0;
     }
 
+    default int pageBackedHistoricalSnapshotReadCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default int pageBackedHistoricalSnapshotScanCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
     default int legacySnapshotFallbackReadCountForTesting(int segment, long containerId) {
         return 0;
     }

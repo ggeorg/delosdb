@@ -144,6 +144,16 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public int pageBackedHistoricalSnapshotReadCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageBackedHistoricalSnapshotReadCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public int pageBackedHistoricalSnapshotScanCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageBackedHistoricalSnapshotScanCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public int legacySnapshotFallbackReadCountForTesting(int segment, long containerId) {
         return MvccConglomerate.legacySnapshotFallbackReadCountForDiagnostics(segment, containerId);
     }
