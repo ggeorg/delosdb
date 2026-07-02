@@ -87,6 +87,10 @@ public interface DelosStorageTableDiagnostics {
         return 0;
     }
 
+    default int legacyWriteFrontQuarantineViolationCountForTesting() {
+        return 0;
+    }
+
     default int providerFirstWriteAppendFailureRollbackCountForTesting() {
         return 0;
     }

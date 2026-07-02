@@ -228,6 +228,10 @@ final class MvccConglomerateState {
         return diagnostics.legacyWriteFrontShadowMutationCountForTesting();
     }
 
+    synchronized int legacyWriteFrontQuarantineViolationCountForTesting() {
+        return diagnostics.legacyWriteFrontQuarantineViolationCountForTesting();
+    }
+
     synchronized int providerFirstWriteAppendFailureRollbackCountForTesting() {
         return diagnostics.providerFirstWriteAppendFailureRollbackCountForTesting();
     }

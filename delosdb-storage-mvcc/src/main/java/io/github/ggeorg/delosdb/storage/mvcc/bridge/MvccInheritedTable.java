@@ -68,6 +68,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private List<String> lastCommittedWriteIntentPayloadSummaries = List.of();
     private int providerFirstWriteAppendCount;
     private int legacyWriteFrontShadowMutationCount;
+    private int legacyWriteFrontQuarantineViolationCount;
     private int providerFirstWriteAppendFailureRollbackCount;
     private int transactionLocalWriteIntentReadCount;
     private int transactionLocalWriteIntentScanCount;
@@ -205,7 +206,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             recordProviderFirstUpsertWriteIntent(handle, rowId, rowVersion, commandSequence);
             try {
                 table.insert(rowId, cloneRowUnchecked(rowVersion), handle.nativeTransaction(), commandSequence);
-                recordLegacyWriteFrontShadowMutation();
+                recordLegacyWriteFrontShadowMutation(handle, rowId, commandSequence, false);
             } catch (RuntimeException | Error failure) {
                 rollbackProviderFirstCommand(handle, commandSequence);
                 throw failure;
@@ -233,7 +234,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                         nativeSnapshot(snapshot),
                         transactions,
                         commandSequence);
-                recordLegacyWriteFrontShadowMutation();
+                recordLegacyWriteFrontShadowMutation(handle, rowId, commandSequence, false);
             } catch (RuntimeException | Error failure) {
                 rollbackProviderFirstCommand(handle, commandSequence);
                 throw failure;
@@ -258,7 +259,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                         nativeSnapshot(snapshot),
                         transactions,
                         commandSequence);
-                recordLegacyWriteFrontShadowMutation();
+                recordLegacyWriteFrontShadowMutation(handle, rowId, commandSequence, true);
             } catch (RuntimeException | Error failure) {
                 rollbackProviderFirstCommand(handle, commandSequence);
                 throw failure;
@@ -346,7 +347,16 @@ final class MvccInheritedTable implements DelosStorageTable,
         providerFirstWriteAppendCount++;
     }
 
-    private void recordLegacyWriteFrontShadowMutation() {
+    private void recordLegacyWriteFrontShadowMutation(
+            MvccInheritedHandles.Transaction handle,
+            long rowId,
+            MvccCommandSequence commandSequence,
+            boolean delete) {
+        if (!handle.hasAppendedWriteIntent(rowId, commandSequence, delete)) {
+            legacyWriteFrontQuarantineViolationCount++;
+            throw new IllegalStateException("Inherited MVCC write-front shadow mutation attempted "
+                    + "without a matching provider-first write intent for row " + rowId);
+        }
         legacyWriteFrontShadowMutationCount++;
     }
 
@@ -459,6 +469,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public int legacyWriteFrontShadowMutationCountForTesting() {
         return readLocked(() -> legacyWriteFrontShadowMutationCount);
+    }
+
+    @Override
+    public int legacyWriteFrontQuarantineViolationCountForTesting() {
+        return readLocked(() -> legacyWriteFrontQuarantineViolationCount);
     }
 
     @Override

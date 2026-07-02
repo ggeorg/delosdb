@@ -109,6 +109,10 @@ public interface DelosStorageDiagnostics {
         return 0;
     }
 
+    default int legacyWriteFrontQuarantineViolationCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
     default int providerFirstWriteAppendFailureRollbackCountForTesting(int segment, long containerId) {
         return 0;
     }

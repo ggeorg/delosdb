@@ -110,6 +110,20 @@ final class MvccInheritedHandles {
             return appendedWriteIntents.size();
         }
 
+        boolean hasAppendedWriteIntent(
+                long rowId,
+                MvccCommandSequence commandSequence,
+                boolean delete) {
+            for (WriteIntent intent : appendedWriteIntents) {
+                if (intent.rowId() == rowId
+                        && intent.commandSequence().equals(commandSequence)
+                        && intent.delete() == delete) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         void clearWriteIntents() {
             writeIntents.clear();
             appendedWriteIntents.clear();
