@@ -77,6 +77,7 @@ public final class MvccSqlRowIdFastPathTest extends MvccSqlTestSupport {
             assertEquals("secondary equality should not reject rows by full-scan qualifier filtering",
                     0, diagnostics.qualifierRejectCountForTesting());
             diagnostics.assertConsistentForTesting(0, containerId);
+            connection.rollback();
         }
 
         shutdownDatabase(databaseName);
@@ -106,6 +107,7 @@ public final class MvccSqlRowIdFastPathTest extends MvccSqlTestSupport {
             executeUpdate(setup, "insert into row_id_fast_path_snapshot_t values (2, 'beta', 'payload-2')");
             setup.commit();
             containerId = mvccContainerId(setup, "ROW_ID_FAST_PATH_SNAPSHOT_T");
+            setup.rollback();
         }
 
         try (Connection reader = openDatabase(databaseName, false);
