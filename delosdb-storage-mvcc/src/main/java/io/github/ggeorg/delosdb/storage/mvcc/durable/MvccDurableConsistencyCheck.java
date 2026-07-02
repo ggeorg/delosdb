@@ -38,18 +38,21 @@ public final class MvccDurableConsistencyCheck {
         Map<MvccRowId, MvccRowDirectoryStore.RowHeadRecord> durableHeads = rowDirectory.recoverHeads();
         List<String> pageRecordErrors = store.pageRecordConsistencyErrors();
         List<String> reusablePageErrors = store.reusablePageConsistencyErrors();
+        List<String> freeSpaceMapErrors = store.freeSpaceMapConsistencyErrors();
         if (!pageRecordErrors.isEmpty()) {
             List<String> errors = new ArrayList<>(pageRecordErrors);
             errors.addAll(reusablePageErrors);
+            errors.addAll(freeSpaceMapErrors);
             return new Result(0, 0, durableHeads.size(), errors);
         }
 
         Result result = check(store.loadAll(), durableHeads);
-        if (reusablePageErrors.isEmpty()) {
+        if (reusablePageErrors.isEmpty() && freeSpaceMapErrors.isEmpty()) {
             return result;
         }
         List<String> errors = new ArrayList<>(result.errors());
         errors.addAll(reusablePageErrors);
+        errors.addAll(freeSpaceMapErrors);
         return new Result(result.physicalVersions(), result.logicalRows(), result.durableHeads(), errors);
     }
 

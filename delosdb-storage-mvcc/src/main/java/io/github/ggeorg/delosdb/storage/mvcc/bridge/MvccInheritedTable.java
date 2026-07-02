@@ -512,6 +512,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public Path freeSpaceMapFileForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapFile);
+    }
+
+    @Override
     public Path pageMutationLogFileForTesting() {
         return readLocked(pageVolumeStateStore::pageMutationLogFile);
     }
@@ -562,6 +567,56 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public long reusablePageCountForTesting() {
         return readLocked(pageVolumeStateStore::reusablePageCount);
+    }
+
+    @Override
+    public long freeSpaceMapPageCountForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapPageCount);
+    }
+
+    @Override
+    public int freeSpaceMapMaxFreeBytesForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapMaxFreeBytes);
+    }
+
+    @Override
+    public long freeSpaceMapLookupCountForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapLookupCount);
+    }
+
+    @Override
+    public long freeSpaceMapHitCountForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapHitCount);
+    }
+
+    @Override
+    public long freeSpaceMapNonLastHitCountForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapNonLastHitCount);
+    }
+
+    @Override
+    public long freeSpaceMapMissCountForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapMissCount);
+    }
+
+    @Override
+    public long freeSpaceMapStaleEntryCountForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapStaleEntryCount);
+    }
+
+    @Override
+    public long freeSpaceMapUpdateCountForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapUpdateCount);
+    }
+
+    @Override
+    public long freeSpaceMapRebuildCountForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapRebuildCount);
+    }
+
+    @Override
+    public List<String> freeSpaceMapPageSummariesForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapPageSummaries);
     }
 
     @Override

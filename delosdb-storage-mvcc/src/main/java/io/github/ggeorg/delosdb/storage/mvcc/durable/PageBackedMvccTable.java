@@ -450,6 +450,50 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return store.reusablePageIndexPath();
     }
 
+    public synchronized Path freeSpaceMapPath() {
+        return store.freeSpaceMapPath();
+    }
+
+    public synchronized long freeSpaceMapPageCount() {
+        return store.freeSpaceMapPageCount();
+    }
+
+    public synchronized int freeSpaceMapMaxFreeBytes() {
+        return store.freeSpaceMapMaxFreeBytes();
+    }
+
+    public synchronized long freeSpaceMapLookupCount() {
+        return store.freeSpaceMapLookupCount();
+    }
+
+    public synchronized long freeSpaceMapHitCount() {
+        return store.freeSpaceMapHitCount();
+    }
+
+    public synchronized long freeSpaceMapNonLastHitCount() {
+        return store.freeSpaceMapNonLastHitCount();
+    }
+
+    public synchronized long freeSpaceMapMissCount() {
+        return store.freeSpaceMapMissCount();
+    }
+
+    public synchronized long freeSpaceMapStaleEntryCount() {
+        return store.freeSpaceMapStaleEntryCount();
+    }
+
+    public synchronized long freeSpaceMapUpdateCount() {
+        return store.freeSpaceMapUpdateCount();
+    }
+
+    public synchronized long freeSpaceMapRebuildCount() {
+        return store.freeSpaceMapRebuildCount();
+    }
+
+    public synchronized java.util.List<String> freeSpaceMapPageSummaries() {
+        return store.freeSpaceMapPageSummaries();
+    }
+
     @Override
     public synchronized void close() throws IOException {
         IOException failure = null;
@@ -593,6 +637,10 @@ public final class PageBackedMvccTable implements AutoCloseable {
 
     public static Path reusablePageIndexPath(Path pageFile) {
         return PageBackedMvccTableStore.reusablePageIndexPath(pageFile);
+    }
+
+    public static Path freeSpaceMapPath(Path pageFile) {
+        return PageBackedMvccTableStore.freeSpaceMapPath(pageFile);
     }
 
     private static byte[] stringBytes(String value) {

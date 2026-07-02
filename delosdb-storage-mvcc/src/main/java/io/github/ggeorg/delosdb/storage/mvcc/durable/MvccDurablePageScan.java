@@ -3,8 +3,10 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NavigableMap;
 import java.util.NavigableSet;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 import io.github.ggeorg.delosdb.storage.io.page.DelosPage;
@@ -22,17 +24,20 @@ final class MvccDurablePageScan {
     private final long pageCount;
     private final List<SlotRecord> slotRecords;
     private final NavigableSet<Long> emptyPageIds;
+    private final NavigableMap<Long, Integer> freeBytesByPageId;
 
     private MvccDurablePageScan(
             long pageCount,
             List<SlotRecord> slotRecords,
-            NavigableSet<Long> emptyPageIds) {
+            NavigableSet<Long> emptyPageIds,
+            NavigableMap<Long, Integer> freeBytesByPageId) {
         if (pageCount < 0L) {
             throw new IllegalArgumentException("pageCount must not be negative: " + pageCount);
         }
         this.pageCount = pageCount;
         this.slotRecords = List.copyOf(Objects.requireNonNull(slotRecords, "slotRecords"));
         this.emptyPageIds = new TreeSet<>(Objects.requireNonNull(emptyPageIds, "emptyPageIds"));
+        this.freeBytesByPageId = new TreeMap<>(Objects.requireNonNull(freeBytesByPageId, "freeBytesByPageId"));
     }
 
     static MvccDurablePageScan scan(PageSource pages) throws IOException {
@@ -44,9 +49,11 @@ final class MvccDurablePageScan {
 
         List<SlotRecord> slotRecords = new ArrayList<>();
         NavigableSet<Long> emptyPageIds = new TreeSet<>();
+        NavigableMap<Long, Integer> freeBytesByPageId = new TreeMap<>();
         for (long pageNumber = 0L; pageNumber < pageCount; pageNumber++) {
             DelosPageId pageId = new DelosPageId(pageNumber);
             DelosPage page = Objects.requireNonNull(pages.readPage(pageId), "page");
+            freeBytesByPageId.put(pageNumber, page.freeBytes());
             if (page.slotCount() == 0) {
                 emptyPageIds.add(pageNumber);
                 continue;
@@ -55,7 +62,7 @@ final class MvccDurablePageScan {
                 slotRecords.add(new SlotRecord(page.pageId(), slot, page.readRecord(slot)));
             }
         }
-        return new MvccDurablePageScan(pageCount, slotRecords, emptyPageIds);
+        return new MvccDurablePageScan(pageCount, slotRecords, emptyPageIds, freeBytesByPageId);
     }
 
     long pageCount() {
@@ -68,6 +75,10 @@ final class MvccDurablePageScan {
 
     NavigableSet<Long> emptyPageIds() {
         return new TreeSet<>(emptyPageIds);
+    }
+
+    NavigableMap<Long, Integer> freeBytesByPageId() {
+        return new TreeMap<>(freeBytesByPageId);
     }
 
     interface PageSource {

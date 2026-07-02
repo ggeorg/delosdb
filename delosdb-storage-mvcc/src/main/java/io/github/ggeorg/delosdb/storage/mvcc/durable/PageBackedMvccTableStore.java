@@ -7,8 +7,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NavigableMap;
 import java.util.NavigableSet;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -34,7 +36,16 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     private MvccOverflowPayloadStore overflowStore;
     private final MvccReusablePageIndexStore reusablePageIndexStore;
     private final NavigableSet<Long> reusablePageIds;
+    private final MvccFreeSpaceMapStore freeSpaceMapStore;
+    private final NavigableMap<Long, Integer> freeBytesByPageId;
     private final MvccPageCache pageCache;
+    private long freeSpaceMapLookupCount;
+    private long freeSpaceMapHitCount;
+    private long freeSpaceMapNonLastHitCount;
+    private long freeSpaceMapMissCount;
+    private long freeSpaceMapStaleEntryCount;
+    private long freeSpaceMapUpdateCount;
+    private long freeSpaceMapRebuildCount;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     private PageBackedMvccTableStore(
@@ -44,6 +55,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             MvccOverflowPayloadStore overflowStore,
             MvccReusablePageIndexStore reusablePageIndexStore,
             NavigableSet<Long> reusablePageIds,
+            MvccFreeSpaceMapStore freeSpaceMapStore,
+            NavigableMap<Long, Integer> freeBytesByPageId,
             MvccPageCache pageCache) {
         this.path = Objects.requireNonNull(path, "path");
         this.overflowPath = overflowPath(path);
@@ -52,6 +65,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         this.overflowStore = Objects.requireNonNull(overflowStore, "overflowStore");
         this.reusablePageIndexStore = Objects.requireNonNull(reusablePageIndexStore, "reusablePageIndexStore");
         this.reusablePageIds = Objects.requireNonNull(reusablePageIds, "reusablePageIds");
+        this.freeSpaceMapStore = Objects.requireNonNull(freeSpaceMapStore, "freeSpaceMapStore");
+        this.freeBytesByPageId = Objects.requireNonNull(freeBytesByPageId, "freeBytesByPageId");
         this.pageCache = Objects.requireNonNull(pageCache, "pageCache");
     }
 
@@ -62,14 +77,21 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 reusablePageIndexPath(path));
         NavigableSet<Long> reusablePageIds = recoverReusablePageIds(pageVolume, reusablePageIndexStore);
         reusablePageIndexStore.rewrite(pageVolume.pageCount(), reusablePageIds);
-        return new PageBackedMvccTableStore(
+        MvccFreeSpaceMapStore freeSpaceMapStore = MvccFreeSpaceMapStore.open(freeSpaceMapPath(path));
+        NavigableMap<Long, Integer> freeBytesByPageId = recoverFreeSpaceMap(pageVolume, freeSpaceMapStore);
+        freeSpaceMapStore.rewrite(pageVolume.pageCount(), freeBytesByPageId);
+        PageBackedMvccTableStore store = new PageBackedMvccTableStore(
                 path,
                 FILE_VOLUME_FACTORY,
                 pageVolume,
                 MvccOverflowPayloadStore.open(overflowPath(path), FILE_VOLUME_FACTORY),
                 reusablePageIndexStore,
                 reusablePageIds,
+                freeSpaceMapStore,
+                freeBytesByPageId,
                 new MvccPageCache());
+        store.freeSpaceMapRebuildCount++;
+        return store;
     }
 
     static PageBackedMvccTableStore open(Path path, DelosPageVolume pageVolume) {
@@ -78,14 +100,21 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                     reusablePageIndexPath(path));
             NavigableSet<Long> reusablePageIds = recoverReusablePageIds(pageVolume, reusablePageIndexStore);
             reusablePageIndexStore.rewrite(pageVolume.pageCount(), reusablePageIds);
-            return new PageBackedMvccTableStore(
+            MvccFreeSpaceMapStore freeSpaceMapStore = MvccFreeSpaceMapStore.open(freeSpaceMapPath(path));
+            NavigableMap<Long, Integer> freeBytesByPageId = recoverFreeSpaceMap(pageVolume, freeSpaceMapStore);
+            freeSpaceMapStore.rewrite(pageVolume.pageCount(), freeBytesByPageId);
+            PageBackedMvccTableStore store = new PageBackedMvccTableStore(
                     path,
                     FILE_VOLUME_FACTORY,
                     pageVolume,
                     MvccOverflowPayloadStore.open(overflowPath(path), FILE_VOLUME_FACTORY),
                     reusablePageIndexStore,
                     reusablePageIds,
+                    freeSpaceMapStore,
+                    freeBytesByPageId,
                     new MvccPageCache());
+            store.freeSpaceMapRebuildCount++;
+            return store;
         } catch (IOException e) {
             throw new UncheckedIOException("Could not open MVCC overflow payload store for " + path, e);
         }
@@ -112,7 +141,9 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
         DelosPage page = writablePage(encoded.length);
         int slotId = page.appendRecord(encoded);
-        writePage(page.withPageLsn(pageLsn.value()));
+        DelosPage writtenPage = page.withPageLsn(pageLsn.value());
+        writePage(writtenPage);
+        updateFreeSpaceMap(writtenPage);
         pageVolume.force();
         return new MvccVersionLocator(page.pageId(), slotId);
     }
@@ -145,6 +176,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                     MvccOverflowPayloadStore.open(rewriteOverflowPath, volumeFactory),
                     MvccReusablePageIndexStore.open(reusablePageIndexPath(rewritePath)),
                     new TreeSet<>(),
+                    MvccFreeSpaceMapStore.open(freeSpaceMapPath(rewritePath)),
+                    new TreeMap<>(),
                     new MvccPageCache())) {
                 for (MvccVersionRecord record : records) {
                     rewrite.append(record);
@@ -159,8 +192,10 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             }
             Files.deleteIfExists(rewritePath);
             MvccReusablePageIndexStore.open(reusablePageIndexPath(rewritePath)).delete();
+            MvccFreeSpaceMapStore.open(freeSpaceMapPath(rewritePath)).delete();
             overflowStore = MvccOverflowPayloadStore.open(overflowPath, volumeFactory);
             rebuildReusablePageIds();
+            rebuildFreeSpaceMap();
             return loadAllUnlocked();
         });
     }
@@ -175,6 +210,55 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     public long reusablePageCount() {
         return readLockedUnchecked(() -> (long) reusablePageIds.size());
+    }
+
+    public Path freeSpaceMapPath() {
+        return readLockedUnchecked(() -> freeSpaceMapStore.path());
+    }
+
+    public long freeSpaceMapPageCount() {
+        return readLockedUnchecked(() -> (long) freeBytesByPageId.size());
+    }
+
+    public int freeSpaceMapMaxFreeBytes() {
+        return readLockedUnchecked(() -> freeBytesByPageId.values().stream()
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(0));
+    }
+
+    public long freeSpaceMapLookupCount() {
+        return readLockedUnchecked(() -> freeSpaceMapLookupCount);
+    }
+
+    public long freeSpaceMapHitCount() {
+        return readLockedUnchecked(() -> freeSpaceMapHitCount);
+    }
+
+    public long freeSpaceMapNonLastHitCount() {
+        return readLockedUnchecked(() -> freeSpaceMapNonLastHitCount);
+    }
+
+    public long freeSpaceMapMissCount() {
+        return readLockedUnchecked(() -> freeSpaceMapMissCount);
+    }
+
+    public long freeSpaceMapStaleEntryCount() {
+        return readLockedUnchecked(() -> freeSpaceMapStaleEntryCount);
+    }
+
+    public long freeSpaceMapUpdateCount() {
+        return readLockedUnchecked(() -> freeSpaceMapUpdateCount);
+    }
+
+    public long freeSpaceMapRebuildCount() {
+        return readLockedUnchecked(() -> freeSpaceMapRebuildCount);
+    }
+
+    public List<String> freeSpaceMapPageSummaries() {
+        return readLockedUnchecked(() -> freeBytesByPageId.entrySet().stream()
+                .map(entry -> entry.getKey() + ":" + entry.getValue())
+                .toList());
     }
 
     public long pageCacheMaxPageCount() {
@@ -281,6 +365,38 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         });
     }
 
+    List<String> freeSpaceMapConsistencyErrors() throws IOException {
+        return readLockedIo(() -> {
+            List<String> errors = new ArrayList<>();
+            MvccDurablePageScan scan = scanPages();
+            long pageCount = scan.pageCount();
+            for (var entry : freeBytesByPageId.entrySet()) {
+                Long pageNumber = entry.getKey();
+                Integer freeBytes = entry.getValue();
+                if (pageNumber == null) {
+                    errors.add("free-space map contains null page id");
+                    continue;
+                }
+                if (pageNumber < 0L || pageNumber >= pageCount) {
+                    errors.add("free-space map contains out-of-range page "
+                            + pageNumber + " for pageCount=" + pageCount);
+                    continue;
+                }
+                Integer actualFreeBytes = scan.freeBytesByPageId().get(pageNumber);
+                if (!Objects.equals(freeBytes, actualFreeBytes)) {
+                    errors.add("free-space map page " + pageNumber + " has freeBytes="
+                            + freeBytes + " but page image has freeBytes=" + actualFreeBytes);
+                }
+            }
+            for (var entry : scan.freeBytesByPageId().entrySet()) {
+                if (!Objects.equals(freeBytesByPageId.get(entry.getKey()), entry.getValue())) {
+                    errors.add("page " + entry.getKey() + " is missing or stale in free-space map");
+                }
+            }
+            return List.copyOf(errors);
+        });
+    }
+
     public Path reusablePageIndexPath() {
         return readLockedUnchecked(() -> reusablePageIndexStore.path());
     }
@@ -331,6 +447,11 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return pageFile.resolveSibling(pageFile.getFileName() + ".free");
     }
 
+    static Path freeSpaceMapPath(Path pageFile) {
+        Objects.requireNonNull(pageFile, "pageFile");
+        return pageFile.resolveSibling(pageFile.getFileName() + ".fsm");
+    }
+
     private EncodedVersion encodeForPageRecord(MvccVersionRecord record) throws IOException {
         byte[] encoded = MvccPageRecordCodec.encodeVersionRecord(Objects.requireNonNull(record, "record"));
         if (encoded.length <= maxSingleRecordBytes()) {
@@ -368,7 +489,12 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     }
 
     private DelosPage writablePage(int encodedRecordLength) throws IOException {
-        DelosPage reusable = takeReusablePage(encodedRecordLength);
+        int requiredBytes = Math.addExact(encodedRecordLength, SLOT_OVERHEAD_BYTES);
+        DelosPage mapped = pageFromFreeSpaceMap(requiredBytes);
+        if (mapped != null) {
+            return mapped;
+        }
+        DelosPage reusable = takeReusablePage(requiredBytes);
         if (reusable != null) {
             return reusable;
         }
@@ -377,14 +503,60 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             return allocatePage(DelosPage.DATA_PAGE_TYPE);
         }
         DelosPage last = readPage(new DelosPageId(count - 1L));
-        if (last.freeBytes() >= encodedRecordLength + SLOT_OVERHEAD_BYTES) {
+        if (last.freeBytes() >= requiredBytes) {
             return last;
         }
         return allocatePage(DelosPage.DATA_PAGE_TYPE);
     }
 
-    private DelosPage takeReusablePage(int encodedRecordLength) throws IOException {
-        int requiredBytes = Math.addExact(encodedRecordLength, SLOT_OVERHEAD_BYTES);
+    private DelosPage pageFromFreeSpaceMap(int requiredBytes) throws IOException {
+        freeSpaceMapLookupCount++;
+        boolean changed = false;
+        long pageCount = pageVolume.pageCount();
+        java.util.Iterator<java.util.Map.Entry<Long, Integer>> entries = freeBytesByPageId.entrySet().iterator();
+        while (entries.hasNext()) {
+            java.util.Map.Entry<Long, Integer> entry = entries.next();
+            long pageNumber = entry.getKey();
+            int indexedFreeBytes = entry.getValue();
+            if (pageNumber < 0L || pageNumber >= pageCount) {
+                entries.remove();
+                freeSpaceMapStaleEntryCount++;
+                changed = true;
+                continue;
+            }
+            if (indexedFreeBytes < requiredBytes) {
+                continue;
+            }
+            DelosPage page = readPage(new DelosPageId(pageNumber));
+            if (page.freeBytes() >= requiredBytes) {
+                freeSpaceMapHitCount++;
+                if (pageNumber != pageCount - 1L) {
+                    freeSpaceMapNonLastHitCount++;
+                }
+                if (reusablePageIds.remove(pageNumber)) {
+                    persistReusablePageIndex();
+                }
+                if (indexedFreeBytes != page.freeBytes()) {
+                    entry.setValue(page.freeBytes());
+                    changed = true;
+                }
+                if (changed) {
+                    persistFreeSpaceMap();
+                }
+                return page;
+            }
+            entry.setValue(page.freeBytes());
+            freeSpaceMapStaleEntryCount++;
+            changed = true;
+        }
+        freeSpaceMapMissCount++;
+        if (changed) {
+            persistFreeSpaceMap();
+        }
+        return null;
+    }
+
+    private DelosPage takeReusablePage(int requiredBytes) throws IOException {
         boolean changed = false;
         java.util.Iterator<Long> ids = reusablePageIds.iterator();
         while (ids.hasNext()) {
@@ -436,6 +608,23 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         reusablePageIndexStore.rewrite(pageVolume.pageCount(), reusablePageIds);
     }
 
+    private void updateFreeSpaceMap(DelosPage page) throws IOException {
+        freeBytesByPageId.put(page.pageId().value(), page.freeBytes());
+        freeSpaceMapUpdateCount++;
+        persistFreeSpaceMap();
+    }
+
+    private void rebuildFreeSpaceMap() throws IOException {
+        freeBytesByPageId.clear();
+        freeBytesByPageId.putAll(recoverFreeSpaceMap(pageVolume, freeSpaceMapStore));
+        freeSpaceMapRebuildCount++;
+        persistFreeSpaceMap();
+    }
+
+    private void persistFreeSpaceMap() throws IOException {
+        freeSpaceMapStore.rewrite(pageVolume.pageCount(), freeBytesByPageId);
+    }
+
     private static NavigableSet<Long> recoverReusablePageIds(
             DelosPageVolume pageVolume,
             MvccReusablePageIndexStore reusablePageIndexStore) throws IOException {
@@ -464,6 +653,39 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         try {
             return reusablePageIndexStore.read();
         } catch (IllegalStateException invalidIndex) {
+            return null;
+        }
+    }
+
+    private static NavigableMap<Long, Integer> recoverFreeSpaceMap(
+            DelosPageVolume pageVolume,
+            MvccFreeSpaceMapStore freeSpaceMapStore) throws IOException {
+        Objects.requireNonNull(pageVolume, "pageVolume");
+        Objects.requireNonNull(freeSpaceMapStore, "freeSpaceMapStore");
+        NavigableMap<Long, Integer> scanned = scanPages(pageVolume).freeBytesByPageId();
+        if (!freeSpaceMapStore.exists()) {
+            return scanned;
+        }
+        MvccFreeSpaceMapStore.Snapshot indexed = readFreeSpaceMapIfValid(freeSpaceMapStore);
+        if (indexed == null || indexed.pageCount() != pageVolume.pageCount()) {
+            return scanned;
+        }
+        NavigableMap<Long, Integer> reconciled = new TreeMap<>();
+        for (var entry : indexed.freeBytesByPageId().entrySet()) {
+            Integer actualFreeBytes = scanned.get(entry.getKey());
+            if (Objects.equals(actualFreeBytes, entry.getValue())) {
+                reconciled.put(entry.getKey(), entry.getValue());
+            }
+        }
+        reconciled.putAll(scanned);
+        return reconciled;
+    }
+
+    private static MvccFreeSpaceMapStore.Snapshot readFreeSpaceMapIfValid(
+            MvccFreeSpaceMapStore freeSpaceMapStore) throws IOException {
+        try {
+            return freeSpaceMapStore.read();
+        } catch (IllegalStateException invalidMap) {
             return null;
         }
     }

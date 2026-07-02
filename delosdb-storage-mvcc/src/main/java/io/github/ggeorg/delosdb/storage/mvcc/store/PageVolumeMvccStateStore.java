@@ -164,6 +164,10 @@ public final class PageVolumeMvccStateStore<T> {
         return pageFile == null ? null : PageBackedMvccTable.reusablePageIndexPath(pageFile);
     }
 
+    public Path freeSpaceMapFile() {
+        return pageFile == null ? null : PageBackedMvccTable.freeSpaceMapPath(pageFile);
+    }
+
     public Path pageMutationLogFile() {
         return pageMutationLogFile;
     }
@@ -220,6 +224,46 @@ public final class PageVolumeMvccStateStore<T> {
 
     public long reusablePageCount() {
         return enabled() ? table.reusablePageCount() : 0L;
+    }
+
+    public long freeSpaceMapPageCount() {
+        return enabled() ? table.freeSpaceMapPageCount() : 0L;
+    }
+
+    public int freeSpaceMapMaxFreeBytes() {
+        return enabled() ? table.freeSpaceMapMaxFreeBytes() : 0;
+    }
+
+    public long freeSpaceMapLookupCount() {
+        return enabled() ? table.freeSpaceMapLookupCount() : 0L;
+    }
+
+    public long freeSpaceMapHitCount() {
+        return enabled() ? table.freeSpaceMapHitCount() : 0L;
+    }
+
+    public long freeSpaceMapNonLastHitCount() {
+        return enabled() ? table.freeSpaceMapNonLastHitCount() : 0L;
+    }
+
+    public long freeSpaceMapMissCount() {
+        return enabled() ? table.freeSpaceMapMissCount() : 0L;
+    }
+
+    public long freeSpaceMapStaleEntryCount() {
+        return enabled() ? table.freeSpaceMapStaleEntryCount() : 0L;
+    }
+
+    public long freeSpaceMapUpdateCount() {
+        return enabled() ? table.freeSpaceMapUpdateCount() : 0L;
+    }
+
+    public long freeSpaceMapRebuildCount() {
+        return enabled() ? table.freeSpaceMapRebuildCount() : 0L;
+    }
+
+    public List<String> freeSpaceMapPageSummaries() {
+        return enabled() ? table.freeSpaceMapPageSummaries() : List.of();
     }
 
     public long pageCacheMaxPageCount() {
@@ -461,6 +505,11 @@ public final class PageVolumeMvccStateStore<T> {
             if (reusablePageIndex != null) {
                 Files.deleteIfExists(reusablePageIndex);
                 Files.deleteIfExists(reusablePageIndex.resolveSibling(reusablePageIndex.getFileName() + ".rewrite"));
+            }
+            Path freeSpaceMap = freeSpaceMapFile();
+            if (freeSpaceMap != null) {
+                Files.deleteIfExists(freeSpaceMap);
+                Files.deleteIfExists(freeSpaceMap.resolveSibling(freeSpaceMap.getFileName() + ".rewrite"));
             }
             if (pageMutationLogFile != null) {
                 Files.deleteIfExists(pageMutationLogFile);

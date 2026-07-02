@@ -31,6 +31,8 @@ public interface DelosStorageTableDiagnostics {
 
     Path reusablePageIndexFileForTesting();
 
+    Path freeSpaceMapFileForTesting();
+
     Path pageMutationLogFileForTesting();
 
     Path writeAheadLogFileForTesting();
@@ -149,6 +151,28 @@ public interface DelosStorageTableDiagnostics {
 
     long reusablePageCountForTesting();
 
+    long freeSpaceMapPageCountForTesting();
+
+    int freeSpaceMapMaxFreeBytesForTesting();
+
+    long freeSpaceMapLookupCountForTesting();
+
+    long freeSpaceMapHitCountForTesting();
+
+    long freeSpaceMapNonLastHitCountForTesting();
+
+    long freeSpaceMapMissCountForTesting();
+
+    long freeSpaceMapStaleEntryCountForTesting();
+
+    long freeSpaceMapUpdateCountForTesting();
+
+    long freeSpaceMapRebuildCountForTesting();
+
+    default java.util.List<String> freeSpaceMapPageSummariesForTesting() {
+        return java.util.List.of();
+    }
+
     long pageCacheMaxPageCountForTesting();
 
     long pageCacheSizeForTesting();
@@ -176,6 +200,19 @@ public interface DelosStorageTableDiagnostics {
                 reusablePageCountForTesting(),
                 physicalVersionCountForTesting(),
                 logicalRowCountForTesting());
+    }
+
+    default DelosStorageFreeSpaceDiagnostics freeSpaceDiagnosticsForTesting() {
+        return new DelosStorageFreeSpaceDiagnostics(
+                freeSpaceMapPageCountForTesting(),
+                freeSpaceMapMaxFreeBytesForTesting(),
+                freeSpaceMapLookupCountForTesting(),
+                freeSpaceMapHitCountForTesting(),
+                freeSpaceMapNonLastHitCountForTesting(),
+                freeSpaceMapMissCountForTesting(),
+                freeSpaceMapStaleEntryCountForTesting(),
+                freeSpaceMapUpdateCountForTesting(),
+                freeSpaceMapRebuildCountForTesting());
     }
 
     default DelosStoragePageCacheDiagnostics pageCacheDiagnosticsForTesting() {

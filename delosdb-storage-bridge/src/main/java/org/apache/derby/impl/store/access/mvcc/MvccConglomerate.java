@@ -339,6 +339,10 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).reusablePageIndexFileForTesting();
     }
 
+    static Path freeSpaceMapFileForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapFileForTesting();
+    }
+
     static Path pageMutationLogFileForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageMutationLogFileForTesting();
     }
@@ -476,6 +480,46 @@ public final class MvccConglomerate
 
     static long reusablePageCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).reusablePageCountForTesting();
+    }
+
+    static long freeSpaceMapPageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapPageCountForTesting();
+    }
+
+    static int freeSpaceMapMaxFreeBytesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapMaxFreeBytesForTesting();
+    }
+
+    static long freeSpaceMapLookupCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapLookupCountForTesting();
+    }
+
+    static long freeSpaceMapHitCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapHitCountForTesting();
+    }
+
+    static long freeSpaceMapNonLastHitCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapNonLastHitCountForTesting();
+    }
+
+    static long freeSpaceMapMissCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapMissCountForTesting();
+    }
+
+    static long freeSpaceMapStaleEntryCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapStaleEntryCountForTesting();
+    }
+
+    static long freeSpaceMapUpdateCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapUpdateCountForTesting();
+    }
+
+    static long freeSpaceMapRebuildCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapRebuildCountForTesting();
+    }
+
+    static List<String> freeSpaceMapPageSummariesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapPageSummariesForTesting();
     }
 
     static long pageCacheMaxPageCountForDiagnostics(int segment, long containerId) {

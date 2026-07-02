@@ -69,6 +69,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public Path freeSpaceMapFileForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapFileForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public Path pageMutationLogFileForTesting(int segment, long containerId) {
         return MvccConglomerate.pageMutationLogFileForDiagnostics(segment, containerId);
     }
@@ -236,6 +241,56 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public long reusablePageCountForTesting(int segment, long containerId) {
         return MvccConglomerate.reusablePageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long freeSpaceMapPageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapPageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public int freeSpaceMapMaxFreeBytesForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapMaxFreeBytesForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long freeSpaceMapLookupCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapLookupCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long freeSpaceMapHitCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapHitCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long freeSpaceMapNonLastHitCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapNonLastHitCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long freeSpaceMapMissCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapMissCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long freeSpaceMapStaleEntryCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapStaleEntryCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long freeSpaceMapUpdateCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapUpdateCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long freeSpaceMapRebuildCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapRebuildCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public List<String> freeSpaceMapPageSummariesForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapPageSummariesForDiagnostics(segment, containerId);
     }
 
     @Override

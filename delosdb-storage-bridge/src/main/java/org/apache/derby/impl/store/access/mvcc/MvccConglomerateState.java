@@ -164,6 +164,10 @@ final class MvccConglomerateState {
         return diagnostics.reusablePageIndexFileForTesting();
     }
 
+    Path freeSpaceMapFileForTesting() {
+        return diagnostics.freeSpaceMapFileForTesting();
+    }
+
     Path pageMutationLogFileForTesting() {
         return diagnostics.pageMutationLogFileForTesting();
     }
@@ -294,6 +298,46 @@ final class MvccConglomerateState {
 
     synchronized long reusablePageCountForTesting() {
         return diagnostics.reusablePageCountForTesting();
+    }
+
+    synchronized long freeSpaceMapPageCountForTesting() {
+        return diagnostics.freeSpaceMapPageCountForTesting();
+    }
+
+    synchronized int freeSpaceMapMaxFreeBytesForTesting() {
+        return diagnostics.freeSpaceMapMaxFreeBytesForTesting();
+    }
+
+    synchronized long freeSpaceMapLookupCountForTesting() {
+        return diagnostics.freeSpaceMapLookupCountForTesting();
+    }
+
+    synchronized long freeSpaceMapHitCountForTesting() {
+        return diagnostics.freeSpaceMapHitCountForTesting();
+    }
+
+    synchronized long freeSpaceMapNonLastHitCountForTesting() {
+        return diagnostics.freeSpaceMapNonLastHitCountForTesting();
+    }
+
+    synchronized long freeSpaceMapMissCountForTesting() {
+        return diagnostics.freeSpaceMapMissCountForTesting();
+    }
+
+    synchronized long freeSpaceMapStaleEntryCountForTesting() {
+        return diagnostics.freeSpaceMapStaleEntryCountForTesting();
+    }
+
+    synchronized long freeSpaceMapUpdateCountForTesting() {
+        return diagnostics.freeSpaceMapUpdateCountForTesting();
+    }
+
+    synchronized long freeSpaceMapRebuildCountForTesting() {
+        return diagnostics.freeSpaceMapRebuildCountForTesting();
+    }
+
+    synchronized List<String> freeSpaceMapPageSummariesForTesting() {
+        return diagnostics.freeSpaceMapPageSummariesForTesting();
     }
 
     synchronized long pageCacheMaxPageCountForTesting() {

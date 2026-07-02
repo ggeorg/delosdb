@@ -55,6 +55,10 @@ public interface DelosStorageDiagnostics {
 
     Path reusablePageIndexFileForTesting(int segment, long containerId);
 
+    default Path freeSpaceMapFileForTesting(int segment, long containerId) {
+        return null;
+    }
+
     Path pageMutationLogFileForTesting(int segment, long containerId);
 
     Path writeAheadLogFileForTesting(int segment, long containerId);
@@ -171,6 +175,46 @@ public interface DelosStorageDiagnostics {
 
     long reusablePageCountForTesting(int segment, long containerId);
 
+    default long freeSpaceMapPageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default int freeSpaceMapMaxFreeBytesForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default long freeSpaceMapLookupCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long freeSpaceMapHitCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long freeSpaceMapNonLastHitCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long freeSpaceMapMissCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long freeSpaceMapStaleEntryCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long freeSpaceMapUpdateCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long freeSpaceMapRebuildCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default List<String> freeSpaceMapPageSummariesForTesting(int segment, long containerId) {
+        return List.of();
+    }
+
     long pageCacheMaxPageCountForTesting(int segment, long containerId);
 
     long pageCacheSizeForTesting(int segment, long containerId);
@@ -198,6 +242,19 @@ public interface DelosStorageDiagnostics {
                 reusablePageCountForTesting(segment, containerId),
                 physicalVersionCountForTesting(segment, containerId),
                 logicalRowCountForTesting(segment, containerId));
+    }
+
+    default DelosStorageFreeSpaceDiagnostics freeSpaceDiagnosticsForTesting(int segment, long containerId) {
+        return new DelosStorageFreeSpaceDiagnostics(
+                freeSpaceMapPageCountForTesting(segment, containerId),
+                freeSpaceMapMaxFreeBytesForTesting(segment, containerId),
+                freeSpaceMapLookupCountForTesting(segment, containerId),
+                freeSpaceMapHitCountForTesting(segment, containerId),
+                freeSpaceMapNonLastHitCountForTesting(segment, containerId),
+                freeSpaceMapMissCountForTesting(segment, containerId),
+                freeSpaceMapStaleEntryCountForTesting(segment, containerId),
+                freeSpaceMapUpdateCountForTesting(segment, containerId),
+                freeSpaceMapRebuildCountForTesting(segment, containerId));
     }
 
     default DelosStoragePageCacheDiagnostics pageCacheDiagnosticsForTesting(int segment, long containerId) {
