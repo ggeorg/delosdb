@@ -210,8 +210,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             }
             DelosPage page = DelosPage.empty(new DelosPageId(pageId), DelosPage.DATA_PAGE_TYPE);
             for (MvccVersionRecord record : retainedPageRecords) {
-                EncodedVersion encodedVersion = encodeForPageRecord(record);
-                byte[] encoded = encodedVersion.bytes();
+                byte[] encoded = encodeAndRequireSinglePageRecord(record);
                 int requiredBytes = Math.addExact(encoded.length, SLOT_OVERHEAD_BYTES);
                 if (page.freeBytes() < requiredBytes) {
                     throw new IllegalStateException("retained MVCC records no longer fit on page " + pageId
@@ -515,6 +514,11 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                     + " does not match row-payload key " + rowPayload.key());
         }
         return new StoredVersionRecord(locator, new MvccVersionRecord(record.header(), rowPayloadBytes));
+    }
+
+    static boolean requiresOverflowPayload(MvccVersionRecord record) {
+        Objects.requireNonNull(record, "record");
+        return MvccPageRecordCodec.encodeVersionRecord(record).length > maxSingleRecordBytes();
     }
 
     private static int maxSingleRecordBytes() {

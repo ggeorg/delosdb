@@ -665,6 +665,12 @@ public final class PageBackedMvccTable implements AutoCloseable {
         if (prunePageId == null) {
             return null;
         }
+        for (PageBackedMvccTableStore.StoredVersionRecord current : currentRecords) {
+            if (current.locator().pageId().value() == prunePageId
+                    && PageBackedMvccTableStore.requiresOverflowPayload(current.record())) {
+                return null;
+            }
+        }
         List<MvccVersionRecord> retainedForPage = new java.util.ArrayList<>();
         for (PageBackedMvccTableStore.StoredVersionRecord current : currentRecords) {
             MvccVersionId versionId = current.record().header().versionId();
