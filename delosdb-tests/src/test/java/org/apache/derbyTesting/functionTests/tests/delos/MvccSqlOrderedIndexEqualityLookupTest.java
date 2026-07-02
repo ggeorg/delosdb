@@ -36,7 +36,6 @@ public final class MvccSqlOrderedIndexEqualityLookupTest extends MvccSqlTestSupp
             connection.setAutoCommit(false);
             executeUpdate(connection, "create table ordered_index_lookup_t "
                     + "(id int primary key, code varchar(32), payload varchar(64)) using delos_mvcc");
-            executeUpdate(connection, "create index ordered_index_lookup_code_idx on ordered_index_lookup_t(code)");
             executeUpdate(connection, "insert into ordered_index_lookup_t values (1, 'alpha', 'payload-1')");
             executeUpdate(connection, "insert into ordered_index_lookup_t values (2, 'beta', 'payload-2')");
             executeUpdate(connection, "insert into ordered_index_lookup_t values (3, 'gamma', 'payload-3')");
@@ -53,10 +52,12 @@ public final class MvccSqlOrderedIndexEqualityLookupTest extends MvccSqlTestSupp
             diagnostics.resetCandidateIndexCountersForTesting();
             diagnostics.resetScanCountersForTesting();
 
+            // The ordered MVCC index pages are a provider sidecar consulted by
+            // the base-table current-committed equality narrowing path. Do not
+            // force Derby's inherited secondary-index access path here; that
+            // path is a later replacement gate.
             assertRows(connection,
-                    "select id, payload from ordered_index_lookup_t "
-                            + "--DERBY-PROPERTIES index=ordered_index_lookup_code_idx\n "
-                            + "where code = 'beta'",
+                    "select id, payload from ordered_index_lookup_t where code = 'beta'",
                     "2|payload-2");
 
             assertTrue("current-committed equality lookup should consult ordered index pages",
