@@ -187,6 +187,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
             MvccCommandSequence commandSequence = handle.nextCommandSequence();
             StoreDataValue[] rowVersion = cloneRowUnchecked(replacement);
+            touchPageBackedBaseRowForWrite(rowId, snapshot);
             table.update(
                     rowId,
                     rowVersion,
@@ -206,6 +207,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         writeLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
             MvccCommandSequence commandSequence = handle.nextCommandSequence();
+            touchPageBackedBaseRowForWrite(rowId, snapshot);
             table.delete(
                     rowId,
                     handle.nativeTransaction(),
@@ -497,6 +499,16 @@ final class MvccInheritedTable implements DelosStorageTable,
         writeLocked(pageVolumeStateStore::close);
     }
 
+
+
+    private void touchPageBackedBaseRowForWrite(long rowId, DelosStorageSnapshot snapshot) {
+        if (!canReadCommittedImageUnlocked(snapshot)) {
+            return;
+        }
+        if (pageVolumeStateStore.loadVisibleRow(rowId).isPresent()) {
+            transactionLocalPageBackedBaseReadCount++;
+        }
+    }
 
     private Optional<List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>>> writeIntentOverlayRows(
             DelosStorageSnapshot snapshot) {
