@@ -111,6 +111,20 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
         return distinct.size();
     }
 
+    public synchronized List<Long> rowIdsFor(int column, String key) throws IOException {
+        if (column < 0) {
+            throw new IllegalArgumentException("ordered index column must be non-negative: " + column);
+        }
+        String normalizedKey = Entry.normalizeKeyForLookup(Objects.requireNonNull(key, "key"));
+        List<Long> rowIds = new ArrayList<>();
+        for (Entry entry : read().entries()) {
+            if (entry.column() == column && entry.key().equals(normalizedKey)) {
+                rowIds.add(entry.rowId());
+            }
+        }
+        return List.copyOf(rowIds);
+    }
+
     public synchronized long rebuildCount() {
         return rebuildCount;
     }
@@ -213,6 +227,10 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
             if (rowId <= 0L) {
                 throw new IllegalArgumentException("ordered index row id must be positive: " + rowId);
             }
+        }
+
+        public static String normalizeKeyForLookup(String key) {
+            return normalizeKey(Objects.requireNonNull(key, "key"));
         }
 
         private static String normalizeKey(String key) {

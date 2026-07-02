@@ -297,6 +297,22 @@ public interface DelosStorageTableDiagnostics {
         return List.of();
     }
 
+    default long orderedIndexLookupCountForTesting() {
+        return 0L;
+    }
+
+    default long orderedIndexHitCountForTesting() {
+        return 0L;
+    }
+
+    default long orderedIndexFallbackCountForTesting() {
+        return 0L;
+    }
+
+    default long orderedIndexRowIdCountForTesting() {
+        return 0L;
+    }
+
     default DelosStorageOrderedIndexDiagnostics orderedIndexDiagnosticsForTesting() {
         return new DelosStorageOrderedIndexDiagnostics(
                 orderedIndexPageCountForTesting(),

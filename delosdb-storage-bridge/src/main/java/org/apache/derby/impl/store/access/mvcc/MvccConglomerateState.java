@@ -484,6 +484,22 @@ final class MvccConglomerateState {
         return diagnostics.orderedIndexEntrySummariesForTesting();
     }
 
+    synchronized long orderedIndexLookupCountForTesting() {
+        return diagnostics.orderedIndexLookupCountForTesting();
+    }
+
+    synchronized long orderedIndexHitCountForTesting() {
+        return diagnostics.orderedIndexHitCountForTesting();
+    }
+
+    synchronized long orderedIndexFallbackCountForTesting() {
+        return diagnostics.orderedIndexFallbackCountForTesting();
+    }
+
+    synchronized long orderedIndexRowIdCountForTesting() {
+        return diagnostics.orderedIndexRowIdCountForTesting();
+    }
+
     synchronized long pageCacheMaxPageCountForTesting() {
         return diagnostics.pageCacheMaxPageCountForTesting();
     }
@@ -546,8 +562,16 @@ final class MvccConglomerateState {
 
     synchronized Optional<List<Long>> candidateRowIdsFor(Qualifier[][] qualifiers) {
         Optional<ColumnValueKey> key = equalityCandidateKey(qualifiers);
-        return key.flatMap(columnValueKey -> candidateIndex.candidateRowIdsFor(
-                columnValueKey.column(), columnValueKey.value()));
+        if (key.isEmpty()) {
+            return Optional.empty();
+        }
+        ColumnValueKey columnValueKey = key.get();
+        Optional<List<Long>> ordered = candidateIndex.orderedIndexCandidateRowIdsFor(
+                columnValueKey.column(), columnValueKey.value());
+        if (ordered.isPresent()) {
+            return ordered;
+        }
+        return candidateIndex.candidateRowIdsFor(columnValueKey.column(), columnValueKey.value());
     }
 
     synchronized int candidateIndexKeyCountForTesting() {

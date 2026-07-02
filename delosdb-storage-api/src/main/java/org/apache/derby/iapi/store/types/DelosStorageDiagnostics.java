@@ -359,6 +359,22 @@ public interface DelosStorageDiagnostics {
         return List.of();
     }
 
+    default long orderedIndexLookupCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long orderedIndexHitCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long orderedIndexFallbackCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long orderedIndexRowIdCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
     default DelosStorageOrderedIndexDiagnostics orderedIndexDiagnosticsForTesting(int segment, long containerId) {
         return new DelosStorageOrderedIndexDiagnostics(
                 orderedIndexPageCountForTesting(segment, containerId),

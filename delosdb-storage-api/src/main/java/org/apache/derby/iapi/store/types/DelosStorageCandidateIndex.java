@@ -27,5 +27,17 @@ import java.util.Optional;
 public interface DelosStorageCandidateIndex {
     Optional<List<Long>> candidateRowIdsFor(int column, String value);
 
+    /**
+     * Optional ordered page-backed lookup for current-committed equality scans.
+     *
+     * <p>An empty optional means the ordered page sidecar cannot currently answer
+     * this lookup and callers should fall back to the existing candidate index.
+     * A present empty list means the ordered sidecar answered the lookup and found
+     * no matching row ids.</p>
+     */
+    default Optional<List<Long>> orderedIndexCandidateRowIdsFor(int column, String value) {
+        return Optional.empty();
+    }
+
     int candidateIndexKeyCountForTesting();
 }

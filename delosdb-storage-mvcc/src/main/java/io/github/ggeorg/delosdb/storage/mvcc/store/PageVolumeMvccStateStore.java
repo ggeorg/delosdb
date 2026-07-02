@@ -467,6 +467,17 @@ public final class PageVolumeMvccStateStore<T> {
         }
     }
 
+    public Optional<List<Long>> orderedIndexRowIdsFor(int column, String key) {
+        if (!enabled() || orderedIndexPageStore == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(orderedIndexPageStore.rowIdsFor(column, key));
+        } catch (IOException | RuntimeException e) {
+            return Optional.empty();
+        }
+    }
+
     public long pageCacheMaxPageCount() {
         return enabled() ? table.pageCacheMaxPageCount() : 0L;
     }

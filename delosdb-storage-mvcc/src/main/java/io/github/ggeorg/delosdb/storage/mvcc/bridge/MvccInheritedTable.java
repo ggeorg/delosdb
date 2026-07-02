@@ -77,6 +77,10 @@ final class MvccInheritedTable implements DelosStorageTable,
     private int pageBackedHistoricalSnapshotReadCount;
     private int pageBackedHistoricalSnapshotScanCount;
     private int pageBackedCandidateIndexRebuildCount;
+    private long orderedIndexLookupCount;
+    private long orderedIndexHitCount;
+    private long orderedIndexFallbackCount;
+    private long orderedIndexRowIdCount;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
@@ -379,6 +383,24 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public Optional<List<Long>> candidateRowIdsFor(int column, String value) {
         return readLocked(() -> candidateIndex.candidatesFor(column, value));
+    }
+
+    @Override
+    public Optional<List<Long>> orderedIndexCandidateRowIdsFor(int column, String value) {
+        return readLocked(() -> {
+            orderedIndexLookupCount++;
+            Optional<List<Long>> rowIds = pageVolumeStateStore.orderedIndexRowIdsFor(column, value);
+            if (rowIds.isEmpty()) {
+                orderedIndexFallbackCount++;
+                return Optional.empty();
+            }
+            List<Long> ids = rowIds.get();
+            orderedIndexRowIdCount += ids.size();
+            if (!ids.isEmpty()) {
+                orderedIndexHitCount++;
+            }
+            return Optional.of(ids);
+        });
     }
 
     @Override
@@ -797,6 +819,26 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public List<String> orderedIndexEntrySummariesForTesting() {
         return readLocked(pageVolumeStateStore::orderedIndexEntrySummaries);
+    }
+
+    @Override
+    public long orderedIndexLookupCountForTesting() {
+        return readLocked(() -> orderedIndexLookupCount);
+    }
+
+    @Override
+    public long orderedIndexHitCountForTesting() {
+        return readLocked(() -> orderedIndexHitCount);
+    }
+
+    @Override
+    public long orderedIndexFallbackCountForTesting() {
+        return readLocked(() -> orderedIndexFallbackCount);
+    }
+
+    @Override
+    public long orderedIndexRowIdCountForTesting() {
+        return readLocked(() -> orderedIndexRowIdCount);
     }
 
     @Override

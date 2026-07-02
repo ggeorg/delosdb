@@ -666,6 +666,22 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).orderedIndexEntrySummariesForTesting();
     }
 
+    static long orderedIndexLookupCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexLookupCountForTesting();
+    }
+
+    static long orderedIndexHitCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexHitCountForTesting();
+    }
+
+    static long orderedIndexFallbackCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexFallbackCountForTesting();
+    }
+
+    static long orderedIndexRowIdCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexRowIdCountForTesting();
+    }
+
     static long pageCacheMaxPageCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageCacheMaxPageCountForTesting();
     }

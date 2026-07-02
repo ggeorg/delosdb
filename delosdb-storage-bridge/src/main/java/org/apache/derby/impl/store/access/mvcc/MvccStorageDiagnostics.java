@@ -474,6 +474,26 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public long orderedIndexLookupCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexLookupCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long orderedIndexHitCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexHitCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long orderedIndexFallbackCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexFallbackCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long orderedIndexRowIdCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexRowIdCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public long pageCacheMaxPageCountForTesting(int segment, long containerId) {
         return MvccConglomerate.pageCacheMaxPageCountForDiagnostics(segment, containerId);
     }
