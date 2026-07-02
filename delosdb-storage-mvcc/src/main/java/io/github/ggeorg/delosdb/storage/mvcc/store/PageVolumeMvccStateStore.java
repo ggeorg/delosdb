@@ -373,7 +373,7 @@ public final class PageVolumeMvccStateStore<T> {
     }
 
     public void persistChangedRows(List<PersistedChange<T>> changes) {
-        persistChangedRows(changes, nextCommitSequence());
+        persistChangedRows(changes, new MvccCommitSequence(nextCommitSequence()));
     }
 
     public void persistChangedRows(
@@ -384,6 +384,8 @@ public final class PageVolumeMvccStateStore<T> {
         if (!enabled() || changes.isEmpty()) {
             return;
         }
+        long durableCommitSequence = commitSequence.value();
+        nextCommitSequence = Math.max(nextCommitSequence, durableCommitSequence + 1L);
         Map<String, MvccRowDirectoryStore.RowHeadRecord> existingHeads = new LinkedHashMap<>();
         for (MvccRowDirectoryStore.RowHeadRecord head : table.durableRowDirectoryHeads().values()) {
             existingHeads.put(head.key(), head);
@@ -401,7 +403,7 @@ public final class PageVolumeMvccStateStore<T> {
                             beganWalTransaction = true;
                         }
                         DelosLogSequenceNumber pageLsn = writeAheadLog.appendDeleteVersion(transactionId, change.rowId());
-                        table.deleteCommitted(key, transactionId, commitSequence, pageLsn);
+                        table.deleteCommitted(key, transactionId, durableCommitSequence, pageLsn);
                     }
                     continue;
                 }
@@ -412,7 +414,7 @@ public final class PageVolumeMvccStateStore<T> {
                         beganWalTransaction = true;
                     }
                     DelosLogSequenceNumber pageLsn = writeAheadLog.appendInsertVersion(transactionId, change.rowId());
-                    table.insertCommitted(key, encoded, transactionId, commitSequence, pageLsn);
+                    table.insertCommitted(key, encoded, transactionId, durableCommitSequence, pageLsn);
                 } else if (existingHead.tombstone() || table.readPayload(key, LATEST_COMMITTED)
                         .map(payload -> !java.util.Arrays.equals(payload.value(), encoded))
                         .orElse(true)) {
@@ -421,11 +423,11 @@ public final class PageVolumeMvccStateStore<T> {
                         beganWalTransaction = true;
                     }
                     DelosLogSequenceNumber pageLsn = writeAheadLog.appendUpdateVersion(transactionId, change.rowId());
-                    table.updateCommitted(key, encoded, transactionId, commitSequence, pageLsn);
+                    table.updateCommitted(key, encoded, transactionId, durableCommitSequence, pageLsn);
                 }
             }
             if (beganWalTransaction) {
-                writeAheadLog.appendCommit(transactionId, commitSequence);
+                writeAheadLog.appendCommit(transactionId, durableCommitSequence);
                 rewriteCheckpoint();
             }
         } catch (IOException e) {
