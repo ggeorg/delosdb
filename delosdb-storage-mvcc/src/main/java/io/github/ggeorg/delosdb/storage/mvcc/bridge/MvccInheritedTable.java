@@ -73,8 +73,6 @@ final class MvccInheritedTable implements DelosStorageTable,
     private int transactionLocalPageBackedBaseScanCount;
     private int pageBackedHistoricalSnapshotReadCount;
     private int pageBackedHistoricalSnapshotScanCount;
-    private int legacySnapshotFallbackReadCount;
-    private int legacySnapshotFallbackScanCount;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
@@ -397,15 +395,6 @@ final class MvccInheritedTable implements DelosStorageTable,
         return readLocked(() -> pageBackedHistoricalSnapshotScanCount);
     }
 
-    @Override
-    public int legacySnapshotFallbackReadCountForTesting() {
-        return readLocked(() -> legacySnapshotFallbackReadCount);
-    }
-
-    @Override
-    public int legacySnapshotFallbackScanCountForTesting() {
-        return readLocked(() -> legacySnapshotFallbackScanCount);
-    }
 
     @Override
     public Path pageVolumeStateFileForTesting() {
