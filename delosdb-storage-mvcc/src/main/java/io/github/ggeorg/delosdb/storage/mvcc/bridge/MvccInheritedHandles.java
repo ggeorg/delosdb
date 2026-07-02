@@ -34,7 +34,7 @@ final class MvccInheritedHandles {
     static final class Transaction implements DelosStorageTransaction {
         private final MvccTransaction nativeTransaction;
         private final Map<String, MvccCommandSequence> savepoints = new LinkedHashMap<>();
-        private final Map<Long, MvccCommandSequence> changedRows = new LinkedHashMap<>();
+        private final Map<Long, MvccCommandSequence> writeIntents = new LinkedHashMap<>();
         private long nextCommandSequence = 1L;
 
         Transaction(MvccTransaction nativeTransaction) {
@@ -54,19 +54,23 @@ final class MvccInheritedHandles {
             savepoints.put(requireSavepointName(savepointName), lastCompletedCommandSequence());
         }
 
-        void recordChangedRow(long rowId, MvccCommandSequence commandSequence) {
+        void recordWriteIntent(long rowId, MvccCommandSequence commandSequence) {
             if (rowId <= 0L) {
                 throw new IllegalArgumentException("rowId must be positive: " + rowId);
             }
-            changedRows.putIfAbsent(rowId, Objects.requireNonNull(commandSequence, "commandSequence"));
+            writeIntents.putIfAbsent(rowId, Objects.requireNonNull(commandSequence, "commandSequence"));
         }
 
-        List<Long> changedRowIds() {
-            return List.copyOf(changedRows.keySet());
+        List<Long> writeIntentRowIds() {
+            return List.copyOf(writeIntents.keySet());
         }
 
-        void clearChangedRows() {
-            changedRows.clear();
+        int writeIntentCount() {
+            return writeIntents.size();
+        }
+
+        void clearWriteIntents() {
+            writeIntents.clear();
         }
 
         MvccCommandSequence rollbackToSavepoint(String savepointName) {
@@ -76,7 +80,7 @@ final class MvccInheritedHandles {
                 throw new IllegalStateException("Unknown delos_mvcc savepoint: " + normalizedName);
             }
             removeSavepointsAfter(normalizedName);
-            removeChangedRowsAfter(boundary);
+            removeWriteIntentsAfter(boundary);
             nextCommandSequence = boundary.value() + 1L;
             return boundary;
         }
@@ -103,8 +107,8 @@ final class MvccInheritedHandles {
             return MvccCommandSequence.of(Math.max(0L, nextCommandSequence - 1L));
         }
 
-        private void removeChangedRowsAfter(MvccCommandSequence boundary) {
-            var iterator = changedRows.entrySet().iterator();
+        private void removeWriteIntentsAfter(MvccCommandSequence boundary) {
+            var iterator = writeIntents.entrySet().iterator();
             while (iterator.hasNext()) {
                 Map.Entry<Long, MvccCommandSequence> entry = iterator.next();
                 if (entry.getValue().compareTo(boundary) > 0) {

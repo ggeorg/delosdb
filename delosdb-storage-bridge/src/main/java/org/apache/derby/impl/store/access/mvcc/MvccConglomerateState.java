@@ -190,6 +190,10 @@ final class MvccConglomerateState {
         return diagnostics.lastCommittedChangedRowCountForTesting();
     }
 
+    synchronized int lastCommittedWriteIntentCountForTesting() {
+        return diagnostics.lastCommittedWriteIntentCountForTesting();
+    }
+
     synchronized long pageCountForTesting() {
         return diagnostics.pageCountForTesting();
     }

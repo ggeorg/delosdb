@@ -55,6 +55,10 @@ public interface DelosStorageTableDiagnostics {
         return 0;
     }
 
+    default int lastCommittedWriteIntentCountForTesting() {
+        return 0;
+    }
+
     long pageCountForTesting();
 
     long overflowPageCountForTesting();
