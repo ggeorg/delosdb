@@ -375,6 +375,10 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).lastCommittedWriteIntentCountForTesting();
     }
 
+    static List<String> lastCommittedWriteIntentPayloadSummariesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).lastCommittedWriteIntentPayloadSummariesForTesting();
+    }
+
     static int candidateIndexKeyCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).candidateIndexKeyCountForTesting();
     }

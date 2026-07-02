@@ -65,6 +65,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private long nextRowId = 1L;
     private int lastCommittedChangedRowCount;
     private int lastCommittedWriteIntentCount;
+    private List<String> lastCommittedWriteIntentPayloadSummaries = List.of();
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
@@ -139,8 +140,9 @@ final class MvccInheritedTable implements DelosStorageTable,
         writeLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
             MvccCommandSequence commandSequence = handle.nextCommandSequence();
-            table.insert(rowId, cloneRowUnchecked(row), handle.nativeTransaction(), commandSequence);
-            handle.recordWriteIntent(rowId, commandSequence);
+            StoreDataValue[] rowVersion = cloneRowUnchecked(row);
+            table.insert(rowId, rowVersion, handle.nativeTransaction(), commandSequence);
+            handle.recordUpsertWriteIntent(rowId, cloneRowUnchecked(rowVersion), commandSequence);
         });
     }
 
@@ -153,14 +155,15 @@ final class MvccInheritedTable implements DelosStorageTable,
         writeLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
             MvccCommandSequence commandSequence = handle.nextCommandSequence();
+            StoreDataValue[] rowVersion = cloneRowUnchecked(replacement);
             table.update(
                     rowId,
-                    cloneRowUnchecked(replacement),
+                    rowVersion,
                     handle.nativeTransaction(),
                     nativeSnapshot(snapshot),
                     transactions,
                     commandSequence);
-            handle.recordWriteIntent(rowId, commandSequence);
+            handle.recordUpsertWriteIntent(rowId, cloneRowUnchecked(rowVersion), commandSequence);
         });
     }
 
@@ -178,7 +181,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                     nativeSnapshot(snapshot),
                     transactions,
                     commandSequence);
-            handle.recordWriteIntent(rowId, commandSequence);
+            handle.recordDeleteWriteIntent(rowId, commandSequence);
         });
     }
 
@@ -187,7 +190,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         writeLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
             MvccTransaction nativeTx = handle.nativeTransaction();
-            List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes = changedRows(handle, nativeTx);
+            List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes = changedRows(handle);
             try {
                 pageVolumeStateStore.requireChangedRowsCanBePersisted(changes);
             } catch (RuntimeException failure) {
@@ -199,6 +202,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             persistCommittedChangesUnlocked(changes);
             lastCommittedChangedRowCount = changes.size();
             lastCommittedWriteIntentCount = handle.writeIntentCount();
+            lastCommittedWriteIntentPayloadSummaries = writeIntentPayloadSummaries(changes);
             handle.clearWriteIntents();
         });
     }
@@ -297,6 +301,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public int lastCommittedWriteIntentCountForTesting() {
         return readLocked(() -> lastCommittedWriteIntentCount);
+    }
+
+    @Override
+    public List<String> lastCommittedWriteIntentPayloadSummariesForTesting() {
+        return readLocked(() -> lastCommittedWriteIntentPayloadSummaries);
     }
 
     @Override
@@ -543,25 +552,31 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     private List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changedRows(
-            MvccInheritedHandles.Transaction handle,
-            MvccTransaction transaction) {
-        try {
-            MvccSnapshot snapshot = transactions.snapshot(transaction);
-            List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes = new ArrayList<>();
-            for (Long rowId : handle.writeIntentRowIds()) {
-                Optional<StoreDataValue[]> visible = table.read(rowId, snapshot, transactions);
-                if (visible.isPresent()) {
-                    changes.add(PageVolumeMvccStateStore.PersistedChange.upsert(
-                            rowId,
-                            cloneRow(visible.get())));
-                } else {
-                    changes.add(PageVolumeMvccStateStore.PersistedChange.delete(rowId));
-                }
+            MvccInheritedHandles.Transaction handle) {
+        List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes = new ArrayList<>();
+        for (MvccInheritedHandles.Transaction.WriteIntent intent : handle.writeIntents()) {
+            if (intent.delete()) {
+                changes.add(PageVolumeMvccStateStore.PersistedChange.delete(intent.rowId()));
+            } else {
+                changes.add(PageVolumeMvccStateStore.PersistedChange.upsert(
+                        intent.rowId(),
+                        cloneRowUnchecked(intent.row())));
             }
-            return List.copyOf(changes);
-        } catch (StandardException e) {
-            throw new IllegalStateException("Could not clone changed inherited MVCC row for persistence", e);
         }
+        return List.copyOf(changes);
+    }
+
+    private static List<String> writeIntentPayloadSummaries(
+            List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes) {
+        List<String> summaries = new ArrayList<>(changes.size());
+        for (PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]> change : changes) {
+            if (change.delete()) {
+                summaries.add(change.rowId() + "|DELETE");
+            } else {
+                summaries.add(change.rowId() + "|UPSERT|" + String.join("|", valueKeys(change.values())));
+            }
+        }
+        return List.copyOf(summaries);
     }
 
     private void abortIfActive(MvccTransaction transaction, RuntimeException failure) {

@@ -81,6 +81,10 @@ public interface DelosStorageDiagnostics {
         return 0;
     }
 
+    default List<String> lastCommittedWriteIntentPayloadSummariesForTesting(int segment, long containerId) {
+        return List.of();
+    }
+
     long pageCountForTesting(int segment, long containerId);
 
     long overflowPageCountForTesting(int segment, long containerId);

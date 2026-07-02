@@ -1,5 +1,6 @@
 package io.github.ggeorg.delosdb.storage.mvcc.bridge;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +13,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
 
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 
 final class MvccInheritedHandles {
     private MvccInheritedHandles() {
@@ -34,7 +36,7 @@ final class MvccInheritedHandles {
     static final class Transaction implements DelosStorageTransaction {
         private final MvccTransaction nativeTransaction;
         private final Map<String, MvccCommandSequence> savepoints = new LinkedHashMap<>();
-        private final Map<Long, MvccCommandSequence> writeIntents = new LinkedHashMap<>();
+        private final Map<Long, List<WriteIntent>> writeIntents = new LinkedHashMap<>();
         private long nextCommandSequence = 1L;
 
         Transaction(MvccTransaction nativeTransaction) {
@@ -54,19 +56,29 @@ final class MvccInheritedHandles {
             savepoints.put(requireSavepointName(savepointName), lastCompletedCommandSequence());
         }
 
-        void recordWriteIntent(long rowId, MvccCommandSequence commandSequence) {
-            if (rowId <= 0L) {
-                throw new IllegalArgumentException("rowId must be positive: " + rowId);
-            }
-            writeIntents.putIfAbsent(rowId, Objects.requireNonNull(commandSequence, "commandSequence"));
+        void recordUpsertWriteIntent(
+                long rowId,
+                StoreDataValue[] row,
+                MvccCommandSequence commandSequence) {
+            recordWriteIntent(WriteIntent.upsert(rowId, row, commandSequence));
         }
 
-        List<Long> writeIntentRowIds() {
-            return List.copyOf(writeIntents.keySet());
+        void recordDeleteWriteIntent(long rowId, MvccCommandSequence commandSequence) {
+            recordWriteIntent(WriteIntent.delete(rowId, commandSequence));
+        }
+
+        List<WriteIntent> writeIntents() {
+            List<WriteIntent> latest = new ArrayList<>(writeIntents.size());
+            for (List<WriteIntent> history : writeIntents.values()) {
+                if (!history.isEmpty()) {
+                    latest.add(history.get(history.size() - 1));
+                }
+            }
+            return List.copyOf(latest);
         }
 
         int writeIntentCount() {
-            return writeIntents.size();
+            return writeIntents().size();
         }
 
         void clearWriteIntents() {
@@ -110,11 +122,16 @@ final class MvccInheritedHandles {
         private void removeWriteIntentsAfter(MvccCommandSequence boundary) {
             var iterator = writeIntents.entrySet().iterator();
             while (iterator.hasNext()) {
-                Map.Entry<Long, MvccCommandSequence> entry = iterator.next();
-                if (entry.getValue().compareTo(boundary) > 0) {
+                List<WriteIntent> history = iterator.next().getValue();
+                history.removeIf(intent -> intent.commandSequence().compareTo(boundary) > 0);
+                if (history.isEmpty()) {
                     iterator.remove();
                 }
             }
+        }
+
+        private void recordWriteIntent(WriteIntent intent) {
+            writeIntents.computeIfAbsent(intent.rowId(), ignored -> new ArrayList<>()).add(intent);
         }
 
         private void removeSavepointsAfter(String savepointName) {
@@ -136,6 +153,33 @@ final class MvccInheritedHandles {
                 throw new IllegalArgumentException("savepointName must not be blank");
             }
             return normalizedName;
+        }
+
+        record WriteIntent(
+                long rowId,
+                StoreDataValue[] row,
+                boolean delete,
+                MvccCommandSequence commandSequence) {
+            WriteIntent {
+                if (rowId <= 0L) {
+                    throw new IllegalArgumentException("rowId must be positive: " + rowId);
+                }
+                if (!delete) {
+                    row = Objects.requireNonNull(row, "row");
+                }
+                commandSequence = Objects.requireNonNull(commandSequence, "commandSequence");
+            }
+
+            static WriteIntent upsert(
+                    long rowId,
+                    StoreDataValue[] row,
+                    MvccCommandSequence commandSequence) {
+                return new WriteIntent(rowId, row, false, commandSequence);
+            }
+
+            static WriteIntent delete(long rowId, MvccCommandSequence commandSequence) {
+                return new WriteIntent(rowId, null, true, commandSequence);
+            }
         }
     }
 

@@ -59,6 +59,10 @@ public interface DelosStorageTableDiagnostics {
         return 0;
     }
 
+    default List<String> lastCommittedWriteIntentPayloadSummariesForTesting() {
+        return List.of();
+    }
+
     long pageCountForTesting();
 
     long overflowPageCountForTesting();

@@ -194,6 +194,10 @@ final class MvccConglomerateState {
         return diagnostics.lastCommittedWriteIntentCountForTesting();
     }
 
+    synchronized List<String> lastCommittedWriteIntentPayloadSummariesForTesting() {
+        return diagnostics.lastCommittedWriteIntentPayloadSummariesForTesting();
+    }
+
     synchronized long pageCountForTesting() {
         return diagnostics.pageCountForTesting();
     }
