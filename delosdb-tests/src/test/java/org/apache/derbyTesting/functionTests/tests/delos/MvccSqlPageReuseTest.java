@@ -96,7 +96,7 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
                     Files.exists(reusablePageIndexFile));
             diagnostics.assertConsistentForTesting(0, containerId);
 
-            insertPayload(connection, 3, payload('z', 512));
+            insertPayload(connection, 3, payload('z', 2400));
             connection.commit();
 
             pages = diagnostics.pageDiagnosticsForTesting(0, containerId);
@@ -115,7 +115,7 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
                     "select id, length(payload) from mvcc_page_reuse_t order by id",
                     "1|2400",
                     "2|2400",
-                    "3|512");
+                    "3|2400");
             connection.rollback();
         }
 
@@ -140,7 +140,7 @@ public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
                     "select id, length(payload) from mvcc_page_reuse_t order by id",
                     "1|2400",
                     "2|2400",
-                    "3|512");
+                    "3|2400");
         }
     }
 
