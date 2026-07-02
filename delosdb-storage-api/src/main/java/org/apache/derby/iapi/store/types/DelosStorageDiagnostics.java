@@ -275,6 +275,42 @@ public interface DelosStorageDiagnostics {
         return 0L;
     }
 
+    default long pageMutationContextBeginCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageMutationContextCommitCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageMutationContextAbortCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageMutationContextPageReservationCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageMutationContextReservedBytesForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageMutationContextPageWriteCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageMutationContextFreeSpaceMapUpdateCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageMutationContextReusableIndexUpdateCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default String lastPageMutationContextOperationForTesting(int segment, long containerId) {
+        return "none";
+    }
+
     long pageCacheMaxPageCountForTesting(int segment, long containerId);
 
     long pageCacheSizeForTesting(int segment, long containerId);

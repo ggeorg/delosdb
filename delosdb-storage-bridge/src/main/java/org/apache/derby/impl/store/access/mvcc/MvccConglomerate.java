@@ -582,6 +582,42 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).pageLocalPruneRemovedVersionCountForTesting();
     }
 
+    static long pageMutationContextBeginCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageMutationContextBeginCountForTesting();
+    }
+
+    static long pageMutationContextCommitCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageMutationContextCommitCountForTesting();
+    }
+
+    static long pageMutationContextAbortCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageMutationContextAbortCountForTesting();
+    }
+
+    static long pageMutationContextPageReservationCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageMutationContextPageReservationCountForTesting();
+    }
+
+    static long pageMutationContextReservedBytesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageMutationContextReservedBytesForTesting();
+    }
+
+    static long pageMutationContextPageWriteCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageMutationContextPageWriteCountForTesting();
+    }
+
+    static long pageMutationContextFreeSpaceMapUpdateCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageMutationContextFreeSpaceMapUpdateCountForTesting();
+    }
+
+    static long pageMutationContextReusableIndexUpdateCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageMutationContextReusableIndexUpdateCountForTesting();
+    }
+
+    static String lastPageMutationContextOperationForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).lastPageMutationContextOperationForTesting();
+    }
+
     static long pageCacheMaxPageCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageCacheMaxPageCountForTesting();
     }

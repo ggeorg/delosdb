@@ -695,6 +695,51 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public long pageMutationContextBeginCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageMutationContextBeginCount);
+    }
+
+    @Override
+    public long pageMutationContextCommitCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageMutationContextCommitCount);
+    }
+
+    @Override
+    public long pageMutationContextAbortCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageMutationContextAbortCount);
+    }
+
+    @Override
+    public long pageMutationContextPageReservationCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageMutationContextPageReservationCount);
+    }
+
+    @Override
+    public long pageMutationContextReservedBytesForTesting() {
+        return readLocked(pageVolumeStateStore::pageMutationContextReservedBytes);
+    }
+
+    @Override
+    public long pageMutationContextPageWriteCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageMutationContextPageWriteCount);
+    }
+
+    @Override
+    public long pageMutationContextFreeSpaceMapUpdateCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageMutationContextFreeSpaceMapUpdateCount);
+    }
+
+    @Override
+    public long pageMutationContextReusableIndexUpdateCountForTesting() {
+        return readLocked(pageVolumeStateStore::pageMutationContextReusableIndexUpdateCount);
+    }
+
+    @Override
+    public String lastPageMutationContextOperationForTesting() {
+        return readLocked(pageVolumeStateStore::lastPageMutationContextOperation);
+    }
+
+    @Override
     public long pageCacheMaxPageCountForTesting() {
         return readLocked(pageVolumeStateStore::pageCacheMaxPageCount);
     }

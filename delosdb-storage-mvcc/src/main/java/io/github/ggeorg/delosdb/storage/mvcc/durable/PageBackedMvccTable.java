@@ -589,6 +589,42 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return pageLocalPruneRemovedVersionCount;
     }
 
+    public synchronized long pageMutationContextBeginCount() {
+        return store.pageMutationContextBeginCount();
+    }
+
+    public synchronized long pageMutationContextCommitCount() {
+        return store.pageMutationContextCommitCount();
+    }
+
+    public synchronized long pageMutationContextAbortCount() {
+        return store.pageMutationContextAbortCount();
+    }
+
+    public synchronized long pageMutationContextPageReservationCount() {
+        return store.pageMutationContextPageReservationCount();
+    }
+
+    public synchronized long pageMutationContextReservedBytes() {
+        return store.pageMutationContextReservedBytes();
+    }
+
+    public synchronized long pageMutationContextPageWriteCount() {
+        return store.pageMutationContextPageWriteCount();
+    }
+
+    public synchronized long pageMutationContextFreeSpaceMapUpdateCount() {
+        return store.pageMutationContextFreeSpaceMapUpdateCount();
+    }
+
+    public synchronized long pageMutationContextReusableIndexUpdateCount() {
+        return store.pageMutationContextReusableIndexUpdateCount();
+    }
+
+    public synchronized String lastPageMutationContextOperation() {
+        return store.lastPageMutationContextOperation();
+    }
+
     @Override
     public synchronized void close() throws IOException {
         IOException failure = null;

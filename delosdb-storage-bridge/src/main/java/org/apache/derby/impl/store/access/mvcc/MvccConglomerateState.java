@@ -400,6 +400,42 @@ final class MvccConglomerateState {
         return diagnostics.pageLocalPruneRemovedVersionCountForTesting();
     }
 
+    synchronized long pageMutationContextBeginCountForTesting() {
+        return diagnostics.pageMutationContextBeginCountForTesting();
+    }
+
+    synchronized long pageMutationContextCommitCountForTesting() {
+        return diagnostics.pageMutationContextCommitCountForTesting();
+    }
+
+    synchronized long pageMutationContextAbortCountForTesting() {
+        return diagnostics.pageMutationContextAbortCountForTesting();
+    }
+
+    synchronized long pageMutationContextPageReservationCountForTesting() {
+        return diagnostics.pageMutationContextPageReservationCountForTesting();
+    }
+
+    synchronized long pageMutationContextReservedBytesForTesting() {
+        return diagnostics.pageMutationContextReservedBytesForTesting();
+    }
+
+    synchronized long pageMutationContextPageWriteCountForTesting() {
+        return diagnostics.pageMutationContextPageWriteCountForTesting();
+    }
+
+    synchronized long pageMutationContextFreeSpaceMapUpdateCountForTesting() {
+        return diagnostics.pageMutationContextFreeSpaceMapUpdateCountForTesting();
+    }
+
+    synchronized long pageMutationContextReusableIndexUpdateCountForTesting() {
+        return diagnostics.pageMutationContextReusableIndexUpdateCountForTesting();
+    }
+
+    synchronized String lastPageMutationContextOperationForTesting() {
+        return diagnostics.lastPageMutationContextOperationForTesting();
+    }
+
     synchronized long pageCacheMaxPageCountForTesting() {
         return diagnostics.pageCacheMaxPageCountForTesting();
     }

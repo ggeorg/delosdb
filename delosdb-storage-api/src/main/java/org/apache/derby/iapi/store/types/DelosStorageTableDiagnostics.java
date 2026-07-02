@@ -213,6 +213,42 @@ public interface DelosStorageTableDiagnostics {
         return 0L;
     }
 
+    default long pageMutationContextBeginCountForTesting() {
+        return 0L;
+    }
+
+    default long pageMutationContextCommitCountForTesting() {
+        return 0L;
+    }
+
+    default long pageMutationContextAbortCountForTesting() {
+        return 0L;
+    }
+
+    default long pageMutationContextPageReservationCountForTesting() {
+        return 0L;
+    }
+
+    default long pageMutationContextReservedBytesForTesting() {
+        return 0L;
+    }
+
+    default long pageMutationContextPageWriteCountForTesting() {
+        return 0L;
+    }
+
+    default long pageMutationContextFreeSpaceMapUpdateCountForTesting() {
+        return 0L;
+    }
+
+    default long pageMutationContextReusableIndexUpdateCountForTesting() {
+        return 0L;
+    }
+
+    default String lastPageMutationContextOperationForTesting() {
+        return "none";
+    }
+
     long pageCacheMaxPageCountForTesting();
 
     long pageCacheSizeForTesting();

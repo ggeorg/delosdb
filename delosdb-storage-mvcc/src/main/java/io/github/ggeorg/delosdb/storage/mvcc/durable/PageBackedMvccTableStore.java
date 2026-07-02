@@ -46,6 +46,15 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     private long freeSpaceMapStaleEntryCount;
     private long freeSpaceMapUpdateCount;
     private long freeSpaceMapRebuildCount;
+    private long pageMutationContextBeginCount;
+    private long pageMutationContextCommitCount;
+    private long pageMutationContextAbortCount;
+    private long pageMutationContextPageReservationCount;
+    private long pageMutationContextReservedBytes;
+    private long pageMutationContextPageWriteCount;
+    private long pageMutationContextFreeSpaceMapUpdateCount;
+    private long pageMutationContextReusableIndexUpdateCount;
+    private String lastPageMutationContextOperation = "none";
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     private PageBackedMvccTableStore(
@@ -139,13 +148,18 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         byte[] encoded = encodedVersion.bytes();
         record = encodedVersion.record();
 
-        DelosPage page = writablePage(encoded.length);
-        int slotId = page.appendRecord(encoded);
-        DelosPage writtenPage = page.withPageLsn(pageLsn.value());
-        writePage(writtenPage);
-        updateFreeSpaceMap(writtenPage);
-        pageVolume.force();
-        return new MvccVersionLocator(page.pageId(), slotId);
+        int requiredBytes = Math.addExact(encoded.length, SLOT_OVERHEAD_BYTES);
+        try (MvccPageMutationContext context = beginPageMutationContext("append-version")) {
+            context.reservePageCapacity(requiredBytes);
+            DelosPage page = writablePage(encoded.length);
+            int slotId = page.appendRecord(encoded);
+            DelosPage writtenPage = page.withPageLsn(pageLsn.value());
+            writePage(writtenPage, context);
+            updateFreeSpaceMap(writtenPage, context);
+            pageVolume.force();
+            context.commit();
+            return new MvccVersionLocator(page.pageId(), slotId);
+        }
     }
 
     public List<StoredVersionRecord> loadAll() throws IOException {
@@ -208,27 +222,31 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 throw new IllegalArgumentException("page id out of range for page-local MVCC prune: "
                         + pageId + ", pageCount=" + pageCount);
             }
-            DelosPage page = DelosPage.empty(new DelosPageId(pageId), DelosPage.DATA_PAGE_TYPE);
-            for (MvccVersionRecord record : retainedPageRecords) {
-                byte[] encoded = encodeAndRequireSinglePageRecord(record);
-                int requiredBytes = Math.addExact(encoded.length, SLOT_OVERHEAD_BYTES);
-                if (page.freeBytes() < requiredBytes) {
-                    throw new IllegalStateException("retained MVCC records no longer fit on page " + pageId
-                            + " during page-local prune; required=" + requiredBytes
-                            + ", free=" + page.freeBytes());
+            try (MvccPageMutationContext context = beginPageMutationContext("rewrite-page")) {
+                DelosPage page = DelosPage.empty(new DelosPageId(pageId), DelosPage.DATA_PAGE_TYPE);
+                for (MvccVersionRecord record : retainedPageRecords) {
+                    byte[] encoded = encodeAndRequireSinglePageRecord(record);
+                    int requiredBytes = Math.addExact(encoded.length, SLOT_OVERHEAD_BYTES);
+                    context.reservePageCapacity(requiredBytes);
+                    if (page.freeBytes() < requiredBytes) {
+                        throw new IllegalStateException("retained MVCC records no longer fit on page " + pageId
+                                + " during page-local prune; required=" + requiredBytes
+                                + ", free=" + page.freeBytes());
+                    }
+                    page.appendRecord(encoded);
                 }
-                page.appendRecord(encoded);
+                writePage(page, context);
+                if (page.slotCount() == 0) {
+                    reusablePageIds.add(pageId);
+                } else {
+                    reusablePageIds.remove(pageId);
+                }
+                persistReusablePageIndex(context);
+                updateFreeSpaceMap(page, context);
+                pageVolume.force();
+                context.commit();
+                return loadAllUnlocked();
             }
-            writePage(page);
-            if (page.slotCount() == 0) {
-                reusablePageIds.add(pageId);
-            } else {
-                reusablePageIds.remove(pageId);
-            }
-            persistReusablePageIndex();
-            updateFreeSpaceMap(page);
-            pageVolume.force();
-            return loadAllUnlocked();
         });
     }
 
@@ -291,6 +309,42 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return readLockedUnchecked(() -> freeBytesByPageId.entrySet().stream()
                 .map(entry -> entry.getKey() + ":" + entry.getValue())
                 .toList());
+    }
+
+    public long pageMutationContextBeginCount() {
+        return readLockedUnchecked(() -> pageMutationContextBeginCount);
+    }
+
+    public long pageMutationContextCommitCount() {
+        return readLockedUnchecked(() -> pageMutationContextCommitCount);
+    }
+
+    public long pageMutationContextAbortCount() {
+        return readLockedUnchecked(() -> pageMutationContextAbortCount);
+    }
+
+    public long pageMutationContextPageReservationCount() {
+        return readLockedUnchecked(() -> pageMutationContextPageReservationCount);
+    }
+
+    public long pageMutationContextReservedBytes() {
+        return readLockedUnchecked(() -> pageMutationContextReservedBytes);
+    }
+
+    public long pageMutationContextPageWriteCount() {
+        return readLockedUnchecked(() -> pageMutationContextPageWriteCount);
+    }
+
+    public long pageMutationContextFreeSpaceMapUpdateCount() {
+        return readLockedUnchecked(() -> pageMutationContextFreeSpaceMapUpdateCount);
+    }
+
+    public long pageMutationContextReusableIndexUpdateCount() {
+        return readLockedUnchecked(() -> pageMutationContextReusableIndexUpdateCount);
+    }
+
+    public String lastPageMutationContextOperation() {
+        return readLockedUnchecked(() -> lastPageMutationContextOperation);
     }
 
     public long pageCacheMaxPageCount() {
@@ -642,12 +696,26 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     }
 
     private void persistReusablePageIndex() throws IOException {
+        persistReusablePageIndex(null);
+    }
+
+    private void persistReusablePageIndex(MvccPageMutationContext context) throws IOException {
         reusablePageIndexStore.rewrite(pageVolume.pageCount(), reusablePageIds);
+        if (context != null) {
+            context.recordReusablePageIndexUpdate();
+        }
     }
 
     private void updateFreeSpaceMap(DelosPage page) throws IOException {
+        updateFreeSpaceMap(page, null);
+    }
+
+    private void updateFreeSpaceMap(DelosPage page, MvccPageMutationContext context) throws IOException {
         freeBytesByPageId.put(page.pageId().value(), page.freeBytes());
         freeSpaceMapUpdateCount++;
+        if (context != null) {
+            context.recordFreeSpaceMapUpdate();
+        }
         persistFreeSpaceMap();
     }
 
@@ -727,13 +795,56 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         }
     }
 
+    MvccPageMutationContext beginPageMutationContext(String operation) {
+        return new MvccPageMutationContext(this, operation);
+    }
+
+    void recordMutationContextBegin(String operation) {
+        pageMutationContextBeginCount++;
+        lastPageMutationContextOperation = operation;
+    }
+
+    void recordMutationContextCommit(String operation) {
+        pageMutationContextCommitCount++;
+        lastPageMutationContextOperation = operation;
+    }
+
+    void recordMutationContextAbort(String operation) {
+        pageMutationContextAbortCount++;
+        lastPageMutationContextOperation = operation;
+    }
+
+    void recordMutationContextPageReservation(int bytes) {
+        pageMutationContextPageReservationCount++;
+        pageMutationContextReservedBytes += bytes;
+    }
+
+    void recordMutationContextPageWrite() {
+        pageMutationContextPageWriteCount++;
+    }
+
+    void recordMutationContextFreeSpaceMapUpdate() {
+        pageMutationContextFreeSpaceMapUpdateCount++;
+    }
+
+    void recordMutationContextReusableIndexUpdate() {
+        pageMutationContextReusableIndexUpdateCount++;
+    }
+
     private DelosPage readPage(DelosPageId pageId) throws IOException {
         return pageCache.read(pageVolume, pageId);
     }
 
     private void writePage(DelosPage page) throws IOException {
+        writePage(page, null);
+    }
+
+    private void writePage(DelosPage page, MvccPageMutationContext context) throws IOException {
         pageVolume.writePage(page);
         pageCache.put(page);
+        if (context != null) {
+            context.recordPageWrite();
+        }
     }
 
     private DelosPage allocatePage(int pageType) throws IOException {

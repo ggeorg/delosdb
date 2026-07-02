@@ -326,6 +326,42 @@ public final class PageVolumeMvccStateStore<T> {
         return enabled() ? table.pageLocalPruneRemovedVersionCount() : 0L;
     }
 
+    public long pageMutationContextBeginCount() {
+        return enabled() ? table.pageMutationContextBeginCount() : 0L;
+    }
+
+    public long pageMutationContextCommitCount() {
+        return enabled() ? table.pageMutationContextCommitCount() : 0L;
+    }
+
+    public long pageMutationContextAbortCount() {
+        return enabled() ? table.pageMutationContextAbortCount() : 0L;
+    }
+
+    public long pageMutationContextPageReservationCount() {
+        return enabled() ? table.pageMutationContextPageReservationCount() : 0L;
+    }
+
+    public long pageMutationContextReservedBytes() {
+        return enabled() ? table.pageMutationContextReservedBytes() : 0L;
+    }
+
+    public long pageMutationContextPageWriteCount() {
+        return enabled() ? table.pageMutationContextPageWriteCount() : 0L;
+    }
+
+    public long pageMutationContextFreeSpaceMapUpdateCount() {
+        return enabled() ? table.pageMutationContextFreeSpaceMapUpdateCount() : 0L;
+    }
+
+    public long pageMutationContextReusableIndexUpdateCount() {
+        return enabled() ? table.pageMutationContextReusableIndexUpdateCount() : 0L;
+    }
+
+    public String lastPageMutationContextOperation() {
+        return enabled() ? table.lastPageMutationContextOperation() : "none";
+    }
+
     public long pageCacheMaxPageCount() {
         return enabled() ? table.pageCacheMaxPageCount() : 0L;
     }

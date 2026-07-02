@@ -369,6 +369,51 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public long pageMutationContextBeginCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageMutationContextBeginCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageMutationContextCommitCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageMutationContextCommitCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageMutationContextAbortCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageMutationContextAbortCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageMutationContextPageReservationCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageMutationContextPageReservationCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageMutationContextReservedBytesForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageMutationContextReservedBytesForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageMutationContextPageWriteCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageMutationContextPageWriteCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageMutationContextFreeSpaceMapUpdateCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageMutationContextFreeSpaceMapUpdateCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageMutationContextReusableIndexUpdateCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageMutationContextReusableIndexUpdateCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public String lastPageMutationContextOperationForTesting(int segment, long containerId) {
+        return MvccConglomerate.lastPageMutationContextOperationForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public long pageCacheMaxPageCountForTesting(int segment, long containerId) {
         return MvccConglomerate.pageCacheMaxPageCountForDiagnostics(segment, containerId);
     }
