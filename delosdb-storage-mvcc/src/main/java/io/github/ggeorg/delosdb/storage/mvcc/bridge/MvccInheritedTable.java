@@ -68,6 +68,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private List<String> lastCommittedWriteIntentPayloadSummaries = List.of();
     private int transactionLocalWriteIntentReadCount;
     private int transactionLocalWriteIntentScanCount;
+    private int transactionLocalPageBackedBaseReadCount;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
@@ -123,6 +124,12 @@ final class MvccInheritedTable implements DelosStorageTable,
             if (writeIntentDeletesRow(rowId, snapshot)) {
                 transactionLocalWriteIntentReadCount++;
                 return Optional.empty();
+            }
+            if (canReadCommittedImageUnlocked(snapshot)) {
+                transactionLocalPageBackedBaseReadCount++;
+                return pageVolumeStateStore.loadVisibleRow(rowId)
+                        .map(PageVolumeMvccStateStore.PersistedRow::values)
+                        .map(MvccInheritedTable::cloneRowUnchecked);
             }
             return table.read(rowId, nativeSnapshot(snapshot), transactions);
         });
@@ -340,6 +347,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public int transactionLocalWriteIntentScanCountForTesting() {
         return readLocked(() -> transactionLocalWriteIntentScanCount);
+    }
+
+    @Override
+    public int transactionLocalPageBackedBaseReadCountForTesting() {
+        return readLocked(() -> transactionLocalPageBackedBaseReadCount);
     }
 
     @Override
