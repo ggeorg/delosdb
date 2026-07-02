@@ -387,20 +387,34 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public Optional<List<Long>> orderedIndexCandidateRowIdsFor(int column, String value) {
-        return readLocked(() -> {
-            orderedIndexLookupCount++;
-            Optional<List<Long>> rowIds = pageVolumeStateStore.orderedIndexRowIdsFor(column, value);
-            if (rowIds.isEmpty()) {
-                orderedIndexFallbackCount++;
-                return Optional.empty();
-            }
-            List<Long> ids = rowIds.get();
-            orderedIndexRowIdCount += ids.size();
-            if (!ids.isEmpty()) {
-                orderedIndexHitCount++;
-            }
-            return Optional.of(ids);
-        });
+        return readLocked(() -> recordOrderedIndexLookup(
+                pageVolumeStateStore.orderedIndexRowIdsFor(column, value)));
+    }
+
+    @Override
+    public Optional<List<Long>> orderedIndexCandidateRowIdsInRangeFor(
+            int column,
+            String lowerValue,
+            boolean lowerInclusive,
+            String upperValue,
+            boolean upperInclusive) {
+        return readLocked(() -> recordOrderedIndexLookup(
+                pageVolumeStateStore.orderedIndexRowIdsInRangeFor(
+                        column, lowerValue, lowerInclusive, upperValue, upperInclusive)));
+    }
+
+    private Optional<List<Long>> recordOrderedIndexLookup(Optional<List<Long>> rowIds) {
+        orderedIndexLookupCount++;
+        if (rowIds.isEmpty()) {
+            orderedIndexFallbackCount++;
+            return Optional.empty();
+        }
+        List<Long> ids = rowIds.get();
+        orderedIndexRowIdCount += ids.size();
+        if (!ids.isEmpty()) {
+            orderedIndexHitCount++;
+        }
+        return Optional.of(ids);
     }
 
     @Override

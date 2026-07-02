@@ -39,5 +39,24 @@ public interface DelosStorageCandidateIndex {
         return Optional.empty();
     }
 
+    /**
+     * Optional ordered page-backed lookup for current-committed range scans.
+     *
+     * <p>Bounds are normalized using the same key shape as equality lookups.
+     * A {@code null} lower or upper value means the range is unbounded on that
+     * side. An empty optional means the ordered page sidecar cannot currently
+     * answer this range and callers should fall back to the existing scan path.
+     * A present empty list means the ordered sidecar answered the range and
+     * found no matching row ids.</p>
+     */
+    default Optional<List<Long>> orderedIndexCandidateRowIdsInRangeFor(
+            int column,
+            String lowerValue,
+            boolean lowerInclusive,
+            String upperValue,
+            boolean upperInclusive) {
+        return Optional.empty();
+    }
+
     int candidateIndexKeyCountForTesting();
 }

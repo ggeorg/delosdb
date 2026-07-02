@@ -562,16 +562,27 @@ final class MvccConglomerateState {
 
     synchronized Optional<List<Long>> candidateRowIdsFor(Qualifier[][] qualifiers) {
         Optional<ColumnValueKey> key = equalityCandidateKey(qualifiers);
-        if (key.isEmpty()) {
+        if (key.isPresent()) {
+            ColumnValueKey columnValueKey = key.get();
+            Optional<List<Long>> ordered = candidateIndex.orderedIndexCandidateRowIdsFor(
+                    columnValueKey.column(), columnValueKey.value());
+            if (ordered.isPresent()) {
+                return ordered;
+            }
+            return candidateIndex.candidateRowIdsFor(columnValueKey.column(), columnValueKey.value());
+        }
+
+        Optional<ColumnRangeKey> range = rangeCandidateKey(qualifiers);
+        if (range.isEmpty()) {
             return Optional.empty();
         }
-        ColumnValueKey columnValueKey = key.get();
-        Optional<List<Long>> ordered = candidateIndex.orderedIndexCandidateRowIdsFor(
-                columnValueKey.column(), columnValueKey.value());
-        if (ordered.isPresent()) {
-            return ordered;
-        }
-        return candidateIndex.candidateRowIdsFor(columnValueKey.column(), columnValueKey.value());
+        ColumnRangeKey columnRangeKey = range.get();
+        return candidateIndex.orderedIndexCandidateRowIdsInRangeFor(
+                columnRangeKey.column(),
+                columnRangeKey.lowerValue(),
+                columnRangeKey.lowerInclusive(),
+                columnRangeKey.upperValue(),
+                columnRangeKey.upperInclusive());
     }
 
     synchronized int candidateIndexKeyCountForTesting() {
@@ -607,6 +618,98 @@ final class MvccConglomerateState {
             }
         }
         return Optional.empty();
+    }
+
+    private static Optional<ColumnRangeKey> rangeCandidateKey(Qualifier[][] qualifiers) {
+        if (qualifiers == null || qualifiers.length != 1 || qualifiers[0] == null || qualifiers[0].length == 0) {
+            return Optional.empty();
+        }
+        int column = -1;
+        String lowerValue = null;
+        boolean lowerInclusive = true;
+        String upperValue = null;
+        boolean upperInclusive = true;
+        boolean sawRangeBound = false;
+
+        for (Qualifier qualifier : qualifiers[0]) {
+            if (qualifier == null || qualifier.getColumnId() < 0 || qualifier.negateCompareResult()) {
+                return Optional.empty();
+            }
+            if (column == -1) {
+                column = qualifier.getColumnId();
+            } else if (column != qualifier.getColumnId()) {
+                return Optional.empty();
+            }
+            String value;
+            try {
+                StoreDataValue orderable = qualifier.getOrderable();
+                if (orderable == null) {
+                    return Optional.empty();
+                }
+                value = valueKey(orderable);
+            } catch (StandardException e) {
+                return Optional.empty();
+            }
+            switch (qualifier.getOperator()) {
+                case StoreOrderable.ORDER_OP_GREATERTHAN -> {
+                    BoundChoice choice = chooseLowerBound(lowerValue, lowerInclusive, value, false);
+                    lowerValue = choice.value();
+                    lowerInclusive = choice.inclusive();
+                    sawRangeBound = true;
+                }
+                case StoreOrderable.ORDER_OP_GREATEROREQUALS -> {
+                    BoundChoice choice = chooseLowerBound(lowerValue, lowerInclusive, value, true);
+                    lowerValue = choice.value();
+                    lowerInclusive = choice.inclusive();
+                    sawRangeBound = true;
+                }
+                case StoreOrderable.ORDER_OP_LESSTHAN -> {
+                    BoundChoice choice = chooseUpperBound(upperValue, upperInclusive, value, false);
+                    upperValue = choice.value();
+                    upperInclusive = choice.inclusive();
+                    sawRangeBound = true;
+                }
+                case StoreOrderable.ORDER_OP_LESSOREQUALS -> {
+                    BoundChoice choice = chooseUpperBound(upperValue, upperInclusive, value, true);
+                    upperValue = choice.value();
+                    upperInclusive = choice.inclusive();
+                    sawRangeBound = true;
+                }
+                default -> {
+                    return Optional.empty();
+                }
+            }
+        }
+
+        if (!sawRangeBound || column < 0) {
+            return Optional.empty();
+        }
+        return Optional.of(new ColumnRangeKey(
+                column, lowerValue, lowerInclusive, upperValue, upperInclusive));
+    }
+
+    private static BoundChoice chooseLowerBound(
+            String currentValue, boolean currentInclusive, String candidateValue, boolean candidateInclusive) {
+        if (currentValue == null) {
+            return new BoundChoice(candidateValue, candidateInclusive);
+        }
+        int comparison = candidateValue.compareTo(currentValue);
+        if (comparison > 0 || (comparison == 0 && currentInclusive && !candidateInclusive)) {
+            return new BoundChoice(candidateValue, candidateInclusive);
+        }
+        return new BoundChoice(currentValue, currentInclusive);
+    }
+
+    private static BoundChoice chooseUpperBound(
+            String currentValue, boolean currentInclusive, String candidateValue, boolean candidateInclusive) {
+        if (currentValue == null) {
+            return new BoundChoice(candidateValue, candidateInclusive);
+        }
+        int comparison = candidateValue.compareTo(currentValue);
+        if (comparison < 0 || (comparison == 0 && currentInclusive && !candidateInclusive)) {
+            return new BoundChoice(candidateValue, candidateInclusive);
+        }
+        return new BoundChoice(currentValue, currentInclusive);
     }
 
     private static String valueKey(StoreDataValue value) {
@@ -649,5 +752,16 @@ final class MvccConglomerateState {
     }
 
     private record ColumnValueKey(int column, String value) {
+    }
+
+    private record ColumnRangeKey(
+            int column,
+            String lowerValue,
+            boolean lowerInclusive,
+            String upperValue,
+            boolean upperInclusive) {
+    }
+
+    private record BoundChoice(String value, boolean inclusive) {
     }
 }

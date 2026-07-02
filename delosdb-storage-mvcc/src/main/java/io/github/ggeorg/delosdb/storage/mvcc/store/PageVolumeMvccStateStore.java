@@ -478,6 +478,23 @@ public final class PageVolumeMvccStateStore<T> {
         }
     }
 
+    public Optional<List<Long>> orderedIndexRowIdsInRangeFor(
+            int column,
+            String lowerKey,
+            boolean lowerInclusive,
+            String upperKey,
+            boolean upperInclusive) {
+        if (!enabled() || orderedIndexPageStore == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(orderedIndexPageStore.rowIdsInRangeFor(
+                    column, lowerKey, lowerInclusive, upperKey, upperInclusive));
+        } catch (IOException | RuntimeException e) {
+            return Optional.empty();
+        }
+    }
+
     public long pageCacheMaxPageCount() {
         return enabled() ? table.pageCacheMaxPageCount() : 0L;
     }

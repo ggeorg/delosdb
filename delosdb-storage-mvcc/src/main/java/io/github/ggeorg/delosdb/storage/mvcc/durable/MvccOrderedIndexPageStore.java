@@ -125,6 +125,37 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
         return List.copyOf(rowIds);
     }
 
+    public synchronized List<Long> rowIdsInRangeFor(
+            int column,
+            String lowerKey,
+            boolean lowerInclusive,
+            String upperKey,
+            boolean upperInclusive) throws IOException {
+        if (column < 0) {
+            throw new IllegalArgumentException("ordered index column must be non-negative: " + column);
+        }
+        String normalizedLowerKey = lowerKey == null ? null : Entry.normalizeKeyForLookup(lowerKey);
+        String normalizedUpperKey = upperKey == null ? null : Entry.normalizeKeyForLookup(upperKey);
+        if (normalizedLowerKey != null && normalizedUpperKey != null
+                && compareKeys(normalizedLowerKey, normalizedUpperKey) > 0) {
+            return List.of();
+        }
+        List<Long> rowIds = new ArrayList<>();
+        for (Entry entry : read().entries()) {
+            if (entry.column() != column) {
+                continue;
+            }
+            if (!withinLowerBound(entry.key(), normalizedLowerKey, lowerInclusive)) {
+                continue;
+            }
+            if (!withinUpperBound(entry.key(), normalizedUpperKey, upperInclusive)) {
+                continue;
+            }
+            rowIds.add(entry.rowId());
+        }
+        return List.copyOf(rowIds);
+    }
+
     public synchronized long rebuildCount() {
         return rebuildCount;
     }
@@ -214,6 +245,26 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
 
     private static int maxPayloadBytes() {
         return DelosPage.empty(new DelosPageId(0L), ORDERED_INDEX_PAGE_TYPE).freeBytes() - SLOT_OVERHEAD_BYTES;
+    }
+
+    private static boolean withinLowerBound(String key, String lowerKey, boolean inclusive) {
+        if (lowerKey == null) {
+            return true;
+        }
+        int comparison = compareKeys(key, lowerKey);
+        return inclusive ? comparison >= 0 : comparison > 0;
+    }
+
+    private static boolean withinUpperBound(String key, String upperKey, boolean inclusive) {
+        if (upperKey == null) {
+            return true;
+        }
+        int comparison = compareKeys(key, upperKey);
+        return inclusive ? comparison <= 0 : comparison < 0;
+    }
+
+    private static int compareKeys(String left, String right) {
+        return left.compareTo(right);
     }
 
     public record Entry(int column, String key, long rowId) {
