@@ -398,6 +398,18 @@ public final class MvccConglomerate
                 .activeProviderSurvivingWriteIntentPayloadSummariesForTesting();
     }
 
+    static int providerFirstWriteAppendCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).providerFirstWriteAppendCountForTesting();
+    }
+
+    static int legacyWriteFrontShadowMutationCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).legacyWriteFrontShadowMutationCountForTesting();
+    }
+
+    static int providerFirstWriteAppendFailureRollbackCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).providerFirstWriteAppendFailureRollbackCountForTesting();
+    }
+
     static int transactionLocalWriteIntentReadCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).transactionLocalWriteIntentReadCountForTesting();
     }

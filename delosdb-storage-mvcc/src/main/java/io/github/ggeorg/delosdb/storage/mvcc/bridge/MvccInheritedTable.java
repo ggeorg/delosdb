@@ -66,6 +66,9 @@ final class MvccInheritedTable implements DelosStorageTable,
     private int lastCommittedChangedRowCount;
     private int lastCommittedWriteIntentCount;
     private List<String> lastCommittedWriteIntentPayloadSummaries = List.of();
+    private int providerFirstWriteAppendCount;
+    private int legacyWriteFrontShadowMutationCount;
+    private int providerFirstWriteAppendFailureRollbackCount;
     private int transactionLocalWriteIntentReadCount;
     private int transactionLocalWriteIntentScanCount;
     private int transactionLocalPageBackedBaseReadCount;
@@ -199,8 +202,14 @@ final class MvccInheritedTable implements DelosStorageTable,
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
             MvccCommandSequence commandSequence = handle.nextCommandSequence();
             StoreDataValue[] rowVersion = cloneRowUnchecked(row);
-            table.insert(rowId, rowVersion, handle.nativeTransaction(), commandSequence);
-            handle.recordUpsertWriteIntent(rowId, cloneRowUnchecked(rowVersion), commandSequence);
+            recordProviderFirstUpsertWriteIntent(handle, rowId, rowVersion, commandSequence);
+            try {
+                table.insert(rowId, cloneRowUnchecked(rowVersion), handle.nativeTransaction(), commandSequence);
+                recordLegacyWriteFrontShadowMutation();
+            } catch (RuntimeException | Error failure) {
+                rollbackProviderFirstCommand(handle, commandSequence);
+                throw failure;
+            }
         });
     }
 
@@ -215,14 +224,20 @@ final class MvccInheritedTable implements DelosStorageTable,
             MvccCommandSequence commandSequence = handle.nextCommandSequence();
             StoreDataValue[] rowVersion = cloneRowUnchecked(replacement);
             touchPageBackedBaseRowForWrite(rowId, snapshot);
-            table.update(
-                    rowId,
-                    rowVersion,
-                    handle.nativeTransaction(),
-                    nativeSnapshot(snapshot),
-                    transactions,
-                    commandSequence);
-            handle.recordUpsertWriteIntent(rowId, cloneRowUnchecked(rowVersion), commandSequence);
+            recordProviderFirstUpsertWriteIntent(handle, rowId, rowVersion, commandSequence);
+            try {
+                table.update(
+                        rowId,
+                        cloneRowUnchecked(rowVersion),
+                        handle.nativeTransaction(),
+                        nativeSnapshot(snapshot),
+                        transactions,
+                        commandSequence);
+                recordLegacyWriteFrontShadowMutation();
+            } catch (RuntimeException | Error failure) {
+                rollbackProviderFirstCommand(handle, commandSequence);
+                throw failure;
+            }
         });
     }
 
@@ -235,13 +250,19 @@ final class MvccInheritedTable implements DelosStorageTable,
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
             MvccCommandSequence commandSequence = handle.nextCommandSequence();
             touchPageBackedBaseRowForWrite(rowId, snapshot);
-            table.delete(
-                    rowId,
-                    handle.nativeTransaction(),
-                    nativeSnapshot(snapshot),
-                    transactions,
-                    commandSequence);
-            handle.recordDeleteWriteIntent(rowId, commandSequence);
+            recordProviderFirstDeleteWriteIntent(handle, rowId, commandSequence);
+            try {
+                table.delete(
+                        rowId,
+                        handle.nativeTransaction(),
+                        nativeSnapshot(snapshot),
+                        transactions,
+                        commandSequence);
+                recordLegacyWriteFrontShadowMutation();
+            } catch (RuntimeException | Error failure) {
+                rollbackProviderFirstCommand(handle, commandSequence);
+                throw failure;
+            }
         });
     }
 
@@ -306,6 +327,35 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public long nextRowId() {
         return writeLocked(() -> nextRowId++);
+    }
+
+    private void recordProviderFirstUpsertWriteIntent(
+            MvccInheritedHandles.Transaction handle,
+            long rowId,
+            StoreDataValue[] rowVersion,
+            MvccCommandSequence commandSequence) {
+        handle.recordUpsertWriteIntent(rowId, cloneRowUnchecked(rowVersion), commandSequence);
+        providerFirstWriteAppendCount++;
+    }
+
+    private void recordProviderFirstDeleteWriteIntent(
+            MvccInheritedHandles.Transaction handle,
+            long rowId,
+            MvccCommandSequence commandSequence) {
+        handle.recordDeleteWriteIntent(rowId, commandSequence);
+        providerFirstWriteAppendCount++;
+    }
+
+    private void recordLegacyWriteFrontShadowMutation() {
+        legacyWriteFrontShadowMutationCount++;
+    }
+
+    private void rollbackProviderFirstCommand(
+            MvccInheritedHandles.Transaction handle,
+            MvccCommandSequence commandSequence) {
+        MvccCommandSequence boundary = handle.rollbackCurrentCommand(commandSequence);
+        table.rollbackTransactionChangesAfter(handle.nativeTransaction(), boundary);
+        providerFirstWriteAppendFailureRollbackCount++;
     }
 
     private void persistCommittedChangesUnlocked(
@@ -399,6 +449,21 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public List<String> activeProviderSurvivingWriteIntentPayloadSummariesForTesting() {
         return readLocked(() -> writeIntentPayloadSummaries(activeSurvivingWriteIntents()));
+    }
+
+    @Override
+    public int providerFirstWriteAppendCountForTesting() {
+        return readLocked(() -> providerFirstWriteAppendCount);
+    }
+
+    @Override
+    public int legacyWriteFrontShadowMutationCountForTesting() {
+        return readLocked(() -> legacyWriteFrontShadowMutationCount);
+    }
+
+    @Override
+    public int providerFirstWriteAppendFailureRollbackCountForTesting() {
+        return readLocked(() -> providerFirstWriteAppendFailureRollbackCount);
     }
 
     @Override

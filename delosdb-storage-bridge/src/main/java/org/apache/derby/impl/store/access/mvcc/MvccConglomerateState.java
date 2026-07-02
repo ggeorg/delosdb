@@ -220,6 +220,18 @@ final class MvccConglomerateState {
         return diagnostics.activeProviderSurvivingWriteIntentPayloadSummariesForTesting();
     }
 
+    synchronized int providerFirstWriteAppendCountForTesting() {
+        return diagnostics.providerFirstWriteAppendCountForTesting();
+    }
+
+    synchronized int legacyWriteFrontShadowMutationCountForTesting() {
+        return diagnostics.legacyWriteFrontShadowMutationCountForTesting();
+    }
+
+    synchronized int providerFirstWriteAppendFailureRollbackCountForTesting() {
+        return diagnostics.providerFirstWriteAppendFailureRollbackCountForTesting();
+    }
+
     synchronized int transactionLocalWriteIntentReadCountForTesting() {
         return diagnostics.transactionLocalWriteIntentReadCountForTesting();
     }

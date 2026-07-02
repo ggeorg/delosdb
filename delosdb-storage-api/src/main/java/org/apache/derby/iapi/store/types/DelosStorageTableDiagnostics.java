@@ -79,6 +79,18 @@ public interface DelosStorageTableDiagnostics {
         return List.of();
     }
 
+    default int providerFirstWriteAppendCountForTesting() {
+        return 0;
+    }
+
+    default int legacyWriteFrontShadowMutationCountForTesting() {
+        return 0;
+    }
+
+    default int providerFirstWriteAppendFailureRollbackCountForTesting() {
+        return 0;
+    }
+
     default int transactionLocalWriteIntentReadCountForTesting() {
         return 0;
     }

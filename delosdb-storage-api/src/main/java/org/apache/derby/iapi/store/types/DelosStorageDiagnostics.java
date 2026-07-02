@@ -101,6 +101,18 @@ public interface DelosStorageDiagnostics {
         return List.of();
     }
 
+    default int providerFirstWriteAppendCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default int legacyWriteFrontShadowMutationCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default int providerFirstWriteAppendFailureRollbackCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
     default int transactionLocalWriteIntentReadCountForTesting(int segment, long containerId) {
         return 0;
     }

@@ -115,6 +115,14 @@ final class MvccInheritedHandles {
             appendedWriteIntents.clear();
         }
 
+        MvccCommandSequence rollbackCurrentCommand(MvccCommandSequence commandSequence) {
+            MvccCommandSequence boundary = MvccCommandSequence.of(
+                    Objects.requireNonNull(commandSequence, "commandSequence").value() - 1L);
+            removeWriteIntentsAfter(boundary);
+            nextCommandSequence = boundary.value() + 1L;
+            return boundary;
+        }
+
         MvccCommandSequence rollbackToSavepoint(String savepointName) {
             String normalizedName = requireSavepointName(savepointName);
             MvccCommandSequence boundary = savepoints.get(normalizedName);
