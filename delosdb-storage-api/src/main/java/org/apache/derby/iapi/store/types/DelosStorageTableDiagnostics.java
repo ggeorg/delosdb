@@ -63,6 +63,14 @@ public interface DelosStorageTableDiagnostics {
         return List.of();
     }
 
+    default int transactionLocalWriteIntentReadCountForTesting() {
+        return 0;
+    }
+
+    default int transactionLocalWriteIntentScanCountForTesting() {
+        return 0;
+    }
+
     long pageCountForTesting();
 
     long overflowPageCountForTesting();

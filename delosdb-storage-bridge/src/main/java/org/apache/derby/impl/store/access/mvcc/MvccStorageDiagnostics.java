@@ -124,6 +124,16 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public int transactionLocalWriteIntentReadCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.transactionLocalWriteIntentReadCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public int transactionLocalWriteIntentScanCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.transactionLocalWriteIntentScanCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public long pageCountForTesting(int segment, long containerId) {
         return MvccConglomerate.pageCountForDiagnostics(segment, containerId);
     }

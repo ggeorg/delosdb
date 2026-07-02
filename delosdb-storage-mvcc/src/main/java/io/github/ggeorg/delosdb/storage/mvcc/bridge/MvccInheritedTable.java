@@ -66,6 +66,8 @@ final class MvccInheritedTable implements DelosStorageTable,
     private int lastCommittedChangedRowCount;
     private int lastCommittedWriteIntentCount;
     private List<String> lastCommittedWriteIntentPayloadSummaries = List.of();
+    private int transactionLocalWriteIntentReadCount;
+    private int transactionLocalWriteIntentScanCount;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
@@ -91,17 +93,39 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public DelosStorageSnapshot snapshot(DelosStorageTransaction transaction) {
-        return readLocked(() -> new MvccInheritedHandles.Snapshot(transactions.snapshot(nativeTransaction(transaction))));
+        return readLocked(() -> {
+            MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            return new MvccInheritedHandles.Snapshot(handle, transactions.snapshot(handle.nativeTransaction()));
+        });
     }
 
     @Override
     public DelosStorageScan openScan(DelosStorageSnapshot snapshot) {
-        return readLocked(() -> new MvccInheritedScan(table.openScan(nativeSnapshot(snapshot), transactions)));
+        return readLocked(() -> {
+            Optional<List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>>> writeIntentRows =
+                    writeIntentOverlayRows(snapshot);
+            if (writeIntentRows.isPresent()) {
+                transactionLocalWriteIntentScanCount++;
+                return new MvccPageBackedCommittedScan(writeIntentRows.get());
+            }
+            return new MvccInheritedScan(table.openScan(nativeSnapshot(snapshot), transactions));
+        });
     }
 
     @Override
     public Optional<StoreDataValue[]> read(long rowId, DelosStorageSnapshot snapshot) {
-        return readLocked(() -> table.read(rowId, nativeSnapshot(snapshot), transactions));
+        return readLocked(() -> {
+            Optional<StoreDataValue[]> writeIntentRow = readWriteIntent(rowId, snapshot);
+            if (writeIntentRow.isPresent()) {
+                transactionLocalWriteIntentReadCount++;
+                return writeIntentRow;
+            }
+            if (writeIntentDeletesRow(rowId, snapshot)) {
+                transactionLocalWriteIntentReadCount++;
+                return Optional.empty();
+            }
+            return table.read(rowId, nativeSnapshot(snapshot), transactions);
+        });
     }
 
 
@@ -309,6 +333,16 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public int transactionLocalWriteIntentReadCountForTesting() {
+        return readLocked(() -> transactionLocalWriteIntentReadCount);
+    }
+
+    @Override
+    public int transactionLocalWriteIntentScanCountForTesting() {
+        return readLocked(() -> transactionLocalWriteIntentScanCount);
+    }
+
+    @Override
     public Path pageVolumeStateFileForTesting() {
         return readLocked(pageVolumeStateStore::pageFile);
     }
@@ -451,6 +485,54 @@ final class MvccInheritedTable implements DelosStorageTable,
         writeLocked(pageVolumeStateStore::close);
     }
 
+
+    private Optional<List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>>> writeIntentOverlayRows(
+            DelosStorageSnapshot snapshot) {
+        MvccInheritedHandles.Snapshot handleSnapshot = nativeSnapshotHandle(snapshot);
+        MvccInheritedHandles.Transaction handle = handleSnapshot.transaction();
+        if (!handle.hasWriteIntents() || !canReadCommittedImageUnlocked(snapshot)) {
+            return Optional.empty();
+        }
+        java.util.LinkedHashMap<Long, PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows =
+                new java.util.LinkedHashMap<>();
+        for (PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]> row : pageVolumeStateStore.loadVisibleRows()) {
+            rows.put(row.rowId(), new PageVolumeMvccStateStore.PersistedRow<>(
+                    row.rowId(), cloneRowUnchecked(row.values())));
+        }
+        for (MvccInheritedHandles.Transaction.WriteIntent intent : handle.writeIntents()) {
+            if (!intent.commandSequence().isAtOrBefore(handleSnapshot.nativeSnapshot().visibleThroughCommand())) {
+                continue;
+            }
+            if (intent.delete()) {
+                rows.remove(intent.rowId());
+            } else {
+                rows.put(intent.rowId(), new PageVolumeMvccStateStore.PersistedRow<>(
+                        intent.rowId(), cloneRowUnchecked(intent.row())));
+            }
+        }
+        return Optional.of(List.copyOf(rows.values()));
+    }
+
+    private Optional<StoreDataValue[]> readWriteIntent(long rowId, DelosStorageSnapshot snapshot) {
+        return latestWriteIntent(rowId, snapshot)
+                .filter(intent -> !intent.delete())
+                .map(intent -> cloneRowUnchecked(intent.row()));
+    }
+
+    private boolean writeIntentDeletesRow(long rowId, DelosStorageSnapshot snapshot) {
+        return latestWriteIntent(rowId, snapshot)
+                .map(MvccInheritedHandles.Transaction.WriteIntent::delete)
+                .orElse(false);
+    }
+
+    private Optional<MvccInheritedHandles.Transaction.WriteIntent> latestWriteIntent(
+            long rowId,
+            DelosStorageSnapshot snapshot) {
+        MvccInheritedHandles.Snapshot handleSnapshot = nativeSnapshotHandle(snapshot);
+        return handleSnapshot.transaction().latestVisibleWriteIntent(
+                rowId,
+                handleSnapshot.nativeSnapshot().visibleThroughCommand());
+    }
 
     private boolean canReadCommittedImageUnlocked(DelosStorageSnapshot snapshot) {
         MvccSnapshot nativeSnapshot = nativeSnapshot(snapshot);
@@ -595,8 +677,12 @@ final class MvccInheritedTable implements DelosStorageTable,
         return nativeTransactionHandle(transaction).nativeTransaction();
     }
 
+    private static MvccInheritedHandles.Snapshot nativeSnapshotHandle(DelosStorageSnapshot snapshot) {
+        return MvccInheritedHandles.snapshot(snapshot);
+    }
+
     private static MvccSnapshot nativeSnapshot(DelosStorageSnapshot snapshot) {
-        return MvccInheritedHandles.snapshot(snapshot).nativeSnapshot();
+        return nativeSnapshotHandle(snapshot).nativeSnapshot();
     }
 
     private static List<MvccCandidateIndex.CandidateRow> toCandidateRows(

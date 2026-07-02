@@ -77,6 +77,26 @@ final class MvccInheritedHandles {
             return List.copyOf(latest);
         }
 
+        boolean hasWriteIntents() {
+            return !writeIntents.isEmpty();
+        }
+
+        java.util.Optional<WriteIntent> latestVisibleWriteIntent(
+                long rowId,
+                MvccCommandSequence visibleThroughCommand) {
+            List<WriteIntent> history = writeIntents.get(rowId);
+            if (history == null || history.isEmpty()) {
+                return java.util.Optional.empty();
+            }
+            for (int i = history.size() - 1; i >= 0; i--) {
+                WriteIntent intent = history.get(i);
+                if (intent.commandSequence().isAtOrBefore(visibleThroughCommand)) {
+                    return java.util.Optional.of(intent);
+                }
+            }
+            return java.util.Optional.empty();
+        }
+
         int writeIntentCount() {
             return writeIntents().size();
         }
@@ -183,8 +203,9 @@ final class MvccInheritedHandles {
         }
     }
 
-    record Snapshot(MvccSnapshot nativeSnapshot) implements DelosStorageSnapshot {
+    record Snapshot(Transaction transaction, MvccSnapshot nativeSnapshot) implements DelosStorageSnapshot {
         Snapshot {
+            transaction = Objects.requireNonNull(transaction, "transaction");
             nativeSnapshot = Objects.requireNonNull(nativeSnapshot, "nativeSnapshot");
         }
 
