@@ -47,6 +47,7 @@ public record DelosStorageInspection(String providerId,
     public static final String ROW_DIRECTORY_FILE = "rowDirectory";
     public static final String REUSABLE_PAGE_INDEX_FILE = "reusablePageIndex";
     public static final String PAGE_MUTATION_LOG_FILE = "pageMutationLog";
+    public static final String PURGE_QUEUE_FILE = "purgeQueue";
     public static final String WRITE_AHEAD_LOG_FILE = "writeAheadLog";
     public static final String CHECKPOINT_FILE = "checkpoint";
     public static final String LEGACY_SNAPSHOT_FILE = "legacySnapshot";
@@ -74,6 +75,7 @@ public record DelosStorageInspection(String providerId,
                 diagnostics.reusablePageIndexFileForTesting(segment, containerId));
         putIfPresent(files, PAGE_MUTATION_LOG_FILE,
                 diagnostics.pageMutationLogFileForTesting(segment, containerId));
+        putIfPresent(files, PURGE_QUEUE_FILE, diagnostics.purgeQueueFileForTesting(segment, containerId));
         putIfPresent(files, WRITE_AHEAD_LOG_FILE, diagnostics.writeAheadLogFileForTesting(segment, containerId));
         putIfPresent(files, CHECKPOINT_FILE, diagnostics.checkpointFileForTesting(segment, containerId));
         putIfPresent(files, LEGACY_SNAPSHOT_FILE, diagnostics.legacySnapshotFileForTesting(segment, containerId));

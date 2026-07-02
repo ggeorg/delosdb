@@ -63,6 +63,10 @@ public interface DelosStorageDiagnostics {
         return null;
     }
 
+    default Path purgeQueueFileForTesting(int segment, long containerId) {
+        return null;
+    }
+
     Path pageMutationLogFileForTesting(int segment, long containerId);
 
     Path writeAheadLogFileForTesting(int segment, long containerId);
@@ -309,6 +313,26 @@ public interface DelosStorageDiagnostics {
 
     default String lastPageMutationContextOperationForTesting(int segment, long containerId) {
         return "none";
+    }
+
+    default long purgeQueuePendingCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long purgeQueueEnqueueCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long purgeQueueDrainCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long purgeQueueLastDrainCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default List<String> purgeQueueEntrySummariesForTesting(int segment, long containerId) {
+        return List.of();
     }
 
     long pageCacheMaxPageCountForTesting(int segment, long containerId);

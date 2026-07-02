@@ -79,6 +79,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public Path purgeQueueFileForTesting(int segment, long containerId) {
+        return MvccConglomerate.purgeQueueFileForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public Path pageMutationLogFileForTesting(int segment, long containerId) {
         return MvccConglomerate.pageMutationLogFileForDiagnostics(segment, containerId);
     }
@@ -411,6 +416,31 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public String lastPageMutationContextOperationForTesting(int segment, long containerId) {
         return MvccConglomerate.lastPageMutationContextOperationForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long purgeQueuePendingCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.purgeQueuePendingCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long purgeQueueEnqueueCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.purgeQueueEnqueueCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long purgeQueueDrainCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.purgeQueueDrainCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long purgeQueueLastDrainCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.purgeQueueLastDrainCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public java.util.List<String> purgeQueueEntrySummariesForTesting(int segment, long containerId) {
+        return MvccConglomerate.purgeQueueEntrySummariesForDiagnostics(segment, containerId);
     }
 
     @Override

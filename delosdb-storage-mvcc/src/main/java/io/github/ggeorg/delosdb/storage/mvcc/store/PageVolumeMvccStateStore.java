@@ -172,6 +172,10 @@ public final class PageVolumeMvccStateStore<T> {
         return pageFile == null ? null : PageBackedMvccTable.visibilityMapPath(pageFile);
     }
 
+    public Path purgeQueueFile() {
+        return pageFile == null ? null : PageBackedMvccTable.purgeQueuePath(pageFile);
+    }
+
     public Path pageMutationLogFile() {
         return pageMutationLogFile;
     }
@@ -360,6 +364,26 @@ public final class PageVolumeMvccStateStore<T> {
 
     public String lastPageMutationContextOperation() {
         return enabled() ? table.lastPageMutationContextOperation() : "none";
+    }
+
+    public long purgeQueuePendingCount() {
+        return enabled() ? table.purgeQueuePendingCount() : 0L;
+    }
+
+    public long purgeQueueEnqueueCount() {
+        return enabled() ? table.purgeQueueEnqueueCount() : 0L;
+    }
+
+    public long purgeQueueDrainCount() {
+        return enabled() ? table.purgeQueueDrainCount() : 0L;
+    }
+
+    public long purgeQueueLastDrainCount() {
+        return enabled() ? table.purgeQueueLastDrainCount() : 0L;
+    }
+
+    public List<String> purgeQueueEntrySummaries() {
+        return enabled() ? table.purgeQueueEntrySummaries() : List.of();
     }
 
     public long pageCacheMaxPageCount() {
@@ -611,6 +635,11 @@ public final class PageVolumeMvccStateStore<T> {
             if (visibilityMap != null) {
                 Files.deleteIfExists(visibilityMap);
                 Files.deleteIfExists(visibilityMap.resolveSibling(visibilityMap.getFileName() + ".rewrite"));
+            }
+            Path purgeQueue = purgeQueueFile();
+            if (purgeQueue != null) {
+                Files.deleteIfExists(purgeQueue);
+                Files.deleteIfExists(purgeQueue.resolveSibling(purgeQueue.getFileName() + ".rewrite"));
             }
             if (pageMutationLogFile != null) {
                 Files.deleteIfExists(pageMutationLogFile);

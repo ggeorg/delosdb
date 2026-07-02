@@ -172,6 +172,10 @@ final class MvccConglomerateState {
         return diagnostics.visibilityMapFileForTesting();
     }
 
+    Path purgeQueueFileForTesting() {
+        return diagnostics.purgeQueueFileForTesting();
+    }
+
     Path pageMutationLogFileForTesting() {
         return diagnostics.pageMutationLogFileForTesting();
     }
@@ -434,6 +438,26 @@ final class MvccConglomerateState {
 
     synchronized String lastPageMutationContextOperationForTesting() {
         return diagnostics.lastPageMutationContextOperationForTesting();
+    }
+
+    synchronized long purgeQueuePendingCountForTesting() {
+        return diagnostics.purgeQueuePendingCountForTesting();
+    }
+
+    synchronized long purgeQueueEnqueueCountForTesting() {
+        return diagnostics.purgeQueueEnqueueCountForTesting();
+    }
+
+    synchronized long purgeQueueDrainCountForTesting() {
+        return diagnostics.purgeQueueDrainCountForTesting();
+    }
+
+    synchronized long purgeQueueLastDrainCountForTesting() {
+        return diagnostics.purgeQueueLastDrainCountForTesting();
+    }
+
+    synchronized List<String> purgeQueueEntrySummariesForTesting() {
+        return diagnostics.purgeQueueEntrySummariesForTesting();
     }
 
     synchronized long pageCacheMaxPageCountForTesting() {

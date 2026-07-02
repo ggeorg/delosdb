@@ -35,6 +35,10 @@ public interface DelosStorageTableDiagnostics {
 
     Path visibilityMapFileForTesting();
 
+    default Path purgeQueueFileForTesting() {
+        return null;
+    }
+
     Path pageMutationLogFileForTesting();
 
     Path writeAheadLogFileForTesting();
@@ -247,6 +251,26 @@ public interface DelosStorageTableDiagnostics {
 
     default String lastPageMutationContextOperationForTesting() {
         return "none";
+    }
+
+    default long purgeQueuePendingCountForTesting() {
+        return 0L;
+    }
+
+    default long purgeQueueEnqueueCountForTesting() {
+        return 0L;
+    }
+
+    default long purgeQueueDrainCountForTesting() {
+        return 0L;
+    }
+
+    default long purgeQueueLastDrainCountForTesting() {
+        return 0L;
+    }
+
+    default List<String> purgeQueueEntrySummariesForTesting() {
+        return List.of();
     }
 
     long pageCacheMaxPageCountForTesting();

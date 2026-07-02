@@ -347,6 +347,10 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).visibilityMapFileForTesting();
     }
 
+    static Path purgeQueueFileForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeQueueFileForTesting();
+    }
+
     static Path pageMutationLogFileForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageMutationLogFileForTesting();
     }
@@ -616,6 +620,26 @@ public final class MvccConglomerate
 
     static String lastPageMutationContextOperationForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).lastPageMutationContextOperationForTesting();
+    }
+
+    static long purgeQueuePendingCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeQueuePendingCountForTesting();
+    }
+
+    static long purgeQueueEnqueueCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeQueueEnqueueCountForTesting();
+    }
+
+    static long purgeQueueDrainCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeQueueDrainCountForTesting();
+    }
+
+    static long purgeQueueLastDrainCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeQueueLastDrainCountForTesting();
+    }
+
+    static List<String> purgeQueueEntrySummariesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeQueueEntrySummariesForTesting();
     }
 
     static long pageCacheMaxPageCountForDiagnostics(int segment, long containerId) {

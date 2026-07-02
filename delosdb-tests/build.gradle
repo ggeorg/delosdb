@@ -734,6 +734,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVisibilityPruneMapTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageLocalPruningTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageMutationContextTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPurgeQueueTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlWriteIntentReadTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedBaseReadTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedTransactionScanTest.class',

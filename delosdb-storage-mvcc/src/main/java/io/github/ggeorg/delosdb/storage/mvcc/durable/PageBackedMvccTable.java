@@ -36,7 +36,12 @@ public final class PageBackedMvccTable implements AutoCloseable {
     private final MvccTransactionOutcomeLog outcomeLog;
     private final MvccRowDirectoryStore rowDirectoryStore;
     private final MvccVisibilityMapStore visibilityMapStore;
+    private final MvccPurgeQueueStore purgeQueueStore;
     private NavigableMap<Long, MvccVisibilityMapStore.PageState> visibilityMapPageStates;
+    private int purgeQueuePendingCount;
+    private long purgeQueueEnqueueCount;
+    private long purgeQueueDrainCount;
+    private long purgeQueueLastDrainCount;
     private long visibilityMapUpdateCount;
     private long visibilityMapRebuildCount;
     private long pageLocalPruneAttemptCount;
@@ -51,14 +56,18 @@ public final class PageBackedMvccTable implements AutoCloseable {
             MvccTransactionOutcomeLog outcomeLog,
             MvccRowDirectoryStore rowDirectoryStore,
             MvccVisibilityMapStore visibilityMapStore,
-            NavigableMap<Long, MvccVisibilityMapStore.PageState> visibilityMapPageStates) {
+            MvccPurgeQueueStore purgeQueueStore,
+            NavigableMap<Long, MvccVisibilityMapStore.PageState> visibilityMapPageStates,
+            int purgeQueuePendingCount) {
         this.store = Objects.requireNonNull(store, "store");
         this.directory = Objects.requireNonNull(directory, "directory");
         this.mutationLog = mutationLog;
         this.outcomeLog = outcomeLog;
         this.rowDirectoryStore = Objects.requireNonNull(rowDirectoryStore, "rowDirectoryStore");
         this.visibilityMapStore = Objects.requireNonNull(visibilityMapStore, "visibilityMapStore");
+        this.purgeQueueStore = Objects.requireNonNull(purgeQueueStore, "purgeQueueStore");
         this.visibilityMapPageStates = new TreeMap<>(Objects.requireNonNull(visibilityMapPageStates, "visibilityMapPageStates"));
+        this.purgeQueuePendingCount = purgeQueuePendingCount;
     }
 
     public static PageBackedMvccTable open(Path path) throws IOException {
@@ -132,9 +141,12 @@ public final class PageBackedMvccTable implements AutoCloseable {
             NavigableMap<Long, MvccVisibilityMapStore.PageState> visibilityStates = visibilityMapFor(
                     store.pageCount(), store.loadAll(), directory.headRecords());
             visibilityMap.rewrite(store.pageCount(), visibilityStates);
+            MvccPurgeQueueStore purgeQueue = MvccPurgeQueueStore.open(purgeQueuePath(path));
+            int pendingPurgeEntries = purgeQueue.read().pendingCount();
             MvccDurableConsistencyCheck.check(store, rowDirectory, visibilityMap).assertValid();
             PageBackedMvccTable table = new PageBackedMvccTable(
-                    store, directory, log, outcomes, rowDirectory, visibilityMap, visibilityStates);
+                    store, directory, log, outcomes, rowDirectory, visibilityMap, purgeQueue, visibilityStates,
+                    pendingPurgeEntries);
             table.visibilityMapRebuildCount++;
             return table;
         } catch (RuntimeException | IOException failure) {
@@ -376,7 +388,10 @@ public final class PageBackedMvccTable implements AutoCloseable {
                     directory.physicalVersionCount(),
                     directory.logicalRowCount());
         }
+        List<MvccPurgeQueueStore.Entry> purgeEntries = purgeEntriesForSelection(selection);
+        enqueuePurgeEntries(purgeEntries);
         if (tryPageLocalPrune(selection)) {
+            drainPurgeQueue();
             return new MvccVacuumResult(
                     selection.removedVersions(),
                     0,
@@ -394,6 +409,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
         directory = MvccRowDirectory.fromStoredRecords(store.rewrite(selection.retainedRecords()));
         rowDirectoryStore.rewriteHeads(directory.headRecords());
         rebuildVisibilityMap();
+        drainPurgeQueue();
         return new MvccVacuumResult(
                 selection.removedVersions(),
                 0,
@@ -589,6 +605,40 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return pageLocalPruneRemovedVersionCount;
     }
 
+    public synchronized Path purgeQueuePath() {
+        return purgeQueueStore.path();
+    }
+
+    public synchronized long purgeQueuePendingCount() {
+        return purgeQueuePendingCount;
+    }
+
+    public synchronized long purgeQueueEnqueueCount() {
+        return purgeQueueEnqueueCount;
+    }
+
+    public synchronized long purgeQueueDrainCount() {
+        return purgeQueueDrainCount;
+    }
+
+    public synchronized long purgeQueueLastDrainCount() {
+        return purgeQueueLastDrainCount;
+    }
+
+    public synchronized java.util.List<String> purgeQueueEntrySummaries() {
+        try {
+            return purgeQueueStore.read().entries().stream()
+                    .map(entry -> "row:" + entry.rowId()
+                            + "|version:" + entry.versionId()
+                            + "|page:" + entry.pageId()
+                            + "|previous:" + entry.previousVersionId()
+                            + "|flags:" + entry.flags())
+                    .toList();
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException("Could not read MVCC purge queue", e);
+        }
+    }
+
     public synchronized long pageMutationContextBeginCount() {
         return store.pageMutationContextBeginCount();
     }
@@ -645,6 +695,46 @@ public final class PageBackedMvccTable implements AutoCloseable {
         if (failure != null) {
             throw failure;
         }
+    }
+
+    private void enqueuePurgeEntries(List<MvccPurgeQueueStore.Entry> entries) throws IOException {
+        if (entries.isEmpty()) {
+            purgeQueueLastDrainCount = 0L;
+            return;
+        }
+        purgeQueueStore.rewrite(entries);
+        purgeQueuePendingCount = entries.size();
+        purgeQueueEnqueueCount += entries.size();
+        purgeQueueLastDrainCount = 0L;
+    }
+
+    private void drainPurgeQueue() throws IOException {
+        int drained = purgeQueueStore.read().pendingCount();
+        purgeQueueStore.rewrite(List.of());
+        purgeQueuePendingCount = 0;
+        purgeQueueDrainCount += drained;
+        purgeQueueLastDrainCount = drained;
+    }
+
+    private List<MvccPurgeQueueStore.Entry> purgeEntriesForSelection(
+            MvccRowDirectory.VacuumSelection selection) throws IOException {
+        if (selection.removedVersions() == 0) {
+            return List.of();
+        }
+        Map<MvccVersionId, PageBackedMvccTableStore.StoredVersionRecord> currentByVersion = new LinkedHashMap<>();
+        for (PageBackedMvccTableStore.StoredVersionRecord current : store.loadAll()) {
+            currentByVersion.put(current.record().header().versionId(), current);
+        }
+        Set<MvccVersionId> retainedVersionIds = selection.retainedRecords().stream()
+                .map(record -> record.header().versionId())
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+        List<MvccPurgeQueueStore.Entry> entries = new java.util.ArrayList<>();
+        for (PageBackedMvccTableStore.StoredVersionRecord current : currentByVersion.values()) {
+            if (!retainedVersionIds.contains(current.record().header().versionId())) {
+                entries.add(MvccPurgeQueueStore.entryFor(current));
+            }
+        }
+        return entries;
     }
 
     private boolean tryPageLocalPrune(MvccRowDirectory.VacuumSelection selection) throws IOException {
@@ -854,6 +944,11 @@ public final class PageBackedMvccTable implements AutoCloseable {
     public static Path visibilityMapPath(Path pageFile) {
         Objects.requireNonNull(pageFile, "pageFile");
         return pageFile.resolveSibling(pageFile.getFileName() + ".vmap");
+    }
+
+    public static Path purgeQueuePath(Path pageFile) {
+        Objects.requireNonNull(pageFile, "pageFile");
+        return pageFile.resolveSibling(pageFile.getFileName() + ".purge");
     }
 
     private void rebuildVisibilityMap() throws IOException {

@@ -522,6 +522,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public Path purgeQueueFileForTesting() {
+        return readLocked(pageVolumeStateStore::purgeQueueFile);
+    }
+
+    @Override
     public Path pageMutationLogFileForTesting() {
         return readLocked(pageVolumeStateStore::pageMutationLogFile);
     }
@@ -737,6 +742,31 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public String lastPageMutationContextOperationForTesting() {
         return readLocked(pageVolumeStateStore::lastPageMutationContextOperation);
+    }
+
+    @Override
+    public long purgeQueuePendingCountForTesting() {
+        return readLocked(pageVolumeStateStore::purgeQueuePendingCount);
+    }
+
+    @Override
+    public long purgeQueueEnqueueCountForTesting() {
+        return readLocked(pageVolumeStateStore::purgeQueueEnqueueCount);
+    }
+
+    @Override
+    public long purgeQueueDrainCountForTesting() {
+        return readLocked(pageVolumeStateStore::purgeQueueDrainCount);
+    }
+
+    @Override
+    public long purgeQueueLastDrainCountForTesting() {
+        return readLocked(pageVolumeStateStore::purgeQueueLastDrainCount);
+    }
+
+    @Override
+    public List<String> purgeQueueEntrySummariesForTesting() {
+        return readLocked(pageVolumeStateStore::purgeQueueEntrySummaries);
     }
 
     @Override
