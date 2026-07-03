@@ -63,6 +63,10 @@ public final class DelosStorageDiagnosticsRegistry {
         return storageStatistics(MVCC_PROVIDER_ID, segment, containerId);
     }
 
+    public static DelosMvccStorageStatistics mvccStorageStatistics(int segment, long containerId) {
+        return mvcc().mvccStorageStatisticsForTesting(segment, containerId);
+    }
+
     public static DelosStorageStatistics statisticsForHeap(Path databaseDirectory, int segment, long containerId) {
         DelosStorageDiagnostics diagnostics = heap();
         diagnostics.setDatabaseDirectoryForTesting(databaseDirectory);
@@ -157,6 +161,15 @@ public final class DelosStorageDiagnosticsRegistry {
 
     public static DelosStorageStatistics storageStatistics(String providerId, int segment, long containerId) {
         return forProvider(providerId).storageStatisticsForTesting(segment, containerId);
+    }
+
+    public static DelosMvccStorageStatistics mvccStorageStatistics(String providerId, int segment, long containerId) {
+        String normalizedProviderId = DelosStorageProviderIds.normalize(providerId);
+        if (!DelosStorageProviderIds.isMvcc(normalizedProviderId)) {
+            throw new IllegalArgumentException("MVCC storage statistics require provider "
+                    + MVCC_PROVIDER_ID + ", got " + providerId);
+        }
+        return forProvider(normalizedProviderId).mvccStorageStatisticsForTesting(segment, containerId);
     }
 
     public static DelosStorageInspector inspectorForProvider(String providerId) {

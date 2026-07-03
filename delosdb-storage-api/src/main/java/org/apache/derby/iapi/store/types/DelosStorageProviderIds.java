@@ -47,4 +47,12 @@ public final class DelosStorageProviderIds {
     public static boolean matches(String leftProviderId, String rightProviderId) {
         return normalize(leftProviderId).equals(normalize(rightProviderId));
     }
+
+    public static boolean isMvcc(String providerId) {
+        return matches(providerId, MVCC_PROVIDER_ID);
+    }
+
+    public static boolean isHeap(String providerId) {
+        return matches(providerId, HEAP_PROVIDER_ID);
+    }
 }
