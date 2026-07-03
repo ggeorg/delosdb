@@ -689,27 +689,36 @@ final class MvccConglomerateState {
     }
 
     private static Optional<ColumnValueKey> equalityCandidateKey(Qualifier[][] qualifiers) {
-        if (qualifiers == null) {
+        if (qualifiers == null || qualifiers.length == 0) {
             return Optional.empty();
         }
-        for (Qualifier[] andTerm : qualifiers) {
-            if (andTerm == null || andTerm.length != 1 || andTerm[0] == null) {
+        for (int andTermIndex = 0; andTermIndex < qualifiers.length; andTermIndex++) {
+            Qualifier[] andTerm = qualifiers[andTermIndex];
+            if (andTerm == null || andTerm.length == 0) {
                 continue;
             }
-            Qualifier qualifier = andTerm[0];
-            if (qualifier.getColumnId() < 0
-                    || qualifier.getOperator() != StoreOrderable.ORDER_OP_EQUALS
-                    || qualifier.negateCompareResult()) {
-                continue;
+            if (andTermIndex > 0 && andTerm.length != 1) {
+                // Additional Derby qualifier groups are OR terms.  A group
+                // with more than one alternative cannot be used as a safe
+                // single equality narrowing predicate; keep the full scan path.
+                return Optional.empty();
             }
-            try {
-                StoreDataValue orderable = qualifier.getOrderable();
-                if (orderable == null) {
+            for (Qualifier qualifier : andTerm) {
+                if (qualifier == null
+                        || qualifier.getColumnId() < 0
+                        || qualifier.getOperator() != StoreOrderable.ORDER_OP_EQUALS
+                        || qualifier.negateCompareResult()) {
+                    continue;
+                }
+                try {
+                    StoreDataValue orderable = qualifier.getOrderable();
+                    if (orderable == null) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new ColumnValueKey(qualifier.getColumnId(), valueKey(orderable)));
+                } catch (StandardException e) {
                     return Optional.empty();
                 }
-                return Optional.of(new ColumnValueKey(qualifier.getColumnId(), valueKey(orderable)));
-            } catch (StandardException e) {
-                return Optional.empty();
             }
         }
         return Optional.empty();

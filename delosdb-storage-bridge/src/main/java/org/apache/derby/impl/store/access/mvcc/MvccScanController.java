@@ -33,6 +33,7 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.ScanInfo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
+import org.apache.derby.iapi.store.types.DelosOptimizerPredicatePushdownDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageRow;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
@@ -447,6 +448,11 @@ public final class MvccScanController implements ScanManager {
         candidateRowIds = rowIds.iterator();
         MvccBridgeDiagnosticsSupport.incrementCandidateIndexLookupCount();
         MvccBridgeDiagnosticsSupport.addCandidateIndexRowIdCount(rowIds.size());
+        DelosOptimizerPredicatePushdownDiagnostics.recordExecutionIfEnabledForTesting(
+                "delos_mvcc",
+                Math.toIntExact(state.key().getSegmentId()),
+                state.key().getContainerId(),
+                rowIds.size());
     }
 
     /**

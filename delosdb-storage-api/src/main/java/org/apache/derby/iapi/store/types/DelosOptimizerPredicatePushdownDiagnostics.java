@@ -56,10 +56,32 @@ public final class DelosOptimizerPredicatePushdownDiagnostics {
         DelosStoragePredicatePushdown plan = DelosStorageDiagnosticsRegistry.predicatePushdown(request);
         DelosOptimizerPredicatePushdownDecision decision =
                 DelosOptimizerPredicatePushdownDecision.from(enabledForTesting(), plan);
+        record(decision);
+        return decision;
+    }
+
+    public static boolean recordExecutionIfEnabledForTesting(
+            String providerId,
+            int segment,
+            long containerId,
+            long rowIdCount) {
+        if (!enabledForTesting()) {
+            return false;
+        }
+        DelosOptimizerPredicatePushdownDecision decision =
+                DelosOptimizerPredicatePushdownDecision.executionApplied(
+                        providerId,
+                        segment,
+                        containerId,
+                        rowIdCount);
+        record(decision);
+        return true;
+    }
+
+    private static void record(DelosOptimizerPredicatePushdownDecision decision) {
         synchronized (LOCK) {
             DECISIONS.add(decision);
         }
-        return decision;
     }
 
     public static void clearForTesting() {

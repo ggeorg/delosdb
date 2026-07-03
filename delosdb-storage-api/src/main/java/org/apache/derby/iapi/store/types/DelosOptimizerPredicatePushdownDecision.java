@@ -27,10 +27,12 @@ import java.util.Objects;
  * Opt-in optimizer planning decision for the DelosDB predicate
  * pushdown/remainder model.
  *
- * <p>This is deliberately a planning diagnostic.  It proves that Derby's
- * optimizer side can explicitly consider the storage pushdown model, but it
- * does not change execution, consume predicates, or remove Derby remainder
- * evaluation.</p>
+ * <p>This remains deliberately conservative.  Planning decisions prove that
+ * Derby's optimizer side can explicitly consider the storage pushdown model.
+ * Execution checkpoint decisions prove that an already-safe MVCC row-id
+ * shortcut was observed under explicit opt-in.  Derby remainder evaluation is
+ * still preserved, and this record still does not mean Derby's optimizer has
+ * consumed or removed predicates.</p>
  */
 public record DelosOptimizerPredicatePushdownDecision(String providerId,
                                                       int segment,
@@ -51,14 +53,17 @@ public record DelosOptimizerPredicatePushdownDecision(String providerId,
         if (diagnosticLine.isEmpty()) {
             throw new IllegalArgumentException("diagnostic line must not be blank");
         }
-        if (executionPushdownApplied) {
-            throw new IllegalArgumentException("execution predicate pushdown is not enabled by this gate");
-        }
         if (consumedByDerbyOptimizer) {
             throw new IllegalArgumentException("optimizer predicate consumption is not enabled by this gate");
         }
         if (optimizerPlanningConsidered && !optInEnabled) {
             throw new IllegalArgumentException("optimizer planning cannot be considered when opt-in is disabled");
+        }
+        if (executionPushdownApplied && !optInEnabled) {
+            throw new IllegalArgumentException("execution predicate pushdown cannot be observed when opt-in is disabled");
+        }
+        if (executionPushdownApplied && !optimizerPlanningConsidered) {
+            throw new IllegalArgumentException("execution predicate pushdown requires an opt-in planning boundary");
         }
     }
 
@@ -88,4 +93,34 @@ public record DelosOptimizerPredicatePushdownDecision(String providerId,
                 plan.remainderPredicates(),
                 line);
     }
+    public static DelosOptimizerPredicatePushdownDecision executionApplied(
+            String providerId,
+            int segment,
+            long containerId,
+            long rowIdCount) {
+        String normalizedProvider = DelosStorageProviderIds.normalize(providerId);
+        String line = "path=optimizer-predicate-pushdown-execution"
+                + " provider=" + normalizedProvider
+                + " container=" + containerId
+                + " optIn=true"
+                + " planningConsidered=true"
+                + " storagePushable=true"
+                + " executionPushdownApplied=true"
+                + " optimizerConsumed=false"
+                + " rowIds=" + Math.max(0L, rowIdCount)
+                + " derbyRemainderEvaluation=preserved";
+        return new DelosOptimizerPredicatePushdownDecision(
+                normalizedProvider,
+                segment,
+                containerId,
+                true,
+                true,
+                true,
+                true,
+                false,
+                List.of("ordered row-id shortcut"),
+                List.of("Derby RowUtil qualifier evaluation preserved"),
+                line);
+    }
+
 }
