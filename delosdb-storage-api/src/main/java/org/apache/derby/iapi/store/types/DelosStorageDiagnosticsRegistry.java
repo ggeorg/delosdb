@@ -80,6 +80,30 @@ public final class DelosStorageDiagnosticsRegistry {
         return inspectorForProvider(providerId).inspect(segment, containerId);
     }
 
+    public static DelosStorageInspectionReport inspectionReport(DelosStorageConsistencyTarget... targets) {
+        Objects.requireNonNull(targets, "targets");
+        return inspectionReport(List.of(targets));
+    }
+
+    public static DelosStorageInspectionReport inspectionReport(List<DelosStorageConsistencyTarget> targets) {
+        Objects.requireNonNull(targets, "targets");
+        List<DelosStorageInspection> inspections = new ArrayList<>();
+        for (DelosStorageConsistencyTarget target : targets) {
+            DelosStorageConsistencyTarget checkedTarget = Objects.requireNonNull(target, "target");
+            DelosStorageDiagnostics diagnostics = forProvider(checkedTarget.providerId());
+            if (checkedTarget.hasDatabaseDirectory()) {
+                diagnostics.setDatabaseDirectoryForTesting(checkedTarget.databaseDirectory());
+            } else {
+                diagnostics.clearDatabaseDirectoryForTesting();
+            }
+            inspections.add(DelosStorageInspection.fromDiagnostics(
+                    diagnostics,
+                    checkedTarget.segment(),
+                    checkedTarget.containerId()));
+        }
+        return new DelosStorageInspectionReport(inspections);
+    }
+
     public static DelosCrossEngineConsistencyReport consistencyReport(DelosStorageConsistencyTarget... targets) {
         Objects.requireNonNull(targets, "targets");
         return consistencyReport(List.of(targets));
