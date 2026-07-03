@@ -142,16 +142,8 @@ public final class SetReservedSpaceOperation extends PageBasicOperation {
 		int slot = undoPage.findRecordById(recordId,Page.FIRST_SLOT_NUMBER);
 		if (SanityManager.DEBUG)
 		{
-			if ( ! getPageId().equals(undoPage.getPageId()))
-				SanityManager.THROWASSERT(
-								"restoreMe cannot restore to a different page. "
-								 + "doMe page:" + getPageId() + " undoPage:" + 
-								 undoPage.getPageId());
-			if (slot != doMeSlot)
-				SanityManager.THROWASSERT(
-								"restoreMe cannot restore to a different slot. "
-								 + "doMe slot:" + doMeSlot + " undoMe slot: " +
-								 slot + " recordId:" + recordId);
+			D_RawPageSanityAssertions.assertRestorePage(getPageId(), undoPage);
+			D_RawPageSanityAssertions.assertRestoreSlot(doMeSlot, slot, recordId);
 
 		}
 

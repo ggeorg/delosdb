@@ -180,21 +180,12 @@ public final class DeleteOperation extends LogicalPageOperation
 			// this can only happen during recovery since in run time undo,
 			// this resetRecordHandle gets called and this object have the new
 			// page number and recordId
-			if (undoRecordId != this.recordId)
-				if (undoPage.getPageNumber() == getPageId().getPageNumber())
-					SanityManager.THROWASSERT(
-							"recordId changed from " + this.recordId +
-							" to " + undoRecordId +
-							" but page number did not change " +
-							undoPage.getPageNumber());
-
-			if (slot == -1)
-				SanityManager.THROWASSERT(
-					"recordId " +
-					undoRecordId +
-					" not found on page " +
-					undoPage.getPageNumber() + 
-                    undoPage);
+			D_RawPageSanityAssertions.assertRecordIdPageChanged(
+					this.recordId,
+					undoRecordId,
+					getPageId().getPageNumber(),
+					undoPage.getPageNumber());
+			D_RawPageSanityAssertions.assertRecordFoundWithPageObject(undoRecordId, undoPage, slot);
 		}
 
 		undoPage.setDeleteStatus(CLRInstant, slot, !delete);
@@ -257,16 +248,8 @@ public final class DeleteOperation extends LogicalPageOperation
 		int slot = undoPage.findRecordById(recordId, Page.FIRST_SLOT_NUMBER);
 		if (SanityManager.DEBUG)
 		{
-			if ( ! getPageId().equals(undoPage.getPageId()))
-				SanityManager.THROWASSERT(
-								"restoreMe cannot restore to a different page. "
-								 + "doMe page:" + getPageId() + " undoPage:" + 
-								 undoPage.getPageId());
-			if (slot != doMeSlot)
-				SanityManager.THROWASSERT(
-								"restoreMe cannot restore to a different slot. "
-								 + "doMe slot:" + doMeSlot + " undoMe slot: " +
-								 slot + " recordId:" + recordId);
+			D_RawPageSanityAssertions.assertRestorePage(getPageId(), undoPage);
+			D_RawPageSanityAssertions.assertRestoreSlot(doMeSlot, slot, recordId);
 		}
 		undoPage.setDeleteStatus(CLRinstant, slot, !delete);
 		undoPage.setAuxObject(null);
