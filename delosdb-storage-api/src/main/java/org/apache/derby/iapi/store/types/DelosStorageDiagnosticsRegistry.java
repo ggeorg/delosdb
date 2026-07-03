@@ -45,6 +45,19 @@ public final class DelosStorageDiagnosticsRegistry {
         return forProvider(HEAP_PROVIDER_ID);
     }
 
+    public static DelosStorageMetadataQuery metadataQuery() {
+        return DelosStorageMetadataQuery.fromDiagnostics(diagnosticsProviders());
+    }
+
+    public static DelosStorageMetadataSnapshot metadataSnapshot(DelosStorageConsistencyTarget target) {
+        return metadataQuery().snapshot(Objects.requireNonNull(target, "target"));
+    }
+
+    public static List<DelosStorageMetadataSnapshot> metadataSnapshots(
+            List<DelosStorageConsistencyTarget> targets) {
+        return metadataQuery().snapshots(targets);
+    }
+
     public static DelosStorageInspector mvccInspector() {
         return inspectorForProvider(MVCC_PROVIDER_ID);
     }
@@ -120,15 +133,7 @@ public final class DelosStorageDiagnosticsRegistry {
 
     public static DelosStorageInspectionReport inspectionReport(List<DelosStorageConsistencyTarget> targets) {
         Objects.requireNonNull(targets, "targets");
-        List<DelosStorageInspection> inspections = new ArrayList<>();
-        for (DelosStorageConsistencyTarget target : targets) {
-            BoundDiagnostics bound = bind(Objects.requireNonNull(target, "target"));
-            inspections.add(DelosStorageInspection.fromDiagnostics(
-                    bound.diagnostics(),
-                    bound.target().segment(),
-                    bound.target().containerId()));
-        }
-        return new DelosStorageInspectionReport(inspections);
+        return metadataQuery().inspectionReport(targets);
     }
 
     public static DelosCrossEngineConsistencyReport consistencyReport(DelosStorageConsistencyTarget... targets) {
@@ -138,18 +143,7 @@ public final class DelosStorageDiagnosticsRegistry {
 
     public static DelosCrossEngineConsistencyReport consistencyReport(List<DelosStorageConsistencyTarget> targets) {
         Objects.requireNonNull(targets, "targets");
-        List<DelosStorageConsistencyFinding> findings = new ArrayList<>();
-        for (DelosStorageConsistencyTarget target : targets) {
-            BoundDiagnostics bound = bind(Objects.requireNonNull(target, "target"));
-            findings.add(DelosStorageConsistencyFinding.from(
-                    bound.diagnostics().providerId(),
-                    bound.target().segment(),
-                    bound.target().containerId(),
-                    bound.diagnostics().consistencyDiagnosticsForTesting(
-                            bound.target().segment(),
-                            bound.target().containerId())));
-        }
-        return new DelosCrossEngineConsistencyReport(findings);
+        return metadataQuery().consistencyReport(targets);
     }
 
     public static DelosStorageStatisticsReport statisticsReport(DelosStorageConsistencyTarget... targets) {
@@ -159,14 +153,7 @@ public final class DelosStorageDiagnosticsRegistry {
 
     public static DelosStorageStatisticsReport statisticsReport(List<DelosStorageConsistencyTarget> targets) {
         Objects.requireNonNull(targets, "targets");
-        List<DelosStorageStatistics> statistics = new ArrayList<>();
-        for (DelosStorageConsistencyTarget target : targets) {
-            BoundDiagnostics bound = bind(Objects.requireNonNull(target, "target"));
-            statistics.add(bound.diagnostics().storageStatisticsForTesting(
-                    bound.target().segment(),
-                    bound.target().containerId()));
-        }
-        return new DelosStorageStatisticsReport(statistics);
+        return metadataQuery().statisticsReport(targets);
     }
 
     public static DelosStorageStatistics storageStatistics(String providerId, int segment, long containerId) {
@@ -183,7 +170,8 @@ public final class DelosStorageDiagnosticsRegistry {
     }
 
     public static DelosStorageCostReport costReport(List<DelosStorageConsistencyTarget> targets) {
-        return DelosStorageCostIntegration.report(statisticsReport(targets));
+        Objects.requireNonNull(targets, "targets");
+        return metadataQuery().costReport(targets);
     }
 
     public static DelosMvccStorageStatistics mvccStorageStatistics(String providerId, int segment, long containerId) {
@@ -201,7 +189,7 @@ public final class DelosStorageDiagnosticsRegistry {
 
     public static DelosStorageDiagnostics forProvider(String providerId) {
         String normalizedProviderId = DelosStorageProviderIds.normalize(providerId);
-        for (DelosStorageDiagnostics diagnostics : ServiceLoader.load(DelosStorageDiagnostics.class)) {
+        for (DelosStorageDiagnostics diagnostics : diagnosticsProviders()) {
             if (DelosStorageProviderIds.normalize(diagnostics.providerId()).equals(normalizedProviderId)) {
                 return diagnostics;
             }
@@ -209,17 +197,12 @@ public final class DelosStorageDiagnosticsRegistry {
         throw new IllegalStateException("No Delos storage diagnostics provider found for " + providerId);
     }
 
-    private static BoundDiagnostics bind(DelosStorageConsistencyTarget target) {
-        DelosStorageDiagnostics diagnostics = forProvider(target.providerId());
-        if (target.hasDatabaseDirectory()) {
-            diagnostics.setDatabaseDirectoryForTesting(target.databaseDirectory());
-        } else {
-            diagnostics.clearDatabaseDirectoryForTesting();
+    private static List<DelosStorageDiagnostics> diagnosticsProviders() {
+        List<DelosStorageDiagnostics> diagnostics = new ArrayList<>();
+        for (DelosStorageDiagnostics provider : ServiceLoader.load(DelosStorageDiagnostics.class)) {
+            diagnostics.add(provider);
         }
-        return new BoundDiagnostics(target, diagnostics);
+        return List.copyOf(diagnostics);
     }
 
-    private record BoundDiagnostics(DelosStorageConsistencyTarget target,
-                                    DelosStorageDiagnostics diagnostics) {
-    }
 }
