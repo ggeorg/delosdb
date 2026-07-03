@@ -110,6 +110,7 @@ public final class HeapSanityCheckerTest extends MvccSqlTestSupport {
                     .anyMatch(error -> error.contains("missing")));
             assertTrue("missing-container check must still be read-only", sanity.readOnly());
             assertFalse("bogus container file should not be created", Files.exists(sanity.containerFile()));
+            connection.commit();
         }
     }
 
