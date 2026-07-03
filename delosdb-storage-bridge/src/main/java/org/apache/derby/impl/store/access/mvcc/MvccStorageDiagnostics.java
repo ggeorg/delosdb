@@ -629,6 +629,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public boolean candidateIndexDiagnosticFallbackEnabledForTesting() {
+        return MvccConglomerate.candidateIndexDiagnosticFallbackEnabledForDiagnostics();
+    }
+
+    @Override
     public int candidateIndexRowIdCountForTesting() {
         return MvccBridgeDiagnosticsSupport.candidateIndexRowIdCountForDiagnostics();
     }

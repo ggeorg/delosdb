@@ -482,6 +482,10 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).candidateIndexKeyCountForTesting();
     }
 
+    static boolean candidateIndexDiagnosticFallbackEnabledForDiagnostics() {
+        return MvccConglomerateState.candidateIndexDiagnosticFallbackEnabledForTesting();
+    }
+
     static long pageCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageCountForTesting();
     }

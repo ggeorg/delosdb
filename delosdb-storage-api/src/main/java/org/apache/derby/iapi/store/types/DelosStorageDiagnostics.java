@@ -528,6 +528,10 @@ public interface DelosStorageDiagnostics {
         return 0;
     }
 
+    default boolean candidateIndexDiagnosticFallbackEnabledForTesting() {
+        return false;
+    }
+
     int candidateIndexRowIdCountForTesting();
 
     default int candidateIndexKeyCountForTesting(int segment, long containerId) {

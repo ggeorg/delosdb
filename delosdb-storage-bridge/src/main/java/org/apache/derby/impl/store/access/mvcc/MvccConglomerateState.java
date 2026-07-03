@@ -58,6 +58,8 @@ import org.apache.derby.shared.common.error.StandardException;
  */
 final class MvccConglomerateState {
     private static final String MVCC_PROVIDER_NAME = "delos_mvcc";
+    private static final String CANDIDATE_INDEX_DIAGNOSTIC_FALLBACK_PROPERTY =
+            "delosdb.mvcc.candidateIndex.diagnosticFallback";
 
     private final ContainerKey key;
     private final DelosStorageTable table;
@@ -577,6 +579,9 @@ final class MvccConglomerateState {
             if (ordered.isPresent()) {
                 return ordered;
             }
+            if (!candidateIndexDiagnosticFallbackEnabled()) {
+                return Optional.empty();
+            }
             MvccBridgeDiagnosticsSupport.incrementCandidateIndexFallbackLookupCount();
             return candidateIndex.candidateRowIdsFor(columnValueKey.column(), columnValueKey.value());
         }
@@ -592,6 +597,14 @@ final class MvccConglomerateState {
                 columnRangeKey.lowerInclusive(),
                 columnRangeKey.upperValue(),
                 columnRangeKey.upperInclusive());
+    }
+
+    static boolean candidateIndexDiagnosticFallbackEnabledForTesting() {
+        return candidateIndexDiagnosticFallbackEnabled();
+    }
+
+    private static boolean candidateIndexDiagnosticFallbackEnabled() {
+        return Boolean.getBoolean(CANDIDATE_INDEX_DIAGNOSTIC_FALLBACK_PROPERTY);
     }
 
     synchronized int candidateIndexKeyCountForTesting() {
