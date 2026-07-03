@@ -55,12 +55,22 @@ public final class OptimizerStorageCostOptInTest extends MvccSqlTestSupport {
                 assertEquals("default Derby optimizer path must not record provider probes",
                         0,
                         DelosOptimizerStorageCostOptInDiagnostics.probeCountForTesting());
+                connection.commit();
+            }
 
-                System.setProperty(DelosOptimizerStorageCostOptInDiagnostics.PROPERTY_NAME, "enabled");
-                DelosOptimizerStorageCostOptInDiagnostics.clearForTesting();
-                assertTrue("explicit opt-in property should enable provider cost consumption",
-                        DelosOptimizerStorageCostOptInDiagnostics.optimizerCostProviderEnabledForTesting());
+            /*
+             * The compiler context caches StoreCostController instances by
+             * conglomerate id.  Enable the opt-in path before opening the
+             * statement-compile connection used by the proof, so the native
+             * store-cost controller is wrapped when it is first opened.
+             */
+            System.setProperty(DelosOptimizerStorageCostOptInDiagnostics.PROPERTY_NAME, "enabled");
+            DelosOptimizerStorageCostOptInDiagnostics.clearForTesting();
+            assertTrue("explicit opt-in property should enable provider cost consumption",
+                    DelosOptimizerStorageCostOptInDiagnostics.optimizerCostProviderEnabledForTesting());
 
+            try (Connection connection = openDatabase(databaseName, false)) {
+                connection.setAutoCommit(false);
                 assertRows(connection,
                         "select id, name from optimizer_cost_heap_t where name >= 'beta' order by name",
                         "2|beta",
