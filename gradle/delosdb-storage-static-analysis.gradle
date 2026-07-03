@@ -619,8 +619,120 @@ tasks.register('delosDeadCodeCandidateReport') {
     }
 }
 
+
+
+def delosHeapRawStoreDuplicateClassificationFile = file('gradle/static-analysis/delosdb-heap-rawstore-duplicate-classification.txt')
+
+def delosHeapRawStoreDuplicateDecisions = ['KEEP', 'CONSOLIDATE', 'DEFER'] as Set
+
+def delosLoadHeapRawStoreDuplicateClassifications = {
+    if (!delosHeapRawStoreDuplicateClassificationFile.exists()) {
+        return []
+    }
+
+    def rows = []
+    int lineNumber = 0
+    delosHeapRawStoreDuplicateClassificationFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.length != 6) {
+            throw new GradleException('Malformed heap/raw-store duplicate classification line ' + lineNumber + ': expected 6 pipe-delimited fields')
+        }
+        if (!delosHeapRawStoreDuplicateDecisions.contains(parts[1])) {
+            throw new GradleException('Malformed heap/raw-store duplicate classification line ' + lineNumber + ': unknown decision ' + parts[1])
+        }
+        def files = parts[3].split(',').collect { it.trim() }.findAll { it }
+        if (files.isEmpty()) {
+            throw new GradleException('Malformed heap/raw-store duplicate classification line ' + lineNumber + ': no files listed')
+        }
+        rows << [
+                id        : parts[0],
+                decision  : parts[1],
+                scope     : parts[2],
+                files     : files,
+                reason    : parts[4],
+                nextAction: parts[5],
+                lineNumber: lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosHeapRawStoreDuplicateClassificationReport') {
+    group = 'verification'
+    description = 'Reports curated duplicate-code classification for inherited Derby heap/raw-store code.'
+
+    inputs.file(delosHeapRawStoreDuplicateClassificationFile).optional()
+    outputs.file(layout.buildDirectory.file('reports/delosdb/heap-rawstore-duplicate-classification.txt'))
+
+    doLast {
+        def rows = delosLoadHeapRawStoreDuplicateClassifications()
+        def ids = [] as Set
+        def duplicateIds = []
+        def missingFiles = []
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                duplicateIds << row.id
+            }
+            row.files.each { relativePath ->
+                if (!file(relativePath).exists()) {
+                    missingFiles << [id: row.id, path: relativePath]
+                }
+            }
+        }
+
+        def counts = delosHeapRawStoreDuplicateDecisions.collectEntries { decision ->
+            [decision, rows.count { it.decision == decision }]
+        }
+        def missingDecisions = delosHeapRawStoreDuplicateDecisions.findAll { decision -> counts[decision] == 0 }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/heap-rawstore-duplicate-classification.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB inherited heap/raw-store duplicate-code classification')
+            writer.println('===============================================================')
+            writer.println()
+            writer.println('This report classifies duplicate-looking inherited Derby heap/raw-store code.')
+            writer.println('It does not refactor code, delete code, or prove deletion safety.')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            delosHeapRawStoreDuplicateDecisions.sort().each { decision ->
+                writer.println('  ' + decision + ': ' + counts[decision])
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.decision + '] ' + row.scope)
+                writer.println('  reason:      ' + row.reason)
+                writer.println('  next action: ' + row.nextAction)
+                writer.println('  files:')
+                row.files.each { relativePath -> writer.println('    - ' + relativePath) }
+                writer.println()
+            }
+
+            if (!duplicateIds.isEmpty() || !missingFiles.isEmpty() || !missingDecisions.isEmpty()) {
+                writer.println('Validation failures:')
+                duplicateIds.each { id -> writer.println('  duplicate id: ' + id) }
+                missingFiles.each { missing -> writer.println('  missing file for ' + missing.id + ': ' + missing.path) }
+                missingDecisions.each { decision -> writer.println('  missing decision category: ' + decision) }
+            } else {
+                writer.println('Classification file validated.')
+            }
+        }
+
+        if (!duplicateIds.isEmpty() || !missingFiles.isEmpty() || !missingDecisions.isEmpty()) {
+            throw new GradleException('Heap/raw-store duplicate classification validation failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB heap/raw-store duplicate classification written: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
 }
