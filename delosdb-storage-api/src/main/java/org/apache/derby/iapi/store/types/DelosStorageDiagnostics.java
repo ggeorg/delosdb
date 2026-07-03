@@ -463,6 +463,31 @@ public interface DelosStorageDiagnostics {
                 consistencySummaryForTesting(segment, containerId));
     }
 
+    default DelosHeapSanityDiagnostics heapSanityDiagnosticsForTesting(int segment, long containerId) {
+        DelosStorageConsistencyDiagnostics consistency = consistencyDiagnosticsForTesting(segment, containerId);
+        Path containerFile = pageVolumeStateFileForTesting(segment, containerId);
+        Path segmentDirectory = containerFile == null || containerFile.getParent() == null
+                ? Path.of(".")
+                : containerFile.getParent();
+        Path file = containerFile == null ? segmentDirectory.resolve("unknown-container") : containerFile;
+        return new DelosHeapSanityDiagnostics(
+                providerId(),
+                segment,
+                containerId,
+                segmentDirectory,
+                file,
+                true,
+                consistency.errorCount() == 0,
+                consistency.errorCount() == 0,
+                0L,
+                pageCountForTesting(segment, containerId),
+                overflowPageCountForTesting(segment, containerId),
+                reusablePageCountForTesting(segment, containerId),
+                consistency.errorCount(),
+                java.util.List.of(consistency.summary()),
+                consistency.errorCount() == 0 ? java.util.List.of() : java.util.List.of(consistency.summary()));
+    }
+
     default DelosVacuumOutcome lastVacuumOutcomeForTesting(int segment, long containerId) {
         return new DelosVacuumOutcome(
                 lastVacuumSkippedForTesting(segment, containerId),

@@ -24,8 +24,11 @@ package org.apache.derby.impl.store.access.provider;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
+import org.apache.derby.iapi.store.types.DelosHeapSanityDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
@@ -198,6 +201,60 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
     }
 
     @Override
+    public DelosHeapSanityDiagnostics heapSanityDiagnosticsForTesting(int segment, long containerId) {
+        Path segmentDirectory = heapSegmentDirectory(segment);
+        Path file = heapContainerPath(segment, containerId);
+        boolean segmentExists = Files.isDirectory(segmentDirectory);
+        boolean fileExists = Files.isRegularFile(file);
+        long bytes = safeSize(file);
+        long pageCount = fileExists && bytes > 0L
+                ? Math.max(1L, (bytes + DEFAULT_HEAP_PAGE_SIZE - 1L) / DEFAULT_HEAP_PAGE_SIZE)
+                : 0L;
+        long overflowPages = overflowPageCountForTesting(segment, containerId);
+        long reusablePages = reusablePageCountForTesting(segment, containerId);
+
+        List<String> observations = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        observations.add("heap sanity checker is read-only");
+        observations.add("segment directory: " + segmentDirectory);
+        observations.add("container file: " + file);
+        observations.add("container bytes: " + bytes);
+        observations.add("estimated pages: " + pageCount);
+        observations.add("overflow diagnostics: " + overflowPages);
+        observations.add("reusable-page diagnostics: " + reusablePages);
+
+        if (!segmentExists) {
+            errors.add("heap segment directory is missing: " + segmentDirectory);
+        }
+        if (!fileExists) {
+            errors.add("heap container file is missing: " + file);
+        }
+        if (fileExists && bytes <= 0L) {
+            errors.add("heap container file is empty: " + file);
+        }
+        if (fileExists && pageCount <= 0L) {
+            errors.add("heap page count is zero for non-empty container: " + file);
+        }
+
+        return new DelosHeapSanityDiagnostics(
+                providerId(),
+                segment,
+                containerId,
+                segmentDirectory,
+                file,
+                true,
+                segmentExists,
+                fileExists,
+                bytes,
+                pageCount,
+                overflowPages,
+                reusablePages,
+                errors.size(),
+                observations,
+                errors);
+    }
+
+    @Override
     public boolean lastVacuumSkippedForTesting(int segment, long containerId) {
         return true;
     }
@@ -292,16 +349,31 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
         return false;
     }
 
-    private Path heapContainerPath(int segment, long containerId) {
+    private Path heapSegmentDirectory(int segment) {
         Path database = databaseDirectory;
         if (database == null) {
             throw new IllegalStateException("Heap diagnostics require a database directory");
         }
-        Path segmentDirectory = database.resolve("seg" + segment);
+        return database.resolve("seg" + segment);
+    }
+
+    private Path heapContainerPath(int segment, long containerId) {
+        Path segmentDirectory = heapSegmentDirectory(segment);
         Path lowerCase = segmentDirectory.resolve("c" + Long.toHexString(containerId) + ".dat");
         if (Files.exists(lowerCase)) {
             return lowerCase;
         }
         return segmentDirectory.resolve("C" + Long.toHexString(containerId) + ".DAT");
+    }
+
+    private static long safeSize(Path file) {
+        if (!Files.isRegularFile(file)) {
+            return 0L;
+        }
+        try {
+            return Files.size(file);
+        } catch (IOException e) {
+            return 0L;
+        }
     }
 }
