@@ -730,6 +730,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageMetadataProviderChainTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageCapabilitiesTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StoragePredicatePushdownModelTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/StorageOptimizerReviewGateTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlCandidateIndexRefreshTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLogicalRowIdentityTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlHotIndexSuppressionTest.class',

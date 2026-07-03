@@ -148,6 +148,16 @@ public final class DelosStorageMetadataQuery {
         return new DelosStoragePredicatePushdownReport(plans);
     }
 
+    public DelosStorageOptimizerReviewReport optimizerReviewReport(
+            List<DelosStorageConsistencyTarget> targets,
+            List<DelosStoragePredicatePushdownRequest> requests) {
+        Objects.requireNonNull(targets, "targets");
+        Objects.requireNonNull(requests, "requests");
+        return DelosStorageOptimizerReviewReport.from(
+                snapshots(targets),
+                predicatePushdownReport(requests));
+    }
+
     private static int providerRank(String providerId) {
         if (DelosStorageProviderIds.isHeap(providerId)) {
             return 0;

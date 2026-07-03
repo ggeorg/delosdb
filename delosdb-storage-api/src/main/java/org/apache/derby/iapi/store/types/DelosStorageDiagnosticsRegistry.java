@@ -219,6 +219,14 @@ public final class DelosStorageDiagnosticsRegistry {
         return metadataQuery().predicatePushdownReport(requests);
     }
 
+    public static DelosStorageOptimizerReviewReport optimizerReviewReport(
+            List<DelosStorageConsistencyTarget> targets,
+            List<DelosStoragePredicatePushdownRequest> requests) {
+        Objects.requireNonNull(targets, "targets");
+        Objects.requireNonNull(requests, "requests");
+        return metadataQuery().optimizerReviewReport(targets, requests);
+    }
+
     public static DelosMvccStorageStatistics mvccStorageStatistics(String providerId, int segment, long containerId) {
         String normalizedProviderId = DelosStorageProviderIds.normalize(providerId);
         if (!DelosStorageProviderIds.isMvcc(normalizedProviderId)) {
