@@ -643,7 +643,11 @@ final class MvccConglomerateState {
                 return Optional.empty();
             }
             for (Qualifier qualifier : andTerm) {
-                if (qualifier == null || qualifier.getColumnId() < 0 || qualifier.negateCompareResult()) {
+                if (qualifier == null || qualifier.getColumnId() < 0) {
+                    return Optional.empty();
+                }
+                int operator = normalizedRangeOperator(qualifier.getOperator(), qualifier.negateCompareResult());
+                if (operator == Integer.MIN_VALUE) {
                     return Optional.empty();
                 }
                 if (column == -1) {
@@ -661,7 +665,7 @@ final class MvccConglomerateState {
                 } catch (StandardException e) {
                     return Optional.empty();
                 }
-                switch (qualifier.getOperator()) {
+                switch (operator) {
                     case StoreOrderable.ORDER_OP_GREATERTHAN -> {
                         BoundChoice choice = chooseLowerBound(lowerValue, lowerInclusive, value, false);
                         lowerValue = choice.value();
@@ -698,6 +702,19 @@ final class MvccConglomerateState {
         }
         return Optional.of(new ColumnRangeKey(
                 column, lowerValue, lowerInclusive, upperValue, upperInclusive));
+    }
+
+    private static int normalizedRangeOperator(int operator, boolean negateCompareResult) {
+        if (!negateCompareResult) {
+            return operator;
+        }
+        return switch (operator) {
+            case StoreOrderable.ORDER_OP_LESSTHAN -> StoreOrderable.ORDER_OP_GREATEROREQUALS;
+            case StoreOrderable.ORDER_OP_LESSOREQUALS -> StoreOrderable.ORDER_OP_GREATERTHAN;
+            case StoreOrderable.ORDER_OP_GREATERTHAN -> StoreOrderable.ORDER_OP_LESSOREQUALS;
+            case StoreOrderable.ORDER_OP_GREATEROREQUALS -> StoreOrderable.ORDER_OP_LESSTHAN;
+            default -> Integer.MIN_VALUE;
+        };
     }
 
     private static BoundChoice chooseLowerBound(
