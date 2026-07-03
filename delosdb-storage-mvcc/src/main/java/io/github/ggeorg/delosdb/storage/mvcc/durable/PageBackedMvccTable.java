@@ -502,6 +502,22 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return store.pageCacheLastPageGeneration();
     }
 
+    public synchronized long attributeOverflowWriteCount() {
+        return store.attributeOverflowWriteCount();
+    }
+
+    public synchronized long attributeOverflowReadCount() {
+        return store.attributeOverflowReadCount();
+    }
+
+    public synchronized long attributeOverflowInlineRowBytes() {
+        return store.attributeOverflowInlineRowBytes();
+    }
+
+    public synchronized long attributeOverflowValueBytes() {
+        return store.attributeOverflowValueBytes();
+    }
+
 
     public synchronized PageBackedMvccTableStore.PageRecordStats pageRecordStats() {
         try {

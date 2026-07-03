@@ -375,6 +375,22 @@ public interface DelosStorageTableDiagnostics {
         return 0L;
     }
 
+    default long attributeOverflowWriteCountForTesting() {
+        return 0L;
+    }
+
+    default long attributeOverflowReadCountForTesting() {
+        return 0L;
+    }
+
+    default long attributeOverflowInlineRowBytesForTesting() {
+        return 0L;
+    }
+
+    default long attributeOverflowValueBytesForTesting() {
+        return 0L;
+    }
+
     int consistencyErrorCountForTesting();
 
     String consistencySummaryForTesting();

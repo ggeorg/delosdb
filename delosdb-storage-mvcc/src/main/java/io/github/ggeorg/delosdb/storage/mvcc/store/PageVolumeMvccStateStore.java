@@ -555,6 +555,22 @@ public final class PageVolumeMvccStateStore<T> {
         return enabled() ? table.pageCacheLastPageGeneration() : 0L;
     }
 
+    public long attributeOverflowWriteCount() {
+        return enabled() ? table.attributeOverflowWriteCount() : 0L;
+    }
+
+    public long attributeOverflowReadCount() {
+        return enabled() ? table.attributeOverflowReadCount() : 0L;
+    }
+
+    public long attributeOverflowInlineRowBytes() {
+        return enabled() ? table.attributeOverflowInlineRowBytes() : 0L;
+    }
+
+    public long attributeOverflowValueBytes() {
+        return enabled() ? table.attributeOverflowValueBytes() : 0L;
+    }
+
     public int consistencyErrorCount() {
         return validateConsistency().errors().size();
     }

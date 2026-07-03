@@ -942,6 +942,26 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public long attributeOverflowWriteCountForTesting() {
+        return readLocked(pageVolumeStateStore::attributeOverflowWriteCount);
+    }
+
+    @Override
+    public long attributeOverflowReadCountForTesting() {
+        return readLocked(pageVolumeStateStore::attributeOverflowReadCount);
+    }
+
+    @Override
+    public long attributeOverflowInlineRowBytesForTesting() {
+        return readLocked(pageVolumeStateStore::attributeOverflowInlineRowBytes);
+    }
+
+    @Override
+    public long attributeOverflowValueBytesForTesting() {
+        return readLocked(pageVolumeStateStore::attributeOverflowValueBytes);
+    }
+
+    @Override
     public int consistencyErrorCountForTesting() {
         return readLocked(pageVolumeStateStore::consistencyErrorCount);
     }

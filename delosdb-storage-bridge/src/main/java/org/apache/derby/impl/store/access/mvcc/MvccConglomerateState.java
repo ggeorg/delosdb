@@ -567,6 +567,22 @@ final class MvccConglomerateState {
         return diagnostics.pageCacheLastPageGenerationForTesting();
     }
 
+    synchronized long attributeOverflowWriteCountForTesting() {
+        return diagnostics.attributeOverflowWriteCountForTesting();
+    }
+
+    synchronized long attributeOverflowReadCountForTesting() {
+        return diagnostics.attributeOverflowReadCountForTesting();
+    }
+
+    synchronized long attributeOverflowInlineRowBytesForTesting() {
+        return diagnostics.attributeOverflowInlineRowBytesForTesting();
+    }
+
+    synchronized long attributeOverflowValueBytesForTesting() {
+        return diagnostics.attributeOverflowValueBytesForTesting();
+    }
+
     synchronized int consistencyErrorCountForTesting() {
         return diagnostics.consistencyErrorCountForTesting();
     }

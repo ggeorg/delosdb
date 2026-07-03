@@ -754,6 +754,22 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).pageCacheLastPageGenerationForTesting();
     }
 
+    static long attributeOverflowWriteCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).attributeOverflowWriteCountForTesting();
+    }
+
+    static long attributeOverflowReadCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).attributeOverflowReadCountForTesting();
+    }
+
+    static long attributeOverflowInlineRowBytesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).attributeOverflowInlineRowBytesForTesting();
+    }
+
+    static long attributeOverflowValueBytesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).attributeOverflowValueBytesForTesting();
+    }
+
     static int consistencyErrorCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).consistencyErrorCountForTesting();
     }

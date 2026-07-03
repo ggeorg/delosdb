@@ -54,6 +54,10 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     private long pageMutationContextPageWriteCount;
     private long pageMutationContextFreeSpaceMapUpdateCount;
     private long pageMutationContextReusableIndexUpdateCount;
+    private long attributeOverflowWriteCount;
+    private long attributeOverflowReadCount;
+    private long attributeOverflowInlineRowBytes;
+    private long attributeOverflowValueBytes;
     private String lastPageMutationContextOperation = "none";
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
@@ -407,6 +411,22 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return readLockedUnchecked(() -> pageCache.snapshot().lastPageGeneration());
     }
 
+    public long attributeOverflowWriteCount() {
+        return readLockedUnchecked(() -> attributeOverflowWriteCount);
+    }
+
+    public long attributeOverflowReadCount() {
+        return readLockedUnchecked(() -> attributeOverflowReadCount);
+    }
+
+    public long attributeOverflowInlineRowBytes() {
+        return readLockedUnchecked(() -> attributeOverflowInlineRowBytes);
+    }
+
+    public long attributeOverflowValueBytes() {
+        return readLockedUnchecked(() -> attributeOverflowValueBytes);
+    }
+
     List<String> pageRecordConsistencyErrors() throws IOException {
         return readLockedIo(() -> {
             List<String> errors = new ArrayList<>();
@@ -578,6 +598,20 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         }
 
         MvccRowPayload payload = MvccRowPayloadCodec.decode(record.payload());
+        if (canStoreValueAsAttributeOverflow(record, payload)) {
+            MvccOverflowPayloadDescriptor descriptor = overflowStore.write(payload.value());
+            byte[] attributeReferencePayload = MvccAttributeOverflowRowPayloadCodec.encode(
+                    payload.key(),
+                    payload.value().length,
+                    descriptor);
+            MvccVersionRecord attributeReferenceRecord = new MvccVersionRecord(record.header(), attributeReferencePayload);
+            byte[] attributeReferenceBytes = encodeAndRequireSinglePageRecord(attributeReferenceRecord);
+            attributeOverflowWriteCount++;
+            attributeOverflowInlineRowBytes += attributeReferencePayload.length;
+            attributeOverflowValueBytes += payload.value().length;
+            return new EncodedVersion(attributeReferenceRecord, attributeReferenceBytes);
+        }
+
         MvccOverflowPayloadDescriptor descriptor = overflowStore.write(record.payload());
         byte[] referencePayload = MvccOverflowPayloadReferenceCodec.encode(
                 new MvccOverflowPayloadReferenceCodec.Reference(payload.key(), descriptor));
@@ -586,10 +620,34 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return new EncodedVersion(referenceRecord, referenceBytes);
     }
 
+    private static boolean canStoreValueAsAttributeOverflow(MvccVersionRecord record, MvccRowPayload payload) {
+        if (payload.value().length == 0) {
+            return false;
+        }
+        int attributePayloadLength = MvccAttributeOverflowRowPayloadCodec.encodedLengthForKey(payload.key());
+        MvccVersionRecord attributeReferenceRecord = new MvccVersionRecord(
+                record.header(),
+                new byte[attributePayloadLength]);
+        return MvccPageRecordCodec.encodedLength(attributeReferenceRecord) <= maxSingleRecordBytes();
+    }
+
     private StoredVersionRecord readStoredVersionRecord(
             MvccVersionLocator locator,
             MvccVersionRecord record) throws IOException {
         byte[] payload = record.payload();
+        if (MvccAttributeOverflowRowPayloadCodec.isAttributeOverflowPayload(payload)) {
+            MvccAttributeOverflowRowPayloadCodec.Reference reference =
+                    MvccAttributeOverflowRowPayloadCodec.decode(payload);
+            byte[] valueBytes = overflowStore.read(reference.descriptor());
+            if (valueBytes.length != reference.valueLength()) {
+                throw new IllegalStateException("MVCC attribute-overflow value length mismatch for key "
+                        + reference.key() + ": expected " + reference.valueLength()
+                        + ", found " + valueBytes.length);
+            }
+            MvccRowPayload rowPayload = new MvccRowPayload(reference.key(), valueBytes);
+            attributeOverflowReadCount++;
+            return new StoredVersionRecord(locator, new MvccVersionRecord(record.header(), MvccRowPayloadCodec.encode(rowPayload)));
+        }
         if (!MvccOverflowPayloadReferenceCodec.isOverflowReference(payload)) {
             return new StoredVersionRecord(locator, record);
         }

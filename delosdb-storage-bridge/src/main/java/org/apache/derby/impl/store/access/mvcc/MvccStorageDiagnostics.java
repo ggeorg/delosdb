@@ -579,6 +579,26 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public long attributeOverflowWriteCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.attributeOverflowWriteCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long attributeOverflowReadCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.attributeOverflowReadCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long attributeOverflowInlineRowBytesForTesting(int segment, long containerId) {
+        return MvccConglomerate.attributeOverflowInlineRowBytesForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long attributeOverflowValueBytesForTesting(int segment, long containerId) {
+        return MvccConglomerate.attributeOverflowValueBytesForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public int consistencyErrorCountForTesting(int segment, long containerId) {
         return MvccConglomerate.consistencyErrorCountForDiagnostics(segment, containerId);
     }
