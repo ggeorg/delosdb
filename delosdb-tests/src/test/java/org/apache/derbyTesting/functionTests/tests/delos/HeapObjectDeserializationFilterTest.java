@@ -93,7 +93,7 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
                         containsMessage(expected, "JAVA_OBJECT")
                                 || containsMessage(expected, "UserType")
                                 || containsMessage(expected, "unsupported"));
-                connection.rollback();
+                rollbackAfterExpectedCommitFailure(connection);
                 return;
             }
             fail("Expected delos_mvcc to keep rejecting JAVA_OBJECT durable row values");
@@ -115,6 +115,18 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
         executeUpdate(connection,
                 "create table " + tableName + " (id int primary key, payload mvcc_filter_java_serializable) "
                         + "using delos_mvcc");
+    }
+
+    private static void rollbackAfterExpectedCommitFailure(Connection connection) {
+        try {
+            if (!connection.isClosed()) {
+                connection.rollback();
+            }
+        } catch (SQLException ignored) {
+            // Derby may close/invalidate the embedded connection after a failed
+            // commit. The expected boundary failure has already been asserted;
+            // cleanup must not mask it with "No current connection".
+        }
     }
 
     private static void insertPayload(Connection connection, String tableName, int id, Serializable payload)
