@@ -598,6 +598,29 @@ public interface DelosStorageDiagnostics {
                 consistency.errorCount() == 0 ? java.util.List.of() : java.util.List.of(consistency.summary()));
     }
 
+
+    default DelosHeapRawStoreBoundaryDiagnostics heapRawStoreBoundaryDiagnosticsForTesting(
+            int segment,
+            long containerId) {
+        Path file = pageVolumeStateFileForTesting(segment, containerId);
+        Path segmentDirectory = file == null ? Path.of(".") : file.getParent();
+        return new DelosHeapRawStoreBoundaryDiagnostics(
+                providerId(),
+                segment,
+                containerId,
+                segmentDirectory == null ? Path.of(".") : segmentDirectory,
+                file == null ? Path.of("missing") : file,
+                true,
+                false,
+                0L,
+                0L,
+                0L,
+                false,
+                false,
+                false,
+                List.of("heap raw-store boundary diagnostics are unavailable for provider " + providerId()));
+    }
+
     default DelosHeapStorageDiagnostics heapStorageDiagnosticsForTesting(
             int segment,
             long containerId,

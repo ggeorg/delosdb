@@ -21,13 +21,13 @@
 
 package org.apache.derby.impl.store.access.provider;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import org.apache.derby.iapi.store.types.DelosHeapRawStoreBoundaryDiagnostics;
 import org.apache.derby.iapi.store.types.DelosHeapSanityDiagnostics;
 import org.apache.derby.iapi.store.types.DelosHeapStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
@@ -42,8 +42,6 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
  * and it does not introduce a dependency from heap/raw-store code to MVCC.</p>
  */
 public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostics {
-    private static final long DEFAULT_HEAP_PAGE_SIZE = 4096L;
-
     private volatile Path databaseDirectory;
 
     @Override
@@ -123,16 +121,7 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
 
     @Override
     public long pageCountForTesting(int segment, long containerId) {
-        Path file = heapContainerPath(segment, containerId);
-        if (!Files.isRegularFile(file)) {
-            return 0L;
-        }
-        try {
-            long bytes = Files.size(file);
-            return bytes == 0L ? 0L : Math.max(1L, (bytes + DEFAULT_HEAP_PAGE_SIZE - 1L) / DEFAULT_HEAP_PAGE_SIZE);
-        } catch (IOException e) {
-            return 0L;
-        }
+        return DerbyHeapContainerFiles.snapshot(databaseDirectory, segment, containerId).estimatedPageCount();
     }
 
     @Override
@@ -203,14 +192,14 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
 
     @Override
     public DelosHeapSanityDiagnostics heapSanityDiagnosticsForTesting(int segment, long containerId) {
-        Path segmentDirectory = heapSegmentDirectory(segment);
-        Path file = heapContainerPath(segment, containerId);
-        boolean segmentExists = Files.isDirectory(segmentDirectory);
-        boolean fileExists = Files.isRegularFile(file);
-        long bytes = safeSize(file);
-        long pageCount = fileExists && bytes > 0L
-                ? Math.max(1L, (bytes + DEFAULT_HEAP_PAGE_SIZE - 1L) / DEFAULT_HEAP_PAGE_SIZE)
-                : 0L;
+        DerbyHeapContainerFiles.Snapshot snapshot = DerbyHeapContainerFiles.snapshot(
+                databaseDirectory, segment, containerId);
+        Path segmentDirectory = snapshot.segmentDirectory();
+        Path file = snapshot.containerFile();
+        boolean segmentExists = snapshot.segmentExists();
+        boolean fileExists = snapshot.containerExists();
+        long bytes = snapshot.bytes();
+        long pageCount = snapshot.estimatedPageCount();
         long overflowPages = overflowPageCountForTesting(segment, containerId);
         long reusablePages = reusablePageCountForTesting(segment, containerId);
 
@@ -260,13 +249,13 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
             int segment,
             long containerId,
             long... indexContainerIds) {
-        Path segmentDirectory = heapSegmentDirectory(segment);
-        Path tableFile = heapContainerPath(segment, containerId);
-        boolean tableExists = Files.isRegularFile(tableFile);
-        long tableBytes = safeSize(tableFile);
-        long estimatedTablePages = tableExists && tableBytes > 0L
-                ? Math.max(1L, (tableBytes + DEFAULT_HEAP_PAGE_SIZE - 1L) / DEFAULT_HEAP_PAGE_SIZE)
-                : 0L;
+        DerbyHeapContainerFiles.Snapshot tableSnapshot = DerbyHeapContainerFiles.snapshot(
+                databaseDirectory, segment, containerId);
+        Path segmentDirectory = tableSnapshot.segmentDirectory();
+        Path tableFile = tableSnapshot.containerFile();
+        boolean tableExists = tableSnapshot.containerExists();
+        long tableBytes = tableSnapshot.bytes();
+        long estimatedTablePages = tableSnapshot.estimatedPageCount();
         long overflowPages = overflowPageCountForTesting(segment, containerId);
         long reusablePages = reusablePageCountForTesting(segment, containerId);
         long freePages = Math.min(estimatedTablePages, reusablePages);
@@ -276,17 +265,18 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
         long indexBytes = 0L;
         if (indexContainerIds != null) {
             for (long indexContainerId : indexContainerIds) {
-                Path indexFile = heapContainerPath(segment, indexContainerId);
+                DerbyHeapContainerFiles.Snapshot indexSnapshot = DerbyHeapContainerFiles.snapshot(
+                        databaseDirectory, segment, indexContainerId);
                 indexIds.add(indexContainerId);
-                indexFiles.add(indexFile);
-                indexBytes += safeSize(indexFile);
+                indexFiles.add(indexSnapshot.containerFile());
+                indexBytes += indexSnapshot.bytes();
             }
         }
 
         long totalBytes = tableBytes + indexBytes;
         long estimatedBeforeCompressBytes = totalBytes;
         long estimatedAfterCompressBytes = Math.max(0L,
-                estimatedBeforeCompressBytes - (freePages * DEFAULT_HEAP_PAGE_SIZE));
+                estimatedBeforeCompressBytes - (freePages * DerbyHeapContainerFiles.DEFAULT_HEAP_PAGE_SIZE));
 
         List<String> observations = new ArrayList<>();
         observations.add("heap diagnostics are read-only");
@@ -321,6 +311,39 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
                 estimatedBeforeCompressBytes,
                 estimatedAfterCompressBytes,
                 consistencySummaryForTesting(segment, containerId),
+                observations);
+    }
+
+
+    @Override
+    public DelosHeapRawStoreBoundaryDiagnostics heapRawStoreBoundaryDiagnosticsForTesting(
+            int segment,
+            long containerId) {
+        DerbyHeapContainerFiles.Snapshot snapshot = DerbyHeapContainerFiles.snapshot(
+                databaseDirectory, segment, containerId);
+        List<String> observations = new ArrayList<>();
+        observations.add("heap raw-store boundary diagnostics are read-only");
+        observations.add("heap page format is Derby-compatible and unchanged");
+        observations.add("raw log format is Derby-compatible and unchanged");
+        observations.add("catalog behavior is Derby-compatible and unchanged");
+        observations.add("container path: " + snapshot.containerFile());
+        observations.add("container bytes: " + snapshot.bytes());
+        observations.add("estimated pages: " + snapshot.estimatedPageCount());
+
+        return new DelosHeapRawStoreBoundaryDiagnostics(
+                providerId(),
+                segment,
+                containerId,
+                snapshot.segmentDirectory(),
+                snapshot.containerFile(),
+                true,
+                snapshot.containerExists(),
+                DerbyHeapContainerFiles.DEFAULT_HEAP_PAGE_SIZE,
+                snapshot.bytes(),
+                snapshot.estimatedPageCount(),
+                false,
+                false,
+                false,
                 observations);
     }
 
@@ -420,30 +443,10 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
     }
 
     private Path heapSegmentDirectory(int segment) {
-        Path database = databaseDirectory;
-        if (database == null) {
-            throw new IllegalStateException("Heap diagnostics require a database directory");
-        }
-        return database.resolve("seg" + segment);
+        return DerbyHeapContainerFiles.segmentDirectory(databaseDirectory, segment);
     }
 
     private Path heapContainerPath(int segment, long containerId) {
-        Path segmentDirectory = heapSegmentDirectory(segment);
-        Path lowerCase = segmentDirectory.resolve("c" + Long.toHexString(containerId) + ".dat");
-        if (Files.exists(lowerCase)) {
-            return lowerCase;
-        }
-        return segmentDirectory.resolve("C" + Long.toHexString(containerId) + ".DAT");
-    }
-
-    private static long safeSize(Path file) {
-        if (!Files.isRegularFile(file)) {
-            return 0L;
-        }
-        try {
-            return Files.size(file);
-        } catch (IOException e) {
-            return 0L;
-        }
+        return DerbyHeapContainerFiles.containerPath(databaseDirectory, segment, containerId);
     }
 }
