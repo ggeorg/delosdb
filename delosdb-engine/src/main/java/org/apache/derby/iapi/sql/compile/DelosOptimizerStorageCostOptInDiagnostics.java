@@ -18,7 +18,7 @@
    limitations under the License.
 
  */
-package org.apache.derby.impl.sql.compile;
+package org.apache.derby.iapi.sql.compile;
 
 import io.github.ggeorg.delosdb.engine.extension.cost.CostModelDiagnostics;
 import io.github.ggeorg.delosdb.engine.extension.cost.CostModelMode;

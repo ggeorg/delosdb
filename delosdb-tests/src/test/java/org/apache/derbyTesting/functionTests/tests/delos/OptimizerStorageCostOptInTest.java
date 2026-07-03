@@ -20,7 +20,7 @@
  */
 package org.apache.derbyTesting.functionTests.tests.delos;
 
-import org.apache.derby.impl.sql.compile.DelosOptimizerStorageCostOptInDiagnostics;
+import org.apache.derby.iapi.sql.compile.DelosOptimizerStorageCostOptInDiagnostics;
 
 import java.sql.Connection;
 
