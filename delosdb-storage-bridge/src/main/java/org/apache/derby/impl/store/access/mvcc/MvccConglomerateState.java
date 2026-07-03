@@ -500,6 +500,14 @@ final class MvccConglomerateState {
         return diagnostics.orderedIndexRowIdCountForTesting();
     }
 
+    synchronized int orderedIndexCandidateParityErrorCountForTesting() {
+        return diagnostics.orderedIndexCandidateParityErrorCountForTesting();
+    }
+
+    synchronized List<String> orderedIndexCandidateParityErrorSummariesForTesting() {
+        return diagnostics.orderedIndexCandidateParityErrorSummariesForTesting();
+    }
+
     synchronized long pageCacheMaxPageCountForTesting() {
         return diagnostics.pageCacheMaxPageCountForTesting();
     }
@@ -569,6 +577,7 @@ final class MvccConglomerateState {
             if (ordered.isPresent()) {
                 return ordered;
             }
+            MvccBridgeDiagnosticsSupport.incrementCandidateIndexFallbackLookupCount();
             return candidateIndex.candidateRowIdsFor(columnValueKey.column(), columnValueKey.value());
         }
 

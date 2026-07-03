@@ -1,5 +1,6 @@
 package io.github.ggeorg.delosdb.storage.mvcc.store;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -52,6 +53,18 @@ public final class MvccCandidateIndex {
 
     public synchronized int indexedKeyCountForTesting() {
         return rowIdsByColumnValue.size();
+    }
+
+    public synchronized List<String> entrySummariesForTesting() {
+        List<String> summaries = new ArrayList<>();
+        for (Map.Entry<ColumnValueKey, LinkedHashSet<Long>> entry : rowIdsByColumnValue.entrySet()) {
+            ColumnValueKey key = entry.getKey();
+            for (Long rowId : entry.getValue()) {
+                summaries.add("col:" + key.column() + "|key:" + key.value() + "|row:" + rowId);
+            }
+        }
+        summaries.sort(String::compareTo);
+        return List.copyOf(summaries);
     }
 
     private void indexRow(long rowId, List<String> values) {

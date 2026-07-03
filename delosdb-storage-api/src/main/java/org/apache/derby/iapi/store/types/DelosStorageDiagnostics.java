@@ -375,6 +375,14 @@ public interface DelosStorageDiagnostics {
         return 0L;
     }
 
+    default int orderedIndexCandidateParityErrorCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default List<String> orderedIndexCandidateParityErrorSummariesForTesting(int segment, long containerId) {
+        return List.of();
+    }
+
     default DelosStorageOrderedIndexDiagnostics orderedIndexDiagnosticsForTesting(int segment, long containerId) {
         return new DelosStorageOrderedIndexDiagnostics(
                 orderedIndexPageCountForTesting(segment, containerId),
@@ -490,6 +498,10 @@ public interface DelosStorageDiagnostics {
     void resetCandidateIndexCountersForTesting();
 
     int candidateIndexLookupCountForTesting();
+
+    default int candidateIndexFallbackLookupCountForTesting() {
+        return 0;
+    }
 
     int candidateIndexRowIdCountForTesting();
 

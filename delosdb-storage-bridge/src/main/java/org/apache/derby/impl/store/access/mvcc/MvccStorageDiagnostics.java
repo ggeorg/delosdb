@@ -494,6 +494,16 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public int orderedIndexCandidateParityErrorCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexCandidateParityErrorCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public java.util.List<String> orderedIndexCandidateParityErrorSummariesForTesting(int segment, long containerId) {
+        return MvccConglomerate.orderedIndexCandidateParityErrorSummariesForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public long pageCacheMaxPageCountForTesting(int segment, long containerId) {
         return MvccConglomerate.pageCacheMaxPageCountForDiagnostics(segment, containerId);
     }
@@ -611,6 +621,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public int candidateIndexLookupCountForTesting() {
         return MvccBridgeDiagnosticsSupport.candidateIndexLookupCountForDiagnostics();
+    }
+
+    @Override
+    public int candidateIndexFallbackLookupCountForTesting() {
+        return MvccBridgeDiagnosticsSupport.candidateIndexFallbackLookupCountForDiagnostics();
     }
 
     @Override

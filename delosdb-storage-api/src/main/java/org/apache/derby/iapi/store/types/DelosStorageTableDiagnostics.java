@@ -313,6 +313,14 @@ public interface DelosStorageTableDiagnostics {
         return 0L;
     }
 
+    default int orderedIndexCandidateParityErrorCountForTesting() {
+        return 0;
+    }
+
+    default List<String> orderedIndexCandidateParityErrorSummariesForTesting() {
+        return List.of();
+    }
+
     default DelosStorageOrderedIndexDiagnostics orderedIndexDiagnosticsForTesting() {
         return new DelosStorageOrderedIndexDiagnostics(
                 orderedIndexPageCountForTesting(),

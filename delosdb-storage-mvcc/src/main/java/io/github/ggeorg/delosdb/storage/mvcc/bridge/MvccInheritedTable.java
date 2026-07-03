@@ -8,6 +8,7 @@ import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.locks.Lock;
@@ -856,6 +857,16 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public int orderedIndexCandidateParityErrorCountForTesting() {
+        return readLocked(() -> orderedIndexCandidateParityErrorsUnlocked().size());
+    }
+
+    @Override
+    public List<String> orderedIndexCandidateParityErrorSummariesForTesting() {
+        return readLocked(this::orderedIndexCandidateParityErrorsUnlocked);
+    }
+
+    @Override
     public long pageCacheMaxPageCountForTesting() {
         return readLocked(pageVolumeStateStore::pageCacheMaxPageCount);
     }
@@ -1104,6 +1115,36 @@ final class MvccInheritedTable implements DelosStorageTable,
         candidateIndex.rebuildFromVisibleRows(toCandidateRows(rows));
         pageVolumeStateStore.rebuildOrderedIndexPages(toOrderedIndexEntries(rows));
         pageBackedCandidateIndexRebuildCount++;
+    }
+
+    private List<String> orderedIndexCandidateParityErrorsUnlocked() {
+        List<String> candidateEntries = candidateIndex.entrySummariesForTesting();
+        List<String> orderedEntries = new ArrayList<>(pageVolumeStateStore.orderedIndexEntrySummaries());
+        orderedEntries.sort(String::compareTo);
+        if (candidateEntries.equals(orderedEntries)) {
+            return List.of();
+        }
+
+        LinkedHashSet<String> candidateOnly = new LinkedHashSet<>(candidateEntries);
+        candidateOnly.removeAll(orderedEntries);
+        LinkedHashSet<String> orderedOnly = new LinkedHashSet<>(orderedEntries);
+        orderedOnly.removeAll(candidateEntries);
+
+        List<String> errors = new ArrayList<>();
+        errors.add("candidate-size:" + candidateEntries.size() + "|ordered-size:" + orderedEntries.size());
+        for (String missingOrdered : candidateOnly) {
+            errors.add("missing-ordered:" + missingOrdered);
+            if (errors.size() >= 20) {
+                return List.copyOf(errors);
+            }
+        }
+        for (String missingCandidate : orderedOnly) {
+            errors.add("missing-candidate:" + missingCandidate);
+            if (errors.size() >= 20) {
+                return List.copyOf(errors);
+            }
+        }
+        return List.copyOf(errors);
     }
 
     private List<MvccInheritedHandles.Transaction.WriteIntent> activeAppendedWriteIntents() {

@@ -38,6 +38,7 @@ final class MvccBridgeDiagnosticsSupport {
     private static final AtomicInteger OPEN_COUNT = new AtomicInteger();
     private static final AtomicInteger QUALIFIER_REJECT_COUNT = new AtomicInteger();
     private static final AtomicInteger CANDIDATE_INDEX_LOOKUP_COUNT = new AtomicInteger();
+    private static final AtomicInteger CANDIDATE_INDEX_FALLBACK_LOOKUP_COUNT = new AtomicInteger();
     private static final AtomicInteger CANDIDATE_INDEX_ROWID_COUNT = new AtomicInteger();
     private static final AtomicInteger CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT = new AtomicInteger();
     private static final AtomicInteger CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT = new AtomicInteger();
@@ -124,6 +125,7 @@ final class MvccBridgeDiagnosticsSupport {
 
     static void resetCandidateIndexCountersForDiagnostics() {
         CANDIDATE_INDEX_LOOKUP_COUNT.set(0);
+        CANDIDATE_INDEX_FALLBACK_LOOKUP_COUNT.set(0);
         CANDIDATE_INDEX_ROWID_COUNT.set(0);
         CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT.set(0);
         CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.set(0);
@@ -135,6 +137,14 @@ final class MvccBridgeDiagnosticsSupport {
 
     static int candidateIndexLookupCountForDiagnostics() {
         return CANDIDATE_INDEX_LOOKUP_COUNT.get();
+    }
+
+    static void incrementCandidateIndexFallbackLookupCount() {
+        CANDIDATE_INDEX_FALLBACK_LOOKUP_COUNT.incrementAndGet();
+    }
+
+    static int candidateIndexFallbackLookupCountForDiagnostics() {
+        return CANDIDATE_INDEX_FALLBACK_LOOKUP_COUNT.get();
     }
 
     static void addCandidateIndexRowIdCount(int rowIds) {

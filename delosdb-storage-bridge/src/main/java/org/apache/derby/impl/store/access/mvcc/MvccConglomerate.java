@@ -682,6 +682,14 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).orderedIndexRowIdCountForTesting();
     }
 
+    static int orderedIndexCandidateParityErrorCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexCandidateParityErrorCountForTesting();
+    }
+
+    static List<String> orderedIndexCandidateParityErrorSummariesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexCandidateParityErrorSummariesForTesting();
+    }
+
     static long pageCacheMaxPageCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).pageCacheMaxPageCountForTesting();
     }
