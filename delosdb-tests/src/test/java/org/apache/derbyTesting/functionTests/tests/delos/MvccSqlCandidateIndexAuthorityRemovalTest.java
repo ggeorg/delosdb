@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.MvccSqlCandidateIndexQuarantineTest
+   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.MvccSqlCandidateIndexAuthorityRemovalTest
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -25,16 +25,16 @@ import java.sql.Connection;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
-/** Candidate-index quarantine gate after ordered-page equality/range promotion. */
-public final class MvccSqlCandidateIndexQuarantineTest extends MvccSqlTestSupport {
+/** Closeout gate for removing candidate indexes as MVCC SQL read authority. */
+public final class MvccSqlCandidateIndexAuthorityRemovalTest extends MvccSqlTestSupport {
     private static final String DIAGNOSTIC_FALLBACK_PROPERTY =
             "delosdb.mvcc.candidateIndex.diagnosticFallback";
 
-    public void testCandidateIndexAuthorityIsQuarantinedBehindDiagnostics() throws Exception {
+    public void testCandidateIndexIsNotSqlAuthorityEvenWhenLegacyPropertyIsSet() throws Exception {
         String previous = System.getProperty(DIAGNOSTIC_FALLBACK_PROPERTY);
-        System.clearProperty(DIAGNOSTIC_FALLBACK_PROPERTY);
+        System.setProperty(DIAGNOSTIC_FALLBACK_PROPERTY, "true");
         try {
-            assertCandidateIndexAuthorityIsQuarantinedBehindDiagnostics();
+            assertCandidateIndexIsNotSqlAuthorityEvenWhenLegacyPropertyIsSet();
         } finally {
             if (previous == null) {
                 System.clearProperty(DIAGNOSTIC_FALLBACK_PROPERTY);
@@ -44,33 +44,33 @@ public final class MvccSqlCandidateIndexQuarantineTest extends MvccSqlTestSuppor
         }
     }
 
-    private static void assertCandidateIndexAuthorityIsQuarantinedBehindDiagnostics() throws Exception {
-        String databaseName = databaseName("mvcc-candidate-index-quarantine-db");
+    private static void assertCandidateIndexIsNotSqlAuthorityEvenWhenLegacyPropertyIsSet() throws Exception {
+        String databaseName = databaseName("mvcc-candidate-index-authority-removal-db");
         DelosStorageDiagnostics diagnostics = mvccDiagnostics();
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
-            executeUpdate(connection, "create table candidate_index_quarantine_t "
+            executeUpdate(connection, "create table candidate_index_authority_removal_t "
                     + "(id int primary key, code varchar(32), payload varchar(64)) using delos_mvcc");
-            executeUpdate(connection, "insert into candidate_index_quarantine_t values "
+            executeUpdate(connection, "insert into candidate_index_authority_removal_t values "
                     + "(10, 'theta', 'payload-theta')");
-            executeUpdate(connection, "insert into candidate_index_quarantine_t values "
+            executeUpdate(connection, "insert into candidate_index_authority_removal_t values "
                     + "(20, 'alpha', 'payload-alpha')");
-            executeUpdate(connection, "insert into candidate_index_quarantine_t values "
+            executeUpdate(connection, "insert into candidate_index_authority_removal_t values "
                     + "(30, 'gamma', 'payload-gamma')");
-            executeUpdate(connection, "insert into candidate_index_quarantine_t values "
+            executeUpdate(connection, "insert into candidate_index_authority_removal_t values "
                     + "(40, 'beta', 'payload-beta')");
-            executeUpdate(connection, "insert into candidate_index_quarantine_t values "
+            executeUpdate(connection, "insert into candidate_index_authority_removal_t values "
                     + "(50, 'zeta', 'payload-zeta')");
             connection.commit();
 
-            containerId = mvccContainerId(connection, "CANDIDATE_INDEX_QUARANTINE_T");
-            assertFalse("candidate-index fallback should be quarantined by default",
+            containerId = mvccContainerId(connection, "CANDIDATE_INDEX_AUTHORITY_REMOVAL_T");
+            assertFalse("legacy candidate-index fallback property must no longer enable SQL authority",
                     diagnostics.candidateIndexDiagnosticFallbackEnabledForTesting());
-            assertTrue("candidate index should remain populated for diagnostics/fallback comparison",
+            assertTrue("candidate index remains populated for parity diagnostics only",
                     diagnostics.candidateIndexKeyCountForTesting(0, containerId) > 0);
-            assertTrue("ordered index pages should be populated for normal authority",
+            assertTrue("ordered index pages are the current-committed authority",
                     diagnostics.orderedIndexDistinctKeyCountForTesting(0, containerId) > 0);
             assertCandidateOrderedParityClean(diagnostics, containerId);
 
@@ -78,24 +78,26 @@ public final class MvccSqlCandidateIndexQuarantineTest extends MvccSqlTestSuppor
             diagnostics.resetScanCountersForTesting();
             long lookupBefore = diagnostics.orderedIndexLookupCountForTesting(0, containerId);
             long hitBefore = diagnostics.orderedIndexHitCountForTesting(0, containerId);
-            long fallbackBefore = diagnostics.orderedIndexFallbackCountForTesting(0, containerId);
+            long orderedFallbackBefore = diagnostics.orderedIndexFallbackCountForTesting(0, containerId);
 
             assertRows(connection,
-                    "select id, payload from candidate_index_quarantine_t where code = 'beta'",
+                    "select id, payload from candidate_index_authority_removal_t where code = 'beta'",
                     "40|payload-beta");
             assertRows(connection,
-                    "select code, id from candidate_index_quarantine_t "
+                    "select code, id from candidate_index_authority_removal_t "
                             + "where code >= 'beta' and code <= 'theta'",
                     "beta|40", "gamma|30", "theta|10");
+            assertRows(connection,
+                    "select id from candidate_index_authority_removal_t where code = 'missing'");
 
             assertTrue("normal equality/range reads should use ordered index pages",
-                    diagnostics.orderedIndexLookupCountForTesting(0, containerId) >= lookupBefore + 2);
+                    diagnostics.orderedIndexLookupCountForTesting(0, containerId) >= lookupBefore + 3);
             assertTrue("covered equality/range reads should hit ordered index pages",
                     diagnostics.orderedIndexHitCountForTesting(0, containerId) >= hitBefore + 2);
-            assertEquals("covered reads should not need ordered-index fallback",
-                    fallbackBefore, diagnostics.orderedIndexFallbackCountForTesting(0, containerId));
-            assertEquals("candidate-index fallback should remain cold on normal covered paths",
+            assertEquals("candidate-index fallback must be removed as SQL authority",
                     0, diagnostics.candidateIndexFallbackLookupCountForTesting());
+            assertEquals("covered reads should not need ordered fallback",
+                    orderedFallbackBefore, diagnostics.orderedIndexFallbackCountForTesting(0, containerId));
             assertTrue("ordered authority should feed page-backed row-id reads",
                     diagnostics.rowIdFastPathReadCountForTesting() > 0);
             assertEquals("legacy snapshot fallback reads must remain closed",
@@ -104,12 +106,28 @@ public final class MvccSqlCandidateIndexQuarantineTest extends MvccSqlTestSuppor
                     0, diagnostics.legacySnapshotFallbackScanCountForTesting(0, containerId));
             diagnostics.assertConsistentForTesting(0, containerId);
             assertCandidateOrderedParityClean(diagnostics, containerId);
-
-            System.setProperty(DIAGNOSTIC_FALLBACK_PROPERTY, "true");
-            assertFalse("candidate-index SQL authority should remain hard-quarantined even if the old diagnostic fallback property is set",
-                    diagnostics.candidateIndexDiagnosticFallbackEnabledForTesting());
-            assertCandidateOrderedParityClean(diagnostics, containerId);
             connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertFalse("legacy candidate-index fallback property must remain ignored after reopen",
+                    diagnostics.candidateIndexDiagnosticFallbackEnabledForTesting());
+            diagnostics.resetCandidateIndexCountersForTesting();
+            diagnostics.resetScanCountersForTesting();
+            long lookupBefore = diagnostics.orderedIndexLookupCountForTesting(0, containerId);
+
+            assertRows(reopened,
+                    "select code, id from candidate_index_authority_removal_t "
+                            + "where code >= 'beta' and code <= 'theta'",
+                    "beta|40", "gamma|30", "theta|10");
+            assertTrue("reopened reads should still use ordered index pages",
+                    diagnostics.orderedIndexLookupCountForTesting(0, containerId) > lookupBefore);
+            assertEquals("candidate-index fallback must stay removed after reopen",
+                    0, diagnostics.candidateIndexFallbackLookupCountForTesting());
+            diagnostics.assertConsistentForTesting(0, containerId);
+            assertCandidateOrderedParityClean(diagnostics, containerId);
         }
     }
 

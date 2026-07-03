@@ -58,9 +58,6 @@ import org.apache.derby.shared.common.error.StandardException;
  */
 final class MvccConglomerateState {
     private static final String MVCC_PROVIDER_NAME = "delos_mvcc";
-    private static final String CANDIDATE_INDEX_DIAGNOSTIC_FALLBACK_PROPERTY =
-            "delosdb.mvcc.candidateIndex.diagnosticFallback";
-
     private final ContainerKey key;
     private final DelosStorageTable table;
     private final DelosStorageMaintenance maintenance;
@@ -574,16 +571,8 @@ final class MvccConglomerateState {
         Optional<ColumnValueKey> key = equalityCandidateKey(qualifiers);
         if (key.isPresent()) {
             ColumnValueKey columnValueKey = key.get();
-            Optional<List<Long>> ordered = candidateIndex.orderedIndexCandidateRowIdsFor(
+            return candidateIndex.orderedIndexCandidateRowIdsFor(
                     columnValueKey.column(), columnValueKey.value());
-            if (ordered.isPresent()) {
-                return ordered;
-            }
-            if (!candidateIndexDiagnosticFallbackEnabled()) {
-                return Optional.empty();
-            }
-            MvccBridgeDiagnosticsSupport.incrementCandidateIndexFallbackLookupCount();
-            return candidateIndex.candidateRowIdsFor(columnValueKey.column(), columnValueKey.value());
         }
 
         Optional<ColumnRangeKey> range = rangeCandidateKey(qualifiers);
@@ -600,11 +589,7 @@ final class MvccConglomerateState {
     }
 
     static boolean candidateIndexDiagnosticFallbackEnabledForTesting() {
-        return candidateIndexDiagnosticFallbackEnabled();
-    }
-
-    private static boolean candidateIndexDiagnosticFallbackEnabled() {
-        return Boolean.getBoolean(CANDIDATE_INDEX_DIAGNOSTIC_FALLBACK_PROPERTY);
+        return false;
     }
 
     synchronized int candidateIndexKeyCountForTesting() {

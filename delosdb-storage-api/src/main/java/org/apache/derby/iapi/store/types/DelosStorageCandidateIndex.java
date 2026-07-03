@@ -23,15 +23,26 @@ package org.apache.derby.iapi.store.types;
 import java.util.List;
 import java.util.Optional;
 
-/** Optional candidate-row index used by provider-aware scans to narrow equality predicates. */
+/**
+ * Candidate-row index diagnostics plus ordered-page lookup boundary.
+ *
+ * <p>The legacy candidate index is no longer SQL read authority. It remains
+ * populated so parity diagnostics can compare it with ordered MVCC index pages.
+ * Normal current-committed reads must use the ordered page-backed methods below
+ * or fall back to a full committed-image scan.</p>
+ */
 public interface DelosStorageCandidateIndex {
+    /**
+     * Legacy diagnostic lookup. Normal SQL read paths must not use this as
+     * row-id authority.
+     */
     Optional<List<Long>> candidateRowIdsFor(int column, String value);
 
     /**
      * Optional ordered page-backed lookup for current-committed equality scans.
      *
      * <p>An empty optional means the ordered page sidecar cannot currently answer
-     * this lookup and callers should fall back to the existing candidate index.
+     * this lookup and callers should fall back to the full committed-image scan.
      * A present empty list means the ordered sidecar answered the lookup and found
      * no matching row ids.</p>
      */
@@ -45,7 +56,7 @@ public interface DelosStorageCandidateIndex {
      * <p>Bounds are normalized using the same key shape as equality lookups.
      * A {@code null} lower or upper value means the range is unbounded on that
      * side. An empty optional means the ordered page sidecar cannot currently
-     * answer this range and callers should fall back to the existing scan path.
+     * answer this range and callers should fall back to the full committed-image scan.
      * A present empty list means the ordered sidecar answered the range and
      * found no matching row ids.</p>
      */
