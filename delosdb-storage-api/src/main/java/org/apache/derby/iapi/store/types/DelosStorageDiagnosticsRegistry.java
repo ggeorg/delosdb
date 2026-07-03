@@ -173,6 +173,19 @@ public final class DelosStorageDiagnosticsRegistry {
         return forProvider(providerId).storageStatisticsForTesting(segment, containerId);
     }
 
+    public static DelosStorageCostEstimate storageCostEstimate(String providerId, int segment, long containerId) {
+        return DelosStorageCostIntegration.estimate(storageStatistics(providerId, segment, containerId));
+    }
+
+    public static DelosStorageCostReport costReport(DelosStorageConsistencyTarget... targets) {
+        Objects.requireNonNull(targets, "targets");
+        return costReport(List.of(targets));
+    }
+
+    public static DelosStorageCostReport costReport(List<DelosStorageConsistencyTarget> targets) {
+        return DelosStorageCostIntegration.report(statisticsReport(targets));
+    }
+
     public static DelosMvccStorageStatistics mvccStorageStatistics(String providerId, int segment, long containerId) {
         String normalizedProviderId = DelosStorageProviderIds.normalize(providerId);
         if (!DelosStorageProviderIds.isMvcc(normalizedProviderId)) {
