@@ -22,7 +22,10 @@
 package org.apache.derby.iapi.store.types;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.ServiceLoader;
 
 /**
@@ -65,6 +68,33 @@ public final class DelosStorageDiagnosticsRegistry {
 
     public static DelosStorageInspection inspect(String providerId, int segment, long containerId) {
         return inspectorForProvider(providerId).inspect(segment, containerId);
+    }
+
+    public static DelosCrossEngineConsistencyReport consistencyReport(DelosStorageConsistencyTarget... targets) {
+        Objects.requireNonNull(targets, "targets");
+        return consistencyReport(List.of(targets));
+    }
+
+    public static DelosCrossEngineConsistencyReport consistencyReport(List<DelosStorageConsistencyTarget> targets) {
+        Objects.requireNonNull(targets, "targets");
+        List<DelosStorageConsistencyFinding> findings = new ArrayList<>();
+        for (DelosStorageConsistencyTarget target : targets) {
+            DelosStorageConsistencyTarget checkedTarget = Objects.requireNonNull(target, "target");
+            DelosStorageDiagnostics diagnostics = forProvider(checkedTarget.providerId());
+            if (checkedTarget.hasDatabaseDirectory()) {
+                diagnostics.setDatabaseDirectoryForTesting(checkedTarget.databaseDirectory());
+            } else {
+                diagnostics.clearDatabaseDirectoryForTesting();
+            }
+            findings.add(DelosStorageConsistencyFinding.from(
+                    diagnostics.providerId(),
+                    checkedTarget.segment(),
+                    checkedTarget.containerId(),
+                    diagnostics.consistencyDiagnosticsForTesting(
+                            checkedTarget.segment(),
+                            checkedTarget.containerId())));
+        }
+        return new DelosCrossEngineConsistencyReport(findings);
     }
 
     public static DelosStorageInspector inspectorForProvider(String providerId) {
