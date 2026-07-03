@@ -639,7 +639,7 @@ def delosLoadHeapRawStoreDuplicateClassifications = {
             return
         }
         def parts = line.split('\\|', -1).collect { it.trim() }
-        if (parts.length != 6) {
+        if (parts.size() != 6) {
             throw new GradleException('Malformed heap/raw-store duplicate classification line ' + lineNumber + ': expected 6 pipe-delimited fields')
         }
         if (!delosHeapRawStoreDuplicateDecisions.contains(parts[1])) {
