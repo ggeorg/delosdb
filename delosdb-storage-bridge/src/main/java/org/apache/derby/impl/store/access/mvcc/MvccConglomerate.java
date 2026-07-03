@@ -367,6 +367,10 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).checkpointFileForTesting();
     }
 
+    static Path subsystemRecoveryRecordsFileForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).subsystemRecoveryRecordsFileForTesting();
+    }
+
     static String checkpointStatusForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).checkpointStatusForTesting();
     }
@@ -768,6 +772,42 @@ public final class MvccConglomerate
 
     static long attributeOverflowValueBytesForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).attributeOverflowValueBytesForTesting();
+    }
+
+    static long subsystemRecoveryRecordCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).subsystemRecoveryRecordCountForTesting();
+    }
+
+    static long subsystemRecoveryLastSequenceForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).subsystemRecoveryLastSequenceForTesting();
+    }
+
+    static long rowPageRedoRecordCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).rowPageRedoRecordCountForTesting();
+    }
+
+    static long indexPageRedoRecordCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).indexPageRedoRecordCountForTesting();
+    }
+
+    static long overflowPageRedoRecordCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).overflowPageRedoRecordCountForTesting();
+    }
+
+    static long freeSpaceMapRedoRecordCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).freeSpaceMapRedoRecordCountForTesting();
+    }
+
+    static long transactionOutcomeRedoRecordCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).transactionOutcomeRedoRecordCountForTesting();
+    }
+
+    static long checkpointRecoveryRecordCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).checkpointRecoveryRecordCountForTesting();
+    }
+
+    static List<String> subsystemRecoveryRecordSummariesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).subsystemRecoveryRecordSummariesForTesting();
     }
 
     static int consistencyErrorCountForDiagnostics(int segment, long containerId) {

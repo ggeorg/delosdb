@@ -191,6 +191,10 @@ final class MvccConglomerateState {
         return diagnostics.checkpointFileForTesting();
     }
 
+    Path subsystemRecoveryRecordsFileForTesting() {
+        return diagnostics.subsystemRecoveryRecordsFileForTesting();
+    }
+
     String checkpointStatusForTesting() {
         return diagnostics.checkpointStatusForTesting();
     }
@@ -581,6 +585,42 @@ final class MvccConglomerateState {
 
     synchronized long attributeOverflowValueBytesForTesting() {
         return diagnostics.attributeOverflowValueBytesForTesting();
+    }
+
+    synchronized long subsystemRecoveryRecordCountForTesting() {
+        return diagnostics.subsystemRecoveryRecordCountForTesting();
+    }
+
+    synchronized long subsystemRecoveryLastSequenceForTesting() {
+        return diagnostics.subsystemRecoveryLastSequenceForTesting();
+    }
+
+    synchronized long rowPageRedoRecordCountForTesting() {
+        return diagnostics.rowPageRedoRecordCountForTesting();
+    }
+
+    synchronized long indexPageRedoRecordCountForTesting() {
+        return diagnostics.indexPageRedoRecordCountForTesting();
+    }
+
+    synchronized long overflowPageRedoRecordCountForTesting() {
+        return diagnostics.overflowPageRedoRecordCountForTesting();
+    }
+
+    synchronized long freeSpaceMapRedoRecordCountForTesting() {
+        return diagnostics.freeSpaceMapRedoRecordCountForTesting();
+    }
+
+    synchronized long transactionOutcomeRedoRecordCountForTesting() {
+        return diagnostics.transactionOutcomeRedoRecordCountForTesting();
+    }
+
+    synchronized long checkpointRecoveryRecordCountForTesting() {
+        return diagnostics.checkpointRecoveryRecordCountForTesting();
+    }
+
+    synchronized List<String> subsystemRecoveryRecordSummariesForTesting() {
+        return diagnostics.subsystemRecoveryRecordSummariesForTesting();
     }
 
     synchronized int consistencyErrorCountForTesting() {

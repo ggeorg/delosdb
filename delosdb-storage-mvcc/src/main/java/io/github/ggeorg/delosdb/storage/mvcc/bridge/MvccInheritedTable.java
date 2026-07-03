@@ -584,6 +584,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public Path subsystemRecoveryRecordsFileForTesting() {
+        return readLocked(pageVolumeStateStore::subsystemRecoveryRecordsFile);
+    }
+
+    @Override
     public String checkpointStatusForTesting() {
         return readLocked(pageVolumeStateStore::checkpointStatus);
     }
@@ -959,6 +964,51 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public long attributeOverflowValueBytesForTesting() {
         return readLocked(pageVolumeStateStore::attributeOverflowValueBytes);
+    }
+
+    @Override
+    public long subsystemRecoveryRecordCountForTesting() {
+        return readLocked(pageVolumeStateStore::subsystemRecoveryRecordCount);
+    }
+
+    @Override
+    public long subsystemRecoveryLastSequenceForTesting() {
+        return readLocked(pageVolumeStateStore::subsystemRecoveryLastSequence);
+    }
+
+    @Override
+    public long rowPageRedoRecordCountForTesting() {
+        return readLocked(pageVolumeStateStore::rowPageRedoRecordCount);
+    }
+
+    @Override
+    public long indexPageRedoRecordCountForTesting() {
+        return readLocked(pageVolumeStateStore::indexPageRedoRecordCount);
+    }
+
+    @Override
+    public long overflowPageRedoRecordCountForTesting() {
+        return readLocked(pageVolumeStateStore::overflowPageRedoRecordCount);
+    }
+
+    @Override
+    public long freeSpaceMapRedoRecordCountForTesting() {
+        return readLocked(pageVolumeStateStore::freeSpaceMapRedoRecordCount);
+    }
+
+    @Override
+    public long transactionOutcomeRedoRecordCountForTesting() {
+        return readLocked(pageVolumeStateStore::transactionOutcomeRedoRecordCount);
+    }
+
+    @Override
+    public long checkpointRecoveryRecordCountForTesting() {
+        return readLocked(pageVolumeStateStore::checkpointRecoveryRecordCount);
+    }
+
+    @Override
+    public List<String> subsystemRecoveryRecordSummariesForTesting() {
+        return readLocked(pageVolumeStateStore::subsystemRecoveryRecordSummaries);
     }
 
     @Override

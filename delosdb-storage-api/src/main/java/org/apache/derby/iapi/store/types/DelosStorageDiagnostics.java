@@ -77,6 +77,10 @@ public interface DelosStorageDiagnostics {
 
     Path checkpointFileForTesting(int segment, long containerId);
 
+    default Path subsystemRecoveryRecordsFileForTesting(int segment, long containerId) {
+        return null;
+    }
+
     Path legacySnapshotFileForTesting(int segment, long containerId);
 
     String checkpointStatusForTesting(int segment, long containerId);
@@ -453,6 +457,42 @@ public interface DelosStorageDiagnostics {
         return 0L;
     }
 
+    default long subsystemRecoveryRecordCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long subsystemRecoveryLastSequenceForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long rowPageRedoRecordCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long indexPageRedoRecordCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long overflowPageRedoRecordCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long freeSpaceMapRedoRecordCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long transactionOutcomeRedoRecordCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long checkpointRecoveryRecordCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default List<String> subsystemRecoveryRecordSummariesForTesting(int segment, long containerId) {
+        return List.of();
+    }
+
     int consistencyErrorCountForTesting(int segment, long containerId);
 
     String consistencySummaryForTesting(int segment, long containerId);
@@ -511,6 +551,20 @@ public interface DelosStorageDiagnostics {
                 pageCacheFlushCountForTesting(segment, containerId),
                 pageCachePinnedEvictionSkipCountForTesting(segment, containerId),
                 pageCacheLastPageGenerationForTesting(segment, containerId));
+    }
+
+    default DelosStorageRecoveryDiagnostics recoveryDiagnosticsForTesting(int segment, long containerId) {
+        return new DelosStorageRecoveryDiagnostics(
+                subsystemRecoveryRecordsFileForTesting(segment, containerId),
+                subsystemRecoveryRecordCountForTesting(segment, containerId),
+                subsystemRecoveryLastSequenceForTesting(segment, containerId),
+                rowPageRedoRecordCountForTesting(segment, containerId),
+                indexPageRedoRecordCountForTesting(segment, containerId),
+                overflowPageRedoRecordCountForTesting(segment, containerId),
+                freeSpaceMapRedoRecordCountForTesting(segment, containerId),
+                transactionOutcomeRedoRecordCountForTesting(segment, containerId),
+                checkpointRecoveryRecordCountForTesting(segment, containerId),
+                subsystemRecoveryRecordSummariesForTesting(segment, containerId));
     }
 
     default DelosStorageConsistencyDiagnostics consistencyDiagnosticsForTesting(int segment, long containerId) {

@@ -63,6 +63,7 @@ public final class PageVolumeMvccStateStore<T> {
     private final Path transactionOutcomeLogFile;
     private final PageVolumeMvccWriteAheadLog writeAheadLog;
     private final PageVolumeMvccCheckpointStore checkpointStore;
+    private final MvccSubsystemRecoveryRecordStore recoveryRecordStore;
     private final PageBackedMvccTable table;
     private final MvccOrderedIndexPageStore orderedIndexPageStore;
     private PageVolumeMvccCheckpointStore.Status checkpointStatus;
@@ -77,6 +78,7 @@ public final class PageVolumeMvccStateStore<T> {
             Path transactionOutcomeLogFile,
             PageVolumeMvccWriteAheadLog writeAheadLog,
             PageVolumeMvccCheckpointStore checkpointStore,
+            MvccSubsystemRecoveryRecordStore recoveryRecordStore,
             PageBackedMvccTable table,
             MvccOrderedIndexPageStore orderedIndexPageStore,
             PageVolumeMvccCheckpointStore.Status checkpointStatus) {
@@ -87,6 +89,7 @@ public final class PageVolumeMvccStateStore<T> {
         this.transactionOutcomeLogFile = transactionOutcomeLogFile;
         this.writeAheadLog = Objects.requireNonNull(writeAheadLog, "writeAheadLog");
         this.checkpointStore = Objects.requireNonNull(checkpointStore, "checkpointStore");
+        this.recoveryRecordStore = Objects.requireNonNull(recoveryRecordStore, "recoveryRecordStore");
         this.table = table;
         this.orderedIndexPageStore = orderedIndexPageStore;
         this.checkpointStatus = Objects.requireNonNull(checkpointStatus, "checkpointStatus");
@@ -111,6 +114,8 @@ public final class PageVolumeMvccStateStore<T> {
             Path transactionOutcomeLog = PageVolumeMvccPaths.transactionOutcomeLogFileFor(pageFile);
             PageVolumeMvccWriteAheadLog writeAheadLog = PageVolumeMvccWriteAheadLog.open(databaseDirectory, storageId);
             PageVolumeMvccCheckpointStore checkpointStore = PageVolumeMvccCheckpointStore.open(databaseDirectory, storageId);
+            MvccSubsystemRecoveryRecordStore recoveryRecordStore = MvccSubsystemRecoveryRecordStore.open(
+                    databaseDirectory, storageId);
             PageBackedMvccTable table = PageBackedMvccTable.open(pageFile, pageMutationLog, transactionOutcomeLog);
             MvccOrderedIndexPageStore orderedIndexPageStore = MvccOrderedIndexPageStore.open(
                     PageBackedMvccTable.orderedIndexPagesPath(pageFile));
@@ -134,6 +139,7 @@ public final class PageVolumeMvccStateStore<T> {
                     transactionOutcomeLog,
                     writeAheadLog,
                     checkpointStore,
+                    recoveryRecordStore,
                     table,
                     orderedIndexPageStore,
                     checkpointStatus);
@@ -151,6 +157,7 @@ public final class PageVolumeMvccStateStore<T> {
                 null,
                 PageVolumeMvccWriteAheadLog.disabled(),
                 PageVolumeMvccCheckpointStore.disabled("disabled"),
+                MvccSubsystemRecoveryRecordStore.disabled(),
                 null,
                 null,
                 PageVolumeMvccCheckpointStore.Status.DISABLED);
@@ -202,6 +209,10 @@ public final class PageVolumeMvccStateStore<T> {
 
     public Path checkpointFile() {
         return checkpointStore.path();
+    }
+
+    public Path subsystemRecoveryRecordsFile() {
+        return recoveryRecordStore.path();
     }
 
     public String checkpointStatus() {
@@ -409,6 +420,9 @@ public final class PageVolumeMvccStateStore<T> {
                         entry.column(), entry.key(), entry.rowId()));
             }
             orderedIndexPageStore.rewrite(durableEntries);
+            recoveryRecordStore.appendIndexPageRedo(
+                    orderedIndexPageStore.pageCount(),
+                    orderedIndexPageStore.entryCount());
         } catch (IOException e) {
             throw new UncheckedIOException("Could not rebuild MVCC ordered index pages "
                     + orderedIndexPagesFile(), e);
@@ -569,6 +583,46 @@ public final class PageVolumeMvccStateStore<T> {
 
     public long attributeOverflowValueBytes() {
         return enabled() ? table.attributeOverflowValueBytes() : 0L;
+    }
+
+    public long subsystemRecoveryRecordCount() {
+        return recoveryDiagnostics().recordCount();
+    }
+
+    public long subsystemRecoveryLastSequence() {
+        return recoveryDiagnostics().lastSequence();
+    }
+
+    public long rowPageRedoRecordCount() {
+        return recoveryDiagnostics().count(MvccSubsystemRecoveryRecordStore.Subsystem.ROW_PAGE);
+    }
+
+    public long indexPageRedoRecordCount() {
+        return recoveryDiagnostics().count(MvccSubsystemRecoveryRecordStore.Subsystem.INDEX_PAGE);
+    }
+
+    public long overflowPageRedoRecordCount() {
+        return recoveryDiagnostics().count(MvccSubsystemRecoveryRecordStore.Subsystem.OVERFLOW_PAGE);
+    }
+
+    public long freeSpaceMapRedoRecordCount() {
+        return recoveryDiagnostics().count(MvccSubsystemRecoveryRecordStore.Subsystem.FREE_SPACE_MAP);
+    }
+
+    public long transactionOutcomeRedoRecordCount() {
+        return recoveryDiagnostics().count(MvccSubsystemRecoveryRecordStore.Subsystem.TRANSACTION_OUTCOME);
+    }
+
+    public long checkpointRecoveryRecordCount() {
+        return recoveryDiagnostics().count(MvccSubsystemRecoveryRecordStore.Subsystem.CHECKPOINT);
+    }
+
+    public List<String> subsystemRecoveryRecordSummaries() {
+        return recoveryDiagnostics().summaries();
+    }
+
+    private MvccSubsystemRecoveryRecordStore.Diagnostics recoveryDiagnostics() {
+        return recoveryRecordStore.diagnostics();
     }
 
     public int consistencyErrorCount() {
@@ -749,6 +803,7 @@ public final class PageVolumeMvccStateStore<T> {
             }
             if (beganWalTransaction) {
                 writeAheadLog.appendCommit(transactionId, durableCommitSequence);
+                appendSubsystemRecoveryRecords(transactionId, durableCommitSequence);
                 rewriteCheckpoint();
             }
         } catch (IOException e) {
@@ -819,6 +874,10 @@ public final class PageVolumeMvccStateStore<T> {
             if (checkpoint != null) {
                 Files.deleteIfExists(checkpoint);
             }
+            Path recoveryRecords = recoveryRecordStore.path();
+            if (recoveryRecords != null) {
+                Files.deleteIfExists(recoveryRecords);
+            }
         } catch (IOException e) {
             throw new UncheckedIOException("Could not delete inherited MVCC page-volume state " + pageFile, e);
         }
@@ -839,6 +898,24 @@ public final class PageVolumeMvccStateStore<T> {
     }
 
 
+    private void appendSubsystemRecoveryRecords(long transactionId, long commitSequence) {
+        if (!enabled()) {
+            return;
+        }
+        recoveryRecordStore.appendRowPageRedo(
+                transactionId,
+                commitSequence,
+                pageCount(),
+                physicalVersionCount());
+        recoveryRecordStore.appendOverflowPageRedo(
+                overflowPageCount(),
+                attributeOverflowValueBytes());
+        recoveryRecordStore.appendFreeSpaceMapRedo(
+                freeSpaceMapPageCount(),
+                freeSpaceMapUpdateCount());
+        recoveryRecordStore.appendTransactionOutcomeRedo(transactionId, commitSequence);
+    }
+
     private void rewriteCheckpoint() {
         if (!enabled()) {
             return;
@@ -853,6 +930,7 @@ public final class PageVolumeMvccStateStore<T> {
                 table.physicalVersionCount(),
                 table.logicalRowCount(),
                 heads.keySet().stream().mapToLong(MvccRowId::value).max().orElse(0L) + 1L);
+        recoveryRecordStore.appendCheckpoint(table.physicalVersionCount(), table.logicalRowCount());
         checkpointStatus = PageVolumeMvccCheckpointStore.Status.WRITTEN;
     }
 

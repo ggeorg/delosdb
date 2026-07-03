@@ -49,6 +49,10 @@ public interface DelosStorageTableDiagnostics {
 
     Path checkpointFileForTesting();
 
+    default Path subsystemRecoveryRecordsFileForTesting() {
+        return null;
+    }
+
     String checkpointStatusForTesting();
 
     int physicalVersionCountForTesting();
@@ -391,6 +395,42 @@ public interface DelosStorageTableDiagnostics {
         return 0L;
     }
 
+    default long subsystemRecoveryRecordCountForTesting() {
+        return 0L;
+    }
+
+    default long subsystemRecoveryLastSequenceForTesting() {
+        return 0L;
+    }
+
+    default long rowPageRedoRecordCountForTesting() {
+        return 0L;
+    }
+
+    default long indexPageRedoRecordCountForTesting() {
+        return 0L;
+    }
+
+    default long overflowPageRedoRecordCountForTesting() {
+        return 0L;
+    }
+
+    default long freeSpaceMapRedoRecordCountForTesting() {
+        return 0L;
+    }
+
+    default long transactionOutcomeRedoRecordCountForTesting() {
+        return 0L;
+    }
+
+    default long checkpointRecoveryRecordCountForTesting() {
+        return 0L;
+    }
+
+    default List<String> subsystemRecoveryRecordSummariesForTesting() {
+        return List.of();
+    }
+
     int consistencyErrorCountForTesting();
 
     String consistencySummaryForTesting();
@@ -449,6 +489,20 @@ public interface DelosStorageTableDiagnostics {
                 pageCacheFlushCountForTesting(),
                 pageCachePinnedEvictionSkipCountForTesting(),
                 pageCacheLastPageGenerationForTesting());
+    }
+
+    default DelosStorageRecoveryDiagnostics recoveryDiagnosticsForTesting() {
+        return new DelosStorageRecoveryDiagnostics(
+                subsystemRecoveryRecordsFileForTesting(),
+                subsystemRecoveryRecordCountForTesting(),
+                subsystemRecoveryLastSequenceForTesting(),
+                rowPageRedoRecordCountForTesting(),
+                indexPageRedoRecordCountForTesting(),
+                overflowPageRedoRecordCountForTesting(),
+                freeSpaceMapRedoRecordCountForTesting(),
+                transactionOutcomeRedoRecordCountForTesting(),
+                checkpointRecoveryRecordCountForTesting(),
+                subsystemRecoveryRecordSummariesForTesting());
     }
 
     default DelosStorageConsistencyDiagnostics consistencyDiagnosticsForTesting() {

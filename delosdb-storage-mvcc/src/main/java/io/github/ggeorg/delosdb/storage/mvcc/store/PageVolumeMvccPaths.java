@@ -58,6 +58,14 @@ public final class PageVolumeMvccPaths {
         return directory.resolve(requireStorageId(storageId) + ".checkpoint");
     }
 
+    public static Path subsystemRecoveryRecordsFile(Path databaseDirectory, String storageId) {
+        Path directory = inheritedStoreDirectory(databaseDirectory);
+        if (directory == null) {
+            return null;
+        }
+        return directory.resolve(requireStorageId(storageId) + ".recovery");
+    }
+
     private static String requireStorageId(String storageId) {
         String id = Objects.requireNonNull(storageId, "storageId");
         if (id.isBlank() || id.contains("/") || id.contains("\\\\")) {

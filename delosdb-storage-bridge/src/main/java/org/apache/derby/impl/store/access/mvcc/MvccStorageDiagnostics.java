@@ -104,6 +104,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public Path subsystemRecoveryRecordsFileForTesting(int segment, long containerId) {
+        return MvccConglomerate.subsystemRecoveryRecordsFileForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public Path legacySnapshotFileForTesting(int segment, long containerId) {
         return MvccConglomerate.legacySnapshotFileForDiagnostics(segment, containerId);
     }
@@ -596,6 +601,51 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public long attributeOverflowValueBytesForTesting(int segment, long containerId) {
         return MvccConglomerate.attributeOverflowValueBytesForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long subsystemRecoveryRecordCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.subsystemRecoveryRecordCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long subsystemRecoveryLastSequenceForTesting(int segment, long containerId) {
+        return MvccConglomerate.subsystemRecoveryLastSequenceForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long rowPageRedoRecordCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.rowPageRedoRecordCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long indexPageRedoRecordCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.indexPageRedoRecordCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long overflowPageRedoRecordCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.overflowPageRedoRecordCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long freeSpaceMapRedoRecordCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.freeSpaceMapRedoRecordCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long transactionOutcomeRedoRecordCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.transactionOutcomeRedoRecordCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long checkpointRecoveryRecordCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.checkpointRecoveryRecordCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public List<String> subsystemRecoveryRecordSummariesForTesting(int segment, long containerId) {
+        return MvccConglomerate.subsystemRecoveryRecordSummariesForDiagnostics(segment, containerId);
     }
 
     @Override
