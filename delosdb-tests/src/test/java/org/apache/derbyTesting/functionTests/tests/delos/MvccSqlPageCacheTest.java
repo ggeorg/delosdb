@@ -50,6 +50,19 @@ public final class MvccSqlPageCacheTest extends MvccSqlTestSupport {
                     cache.writeCount() > 0L);
             assertTrue("MVCC append path should reuse the cached last page instead of rereading every append",
                     cache.hitCount() > 0L);
+            assertTrue("MVCC page reads should use scoped page-cache pins", cache.pinCount() > 0L);
+            assertEquals("scoped MVCC page-cache pins should be released after reads",
+                    cache.pinCount(), cache.unpinCount());
+            assertEquals("MVCC page cache should not leave pages pinned after SQL work",
+                    0L, cache.pinnedPageCount());
+            assertEquals("write-through MVCC page cache should have an empty dirty list after commit",
+                    0L, cache.dirtyPageCount());
+            assertEquals("write-through MVCC page cache should have an empty flush list after commit",
+                    0L, cache.flushListPageCount());
+            assertTrue("MVCC page cache should flush dirty writes through the cache boundary",
+                    cache.flushCount() > 0L);
+            assertTrue("MVCC page cache should advance page generations on cached writes",
+                    cache.lastPageGeneration() > 0L);
 
             long hitsBeforeConsistency = cache.hitCount();
             diagnostics.assertConsistentForTesting(0, containerId);
@@ -109,6 +122,14 @@ public final class MvccSqlPageCacheTest extends MvccSqlTestSupport {
             assertTrue("MVCC page cache should not grow beyond the bounded capacity",
                     cache.size() <= cache.maxPageCount());
             assertTrue("multi-page MVCC workload should evict old page images", cache.evictionCount() > 0L);
+            assertTrue("multi-page MVCC workload should pin pages while reading through the cache",
+                    cache.pinCount() > 0L);
+            assertEquals("bounded MVCC cache should release read pins after operations",
+                    cache.pinCount(), cache.unpinCount());
+            assertEquals("bounded MVCC cache should not leave pages dirty after write-through flushes",
+                    0L, cache.dirtyPageCount());
+            assertTrue("bounded MVCC cache should flush dirty writes before returning from commit",
+                    cache.flushCount() > 0L);
 
             assertRows(connection,
                     "select id, length(payload) from mvcc_page_cache_t where id in (1, 75, 150) order by id",

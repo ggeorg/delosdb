@@ -405,6 +405,38 @@ public interface DelosStorageDiagnostics {
 
     long pageCacheInvalidationCountForTesting(int segment, long containerId);
 
+    default long pageCachePinCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageCacheUnpinCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageCachePinnedPageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageCacheDirtyPageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageCacheFlushListPageCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageCacheFlushCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageCachePinnedEvictionSkipCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long pageCacheLastPageGenerationForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
     int consistencyErrorCountForTesting(int segment, long containerId);
 
     String consistencySummaryForTesting(int segment, long containerId);
@@ -454,7 +486,15 @@ public interface DelosStorageDiagnostics {
                 pageCacheMissCountForTesting(segment, containerId),
                 pageCacheWriteCountForTesting(segment, containerId),
                 pageCacheEvictionCountForTesting(segment, containerId),
-                pageCacheInvalidationCountForTesting(segment, containerId));
+                pageCacheInvalidationCountForTesting(segment, containerId),
+                pageCachePinCountForTesting(segment, containerId),
+                pageCacheUnpinCountForTesting(segment, containerId),
+                pageCachePinnedPageCountForTesting(segment, containerId),
+                pageCacheDirtyPageCountForTesting(segment, containerId),
+                pageCacheFlushListPageCountForTesting(segment, containerId),
+                pageCacheFlushCountForTesting(segment, containerId),
+                pageCachePinnedEvictionSkipCountForTesting(segment, containerId),
+                pageCacheLastPageGenerationForTesting(segment, containerId));
     }
 
     default DelosStorageConsistencyDiagnostics consistencyDiagnosticsForTesting(int segment, long containerId) {

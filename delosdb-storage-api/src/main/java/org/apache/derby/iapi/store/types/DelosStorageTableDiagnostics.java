@@ -343,6 +343,38 @@ public interface DelosStorageTableDiagnostics {
 
     long pageCacheInvalidationCountForTesting();
 
+    default long pageCachePinCountForTesting() {
+        return 0L;
+    }
+
+    default long pageCacheUnpinCountForTesting() {
+        return 0L;
+    }
+
+    default long pageCachePinnedPageCountForTesting() {
+        return 0L;
+    }
+
+    default long pageCacheDirtyPageCountForTesting() {
+        return 0L;
+    }
+
+    default long pageCacheFlushListPageCountForTesting() {
+        return 0L;
+    }
+
+    default long pageCacheFlushCountForTesting() {
+        return 0L;
+    }
+
+    default long pageCachePinnedEvictionSkipCountForTesting() {
+        return 0L;
+    }
+
+    default long pageCacheLastPageGenerationForTesting() {
+        return 0L;
+    }
+
     int consistencyErrorCountForTesting();
 
     String consistencySummaryForTesting();
@@ -392,7 +424,15 @@ public interface DelosStorageTableDiagnostics {
                 pageCacheMissCountForTesting(),
                 pageCacheWriteCountForTesting(),
                 pageCacheEvictionCountForTesting(),
-                pageCacheInvalidationCountForTesting());
+                pageCacheInvalidationCountForTesting(),
+                pageCachePinCountForTesting(),
+                pageCacheUnpinCountForTesting(),
+                pageCachePinnedPageCountForTesting(),
+                pageCacheDirtyPageCountForTesting(),
+                pageCacheFlushListPageCountForTesting(),
+                pageCacheFlushCountForTesting(),
+                pageCachePinnedEvictionSkipCountForTesting(),
+                pageCacheLastPageGenerationForTesting());
     }
 
     default DelosStorageConsistencyDiagnostics consistencyDiagnosticsForTesting() {

@@ -375,6 +375,38 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return readLockedUnchecked(() -> pageCache.snapshot().invalidations());
     }
 
+    public long pageCachePinCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().pins());
+    }
+
+    public long pageCacheUnpinCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().unpins());
+    }
+
+    public long pageCachePinnedPageCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().pinnedPages());
+    }
+
+    public long pageCacheDirtyPageCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().dirtyPages());
+    }
+
+    public long pageCacheFlushListPageCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().flushListPages());
+    }
+
+    public long pageCacheFlushCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().flushes());
+    }
+
+    public long pageCachePinnedEvictionSkipCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().pinnedEvictionSkips());
+    }
+
+    public long pageCacheLastPageGeneration() {
+        return readLockedUnchecked(() -> pageCache.snapshot().lastPageGeneration());
+    }
+
     List<String> pageRecordConsistencyErrors() throws IOException {
         return readLockedIo(() -> {
             List<String> errors = new ArrayList<>();
@@ -492,6 +524,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         writeLockedIo(() -> {
             IOException failure = null;
             try {
+                pageCache.flushAll(pageVolume);
                 pageCache.clear();
                 pageVolume.close();
             } catch (IOException e) {
@@ -840,8 +873,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     }
 
     private void writePage(DelosPage page, MvccPageMutationContext context) throws IOException {
-        pageVolume.writePage(page);
-        pageCache.put(page);
+        pageCache.putDirty(page);
+        pageCache.flush(pageVolume, page.pageId());
         if (context != null) {
             context.recordPageWrite();
         }
@@ -849,7 +882,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     private DelosPage allocatePage(int pageType) throws IOException {
         DelosPage page = pageVolume.allocatePage(pageType);
-        pageCache.put(page);
+        pageCache.putClean(page);
         return page;
     }
 

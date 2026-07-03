@@ -28,5 +28,13 @@ public record DelosStoragePageCacheDiagnostics(long maxPageCount,
                                                long missCount,
                                                long writeCount,
                                                long evictionCount,
-                                               long invalidationCount) {
+                                               long invalidationCount,
+                                               long pinCount,
+                                               long unpinCount,
+                                               long pinnedPageCount,
+                                               long dirtyPageCount,
+                                               long flushListPageCount,
+                                               long flushCount,
+                                               long pinnedEvictionSkipCount,
+                                               long lastPageGeneration) {
 }

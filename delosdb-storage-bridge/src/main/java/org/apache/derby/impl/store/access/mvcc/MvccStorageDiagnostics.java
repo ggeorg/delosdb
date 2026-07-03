@@ -539,6 +539,46 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public long pageCachePinCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCachePinCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageCacheUnpinCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCacheUnpinCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageCachePinnedPageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCachePinnedPageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageCacheDirtyPageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCacheDirtyPageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageCacheFlushListPageCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCacheFlushListPageCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageCacheFlushCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCacheFlushCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageCachePinnedEvictionSkipCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCachePinnedEvictionSkipCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long pageCacheLastPageGenerationForTesting(int segment, long containerId) {
+        return MvccConglomerate.pageCacheLastPageGenerationForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public int consistencyErrorCountForTesting(int segment, long containerId) {
         return MvccConglomerate.consistencyErrorCountForDiagnostics(segment, containerId);
     }

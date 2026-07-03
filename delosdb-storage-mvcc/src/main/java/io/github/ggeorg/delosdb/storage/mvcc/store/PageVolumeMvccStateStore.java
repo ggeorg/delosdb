@@ -523,6 +523,38 @@ public final class PageVolumeMvccStateStore<T> {
         return enabled() ? table.pageCacheInvalidationCount() : 0L;
     }
 
+    public long pageCachePinCount() {
+        return enabled() ? table.pageCachePinCount() : 0L;
+    }
+
+    public long pageCacheUnpinCount() {
+        return enabled() ? table.pageCacheUnpinCount() : 0L;
+    }
+
+    public long pageCachePinnedPageCount() {
+        return enabled() ? table.pageCachePinnedPageCount() : 0L;
+    }
+
+    public long pageCacheDirtyPageCount() {
+        return enabled() ? table.pageCacheDirtyPageCount() : 0L;
+    }
+
+    public long pageCacheFlushListPageCount() {
+        return enabled() ? table.pageCacheFlushListPageCount() : 0L;
+    }
+
+    public long pageCacheFlushCount() {
+        return enabled() ? table.pageCacheFlushCount() : 0L;
+    }
+
+    public long pageCachePinnedEvictionSkipCount() {
+        return enabled() ? table.pageCachePinnedEvictionSkipCount() : 0L;
+    }
+
+    public long pageCacheLastPageGeneration() {
+        return enabled() ? table.pageCacheLastPageGeneration() : 0L;
+    }
+
     public int consistencyErrorCount() {
         return validateConsistency().errors().size();
     }

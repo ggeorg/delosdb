@@ -470,6 +470,38 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return store.pageCacheInvalidationCount();
     }
 
+    public synchronized long pageCachePinCount() {
+        return store.pageCachePinCount();
+    }
+
+    public synchronized long pageCacheUnpinCount() {
+        return store.pageCacheUnpinCount();
+    }
+
+    public synchronized long pageCachePinnedPageCount() {
+        return store.pageCachePinnedPageCount();
+    }
+
+    public synchronized long pageCacheDirtyPageCount() {
+        return store.pageCacheDirtyPageCount();
+    }
+
+    public synchronized long pageCacheFlushListPageCount() {
+        return store.pageCacheFlushListPageCount();
+    }
+
+    public synchronized long pageCacheFlushCount() {
+        return store.pageCacheFlushCount();
+    }
+
+    public synchronized long pageCachePinnedEvictionSkipCount() {
+        return store.pageCachePinnedEvictionSkipCount();
+    }
+
+    public synchronized long pageCacheLastPageGeneration() {
+        return store.pageCacheLastPageGeneration();
+    }
+
 
     public synchronized PageBackedMvccTableStore.PageRecordStats pageRecordStats() {
         try {

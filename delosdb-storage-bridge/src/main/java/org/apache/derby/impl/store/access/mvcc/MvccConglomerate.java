@@ -722,6 +722,38 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).pageCacheInvalidationCountForTesting();
     }
 
+    static long pageCachePinCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCachePinCountForTesting();
+    }
+
+    static long pageCacheUnpinCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheUnpinCountForTesting();
+    }
+
+    static long pageCachePinnedPageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCachePinnedPageCountForTesting();
+    }
+
+    static long pageCacheDirtyPageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheDirtyPageCountForTesting();
+    }
+
+    static long pageCacheFlushListPageCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheFlushListPageCountForTesting();
+    }
+
+    static long pageCacheFlushCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheFlushCountForTesting();
+    }
+
+    static long pageCachePinnedEvictionSkipCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCachePinnedEvictionSkipCountForTesting();
+    }
+
+    static long pageCacheLastPageGenerationForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).pageCacheLastPageGenerationForTesting();
+    }
+
     static int consistencyErrorCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).consistencyErrorCountForTesting();
     }
