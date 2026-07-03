@@ -629,6 +629,13 @@ public interface DelosStorageDiagnostics {
                 List.of("heap raw-store boundary diagnostics are unavailable for provider " + providerId()));
     }
 
+    default DelosHeapStorageStatistics heapStorageStatisticsForTesting(
+            int segment,
+            long containerId,
+            long... indexContainerIds) {
+        return DelosHeapStorageStatistics.fromDiagnostics(this, segment, containerId, indexContainerIds);
+    }
+
     default DelosHeapStorageDiagnostics heapStorageDiagnosticsForTesting(
             int segment,
             long containerId,
