@@ -69,13 +69,16 @@ final class DelosDiagnosticsStorageMetadataProvider implements DelosStorageMetad
                 normalizedTarget.segment(),
                 normalizedTarget.containerId());
         DelosStorageCostEstimate estimate = DelosStorageCostIntegration.estimate(statistics);
+        DelosStorageCapabilities capabilities = DelosStorageCapabilities.fromStatistics(statistics, estimate);
         return new DelosStorageMetadataSnapshot(
                 normalizedTarget,
                 inspection,
                 finding,
                 statistics,
                 estimate,
+                capabilities,
                 List.of("metadata provider: " + providerId(),
-                        "metadata source: diagnostics"));
+                        "metadata source: diagnostics",
+                        "capability source: storage statistics"));
     }
 }

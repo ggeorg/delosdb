@@ -31,6 +31,7 @@ public record DelosStorageMetadataSnapshot(DelosStorageConsistencyTarget target,
                                            DelosStorageConsistencyFinding consistencyFinding,
                                            DelosStorageStatistics statistics,
                                            DelosStorageCostEstimate costEstimate,
+                                           DelosStorageCapabilities capabilities,
                                            List<String> observations) {
     public DelosStorageMetadataSnapshot {
         target = Objects.requireNonNull(target, "target");
@@ -38,22 +39,26 @@ public record DelosStorageMetadataSnapshot(DelosStorageConsistencyTarget target,
         consistencyFinding = Objects.requireNonNull(consistencyFinding, "consistencyFinding");
         statistics = Objects.requireNonNull(statistics, "statistics");
         costEstimate = Objects.requireNonNull(costEstimate, "costEstimate");
+        capabilities = Objects.requireNonNull(capabilities, "capabilities");
         observations = List.copyOf(Objects.requireNonNull(observations, "observations"));
         String providerId = target.providerId();
         if (!DelosStorageProviderIds.matches(providerId, inspection.providerId())
                 || !DelosStorageProviderIds.matches(providerId, consistencyFinding.providerId())
                 || !DelosStorageProviderIds.matches(providerId, statistics.providerId())
-                || !DelosStorageProviderIds.matches(providerId, costEstimate.providerId())) {
+                || !DelosStorageProviderIds.matches(providerId, costEstimate.providerId())
+                || !DelosStorageProviderIds.matches(providerId, capabilities.providerId())) {
             throw new IllegalArgumentException("metadata snapshot provider ids do not match");
         }
         if (target.segment() != inspection.segment()
                 || target.segment() != consistencyFinding.segment()
                 || target.segment() != statistics.segment()
                 || target.segment() != costEstimate.segment()
+                || target.segment() != capabilities.segment()
                 || target.containerId() != inspection.containerId()
                 || target.containerId() != consistencyFinding.containerId()
                 || target.containerId() != statistics.containerId()
-                || target.containerId() != costEstimate.containerId()) {
+                || target.containerId() != costEstimate.containerId()
+                || target.containerId() != capabilities.containerId()) {
             throw new IllegalArgumentException("metadata snapshot target coordinates do not match");
         }
     }
@@ -75,7 +80,7 @@ public record DelosStorageMetadataSnapshot(DelosStorageConsistencyTarget target,
     }
 
     public boolean readOnly() {
-        return statistics.readOnly() && costEstimate.readOnly();
+        return statistics.readOnly() && costEstimate.readOnly() && capabilities.readOnly();
     }
 
     public String summary() {
@@ -85,6 +90,7 @@ public record DelosStorageMetadataSnapshot(DelosStorageConsistencyTarget target,
                 + " rows=" + statistics.logicalRowCount()
                 + " pages=" + statistics.pageCount()
                 + " cost=" + costEstimate.estimatedFullScanCost()
+                + " orderedRange=" + capabilities.supportsOrderedRangeScan()
                 + " errors=" + consistencyFinding.errorCount();
     }
 }

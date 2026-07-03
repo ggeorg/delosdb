@@ -164,6 +164,34 @@ public final class DelosStorageDiagnosticsRegistry {
         return DelosStorageCostIntegration.estimate(storageStatistics(providerId, segment, containerId));
     }
 
+    public static DelosStorageCapabilities storageCapabilities(String providerId, int segment, long containerId) {
+        DelosStorageStatistics statistics = storageStatistics(providerId, segment, containerId);
+        return DelosStorageCapabilities.fromStatistics(
+                statistics,
+                DelosStorageCostIntegration.estimate(statistics));
+    }
+
+    public static DelosStorageCapabilities capabilitiesForMvcc(int segment, long containerId) {
+        return storageCapabilities(MVCC_PROVIDER_ID, segment, containerId);
+    }
+
+    public static DelosStorageCapabilities capabilitiesForHeap(Path databaseDirectory, int segment, long containerId) {
+        DelosStorageStatistics statistics = statisticsForHeap(databaseDirectory, segment, containerId);
+        return DelosStorageCapabilities.fromStatistics(
+                statistics,
+                DelosStorageCostIntegration.estimate(statistics));
+    }
+
+    public static DelosStorageCapabilitiesReport capabilitiesReport(DelosStorageConsistencyTarget... targets) {
+        Objects.requireNonNull(targets, "targets");
+        return capabilitiesReport(List.of(targets));
+    }
+
+    public static DelosStorageCapabilitiesReport capabilitiesReport(List<DelosStorageConsistencyTarget> targets) {
+        Objects.requireNonNull(targets, "targets");
+        return metadataQuery().capabilitiesReport(targets);
+    }
+
     public static DelosStorageCostReport costReport(DelosStorageConsistencyTarget... targets) {
         Objects.requireNonNull(targets, "targets");
         return costReport(List.of(targets));

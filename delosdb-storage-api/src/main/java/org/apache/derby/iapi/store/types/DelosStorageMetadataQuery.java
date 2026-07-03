@@ -123,6 +123,14 @@ public final class DelosStorageMetadataQuery {
         return new DelosStorageCostReport(DelosStorageCostIntegration.enabled(), false, estimates);
     }
 
+    public DelosStorageCapabilitiesReport capabilitiesReport(List<DelosStorageConsistencyTarget> targets) {
+        List<DelosStorageCapabilities> capabilities = new ArrayList<>();
+        for (DelosStorageMetadataSnapshot snapshot : snapshots(targets)) {
+            capabilities.add(snapshot.capabilities());
+        }
+        return new DelosStorageCapabilitiesReport(capabilities);
+    }
+
     private static int providerRank(String providerId) {
         if (DelosStorageProviderIds.isHeap(providerId)) {
             return 0;
