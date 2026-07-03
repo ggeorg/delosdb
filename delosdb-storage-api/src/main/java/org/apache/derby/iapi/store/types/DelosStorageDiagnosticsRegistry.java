@@ -202,6 +202,23 @@ public final class DelosStorageDiagnosticsRegistry {
         return metadataQuery().costReport(targets);
     }
 
+    public static DelosStoragePredicatePushdown predicatePushdown(
+            DelosStoragePredicatePushdownRequest request) {
+        return metadataQuery().predicatePushdown(Objects.requireNonNull(request, "request"));
+    }
+
+    public static DelosStoragePredicatePushdownReport predicatePushdownReport(
+            DelosStoragePredicatePushdownRequest... requests) {
+        Objects.requireNonNull(requests, "requests");
+        return predicatePushdownReport(List.of(requests));
+    }
+
+    public static DelosStoragePredicatePushdownReport predicatePushdownReport(
+            List<DelosStoragePredicatePushdownRequest> requests) {
+        Objects.requireNonNull(requests, "requests");
+        return metadataQuery().predicatePushdownReport(requests);
+    }
+
     public static DelosMvccStorageStatistics mvccStorageStatistics(String providerId, int segment, long containerId) {
         String normalizedProviderId = DelosStorageProviderIds.normalize(providerId);
         if (!DelosStorageProviderIds.isMvcc(normalizedProviderId)) {

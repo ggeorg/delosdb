@@ -131,6 +131,23 @@ public final class DelosStorageMetadataQuery {
         return new DelosStorageCapabilitiesReport(capabilities);
     }
 
+    public DelosStoragePredicatePushdown predicatePushdown(
+            DelosStoragePredicatePushdownRequest request) {
+        Objects.requireNonNull(request, "request");
+        DelosStorageMetadataSnapshot snapshot = snapshot(request.target());
+        return DelosStoragePredicatePushdown.plan(snapshot.capabilities(), request);
+    }
+
+    public DelosStoragePredicatePushdownReport predicatePushdownReport(
+            List<DelosStoragePredicatePushdownRequest> requests) {
+        Objects.requireNonNull(requests, "requests");
+        List<DelosStoragePredicatePushdown> plans = new ArrayList<>();
+        for (DelosStoragePredicatePushdownRequest request : requests) {
+            plans.add(predicatePushdown(Objects.requireNonNull(request, "request")));
+        }
+        return new DelosStoragePredicatePushdownReport(plans);
+    }
+
     private static int providerRank(String providerId) {
         if (DelosStorageProviderIds.isHeap(providerId)) {
             return 0;
