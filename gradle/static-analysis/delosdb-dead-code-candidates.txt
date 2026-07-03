@@ -4,6 +4,5 @@
 # it does not prove safe deletion by itself because ServiceLoader, reflection, public API, and JPMS
 # exports can keep code alive without simple source references.
 
-delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosTableAccessFamily.java|DelosTableAccessFamily|Audit candidate: no obvious production owner after Derby-access bridge became the serious MVCC integration path.
 delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccDurableIndexStore.java|MvccDurableIndexStore|Audit candidate: durable secondary-index store may be superseded by Derby index maintenance path; confirm before deletion.
 delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccVacuum.java|MvccVacuum|Audit candidate: vacuum behavior moved into page-backed table/store paths; confirm no test/helper entry point depends on this class.

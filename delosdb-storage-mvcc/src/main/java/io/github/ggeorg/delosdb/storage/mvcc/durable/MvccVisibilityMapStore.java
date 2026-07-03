@@ -26,12 +26,10 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Collections;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.TreeMap;
-import java.util.zip.CRC32;
 
 /** Durable sidecar visibility/prune map for page-backed MVCC data pages. */
 final class MvccVisibilityMapStore {
@@ -77,7 +75,7 @@ final class MvccVisibilityMapStore {
         int storedChecksum = ByteBuffer.wrap(bytes, bytes.length - CHECKSUM_BYTES, CHECKSUM_BYTES)
                 .order(ByteOrder.BIG_ENDIAN)
                 .getInt();
-        int actualChecksum = checksum(bytes, 0, bytes.length - CHECKSUM_BYTES);
+        int actualChecksum = MvccSidecarFiles.checksum(bytes, 0, bytes.length - CHECKSUM_BYTES);
         if (storedChecksum != actualChecksum) {
             throw new IllegalStateException("MVCC visibility map checksum mismatch: " + path);
         }
@@ -146,30 +144,13 @@ final class MvccVisibilityMapStore {
             buffer.putInt(entry.getValue().flags());
             buffer.putInt(entry.getValue().versionCount());
         }
-        buffer.putInt(checksum(buffer.array(), 0, payloadLength));
+        buffer.putInt(MvccSidecarFiles.checksum(buffer.array(), 0, payloadLength));
 
-        Path parent = path.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        Path rewritePath = path.resolveSibling(path.getFileName() + ".rewrite");
-        Files.write(rewritePath, buffer.array());
-        try {
-            Files.move(rewritePath, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException atomicMoveFailure) {
-            Files.move(rewritePath, path, StandardCopyOption.REPLACE_EXISTING);
-        }
+        MvccSidecarFiles.rewriteAtomically(path, buffer.array());
     }
 
     void delete() throws IOException {
-        Files.deleteIfExists(path);
-        Files.deleteIfExists(path.resolveSibling(path.getFileName() + ".rewrite"));
-    }
-
-    private static int checksum(byte[] bytes, int offset, int length) {
-        CRC32 checksum = new CRC32();
-        checksum.update(bytes, offset, length);
-        return (int) checksum.getValue();
+        MvccSidecarFiles.deleteWithRewriteSibling(path);
     }
 
     record PageState(int flags, int versionCount) {

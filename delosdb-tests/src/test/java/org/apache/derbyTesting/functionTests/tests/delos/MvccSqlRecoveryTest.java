@@ -278,9 +278,31 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
                 runScenario(args[0], args[1]);
                 Runtime.getRuntime().halt(0);
             } catch (Throwable t) {
-                t.printStackTrace(System.err);
+                System.err.println(failureSummary(t));
                 Runtime.getRuntime().halt(2);
             }
+        }
+
+        private static String failureSummary(Throwable failure) {
+            StringBuilder builder = new StringBuilder();
+            builder.append(failure.getClass().getName());
+            String message = failure.getMessage();
+            if (message != null && !message.isBlank()) {
+                builder.append(": ").append(message);
+            }
+            for (StackTraceElement element : failure.getStackTrace()) {
+                builder.append(System.lineSeparator()).append("    at ").append(element);
+            }
+            Throwable cause = failure.getCause();
+            while (cause != null) {
+                builder.append(System.lineSeparator()).append("Caused by: ").append(cause.getClass().getName());
+                String causeMessage = cause.getMessage();
+                if (causeMessage != null && !causeMessage.isBlank()) {
+                    builder.append(": ").append(causeMessage);
+                }
+                cause = cause.getCause();
+            }
+            return builder.toString();
         }
 
         private static void runScenario(String scenario, String databaseName) throws Exception {
