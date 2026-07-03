@@ -215,9 +215,12 @@ public final class FormatIdInputStream extends DataInputStream
 
 	private ObjectInputStream getObjectStream() throws IOException {
 
-		return getClassFactory() == null ?
+		ObjectInputStream objectStream = getClassFactory() == null ?
 			new ObjectInputStream(this) :
 			new ApplicationObjectInputStream(this, cf);
+
+		DelosHeapObjectDeserializationFilter.applyIfConfigured(objectStream);
+		return objectStream;
 	}
 
 
