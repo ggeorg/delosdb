@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Objects;
 
 import org.apache.derby.iapi.store.types.DelosHeapSanityDiagnostics;
+import org.apache.derby.iapi.store.types.DelosHeapStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
@@ -252,6 +253,75 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
                 errors.size(),
                 observations,
                 errors);
+    }
+
+    @Override
+    public DelosHeapStorageDiagnostics heapStorageDiagnosticsForTesting(
+            int segment,
+            long containerId,
+            long... indexContainerIds) {
+        Path segmentDirectory = heapSegmentDirectory(segment);
+        Path tableFile = heapContainerPath(segment, containerId);
+        boolean tableExists = Files.isRegularFile(tableFile);
+        long tableBytes = safeSize(tableFile);
+        long estimatedTablePages = tableExists && tableBytes > 0L
+                ? Math.max(1L, (tableBytes + DEFAULT_HEAP_PAGE_SIZE - 1L) / DEFAULT_HEAP_PAGE_SIZE)
+                : 0L;
+        long overflowPages = overflowPageCountForTesting(segment, containerId);
+        long reusablePages = reusablePageCountForTesting(segment, containerId);
+        long freePages = Math.min(estimatedTablePages, reusablePages);
+
+        List<Long> indexIds = new ArrayList<>();
+        List<Path> indexFiles = new ArrayList<>();
+        long indexBytes = 0L;
+        if (indexContainerIds != null) {
+            for (long indexContainerId : indexContainerIds) {
+                Path indexFile = heapContainerPath(segment, indexContainerId);
+                indexIds.add(indexContainerId);
+                indexFiles.add(indexFile);
+                indexBytes += safeSize(indexFile);
+            }
+        }
+
+        long totalBytes = tableBytes + indexBytes;
+        long estimatedBeforeCompressBytes = totalBytes;
+        long estimatedAfterCompressBytes = Math.max(0L,
+                estimatedBeforeCompressBytes - (freePages * DEFAULT_HEAP_PAGE_SIZE));
+
+        List<String> observations = new ArrayList<>();
+        observations.add("heap diagnostics are read-only");
+        observations.add("table container file: " + tableFile);
+        observations.add("table storage bytes: " + tableBytes);
+        observations.add("index storage bytes: " + indexBytes);
+        observations.add("estimated allocated pages: " + estimatedTablePages);
+        observations.add("estimated free pages: " + freePages);
+        observations.add("overflow diagnostics: " + overflowPages);
+        observations.add("reusable-page diagnostics: " + reusablePages);
+        observations.add("compress estimate before bytes: " + estimatedBeforeCompressBytes);
+        observations.add("compress estimate after bytes: " + estimatedAfterCompressBytes);
+
+        return new DelosHeapStorageDiagnostics(
+                providerId(),
+                segment,
+                containerId,
+                segmentDirectory,
+                tableFile,
+                indexIds,
+                indexFiles,
+                true,
+                tableExists,
+                tableBytes,
+                indexBytes,
+                totalBytes,
+                estimatedTablePages,
+                estimatedTablePages,
+                freePages,
+                overflowPages,
+                reusablePages,
+                estimatedBeforeCompressBytes,
+                estimatedAfterCompressBytes,
+                consistencySummaryForTesting(segment, containerId),
+                observations);
     }
 
     @Override

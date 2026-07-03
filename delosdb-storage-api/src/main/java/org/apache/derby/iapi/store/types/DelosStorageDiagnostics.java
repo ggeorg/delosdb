@@ -488,6 +488,44 @@ public interface DelosStorageDiagnostics {
                 consistency.errorCount() == 0 ? java.util.List.of() : java.util.List.of(consistency.summary()));
     }
 
+    default DelosHeapStorageDiagnostics heapStorageDiagnosticsForTesting(
+            int segment,
+            long containerId,
+            long... indexContainerIds) {
+        Path containerFile = pageVolumeStateFileForTesting(segment, containerId);
+        Path segmentDirectory = containerFile == null || containerFile.getParent() == null
+                ? Path.of(".")
+                : containerFile.getParent();
+        Path file = containerFile == null ? segmentDirectory.resolve("unknown-container") : containerFile;
+        long pageCount = pageCountForTesting(segment, containerId);
+        long reusablePages = reusablePageCountForTesting(segment, containerId);
+        long freePages = Math.min(pageCount, reusablePages);
+        long beforeBytes = Math.max(0L, pageCount) * 4096L;
+        long afterBytes = Math.max(0L, beforeBytes - (freePages * 4096L));
+        return new DelosHeapStorageDiagnostics(
+                providerId(),
+                segment,
+                containerId,
+                segmentDirectory,
+                file,
+                java.util.List.of(),
+                java.util.List.of(),
+                true,
+                consistencyErrorCountForTesting(segment, containerId) == 0,
+                beforeBytes,
+                0L,
+                beforeBytes,
+                pageCount,
+                pageCount,
+                freePages,
+                overflowPageCountForTesting(segment, containerId),
+                reusablePages,
+                beforeBytes,
+                afterBytes,
+                consistencySummaryForTesting(segment, containerId),
+                java.util.List.of("heap storage diagnostics are read-only"));
+    }
+
     default DelosVacuumOutcome lastVacuumOutcomeForTesting(int segment, long containerId) {
         return new DelosVacuumOutcome(
                 lastVacuumSkippedForTesting(segment, containerId),

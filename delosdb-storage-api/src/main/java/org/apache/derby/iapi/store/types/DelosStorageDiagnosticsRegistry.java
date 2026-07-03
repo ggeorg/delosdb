@@ -66,6 +66,16 @@ public final class DelosStorageDiagnosticsRegistry {
         return diagnostics.heapSanityDiagnosticsForTesting(segment, containerId);
     }
 
+    public static DelosHeapStorageDiagnostics inspectHeapStorage(
+            Path databaseDirectory,
+            int segment,
+            long containerId,
+            long... indexContainerIds) {
+        DelosStorageDiagnostics diagnostics = heap();
+        diagnostics.setDatabaseDirectoryForTesting(databaseDirectory);
+        return diagnostics.heapStorageDiagnosticsForTesting(segment, containerId, indexContainerIds);
+    }
+
     public static DelosStorageInspection inspect(String providerId, int segment, long containerId) {
         return inspectorForProvider(providerId).inspect(segment, containerId);
     }
