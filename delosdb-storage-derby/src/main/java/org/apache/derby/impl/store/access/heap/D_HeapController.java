@@ -24,6 +24,7 @@ package org.apache.derby.impl.store.access.heap;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.impl.store.access.conglomerate.D_DiagnosticFormatting;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.services.diag.DiagnosticableGeneric;
@@ -110,32 +111,6 @@ public class D_HeapController extends DiagnosticableGeneric
         stat.max_rowsize_bytes = Math.max(stat.max_rowsize_bytes, max_rowsize);
     }
 
-    private static String out_summary(
-    String  hdr,
-    long    value,
-    double  ratio,
-    String  ratio_desc)
-    {
-        String short_str;
-
-        if (ratio > 0.001)
-        {
-            String double_str = "" + ratio;
-            short_str = double_str.substring(
-                0, 
-                Math.min(double_str.lastIndexOf(".") + 3, double_str.length()));
-        }
-        else 
-        {
-            short_str = "NA";
-        }
-
-        return(
-            "\t" + hdr + value + ".\t(" + short_str + 
-            " " + ratio_desc + ").\n");
-    }
-            
-
     private static String diag_tabulate(
     Properties  prop,
     TableStats stat)
@@ -160,27 +135,27 @@ public class D_HeapController extends DiagnosticableGeneric
                     (stat.num_entries == 0 ? 
                          0 : (stat.num_rowsize_bytes / stat.num_entries)) + 
                 " bytes/row).\n"                                            +
-            out_summary(
+            D_DiagnosticFormatting.summaryOrNotApplicableForTinyRatio(
                 "# of reserved bytes   = ", 
                 stat.num_res_bytes,
                 (stat.num_res_bytes / stat.num_pages),
                 "reserved bytes/page") +
-            out_summary(
+            D_DiagnosticFormatting.summaryOrNotApplicableForTinyRatio(
                 "# of free bytes       = ",
                 stat.num_free_bytes,
                 (stat.num_free_bytes / stat.num_pages),
                 "free bytes/page")  +
-            out_summary(
+            D_DiagnosticFormatting.summaryOrNotApplicableForTinyRatio(
                 "# of total records    = ",
                 stat.num_entries,
                 (((double) stat.num_entries) / stat.num_pages),
                 "records/page") +
-            out_summary(
+            D_DiagnosticFormatting.summaryOrNotApplicableForTinyRatio(
                 "# of overflow records = ",
                 stat.num_overflow_rows,
                 (((double) stat.num_overflow_rows) / stat.num_pages),
                 "overflow records/page") +
-            out_summary(
+            D_DiagnosticFormatting.summaryOrNotApplicableForTinyRatio(
                 "# of deleted records  = ",
                 stat.num_deleted,
                 (((double) stat.num_deleted) / stat.num_pages),

@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.store.access.btree;
 
+import org.apache.derby.impl.store.access.conglomerate.D_DiagnosticFormatting;
 import org.apache.derby.iapi.services.diag.DiagnosticableGeneric;
 import org.apache.derby.iapi.services.diag.DiagnosticUtil;
 import org.apache.derby.shared.common.sanity.SanityManager;
@@ -169,22 +170,6 @@ public class D_BTreeController extends DiagnosticableGeneric
         return;
     }
 
-    private static String out_summary(
-    String  hdr,
-    long    value,
-    double  ratio,
-    String  ratio_desc)
-    {
-        String double_str = "" + ratio;
-
-        String short_str = double_str.substring(
-            0, Math.min(double_str.lastIndexOf(".") + 3, double_str.length()));
-
-        return(
-            "\t" + hdr + value + ".\t(" + short_str + 
-            " " + ratio_desc + ").\n");
-    }
-
     private static String diag_onelevel(
     Properties  prop,
     LevelInfo   li)
@@ -209,22 +194,22 @@ public class D_BTreeController extends DiagnosticableGeneric
                 (li.num_entries == 0 ? 
                      0 : (li.num_rowsize_bytes / li.num_entries)) + 
                 " bytes/row).\n"                                  +
-            out_summary(
+            D_DiagnosticFormatting.summary(
                 "# of reserved bytes   = ", 
                 li.num_res_bytes,
                 (li.num_res_bytes / li.num_pages),
                 "reserved bytes/page") +
-            out_summary(
+            D_DiagnosticFormatting.summary(
                 "# of free bytes       = ",
                 li.num_free_bytes,
                 (li.num_free_bytes / li.num_pages),
                 "free bytes/page")  +
-            out_summary(
+            D_DiagnosticFormatting.summary(
                 "# of slot table bytes = ",
                 li.num_slottab_bytes,
                 (li.num_slottab_bytes / li.num_pages),
                 "slot table bytes/page")  +
-            out_summary(
+            D_DiagnosticFormatting.summary(
                 "# of reserved+free+row+slot bytes = ",
                 (li.num_rowsize_bytes +
                  li.num_res_bytes     +
@@ -235,17 +220,17 @@ public class D_BTreeController extends DiagnosticableGeneric
                   li.num_free_bytes     +
                   li.num_slottab_bytes) / li.num_pages),
                 "summed bytes/page")  +
-            out_summary(
+            D_DiagnosticFormatting.summary(
                 "# of total records    = ",
                 li.num_entries,
                 (((double) li.num_entries) / li.num_pages),
                 "records/page") +
-            out_summary(
+            D_DiagnosticFormatting.summary(
                 "# of overflow records = ",
                 li.num_overflow_rows,
                 (((double) li.num_overflow_rows) / li.num_pages),
                 "overflow records/page") +
-            out_summary(
+            D_DiagnosticFormatting.summary(
                 "# of deleted records  = ",
                 li.num_deleted,
                 (((double) li.num_deleted) / li.num_pages),
