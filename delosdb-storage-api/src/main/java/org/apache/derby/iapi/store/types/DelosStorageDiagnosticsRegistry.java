@@ -59,6 +59,16 @@ public final class DelosStorageDiagnosticsRegistry {
         return DelosStorageInspection.fromDiagnostics(diagnostics, segment, containerId);
     }
 
+    public static DelosStorageStatistics statisticsForMvcc(int segment, long containerId) {
+        return storageStatistics(MVCC_PROVIDER_ID, segment, containerId);
+    }
+
+    public static DelosStorageStatistics statisticsForHeap(Path databaseDirectory, int segment, long containerId) {
+        DelosStorageDiagnostics diagnostics = heap();
+        diagnostics.setDatabaseDirectoryForTesting(databaseDirectory);
+        return diagnostics.storageStatisticsForTesting(segment, containerId);
+    }
+
     public static DelosHeapSanityDiagnostics inspectHeapSanity(Path databaseDirectory, int segment, long containerId) {
         DelosStorageDiagnostics diagnostics = heap();
         diagnostics.setDatabaseDirectoryForTesting(databaseDirectory);
@@ -126,6 +136,27 @@ public final class DelosStorageDiagnosticsRegistry {
                             bound.target().containerId())));
         }
         return new DelosCrossEngineConsistencyReport(findings);
+    }
+
+    public static DelosStorageStatisticsReport statisticsReport(DelosStorageConsistencyTarget... targets) {
+        Objects.requireNonNull(targets, "targets");
+        return statisticsReport(List.of(targets));
+    }
+
+    public static DelosStorageStatisticsReport statisticsReport(List<DelosStorageConsistencyTarget> targets) {
+        Objects.requireNonNull(targets, "targets");
+        List<DelosStorageStatistics> statistics = new ArrayList<>();
+        for (DelosStorageConsistencyTarget target : targets) {
+            BoundDiagnostics bound = bind(Objects.requireNonNull(target, "target"));
+            statistics.add(bound.diagnostics().storageStatisticsForTesting(
+                    bound.target().segment(),
+                    bound.target().containerId()));
+        }
+        return new DelosStorageStatisticsReport(statistics);
+    }
+
+    public static DelosStorageStatistics storageStatistics(String providerId, int segment, long containerId) {
+        return forProvider(providerId).storageStatisticsForTesting(segment, containerId);
     }
 
     public static DelosStorageInspector inspectorForProvider(String providerId) {

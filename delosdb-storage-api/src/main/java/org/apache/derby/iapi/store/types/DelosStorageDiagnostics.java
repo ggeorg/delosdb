@@ -573,6 +573,10 @@ public interface DelosStorageDiagnostics {
                 consistencySummaryForTesting(segment, containerId));
     }
 
+    default DelosStorageStatistics storageStatisticsForTesting(int segment, long containerId) {
+        return DelosStorageStatistics.fromDiagnostics(this, segment, containerId);
+    }
+
     default DelosHeapSanityDiagnostics heapSanityDiagnosticsForTesting(int segment, long containerId) {
         DelosStorageConsistencyDiagnostics consistency = consistencyDiagnosticsForTesting(segment, containerId);
         Path containerFile = pageVolumeStateFileForTesting(segment, containerId);
