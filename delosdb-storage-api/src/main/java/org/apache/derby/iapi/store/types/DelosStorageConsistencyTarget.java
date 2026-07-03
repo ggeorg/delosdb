@@ -36,10 +36,7 @@ public record DelosStorageConsistencyTarget(String providerId,
                                             int segment,
                                             long containerId) {
     public DelosStorageConsistencyTarget {
-        if (providerId == null || providerId.isBlank()) {
-            throw new IllegalArgumentException("provider id must not be blank");
-        }
-        providerId = providerId.trim();
+        providerId = DelosStorageProviderIds.normalize(providerId);
     }
 
     public static DelosStorageConsistencyTarget heap(Path databaseDirectory, int segment, long containerId) {

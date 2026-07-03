@@ -24,7 +24,6 @@ package org.apache.derby.iapi.store.types;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.ServiceLoader;
 
@@ -32,8 +31,8 @@ import java.util.ServiceLoader;
  * ServiceLoader lookup for storage diagnostics implementations.
  */
 public final class DelosStorageDiagnosticsRegistry {
-    public static final String MVCC_PROVIDER_ID = "delos_mvcc";
-    public static final String HEAP_PROVIDER_ID = "derby_heap";
+    public static final String MVCC_PROVIDER_ID = DelosStorageProviderIds.MVCC_PROVIDER_ID;
+    public static final String HEAP_PROVIDER_ID = DelosStorageProviderIds.HEAP_PROVIDER_ID;
 
     private DelosStorageDiagnosticsRegistry() {
     }
@@ -99,17 +98,11 @@ public final class DelosStorageDiagnosticsRegistry {
         Objects.requireNonNull(targets, "targets");
         List<DelosStorageInspection> inspections = new ArrayList<>();
         for (DelosStorageConsistencyTarget target : targets) {
-            DelosStorageConsistencyTarget checkedTarget = Objects.requireNonNull(target, "target");
-            DelosStorageDiagnostics diagnostics = forProvider(checkedTarget.providerId());
-            if (checkedTarget.hasDatabaseDirectory()) {
-                diagnostics.setDatabaseDirectoryForTesting(checkedTarget.databaseDirectory());
-            } else {
-                diagnostics.clearDatabaseDirectoryForTesting();
-            }
+            BoundDiagnostics bound = bind(Objects.requireNonNull(target, "target"));
             inspections.add(DelosStorageInspection.fromDiagnostics(
-                    diagnostics,
-                    checkedTarget.segment(),
-                    checkedTarget.containerId()));
+                    bound.diagnostics(),
+                    bound.target().segment(),
+                    bound.target().containerId()));
         }
         return new DelosStorageInspectionReport(inspections);
     }
@@ -123,20 +116,14 @@ public final class DelosStorageDiagnosticsRegistry {
         Objects.requireNonNull(targets, "targets");
         List<DelosStorageConsistencyFinding> findings = new ArrayList<>();
         for (DelosStorageConsistencyTarget target : targets) {
-            DelosStorageConsistencyTarget checkedTarget = Objects.requireNonNull(target, "target");
-            DelosStorageDiagnostics diagnostics = forProvider(checkedTarget.providerId());
-            if (checkedTarget.hasDatabaseDirectory()) {
-                diagnostics.setDatabaseDirectoryForTesting(checkedTarget.databaseDirectory());
-            } else {
-                diagnostics.clearDatabaseDirectoryForTesting();
-            }
+            BoundDiagnostics bound = bind(Objects.requireNonNull(target, "target"));
             findings.add(DelosStorageConsistencyFinding.from(
-                    diagnostics.providerId(),
-                    checkedTarget.segment(),
-                    checkedTarget.containerId(),
-                    diagnostics.consistencyDiagnosticsForTesting(
-                            checkedTarget.segment(),
-                            checkedTarget.containerId())));
+                    bound.diagnostics().providerId(),
+                    bound.target().segment(),
+                    bound.target().containerId(),
+                    bound.diagnostics().consistencyDiagnosticsForTesting(
+                            bound.target().segment(),
+                            bound.target().containerId())));
         }
         return new DelosCrossEngineConsistencyReport(findings);
     }
@@ -146,19 +133,26 @@ public final class DelosStorageDiagnosticsRegistry {
     }
 
     public static DelosStorageDiagnostics forProvider(String providerId) {
-        String normalizedProviderId = normalize(providerId);
+        String normalizedProviderId = DelosStorageProviderIds.normalize(providerId);
         for (DelosStorageDiagnostics diagnostics : ServiceLoader.load(DelosStorageDiagnostics.class)) {
-            if (normalize(diagnostics.providerId()).equals(normalizedProviderId)) {
+            if (DelosStorageProviderIds.normalize(diagnostics.providerId()).equals(normalizedProviderId)) {
                 return diagnostics;
             }
         }
         throw new IllegalStateException("No Delos storage diagnostics provider found for " + providerId);
     }
 
-    private static String normalize(String providerId) {
-        if (providerId == null || providerId.isBlank()) {
-            throw new IllegalArgumentException("provider id must not be blank");
+    private static BoundDiagnostics bind(DelosStorageConsistencyTarget target) {
+        DelosStorageDiagnostics diagnostics = forProvider(target.providerId());
+        if (target.hasDatabaseDirectory()) {
+            diagnostics.setDatabaseDirectoryForTesting(target.databaseDirectory());
+        } else {
+            diagnostics.clearDatabaseDirectoryForTesting();
         }
-        return providerId.trim().toLowerCase(Locale.ROOT);
+        return new BoundDiagnostics(target, diagnostics);
+    }
+
+    private record BoundDiagnostics(DelosStorageConsistencyTarget target,
+                                    DelosStorageDiagnostics diagnostics) {
     }
 }

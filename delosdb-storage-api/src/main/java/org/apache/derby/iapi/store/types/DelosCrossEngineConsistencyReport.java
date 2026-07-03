@@ -63,9 +63,9 @@ public record DelosCrossEngineConsistencyReport(List<DelosStorageConsistencyFind
     }
 
     public DelosStorageConsistencyFinding finding(String providerId, int segment, long containerId) {
-        String normalizedProvider = Objects.requireNonNull(providerId, "providerId").trim();
+        String normalizedProvider = DelosStorageProviderIds.normalize(providerId);
         return findings.stream()
-                .filter(finding -> finding.providerId().equalsIgnoreCase(normalizedProvider)
+                .filter(finding -> DelosStorageProviderIds.normalize(finding.providerId()).equals(normalizedProvider)
                         && finding.segment() == segment
                         && finding.containerId() == containerId)
                 .findFirst()

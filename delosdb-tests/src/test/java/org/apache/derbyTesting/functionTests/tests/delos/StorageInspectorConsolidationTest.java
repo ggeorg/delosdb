@@ -29,6 +29,7 @@ import java.sql.Connection;
 import org.apache.derby.iapi.store.types.DelosStorageConsistencyTarget;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.iapi.store.types.DelosStorageInspection;
+import org.apache.derby.iapi.store.types.DelosStorageProviderIds;
 import org.apache.derby.iapi.store.types.DelosStorageInspectionReport;
 
 /** SQL gate for the consolidated heap/MVCC storage-inspector surface. */
@@ -65,9 +66,15 @@ public final class StorageInspectorConsolidationTest extends MvccSqlTestSupport 
                     report.providerIds().contains(DelosStorageDiagnosticsRegistry.HEAP_PROVIDER_ID));
             assertTrue("expected MVCC provider in inspection report",
                     report.providerIds().contains(DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID));
+            assertTrue("provider-id helper should match heap ids with whitespace/case differences",
+                    DelosStorageProviderIds.matches("  DERBY_HEAP  ",
+                            DelosStorageDiagnosticsRegistry.HEAP_PROVIDER_ID));
+            assertEquals("provider target should canonicalize MVCC id",
+                    DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID,
+                    new DelosStorageConsistencyTarget("  DELOS_MVCC  ", null, 0, mvccContainerId).providerId());
 
             DelosStorageInspection heapInspection = report.inspection(
-                    DelosStorageDiagnosticsRegistry.HEAP_PROVIDER_ID, 0, heapContainerId);
+                    "  DERBY_HEAP  ", 0, heapContainerId);
             DelosStorageInspection mvccInspection = report.inspection(
                     DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID, 0, mvccContainerId);
 

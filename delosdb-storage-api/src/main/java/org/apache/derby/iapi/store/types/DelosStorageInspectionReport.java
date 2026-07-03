@@ -24,7 +24,6 @@ package org.apache.derby.iapi.store.types;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 
@@ -75,9 +74,9 @@ public record DelosStorageInspectionReport(List<DelosStorageInspection> inspecti
     }
 
     public DelosStorageInspection inspection(String providerId, int segment, long containerId) {
-        String normalizedProviderId = normalize(providerId);
+        String normalizedProviderId = DelosStorageProviderIds.normalize(providerId);
         for (DelosStorageInspection inspection : inspections) {
-            if (normalize(inspection.providerId()).equals(normalizedProviderId)
+            if (DelosStorageProviderIds.normalize(inspection.providerId()).equals(normalizedProviderId)
                     && inspection.segment() == segment
                     && inspection.containerId() == containerId) {
                 return inspection;
@@ -101,10 +100,4 @@ public record DelosStorageInspectionReport(List<DelosStorageInspection> inspecti
         return List.copyOf(summaries);
     }
 
-    private static String normalize(String providerId) {
-        if (providerId == null || providerId.isBlank()) {
-            throw new IllegalArgumentException("provider id must not be blank");
-        }
-        return providerId.trim().toLowerCase(Locale.ROOT);
-    }
 }
