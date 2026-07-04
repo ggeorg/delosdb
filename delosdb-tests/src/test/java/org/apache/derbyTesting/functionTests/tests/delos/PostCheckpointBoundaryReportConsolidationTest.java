@@ -1,0 +1,49 @@
+/*
+
+   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.PostCheckpointBoundaryReportConsolidationTest
+
+   Licensed to the Apache Software Foundation (ASF) under one or more
+   contributor license agreements.  See the NOTICE file distributed with
+   this work for additional information regarding copyright ownership.
+   The ASF licenses this file to you under the Apache License, Version 2.0
+   (the "License"); you may not use this file except in compliance with
+   the License.  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+ */
+package org.apache.derbyTesting.functionTests.tests.delos;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import junit.framework.TestCase;
+
+/** Gate that keeps the post-checkpoint boundary report wired into closeout verification. */
+public final class PostCheckpointBoundaryReportConsolidationTest extends TestCase {
+    public void testPostCheckpointBoundaryReportIsWiredIntoCloseoutVerification() throws Exception {
+        Path staticAnalysisScript = Path.of("gradle", "delosdb-storage-static-analysis.gradle");
+        assertTrue("storage static-analysis script should exist", Files.exists(staticAnalysisScript));
+
+        String script = Files.readString(staticAnalysisScript, StandardCharsets.UTF_8);
+        assertTrue("post-checkpoint boundary report task should exist",
+                script.contains("tasks.register('delosPostCheckpointBoundaryReport')"));
+        assertTrue("post-checkpoint boundary report should be part of S0 closeout",
+                script.contains("'delosPostCheckpointBoundaryReport'"));
+        assertTrue("report should track stale ordered-index authority aliases",
+                script.contains("orderedIndexCandidateRowIds"));
+        assertTrue("report should track mutable diagnostics context hooks",
+                script.contains("setDatabaseDirectoryForTesting"));
+        assertTrue("report should track optimizer/storage opt-in properties",
+                script.contains("delosdb\\\\.(?:optimizer|storage)"));
+        assertTrue("report should track inherited/new-code boundary imports",
+                script.contains("heap -> MVCC implementation imports"));
+    }
+}

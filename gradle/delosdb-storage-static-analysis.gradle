@@ -895,8 +895,167 @@ tasks.register('delosHeapRawStoreDuplicateClassificationReport') {
     }
 }
 
+
+
+def delosPostCheckpointBoundarySourceRoots = [
+        'delosdb-storage-api/src/main/java',
+        'delosdb-storage-bridge/src/main/java',
+        'delosdb-storage-mvcc/src/main/java',
+        'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap',
+        'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree',
+        'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/provider',
+        'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw',
+        'delosdb-engine/src/main/java',
+        'delosdb-server/src/main/java',
+        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos'
+]
+
+def delosPostCheckpointBoundaryFiles = {
+    delosPostCheckpointBoundarySourceRoots.collect { file(it) }
+            .findAll { it.exists() }
+            .collectMany { root ->
+                fileTree(root) {
+                    include '**/*.java'
+                    include '**/*.gradle'
+                    include '**/*.properties'
+                }.files
+            }
+            .sort { a, b -> a.path <=> b.path }
+}
+
+def delosPostCheckpointRelativePath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
+}
+
+def delosPostCheckpointFindLinesIn = { Collection<File> sourceFiles, Pattern pattern ->
+    def rows = []
+    sourceFiles.each { sourceFile ->
+        def relativePath = delosPostCheckpointRelativePath(sourceFile)
+        def lines = sourceFile.readLines('UTF-8')
+        def codeLines = sourceFile.name.endsWith('.java') ? delosStorageCodeLinesWithoutComments(lines) : lines
+        codeLines.eachWithIndex { String line, int index ->
+            if (pattern.matcher(line).find()) {
+                rows << [path: relativePath, lineNumber: index + 1, normalized: delosStorageNormalize(line)]
+            }
+        }
+    }
+    rows
+}
+
+def delosPostCheckpointFindLines = { Pattern pattern ->
+    delosPostCheckpointFindLinesIn(delosPostCheckpointBoundaryFiles(), pattern)
+}
+
+def delosPostCheckpointProductionBoundaryFiles = {
+    delosPostCheckpointBoundaryFiles().findAll { sourceFile ->
+        !delosPostCheckpointRelativePath(sourceFile).startsWith('delosdb-tests/')
+    }
+}
+
+tasks.register('delosPostCheckpointBoundaryReport') {
+    group = 'verification'
+    description = 'Reports post-checkpoint DelosDB storage/optimizer/heap boundary surface after cleanup consolidation.'
+
+    inputs.files(delosPostCheckpointBoundaryFiles())
+    outputs.file(layout.buildDirectory.file('reports/delosdb/post-checkpoint-boundary-report.txt'))
+
+    doLast {
+        def productionFiles = delosPostCheckpointProductionBoundaryFiles()
+        def orderedAliasRows = delosPostCheckpointFindLinesIn(productionFiles, Pattern.compile('\\borderedIndexCandidateRowIds(?:For|InRangeFor)\\b'))
+        def mutableContextRows = delosPostCheckpointFindLinesIn(productionFiles, Pattern.compile('\\b(?:setDatabaseDirectoryForTesting|clearDatabaseDirectoryForTesting|databaseDirectoryForTesting)\\b'))
+        def optimizerPropertyRows = delosPostCheckpointFindLines(Pattern.compile('delosdb\\.(?:optimizer|storage)\\.[A-Za-z0-9_.]+'))
+        def candidateIndexRows = delosPostCheckpointFindLines(Pattern.compile('candidateIndex|CandidateIndex|candidate index|Candidate index'))
+        def orderedIndexRows = delosPostCheckpointFindLines(Pattern.compile('orderedIndex|OrderedIndex|ordered index|Ordered index'))
+        def forTestingRows = delosPostCheckpointFindLines(Pattern.compile('ForTesting|forTesting'))
+
+        def heapMvccImports = []
+        def bridgeDurableImports = []
+        def serverMvccImports = []
+        delosPostCheckpointBoundaryFiles().findAll { it.name.endsWith('.java') }.each { sourceFile ->
+            def relativePath = delosPostCheckpointRelativePath(sourceFile)
+            sourceFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+                def importTarget = delosStorageImportTarget(line)
+                if (importTarget == null) {
+                    return
+                }
+                if (relativePath.startsWith('delosdb-storage-derby/')
+                        && importTarget.startsWith('io.github.ggeorg.delosdb.storage.mvcc.')) {
+                    heapMvccImports << [path: relativePath, lineNumber: index + 1, normalized: delosStorageNormalize(line)]
+                }
+                if (relativePath.startsWith('delosdb-storage-bridge/')
+                        && importTarget.startsWith('io.github.ggeorg.delosdb.storage.mvcc.durable.')) {
+                    bridgeDurableImports << [path: relativePath, lineNumber: index + 1, normalized: delosStorageNormalize(line)]
+                }
+                if (relativePath.startsWith('delosdb-server/')
+                        && importTarget.startsWith('io.github.ggeorg.delosdb.storage.mvcc.')) {
+                    serverMvccImports << [path: relativePath, lineNumber: index + 1, normalized: delosStorageNormalize(line)]
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/post-checkpoint-boundary-report.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB post-checkpoint boundary report')
+            writer.println('=======================================')
+            writer.println()
+            writer.println('This is a consolidation report, not a new runtime feature.')
+            writer.println('It makes the storage/optimizer/heap boundary surface visible after the green checkpoint.')
+            writer.println()
+            writer.println('Source roots:')
+            delosPostCheckpointBoundarySourceRoots.each { writer.println('  - ' + it) }
+            writer.println()
+            writer.println('Summary:')
+            writer.println('  stale ordered-index authority aliases in production code: ' + orderedAliasRows.size())
+            writer.println('  mutable diagnostics context hooks in production code:     ' + mutableContextRows.size())
+            writer.println('  optimizer/storage property references: ' + optimizerPropertyRows.size())
+            writer.println('  candidate-index references:            ' + candidateIndexRows.size())
+            writer.println('  ordered-index references:              ' + orderedIndexRows.size())
+            writer.println('  ForTesting references:                 ' + forTestingRows.size())
+            writer.println('  heap -> MVCC implementation imports:   ' + heapMvccImports.size())
+            writer.println('  bridge -> MVCC durable imports:        ' + bridgeDurableImports.size())
+            writer.println('  server -> MVCC implementation imports: ' + serverMvccImports.size())
+            writer.println()
+
+            def printRows = { String title, List rows, int limit ->
+                writer.println(title)
+                if (rows.isEmpty()) {
+                    writer.println('  none')
+                } else {
+                    rows.take(limit).each { row ->
+                        writer.println('  ' + row.path + ':' + row.lineNumber + ': ' + row.normalized)
+                    }
+                    if (rows.size() > limit) {
+                        writer.println('  ... ' + (rows.size() - limit) + ' more row(s) omitted')
+                    }
+                }
+                writer.println()
+            }
+
+            printRows('Stale ordered-index authority aliases in production code:', orderedAliasRows, 25)
+            printRows('Mutable diagnostics context hooks in production code:', mutableContextRows, 25)
+            printRows('Optimizer/storage opt-in property references:', optimizerPropertyRows, 80)
+            printRows('Candidate-index references requiring future quarantine/removal review:', candidateIndexRows, 80)
+            printRows('Ordered-index authority references:', orderedIndexRows, 80)
+            printRows('Remaining ForTesting references requiring future API hygiene review:', forTestingRows, 80)
+            printRows('Heap -> MVCC implementation imports:', heapMvccImports, 25)
+            printRows('Bridge -> MVCC durable imports:', bridgeDurableImports, 25)
+            printRows('Server -> MVCC implementation imports:', serverMvccImports, 25)
+
+            writer.println('Interpretation:')
+            writer.println('  - Zero stale ordered-index alias rows means the new ordered-index authority names are consolidated.')
+            writer.println('  - Zero mutable diagnostics context rows means heap diagnostics use explicit context only.')
+            writer.println('  - Candidate-index rows are expected while candidate structures remain diagnostic/parity support.')
+            writer.println('  - ForTesting rows are expected until diagnostics/test APIs are split from production APIs.')
+            writer.println('  - Import counts should remain zero where the static gates require layer separation.')
+        }
+
+        logger.lifecycle('DelosDB post-checkpoint boundary report written: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosPostCheckpointBoundaryReport'
 }
