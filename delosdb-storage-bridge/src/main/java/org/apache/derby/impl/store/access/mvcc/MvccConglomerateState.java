@@ -31,6 +31,7 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
 import org.apache.derby.iapi.store.types.DelosStorageCommittedRead;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexKey;
 import org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
@@ -518,6 +519,10 @@ final class MvccConglomerateState {
 
     synchronized List<String> orderedIndexCandidateParityErrorSummariesForTesting() {
         return diagnostics.orderedIndexCandidateParityErrorSummariesForTesting();
+    }
+
+    synchronized DelosStorageOrderedIndexDiagnostics.AuthorityMode orderedIndexAuthorityModeForTesting() {
+        return diagnostics.orderedIndexAuthorityModeForTesting();
     }
 
     synchronized long pageCacheMaxPageCountForTesting() {
