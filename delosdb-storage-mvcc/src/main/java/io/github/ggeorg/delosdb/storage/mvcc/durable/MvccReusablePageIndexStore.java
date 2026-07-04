@@ -23,7 +23,6 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -36,7 +35,6 @@ final class MvccReusablePageIndexStore {
     private static final int MAGIC = 0x444d4650; // DMFP
     private static final int VERSION = 1;
     private static final int HEADER_BYTES = Integer.BYTES * 3 + Long.BYTES;
-    private static final int CHECKSUM_BYTES = Integer.BYTES;
 
     private final Path path;
 
@@ -57,22 +55,12 @@ final class MvccReusablePageIndexStore {
     }
 
     Snapshot read() throws IOException {
-        if (!Files.exists(path)) {
+        var payload = MvccSidecarCodec.readPayloadIfExists(path, HEADER_BYTES, "MVCC reusable-page index");
+        if (payload.isEmpty()) {
             return Snapshot.empty();
         }
-        byte[] bytes = Files.readAllBytes(path);
-        if (bytes.length < HEADER_BYTES + CHECKSUM_BYTES) {
-            throw new IllegalStateException("MVCC reusable-page index is truncated: " + path);
-        }
-        int storedChecksum = ByteBuffer.wrap(bytes, bytes.length - CHECKSUM_BYTES, CHECKSUM_BYTES)
-                .order(ByteOrder.BIG_ENDIAN)
-                .getInt();
-        int actualChecksum = MvccSidecarFiles.checksum(bytes, 0, bytes.length - CHECKSUM_BYTES);
-        if (storedChecksum != actualChecksum) {
-            throw new IllegalStateException("MVCC reusable-page index checksum mismatch: " + path);
-        }
 
-        ByteBuffer buffer = ByteBuffer.wrap(bytes, 0, bytes.length - CHECKSUM_BYTES).order(ByteOrder.BIG_ENDIAN);
+        ByteBuffer buffer = payload.orElseThrow();
         int magic = buffer.getInt();
         if (magic != MAGIC) {
             throw new IllegalStateException("Unexpected MVCC reusable-page index magic: " + magic);
@@ -86,8 +74,8 @@ final class MvccReusablePageIndexStore {
         if (reusablePageCount < 0) {
             throw new IllegalStateException("Invalid MVCC reusable-page index count: " + reusablePageCount);
         }
-        int expectedBytes = HEADER_BYTES + Math.multiplyExact(reusablePageCount, Long.BYTES) + CHECKSUM_BYTES;
-        if (expectedBytes != bytes.length) {
+        int expectedBytes = HEADER_BYTES + Math.multiplyExact(reusablePageCount, Long.BYTES);
+        if (expectedBytes != buffer.limit()) {
             throw new IllegalStateException("Invalid MVCC reusable-page index length: " + path);
         }
         NavigableSet<Long> reusablePageIds = new TreeSet<>();
@@ -117,7 +105,7 @@ final class MvccReusablePageIndexStore {
             }
         }
         int payloadLength = HEADER_BYTES + Math.multiplyExact(reusablePageIds.size(), Long.BYTES);
-        ByteBuffer buffer = ByteBuffer.allocate(payloadLength + CHECKSUM_BYTES).order(ByteOrder.BIG_ENDIAN);
+        ByteBuffer buffer = MvccSidecarCodec.allocatePayload(payloadLength);
         buffer.putInt(MAGIC);
         buffer.putInt(VERSION);
         buffer.putLong(pageCount);
@@ -125,9 +113,7 @@ final class MvccReusablePageIndexStore {
         for (Long pageId : reusablePageIds) {
             buffer.putLong(pageId);
         }
-        buffer.putInt(MvccSidecarFiles.checksum(buffer.array(), 0, payloadLength));
-
-        MvccSidecarFiles.rewriteAtomically(path, buffer.array());
+        MvccSidecarCodec.rewritePayload(path, buffer, payloadLength);
     }
 
     void delete() throws IOException {

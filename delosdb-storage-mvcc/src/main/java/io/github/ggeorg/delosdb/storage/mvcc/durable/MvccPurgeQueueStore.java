@@ -23,7 +23,6 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -41,7 +40,6 @@ final class MvccPurgeQueueStore {
     private static final int VERSION = 1;
     private static final int HEADER_BYTES = Integer.BYTES * 3;
     private static final int ENTRY_BYTES = Long.BYTES * 4 + Integer.BYTES;
-    private static final int CHECKSUM_BYTES = Integer.BYTES;
 
     private final Path path;
 
@@ -62,22 +60,12 @@ final class MvccPurgeQueueStore {
     }
 
     Snapshot read() throws IOException {
-        if (!Files.exists(path)) {
+        var payload = MvccSidecarCodec.readPayloadIfExists(path, HEADER_BYTES, "MVCC purge queue");
+        if (payload.isEmpty()) {
             return Snapshot.empty();
         }
-        byte[] bytes = Files.readAllBytes(path);
-        if (bytes.length < HEADER_BYTES + CHECKSUM_BYTES) {
-            throw new IllegalStateException("MVCC purge queue is truncated: " + path);
-        }
-        int storedChecksum = ByteBuffer.wrap(bytes, bytes.length - CHECKSUM_BYTES, CHECKSUM_BYTES)
-                .order(ByteOrder.BIG_ENDIAN)
-                .getInt();
-        int actualChecksum = MvccSidecarFiles.checksum(bytes, 0, bytes.length - CHECKSUM_BYTES);
-        if (storedChecksum != actualChecksum) {
-            throw new IllegalStateException("MVCC purge queue checksum mismatch: " + path);
-        }
 
-        ByteBuffer buffer = ByteBuffer.wrap(bytes, 0, bytes.length - CHECKSUM_BYTES).order(ByteOrder.BIG_ENDIAN);
+        ByteBuffer buffer = payload.orElseThrow();
         int magic = buffer.getInt();
         if (magic != MAGIC) {
             throw new IllegalStateException("Unexpected MVCC purge queue magic: " + magic);
@@ -90,8 +78,8 @@ final class MvccPurgeQueueStore {
         if (entryCount < 0) {
             throw new IllegalStateException("Invalid MVCC purge queue entry count: " + entryCount);
         }
-        int expectedBytes = HEADER_BYTES + Math.multiplyExact(entryCount, ENTRY_BYTES) + CHECKSUM_BYTES;
-        if (expectedBytes != bytes.length) {
+        int expectedBytes = HEADER_BYTES + Math.multiplyExact(entryCount, ENTRY_BYTES);
+        if (expectedBytes != buffer.limit()) {
             throw new IllegalStateException("Invalid MVCC purge queue length: " + path);
         }
         List<Entry> entries = new ArrayList<>(entryCount);
@@ -118,7 +106,7 @@ final class MvccPurgeQueueStore {
     void rewrite(List<Entry> entries) throws IOException {
         Objects.requireNonNull(entries, "entries");
         int payloadLength = HEADER_BYTES + Math.multiplyExact(entries.size(), ENTRY_BYTES);
-        ByteBuffer buffer = ByteBuffer.allocate(payloadLength + CHECKSUM_BYTES).order(ByteOrder.BIG_ENDIAN);
+        ByteBuffer buffer = MvccSidecarCodec.allocatePayload(payloadLength);
         buffer.putInt(MAGIC);
         buffer.putInt(VERSION);
         buffer.putInt(entries.size());
@@ -130,9 +118,7 @@ final class MvccPurgeQueueStore {
             buffer.putLong(entry.previousVersionId());
             buffer.putInt(entry.flags());
         }
-        buffer.putInt(MvccSidecarFiles.checksum(buffer.array(), 0, payloadLength));
-
-        MvccSidecarFiles.rewriteAtomically(path, buffer.array());
+        MvccSidecarCodec.rewritePayload(path, buffer, payloadLength);
     }
 
     void delete() throws IOException {

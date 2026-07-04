@@ -23,7 +23,6 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -44,7 +43,6 @@ final class MvccVisibilityMapStore {
     private static final int VERSION = 1;
     private static final int HEADER_BYTES = Integer.BYTES * 3 + Long.BYTES;
     private static final int ENTRY_BYTES = Long.BYTES + Integer.BYTES + Integer.BYTES;
-    private static final int CHECKSUM_BYTES = Integer.BYTES;
 
     private final Path path;
 
@@ -65,22 +63,12 @@ final class MvccVisibilityMapStore {
     }
 
     Snapshot read() throws IOException {
-        if (!Files.exists(path)) {
+        var payload = MvccSidecarCodec.readPayloadIfExists(path, HEADER_BYTES, "MVCC visibility map");
+        if (payload.isEmpty()) {
             return Snapshot.empty();
         }
-        byte[] bytes = Files.readAllBytes(path);
-        if (bytes.length < HEADER_BYTES + CHECKSUM_BYTES) {
-            throw new IllegalStateException("MVCC visibility map is truncated: " + path);
-        }
-        int storedChecksum = ByteBuffer.wrap(bytes, bytes.length - CHECKSUM_BYTES, CHECKSUM_BYTES)
-                .order(ByteOrder.BIG_ENDIAN)
-                .getInt();
-        int actualChecksum = MvccSidecarFiles.checksum(bytes, 0, bytes.length - CHECKSUM_BYTES);
-        if (storedChecksum != actualChecksum) {
-            throw new IllegalStateException("MVCC visibility map checksum mismatch: " + path);
-        }
 
-        ByteBuffer buffer = ByteBuffer.wrap(bytes, 0, bytes.length - CHECKSUM_BYTES).order(ByteOrder.BIG_ENDIAN);
+        ByteBuffer buffer = payload.orElseThrow();
         int magic = buffer.getInt();
         if (magic != MAGIC) {
             throw new IllegalStateException("Unexpected MVCC visibility map magic: " + magic);
@@ -94,8 +82,8 @@ final class MvccVisibilityMapStore {
         if (entryCount < 0) {
             throw new IllegalStateException("Invalid MVCC visibility map entry count: " + entryCount);
         }
-        int expectedBytes = HEADER_BYTES + Math.multiplyExact(entryCount, ENTRY_BYTES) + CHECKSUM_BYTES;
-        if (expectedBytes != bytes.length) {
+        int expectedBytes = HEADER_BYTES + Math.multiplyExact(entryCount, ENTRY_BYTES);
+        if (expectedBytes != buffer.limit()) {
             throw new IllegalStateException("Invalid MVCC visibility map length: " + path);
         }
         NavigableMap<Long, PageState> pageStates = new TreeMap<>();
@@ -134,7 +122,7 @@ final class MvccVisibilityMapStore {
             Objects.requireNonNull(state, "state");
         }
         int payloadLength = HEADER_BYTES + Math.multiplyExact(pageStates.size(), ENTRY_BYTES);
-        ByteBuffer buffer = ByteBuffer.allocate(payloadLength + CHECKSUM_BYTES).order(ByteOrder.BIG_ENDIAN);
+        ByteBuffer buffer = MvccSidecarCodec.allocatePayload(payloadLength);
         buffer.putInt(MAGIC);
         buffer.putInt(VERSION);
         buffer.putLong(pageCount);
@@ -144,9 +132,7 @@ final class MvccVisibilityMapStore {
             buffer.putInt(entry.getValue().flags());
             buffer.putInt(entry.getValue().versionCount());
         }
-        buffer.putInt(MvccSidecarFiles.checksum(buffer.array(), 0, payloadLength));
-
-        MvccSidecarFiles.rewriteAtomically(path, buffer.array());
+        MvccSidecarCodec.rewritePayload(path, buffer, payloadLength);
     }
 
     void delete() throws IOException {
