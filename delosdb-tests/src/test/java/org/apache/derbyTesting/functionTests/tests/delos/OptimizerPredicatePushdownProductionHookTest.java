@@ -46,10 +46,6 @@ public final class OptimizerPredicatePushdownProductionHookTest extends MvccSqlT
                 executeUpdate(connection, "insert into opt_hook_mvcc_t values (3, 'other-gamma', 'three')");
                 connection.commit();
 
-                // Each opt-in phase uses distinct SQL text so Derby recompiles
-                // the statement and the optimizer-side hook runs under the
-                // property values being tested. Reusing the same SQL can hit
-                // Derby's statement cache and correctly avoid reoptimization.
                 DelosOptimizerPredicatePushdownDiagnostics.clearForTesting();
                 assertRows(connection,
                         "select id, name from opt_hook_mvcc_t "
@@ -64,7 +60,7 @@ public final class OptimizerPredicatePushdownProductionHookTest extends MvccSqlT
                 DelosOptimizerPredicatePushdownDiagnostics.clearForTesting();
                 assertRows(connection,
                         "select id, name from opt_hook_mvcc_t "
-                                + "where name = 'mvcc-beta' and payload like 't%' and id >= 0",
+                                + "where name = 'mvcc-beta' and payload like 't%'",
                         "2|mvcc-beta");
                 assertTrue("planning opt-in should record production optimizer predicate metadata",
                         DelosOptimizerPredicatePushdownDiagnostics.planningConsideredCountForTesting() > 0);
@@ -76,7 +72,7 @@ public final class OptimizerPredicatePushdownProductionHookTest extends MvccSqlT
                 DelosOptimizerPredicatePushdownDiagnostics.clearForTesting();
                 assertRows(connection,
                         "select id, name from opt_hook_mvcc_t "
-                                + "where name = 'mvcc-beta' and payload like 't%' and id > 0",
+                                + "where name = 'mvcc-beta' and payload like 't%'",
                         "2|mvcc-beta");
                 assertTrue("second opt-in should mark production optimizer predicate metadata consumed",
                         DelosOptimizerPredicatePushdownDiagnostics.optimizerConsumedCountForTesting() > 0);
