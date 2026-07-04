@@ -42,17 +42,42 @@ public final class DelosOptimizerPredicatePushdownDiagnostics {
     private DelosOptimizerPredicatePushdownDiagnostics() {
     }
 
+    /**
+     * Returns whether optimizer-side predicate pushdown planning is explicitly
+     * enabled.  This is the production spelling; the historical ForTesting
+     * method below delegates here for compatibility with earlier gates.
+     */
+    public static boolean planningEnabled() {
+        return propertyEnabled(PROPERTY_NAME);
+    }
+
     public static boolean enabledForTesting() {
-        String value = System.getProperty(PROPERTY_NAME, "");
-        String normalized = value.trim().toLowerCase(Locale.ROOT);
-        return normalized.equals("enabled")
-                || normalized.equals("true")
-                || normalized.equals("on")
-                || normalized.equals("1");
+        return planningEnabled();
+    }
+
+    /**
+     * Returns whether the second, stricter metadata-consumption property is
+     * explicitly enabled.  This still never removes Derby's remainder
+     * predicate evaluation.
+     */
+    public static boolean consumptionEnabled() {
+        return propertyEnabled(CONSUMPTION_PROPERTY_NAME);
     }
 
     public static boolean consumptionEnabledForTesting() {
-        String value = System.getProperty(CONSUMPTION_PROPERTY_NAME, "");
+        return consumptionEnabled();
+    }
+
+    /**
+     * True when a production optimizer hook should spend work recording a
+     * decision.  Default Derby mode remains side-effect free.
+     */
+    public static boolean optimizerHookEnabled() {
+        return planningEnabled() || consumptionEnabled();
+    }
+
+    private static boolean propertyEnabled(String propertyName) {
+        String value = System.getProperty(propertyName, "");
         String normalized = value.trim().toLowerCase(Locale.ROOT);
         return normalized.equals("enabled")
                 || normalized.equals("true")
@@ -60,27 +85,44 @@ public final class DelosOptimizerPredicatePushdownDiagnostics {
                 || normalized.equals("1");
     }
 
-    public static DelosOptimizerPredicatePushdownDecision considerForTesting(
+    public static DelosOptimizerPredicatePushdownDecision consider(
             DelosStoragePredicatePushdownRequest request) {
         Objects.requireNonNull(request, "request");
         DelosStoragePredicatePushdown plan = DelosStorageDiagnosticsRegistry.predicatePushdown(request);
         DelosOptimizerPredicatePushdownDecision decision =
-                DelosOptimizerPredicatePushdownDecision.from(enabledForTesting(), plan);
+                DelosOptimizerPredicatePushdownDecision.from(planningEnabled(), plan);
+        record(decision);
+        return decision;
+    }
+
+    public static DelosOptimizerPredicatePushdownDecision considerForTesting(
+            DelosStoragePredicatePushdownRequest request) {
+        return consider(request);
+    }
+
+    /**
+     * Production optimizer hook for predicate-consumption metadata.  The
+     * resulting decision may mark the storage-side candidate metadata as
+     * consumed only when both explicit properties are enabled and the storage
+     * plan itself is pushable.  It does not mutate Derby predicate lists and it
+     * does not remove RowUtil/remainder evaluation.
+     */
+    public static DelosOptimizerPredicatePushdownDecision consumeFromOptimizer(
+            DelosStoragePredicatePushdownRequest request) {
+        Objects.requireNonNull(request, "request");
+        DelosStoragePredicatePushdown plan = DelosStorageDiagnosticsRegistry.predicatePushdown(request);
+        DelosOptimizerPredicatePushdownDecision decision =
+                DelosOptimizerPredicatePushdownDecision.optimizerConsumed(
+                        planningEnabled(),
+                        consumptionEnabled(),
+                        plan);
         record(decision);
         return decision;
     }
 
     public static DelosOptimizerPredicatePushdownDecision consumeForTesting(
             DelosStoragePredicatePushdownRequest request) {
-        Objects.requireNonNull(request, "request");
-        DelosStoragePredicatePushdown plan = DelosStorageDiagnosticsRegistry.predicatePushdown(request);
-        DelosOptimizerPredicatePushdownDecision decision =
-                DelosOptimizerPredicatePushdownDecision.optimizerConsumed(
-                        enabledForTesting(),
-                        consumptionEnabledForTesting(),
-                        plan);
-        record(decision);
-        return decision;
+        return consumeFromOptimizer(request);
     }
 
     public static boolean recordExecutionIfEnabledForTesting(

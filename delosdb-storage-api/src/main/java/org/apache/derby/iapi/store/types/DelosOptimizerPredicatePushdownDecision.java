@@ -30,9 +30,10 @@ import java.util.Objects;
  * <p>This remains deliberately conservative.  Planning decisions prove that
  * Derby's optimizer side can explicitly consider the storage pushdown model.
  * Execution checkpoint decisions prove that an already-safe MVCC row-id
- * shortcut was observed under explicit opt-in.  Derby remainder evaluation is
- * still preserved, and this record still does not mean Derby's optimizer has
- * consumed or removed predicates.</p>
+ * shortcut was observed under explicit opt-in.  The stricter consumption
+ * checkpoint may mark storage-side candidate metadata as optimizer-consumed,
+ * but Derby remainder evaluation is still preserved and no Derby predicate is
+ * removed by this record.</p>
  */
 public record DelosOptimizerPredicatePushdownDecision(String providerId,
                                                       int segment,

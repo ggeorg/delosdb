@@ -72,6 +72,8 @@ import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.types.DelosOptimizerPredicatePushdownDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStoragePredicatePushdownRequest;
 import org.apache.derby.iapi.transaction.TransactionControl;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.util.JBitSet;
@@ -2054,6 +2056,8 @@ class FromBaseTable extends FromTable
 			}
 		}
 
+        applyPredicatePushdownConsumptionHook(baseTableRestrictionList);
+
 		/* Put the base predicates back in the predicate list */
 		currentJoinStrategy.putBasePredicates(predList,
 								   baseTableRestrictionList);
@@ -2062,6 +2066,70 @@ class FromBaseTable extends FromTable
         DelosHeapCostProofLookup.observeIfEnabled(tableDescriptor, costEst);
         return costEst;
 	}
+
+    /**
+     * Records the production optimizer predicate-consumption checkpoint for
+     * DelosDB MVCC tables when the explicit opt-in properties are set.  This
+     * hook is intentionally side-effect free with respect to Derby planning:
+     * it does not remove predicates, it does not alter cost, and it does not
+     * change the qualifier arrays generated for execution.
+     */
+    private void applyPredicatePushdownConsumptionHook(OptimizablePredicateList predicates) {
+        if (!DelosOptimizerPredicatePushdownDiagnostics.optimizerHookEnabled()) {
+            return;
+        }
+        if (tableDescriptor == null || predicates == null || predicates.size() == 0) {
+            return;
+        }
+        if (!"delos_mvcc".equals(tableDescriptor.getStorageProviderName())) {
+            return;
+        }
+
+        List<String> storageCandidates = predicateDescriptions(predicates);
+        if (storageCandidates.isEmpty()) {
+            return;
+        }
+
+        try {
+            DelosStoragePredicatePushdownRequest request = new DelosStoragePredicatePushdownRequest(
+                    "delos_mvcc",
+                    null,
+                    0,
+                    tableDescriptor.getHeapConglomerateId(),
+                    "optimizer base predicate metadata",
+                    true,
+                    false,
+                    false,
+                    storageCandidates,
+                    List.of("Derby RowUtil qualifier evaluation preserved"));
+            DelosOptimizerPredicatePushdownDiagnostics.consumeFromOptimizer(request);
+        } catch (StandardException | IllegalArgumentException | IllegalStateException ignored) {
+            /*
+             * Predicate consumption metadata must fail closed.  This hook is a
+             * diagnostic/metadata boundary only; Derby's original predicate
+             * lists and remainder evaluation stay authoritative.
+             */
+        }
+    }
+
+    private static List<String> predicateDescriptions(OptimizablePredicateList predicates) {
+        if (predicates == null || predicates.size() == 0) {
+            return List.of();
+        }
+        List<String> descriptions = new java.util.ArrayList<>(predicates.size());
+        for (int index = 0; index < predicates.size(); index++) {
+            OptimizablePredicate predicate = predicates.getOptPredicate(index);
+            if (predicate == null) {
+                continue;
+            }
+            String description = predicate.toString();
+            if (description == null || description.isBlank()) {
+                description = "optimizer predicate #" + index;
+            }
+            descriptions.add(description.trim());
+        }
+        return descriptions;
+    }
 
     /**
      * Applies the legacy DelosDB index-provider cost diagnostic bridge only
