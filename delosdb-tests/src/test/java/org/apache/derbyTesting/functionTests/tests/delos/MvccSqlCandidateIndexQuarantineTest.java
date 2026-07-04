@@ -31,20 +31,13 @@ public final class MvccSqlCandidateIndexQuarantineTest extends MvccSqlTestSuppor
             "delosdb.mvcc.candidateIndex.diagnosticFallback";
 
     public void testCandidateIndexAuthorityIsQuarantinedBehindDiagnostics() throws Exception {
-        String previous = System.getProperty(DIAGNOSTIC_FALLBACK_PROPERTY);
-        System.clearProperty(DIAGNOSTIC_FALLBACK_PROPERTY);
-        try {
-            assertCandidateIndexAuthorityIsQuarantinedBehindDiagnostics();
-        } finally {
-            if (previous == null) {
-                System.clearProperty(DIAGNOSTIC_FALLBACK_PROPERTY);
-            } else {
-                System.setProperty(DIAGNOSTIC_FALLBACK_PROPERTY, previous);
-            }
+        try (SystemPropertyScope diagnosticFallbackProperty = clearSystemProperty(DIAGNOSTIC_FALLBACK_PROPERTY)) {
+            assertCandidateIndexAuthorityIsQuarantinedBehindDiagnostics(diagnosticFallbackProperty);
         }
     }
 
-    private static void assertCandidateIndexAuthorityIsQuarantinedBehindDiagnostics() throws Exception {
+    private static void assertCandidateIndexAuthorityIsQuarantinedBehindDiagnostics(
+            SystemPropertyScope diagnosticFallbackProperty) throws Exception {
         String databaseName = databaseName("mvcc-candidate-index-quarantine-db");
         DelosStorageDiagnostics diagnostics = mvccDiagnostics();
         long containerId;
@@ -105,8 +98,9 @@ public final class MvccSqlCandidateIndexQuarantineTest extends MvccSqlTestSuppor
             diagnostics.assertConsistentForTesting(0, containerId);
             assertCandidateOrderedParityClean(diagnostics, containerId);
 
-            System.setProperty(DIAGNOSTIC_FALLBACK_PROPERTY, "true");
-            assertFalse("candidate-index SQL authority should remain hard-quarantined even if the old diagnostic fallback property is set",
+            diagnosticFallbackProperty.set("true");
+            assertFalse("candidate-index SQL authority should remain hard-quarantined "
+                            + "even if the old diagnostic fallback property is set",
                     diagnostics.candidateIndexDiagnosticFallbackEnabledForTesting());
             assertCandidateOrderedParityClean(diagnostics, containerId);
             connection.rollback();

@@ -28,10 +28,9 @@ import java.sql.Connection;
 public final class OptimizerStorageCostOptInTest extends MvccSqlTestSupport {
     public void testOptimizerStorageCostConsumptionIsExplicitlyOptIn() throws Exception {
         String databaseName = databaseName("optimizer-storage-cost-optin-db");
-        String oldMode = System.getProperty(DelosOptimizerStorageCostOptInDiagnostics.PROPERTY_NAME);
 
-        try {
-            System.clearProperty(DelosOptimizerStorageCostOptInDiagnostics.PROPERTY_NAME);
+        try (SystemPropertyScope optInProperty = clearSystemProperty(
+                DelosOptimizerStorageCostOptInDiagnostics.PROPERTY_NAME)) {
             DelosOptimizerStorageCostOptInDiagnostics.clearForTesting();
 
             try (Connection connection = openDatabase(databaseName, true)) {
@@ -64,7 +63,7 @@ public final class OptimizerStorageCostOptInTest extends MvccSqlTestSupport {
              * statement-compile connection used by the proof, so the native
              * store-cost controller is wrapped when it is first opened.
              */
-            System.setProperty(DelosOptimizerStorageCostOptInDiagnostics.PROPERTY_NAME, "enabled");
+            optInProperty.set("enabled");
             DelosOptimizerStorageCostOptInDiagnostics.clearForTesting();
             assertTrue("explicit opt-in property should enable provider cost consumption",
                     DelosOptimizerStorageCostOptInDiagnostics.optimizerCostProviderEnabledForTesting());
@@ -102,11 +101,6 @@ public final class OptimizerStorageCostOptInTest extends MvccSqlTestSupport {
             }
         } finally {
             DelosOptimizerStorageCostOptInDiagnostics.clearForTesting();
-            if (oldMode == null) {
-                System.clearProperty(DelosOptimizerStorageCostOptInDiagnostics.PROPERTY_NAME);
-            } else {
-                System.setProperty(DelosOptimizerStorageCostOptInDiagnostics.PROPERTY_NAME, oldMode);
-            }
         }
     }
 }

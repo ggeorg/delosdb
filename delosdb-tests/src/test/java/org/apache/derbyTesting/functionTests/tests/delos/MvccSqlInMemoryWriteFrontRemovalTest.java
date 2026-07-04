@@ -32,16 +32,8 @@ public final class MvccSqlInMemoryWriteFrontRemovalTest extends MvccSqlTestSuppo
     private static final String LEGACY_WRITE_FRONT_SHADOW_PROPERTY = "delosdb.mvcc.legacyWriteFrontShadow";
 
     public void testRemovedInheritedWriteFrontCannotBeReenabledByProperty() throws Exception {
-        String previousShadowProperty = System.getProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY);
-        System.setProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY, "true");
-        try {
+        try (SystemPropertyScope ignored = setSystemProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY, "true")) {
             assertRemovedInheritedWriteFrontCannotBeReenabledByProperty();
-        } finally {
-            if (previousShadowProperty == null) {
-                System.clearProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY);
-            } else {
-                System.setProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY, previousShadowProperty);
-            }
         }
     }
 

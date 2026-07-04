@@ -32,32 +32,14 @@ public final class MvccSqlInMemoryWriteFrontBypassTest extends MvccSqlTestSuppor
     private static final String LEGACY_WRITE_FRONT_SHADOW_PROPERTY = "delosdb.mvcc.legacyWriteFrontShadow";
 
     public void testProviderWritePathBypassesInheritedWriteFrontByDefault() throws Exception {
-        String previousShadowProperty = System.getProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY);
-        System.clearProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY);
-        try {
+        try (SystemPropertyScope ignored = clearSystemProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY)) {
             assertProviderWritePathBypassesInheritedWriteFrontByDefault();
-        } finally {
-            if (previousShadowProperty == null) {
-                System.clearProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY);
-            } else {
-                System.setProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY, previousShadowProperty);
-            }
         }
     }
 
-
-
     public void testProviderBypassKeepsActiveWriterConflictGuard() throws Exception {
-        String previousShadowProperty = System.getProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY);
-        System.clearProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY);
-        try {
+        try (SystemPropertyScope ignored = clearSystemProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY)) {
             assertProviderBypassKeepsActiveWriterConflictGuard();
-        } finally {
-            if (previousShadowProperty == null) {
-                System.clearProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY);
-            } else {
-                System.setProperty(LEGACY_WRITE_FRONT_SHADOW_PROPERTY, previousShadowProperty);
-            }
         }
     }
 

@@ -87,6 +87,49 @@ abstract class MvccSqlTestSupport extends TestCase {
     }
 
 
+    protected static SystemPropertyScope setSystemProperty(String propertyName, String value) {
+        return new SystemPropertyScope(propertyName, value);
+    }
+
+    protected static SystemPropertyScope clearSystemProperty(String propertyName) {
+        return new SystemPropertyScope(propertyName, null);
+    }
+
+    protected static final class SystemPropertyScope implements AutoCloseable {
+        private final String propertyName;
+        private final boolean hadPreviousValue;
+        private final String previousValue;
+
+        private SystemPropertyScope(String propertyName, String initialValue) {
+            this.propertyName = propertyName;
+            this.hadPreviousValue = System.getProperties().containsKey(propertyName);
+            this.previousValue = System.getProperty(propertyName);
+            set(initialValue);
+        }
+
+        void set(String value) {
+            if (value == null) {
+                System.clearProperty(propertyName);
+            } else {
+                System.setProperty(propertyName, value);
+            }
+        }
+
+        void clear() {
+            System.clearProperty(propertyName);
+        }
+
+        @Override
+        public void close() {
+            if (hadPreviousValue) {
+                System.setProperty(propertyName, previousValue);
+            } else {
+                System.clearProperty(propertyName);
+            }
+        }
+    }
+
+
     protected interface SqlAction {
         void run() throws SQLException;
     }

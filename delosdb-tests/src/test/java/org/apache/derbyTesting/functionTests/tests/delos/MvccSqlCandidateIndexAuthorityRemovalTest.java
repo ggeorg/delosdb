@@ -31,16 +31,8 @@ public final class MvccSqlCandidateIndexAuthorityRemovalTest extends MvccSqlTest
             "delosdb.mvcc.candidateIndex.diagnosticFallback";
 
     public void testCandidateIndexIsNotSqlAuthorityEvenWhenLegacyPropertyIsSet() throws Exception {
-        String previous = System.getProperty(DIAGNOSTIC_FALLBACK_PROPERTY);
-        System.setProperty(DIAGNOSTIC_FALLBACK_PROPERTY, "true");
-        try {
+        try (SystemPropertyScope ignored = setSystemProperty(DIAGNOSTIC_FALLBACK_PROPERTY, "true")) {
             assertCandidateIndexIsNotSqlAuthorityEvenWhenLegacyPropertyIsSet();
-        } finally {
-            if (previous == null) {
-                System.clearProperty(DIAGNOSTIC_FALLBACK_PROPERTY);
-            } else {
-                System.setProperty(DIAGNOSTIC_FALLBACK_PROPERTY, previous);
-            }
         }
     }
 

@@ -37,10 +37,9 @@ public final class StorageCostIntegrationCheckpointTest extends MvccSqlTestSuppo
     public void testStorageCostIntegrationIsOptInAndProofOnly() throws Exception {
         String databaseName = databaseName("storage-cost-integration-db");
         Path databaseDirectory = new File(databaseName).toPath();
-        String oldProperty = System.getProperty(DelosStorageCostIntegration.ENABLED_PROPERTY);
 
-        try {
-            System.clearProperty(DelosStorageCostIntegration.ENABLED_PROPERTY);
+        try (SystemPropertyScope costIntegrationProperty = clearSystemProperty(
+                DelosStorageCostIntegration.ENABLED_PROPERTY)) {
             try (Connection connection = openDatabase(databaseName, true)) {
                 connection.setAutoCommit(false);
                 executeUpdate(connection, "create table cost_heap_t "
@@ -67,7 +66,7 @@ public final class StorageCostIntegrationCheckpointTest extends MvccSqlTestSuppo
                 assertFalse("default report must not be consumed by Derby optimizer",
                         disabledReport.consumedByDerbyOptimizer());
 
-                System.setProperty(DelosStorageCostIntegration.ENABLED_PROPERTY, "true");
+                costIntegrationProperty.set("true");
                 DelosStorageCostReport enabledReport = DelosStorageDiagnosticsRegistry.costReport(
                         DelosStorageConsistencyTarget.heap(databaseDirectory, 0, heapContainerId),
                         DelosStorageConsistencyTarget.mvcc(0, mvccContainerId));
@@ -124,14 +123,9 @@ public final class StorageCostIntegrationCheckpointTest extends MvccSqlTestSuppo
                         "3|gamma");
                 connection.commit();
             }
-        } finally {
-            if (oldProperty == null) {
-                System.clearProperty(DelosStorageCostIntegration.ENABLED_PROPERTY);
-            } else {
-                System.setProperty(DelosStorageCostIntegration.ENABLED_PROPERTY, oldProperty);
-            }
         }
     }
+
     public void testStorageCostEstimatesSaturateAndRemainFailClosedForExtremeStatistics() {
         DelosStorageStatistics extreme = new DelosStorageStatistics(
                 DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID,
