@@ -73,11 +73,6 @@ public final class StorageMetadataContextPurityTest extends MvccSqlTestSupport {
                     snapshot.statistics().observedStorageBytes() > 0L);
             assertEquals("registry metadata snapshot must not mutate the sampled provider", 0,
                     heapDiagnostics.runtimeStateCountForTesting());
-
-            // The diagnostics assertions above are read-only, but Derby still considers the
-            // connection to have an active transaction after catalog/container inspection.
-            // End it explicitly so the test closes the embedded connection cleanly.
-            connection.rollback();
         }
     }
 }
