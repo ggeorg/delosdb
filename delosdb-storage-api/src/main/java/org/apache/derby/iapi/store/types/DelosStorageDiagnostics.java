@@ -47,24 +47,6 @@ public interface DelosStorageDiagnostics {
         return this;
     }
 
-    /**
-     * Optional database-directory context for file-based compatibility inspectors.
-     * Providers which do not need a database directory may ignore this hook.
-     *
-     * @deprecated Prefer {@link #withContext(DelosStorageDiagnosticsContext)} so
-     * callers pass explicit request context instead of mutating provider state.
-     */
-    @Deprecated
-    default void setDatabaseDirectoryForTesting(Path databaseDirectory) {
-    }
-
-    /**
-     * @deprecated Prefer {@link #withContext(DelosStorageDiagnosticsContext)}.
-     */
-    @Deprecated
-    default void clearDatabaseDirectoryForTesting() {
-    }
-
     void clearRuntimeStateForTesting();
 
     int runtimeStateCountForTesting();
@@ -395,6 +377,17 @@ public interface DelosStorageDiagnostics {
         return 0L;
     }
 
+    default long orderedIndexFallbackReasonCountForTesting(
+            int segment,
+            long containerId,
+            DelosStorageOrderedIndexFallbackReason reason) {
+        return 0L;
+    }
+
+    default List<String> orderedIndexFallbackReasonSummariesForTesting(int segment, long containerId) {
+        return List.of();
+    }
+
     default long orderedIndexRowIdCountForTesting(int segment, long containerId) {
         return 0L;
     }
@@ -407,12 +400,24 @@ public interface DelosStorageDiagnostics {
         return List.of();
     }
 
+    default DelosStorageOrderedIndexDiagnostics.AuthorityMode orderedIndexAuthorityModeForTesting(
+            int segment,
+            long containerId) {
+        return DelosStorageOrderedIndexDiagnostics.AuthorityMode.UNAVAILABLE;
+    }
+
     default DelosStorageOrderedIndexDiagnostics orderedIndexDiagnosticsForTesting(int segment, long containerId) {
         return new DelosStorageOrderedIndexDiagnostics(
+                orderedIndexAuthorityModeForTesting(segment, containerId),
                 orderedIndexPageCountForTesting(segment, containerId),
                 orderedIndexEntryCountForTesting(segment, containerId),
                 orderedIndexDistinctKeyCountForTesting(segment, containerId),
-                orderedIndexRebuildCountForTesting(segment, containerId));
+                orderedIndexRebuildCountForTesting(segment, containerId),
+                orderedIndexLookupCountForTesting(segment, containerId),
+                orderedIndexHitCountForTesting(segment, containerId),
+                orderedIndexFallbackCountForTesting(segment, containerId),
+                orderedIndexRowIdCountForTesting(segment, containerId),
+                orderedIndexCandidateParityErrorCountForTesting(segment, containerId));
     }
 
     long pageCacheMaxPageCountForTesting(int segment, long containerId);
