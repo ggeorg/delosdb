@@ -1233,8 +1233,295 @@ tasks.register('delosDiagnosticsApiSurfaceReport') {
     }
 }
 
+
+
+def delosFullTreeOwnershipJavaSources = {
+    fileTree(rootProject.projectDir) {
+        include '**/src/main/java/**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/out/**'
+        exclude '**/target/**'
+        exclude '**/generated/**'
+    }.files.sort { a, b -> a.path <=> b.path }
+}
+
+def delosFullTreeOwnershipRelativePath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
+}
+
+def delosFullTreeOwnershipModuleName = { String relativePath ->
+    int slash = relativePath.indexOf('/')
+    slash > 0 ? relativePath.substring(0, slash) : relativePath
+}
+
+def delosFullTreeOwnershipFindClassName = { File sourceFile ->
+    def matcher = sourceFile.name =~ /^(.+)\.java$/
+    matcher.find() ? matcher.group(1) : sourceFile.name
+}
+
+def delosFullTreeOwnershipActiveTouchPath = { String relativePath ->
+    relativePath.contains('/BTreeCostController.java')
+            || relativePath.contains('/HeapCostController.java')
+            || relativePath.contains('/DRDAConnThread.java')
+            || relativePath.contains('/NetworkServerControlImpl.java')
+            || relativePath.contains('/DrdaExtdtaStreamMaterializer.java')
+            || relativePath.contains('/FromBaseTable.java')
+            || relativePath.contains('/DelosTableScanProviderLookup.java')
+            || relativePath.contains('/StoreCostControllerBridge.java')
+            || relativePath.contains('/CostModelDiagnostics.java')
+            || relativePath.contains('/MvccInheritedTable.java')
+            || relativePath.contains('/PageBackedMvccTable.java')
+            || relativePath.contains('/PageBackedMvccTableStore.java')
+            || relativePath.contains('/PageVolumeMvccStateStore.java')
+}
+
+def delosFullTreeOwnershipReflectiveRisk = { String relativePath ->
+    def fileName = relativePath.substring(relativePath.lastIndexOf('/') + 1)
+    if (fileName.startsWith('D_')) {
+        return 'REFLECTIVE_DERBY_DIAGNOSTICABLE_KEEP_OR_KILL_DECISION'
+    }
+    if (fileName.endsWith('Taglet.java')) {
+        return 'JAVADOC_TAGLET_VERIFY_DOCS_BUILD'
+    }
+    if (fileName ==~ /.*Client.*40\.java/) {
+        return 'JDBC_COMPATIBILITY_VERIFY_SERVICES_AND_DATASOURCE_API'
+    }
+    if (relativePath.contains('delosdb-buildtools')
+            && (relativePath.contains('Eclipse') || relativePath.contains('eclipse') || relativePath.contains('derbyBuild'))) {
+        return 'LIKELY_DEAD_ECLIPSE_BUILD_TOOLING_VERIFY_GRADLE_REFERENCES'
+    }
+    return null
+}
+
+def delosFullTreeOwnershipMaybeDeadCodeCandidates = {
+    delosFullTreeOwnershipJavaSources().collect { sourceFile ->
+        def relativePath = delosFullTreeOwnershipRelativePath(sourceFile)
+        def risk = delosFullTreeOwnershipReflectiveRisk(relativePath)
+        risk == null ? null : [path: relativePath, module: delosFullTreeOwnershipModuleName(relativePath), risk: risk]
+    }.findAll { it != null }
+}
+
+def delosFullTreeOwnershipNormalizeCodeLine = { String line ->
+    delosStorageNormalize(line)
+            .replaceAll(/"(?:\\.|[^"\\])*"/, '""')
+            .replaceAll(/'(?:\\.|[^'\\])*'/, "''")
+}
+
+def delosFullTreeOwnershipCodeLinesByFile = { List<File> sources ->
+    def byFile = [:]
+    sources.each { sourceFile ->
+        def relativePath = delosFullTreeOwnershipRelativePath(sourceFile)
+        def rawLines = sourceFile.readLines('UTF-8')
+        def codeLines = delosStorageCodeLinesWithoutComments(rawLines)
+                .collect { delosFullTreeOwnershipNormalizeCodeLine(it) }
+                .findAll { it.length() > 0
+                        && !it.startsWith('package ')
+                        && !it.startsWith('import ')
+                        && it != '{'
+                        && it != '}' }
+        byFile[relativePath] = codeLines
+    }
+    byFile
+}
+
+def delosFullTreeOwnershipCloneSeeds = { Map<String, List<String>> codeLinesByFile ->
+    final int windowSize = 12
+    final int maxOccurrencesPerSeed = 25
+    def seeds = [:]
+    codeLinesByFile.each { String path, List<String> lines ->
+        if (lines.size() >= windowSize) {
+            def seenInFile = [] as Set
+            for (int index = 0; index <= lines.size() - windowSize; index++) {
+                def key = lines.subList(index, index + windowSize).collect { it.hashCode() }.join(':')
+                if (!seenInFile.add(key)) {
+                    continue
+                }
+                def bucket = seeds[key]
+                if (bucket == null) {
+                    bucket = [occurrenceCount: 0, occurrences: []]
+                    seeds[key] = bucket
+                }
+                bucket.occurrenceCount = bucket.occurrenceCount + 1
+                if (bucket.occurrences.size() < maxOccurrencesPerSeed) {
+                    bucket.occurrences << [path: path, lineNumber: index + 1]
+                }
+            }
+        }
+    }
+    seeds.findAll { String key, bucket ->
+        bucket.occurrenceCount > 1 && bucket.occurrences.collect { it.path }.toSet().size() > 1
+    }
+}
+
+def delosFullTreeOwnershipPairKey = { String left, String right ->
+    left <= right ? left + ' ↔ ' + right : right + ' ↔ ' + left
+}
+
+def delosFullTreeOwnershipCountBy = { Collection rows, Closure keyFn ->
+    def counts = [:].withDefault { 0 }
+    rows.each { row -> counts[keyFn(row)] = counts[keyFn(row)] + 1 }
+    counts.entrySet().sort { a, b ->
+        int valueCompare = b.value <=> a.value
+        valueCompare != 0 ? valueCompare : a.key <=> b.key
+    }
+}
+
+tasks.register('delosFullTreeOwnershipReport') {
+    group = 'verification'
+    description = 'Reports full-tree ownership risks: clone-partner hints, reflective-risk dead-code candidates, and active seam hotspots.'
+
+    def sourcesProvider = providers.provider { delosFullTreeOwnershipJavaSources() }
+    inputs.files(sourcesProvider)
+    outputs.file(layout.buildDirectory.file('reports/delosdb/full-tree-ownership-report.txt'))
+
+    doLast {
+        def sources = delosFullTreeOwnershipJavaSources()
+        def sourceRows = sources.collect { sourceFile ->
+            def relativePath = delosFullTreeOwnershipRelativePath(sourceFile)
+            def rawLines = sourceFile.readLines('UTF-8')
+            [
+                    path     : relativePath,
+                    module   : delosFullTreeOwnershipModuleName(relativePath),
+                    className: delosFullTreeOwnershipFindClassName(sourceFile),
+                    lines    : rawLines.size()
+            ]
+        }
+        def totalLines = sourceRows.collect { it.lines }.sum() ?: 0
+        def moduleSourceCounts = delosFullTreeOwnershipCountBy(sourceRows) { it.module }
+        def moduleLineCounts = [:].withDefault { 0 }
+        sourceRows.each { row -> moduleLineCounts[row.module] = moduleLineCounts[row.module] + row.lines }
+        def moduleLinesSorted = moduleLineCounts.entrySet().sort { a, b ->
+            int valueCompare = b.value <=> a.value
+            valueCompare != 0 ? valueCompare : a.key <=> b.key
+        }
+
+        def codeLinesByFile = delosFullTreeOwnershipCodeLinesByFile(sources)
+        def cloneSeeds = delosFullTreeOwnershipCloneSeeds(codeLinesByFile)
+        def modulePairSeedCounts = [:].withDefault { 0 }
+        def activeClonePartnerRows = []
+        cloneSeeds.each { String seed, bucket ->
+            def occurrences = bucket.occurrences
+            def uniquePaths = occurrences.collect { it.path }.toSet().toList().sort()
+            for (int i = 0; i < uniquePaths.size(); i++) {
+                for (int j = i + 1; j < uniquePaths.size(); j++) {
+                    def leftModule = delosFullTreeOwnershipModuleName(uniquePaths[i])
+                    def rightModule = delosFullTreeOwnershipModuleName(uniquePaths[j])
+                    modulePairSeedCounts[delosFullTreeOwnershipPairKey(leftModule, rightModule)] =
+                            modulePairSeedCounts[delosFullTreeOwnershipPairKey(leftModule, rightModule)] + 1
+                }
+            }
+            def activePaths = uniquePaths.findAll { delosFullTreeOwnershipActiveTouchPath(it) }
+            if (!activePaths.isEmpty()) {
+                activePaths.each { activePath ->
+                    def partners = uniquePaths.findAll { it != activePath }
+                    if (!partners.isEmpty()) {
+                        activeClonePartnerRows << [path: activePath, partners: partners.take(8), omitted: Math.max(0, partners.size() - 8)]
+                    }
+                }
+            }
+        }
+        def modulePairSeedsSorted = modulePairSeedCounts.entrySet().sort { a, b ->
+            int valueCompare = b.value <=> a.value
+            valueCompare != 0 ? valueCompare : a.key <=> b.key
+        }
+        def deadCodeCandidates = delosFullTreeOwnershipMaybeDeadCodeCandidates()
+        def deadCodeRiskCounts = delosFullTreeOwnershipCountBy(deadCodeCandidates) { it.risk }
+        def activeSourceRows = sourceRows.findAll { delosFullTreeOwnershipActiveTouchPath(it.path) }
+                .sort { a, b -> b.lines <=> a.lines ?: a.path <=> b.path }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/full-tree-ownership-report.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB full-tree ownership report')
+            writer.println('==================================')
+            writer.println()
+            writer.println('This is a report-only full-tree scan. It treats org.apache.derby and io.github.ggeorg code as one DelosDB-owned codebase.')
+            writer.println('It does not replace narrower hard gates; it prevents fork-only findings from being reported as whole-codebase findings.')
+            writer.println()
+            writer.println('Scope: **/src/main/java/**/*.java under the repository root')
+            writer.println('Total Java source files: ' + sourceRows.size())
+            writer.println('Total Java source lines: ' + totalLines)
+            writer.println()
+            writer.println('Triage rule:')
+            writer.println('  1. Files changed/touched by DelosDB work and their clone partners.')
+            writer.println('  2. Load-bearing inherited seams used by DelosDB routing, storage, DRDA, LOB, costing, or compile/execute hooks.')
+            writer.println('  3. Cold inherited code and reflective-risk candidates.')
+            writer.println()
+
+            def printCounts = { String title, Collection entries, int limit ->
+                writer.println(title)
+                if (entries.isEmpty()) {
+                    writer.println('  none')
+                } else {
+                    entries.take(limit).each { entry -> writer.println('  ' + entry.key + ': ' + entry.value) }
+                    if (entries.size() > limit) {
+                        writer.println('  ... ' + (entries.size() - limit) + ' more row(s) omitted')
+                    }
+                }
+                writer.println()
+            }
+
+            printCounts('Java files by module:', moduleSourceCounts, 40)
+            printCounts('Java lines by module:', moduleLinesSorted, 40)
+            printCounts('Reflective-risk/dead-code candidate classes by classification:', deadCodeRiskCounts, 20)
+
+            writer.println('Normalized 12-line clone-hash seed summary:')
+            writer.println('  clone seed groups: ' + cloneSeeds.size())
+            writer.println('  module-pair clone seed pairs: ' + modulePairSeedsSorted.size())
+            writer.println('  note: this is a clone-partner hint based on normalized line hashes, not a CPD percentage and not a deletion gate.')
+            writer.println()
+            printCounts('Top module-pair clone-seed hints:', modulePairSeedsSorted, 40)
+
+            writer.println('Load-bearing active seam files by size:')
+            if (activeSourceRows.isEmpty()) {
+                writer.println('  none')
+            } else {
+                activeSourceRows.each { row -> writer.println('  ' + row.path + ': ' + row.lines + ' line(s)') }
+            }
+            writer.println()
+
+            writer.println('Clone-partner hints for active seam files:')
+            if (activeClonePartnerRows.isEmpty()) {
+                writer.println('  none')
+            } else {
+                activeClonePartnerRows.take(80).each { row ->
+                    writer.println('  ' + row.path)
+                    row.partners.each { partner -> writer.println('    partner: ' + partner) }
+                    if (row.omitted > 0) {
+                        writer.println('    ... ' + row.omitted + ' more partner(s) omitted')
+                    }
+                }
+                if (activeClonePartnerRows.size() > 80) {
+                    writer.println('  ... ' + (activeClonePartnerRows.size() - 80) + ' more active clone-partner row(s) omitted')
+                }
+            }
+            writer.println()
+
+            writer.println('Reflective-risk/dead-code candidate classes:')
+            if (deadCodeCandidates.isEmpty()) {
+                writer.println('  none')
+            } else {
+                deadCodeCandidates.sort { a, b -> a.risk <=> b.risk ?: a.path <=> b.path }.each { row ->
+                    writer.println('  ' + row.risk + ' ' + row.path)
+                }
+            }
+            writer.println()
+
+            writer.println('Interpretation:')
+            writer.println('  - A row here is not a cleanup command. It is review context for future changes.')
+            writer.println('  - When a touched file appears in clone-partner hints, review partner files before claiming the fix is complete.')
+            writer.println('  - D_* rows may be reflectively reachable through Derby Diagnosticable naming and require an explicit keep/kill decision.')
+            writer.println('  - Taglets and Eclipse build tooling are deletion candidates only after Gradle/docs references are verified.')
+            writer.println('  - Client*40 rows require JDBC/service/data-source compatibility review before deletion.')
+        }
+
+        logger.lifecycle('DelosDB full-tree ownership report written: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosPostCheckpointBoundaryReport', 'delosDiagnosticsApiSurfaceReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosPostCheckpointBoundaryReport', 'delosDiagnosticsApiSurfaceReport', 'delosFullTreeOwnershipReport'
 }

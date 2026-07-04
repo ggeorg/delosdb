@@ -56,6 +56,17 @@ public final class PostCheckpointBoundaryReportConsolidationTest extends TestCas
                 script.contains("reset/state-hook"));
         assertTrue("diagnostics API surface report should classify legacy checkpoint vocabulary",
                 script.contains("legacy proof/checkpoint vocabulary"));
+
+        assertTrue("full-tree ownership report task should exist",
+                script.contains("tasks.register('delosFullTreeOwnershipReport')"));
+        assertTrue("full-tree ownership report should be part of S0 closeout",
+                script.contains("'delosFullTreeOwnershipReport'"));
+        assertTrue("full-tree ownership report should cover both DelosDB namespaces as one codebase",
+                script.contains("org.apache.derby and io.github.ggeorg code as one DelosDB-owned codebase"));
+        assertTrue("full-tree ownership report should emit clone-partner hints",
+                script.contains("Clone-partner hints for active seam files"));
+        assertTrue("full-tree ownership report should classify reflective-risk dead-code candidates",
+                script.contains("REFLECTIVE_DERBY_DIAGNOSTICABLE_KEEP_OR_KILL_DECISION"));
     }
 
     private static Path storageStaticAnalysisScript() {
