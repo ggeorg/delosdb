@@ -18,13 +18,15 @@ import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolume;
 import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactories;
 import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactory;
 
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexKey;
+
 /**
- * Durable shadow store for the first ordered MVCC index-page skeleton.
+ * Durable page-backed store for MVCC ordered index entries.
  *
- * <p>This store is intentionally not the SQL authority yet. It stores visible
- * committed candidate-index keys in deterministic order so later overlays can
- * route equality and range lookups through page-backed ordered index pages after
- * this persistence/reopen/checker gate is proven.</p>
+ * <p>Current-committed equality and range scans may use this store as row-id
+ * authority for covered paths.  Entries keep a typed textual key envelope so
+ * the sidecar does not accidentally apply lexical string ordering to numeric
+ * SQL values.</p>
  */
 public final class MvccOrderedIndexPageStore implements AutoCloseable {
     private static final int ORDERED_INDEX_PAGE_TYPE = 8;
@@ -116,9 +118,17 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
             throw new IllegalArgumentException("ordered index column must be non-negative: " + column);
         }
         String normalizedKey = Entry.normalizeKeyForLookup(Objects.requireNonNull(key, "key"));
+        boolean typedLookup = DelosStorageOrderedIndexKey.isEncoded(normalizedKey);
         List<Long> rowIds = new ArrayList<>();
         for (Entry entry : read().entries()) {
-            if (entry.column() == column && entry.key().equals(normalizedKey)) {
+            if (entry.column() != column) {
+                continue;
+            }
+            if (typedLookup && !DelosStorageOrderedIndexKey.isEncoded(entry.key())) {
+                throw new IllegalStateException("ordered index contains legacy untyped keys for column "
+                        + column + "; full committed scan fallback is required");
+            }
+            if (entry.key().equals(normalizedKey)) {
                 rowIds.add(entry.rowId());
             }
         }
@@ -140,10 +150,16 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
                 && compareKeys(normalizedLowerKey, normalizedUpperKey) > 0) {
             return List.of();
         }
+        boolean typedLookup = DelosStorageOrderedIndexKey.isEncoded(normalizedLowerKey)
+                || DelosStorageOrderedIndexKey.isEncoded(normalizedUpperKey);
         List<Long> rowIds = new ArrayList<>();
         for (Entry entry : read().entries()) {
             if (entry.column() != column) {
                 continue;
+            }
+            if (typedLookup && !DelosStorageOrderedIndexKey.isEncoded(entry.key())) {
+                throw new IllegalStateException("ordered index contains legacy untyped keys for column "
+                        + column + "; full committed scan fallback is required");
             }
             if (!withinLowerBound(entry.key(), normalizedLowerKey, lowerInclusive)) {
                 continue;
@@ -162,7 +178,7 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
 
     public synchronized List<String> entrySummaries() throws IOException {
         return read().entries().stream()
-                .map(entry -> "col:" + entry.column() + "|key:" + entry.key() + "|row:" + entry.rowId())
+                .map(entry -> "col:" + entry.column() + "|key:" + DelosStorageOrderedIndexKey.display(entry.key()) + "|row:" + entry.rowId())
                 .toList();
     }
 
@@ -238,7 +254,7 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
         return entries.stream()
                 .map(Objects::requireNonNull)
                 .sorted(Comparator.comparingInt(Entry::column)
-                        .thenComparing(Entry::key)
+                        .thenComparing(Entry::key, DelosStorageOrderedIndexKey::compare)
                         .thenComparingLong(Entry::rowId))
                 .toList();
     }
@@ -264,7 +280,7 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
     }
 
     private static int compareKeys(String left, String right) {
-        return left.compareTo(right);
+        return DelosStorageOrderedIndexKey.compare(left, right);
     }
 
     public record Entry(int column, String key, long rowId) {

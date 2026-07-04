@@ -53,7 +53,7 @@ public interface DelosStorageCandidateIndex {
     /**
      * Optional ordered page-backed lookup for current-committed range scans.
      *
-     * <p>Bounds are normalized using the same key shape as equality lookups.
+     * <p>Bounds are typed ordered-index keys using the same key shape as equality lookups.
      * A {@code null} lower or upper value means the range is unbounded on that
      * side. An empty optional means the ordered page sidecar cannot currently
      * answer this range and callers should fall back to the full committed-image scan.

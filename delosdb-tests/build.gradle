@@ -759,6 +759,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexEqualityLookupTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexRangeScanTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexAuthorityCheckpointTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlCandidateIndexQuarantineTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlCandidateIndexAuthorityRemovalTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlWriteIntentReadTest.class',

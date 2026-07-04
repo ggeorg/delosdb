@@ -21,8 +21,6 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
@@ -33,6 +31,7 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
 import org.apache.derby.iapi.store.types.DelosStorageCommittedRead;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexKey;
 import org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
 import org.apache.derby.iapi.store.types.DelosStorageRow;
 import org.apache.derby.iapi.store.types.DelosStorageRowHead;
@@ -826,7 +825,7 @@ final class MvccConglomerateState {
         if (currentValue == null) {
             return new BoundChoice(candidateValue, candidateInclusive);
         }
-        int comparison = candidateValue.compareTo(currentValue);
+        int comparison = DelosStorageOrderedIndexKey.compare(candidateValue, currentValue);
         if (comparison > 0 || (comparison == 0 && currentInclusive && !candidateInclusive)) {
             return new BoundChoice(candidateValue, candidateInclusive);
         }
@@ -838,7 +837,7 @@ final class MvccConglomerateState {
         if (currentValue == null) {
             return new BoundChoice(candidateValue, candidateInclusive);
         }
-        int comparison = candidateValue.compareTo(currentValue);
+        int comparison = DelosStorageOrderedIndexKey.compare(candidateValue, currentValue);
         if (comparison < 0 || (comparison == 0 && currentInclusive && !candidateInclusive)) {
             return new BoundChoice(candidateValue, candidateInclusive);
         }
@@ -847,23 +846,10 @@ final class MvccConglomerateState {
 
     private static String valueKey(StoreDataValue value) {
         try {
-            Method getString = value.getClass().getMethod("getString");
-            Object result = getString.invoke(value);
-            return result == null ? "<null>" : result.toString();
-        } catch (NoSuchMethodException e) {
-            return value.toString();
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException("Cannot access store value key operation on "
+            return DelosStorageOrderedIndexKey.encode(value);
+        } catch (StandardException e) {
+            throw new IllegalStateException("Cannot derive typed ordered-index key from "
                     + value.getClass().getName(), e);
-        } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException runtimeException) {
-                throw runtimeException;
-            }
-            if (cause instanceof Error error) {
-                throw error;
-            }
-            return value.toString();
         }
     }
 

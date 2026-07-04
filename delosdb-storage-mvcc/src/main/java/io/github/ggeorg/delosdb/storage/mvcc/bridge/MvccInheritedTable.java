@@ -29,6 +29,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
 import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
 import org.apache.derby.iapi.store.types.DelosStorageCommittedRead;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexKey;
 import org.apache.derby.iapi.store.types.DelosStorageRow;
 import org.apache.derby.iapi.store.types.DelosStorageRowHead;
 import org.apache.derby.iapi.store.types.DelosStorageRowLocator;
@@ -606,7 +607,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public List<String> pageBackedVisibleRowSummariesForTesting() {
         return readLocked(() -> pageVolumeStateStore.loadVisibleRows().stream()
-                .map(row -> row.rowId() + "|" + String.join("|", valueKeys(row.values())))
+                .map(row -> row.rowId() + "|" + String.join("|", valueKeysRaw(row.values())))
                 .sorted()
                 .toList());
     }
@@ -1295,7 +1296,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             if (change.delete()) {
                 summaries.add(change.rowId() + "|DELETE");
             } else {
-                summaries.add(change.rowId() + "|UPSERT|" + String.join("|", valueKeys(change.values())));
+                summaries.add(change.rowId() + "|UPSERT|" + String.join("|", valueKeysRaw(change.values())));
             }
         }
         return List.copyOf(summaries);
@@ -1308,7 +1309,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             if (intent.delete()) {
                 summaries.add(intent.rowId() + "|DELETE");
             } else {
-                summaries.add(intent.rowId() + "|UPSERT|" + String.join("|", valueKeys(intent.row())));
+                summaries.add(intent.rowId() + "|UPSERT|" + String.join("|", valueKeysRaw(intent.row())));
             }
         }
         return List.copyOf(summaries);
@@ -1345,7 +1346,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         }
         List<MvccCandidateIndex.CandidateRow> candidates = new ArrayList<>(rows.size());
         for (PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]> row : rows) {
-            candidates.add(new MvccCandidateIndex.CandidateRow(row.rowId(), valueKeys(row.values())));
+            candidates.add(new MvccCandidateIndex.CandidateRow(row.rowId(), valueKeysRaw(row.values())));
         }
         return List.copyOf(candidates);
     }
@@ -1357,7 +1358,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         }
         List<PageVolumeMvccStateStore.OrderedIndexEntry> entries = new ArrayList<>();
         for (PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]> row : rows) {
-            List<String> keys = valueKeys(row.values());
+            List<String> keys = valueKeysTyped(row.values());
             for (int column = 0; column < keys.size(); column++) {
                 entries.add(new PageVolumeMvccStateStore.OrderedIndexEntry(column, keys.get(column), row.rowId()));
             }
@@ -1365,18 +1366,38 @@ final class MvccInheritedTable implements DelosStorageTable,
         return List.copyOf(entries);
     }
 
-    private static List<String> valueKeys(StoreDataValue[] values) {
+    private static List<String> valueKeysRaw(StoreDataValue[] values) {
         if (values == null || values.length == 0) {
             return List.of();
         }
         List<String> keys = new ArrayList<>(values.length);
         for (StoreDataValue value : values) {
-            keys.add(value == null ? null : valueKey(value));
+            keys.add(value == null ? null : valueKeyRaw(value));
         }
         return List.copyOf(keys);
     }
 
-    private static String valueKey(StoreDataValue value) {
+    private static List<String> valueKeysTyped(StoreDataValue[] values) {
+        if (values == null || values.length == 0) {
+            return List.of();
+        }
+        List<String> keys = new ArrayList<>(values.length);
+        for (StoreDataValue value : values) {
+            keys.add(value == null ? null : valueKeyTyped(value));
+        }
+        return List.copyOf(keys);
+    }
+
+    private static String valueKeyTyped(StoreDataValue value) {
+        try {
+            return DelosStorageOrderedIndexKey.encode(value);
+        } catch (StandardException e) {
+            throw new IllegalStateException("Cannot derive typed ordered-index key from "
+                    + value.getClass().getName(), e);
+        }
+    }
+
+    private static String valueKeyRaw(StoreDataValue value) {
         if (value instanceof StoreValueOperations operations) {
             try {
                 return valueKeyString(operations.getString());
@@ -1393,8 +1414,10 @@ final class MvccInheritedTable implements DelosStorageTable,
             Object result = getString.get().invoke(value);
             return valueKeyString(result);
         } catch (IllegalAccessException e) {
-            throw new IllegalStateException("Cannot access store value key operation on "
-                    + value.getClass().getName(), e);
+            // Some Derby LOB values inherit public methods from package-private
+            // implementation classes.  Raw row/candidate diagnostics must not
+            // fail commits for those values; keep the existing fallback shape.
+            return value.toString();
         } catch (InvocationTargetException e) {
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException runtimeException) {
