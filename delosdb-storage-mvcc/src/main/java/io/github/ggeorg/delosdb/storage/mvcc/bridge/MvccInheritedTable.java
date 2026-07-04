@@ -8,8 +8,10 @@ import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -29,6 +31,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
 import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
 import org.apache.derby.iapi.store.types.DelosStorageCommittedRead;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexKey;
 import org.apache.derby.iapi.store.types.DelosStorageRow;
 import org.apache.derby.iapi.store.types.DelosStorageRowHead;
@@ -82,6 +85,8 @@ final class MvccInheritedTable implements DelosStorageTable,
     private long orderedIndexLookupCount;
     private long orderedIndexHitCount;
     private long orderedIndexFallbackCount;
+    private final EnumMap<DelosStorageOrderedIndexFallbackReason, Long> orderedIndexFallbackReasonCounts =
+            new EnumMap<>(DelosStorageOrderedIndexFallbackReason.class);
     private long orderedIndexRowIdCount;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
@@ -389,8 +394,8 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public Optional<List<Long>> orderedIndexRowIdsFor(int column, String value) {
-        return readLocked(() -> recordOrderedIndexLookup(
-                pageVolumeStateStore.orderedIndexRowIdsFor(column, value)));
+        return writeLocked(() -> recordOrderedIndexLookup(
+                pageVolumeStateStore.orderedIndexLookupFor(column, value)));
     }
 
     @Override
@@ -400,15 +405,22 @@ final class MvccInheritedTable implements DelosStorageTable,
             boolean lowerInclusive,
             String upperValue,
             boolean upperInclusive) {
-        return readLocked(() -> recordOrderedIndexLookup(
-                pageVolumeStateStore.orderedIndexRowIdsInRangeFor(
+        return writeLocked(() -> recordOrderedIndexLookup(
+                pageVolumeStateStore.orderedIndexRangeLookupFor(
                         column, lowerValue, lowerInclusive, upperValue, upperInclusive)));
     }
 
-    private Optional<List<Long>> recordOrderedIndexLookup(Optional<List<Long>> rowIds) {
+    @Override
+    public void recordOrderedIndexFallbackForTesting(DelosStorageOrderedIndexFallbackReason reason) {
+        writeLocked(() -> recordOrderedIndexFallback(reason));
+    }
+
+    private Optional<List<Long>> recordOrderedIndexLookup(
+            PageVolumeMvccStateStore.OrderedIndexLookupResult lookup) {
         orderedIndexLookupCount++;
+        Optional<List<Long>> rowIds = lookup.rowIds();
         if (rowIds.isEmpty()) {
-            orderedIndexFallbackCount++;
+            recordOrderedIndexFallback(toApiFallbackReason(lookup.fallbackReason()));
             return Optional.empty();
         }
         List<Long> ids = rowIds.get();
@@ -417,6 +429,25 @@ final class MvccInheritedTable implements DelosStorageTable,
             orderedIndexHitCount++;
         }
         return Optional.of(ids);
+    }
+
+    private void recordOrderedIndexFallback(DelosStorageOrderedIndexFallbackReason reason) {
+        if (reason == null) {
+            return;
+        }
+        orderedIndexFallbackCount++;
+        orderedIndexFallbackReasonCounts.merge(reason, 1L, Long::sum);
+    }
+
+    private static DelosStorageOrderedIndexFallbackReason toApiFallbackReason(
+            PageVolumeMvccStateStore.OrderedIndexLookupFallbackReason reason) {
+        return switch (reason) {
+            case UNSUPPORTED_KEY_OR_TYPE -> DelosStorageOrderedIndexFallbackReason.UNSUPPORTED_KEY_OR_TYPE;
+            case MALFORMED_ORDERED_INDEX_SIDECAR ->
+                    DelosStorageOrderedIndexFallbackReason.MALFORMED_ORDERED_INDEX_SIDECAR;
+            case STALE_OR_MISSING_ORDERED_INDEX_SIDECAR ->
+                    DelosStorageOrderedIndexFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR;
+        };
     }
 
     @Override
@@ -855,6 +886,21 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public long orderedIndexFallbackCountForTesting() {
         return readLocked(() -> orderedIndexFallbackCount);
+    }
+
+    @Override
+    public long orderedIndexFallbackReasonCountForTesting(
+            DelosStorageOrderedIndexFallbackReason reason) {
+        return readLocked(() -> orderedIndexFallbackReasonCounts.getOrDefault(reason, 0L));
+    }
+
+    @Override
+    public List<String> orderedIndexFallbackReasonSummariesForTesting() {
+        return readLocked(() -> orderedIndexFallbackReasonCounts.entrySet().stream()
+                .filter(entry -> entry.getValue() > 0L)
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey().name() + ":" + entry.getValue())
+                .toList());
     }
 
     @Override

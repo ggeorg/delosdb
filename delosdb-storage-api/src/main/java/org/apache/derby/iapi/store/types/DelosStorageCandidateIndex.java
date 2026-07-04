@@ -69,6 +69,12 @@ public interface DelosStorageCandidateIndex {
         return Optional.empty();
     }
 
+    /**
+     * Records that the ordered page-backed lookup intentionally declined to
+     * answer and the caller safely used the full scan path instead.
+     */
+    default void recordOrderedIndexFallbackForTesting(DelosStorageOrderedIndexFallbackReason reason) {
+    }
 
     int candidateIndexKeyCountForTesting();
 }

@@ -47,6 +47,7 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 import org.apache.derby.iapi.store.types.StoreDataValueBase;
@@ -684,6 +685,18 @@ public final class MvccConglomerate
 
     static long orderedIndexFallbackCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).orderedIndexFallbackCountForTesting();
+    }
+
+    static long orderedIndexFallbackReasonCountForDiagnostics(
+            int segment,
+            long containerId,
+            DelosStorageOrderedIndexFallbackReason reason) {
+        return stateFor(new ContainerKey(segment, containerId))
+                .orderedIndexFallbackReasonCountForTesting(reason);
+    }
+
+    static List<String> orderedIndexFallbackReasonSummariesForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexFallbackReasonSummariesForTesting();
     }
 
     static long orderedIndexRowIdCountForDiagnostics(int segment, long containerId) {

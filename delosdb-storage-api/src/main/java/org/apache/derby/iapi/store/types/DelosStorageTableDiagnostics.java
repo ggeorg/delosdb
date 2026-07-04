@@ -313,6 +313,15 @@ public interface DelosStorageTableDiagnostics {
         return 0L;
     }
 
+    default long orderedIndexFallbackReasonCountForTesting(
+            DelosStorageOrderedIndexFallbackReason reason) {
+        return 0L;
+    }
+
+    default List<String> orderedIndexFallbackReasonSummariesForTesting() {
+        return List.of();
+    }
+
     default long orderedIndexRowIdCountForTesting() {
         return 0L;
     }

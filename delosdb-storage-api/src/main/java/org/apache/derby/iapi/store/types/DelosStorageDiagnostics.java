@@ -377,6 +377,17 @@ public interface DelosStorageDiagnostics {
         return 0L;
     }
 
+    default long orderedIndexFallbackReasonCountForTesting(
+            int segment,
+            long containerId,
+            DelosStorageOrderedIndexFallbackReason reason) {
+        return 0L;
+    }
+
+    default List<String> orderedIndexFallbackReasonSummariesForTesting(int segment, long containerId) {
+        return List.of();
+    }
+
     default long orderedIndexRowIdCountForTesting(int segment, long containerId) {
         return 0L;
     }

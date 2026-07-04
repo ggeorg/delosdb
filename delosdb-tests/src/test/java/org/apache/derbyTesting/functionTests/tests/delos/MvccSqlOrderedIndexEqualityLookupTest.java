@@ -21,9 +21,12 @@
 
 package org.apache.derbyTesting.functionTests.tests.delos;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 
 /** SQL gate for routing current-committed equality narrowing through ordered MVCC index pages. */
 public final class MvccSqlOrderedIndexEqualityLookupTest extends MvccSqlTestSupport {
@@ -128,6 +131,150 @@ public final class MvccSqlOrderedIndexEqualityLookupTest extends MvccSqlTestSupp
         }
     }
 
+    public void testUnsupportedOrderedIndexPredicateFallsBackWithReason() throws Exception {
+        String databaseName = databaseName("mvcc-ordered-index-unsupported-fallback-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table ordered_index_unsupported_t "
+                    + "(id int primary key, code varchar(32), payload varchar(64)) using delos_mvcc");
+            executeUpdate(connection, "insert into ordered_index_unsupported_t values (1, 'alpha', 'payload-1')");
+            executeUpdate(connection, "insert into ordered_index_unsupported_t values (2, 'beta', 'payload-2')");
+            connection.commit();
+
+            long containerId = mvccContainerId(connection, "ORDERED_INDEX_UNSUPPORTED_T");
+            long lookupBefore = diagnostics.orderedIndexLookupCountForTesting(0, containerId);
+            long fallbackBefore = diagnostics.orderedIndexFallbackCountForTesting(0, containerId);
+            long unsupportedBefore = diagnostics.orderedIndexFallbackReasonCountForTesting(
+                    0,
+                    containerId,
+                    DelosStorageOrderedIndexFallbackReason.UNSUPPORTED_KEY_OR_TYPE);
+            diagnostics.resetScanCountersForTesting();
+
+            assertRows(connection,
+                    "select id from ordered_index_unsupported_t where code <> 'missing'",
+                    "1", "2");
+
+            assertEquals("unsupported predicates should not claim an ordered-index execution shortcut",
+                    lookupBefore, diagnostics.orderedIndexLookupCountForTesting(0, containerId));
+            assertTrue("unsupported predicates should record a safe ordered-index fallback",
+                    diagnostics.orderedIndexFallbackCountForTesting(0, containerId) > fallbackBefore);
+            assertTrue("unsupported predicates should record an explicit fallback reason",
+                    diagnostics.orderedIndexFallbackReasonCountForTesting(
+                            0,
+                            containerId,
+                            DelosStorageOrderedIndexFallbackReason.UNSUPPORTED_KEY_OR_TYPE) > unsupportedBefore);
+            assertEquals("unsupported predicates should continue through the full scan path",
+                    0, diagnostics.rowIdFastPathReadCountForTesting());
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+    }
+
+    public void testMissingOrderedIndexSidecarFallsBackWithReason() throws Exception {
+        String databaseName = databaseName("mvcc-ordered-index-missing-sidecar-fallback-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        long containerId;
+        Path orderedIndexPagesFile;
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table ordered_index_missing_sidecar_t "
+                    + "(id int primary key, code varchar(32), payload varchar(64)) using delos_mvcc");
+            executeUpdate(connection, "insert into ordered_index_missing_sidecar_t values (1, 'alpha', 'payload-1')");
+            executeUpdate(connection, "insert into ordered_index_missing_sidecar_t values (2, 'beta', 'payload-2')");
+            connection.commit();
+            containerId = mvccContainerId(connection, "ORDERED_INDEX_MISSING_SIDECAR_T");
+            orderedIndexPagesFile = diagnostics.orderedIndexPagesFileForTesting(0, containerId);
+            assertTrue("ordered index sidecar should exist before intentional removal",
+                    Files.exists(orderedIndexPagesFile));
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+        Files.deleteIfExists(orderedIndexPagesFile);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            long lookupBefore = diagnostics.orderedIndexLookupCountForTesting(0, containerId);
+            long fallbackBefore = diagnostics.orderedIndexFallbackCountForTesting(0, containerId);
+            long missingBefore = diagnostics.orderedIndexFallbackReasonCountForTesting(
+                    0,
+                    containerId,
+                    DelosStorageOrderedIndexFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR);
+            diagnostics.resetScanCountersForTesting();
+
+            assertRows(reopened,
+                    "select id, payload from ordered_index_missing_sidecar_t where code = 'beta'",
+                    "2|payload-2");
+
+            assertTrue("missing ordered-index sidecar should still be looked up diagnostically",
+                    diagnostics.orderedIndexLookupCountForTesting(0, containerId) > lookupBefore);
+            assertTrue("missing ordered-index sidecar should record safe fallback",
+                    diagnostics.orderedIndexFallbackCountForTesting(0, containerId) > fallbackBefore);
+            assertTrue("missing ordered-index sidecar should record a stale/missing fallback reason",
+                    diagnostics.orderedIndexFallbackReasonCountForTesting(
+                            0,
+                            containerId,
+                            DelosStorageOrderedIndexFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR)
+                            > missingBefore);
+            assertEquals("missing sidecar fallback must not claim row-id shortcut execution",
+                    0, diagnostics.rowIdFastPathReadCountForTesting());
+        }
+    }
+
+    public void testMalformedOrderedIndexSidecarFallsBackWithReason() throws Exception {
+        String databaseName = databaseName("mvcc-ordered-index-malformed-sidecar-fallback-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        long containerId;
+        Path orderedIndexPagesFile;
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table ordered_index_malformed_sidecar_t "
+                    + "(id int primary key, code varchar(32), payload varchar(64)) using delos_mvcc");
+            executeUpdate(connection, "insert into ordered_index_malformed_sidecar_t values (1, 'alpha', 'payload-1')");
+            executeUpdate(connection, "insert into ordered_index_malformed_sidecar_t values (2, 'beta', 'payload-2')");
+            connection.commit();
+            containerId = mvccContainerId(connection, "ORDERED_INDEX_MALFORMED_SIDECAR_T");
+            orderedIndexPagesFile = diagnostics.orderedIndexPagesFileForTesting(0, containerId);
+            assertTrue("ordered index sidecar should exist before intentional corruption",
+                    Files.exists(orderedIndexPagesFile));
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+        Files.write(orderedIndexPagesFile, new byte[] {0x44, 0x45, 0x4c, 0x4f, 0x53});
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            long lookupBefore = diagnostics.orderedIndexLookupCountForTesting(0, containerId);
+            long fallbackBefore = diagnostics.orderedIndexFallbackCountForTesting(0, containerId);
+            long malformedBefore = diagnostics.orderedIndexFallbackReasonCountForTesting(
+                    0,
+                    containerId,
+                    DelosStorageOrderedIndexFallbackReason.MALFORMED_ORDERED_INDEX_SIDECAR);
+            diagnostics.resetScanCountersForTesting();
+
+            assertRows(reopened,
+                    "select id, payload from ordered_index_malformed_sidecar_t where code = 'beta'",
+                    "2|payload-2");
+
+            assertTrue("malformed ordered-index sidecar should still be looked up diagnostically",
+                    diagnostics.orderedIndexLookupCountForTesting(0, containerId) > lookupBefore);
+            assertTrue("malformed ordered-index sidecar should record safe fallback",
+                    diagnostics.orderedIndexFallbackCountForTesting(0, containerId) > fallbackBefore);
+            assertTrue("malformed ordered-index sidecar should record a malformed-sidecar fallback reason",
+                    diagnostics.orderedIndexFallbackReasonCountForTesting(
+                            0,
+                            containerId,
+                            DelosStorageOrderedIndexFallbackReason.MALFORMED_ORDERED_INDEX_SIDECAR)
+                            > malformedBefore);
+            assertEquals("malformed sidecar fallback must not claim row-id shortcut execution",
+                    0, diagnostics.rowIdFastPathReadCountForTesting());
+        }
+    }
+
     public void testStableSnapshotsAndLocalWritersDoNotUseOrderedCurrentCommittedLookup() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-equality-snapshot-db");
         DelosStorageDiagnostics diagnostics = mvccDiagnostics();
@@ -157,12 +304,22 @@ public final class MvccSqlOrderedIndexEqualityLookupTest extends MvccSqlTestSupp
             writer.commit();
 
             long lookupBefore = diagnostics.orderedIndexLookupCountForTesting(0, containerId);
+            long intentionalBefore = diagnostics.orderedIndexFallbackReasonCountForTesting(
+                    0,
+                    containerId,
+                    DelosStorageOrderedIndexFallbackReason.INTENTIONAL_NON_SHORTCUT_READ);
             diagnostics.resetScanCountersForTesting();
             assertRows(reader,
                     "select id, payload from ordered_index_snapshot_t where code = 'alpha'",
                     "1|payload-1");
             assertEquals("stable snapshots must not use current-committed ordered index pages",
                     lookupBefore, diagnostics.orderedIndexLookupCountForTesting(0, containerId));
+            assertTrue("stable snapshots should be classified as intentional non-shortcut reads",
+                    diagnostics.orderedIndexFallbackReasonCountForTesting(
+                            0,
+                            containerId,
+                            DelosStorageOrderedIndexFallbackReason.INTENTIONAL_NON_SHORTCUT_READ)
+                            > intentionalBefore);
             assertEquals("stable snapshots must not use current-committed row-id fast path",
                     0, diagnostics.rowIdFastPathReadCountForTesting());
             reader.commit();
@@ -172,12 +329,22 @@ public final class MvccSqlOrderedIndexEqualityLookupTest extends MvccSqlTestSupp
             writer.setAutoCommit(false);
             executeUpdate(writer, "update ordered_index_snapshot_t set code = 'local', payload = 'payload-2-local' where id = 2");
             long lookupBefore = diagnostics.orderedIndexLookupCountForTesting(0, containerId);
+            long intentionalBefore = diagnostics.orderedIndexFallbackReasonCountForTesting(
+                    0,
+                    containerId,
+                    DelosStorageOrderedIndexFallbackReason.INTENTIONAL_NON_SHORTCUT_READ);
             diagnostics.resetScanCountersForTesting();
             assertRows(writer,
                     "select id, payload from ordered_index_snapshot_t where code = 'local'",
                     "2|payload-2-local");
             assertEquals("writer-borrowed reads must not use current-committed ordered index pages",
                     lookupBefore, diagnostics.orderedIndexLookupCountForTesting(0, containerId));
+            assertTrue("writer-borrowed reads should be classified as intentional non-shortcut reads",
+                    diagnostics.orderedIndexFallbackReasonCountForTesting(
+                            0,
+                            containerId,
+                            DelosStorageOrderedIndexFallbackReason.INTENTIONAL_NON_SHORTCUT_READ)
+                            > intentionalBefore);
             assertEquals("writer-borrowed reads must not use current-committed row-id fast path",
                     0, diagnostics.rowIdFastPathReadCountForTesting());
             assertTrue("writer-borrowed reads should observe local provider write intents",

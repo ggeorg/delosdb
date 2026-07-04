@@ -66,6 +66,7 @@ public final class PageVolumeMvccStateStore<T> {
     private final MvccSubsystemRecoveryRecordStore recoveryRecordStore;
     private final PageBackedMvccTable table;
     private final MvccOrderedIndexPageStore orderedIndexPageStore;
+    private OrderedIndexLookupFallbackReason orderedIndexOpenFallbackReason;
     private PageVolumeMvccCheckpointStore.Status checkpointStatus;
     private long nextTransactionId;
     private long nextCommitSequence;
@@ -81,6 +82,7 @@ public final class PageVolumeMvccStateStore<T> {
             MvccSubsystemRecoveryRecordStore recoveryRecordStore,
             PageBackedMvccTable table,
             MvccOrderedIndexPageStore orderedIndexPageStore,
+            OrderedIndexLookupFallbackReason orderedIndexOpenFallbackReason,
             PageVolumeMvccCheckpointStore.Status checkpointStatus) {
         this.storageId = storageId;
         this.rowCodec = Objects.requireNonNull(rowCodec, "rowCodec");
@@ -92,6 +94,7 @@ public final class PageVolumeMvccStateStore<T> {
         this.recoveryRecordStore = Objects.requireNonNull(recoveryRecordStore, "recoveryRecordStore");
         this.table = table;
         this.orderedIndexPageStore = orderedIndexPageStore;
+        this.orderedIndexOpenFallbackReason = orderedIndexOpenFallbackReason;
         this.checkpointStatus = Objects.requireNonNull(checkpointStatus, "checkpointStatus");
         long nextSequence = 1L;
         if (table != null) {
@@ -112,13 +115,20 @@ public final class PageVolumeMvccStateStore<T> {
         try {
             Path pageMutationLog = PageVolumeMvccPaths.pageMutationLogFileFor(pageFile);
             Path transactionOutcomeLog = PageVolumeMvccPaths.transactionOutcomeLogFileFor(pageFile);
-            PageVolumeMvccWriteAheadLog writeAheadLog = PageVolumeMvccWriteAheadLog.open(databaseDirectory, storageId);
-            PageVolumeMvccCheckpointStore checkpointStore = PageVolumeMvccCheckpointStore.open(databaseDirectory, storageId);
+            PageVolumeMvccWriteAheadLog writeAheadLog = PageVolumeMvccWriteAheadLog.open(
+                    databaseDirectory, storageId);
+            PageVolumeMvccCheckpointStore checkpointStore = PageVolumeMvccCheckpointStore.open(
+                    databaseDirectory, storageId);
             MvccSubsystemRecoveryRecordStore recoveryRecordStore = MvccSubsystemRecoveryRecordStore.open(
                     databaseDirectory, storageId);
             PageBackedMvccTable table = PageBackedMvccTable.open(pageFile, pageMutationLog, transactionOutcomeLog);
-            MvccOrderedIndexPageStore orderedIndexPageStore = MvccOrderedIndexPageStore.open(
-                    PageBackedMvccTable.orderedIndexPagesPath(pageFile));
+            Path orderedIndexPagesPath = PageBackedMvccTable.orderedIndexPagesPath(pageFile);
+            boolean orderedIndexPagesExisted = Files.exists(orderedIndexPagesPath);
+            OrderedIndexOpenResult orderedIndexOpenResult = openOrderedIndexPagesSafely(
+                    orderedIndexPagesPath,
+                    orderedIndexPagesExisted,
+                    table.logicalRowCount());
+            MvccOrderedIndexPageStore orderedIndexPageStore = orderedIndexOpenResult.store();
             PageVolumeMvccCheckpointStore.Status checkpointStatus = checkpointStore.validate(
                     pageFile,
                     PageBackedMvccTable.rowDirectoryPath(pageFile),
@@ -142,6 +152,7 @@ public final class PageVolumeMvccStateStore<T> {
                     recoveryRecordStore,
                     table,
                     orderedIndexPageStore,
+                    orderedIndexOpenResult.fallbackReason(),
                     checkpointStatus);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not open MVCC page-volume state for " + storageId, e);
@@ -160,7 +171,27 @@ public final class PageVolumeMvccStateStore<T> {
                 MvccSubsystemRecoveryRecordStore.disabled(),
                 null,
                 null,
+                OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR,
                 PageVolumeMvccCheckpointStore.Status.DISABLED);
+    }
+
+    private static OrderedIndexOpenResult openOrderedIndexPagesSafely(
+            Path orderedIndexPagesPath,
+            boolean orderedIndexPagesExisted,
+            int logicalRowCount) {
+        try {
+            MvccOrderedIndexPageStore store = MvccOrderedIndexPageStore.open(orderedIndexPagesPath);
+            OrderedIndexLookupFallbackReason fallbackReason = null;
+            if (!orderedIndexPagesExisted && logicalRowCount > 0) {
+                fallbackReason = OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR;
+            }
+            return new OrderedIndexOpenResult(store, fallbackReason);
+        } catch (IOException | RuntimeException e) {
+            OrderedIndexLookupFallbackReason fallbackReason = Files.exists(orderedIndexPagesPath)
+                    ? OrderedIndexLookupFallbackReason.MALFORMED_ORDERED_INDEX_SIDECAR
+                    : OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR;
+            return new OrderedIndexOpenResult(null, fallbackReason);
+        }
     }
 
     public boolean enabled() {
@@ -420,6 +451,7 @@ public final class PageVolumeMvccStateStore<T> {
                         entry.column(), entry.key(), entry.rowId()));
             }
             orderedIndexPageStore.rewrite(durableEntries);
+            orderedIndexOpenFallbackReason = null;
             recoveryRecordStore.appendIndexPageRedo(
                     orderedIndexPageStore.pageCount(),
                     orderedIndexPageStore.entryCount());
@@ -482,13 +514,18 @@ public final class PageVolumeMvccStateStore<T> {
     }
 
     public Optional<List<Long>> orderedIndexRowIdsFor(int column, String key) {
-        if (!enabled() || orderedIndexPageStore == null) {
-            return Optional.empty();
+        return orderedIndexLookupFor(column, key).rowIds();
+    }
+
+    public OrderedIndexLookupResult orderedIndexLookupFor(int column, String key) {
+        OrderedIndexLookupFallbackReason unavailableReason = orderedIndexUnavailableForLookup();
+        if (unavailableReason != null) {
+            return OrderedIndexLookupResult.fallback(unavailableReason);
         }
         try {
-            return Optional.of(orderedIndexPageStore.rowIdsFor(column, key));
+            return OrderedIndexLookupResult.answered(orderedIndexPageStore.rowIdsFor(column, key));
         } catch (IOException | RuntimeException e) {
-            return Optional.empty();
+            return OrderedIndexLookupResult.fallback(classifyOrderedIndexLookupFailure(e));
         }
     }
 
@@ -498,15 +535,56 @@ public final class PageVolumeMvccStateStore<T> {
             boolean lowerInclusive,
             String upperKey,
             boolean upperInclusive) {
-        if (!enabled() || orderedIndexPageStore == null) {
-            return Optional.empty();
+        return orderedIndexRangeLookupFor(column, lowerKey, lowerInclusive, upperKey, upperInclusive).rowIds();
+    }
+
+    public OrderedIndexLookupResult orderedIndexRangeLookupFor(
+            int column,
+            String lowerKey,
+            boolean lowerInclusive,
+            String upperKey,
+            boolean upperInclusive) {
+        OrderedIndexLookupFallbackReason unavailableReason = orderedIndexUnavailableForLookup();
+        if (unavailableReason != null) {
+            return OrderedIndexLookupResult.fallback(unavailableReason);
         }
         try {
-            return Optional.of(orderedIndexPageStore.rowIdsInRangeFor(
+            return OrderedIndexLookupResult.answered(orderedIndexPageStore.rowIdsInRangeFor(
                     column, lowerKey, lowerInclusive, upperKey, upperInclusive));
         } catch (IOException | RuntimeException e) {
-            return Optional.empty();
+            return OrderedIndexLookupResult.fallback(classifyOrderedIndexLookupFailure(e));
         }
+    }
+
+    private OrderedIndexLookupFallbackReason orderedIndexUnavailableForLookup() {
+        if (!enabled() || orderedIndexPageStore == null) {
+            return orderedIndexOpenFallbackReason == null
+                    ? OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR
+                    : orderedIndexOpenFallbackReason;
+        }
+        if (orderedIndexOpenFallbackReason != null) {
+            return orderedIndexOpenFallbackReason;
+        }
+        try {
+            if (table.logicalRowCount() > 0 && orderedIndexPageStore.pageCount() == 0L) {
+                return OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR;
+            }
+            return null;
+        } catch (IOException | RuntimeException e) {
+            return classifyOrderedIndexLookupFailure(e);
+        }
+    }
+
+    private OrderedIndexLookupFallbackReason classifyOrderedIndexLookupFailure(Throwable failure) {
+        String message = failure.getMessage();
+        if (message != null && message.contains("legacy untyped keys")) {
+            return OrderedIndexLookupFallbackReason.UNSUPPORTED_KEY_OR_TYPE;
+        }
+        Path path = orderedIndexPagesFile();
+        if (path == null || !Files.exists(path)) {
+            return OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR;
+        }
+        return OrderedIndexLookupFallbackReason.MALFORMED_ORDERED_INDEX_SIDECAR;
     }
 
     public long pageCacheMaxPageCount() {
@@ -777,7 +855,8 @@ public final class PageVolumeMvccStateStore<T> {
                             writeAheadLog.appendBegin(transactionId);
                             beganWalTransaction = true;
                         }
-                        DelosLogSequenceNumber pageLsn = writeAheadLog.appendDeleteVersion(transactionId, change.rowId());
+                        DelosLogSequenceNumber pageLsn = writeAheadLog.appendDeleteVersion(
+                                transactionId, change.rowId());
                         table.deleteCommitted(key, transactionId, durableCommitSequence, pageLsn);
                     }
                     continue;
@@ -1035,4 +1114,38 @@ public final class PageVolumeMvccStateStore<T> {
             values = Objects.requireNonNull(values, "values");
         }
     }
+
+    private record OrderedIndexOpenResult(
+            MvccOrderedIndexPageStore store,
+            OrderedIndexLookupFallbackReason fallbackReason) {
+    }
+
+    public record OrderedIndexLookupResult(
+            Optional<List<Long>> rowIds,
+            OrderedIndexLookupFallbackReason fallbackReason) {
+        public OrderedIndexLookupResult {
+            rowIds = Objects.requireNonNull(rowIds, "rowIds");
+            if (rowIds.isPresent() && fallbackReason != null) {
+                throw new IllegalArgumentException("answered ordered-index lookups must not have a fallback reason");
+            }
+            if (rowIds.isEmpty() && fallbackReason == null) {
+                throw new IllegalArgumentException("fallback ordered-index lookups must have a reason");
+            }
+        }
+
+        static OrderedIndexLookupResult answered(List<Long> rowIds) {
+            return new OrderedIndexLookupResult(Optional.of(List.copyOf(rowIds)), null);
+        }
+
+        static OrderedIndexLookupResult fallback(OrderedIndexLookupFallbackReason reason) {
+            return new OrderedIndexLookupResult(Optional.empty(), Objects.requireNonNull(reason, "reason"));
+        }
+    }
+
+    public enum OrderedIndexLookupFallbackReason {
+        UNSUPPORTED_KEY_OR_TYPE,
+        MALFORMED_ORDERED_INDEX_SIDECAR,
+        STALE_OR_MISSING_ORDERED_INDEX_SIDECAR
+    }
+
 }

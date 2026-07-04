@@ -31,6 +31,7 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
 import org.apache.derby.iapi.store.types.DelosStorageCommittedRead;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexKey;
 import org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
 import org.apache.derby.iapi.store.types.DelosStorageRow;
@@ -498,6 +499,15 @@ final class MvccConglomerateState {
         return diagnostics.orderedIndexFallbackCountForTesting();
     }
 
+    synchronized long orderedIndexFallbackReasonCountForTesting(
+            DelosStorageOrderedIndexFallbackReason reason) {
+        return diagnostics.orderedIndexFallbackReasonCountForTesting(reason);
+    }
+
+    synchronized List<String> orderedIndexFallbackReasonSummariesForTesting() {
+        return diagnostics.orderedIndexFallbackReasonSummariesForTesting();
+    }
+
     synchronized long orderedIndexRowIdCountForTesting() {
         return diagnostics.orderedIndexRowIdCountForTesting();
     }
@@ -664,6 +674,10 @@ final class MvccConglomerateState {
 
         Optional<ColumnRangeKey> range = rangeOrderedIndexKey(qualifiers);
         if (range.isEmpty()) {
+            if (hasIndexQualifiers(qualifiers)) {
+                recordOrderedIndexFallbackForDiagnostics(
+                        DelosStorageOrderedIndexFallbackReason.UNSUPPORTED_KEY_OR_TYPE);
+            }
             return Optional.empty();
         }
         ColumnRangeKey columnRangeKey = range.get();
@@ -673,6 +687,28 @@ final class MvccConglomerateState {
                 columnRangeKey.lowerInclusive(),
                 columnRangeKey.upperValue(),
                 columnRangeKey.upperInclusive());
+    }
+
+    synchronized void recordOrderedIndexFallbackForDiagnostics(
+            DelosStorageOrderedIndexFallbackReason reason) {
+        candidateIndex.recordOrderedIndexFallbackForTesting(reason);
+    }
+
+    static boolean hasIndexQualifiers(Qualifier[][] qualifiers) {
+        if (qualifiers == null || qualifiers.length == 0) {
+            return false;
+        }
+        for (Qualifier[] andTerm : qualifiers) {
+            if (andTerm == null) {
+                continue;
+            }
+            for (Qualifier qualifier : andTerm) {
+                if (qualifier != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     static boolean candidateIndexDiagnosticFallbackEnabledForTesting() {
@@ -715,7 +751,7 @@ final class MvccConglomerateState {
                         return Optional.empty();
                     }
                     return Optional.of(new ColumnValueKey(qualifier.getColumnId(), valueKey(orderable)));
-                } catch (StandardException e) {
+                } catch (StandardException | RuntimeException e) {
                     return Optional.empty();
                 }
             }
@@ -765,7 +801,7 @@ final class MvccConglomerateState {
                         return Optional.empty();
                     }
                     value = valueKey(orderable);
-                } catch (StandardException e) {
+                } catch (StandardException | RuntimeException e) {
                     return Optional.empty();
                 }
                 switch (operator) {
