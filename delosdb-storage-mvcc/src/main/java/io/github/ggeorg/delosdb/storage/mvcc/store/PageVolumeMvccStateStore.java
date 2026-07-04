@@ -67,6 +67,7 @@ public final class PageVolumeMvccStateStore<T> {
     private final PageBackedMvccTable table;
     private final MvccOrderedIndexPageStore orderedIndexPageStore;
     private OrderedIndexLookupFallbackReason orderedIndexOpenFallbackReason;
+    private OrderedIndexLookupFallbackReason pendingOrderedIndexLookupFallbackReason;
     private PageVolumeMvccCheckpointStore.Status checkpointStatus;
     private long nextTransactionId;
     private long nextCommitSequence;
@@ -95,6 +96,7 @@ public final class PageVolumeMvccStateStore<T> {
         this.table = table;
         this.orderedIndexPageStore = orderedIndexPageStore;
         this.orderedIndexOpenFallbackReason = orderedIndexOpenFallbackReason;
+        this.pendingOrderedIndexLookupFallbackReason = orderedIndexOpenFallbackReason;
         this.checkpointStatus = Objects.requireNonNull(checkpointStatus, "checkpointStatus");
         long nextSequence = 1L;
         if (table != null) {
@@ -565,14 +567,12 @@ public final class PageVolumeMvccStateStore<T> {
         if (orderedIndexOpenFallbackReason != null) {
             return orderedIndexOpenFallbackReason;
         }
-        try {
-            if (table.logicalRowCount() > 0 && orderedIndexPageStore.pageCount() == 0L) {
-                return OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR;
-            }
-            return null;
-        } catch (IOException | RuntimeException e) {
-            return classifyOrderedIndexLookupFailure(e);
+        if (pendingOrderedIndexLookupFallbackReason != null) {
+            OrderedIndexLookupFallbackReason reason = pendingOrderedIndexLookupFallbackReason;
+            pendingOrderedIndexLookupFallbackReason = null;
+            return reason;
         }
+        return null;
     }
 
     private OrderedIndexLookupFallbackReason classifyOrderedIndexLookupFailure(Throwable failure) {

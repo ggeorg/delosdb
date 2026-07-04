@@ -29,7 +29,7 @@ import junit.framework.TestCase;
 /** Gate that keeps the post-checkpoint boundary report wired into closeout verification. */
 public final class PostCheckpointBoundaryReportConsolidationTest extends TestCase {
     public void testPostCheckpointBoundaryReportIsWiredIntoCloseoutVerification() throws Exception {
-        Path staticAnalysisScript = Path.of("gradle", "delosdb-storage-static-analysis.gradle");
+        Path staticAnalysisScript = storageStaticAnalysisScript();
         assertTrue("storage static-analysis script should exist", Files.exists(staticAnalysisScript));
 
         String script = Files.readString(staticAnalysisScript, StandardCharsets.UTF_8);
@@ -45,5 +45,20 @@ public final class PostCheckpointBoundaryReportConsolidationTest extends TestCas
                 script.contains("delosdb\\\\.(?:optimizer|storage)"));
         assertTrue("report should track inherited/new-code boundary imports",
                 script.contains("heap -> MVCC implementation imports"));
+    }
+
+    private static Path storageStaticAnalysisScript() {
+        Path direct = Path.of("gradle", "delosdb-storage-static-analysis.gradle");
+        if (Files.exists(direct)) {
+            return direct;
+        }
+        Path fromFocusedTestWorkDir = Path.of(
+                "..", "..", "..", "..",
+                "gradle",
+                "delosdb-storage-static-analysis.gradle").normalize();
+        if (Files.exists(fromFocusedTestWorkDir)) {
+            return fromFocusedTestWorkDir;
+        }
+        return direct;
     }
 }
