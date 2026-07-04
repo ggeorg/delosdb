@@ -169,7 +169,10 @@ public final class StoreCostControllerBridge implements StoreCostControllerWrapp
                         request.inputRowCount(),
                         request.derbyCost(),
                         request.derbyEstimatedRows(),
-                        "provider returned no estimate for factory id " + request.factoryId());
+                        request.hasSafeDerbyBaseline(),
+                        request.hasSafeDerbyBaseline()
+                                ? "provider returned no estimate for factory id " + request.factoryId()
+                                : "Derby baseline cost was not safe for provider consumption");
             }
             CostModelEstimate value = estimate.get();
             return new CostModelProbe(
@@ -181,6 +184,7 @@ public final class StoreCostControllerBridge implements StoreCostControllerWrapp
                     request.inputRowCount(),
                     request.derbyCost(),
                     request.derbyEstimatedRows(),
+                    request.hasSafeDerbyBaseline(),
                     true,
                     value.startupCost(),
                     value.totalCost(),

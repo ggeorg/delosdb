@@ -25,7 +25,7 @@ final class BuiltInBTreeCostModelProvider implements CostModelProvider {
 
     @Override
     public Optional<CostModelEstimate> estimateScanCost(CostModelRequest request) {
-        if (request.factoryId() != accessMethodFactoryId()) {
+        if (request.factoryId() != accessMethodFactoryId() || !request.hasSafeDerbyBaseline()) {
             return Optional.empty();
         }
 

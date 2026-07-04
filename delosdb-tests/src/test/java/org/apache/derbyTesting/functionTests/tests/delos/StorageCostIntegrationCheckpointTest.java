@@ -23,12 +23,14 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 import java.io.File;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.util.List;
 
 import org.apache.derby.iapi.store.types.DelosStorageConsistencyTarget;
 import org.apache.derby.iapi.store.types.DelosStorageCostEstimate;
 import org.apache.derby.iapi.store.types.DelosStorageCostIntegration;
 import org.apache.derby.iapi.store.types.DelosStorageCostReport;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
+import org.apache.derby.iapi.store.types.DelosStorageStatistics;
 
 /** SQL gate for the opt-in storage-statistics cost checkpoint. */
 public final class StorageCostIntegrationCheckpointTest extends MvccSqlTestSupport {
@@ -75,6 +77,10 @@ public final class StorageCostIntegrationCheckpointTest extends MvccSqlTestSuppo
                 assertTrue("enabled checkpoint remains proof-only", enabledReport.proofOnly());
                 assertFalse("enabled checkpoint must not change Derby optimizer consumption",
                         enabledReport.consumedByDerbyOptimizer());
+                assertFalse("proof-only storage statistics must fail closed for optimizer consumption",
+                        enabledReport.optimizerConsumptionEligible());
+                assertTrue("proof-only storage statistics report should document fail-closed optimizer state",
+                        enabledReport.failClosedForOptimizer());
                 assertEquals("expected heap and MVCC cost targets", 2, enabledReport.targetCount());
                 assertTrue("expected positive aggregate full-scan cost",
                         enabledReport.totalEstimatedFullScanCost() > 0L);
@@ -101,6 +107,11 @@ public final class StorageCostIntegrationCheckpointTest extends MvccSqlTestSuppo
                         mvccEstimate.estimatedFullScanCost() > 0L);
                 assertFalse("MVCC estimate must not be consumed by optimizer",
                         mvccEstimate.consumedByDerbyOptimizer());
+                assertTrue("MVCC estimate should expose ordered-index facts to cost diagnostics",
+                        mvccEstimate.observations().stream()
+                                .anyMatch(value -> value.startsWith("ordered index entries:")));
+                assertTrue("MVCC estimate should remain fail-closed for optimizer consumption",
+                        mvccEstimate.failClosedForOptimizer());
 
                 assertRows(connection,
                         "select id, name from cost_heap_t order by id",
@@ -121,4 +132,46 @@ public final class StorageCostIntegrationCheckpointTest extends MvccSqlTestSuppo
             }
         }
     }
+    public void testStorageCostEstimatesSaturateAndRemainFailClosedForExtremeStatistics() {
+        DelosStorageStatistics extreme = new DelosStorageStatistics(
+                DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID,
+                0,
+                42L,
+                true,
+                Long.MAX_VALUE - 10L,
+                Long.MAX_VALUE - 5L,
+                Long.MAX_VALUE - 4L,
+                Long.MAX_VALUE - 3L,
+                0L,
+                Long.MAX_VALUE - 2L,
+                Long.MAX_VALUE - 1L,
+                Long.MAX_VALUE,
+                Long.MAX_VALUE,
+                0L,
+                0L,
+                Long.MAX_VALUE,
+                Long.MAX_VALUE,
+                Long.MAX_VALUE,
+                List.of("synthetic extreme statistics"));
+
+        DelosStorageCostEstimate estimate = DelosStorageCostEstimate.fromStatistics(extreme, true);
+
+        assertEquals("extreme storage statistics should saturate instead of overflowing",
+                Long.MAX_VALUE,
+                estimate.estimatedFullScanCost());
+        assertTrue("saturated estimate should keep a positive row fetch cost",
+                estimate.estimatedRowFetchCost() > 0L);
+        assertTrue("saturated estimate should keep an ordered-index lookup estimate",
+                estimate.hasIndexLookupCost());
+        assertTrue("storage-statistics checkpoint remains proof-only",
+                estimate.proofOnly());
+        assertFalse("proof-only estimate must not be optimizer-consumption eligible",
+                estimate.optimizerConsumptionEligible());
+        assertTrue("proof-only estimate must fail closed for optimizer consumption",
+                estimate.failClosedForOptimizer());
+        assertTrue("estimate should document fail-closed optimizer state",
+                estimate.observations().contains(
+                        "optimizer consumption eligibility: fail-closed proof-only checkpoint"));
+    }
+
 }

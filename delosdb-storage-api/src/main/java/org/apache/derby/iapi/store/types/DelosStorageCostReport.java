@@ -68,6 +68,22 @@ public record DelosStorageCostReport(boolean storageStatisticsEnabled,
         return true;
     }
 
+    public boolean optimizerConsumptionEligible() {
+        if (!storageStatisticsEnabled || consumedByDerbyOptimizer) {
+            return false;
+        }
+        for (DelosStorageCostEstimate estimate : estimates) {
+            if (!estimate.optimizerConsumptionEligible()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean failClosedForOptimizer() {
+        return !optimizerConsumptionEligible();
+    }
+
     public Set<String> providerIds() {
         Set<String> providers = new LinkedHashSet<>();
         for (DelosStorageCostEstimate estimate : estimates) {

@@ -71,6 +71,26 @@ public final class DelosOptimizerStorageCostOptInDiagnostics {
         return safe;
     }
 
+    public static int safeDerbyBaselineProbeCountForTesting() {
+        int safe = 0;
+        for (CostModelProbe probe : CostModelDiagnostics.probes()) {
+            if (probe.safeDerbyBaseline()) {
+                safe++;
+            }
+        }
+        return safe;
+    }
+
+    public static int fallbackProbeCountForTesting() {
+        int fallback = 0;
+        for (CostModelProbe probe : CostModelDiagnostics.probes()) {
+            if (!probe.canSafelyReplaceDerbyCost()) {
+                fallback++;
+            }
+        }
+        return fallback;
+    }
+
     public static boolean lastProbeConsumedForTesting() {
         CostModelProbe probe = CostModelDiagnostics.lastProbe();
         return probe != null && probe.consumed();

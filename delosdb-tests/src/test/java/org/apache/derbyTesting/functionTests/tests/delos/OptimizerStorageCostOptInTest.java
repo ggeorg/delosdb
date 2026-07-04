@@ -78,6 +78,8 @@ public final class OptimizerStorageCostOptInTest extends MvccSqlTestSupport {
 
                 assertTrue("enabled optimizer path should record store-cost provider probes",
                         DelosOptimizerStorageCostOptInDiagnostics.probeCountForTesting() > 0);
+                assertTrue("enabled optimizer path should observe safe Derby baseline costs",
+                        DelosOptimizerStorageCostOptInDiagnostics.safeDerbyBaselineProbeCountForTesting() > 0);
                 assertTrue("enabled optimizer path should find safe provider estimates",
                         DelosOptimizerStorageCostOptInDiagnostics.safeProviderEstimateCountForTesting() > 0);
                 assertTrue("enabled optimizer path should consume at least one provider estimate",
@@ -85,6 +87,9 @@ public final class OptimizerStorageCostOptInTest extends MvccSqlTestSupport {
                 assertTrue("last probe should document the native store-cost controller path",
                         DelosOptimizerStorageCostOptInDiagnostics.lastDiagnosticLineForTesting()
                                 .contains("path=store-cost-controller"));
+                assertTrue("last probe should document a safe Derby baseline before consumption",
+                        DelosOptimizerStorageCostOptInDiagnostics.lastDiagnosticLineForTesting()
+                                .contains("safeDerbyBaseline=true"));
                 assertTrue("last probe should document opt-in consumption",
                         DelosOptimizerStorageCostOptInDiagnostics.lastDiagnosticLineForTesting()
                                 .contains("consumed=true"));

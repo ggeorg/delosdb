@@ -12,6 +12,7 @@ public record CostModelProbe(
         long inputRowCount,
         double derbyCost,
         long derbyRows,
+        boolean safeDerbyBaseline,
         boolean estimatePresent,
         double providerStartupCost,
         double providerTotalCost,
@@ -43,7 +44,8 @@ public record CostModelProbe(
     }
 
     public boolean canSafelyReplaceDerbyCost() {
-        return estimatePresent
+        return safeDerbyBaseline
+                && estimatePresent
                 && Double.isFinite(providerStartupCost)
                 && providerStartupCost >= 0.0d
                 && Double.isFinite(providerTotalCost)
@@ -62,6 +64,7 @@ public record CostModelProbe(
                 inputRowCount,
                 derbyCost,
                 derbyRows,
+                safeDerbyBaseline,
                 estimatePresent,
                 providerStartupCost,
                 providerTotalCost,
@@ -96,6 +99,7 @@ public record CostModelProbe(
                 + ", scanType=" + scanType
                 + ", decision=" + decision()
                 + ", costSource=" + costSource()
+                + ", safeDerbyBaseline=" + safeDerbyBaseline
                 + ", safeToConsume=" + canSafelyReplaceDerbyCost()
                 + ", consumed=" + consumed
                 + ", derbyCost=" + derbyCost
@@ -118,6 +122,7 @@ public record CostModelProbe(
             long inputRowCount,
             double derbyCost,
             long derbyRows,
+            boolean safeDerbyBaseline,
             String explanation) {
         return new CostModelProbe(
                 mode,
@@ -128,6 +133,7 @@ public record CostModelProbe(
                 inputRowCount,
                 derbyCost,
                 derbyRows,
+                safeDerbyBaseline,
                 false,
                 0.0d,
                 0.0d,

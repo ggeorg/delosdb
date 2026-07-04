@@ -76,15 +76,18 @@ public record DelosStorageCostEstimate(String providerId,
 
         long observedStoragePages = pagesForBytes(statistics.observedStorageBytes());
         long estimatedPages = Math.max(statistics.pageCount(), observedStoragePages);
-        long auxiliaryPages = statistics.overflowPageCount()
-                + statistics.freeSpaceMapPageCount()
-                + statistics.visibilityMapPageCount()
-                + statistics.orderedIndexPageCount();
+        long auxiliaryPages = saturatedAdd(
+                saturatedAdd(statistics.overflowPageCount(), statistics.freeSpaceMapPageCount()),
+                saturatedAdd(statistics.visibilityMapPageCount(), statistics.orderedIndexPageCount()));
         long rows = Math.max(statistics.logicalRowCount(), statistics.physicalVersionCount());
-        long fullScanCost = Math.max(1L, estimatedPages + auxiliaryPages + rows);
-        long rowFetchCost = Math.max(1L, estimatedPages == 0L ? 1L : 1L + Math.min(estimatedPages, 4L));
+        long versionBloat = Math.max(0L, statistics.physicalVersionCount() - statistics.logicalRowCount());
+        long scanRows = saturatedAdd(rows, versionBloat);
+        long fullScanCost = Math.max(1L, saturatedAdd(saturatedAdd(estimatedPages, auxiliaryPages), scanRows));
+        long rowFetchCost = Math.max(1L, estimatedPages == 0L ? 1L : saturatedAdd(1L, Math.min(estimatedPages, 4L)));
         long indexLookupCost = statistics.orderedIndexEntryCount() > 0L
-                ? Math.max(1L, logarithmicCost(statistics.orderedIndexEntryCount()) + rowFetchCost)
+                ? Math.max(1L, saturatedAdd(
+                        logarithmicCost(statistics.orderedIndexEntryCount()),
+                        saturatedAdd(rowFetchCost, statistics.orderedIndexPageCount())))
                 : 0L;
 
         List<String> observations = new ArrayList<>();
@@ -94,6 +97,13 @@ public record DelosStorageCostEstimate(String providerId,
         observations.add("provider: " + statistics.providerId());
         observations.add("estimated pages: " + estimatedPages);
         observations.add("estimated storage bytes: " + statistics.observedStorageBytes());
+        observations.add("ordered index pages: " + statistics.orderedIndexPageCount());
+        observations.add("ordered index entries: " + statistics.orderedIndexEntryCount());
+        observations.add("overflow pages: " + statistics.overflowPageCount());
+        observations.add("free-space map pages: " + statistics.freeSpaceMapPageCount());
+        observations.add("visibility map pages: " + statistics.visibilityMapPageCount());
+        observations.add("physical/logical version bloat: " + versionBloat);
+        observations.add("optimizer consumption eligibility: fail-closed proof-only checkpoint");
 
         return new DelosStorageCostEstimate(
                 statistics.providerId(),
@@ -117,6 +127,19 @@ public record DelosStorageCostEstimate(String providerId,
         return estimatedIndexLookupCost > 0L;
     }
 
+    public boolean optimizerConsumptionEligible() {
+        return storageStatisticsEnabled
+                && readOnly
+                && !proofOnly
+                && estimatedFullScanCost > 0L
+                && estimatedRowFetchCost > 0L
+                && estimatedStorageBytes >= 0L;
+    }
+
+    public boolean failClosedForOptimizer() {
+        return !optimizerConsumptionEligible();
+    }
+
     public String decision() {
         return consumedByDerbyOptimizer ? "consumed" : "proof-only";
     }
@@ -135,7 +158,14 @@ public record DelosStorageCostEstimate(String providerId,
         if (bytes <= 0L) {
             return 0L;
         }
-        return Math.max(1L, (bytes + DEFAULT_PAGE_SIZE - 1L) / DEFAULT_PAGE_SIZE);
+        return Math.max(1L, ((bytes - 1L) / DEFAULT_PAGE_SIZE) + 1L);
+    }
+
+    private static long saturatedAdd(long left, long right) {
+        if (left >= Long.MAX_VALUE - right) {
+            return Long.MAX_VALUE;
+        }
+        return left + right;
     }
 
     private static long logarithmicCost(long entries) {
