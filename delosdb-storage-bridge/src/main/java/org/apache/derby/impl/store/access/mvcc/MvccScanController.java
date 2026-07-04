@@ -34,6 +34,7 @@ import org.apache.derby.iapi.store.access.ScanInfo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.types.DelosOptimizerPredicatePushdownDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.DelosStorageRow;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
@@ -433,6 +434,9 @@ public final class MvccScanController implements ScanManager {
 
     private void resetOrderedIndexScan(Qualifier[][] indexQualifiers) {
         if (!canUseCommittedOrderedIndex()) {
+            if (shouldRecordOrderedIndexNonShortcut(indexQualifiers)) {
+                state.recordOrderedIndexFallbackForDiagnostics(nonShortcutFallbackReason());
+            }
             orderedIndexRowIdScan = false;
             orderedIndexRowIds = null;
             return;
@@ -469,6 +473,19 @@ public final class MvccScanController implements ScanManager {
      */
     private boolean canUseCommittedOrderedIndex() {
         return pageBackedCommittedRead;
+    }
+
+    private boolean shouldRecordOrderedIndexNonShortcut(Qualifier[][] indexQualifiers) {
+        return transactionScopedReader
+                || readerBorrowedFromWriter
+                || MvccConglomerateState.hasIndexQualifiers(indexQualifiers);
+    }
+
+    private DelosStorageOrderedIndexFallbackReason nonShortcutFallbackReason() {
+        if (transactionScopedReader || readerBorrowedFromWriter) {
+            return DelosStorageOrderedIndexFallbackReason.INTENTIONAL_NON_SHORTCUT_READ;
+        }
+        return DelosStorageOrderedIndexFallbackReason.FULL_COMMITTED_SCAN_FALLBACK;
     }
 
     private boolean canUseCurrentCommittedOptimization() {
