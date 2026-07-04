@@ -65,8 +65,8 @@ public final class MvccScanController implements ScanManager {
     private DelosStorageScan scan;
     private final FormatableBitSet scanColumnList;
     private Qualifier[][] qualifiers;
-    private Iterator<Long> candidateRowIds;
-    private boolean candidateIndexScan;
+    private Iterator<Long> orderedIndexRowIds;
+    private boolean orderedIndexRowIdScan;
     private boolean pageBackedCommittedRead;
     private DelosStorageRow current;
     private boolean closed;
@@ -123,7 +123,7 @@ public final class MvccScanController implements ScanManager {
         } catch (StandardException e) {
             throw new IllegalStateException("Could not open MVCC storage-api scan", e);
         }
-        resetCandidateIndexScan(qualifiers);
+        resetOrderedIndexScan(qualifiers);
     }
 
 
@@ -202,7 +202,7 @@ public final class MvccScanController implements ScanManager {
             throw new IllegalStateException("Could not reopen MVCC storage-api scan", e);
         }
         this.qualifiers = qualifier;
-        resetCandidateIndexScan(qualifier);
+        resetOrderedIndexScan(qualifier);
     }
 
     @Override
@@ -217,7 +217,7 @@ public final class MvccScanController implements ScanManager {
             throw new IllegalStateException("Could not reopen MVCC storage-api scan", e);
         }
         this.qualifiers = qualifier;
-        resetCandidateIndexScan(qualifier);
+        resetOrderedIndexScan(qualifier);
     }
 
     private void openStorageScan() throws StandardException {
@@ -383,8 +383,8 @@ public final class MvccScanController implements ScanManager {
     }
 
     private boolean advanceToNextQualifiedRow() throws StandardException {
-        if (candidateIndexScan) {
-            return advanceToNextCandidateRow();
+        if (orderedIndexRowIdScan) {
+            return advanceToNextIndexedRow();
         }
         while (scan.next()) {
             DelosStorageRow candidate = scan.row();
@@ -398,9 +398,9 @@ public final class MvccScanController implements ScanManager {
         return false;
     }
 
-    private boolean advanceToNextCandidateRow() throws StandardException {
-        while (candidateRowIds != null && candidateRowIds.hasNext()) {
-            long rowId = candidateRowIds.next();
+    private boolean advanceToNextIndexedRow() throws StandardException {
+        while (orderedIndexRowIds != null && orderedIndexRowIds.hasNext()) {
+            long rowId = orderedIndexRowIds.next();
             Optional<StoreDataValue[]> visible = readCurrentCommittedOrSnapshot(rowId);
             if (visible.isEmpty()) {
                 MvccBridgeDiagnosticsSupport.incrementCandidateIndexVisibilityRejectCount();
@@ -431,21 +431,23 @@ public final class MvccScanController implements ScanManager {
         return state.read(rowId, snapshot);
     }
 
-    private void resetCandidateIndexScan(Qualifier[][] candidateQualifiers) {
-        if (!canUseCommittedCandidateIndex()) {
-            candidateIndexScan = false;
-            candidateRowIds = null;
+    private void resetOrderedIndexScan(Qualifier[][] indexQualifiers) {
+        if (!canUseCommittedOrderedIndex()) {
+            orderedIndexRowIdScan = false;
+            orderedIndexRowIds = null;
             return;
         }
-        Optional<List<Long>> candidates = state.candidateRowIdsFor(candidateQualifiers);
-        if (candidates.isEmpty()) {
-            candidateIndexScan = false;
-            candidateRowIds = null;
+        Optional<List<Long>> indexedRowIds = state.orderedIndexRowIdsFor(indexQualifiers);
+        if (indexedRowIds.isEmpty()) {
+            orderedIndexRowIdScan = false;
+            orderedIndexRowIds = null;
             return;
         }
-        List<Long> rowIds = candidates.get();
-        candidateIndexScan = true;
-        candidateRowIds = rowIds.iterator();
+        List<Long> rowIds = indexedRowIds.get();
+        orderedIndexRowIdScan = true;
+        orderedIndexRowIds = rowIds.iterator();
+        // Keep the historical diagnostic counter names for existing gates, but
+        // the normal row-id source here is the ordered MVCC index page store.
         MvccBridgeDiagnosticsSupport.incrementCandidateIndexLookupCount();
         MvccBridgeDiagnosticsSupport.addCandidateIndexRowIdCount(rowIds.size());
         DelosOptimizerPredicatePushdownDiagnostics.recordExecutionIfEnabledForTesting(
@@ -456,16 +458,16 @@ public final class MvccScanController implements ScanManager {
     }
 
     /**
-     * The inherited MVCC candidate index is rebuilt from the current committed
-     * visible image. It is therefore a safe narrowing structure only for
+     * The ordered MVCC index is rebuilt from the current committed visible
+     * image. It is therefore a safe row-id narrowing authority only for
      * statement-scoped reads over the current committed image. Transaction-
      * scoped snapshots may still need rows whose current committed key was
      * updated or deleted after the snapshot was captured, and scans borrowing an
      * active writer must also see uncommitted same-transaction writes that are
-     * not part of the committed candidate index. Those cases must fall back to
+     * not part of the committed ordered index. Those cases must fall back to
      * the full MVCC scan and let row-version visibility decide.
      */
-    private boolean canUseCommittedCandidateIndex() {
+    private boolean canUseCommittedOrderedIndex() {
         return pageBackedCommittedRead;
     }
 

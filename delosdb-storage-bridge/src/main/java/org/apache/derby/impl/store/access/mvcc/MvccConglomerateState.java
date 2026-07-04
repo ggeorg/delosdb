@@ -654,20 +654,20 @@ final class MvccConglomerateState {
         return new MvccRowLocation(rowId);
     }
 
-    synchronized Optional<List<Long>> candidateRowIdsFor(Qualifier[][] qualifiers) {
-        Optional<ColumnValueKey> key = equalityCandidateKey(qualifiers);
+    synchronized Optional<List<Long>> orderedIndexRowIdsFor(Qualifier[][] qualifiers) {
+        Optional<ColumnValueKey> key = equalityOrderedIndexKey(qualifiers);
         if (key.isPresent()) {
             ColumnValueKey columnValueKey = key.get();
-            return candidateIndex.orderedIndexCandidateRowIdsFor(
+            return candidateIndex.orderedIndexRowIdsFor(
                     columnValueKey.column(), columnValueKey.value());
         }
 
-        Optional<ColumnRangeKey> range = rangeCandidateKey(qualifiers);
+        Optional<ColumnRangeKey> range = rangeOrderedIndexKey(qualifiers);
         if (range.isEmpty()) {
             return Optional.empty();
         }
         ColumnRangeKey columnRangeKey = range.get();
-        return candidateIndex.orderedIndexCandidateRowIdsInRangeFor(
+        return candidateIndex.orderedIndexRowIdsInRangeFor(
                 columnRangeKey.column(),
                 columnRangeKey.lowerValue(),
                 columnRangeKey.lowerInclusive(),
@@ -687,7 +687,7 @@ final class MvccConglomerateState {
         table.close();
     }
 
-    private static Optional<ColumnValueKey> equalityCandidateKey(Qualifier[][] qualifiers) {
+    private static Optional<ColumnValueKey> equalityOrderedIndexKey(Qualifier[][] qualifiers) {
         if (qualifiers == null || qualifiers.length == 0) {
             return Optional.empty();
         }
@@ -723,7 +723,7 @@ final class MvccConglomerateState {
         return Optional.empty();
     }
 
-    private static Optional<ColumnRangeKey> rangeCandidateKey(Qualifier[][] qualifiers) {
+    private static Optional<ColumnRangeKey> rangeOrderedIndexKey(Qualifier[][] qualifiers) {
         if (qualifiers == null || qualifiers.length == 0) {
             return Optional.empty();
         }
@@ -742,7 +742,7 @@ final class MvccConglomerateState {
             if (andTermIndex > 0 && andTerm.length != 1) {
                 // Additional Derby qualifier groups are OR terms. A group with
                 // more than one alternative is not a simple single-column range,
-                // so keep the existing full/candidate fallback path.
+                // so keep the full committed-image scan path.
                 return Optional.empty();
             }
             for (Qualifier qualifier : andTerm) {

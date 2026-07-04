@@ -388,13 +388,13 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
-    public Optional<List<Long>> orderedIndexCandidateRowIdsFor(int column, String value) {
+    public Optional<List<Long>> orderedIndexRowIdsFor(int column, String value) {
         return readLocked(() -> recordOrderedIndexLookup(
                 pageVolumeStateStore.orderedIndexRowIdsFor(column, value)));
     }
 
     @Override
-    public Optional<List<Long>> orderedIndexCandidateRowIdsInRangeFor(
+    public Optional<List<Long>> orderedIndexRowIdsInRangeFor(
             int column,
             String lowerValue,
             boolean lowerInclusive,

@@ -39,34 +39,57 @@ public interface DelosStorageCandidateIndex {
     Optional<List<Long>> candidateRowIdsFor(int column, String value);
 
     /**
-     * Optional ordered page-backed lookup for current-committed equality scans.
+     * Ordered page-backed lookup for current-committed equality scans.
      *
-     * <p>An empty optional means the ordered page sidecar cannot currently answer
+     * <p>An empty optional means the ordered page store cannot currently answer
      * this lookup and callers should fall back to the full committed-image scan.
-     * A present empty list means the ordered sidecar answered the lookup and found
+     * A present empty list means the ordered index answered the lookup and found
      * no matching row ids.</p>
      */
-    default Optional<List<Long>> orderedIndexCandidateRowIdsFor(int column, String value) {
+    default Optional<List<Long>> orderedIndexRowIdsFor(int column, String value) {
         return Optional.empty();
     }
 
     /**
-     * Optional ordered page-backed lookup for current-committed range scans.
+     * Ordered page-backed lookup for current-committed range scans.
      *
      * <p>Bounds are typed ordered-index keys using the same key shape as equality lookups.
      * A {@code null} lower or upper value means the range is unbounded on that
-     * side. An empty optional means the ordered page sidecar cannot currently
+     * side. An empty optional means the ordered page store cannot currently
      * answer this range and callers should fall back to the full committed-image scan.
-     * A present empty list means the ordered sidecar answered the range and
+     * A present empty list means the ordered index answered the range and
      * found no matching row ids.</p>
      */
-    default Optional<List<Long>> orderedIndexCandidateRowIdsInRangeFor(
+    default Optional<List<Long>> orderedIndexRowIdsInRangeFor(
             int column,
             String lowerValue,
             boolean lowerInclusive,
             String upperValue,
             boolean upperInclusive) {
         return Optional.empty();
+    }
+
+    /**
+     * @deprecated The name predates ordered-page authority. Use
+     *             {@link #orderedIndexRowIdsFor(int, String)} instead.
+     */
+    @Deprecated
+    default Optional<List<Long>> orderedIndexCandidateRowIdsFor(int column, String value) {
+        return orderedIndexRowIdsFor(column, value);
+    }
+
+    /**
+     * @deprecated The name predates ordered-page authority. Use
+     *             {@link #orderedIndexRowIdsInRangeFor(int, String, boolean, String, boolean)} instead.
+     */
+    @Deprecated
+    default Optional<List<Long>> orderedIndexCandidateRowIdsInRangeFor(
+            int column,
+            String lowerValue,
+            boolean lowerInclusive,
+            String upperValue,
+            boolean upperInclusive) {
+        return orderedIndexRowIdsInRangeFor(column, lowerValue, lowerInclusive, upperValue, upperInclusive);
     }
 
     int candidateIndexKeyCountForTesting();
