@@ -36,12 +36,32 @@ public interface DelosStorageDiagnostics {
     String providerId();
 
     /**
+     * Return a diagnostics view bound to an explicit request context.
+     *
+     * <p>Implementations that need filesystem context, such as the Derby heap
+     * compatibility diagnostics, should prefer this method over mutable
+     * set/clear hooks. Providers which do not need context may return
+     * {@code this}.</p>
+     */
+    default DelosStorageDiagnostics withContext(DelosStorageDiagnosticsContext context) {
+        return this;
+    }
+
+    /**
      * Optional database-directory context for file-based compatibility inspectors.
      * Providers which do not need a database directory may ignore this hook.
+     *
+     * @deprecated Prefer {@link #withContext(DelosStorageDiagnosticsContext)} so
+     * callers pass explicit request context instead of mutating provider state.
      */
+    @Deprecated
     default void setDatabaseDirectoryForTesting(Path databaseDirectory) {
     }
 
+    /**
+     * @deprecated Prefer {@link #withContext(DelosStorageDiagnosticsContext)}.
+     */
+    @Deprecated
     default void clearDatabaseDirectoryForTesting() {
     }
 

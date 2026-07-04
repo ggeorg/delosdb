@@ -67,8 +67,7 @@ public final class DelosStorageDiagnosticsRegistry {
     }
 
     public static DelosStorageInspection inspectHeap(Path databaseDirectory, int segment, long containerId) {
-        DelosStorageDiagnostics diagnostics = heap();
-        diagnostics.setDatabaseDirectoryForTesting(databaseDirectory);
+        DelosStorageDiagnostics diagnostics = heapDiagnostics(databaseDirectory);
         return DelosStorageInspection.fromDiagnostics(diagnostics, segment, containerId);
     }
 
@@ -81,14 +80,12 @@ public final class DelosStorageDiagnosticsRegistry {
     }
 
     public static DelosStorageStatistics statisticsForHeap(Path databaseDirectory, int segment, long containerId) {
-        DelosStorageDiagnostics diagnostics = heap();
-        diagnostics.setDatabaseDirectoryForTesting(databaseDirectory);
+        DelosStorageDiagnostics diagnostics = heapDiagnostics(databaseDirectory);
         return diagnostics.storageStatisticsForTesting(segment, containerId);
     }
 
     public static DelosHeapSanityDiagnostics inspectHeapSanity(Path databaseDirectory, int segment, long containerId) {
-        DelosStorageDiagnostics diagnostics = heap();
-        diagnostics.setDatabaseDirectoryForTesting(databaseDirectory);
+        DelosStorageDiagnostics diagnostics = heapDiagnostics(databaseDirectory);
         return diagnostics.heapSanityDiagnosticsForTesting(segment, containerId);
     }
 
@@ -97,8 +94,7 @@ public final class DelosStorageDiagnosticsRegistry {
             Path databaseDirectory,
             int segment,
             long containerId) {
-        DelosStorageDiagnostics diagnostics = heap();
-        diagnostics.setDatabaseDirectoryForTesting(databaseDirectory);
+        DelosStorageDiagnostics diagnostics = heapDiagnostics(databaseDirectory);
         return diagnostics.heapRawStoreBoundaryDiagnosticsForTesting(segment, containerId);
     }
 
@@ -107,8 +103,7 @@ public final class DelosStorageDiagnosticsRegistry {
             int segment,
             long containerId,
             long... indexContainerIds) {
-        DelosStorageDiagnostics diagnostics = heap();
-        diagnostics.setDatabaseDirectoryForTesting(databaseDirectory);
+        DelosStorageDiagnostics diagnostics = heapDiagnostics(databaseDirectory);
         return diagnostics.heapStorageDiagnosticsForTesting(segment, containerId, indexContainerIds);
     }
 
@@ -117,8 +112,7 @@ public final class DelosStorageDiagnosticsRegistry {
             int segment,
             long containerId,
             long... indexContainerIds) {
-        DelosStorageDiagnostics diagnostics = heap();
-        diagnostics.setDatabaseDirectoryForTesting(databaseDirectory);
+        DelosStorageDiagnostics diagnostics = heapDiagnostics(databaseDirectory);
         return diagnostics.heapStorageStatisticsForTesting(segment, containerId, indexContainerIds);
     }
 
@@ -238,6 +232,11 @@ public final class DelosStorageDiagnosticsRegistry {
 
     public static DelosStorageInspector inspectorForProvider(String providerId) {
         return DelosStorageInspector.fromDiagnostics(forProvider(providerId));
+    }
+
+
+    private static DelosStorageDiagnostics heapDiagnostics(Path databaseDirectory) {
+        return heap().withContext(DelosStorageDiagnosticsContext.databaseDirectory(databaseDirectory));
     }
 
     public static DelosStorageDiagnostics forProvider(String providerId) {

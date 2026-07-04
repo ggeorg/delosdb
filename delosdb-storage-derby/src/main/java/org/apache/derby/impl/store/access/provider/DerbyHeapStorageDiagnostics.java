@@ -31,6 +31,7 @@ import org.apache.derby.iapi.store.types.DelosHeapRawStoreBoundaryDiagnostics;
 import org.apache.derby.iapi.store.types.DelosHeapSanityDiagnostics;
 import org.apache.derby.iapi.store.types.DelosHeapStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 
@@ -42,7 +43,16 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
  * and it does not introduce a dependency from heap/raw-store code to MVCC.</p>
  */
 public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostics {
-    private volatile Path databaseDirectory;
+    private final Path explicitDatabaseDirectory;
+    private volatile Path databaseDirectoryForTesting;
+
+    public DerbyHeapStorageDiagnostics() {
+        this(null);
+    }
+
+    private DerbyHeapStorageDiagnostics(Path explicitDatabaseDirectory) {
+        this.explicitDatabaseDirectory = explicitDatabaseDirectory;
+    }
 
     @Override
     public String providerId() {
@@ -50,13 +60,21 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
     }
 
     @Override
+    public DelosStorageDiagnostics withContext(DelosStorageDiagnosticsContext context) {
+        Objects.requireNonNull(context, "context");
+        return context.hasDatabaseDirectory()
+                ? new DerbyHeapStorageDiagnostics(context.databaseDirectory())
+                : this;
+    }
+
+    @Override
     public void setDatabaseDirectoryForTesting(Path databaseDirectory) {
-        this.databaseDirectory = Objects.requireNonNull(databaseDirectory, "databaseDirectory");
+        this.databaseDirectoryForTesting = Objects.requireNonNull(databaseDirectory, "databaseDirectory");
     }
 
     @Override
     public void clearDatabaseDirectoryForTesting() {
-        this.databaseDirectory = null;
+        this.databaseDirectoryForTesting = null;
     }
 
     @Override
@@ -66,7 +84,7 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
 
     @Override
     public int runtimeStateCountForTesting() {
-        return databaseDirectory == null ? 0 : 1;
+        return databaseDirectoryForTesting == null ? 0 : 1;
     }
 
     @Override
@@ -121,7 +139,7 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
 
     @Override
     public long pageCountForTesting(int segment, long containerId) {
-        return DerbyHeapContainerFiles.snapshot(databaseDirectory, segment, containerId).estimatedPageCount();
+        return DerbyHeapContainerFiles.snapshot(databaseDirectory(), segment, containerId).estimatedPageCount();
     }
 
     @Override
@@ -193,7 +211,7 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
     @Override
     public DelosHeapSanityDiagnostics heapSanityDiagnosticsForTesting(int segment, long containerId) {
         DerbyHeapContainerFiles.Snapshot snapshot = DerbyHeapContainerFiles.snapshot(
-                databaseDirectory, segment, containerId);
+                databaseDirectory(), segment, containerId);
         Path segmentDirectory = snapshot.segmentDirectory();
         Path file = snapshot.containerFile();
         boolean segmentExists = snapshot.segmentExists();
@@ -250,7 +268,7 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
             long containerId,
             long... indexContainerIds) {
         DerbyHeapContainerFiles.Snapshot tableSnapshot = DerbyHeapContainerFiles.snapshot(
-                databaseDirectory, segment, containerId);
+                databaseDirectory(), segment, containerId);
         Path segmentDirectory = tableSnapshot.segmentDirectory();
         Path tableFile = tableSnapshot.containerFile();
         boolean tableExists = tableSnapshot.containerExists();
@@ -266,7 +284,7 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
         if (indexContainerIds != null) {
             for (long indexContainerId : indexContainerIds) {
                 DerbyHeapContainerFiles.Snapshot indexSnapshot = DerbyHeapContainerFiles.snapshot(
-                        databaseDirectory, segment, indexContainerId);
+                        databaseDirectory(), segment, indexContainerId);
                 indexIds.add(indexContainerId);
                 indexFiles.add(indexSnapshot.containerFile());
                 indexBytes += indexSnapshot.bytes();
@@ -320,7 +338,7 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
             int segment,
             long containerId) {
         DerbyHeapContainerFiles.Snapshot snapshot = DerbyHeapContainerFiles.snapshot(
-                databaseDirectory, segment, containerId);
+                databaseDirectory(), segment, containerId);
         List<String> observations = new ArrayList<>();
         observations.add("heap raw-store boundary diagnostics are read-only");
         observations.add("heap page format is Derby-compatible and unchanged");
@@ -442,11 +460,22 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
         return false;
     }
 
+
+    private Path databaseDirectory() {
+        Path directory = explicitDatabaseDirectory != null
+                ? explicitDatabaseDirectory
+                : databaseDirectoryForTesting;
+        if (directory == null) {
+            throw new IllegalStateException("Heap diagnostics require a database directory");
+        }
+        return directory;
+    }
+
     private Path heapSegmentDirectory(int segment) {
-        return DerbyHeapContainerFiles.segmentDirectory(databaseDirectory, segment);
+        return DerbyHeapContainerFiles.segmentDirectory(databaseDirectory(), segment);
     }
 
     private Path heapContainerPath(int segment, long containerId) {
-        return DerbyHeapContainerFiles.containerPath(databaseDirectory, segment, containerId);
+        return DerbyHeapContainerFiles.containerPath(databaseDirectory(), segment, containerId);
     }
 }

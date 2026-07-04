@@ -43,11 +43,8 @@ final class DelosDiagnosticsStorageMetadataProvider implements DelosStorageMetad
             throw new IllegalArgumentException("Metadata provider " + providerId()
                     + " cannot serve target provider " + target.providerId());
         }
-        if (target.hasDatabaseDirectory()) {
-            diagnostics.setDatabaseDirectoryForTesting(target.databaseDirectory());
-        } else {
-            diagnostics.clearDatabaseDirectoryForTesting();
-        }
+        DelosStorageDiagnostics contextualDiagnostics = diagnostics.withContext(
+                DelosStorageDiagnosticsContext.fromTarget(target));
 
         DelosStorageConsistencyTarget normalizedTarget = new DelosStorageConsistencyTarget(
                 providerId(),
@@ -55,17 +52,17 @@ final class DelosDiagnosticsStorageMetadataProvider implements DelosStorageMetad
                 target.segment(),
                 target.containerId());
         DelosStorageInspection inspection = DelosStorageInspection.fromDiagnostics(
-                diagnostics,
+                contextualDiagnostics,
                 normalizedTarget.segment(),
                 normalizedTarget.containerId());
         DelosStorageConsistencyFinding finding = DelosStorageConsistencyFinding.from(
                 providerId(),
                 normalizedTarget.segment(),
                 normalizedTarget.containerId(),
-                diagnostics.consistencyDiagnosticsForTesting(
+                contextualDiagnostics.consistencyDiagnosticsForTesting(
                         normalizedTarget.segment(),
                         normalizedTarget.containerId()));
-        DelosStorageStatistics statistics = diagnostics.storageStatisticsForTesting(
+        DelosStorageStatistics statistics = contextualDiagnostics.storageStatisticsForTesting(
                 normalizedTarget.segment(),
                 normalizedTarget.containerId());
         DelosStorageCostEstimate estimate = DelosStorageCostIntegration.estimate(statistics);
