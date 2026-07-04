@@ -57,47 +57,6 @@ public final class DelosTableScanProviderLookup
     public static final String FACTORY_PROBE_PROPERTY =
             "delosdb.storage.phaseF3.tableScanBranchProbe";
 
-    /**
-     * Obsolete pre-MODULE6I MVCC table-scan proof gate name.  It is retained
-     * only as a compatibility constant for old smokes; it must not route.
-     */
-    public static final String FACTORY_SKELETON_BRANCH_PROPERTY =
-            "delosdb.storage.phaseF32.delosTableScanSkeleton";
-
-    public static final String FACTORY_SKELETON_REACHED_MESSAGE =
-            "DelosTableScanResultSet skeleton reached; F4 must implement real MVCC scan materialization";
-
-    /** Obsolete pre-MODULE6I MVCC SELECT equality proof gate name. */
-    public static final String FACTORY_NATIVE_SELECT_EQUALITY_PROPERTY =
-            "delosdb.storage.phaseF4.nativeMvccSelectEquality";
-
-    public static final String FACTORY_NATIVE_SELECT_REACHED_MESSAGE =
-            "DelosTableScanResultSet native MVCC SELECT equality reached";
-
-    /** Obsolete pre-MODULE6I native range-predicate proof gate name. */
-    public static final String FACTORY_NATIVE_RANGE_PREDICATES_PROPERTY =
-            "delosdb.storage.phaseG1.nativeRangePredicates";
-
-    /** Obsolete pre-MODULE6I native BETWEEN-predicate proof gate name. */
-    public static final String FACTORY_NATIVE_BETWEEN_PREDICATES_PROPERTY =
-            "delosdb.storage.phaseG2.nativeBetweenPredicates";
-
-    /** Obsolete pre-MODULE6I native IS NULL / IS NOT NULL proof gate name. */
-    public static final String FACTORY_NATIVE_NULL_PREDICATES_PROPERTY =
-            "delosdb.storage.phaseL31.nativeNullPredicates";
-
-    /** Obsolete pre-MODULE6I native OR-predicate residual proof gate name. */
-    public static final String FACTORY_NATIVE_OR_PREDICATES_PROPERTY =
-            "delosdb.storage.phaseL33.nativeOrPredicateResidual";
-
-    /** Obsolete pre-MODULE6I native projection-variant proof gate name. */
-    public static final String FACTORY_NATIVE_PROJECTION_VARIANTS_PROPERTY =
-            "delosdb.storage.phaseL34.nativeProjectionVariants";
-
-    /** Obsolete pre-MODULE6I ORDER BY residual-sort proof gate name. */
-    public static final String FACTORY_NATIVE_ORDER_BY_RESIDUAL_PROPERTY =
-            "delosdb.storage.phaseL35.nativeOrderByResidual";
-
     /** Test/proof gate for Phase M2 heap scan shadow branch. */
     public static final String FACTORY_HEAP_SCAN_SHADOW_PROPERTY =
             DelosHeapScanShadowResultSet.HEAP_SCAN_SHADOW_PROPERTY;
@@ -105,25 +64,6 @@ public final class DelosTableScanProviderLookup
     /** Test/proof gate for Phase M3 heap SELECT live route. */
     public static final String FACTORY_HEAP_SELECT_LIVE_ROUTE_PROPERTY =
             DelosHeapLiveTableScanResultSet.HEAP_SELECT_LIVE_ROUTE_PROPERTY;
-
-    /**
-     * Obsolete MODULE5-era compatibility property name. It no longer controls
-     * routing; delos_mvcc full scans are selected by persisted provider
-     * identity.
-     */
-    public static final String FACTORY_NATIVE_SELECT_ALL_PROPERTY =
-            "delosdb.storage.phaseG3.nativeSelectAll";
-
-    /** Obsolete pre-MODULE6I native SELECT COUNT(*) proof gate name. */
-    public static final String FACTORY_NATIVE_COUNT_AGGREGATE_PROPERTY =
-            "delosdb.storage.phaseG4.nativeCountAggregate";
-
-    /**
-     * Obsolete MODULE5-era compatibility property name. It no longer controls
-     * routing; delos_mvcc INSERT is selected by persisted provider identity.
-     */
-    public static final String FACTORY_NATIVE_INSERT_PROPERTY =
-            "delosdb.storage.phaseF5.nativeMvccInsert";
 
     /** Test/proof gate for Phase N2 heap INSERT live route. */
     public static final String FACTORY_HEAP_INSERT_LIVE_ROUTE_PROPERTY =
@@ -138,28 +78,13 @@ public final class DelosTableScanProviderLookup
             "delosdb.storage.phaseO.heapProviderParity";
 
     /**
-     * Obsolete MODULE5-era compatibility property name. It no longer controls
-     * routing; delos_mvcc DELETE is selected by persisted provider identity.
-     */
-    public static final String FACTORY_NATIVE_DELETE_EQUALITY_PROPERTY =
-            "delosdb.storage.phaseF6.nativeMvccDeleteEquality";
-
-    /**
-     * Obsolete MODULE5-era compatibility property name. It no longer controls
-     * routing; delos_mvcc UPDATE is selected by persisted provider identity.
-     */
-    public static final String FACTORY_NATIVE_UPDATE_EQUALITY_PROPERTY =
-            "delosdb.storage.phaseF7.nativeMvccUpdateEquality";
-
-
-    /**
      * MODULE5L guardrail: the old SELECT/INSERT/DELETE/UPDATE native proof
      * properties are kept only so older smokes can clear or reference their
      * names. They must not become route guards again.
      */
     public static boolean legacyNativeMvccCrudProofRoutesEnabledForTesting()
     {
-        return false;
+        return DelosObsoleteStorageProperties.legacyNativeMvccCrudProofRoutesEnabledForTesting();
     }
 
     private static final AtomicReference<Result> LAST_FACTORY_LOOKUP = new AtomicReference<>();

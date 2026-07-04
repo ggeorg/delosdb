@@ -23,7 +23,6 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.NavigableMap;
@@ -31,7 +30,7 @@ import java.util.Objects;
 import java.util.TreeMap;
 
 /** Durable sidecar visibility/prune map for page-backed MVCC data pages. */
-final class MvccVisibilityMapStore {
+final class MvccVisibilityMapStore extends AbstractSidecarStore {
     static final int HAS_OLD_VERSIONS = 1;
     static final int HAS_PRUNABLE_VERSIONS = 1 << 1;
     static final int ALL_VISIBLE = 1 << 2;
@@ -44,10 +43,9 @@ final class MvccVisibilityMapStore {
     private static final int HEADER_BYTES = Integer.BYTES * 3 + Long.BYTES;
     private static final int ENTRY_BYTES = Long.BYTES + Integer.BYTES + Integer.BYTES;
 
-    private final Path path;
 
     private MvccVisibilityMapStore(Path path) {
-        this.path = Objects.requireNonNull(path, "path");
+        super(path);
     }
 
     static MvccVisibilityMapStore open(Path path) {
@@ -55,15 +53,15 @@ final class MvccVisibilityMapStore {
     }
 
     Path path() {
-        return path;
+        return sidecarPath();
     }
 
     boolean exists() {
-        return Files.exists(path);
+        return sidecarExists();
     }
 
     Snapshot read() throws IOException {
-        var payload = MvccSidecarCodec.readPayloadIfExists(path, HEADER_BYTES, "MVCC visibility map");
+        var payload = readPayloadIfExists( HEADER_BYTES, "MVCC visibility map");
         if (payload.isEmpty()) {
             return Snapshot.empty();
         }
@@ -84,7 +82,7 @@ final class MvccVisibilityMapStore {
         }
         int expectedBytes = HEADER_BYTES + Math.multiplyExact(entryCount, ENTRY_BYTES);
         if (expectedBytes != buffer.limit()) {
-            throw new IllegalStateException("Invalid MVCC visibility map length: " + path);
+            throw new IllegalStateException("Invalid MVCC visibility map length: " + sidecarPath());
         }
         NavigableMap<Long, PageState> pageStates = new TreeMap<>();
         for (int index = 0; index < entryCount; index++) {
@@ -122,7 +120,7 @@ final class MvccVisibilityMapStore {
             Objects.requireNonNull(state, "state");
         }
         int payloadLength = HEADER_BYTES + Math.multiplyExact(pageStates.size(), ENTRY_BYTES);
-        ByteBuffer buffer = MvccSidecarCodec.allocatePayload(payloadLength);
+        ByteBuffer buffer = allocatePayload(payloadLength);
         buffer.putInt(MAGIC);
         buffer.putInt(VERSION);
         buffer.putLong(pageCount);
@@ -132,11 +130,11 @@ final class MvccVisibilityMapStore {
             buffer.putInt(entry.getValue().flags());
             buffer.putInt(entry.getValue().versionCount());
         }
-        MvccSidecarCodec.rewritePayload(path, buffer, payloadLength);
+        rewritePayload(buffer, payloadLength);
     }
 
     void delete() throws IOException {
-        MvccSidecarFiles.deleteWithRewriteSibling(path);
+        deleteWithRewriteSibling();
     }
 
     record PageState(int flags, int versionCount) {

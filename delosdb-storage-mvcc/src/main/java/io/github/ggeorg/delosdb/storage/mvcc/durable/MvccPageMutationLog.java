@@ -1,14 +1,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -32,7 +25,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordCodec;
  * The durable page file stores physical {@link MvccVersionRecord} instances;
  * this log stores the same record bytes plus transaction terminal records.</p>
  */
-public final class MvccPageMutationLog {
+public final class MvccPageMutationLog extends AbstractSidecarStore {
     private static final String LOG_VERSION = "1";
     private static final String LOG_NAME = "MVCC page mutation log";
     private static final String RECORD_VERSION = "VERSION";
@@ -40,27 +33,19 @@ public final class MvccPageMutationLog {
     private static final String RECORD_ABORT = "ABORT";
     private static final String RECORD_FSYNC = "FSYNC";
 
-    private final Path path;
 
     private MvccPageMutationLog(Path path) {
-        this.path = Objects.requireNonNull(path, "path");
+        super(path);
     }
 
     public static MvccPageMutationLog open(Path path) {
-        Objects.requireNonNull(path, "path");
-        Path parent = path.getParent();
-        if (parent != null) {
-            try {
-                Files.createDirectories(parent);
-            } catch (IOException e) {
-                throw new UncheckedIOException("Could not create MVCC page mutation log directory: " + parent, e);
-            }
-        }
-        return new MvccPageMutationLog(path);
+        MvccPageMutationLog log = new MvccPageMutationLog(path);
+        log.ensureParentDirectory("MVCC page mutation log");
+        return log;
     }
 
     public Path path() {
-        return path;
+        return sidecarPath();
     }
 
     public void appendVersion(long transactionId, MvccVersionRecord record) {
@@ -133,15 +118,10 @@ public final class MvccPageMutationLog {
     }
 
     public synchronized List<MvccVersionRecord> recoverCommittedRecords() {
-        if (!Files.exists(path)) {
+        if (!sidecarExists()) {
             return List.of();
         }
-        String content;
-        try {
-            content = Files.readString(path, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read MVCC page mutation log: " + path, e);
-        }
+        String content = readUtf8IfExists(LOG_NAME);
         if (content.isEmpty()) {
             return List.of();
         }
@@ -179,15 +159,10 @@ public final class MvccPageMutationLog {
     public synchronized List<MvccVersionRecord> recoverRecordsThroughOutcomeLog(
             MvccTransactionOutcomeLog outcomeLog) {
         Objects.requireNonNull(outcomeLog, "outcomeLog");
-        if (!Files.exists(path)) {
+        if (!sidecarExists()) {
             return List.of();
         }
-        String content;
-        try {
-            content = Files.readString(path, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read MVCC page mutation log: " + path, e);
-        }
+        String content = readUtf8IfExists(LOG_NAME);
         if (content.isEmpty()) {
             return List.of();
         }
@@ -268,19 +243,12 @@ public final class MvccPageMutationLog {
     }
 
     private synchronized void appendLine(String type, String... fields) {
-        StringBuilder line = new StringBuilder(LOG_VERSION).append('\t').append(type);
+        StringBuilder line = new StringBuilder(LOG_VERSION).append('	').append(type);
         for (String field : fields) {
-            line.append('\t').append(field);
+            line.append('	').append(field);
         }
         line.append('\n');
-        byte[] bytes = line.toString().getBytes(StandardCharsets.UTF_8);
-        try (FileChannel channel = FileChannel.open(path,
-                StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-            channel.write(ByteBuffer.wrap(bytes));
-            channel.force(true);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not append MVCC page mutation log record to: " + path, e);
-        }
+        appendUtf8Forced(line.toString(), "MVCC page mutation log record");
     }
 
     private static void appendLine(StringBuilder content, String type, String... fields) {
@@ -292,24 +260,7 @@ public final class MvccPageMutationLog {
     }
 
     private synchronized void writeAtomically(byte[] bytes) {
-        Path parent = path.getParent();
-        Path temp = parent == null
-                ? path.resolveSibling(path.getFileName() + ".tmp")
-                : parent.resolve(path.getFileName() + ".tmp");
-        try {
-            Files.write(temp, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-            try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.WRITE)) {
-                channel.force(true);
-            }
-            Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException atomicFailure) {
-            try {
-                Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING);
-            } catch (IOException fallbackFailure) {
-                atomicFailure.addSuppressed(fallbackFailure);
-                throw new UncheckedIOException("Could not rewrite MVCC page mutation checkpoint log: " + path, atomicFailure);
-            }
-        }
+        rewriteBytesAtomicallyForced(bytes, "MVCC page mutation checkpoint log");
     }
 
     private static String encodeRecord(MvccVersionRecord record) {

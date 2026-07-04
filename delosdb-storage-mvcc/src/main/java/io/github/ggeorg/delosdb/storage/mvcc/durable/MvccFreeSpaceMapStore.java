@@ -2,7 +2,6 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.NavigableMap;
@@ -10,16 +9,15 @@ import java.util.Objects;
 import java.util.TreeMap;
 
 /** Durable sidecar free-space map for page-backed MVCC data pages. */
-final class MvccFreeSpaceMapStore {
+final class MvccFreeSpaceMapStore extends AbstractSidecarStore {
     private static final int MAGIC = 0x444d4653; // DMFS
     private static final int VERSION = 1;
     private static final int HEADER_BYTES = Integer.BYTES * 3 + Long.BYTES;
     private static final int ENTRY_BYTES = Long.BYTES + Integer.BYTES;
 
-    private final Path path;
 
     private MvccFreeSpaceMapStore(Path path) {
-        this.path = Objects.requireNonNull(path, "path");
+        super(path);
     }
 
     static MvccFreeSpaceMapStore open(Path path) {
@@ -27,15 +25,15 @@ final class MvccFreeSpaceMapStore {
     }
 
     Path path() {
-        return path;
+        return sidecarPath();
     }
 
     boolean exists() {
-        return Files.exists(path);
+        return sidecarExists();
     }
 
     Snapshot read() throws IOException {
-        var payload = MvccSidecarCodec.readPayloadIfExists(path, HEADER_BYTES, "MVCC free-space map");
+        var payload = readPayloadIfExists( HEADER_BYTES, "MVCC free-space map");
         if (payload.isEmpty()) {
             return Snapshot.empty();
         }
@@ -56,7 +54,7 @@ final class MvccFreeSpaceMapStore {
         }
         int expectedBytes = HEADER_BYTES + Math.multiplyExact(entryCount, ENTRY_BYTES);
         if (expectedBytes != buffer.limit()) {
-            throw new IllegalStateException("Invalid MVCC free-space map length: " + path);
+            throw new IllegalStateException("Invalid MVCC free-space map length: " + sidecarPath());
         }
         NavigableMap<Long, Integer> freeBytesByPageId = new TreeMap<>();
         for (int index = 0; index < entryCount; index++) {
@@ -96,7 +94,7 @@ final class MvccFreeSpaceMapStore {
             }
         }
         int payloadLength = HEADER_BYTES + Math.multiplyExact(freeBytesByPageId.size(), ENTRY_BYTES);
-        ByteBuffer buffer = MvccSidecarCodec.allocatePayload(payloadLength);
+        ByteBuffer buffer = allocatePayload(payloadLength);
         buffer.putInt(MAGIC);
         buffer.putInt(VERSION);
         buffer.putLong(pageCount);
@@ -105,11 +103,11 @@ final class MvccFreeSpaceMapStore {
             buffer.putLong(entry.getKey());
             buffer.putInt(entry.getValue());
         }
-        MvccSidecarCodec.rewritePayload(path, buffer, payloadLength);
+        rewritePayload(buffer, payloadLength);
     }
 
     void delete() throws IOException {
-        MvccSidecarFiles.deleteWithRewriteSibling(path);
+        deleteWithRewriteSibling();
     }
 
     record Snapshot(long pageCount, NavigableMap<Long, Integer> freeBytesByPageId) {

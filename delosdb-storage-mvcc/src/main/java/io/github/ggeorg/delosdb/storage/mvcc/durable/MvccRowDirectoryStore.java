@@ -1,14 +1,8 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.nio.channels.FileChannel;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,58 +23,39 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
  * sidecar makes the {@code MvccRowId -> head MvccVersionLocator} mapping
  * explicit and durable instead of only an in-memory rebuild artifact.</p>
  */
-public final class MvccRowDirectoryStore implements AutoCloseable {
+public final class MvccRowDirectoryStore extends AbstractSidecarStore implements AutoCloseable {
     private static final int FORMAT_VERSION = 1;
     private static final String FIELD_SEPARATOR = "\t";
     private static final Base64.Encoder KEY_ENCODER = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder KEY_DECODER = Base64.getUrlDecoder();
 
-    private final Path path;
 
     private MvccRowDirectoryStore(Path path) {
-        this.path = Objects.requireNonNull(path, "path");
+        super(path);
     }
 
     public static MvccRowDirectoryStore open(Path path) {
-        Objects.requireNonNull(path, "path");
-        Path parent = path.getParent();
-        if (parent != null) {
-            try {
-                Files.createDirectories(parent);
-            } catch (IOException e) {
-                throw new java.io.UncheckedIOException("Could not create MVCC row-directory parent: " + parent, e);
-            }
-        }
-        return new MvccRowDirectoryStore(path);
+        MvccRowDirectoryStore store = new MvccRowDirectoryStore(path);
+        store.ensureParentDirectory("MVCC row-directory");
+        return store;
     }
 
     public Path path() {
-        return path;
+        return sidecarPath();
     }
 
     public synchronized void recordHead(RowHeadRecord record) throws IOException {
         Objects.requireNonNull(record, "record");
-        byte[] encoded = (encode(record) + System.lineSeparator()).getBytes(StandardCharsets.UTF_8);
-        try (FileChannel channel = FileChannel.open(
-                path,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.APPEND)) {
-            channel.write(ByteBuffer.wrap(encoded));
-            channel.force(true);
-        }
+        appendUtf8Forced(encode(record) + System.lineSeparator(), "MVCC row-directory record");
     }
 
     public synchronized boolean hasRecords() throws IOException {
-        return Files.exists(path) && Files.size(path) > 0L;
+        return sidecarHasBytes();
     }
 
     public synchronized Map<MvccRowId, RowHeadRecord> recoverHeads() throws IOException {
         Map<MvccRowId, RowHeadRecord> heads = new LinkedHashMap<>();
-        if (!Files.exists(path)) {
-            return heads;
-        }
-        List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+        List<String> lines = readUtf8LinesIfExists("MVCC row-directory");
         for (int lineNumber = 0; lineNumber < lines.size(); lineNumber++) {
             String line = lines.get(lineNumber);
             if (line.isBlank()) {
@@ -109,39 +84,13 @@ public final class MvccRowDirectoryStore implements AutoCloseable {
 
     public synchronized void rewriteHeads(Iterable<RowHeadRecord> records) throws IOException {
         Objects.requireNonNull(records, "records");
-        Path rewritePath = path.resolveSibling(path.getFileName() + ".rewrite");
-        Files.deleteIfExists(rewritePath);
-        try (FileChannel channel = FileChannel.open(
-                rewritePath,
-                StandardOpenOption.CREATE_NEW,
-                StandardOpenOption.WRITE)) {
-            channel.force(true);
-        }
-        MvccRowDirectoryStore rewrite = new MvccRowDirectoryStore(rewritePath);
+        StringBuilder content = new StringBuilder();
         for (RowHeadRecord record : records) {
-            rewrite.recordHead(record);
+            Objects.requireNonNull(record, "record");
+            content.append(encode(record)).append(System.lineSeparator());
         }
-        moveRewriteIntoPlace(rewritePath);
-        forceParentDirectory();
-    }
-
-    private void moveRewriteIntoPlace(Path rewritePath) throws IOException {
-        try {
-            Files.move(rewritePath, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException e) {
-            // Keep the same-directory rewrite path portable for filesystems that do not expose
-            // atomic move through the JDK. The rewrite file was forced before this fallback and
-            // the parent directory is forced afterwards when the platform supports it.
-            Files.move(rewritePath, path, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private void forceParentDirectory() throws IOException {
-        try (FileChannel parent = FileChannel.open(path.getParent() == null ? Path.of(".") : path.getParent(), StandardOpenOption.READ)) {
-            parent.force(true);
-        } catch (IOException ignored) {
-            // Some platforms do not support forcing a directory. The row-directory file itself is already forced.
-        }
+        rewriteUtf8AtomicallyForced(content.toString(), "MVCC row-directory heads");
+        forceParentDirectoryIfSupported();
     }
 
     @Override

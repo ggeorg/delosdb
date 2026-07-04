@@ -1,19 +1,14 @@
 package io.github.ggeorg.delosdb.storage.mvcc.store;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import io.github.ggeorg.delosdb.storage.mvcc.durable.AbstractSidecarStore;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 
 /**
@@ -45,14 +40,7 @@ public final class MvccSubsystemRecoveryRecordStore {
         if (file == null || storageId == null || storageId.isBlank()) {
             return disabled();
         }
-        Path parent = file.getParent();
-        if (parent != null) {
-            try {
-                Files.createDirectories(parent);
-            } catch (IOException e) {
-                throw new UncheckedIOException("Could not create MVCC subsystem recovery directory: " + parent, e);
-            }
-        }
+        AbstractSidecarStore.ensureParentDirectory(file, "MVCC subsystem recovery");
         return new MvccSubsystemRecoveryRecordStore(file, storageId, recoverLastSequence(file) + 1L, true);
     }
 
@@ -96,11 +84,7 @@ public final class MvccSubsystemRecoveryRecordStore {
         if (!enabled() || !Files.exists(path)) {
             return Diagnostics.empty(path);
         }
-        try {
-            return diagnostics(Files.readString(path, StandardCharsets.UTF_8), path);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read MVCC subsystem recovery records: " + path, e);
-        }
+        return diagnostics(AbstractSidecarStore.readUtf8IfExists(path, LOG_NAME), path);
     }
 
     private synchronized void append(
@@ -115,17 +99,7 @@ public final class MvccSubsystemRecoveryRecordStore {
         }
         RecoveryRecord record = new RecoveryRecord(
                 nextSequence++, subsystem, action, transactionId, commitSequence, primaryValue, secondaryValue);
-        byte[] bytes = encode(record).getBytes(StandardCharsets.UTF_8);
-        try (FileChannel channel = FileChannel.open(path,
-                StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-            ByteBuffer buffer = ByteBuffer.wrap(bytes);
-            while (buffer.hasRemaining()) {
-                channel.write(buffer);
-            }
-            channel.force(true);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not append MVCC subsystem recovery record to: " + path, e);
-        }
+        AbstractSidecarStore.appendUtf8Forced(path, encode(record), "MVCC subsystem recovery record");
     }
 
     private String encode(RecoveryRecord record) {
@@ -187,11 +161,7 @@ public final class MvccSubsystemRecoveryRecordStore {
         if (path == null || !Files.exists(path)) {
             return 0L;
         }
-        try {
-            return diagnostics(Files.readString(path, StandardCharsets.UTF_8), path).lastSequence();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not recover MVCC subsystem recovery record sequence: " + path, e);
-        }
+        return diagnostics(AbstractSidecarStore.readUtf8IfExists(path, LOG_NAME), path).lastSequence();
     }
 
     private static long parseLong(String value, int lineIndex, String fieldName) {

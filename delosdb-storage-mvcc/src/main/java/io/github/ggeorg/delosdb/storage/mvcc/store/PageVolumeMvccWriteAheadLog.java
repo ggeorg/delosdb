@@ -1,16 +1,11 @@
 package io.github.ggeorg.delosdb.storage.mvcc.store;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.AbstractSidecarStore;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 
 /**
@@ -45,14 +40,7 @@ public final class PageVolumeMvccWriteAheadLog {
         if (logFile == null || storageId == null || storageId.isBlank()) {
             return disabled();
         }
-        Path parent = logFile.getParent();
-        if (parent != null) {
-            try {
-                Files.createDirectories(parent);
-            } catch (IOException e) {
-                throw new UncheckedIOException("Could not create MVCC page-volume WAL directory: " + parent, e);
-            }
-        }
+        AbstractSidecarStore.ensureParentDirectory(logFile, "MVCC page-volume WAL");
         return new PageVolumeMvccWriteAheadLog(logFile, storageId, recoverLastLsn(logFile).value() + 1L, true);
     }
 
@@ -110,17 +98,10 @@ public final class PageVolumeMvccWriteAheadLog {
 
     private synchronized DelosLogSequenceNumber append(String type, long transactionId, long commitSequence, long rowId) {
         DelosLogSequenceNumber lsn = new DelosLogSequenceNumber(nextLsnValue++);
-        byte[] bytes = encodeLine(lsn, type, transactionId, commitSequence, rowId).getBytes(StandardCharsets.UTF_8);
-        try (FileChannel channel = FileChannel.open(path,
-                StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-            ByteBuffer buffer = ByteBuffer.wrap(bytes);
-            while (buffer.hasRemaining()) {
-                channel.write(buffer);
-            }
-            channel.force(true);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not append MVCC page-volume WAL record to: " + path, e);
-        }
+        AbstractSidecarStore.appendUtf8Forced(
+                path,
+                encodeLine(lsn, type, transactionId, commitSequence, rowId),
+                "MVCC page-volume WAL record");
         return lsn;
     }
 
@@ -144,12 +125,7 @@ public final class PageVolumeMvccWriteAheadLog {
         if (path == null || !Files.exists(path)) {
             return DelosLogSequenceNumber.NONE;
         }
-        String content;
-        try {
-            content = Files.readString(path, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read MVCC page-volume WAL: " + path, e);
-        }
+        String content = AbstractSidecarStore.readUtf8IfExists(path, LOG_NAME);
         if (content.isEmpty()) {
             return DelosLogSequenceNumber.NONE;
         }

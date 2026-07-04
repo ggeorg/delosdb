@@ -23,7 +23,6 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.NavigableSet;
@@ -31,15 +30,14 @@ import java.util.Objects;
 import java.util.TreeSet;
 
 /** Durable sidecar index of whole MVCC pages made reusable by vacuum. */
-final class MvccReusablePageIndexStore {
+final class MvccReusablePageIndexStore extends AbstractSidecarStore {
     private static final int MAGIC = 0x444d4650; // DMFP
     private static final int VERSION = 1;
     private static final int HEADER_BYTES = Integer.BYTES * 3 + Long.BYTES;
 
-    private final Path path;
 
     private MvccReusablePageIndexStore(Path path) {
-        this.path = Objects.requireNonNull(path, "path");
+        super(path);
     }
 
     static MvccReusablePageIndexStore open(Path path) {
@@ -47,15 +45,15 @@ final class MvccReusablePageIndexStore {
     }
 
     Path path() {
-        return path;
+        return sidecarPath();
     }
 
     boolean exists() {
-        return Files.exists(path);
+        return sidecarExists();
     }
 
     Snapshot read() throws IOException {
-        var payload = MvccSidecarCodec.readPayloadIfExists(path, HEADER_BYTES, "MVCC reusable-page index");
+        var payload = readPayloadIfExists( HEADER_BYTES, "MVCC reusable-page index");
         if (payload.isEmpty()) {
             return Snapshot.empty();
         }
@@ -76,7 +74,7 @@ final class MvccReusablePageIndexStore {
         }
         int expectedBytes = HEADER_BYTES + Math.multiplyExact(reusablePageCount, Long.BYTES);
         if (expectedBytes != buffer.limit()) {
-            throw new IllegalStateException("Invalid MVCC reusable-page index length: " + path);
+            throw new IllegalStateException("Invalid MVCC reusable-page index length: " + sidecarPath());
         }
         NavigableSet<Long> reusablePageIds = new TreeSet<>();
         for (int index = 0; index < reusablePageCount; index++) {
@@ -88,7 +86,7 @@ final class MvccReusablePageIndexStore {
             reusablePageIds.add(pageId);
         }
         if (reusablePageIds.size() != reusablePageCount) {
-            throw new IllegalStateException("MVCC reusable-page index contains duplicate page ids: " + path);
+            throw new IllegalStateException("MVCC reusable-page index contains duplicate page ids: " + sidecarPath());
         }
         return new Snapshot(pageCount, reusablePageIds);
     }
@@ -105,7 +103,7 @@ final class MvccReusablePageIndexStore {
             }
         }
         int payloadLength = HEADER_BYTES + Math.multiplyExact(reusablePageIds.size(), Long.BYTES);
-        ByteBuffer buffer = MvccSidecarCodec.allocatePayload(payloadLength);
+        ByteBuffer buffer = allocatePayload(payloadLength);
         buffer.putInt(MAGIC);
         buffer.putInt(VERSION);
         buffer.putLong(pageCount);
@@ -113,11 +111,11 @@ final class MvccReusablePageIndexStore {
         for (Long pageId : reusablePageIds) {
             buffer.putLong(pageId);
         }
-        MvccSidecarCodec.rewritePayload(path, buffer, payloadLength);
+        rewritePayload(buffer, payloadLength);
     }
 
     void delete() throws IOException {
-        MvccSidecarFiles.deleteWithRewriteSibling(path);
+        deleteWithRewriteSibling();
     }
 
     record Snapshot(long pageCount, NavigableSet<Long> reusablePageIds) {

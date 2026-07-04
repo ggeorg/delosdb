@@ -23,7 +23,6 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -35,16 +34,15 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccTupleHeader;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
 
 /** Durable first-step purge queue for obsolete page-backed MVCC versions. */
-final class MvccPurgeQueueStore {
+final class MvccPurgeQueueStore extends AbstractSidecarStore {
     private static final int MAGIC = 0x444d5051; // DMPQ
     private static final int VERSION = 1;
     private static final int HEADER_BYTES = Integer.BYTES * 3;
     private static final int ENTRY_BYTES = Long.BYTES * 4 + Integer.BYTES;
 
-    private final Path path;
 
     private MvccPurgeQueueStore(Path path) {
-        this.path = Objects.requireNonNull(path, "path");
+        super(path);
     }
 
     static MvccPurgeQueueStore open(Path path) {
@@ -52,15 +50,15 @@ final class MvccPurgeQueueStore {
     }
 
     Path path() {
-        return path;
+        return sidecarPath();
     }
 
     boolean exists() {
-        return Files.exists(path);
+        return sidecarExists();
     }
 
     Snapshot read() throws IOException {
-        var payload = MvccSidecarCodec.readPayloadIfExists(path, HEADER_BYTES, "MVCC purge queue");
+        var payload = readPayloadIfExists( HEADER_BYTES, "MVCC purge queue");
         if (payload.isEmpty()) {
             return Snapshot.empty();
         }
@@ -80,7 +78,7 @@ final class MvccPurgeQueueStore {
         }
         int expectedBytes = HEADER_BYTES + Math.multiplyExact(entryCount, ENTRY_BYTES);
         if (expectedBytes != buffer.limit()) {
-            throw new IllegalStateException("Invalid MVCC purge queue length: " + path);
+            throw new IllegalStateException("Invalid MVCC purge queue length: " + sidecarPath());
         }
         List<Entry> entries = new ArrayList<>(entryCount);
         for (int index = 0; index < entryCount; index++) {
@@ -106,7 +104,7 @@ final class MvccPurgeQueueStore {
     void rewrite(List<Entry> entries) throws IOException {
         Objects.requireNonNull(entries, "entries");
         int payloadLength = HEADER_BYTES + Math.multiplyExact(entries.size(), ENTRY_BYTES);
-        ByteBuffer buffer = MvccSidecarCodec.allocatePayload(payloadLength);
+        ByteBuffer buffer = allocatePayload(payloadLength);
         buffer.putInt(MAGIC);
         buffer.putInt(VERSION);
         buffer.putInt(entries.size());
@@ -118,11 +116,11 @@ final class MvccPurgeQueueStore {
             buffer.putLong(entry.previousVersionId());
             buffer.putInt(entry.flags());
         }
-        MvccSidecarCodec.rewritePayload(path, buffer, payloadLength);
+        rewritePayload(buffer, payloadLength);
     }
 
     void delete() throws IOException {
-        MvccSidecarFiles.deleteWithRewriteSibling(path);
+        deleteWithRewriteSibling();
     }
 
     static Entry entryFor(PageBackedMvccTableStore.StoredVersionRecord stored) {

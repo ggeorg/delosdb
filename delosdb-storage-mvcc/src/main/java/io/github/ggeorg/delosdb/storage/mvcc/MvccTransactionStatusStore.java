@@ -1,18 +1,12 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+import io.github.ggeorg.delosdb.storage.mvcc.durable.AbstractSidecarStore;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 
 /**
@@ -24,14 +18,14 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
  * complete record is ACTIVE are exposed as RECOVERY_PENDING on reopen so their
  * versions are never visible by default.</p>
  */
-public class MvccTransactionStatusStore {
+public class MvccTransactionStatusStore extends AbstractSidecarStore {
     private static final String LOG_VERSION = "1";
     private static final String LOG_NAME = "MVCC transaction status store";
     private static final String RECORD_ACTIVE = "ACTIVE";
     private static final String RECORD_COMMIT = "COMMITTED";
     private static final String RECORD_ABORT = "ABORTED";
 
-    private static final MvccTransactionStatusStore DISABLED = new MvccTransactionStatusStore(null) {
+    private static final MvccTransactionStatusStore DISABLED = new MvccTransactionStatusStore(Path.of("disabled")) {
         @Override
         public Optional<Path> path() {
             return Optional.empty();
@@ -63,10 +57,9 @@ public class MvccTransactionStatusStore {
         }
     };
 
-    private final Path path;
 
     private MvccTransactionStatusStore(Path path) {
-        this.path = path;
+        super(path);
     }
 
     public static MvccTransactionStatusStore disabled() {
@@ -74,20 +67,13 @@ public class MvccTransactionStatusStore {
     }
 
     public static MvccTransactionStatusStore open(Path path) {
-        Objects.requireNonNull(path, "path");
-        Path parent = path.getParent();
-        if (parent != null) {
-            try {
-                Files.createDirectories(parent);
-            } catch (IOException e) {
-                throw new UncheckedIOException("Could not create MVCC transaction status directory: " + parent, e);
-            }
-        }
-        return new MvccTransactionStatusStore(path);
+        MvccTransactionStatusStore store = new MvccTransactionStatusStore(path);
+        store.ensureParentDirectory("MVCC transaction status");
+        return store;
     }
 
     public Optional<Path> path() {
-        return Optional.of(path);
+        return Optional.of(sidecarPath());
     }
 
     public boolean isEnabled() {
@@ -110,15 +96,10 @@ public class MvccTransactionStatusStore {
     }
 
     public synchronized Map<MvccTransactionId, MvccTransactionStatusRecord> recoverStatuses() {
-        if (path == null || !Files.exists(path)) {
+        if (!sidecarExists()) {
             return Map.of();
         }
-        String content;
-        try {
-            content = Files.readString(path, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read MVCC transaction status store: " + path, e);
-        }
+        String content = readUtf8IfExists(LOG_NAME);
         if (content.isEmpty()) {
             return Map.of();
         }
@@ -195,19 +176,12 @@ public class MvccTransactionStatusStore {
     }
 
     private synchronized void appendLine(String type, String... fields) {
-        StringBuilder line = new StringBuilder(LOG_VERSION).append('\t').append(type);
+        StringBuilder line = new StringBuilder(LOG_VERSION).append('	').append(type);
         for (String field : fields) {
-            line.append('\t').append(field);
+            line.append('	').append(field);
         }
         line.append('\n');
-        byte[] bytes = line.toString().getBytes(StandardCharsets.UTF_8);
-        try (FileChannel channel = FileChannel.open(path,
-                StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-            channel.write(ByteBuffer.wrap(bytes));
-            channel.force(true);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not append MVCC transaction status record to: " + path, e);
-        }
+        appendUtf8Forced(line.toString(), "MVCC transaction status record");
     }
 
     private static void validateCommitted(MvccTransactionId transactionId, MvccCommitSequence commitSequence) {

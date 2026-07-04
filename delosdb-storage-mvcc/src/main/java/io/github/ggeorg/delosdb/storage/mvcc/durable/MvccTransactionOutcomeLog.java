@@ -1,14 +1,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,34 +25,26 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
  * path, its creating transaction must have a committed or aborted outcome here.
  * Unknown outcomes fail loudly instead of being silently exposed.</p>
  */
-public final class MvccTransactionOutcomeLog {
+public final class MvccTransactionOutcomeLog extends AbstractSidecarStore {
     private static final String LOG_VERSION = "1";
     private static final String LOG_NAME = "MVCC transaction outcome log";
     private static final String RECORD_COMMIT = "COMMIT";
     private static final String RECORD_ABORT = "ABORT";
     private static final String RECORD_FSYNC = "FSYNC";
 
-    private final Path path;
 
     private MvccTransactionOutcomeLog(Path path) {
-        this.path = Objects.requireNonNull(path, "path");
+        super(path);
     }
 
     public static MvccTransactionOutcomeLog open(Path path) {
-        Objects.requireNonNull(path, "path");
-        Path parent = path.getParent();
-        if (parent != null) {
-            try {
-                Files.createDirectories(parent);
-            } catch (IOException e) {
-                throw new UncheckedIOException("Could not create MVCC transaction outcome log directory: " + parent, e);
-            }
-        }
-        return new MvccTransactionOutcomeLog(path);
+        MvccTransactionOutcomeLog log = new MvccTransactionOutcomeLog(path);
+        log.ensureParentDirectory("MVCC transaction outcome log");
+        return log;
     }
 
     public Path path() {
-        return path;
+        return sidecarPath();
     }
 
     public void appendCommit(MvccTransactionId transactionId, MvccCommitSequence commitSequence) {
@@ -130,15 +115,10 @@ public final class MvccTransactionOutcomeLog {
     }
 
     public synchronized Map<MvccTransactionId, Outcome> recoverOutcomes() {
-        if (!Files.exists(path)) {
+        if (!sidecarExists()) {
             return Map.of();
         }
-        String content;
-        try {
-            content = Files.readString(path, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read MVCC transaction outcome log: " + path, e);
-        }
+        String content = readUtf8IfExists(LOG_NAME);
         if (content.isEmpty()) {
             return Map.of();
         }
@@ -222,14 +202,7 @@ public final class MvccTransactionOutcomeLog {
     private synchronized void appendLine(String type, String... fields) {
         StringBuilder line = new StringBuilder();
         appendLine(line, type, fields);
-        byte[] bytes = line.toString().getBytes(StandardCharsets.UTF_8);
-        try (FileChannel channel = FileChannel.open(path,
-                StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-            channel.write(ByteBuffer.wrap(bytes));
-            channel.force(true);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not append MVCC transaction outcome record to: " + path, e);
-        }
+        appendUtf8Forced(line.toString(), "MVCC transaction outcome record");
     }
 
     private static void appendLine(StringBuilder content, String type, String... fields) {
@@ -241,28 +214,7 @@ public final class MvccTransactionOutcomeLog {
     }
 
     private synchronized void writeAtomically(byte[] bytes) {
-        Path parent = path.getParent();
-        Path temp = parent == null
-                ? path.resolveSibling(path.getFileName() + ".tmp")
-                : parent.resolve(path.getFileName() + ".tmp");
-        try {
-            Files.write(temp, bytes,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE);
-            try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.WRITE)) {
-                channel.force(true);
-            }
-            Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException atomicFailure) {
-            try {
-                Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING);
-            } catch (IOException fallbackFailure) {
-                atomicFailure.addSuppressed(fallbackFailure);
-                throw new UncheckedIOException("Could not rewrite MVCC transaction outcome checkpoint log: "
-                        + path, atomicFailure);
-            }
-        }
+        rewriteBytesAtomicallyForced(bytes, "MVCC transaction outcome checkpoint log");
     }
 
     private static MvccVersionRecord recordCommittedAt(MvccVersionRecord record, MvccCommitSequence commitSequence) {
