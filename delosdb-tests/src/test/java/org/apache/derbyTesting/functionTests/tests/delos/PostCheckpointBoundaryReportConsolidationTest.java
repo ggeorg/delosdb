@@ -45,6 +45,17 @@ public final class PostCheckpointBoundaryReportConsolidationTest extends TestCas
                 script.contains("delosdb\\\\.(?:optimizer|storage)"));
         assertTrue("report should track inherited/new-code boundary imports",
                 script.contains("heap -> MVCC implementation imports"));
+
+        assertTrue("diagnostics API surface report task should exist",
+                script.contains("tasks.register('delosDiagnosticsApiSurfaceReport')"));
+        assertTrue("diagnostics API surface report should be part of S0 closeout",
+                script.contains("'delosDiagnosticsApiSurfaceReport'"));
+        assertTrue("diagnostics API surface report should classify stable diagnostics candidates",
+                script.contains("stable diagnostics candidates"));
+        assertTrue("diagnostics API surface report should classify reset/state hooks",
+                script.contains("reset/state-hook"));
+        assertTrue("diagnostics API surface report should classify legacy checkpoint vocabulary",
+                script.contains("legacy proof/checkpoint vocabulary"));
     }
 
     private static Path storageStaticAnalysisScript() {

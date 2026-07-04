@@ -1054,8 +1054,187 @@ tasks.register('delosPostCheckpointBoundaryReport') {
     }
 }
 
+
+
+def delosDiagnosticsApiSurfaceSourceRoots = [
+        'delosdb-storage-api/src/main/java',
+        'delosdb-storage-bridge/src/main/java',
+        'delosdb-storage-mvcc/src/main/java',
+        'delosdb-storage-derby/src/main/java',
+        'delosdb-engine/src/main/java',
+        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos'
+]
+
+def delosDiagnosticsApiSurfaceFiles = {
+    delosDiagnosticsApiSurfaceSourceRoots.collect { file(it) }
+            .findAll { it.exists() }
+            .collectMany { root ->
+                fileTree(root) {
+                    include '**/*.java'
+                }.files
+            }
+            .sort { a, b -> a.path <=> b.path }
+}
+
+def delosDiagnosticsApiRelativePath = { File sourceFile ->
+    rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
+}
+
+def delosDiagnosticsApiModuleName = { String relativePath ->
+    int slash = relativePath.indexOf('/')
+    slash > 0 ? relativePath.substring(0, slash) : relativePath
+}
+
+def delosDiagnosticsApiFindRows = { Pattern pattern ->
+    def rows = []
+    delosDiagnosticsApiSurfaceFiles().each { sourceFile ->
+        def relativePath = delosDiagnosticsApiRelativePath(sourceFile)
+        def lines = sourceFile.readLines('UTF-8')
+        def codeLines = delosStorageCodeLinesWithoutComments(lines)
+        codeLines.eachWithIndex { String line, int index ->
+            if (pattern.matcher(line).find()) {
+                rows << [
+                        path      : relativePath,
+                        module    : delosDiagnosticsApiModuleName(relativePath),
+                        lineNumber: index + 1,
+                        normalized: delosStorageNormalize(line)
+                ]
+            }
+        }
+    }
+    rows
+}
+
+def delosDiagnosticsApiRowsContaining = { List rows, Pattern pattern ->
+    rows.findAll { row -> pattern.matcher(row.normalized).find() }
+}
+
+def delosDiagnosticsApiMethodRows = { List rows ->
+    rows.findAll { row ->
+        row.normalized.contains('(')
+                && row.normalized.contains(')')
+                && !row.normalized.startsWith('import ')
+                && !row.normalized.startsWith('*')
+                && !row.normalized.startsWith('@')
+                && !row.normalized.startsWith('assert')
+                && !row.normalized.startsWith('writer.println')
+                && !row.normalized.startsWith('script.contains')
+    }
+}
+
+def delosDiagnosticsApiCountBy = { List rows, Closure keyFn ->
+    def counts = [:].withDefault { 0 }
+    rows.each { row -> counts[keyFn(row)] = counts[keyFn(row)] + 1 }
+    counts.entrySet().sort { a, b ->
+        int valueCompare = b.value <=> a.value
+        valueCompare != 0 ? valueCompare : a.key <=> b.key
+    }
+}
+
+tasks.register('delosDiagnosticsApiSurfaceReport') {
+    group = 'verification'
+    description = 'Reports DelosDB diagnostics/test-facing API surface before cleanup refactors.'
+
+    inputs.files(delosDiagnosticsApiSurfaceFiles())
+    outputs.file(layout.buildDirectory.file('reports/delosdb/diagnostics-api-surface-report.txt'))
+
+    doLast {
+        def allForTestingRows = delosDiagnosticsApiFindRows(Pattern.compile('ForTesting|forTesting'))
+        def methodRows = delosDiagnosticsApiMethodRows(allForTestingRows)
+        def productionMethodRows = methodRows.findAll { !it.path.startsWith('delosdb-tests/') }
+        def testMethodRows = methodRows.findAll { it.path.startsWith('delosdb-tests/') }
+        def stableDiagnosticsRows = delosDiagnosticsApiRowsContaining(productionMethodRows,
+                Pattern.compile('(?i)(diagnostic|statistics|summary|snapshot|sample|report|consistency|inspector|storage|optimizer|cost)'))
+        def debugCounterRows = delosDiagnosticsApiRowsContaining(productionMethodRows,
+                Pattern.compile('(?i)(count|counter|metric|samples|fallback|shortcut|scan|rowIds|page|version|commit)'))
+        def resetHookRows = delosDiagnosticsApiRowsContaining(productionMethodRows,
+                Pattern.compile('(?i)\\b(reset|clear|set|start|stop|enable|disable|record|increment)[A-Za-z0-9_]*ForTesting\\b'))
+        def legacyCheckpointRows = delosDiagnosticsApiRowsContaining(productionMethodRows,
+                Pattern.compile('(?i)(proof|checkpoint|shadow|candidate|quarantine|skeleton)'))
+        def publicApiRows = productionMethodRows.findAll {
+            it.path.startsWith('delosdb-storage-api/') || it.path.startsWith('delosdb-engine/src/main/java/org/apache/derby/iapi/')
+        }
+        def publicTestVocabularyRows = delosDiagnosticsApiRowsContaining(publicApiRows,
+                Pattern.compile('ForTesting|forTesting|Proof|Checkpoint|Shadow|Candidate|candidate'))
+        def moduleCounts = delosDiagnosticsApiCountBy(methodRows) { it.module }
+        def classCounts = delosDiagnosticsApiCountBy(methodRows) { it.path }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/diagnostics-api-surface-report.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB diagnostics API surface report')
+            writer.println('======================================')
+            writer.println()
+            writer.println('This report is intentionally classification-only. It does not remove or rename APIs.')
+            writer.println('It separates stable diagnostics candidates, debug counters, reset hooks, and legacy checkpoint vocabulary.')
+            writer.println()
+            writer.println('Source roots:')
+            delosDiagnosticsApiSurfaceSourceRoots.each { writer.println('  - ' + it) }
+            writer.println()
+            writer.println('Summary:')
+            writer.println('  ForTesting/forTesting references:             ' + allForTestingRows.size())
+            writer.println('  method-like ForTesting rows:                  ' + methodRows.size())
+            writer.println('  production method-like ForTesting rows:       ' + productionMethodRows.size())
+            writer.println('  test method-like ForTesting rows:             ' + testMethodRows.size())
+            writer.println('  stable diagnostics candidates:                ' + stableDiagnosticsRows.size())
+            writer.println('  debug counter/metric candidates:              ' + debugCounterRows.size())
+            writer.println('  test-only reset/state-hook candidates:        ' + resetHookRows.size())
+            writer.println('  legacy proof/checkpoint vocabulary rows:      ' + legacyCheckpointRows.size())
+            writer.println('  public API rows with test/checkpoint wording: ' + publicTestVocabularyRows.size())
+            writer.println()
+
+            def printCounts = { String title, Collection entries, int limit ->
+                writer.println(title)
+                if (entries.isEmpty()) {
+                    writer.println('  none')
+                } else {
+                    entries.take(limit).each { entry ->
+                        writer.println('  ' + entry.key + ': ' + entry.value)
+                    }
+                    if (entries.size() > limit) {
+                        writer.println('  ... ' + (entries.size() - limit) + ' more row(s) omitted')
+                    }
+                }
+                writer.println()
+            }
+
+            def printRows = { String title, List rows, int limit ->
+                writer.println(title)
+                if (rows.isEmpty()) {
+                    writer.println('  none')
+                } else {
+                    rows.take(limit).each { row ->
+                        writer.println('  ' + row.path + ':' + row.lineNumber + ': ' + row.normalized)
+                    }
+                    if (rows.size() > limit) {
+                        writer.println('  ... ' + (rows.size() - limit) + ' more row(s) omitted')
+                    }
+                }
+                writer.println()
+            }
+
+            printCounts('Method-like ForTesting rows by module:', moduleCounts, 20)
+            printCounts('Top files by method-like ForTesting rows:', classCounts, 40)
+            printRows('Stable diagnostics candidates:', stableDiagnosticsRows, 80)
+            printRows('Debug counter/metric candidates:', debugCounterRows, 80)
+            printRows('Test-only reset/state-hook candidates:', resetHookRows, 80)
+            printRows('Legacy proof/checkpoint vocabulary rows:', legacyCheckpointRows, 80)
+            printRows('Public API rows with test/checkpoint wording:', publicTestVocabularyRows, 80)
+
+            writer.println('Interpretation:')
+            writer.println('  - Stable diagnostics candidates are the first rename/snapshot candidates.')
+            writer.println('  - Debug counter rows should move toward explicit debug counter objects before API removal.')
+            writer.println('  - Reset/state hooks are test-only candidates and should not become stable API.')
+            writer.println('  - Legacy proof/checkpoint wording should be renamed only behind focused gates.')
+            writer.println('  - This report is not a failure gate; it makes the cleanup backlog measurable.')
+        }
+
+        logger.lifecycle('DelosDB diagnostics API surface report written: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosPostCheckpointBoundaryReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosPostCheckpointBoundaryReport', 'delosDiagnosticsApiSurfaceReport'
 }
