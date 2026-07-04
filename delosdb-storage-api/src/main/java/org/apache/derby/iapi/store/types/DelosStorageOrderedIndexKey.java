@@ -90,15 +90,6 @@ public final class DelosStorageOrderedIndexKey
         return EncodedKey.hasTypedEnvelope(key);
     }
 
-    public static String display(String key)
-    {
-        if (!EncodedKey.hasTypedEnvelope(key))
-        {
-            return key;
-        }
-        return EncodedKey.parse(key).payload();
-    }
-
     private static String encodeObject(Object object)
     {
         if (object instanceof BigDecimal decimal)

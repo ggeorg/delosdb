@@ -31,7 +31,6 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
 import org.apache.derby.iapi.store.types.DelosStorageCommittedRead;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
-import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexKey;
 import org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
 import org.apache.derby.iapi.store.types.DelosStorageRow;
@@ -499,15 +498,6 @@ final class MvccConglomerateState {
         return diagnostics.orderedIndexFallbackCountForTesting();
     }
 
-    synchronized long orderedIndexFallbackReasonCountForTesting(
-            DelosStorageOrderedIndexFallbackReason reason) {
-        return diagnostics.orderedIndexFallbackReasonCountForTesting(reason);
-    }
-
-    synchronized List<String> orderedIndexFallbackReasonSummariesForTesting() {
-        return diagnostics.orderedIndexFallbackReasonSummariesForTesting();
-    }
-
     synchronized long orderedIndexRowIdCountForTesting() {
         return diagnostics.orderedIndexRowIdCountForTesting();
     }
@@ -664,51 +654,25 @@ final class MvccConglomerateState {
         return new MvccRowLocation(rowId);
     }
 
-    synchronized Optional<List<Long>> orderedIndexRowIdsFor(Qualifier[][] qualifiers) {
-        Optional<ColumnValueKey> key = equalityOrderedIndexKey(qualifiers);
+    synchronized Optional<List<Long>> candidateRowIdsFor(Qualifier[][] qualifiers) {
+        Optional<ColumnValueKey> key = equalityCandidateKey(qualifiers);
         if (key.isPresent()) {
             ColumnValueKey columnValueKey = key.get();
-            return candidateIndex.orderedIndexRowIdsFor(
+            return candidateIndex.orderedIndexCandidateRowIdsFor(
                     columnValueKey.column(), columnValueKey.value());
         }
 
-        Optional<ColumnRangeKey> range = rangeOrderedIndexKey(qualifiers);
+        Optional<ColumnRangeKey> range = rangeCandidateKey(qualifiers);
         if (range.isEmpty()) {
-            if (hasIndexQualifiers(qualifiers)) {
-                recordOrderedIndexFallbackForDiagnostics(
-                        DelosStorageOrderedIndexFallbackReason.UNSUPPORTED_KEY_OR_TYPE);
-            }
             return Optional.empty();
         }
         ColumnRangeKey columnRangeKey = range.get();
-        return candidateIndex.orderedIndexRowIdsInRangeFor(
+        return candidateIndex.orderedIndexCandidateRowIdsInRangeFor(
                 columnRangeKey.column(),
                 columnRangeKey.lowerValue(),
                 columnRangeKey.lowerInclusive(),
                 columnRangeKey.upperValue(),
                 columnRangeKey.upperInclusive());
-    }
-
-    synchronized void recordOrderedIndexFallbackForDiagnostics(
-            DelosStorageOrderedIndexFallbackReason reason) {
-        candidateIndex.recordOrderedIndexFallbackForTesting(reason);
-    }
-
-    static boolean hasIndexQualifiers(Qualifier[][] qualifiers) {
-        if (qualifiers == null || qualifiers.length == 0) {
-            return false;
-        }
-        for (Qualifier[] andTerm : qualifiers) {
-            if (andTerm == null) {
-                continue;
-            }
-            for (Qualifier qualifier : andTerm) {
-                if (qualifier != null) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     static boolean candidateIndexDiagnosticFallbackEnabledForTesting() {
@@ -723,7 +687,7 @@ final class MvccConglomerateState {
         table.close();
     }
 
-    private static Optional<ColumnValueKey> equalityOrderedIndexKey(Qualifier[][] qualifiers) {
+    private static Optional<ColumnValueKey> equalityCandidateKey(Qualifier[][] qualifiers) {
         if (qualifiers == null || qualifiers.length == 0) {
             return Optional.empty();
         }
@@ -751,7 +715,7 @@ final class MvccConglomerateState {
                         return Optional.empty();
                     }
                     return Optional.of(new ColumnValueKey(qualifier.getColumnId(), valueKey(orderable)));
-                } catch (StandardException | RuntimeException e) {
+                } catch (StandardException e) {
                     return Optional.empty();
                 }
             }
@@ -759,7 +723,7 @@ final class MvccConglomerateState {
         return Optional.empty();
     }
 
-    private static Optional<ColumnRangeKey> rangeOrderedIndexKey(Qualifier[][] qualifiers) {
+    private static Optional<ColumnRangeKey> rangeCandidateKey(Qualifier[][] qualifiers) {
         if (qualifiers == null || qualifiers.length == 0) {
             return Optional.empty();
         }
@@ -778,7 +742,7 @@ final class MvccConglomerateState {
             if (andTermIndex > 0 && andTerm.length != 1) {
                 // Additional Derby qualifier groups are OR terms. A group with
                 // more than one alternative is not a simple single-column range,
-                // so keep the full committed-image scan path.
+                // so keep the existing full/candidate fallback path.
                 return Optional.empty();
             }
             for (Qualifier qualifier : andTerm) {
@@ -801,7 +765,7 @@ final class MvccConglomerateState {
                         return Optional.empty();
                     }
                     value = valueKey(orderable);
-                } catch (StandardException | RuntimeException e) {
+                } catch (StandardException e) {
                     return Optional.empty();
                 }
                 switch (operator) {

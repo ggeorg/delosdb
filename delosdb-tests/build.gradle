@@ -728,9 +728,6 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapStorageStatisticsTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageCostIntegrationCheckpointTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageMetadataProviderChainTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StorageMetadataContextPurityTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StorageConsolidationBoundaryTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/PostCheckpointBoundaryReportConsolidationTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageCapabilitiesTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StoragePredicatePushdownModelTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageOptimizerReviewGateTest.class',
@@ -738,7 +735,6 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownOptInTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownExecutionCheckpointTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownConsumptionOptInTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownProductionHookTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlCandidateIndexRefreshTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLogicalRowIdentityTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlHotIndexSuppressionTest.class',
@@ -782,7 +778,6 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSavepointTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlFeatureCompletenessTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlObsoletePropertyConsolidationTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlHeapParityTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConcurrentStressTest.class'
         ])

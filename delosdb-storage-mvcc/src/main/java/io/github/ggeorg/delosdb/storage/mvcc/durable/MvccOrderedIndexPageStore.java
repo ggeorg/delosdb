@@ -1,8 +1,6 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -20,6 +18,7 @@ import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolume;
 import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactories;
 import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactory;
 
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexKey;
 
 /**
  * Durable page-backed store for MVCC ordered index entries.
@@ -119,13 +118,13 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
             throw new IllegalArgumentException("ordered index column must be non-negative: " + column);
         }
         String normalizedKey = Entry.normalizeKeyForLookup(Objects.requireNonNull(key, "key"));
-        boolean typedLookup = OrderedIndexKeyCodec.isEncoded(normalizedKey);
+        boolean typedLookup = DelosStorageOrderedIndexKey.isEncoded(normalizedKey);
         List<Long> rowIds = new ArrayList<>();
         for (Entry entry : read().entries()) {
             if (entry.column() != column) {
                 continue;
             }
-            if (typedLookup && !OrderedIndexKeyCodec.isEncoded(entry.key())) {
+            if (typedLookup && !DelosStorageOrderedIndexKey.isEncoded(entry.key())) {
                 throw new IllegalStateException("ordered index contains legacy untyped keys for column "
                         + column + "; full committed scan fallback is required");
             }
@@ -151,14 +150,14 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
                 && compareKeys(normalizedLowerKey, normalizedUpperKey) > 0) {
             return List.of();
         }
-        boolean typedLookup = OrderedIndexKeyCodec.isEncoded(normalizedLowerKey)
-                || OrderedIndexKeyCodec.isEncoded(normalizedUpperKey);
+        boolean typedLookup = DelosStorageOrderedIndexKey.isEncoded(normalizedLowerKey)
+                || DelosStorageOrderedIndexKey.isEncoded(normalizedUpperKey);
         List<Long> rowIds = new ArrayList<>();
         for (Entry entry : read().entries()) {
             if (entry.column() != column) {
                 continue;
             }
-            if (typedLookup && !OrderedIndexKeyCodec.isEncoded(entry.key())) {
+            if (typedLookup && !DelosStorageOrderedIndexKey.isEncoded(entry.key())) {
                 throw new IllegalStateException("ordered index contains legacy untyped keys for column "
                         + column + "; full committed scan fallback is required");
             }
@@ -179,7 +178,7 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
 
     public synchronized List<String> entrySummaries() throws IOException {
         return read().entries().stream()
-                .map(entry -> "col:" + entry.column() + "|key:" + OrderedIndexKeyCodec.display(entry.key()) + "|row:" + entry.rowId())
+                .map(entry -> "col:" + entry.column() + "|key:" + entry.key() + "|row:" + entry.rowId())
                 .toList();
     }
 
@@ -255,7 +254,7 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
         return entries.stream()
                 .map(Objects::requireNonNull)
                 .sorted(Comparator.comparingInt(Entry::column)
-                        .thenComparing(Entry::key, OrderedIndexKeyCodec::compare)
+                        .thenComparing(Entry::key, DelosStorageOrderedIndexKey::compare)
                         .thenComparingLong(Entry::rowId))
                 .toList();
     }
@@ -281,7 +280,7 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
     }
 
     private static int compareKeys(String left, String right) {
-        return OrderedIndexKeyCodec.compare(left, right);
+        return DelosStorageOrderedIndexKey.compare(left, right);
     }
 
     public record Entry(int column, String key, long rowId) {
@@ -335,119 +334,6 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
                 return builder.toString();
             } catch (NoSuchAlgorithmException e) {
                 throw new IllegalStateException("SHA-256 is required for ordered MVCC index key normalization", e);
-            }
-        }
-    }
-
-
-    /**
-     * MVCC-durable interpretation of the typed key envelope.
-     *
-     * <p>The bridge/storage-API side owns producing typed key envelopes from
-     * Derby values.  The durable page store must still be able to sort and
-     * range-scan those envelopes, but it must not import Derby/iapi types from
-     * the MVCC durable layer.  Keep this decoder local to the durable package
-     * boundary so the static storage gate remains meaningful.</p>
-     */
-    private static final class OrderedIndexKeyCodec {
-        private static final char SEPARATOR = '|';
-
-        private OrderedIndexKeyCodec() {
-        }
-
-        static int compare(String left, String right) {
-            EncodedKey leftKey = EncodedKey.parse(left);
-            EncodedKey rightKey = EncodedKey.parse(right);
-            int kindComparison = Integer.compare(leftKey.kind().order(), rightKey.kind().order());
-            if (kindComparison != 0) {
-                return kindComparison;
-            }
-            return switch (leftKey.kind()) {
-                case NULL -> 0;
-                case INTEGER -> compareIntegers(leftKey.payload(), rightKey.payload());
-                case DECIMAL -> compareDecimals(leftKey.payload(), rightKey.payload());
-                case FLOAT -> compareFloats(leftKey.payload(), rightKey.payload());
-                case TEMPORAL, TEXT, LEGACY -> leftKey.payload().compareTo(rightKey.payload());
-            };
-        }
-
-        static boolean isEncoded(String key) {
-            return EncodedKey.hasTypedEnvelope(key);
-        }
-
-        static String display(String key) {
-            if (!EncodedKey.hasTypedEnvelope(key)) {
-                return key;
-            }
-            return EncodedKey.parse(key).payload();
-        }
-
-        private static int compareIntegers(String left, String right) {
-            try {
-                return new BigInteger(left).compareTo(new BigInteger(right));
-            } catch (NumberFormatException e) {
-                return left.compareTo(right);
-            }
-        }
-
-        private static int compareDecimals(String left, String right) {
-            try {
-                return new BigDecimal(left).compareTo(new BigDecimal(right));
-            } catch (NumberFormatException e) {
-                return left.compareTo(right);
-            }
-        }
-
-        private static int compareFloats(String left, String right) {
-            try {
-                return Double.compare(Double.parseDouble(left), Double.parseDouble(right));
-            } catch (NumberFormatException e) {
-                return left.compareTo(right);
-            }
-        }
-
-        private enum Kind {
-            NULL('N', 0),
-            INTEGER('I', 1),
-            DECIMAL('D', 2),
-            FLOAT('F', 3),
-            TEMPORAL('T', 4),
-            TEXT('S', 5),
-            LEGACY('L', 6);
-
-            private final char code;
-            private final int order;
-
-            Kind(char code, int order) {
-                this.code = code;
-                this.order = order;
-            }
-
-            int order() {
-                return order;
-            }
-
-            static Kind fromCode(char code) {
-                for (Kind kind : values()) {
-                    if (kind.code == code) {
-                        return kind;
-                    }
-                }
-                return LEGACY;
-            }
-        }
-
-        private record EncodedKey(Kind kind, String payload) {
-            static EncodedKey parse(String key) {
-                Objects.requireNonNull(key, "key");
-                if (!hasTypedEnvelope(key)) {
-                    return new EncodedKey(Kind.LEGACY, key);
-                }
-                return new EncodedKey(Kind.fromCode(key.charAt(0)), key.substring(2));
-            }
-
-            static boolean hasTypedEnvelope(String key) {
-                return key != null && key.length() >= 2 && key.charAt(1) == SEPARATOR;
             }
         }
     }
