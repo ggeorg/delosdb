@@ -126,4 +126,42 @@ public final class MvccSqlTypedOrderedIndexKeyTest extends MvccSqlTestSupport {
             connection.rollback();
         }
     }
+
+    public void testTextValuesThatResembleLegacyTypedEnvelopeUseTextSemantics() throws Exception {
+        String databaseName = databaseName("mvcc-typed-ordered-index-key-text-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        long containerId;
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table typed_ordered_key_text_t "
+                    + "(id int primary key, marker varchar(16), payload varchar(32)) using delos_mvcc");
+            executeUpdate(connection,
+                    "insert into typed_ordered_key_text_t values (1, 'I|10', 'payload-10')");
+            executeUpdate(connection,
+                    "insert into typed_ordered_key_text_t values (2, 'I|2', 'payload-2')");
+            executeUpdate(connection,
+                    "insert into typed_ordered_key_text_t values (3, 'D|3', 'payload-3')");
+            connection.commit();
+
+            containerId = mvccContainerId(connection, "TYPED_ORDERED_KEY_TEXT_T");
+            long lookupBefore = diagnostics.orderedIndexLookupCountForTesting(0, containerId);
+            long fallbackBefore = diagnostics.orderedIndexFallbackCountForTesting(0, containerId);
+            diagnostics.resetCandidateIndexCountersForTesting();
+            diagnostics.resetScanCountersForTesting();
+
+            assertRows(connection,
+                    "select id, marker from typed_ordered_key_text_t "
+                            + "where marker >= 'I|10' and marker <= 'I|2' order by marker",
+                    "1|I|10", "2|I|2");
+
+            assertTrue("prefix-shaped text range should still consult ordered index pages",
+                    diagnostics.orderedIndexLookupCountForTesting(0, containerId) > lookupBefore);
+            assertEquals("prefix-shaped text keys should not be mistaken for legacy numeric envelopes",
+                    fallbackBefore, diagnostics.orderedIndexFallbackCountForTesting(0, containerId));
+            diagnostics.assertConsistentForTesting(0, containerId);
+            connection.rollback();
+        }
+    }
+
 }

@@ -41,7 +41,10 @@ import org.apache.derby.shared.common.error.StandardException;
  */
 public final class DelosStorageOrderedIndexKey
 {
+    private static final String ENVELOPE_PREFIX = "DOK1|";
     private static final char SEPARATOR = '|';
+    private static final int KIND_OFFSET = ENVELOPE_PREFIX.length();
+    private static final int PAYLOAD_OFFSET = KIND_OFFSET + 2;
 
     private DelosStorageOrderedIndexKey()
     {
@@ -90,6 +93,15 @@ public final class DelosStorageOrderedIndexKey
         return EncodedKey.hasTypedEnvelope(key);
     }
 
+    public static String display(String key)
+    {
+        if (!EncodedKey.hasTypedEnvelope(key))
+        {
+            return key;
+        }
+        return EncodedKey.parse(key).payload();
+    }
+
     private static String encodeObject(Object object)
     {
         if (object instanceof BigDecimal decimal)
@@ -128,7 +140,8 @@ public final class DelosStorageOrderedIndexKey
 
     private static String envelope(Kind kind, String payload)
     {
-        return kind.code() + String.valueOf(SEPARATOR) + Objects.requireNonNull(payload, "payload");
+        return ENVELOPE_PREFIX + kind.code() + String.valueOf(SEPARATOR)
+                + Objects.requireNonNull(payload, "payload");
     }
 
     private static int compareIntegers(String left, String right)
@@ -210,12 +223,24 @@ public final class DelosStorageOrderedIndexKey
         {
             for (Kind kind : values())
             {
-                if (kind.code == code)
+                if (kind.code == code && kind != LEGACY)
                 {
                     return kind;
                 }
             }
-            return LEGACY;
+            throw new IllegalArgumentException("unknown ordered-index typed key kind: " + code);
+        }
+
+        static boolean isKnownCode(char code)
+        {
+            for (Kind kind : values())
+            {
+                if (kind.code == code && kind != LEGACY)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -224,16 +249,24 @@ public final class DelosStorageOrderedIndexKey
         static EncodedKey parse(String key)
         {
             Objects.requireNonNull(key, "key");
-            if (!hasTypedEnvelope(key))
+            if (!key.startsWith(ENVELOPE_PREFIX))
             {
                 return new EncodedKey(Kind.LEGACY, key);
             }
-            return new EncodedKey(Kind.fromCode(key.charAt(0)), key.substring(2));
+            if (!hasTypedEnvelope(key))
+            {
+                throw new IllegalArgumentException("malformed ordered-index typed key envelope: " + key);
+            }
+            return new EncodedKey(Kind.fromCode(key.charAt(KIND_OFFSET)), key.substring(PAYLOAD_OFFSET));
         }
 
         static boolean hasTypedEnvelope(String key)
         {
-            return key != null && key.length() >= 2 && key.charAt(1) == SEPARATOR;
+            return key != null
+                    && key.startsWith(ENVELOPE_PREFIX)
+                    && key.length() >= PAYLOAD_OFFSET
+                    && key.charAt(KIND_OFFSET + 1) == SEPARATOR
+                    && Kind.isKnownCode(key.charAt(KIND_OFFSET));
         }
     }
 }
