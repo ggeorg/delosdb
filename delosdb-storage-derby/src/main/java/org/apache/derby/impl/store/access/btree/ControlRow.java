@@ -382,8 +382,6 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	protected ControlRow(ContainerHandle container, Page page)
         throws StandardException
 	{
-        System.out.println("ControlRow construct 2.");
-
 		// The caller is expected to have latched the pages.
         if (SanityManager.DEBUG)
             SanityManager.ASSERT(page.isLatched());

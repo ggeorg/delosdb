@@ -1,0 +1,24 @@
+# DelosDB inherited heap/raw-store stdout/stderr classification.
+#
+# Format:
+#   id|decision|path|normalized line|reason
+#
+# This file classifies active System.out/System.err sites in inherited Derby
+# heap/btree/raw-store compatibility code. The static gate fails on any new
+# active output site that is not classified here. Commented-out legacy debug
+# snippets are intentionally ignored by the gate.
+
+HEAP-STDOUT-001|ALLOW_DEBUG_FLAG|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreePostCommit.java|System.out.println("starting internal xact\n");|Guarded by SanityManager.DEBUG_ON("verbose_btree_post_commit").
+HEAP-STDOUT-002|ALLOW_DEBUG_FLAG|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreePostCommit.java|System.out.println(|Guarded by SanityManager.DEBUG_ON("verbose_btree_post_commit") around purge diagnostics.
+HEAP-STDOUT-003|ALLOW_DEBUG_FLAG|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreePostCommit.java|System.out.println("Chance to shrink.\n");|Guarded by SanityManager.DEBUG_ON("verbose_btree_post_commit").
+HEAP-STDOUT-004|ALLOW_DEBUG_FLAG|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreePostCommit.java|System.out.println(|Guarded by SanityManager.DEBUG_ON("verbose_btree_post_commit") around no-wait diagnostics.
+HEAP-STDOUT-005|ALLOW_COMPAT_WARNING|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java|System.err.println(warningMsg);|Existing Derby multiple-JBMS warning path also logs to derby.log.
+HEAP-STDOUT-006|ALLOW_DIAGNOSTIC_ENTRYPOINT|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java|System.out.println(diag_conglomid(db_name, conglomid));|D_ diagnostic utility explicit operator output.
+HEAP-STDOUT-007|ALLOW_DIAGNOSTIC_ENTRYPOINT|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java|System.out.println(|D_ diagnostic utility explicit operator output.
+HEAP-STDOUT-008|ALLOW_DIAGNOSTIC_ENTRYPOINT|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java|System.out.println(page.toString());|D_ diagnostic utility explicit page inspection output.
+HEAP-STDOUT-009|ALLOW_DIAGNOSTIC_ENTRYPOINT|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java|System.out.println("page " + pagenumber + " not found");|D_ diagnostic utility explicit page inspection output.
+HEAP-STDOUT-010|ALLOW_DIAGNOSTIC_ENTRYPOINT|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_StoredPage.java|System.out.println("Got error from getIsOverflow().");|D_ diagnostic class output while summarizing stored pages.
+HEAP-STDOUT-011|ALLOW_EXPLICIT_DUMP_MODE|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java|System.out.println("Dump log only");|Explicit derby.storage.logDump mode output.
+HEAP-STDOUT-012|ALLOW_DEBUG_FLAG|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java|System.out.println("Set Checkpoint.");|Guarded by SanityManager.DEBUG_ON("setCheckpoint").
+HEAP-STDOUT-013|ALLOW_DEBUG_FLAG|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/TransactionTable.java|System.out.println("memoryLeakTrace:TransactionTable " + trans.size());|Guarded by SanityManager.DEBUG_ON("memoryLeakTrace").
+HEAP-STDOUT-014|ALLOW_DEBUG_FLAG|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/Xact.java|System.out.println("memoryLeakTrace:Xact:savepoints " + savePoints.size());|Guarded by SanityManager.DEBUG_ON("memoryLeakTrace").

@@ -22,6 +22,44 @@ def delosStorageNormalize = { String line ->
     line == null ? '' : line.trim().replaceAll(/\s+/, ' ')
 }
 
+def delosStorageCodeLinesWithoutComments = { List<String> lines ->
+    def codeLines = []
+    boolean inBlockComment = false
+
+    lines.each { String rawLine ->
+        def code = new StringBuilder()
+        int offset = 0
+        while (offset < rawLine.length()) {
+            if (inBlockComment) {
+                int end = rawLine.indexOf('*/', offset)
+                if (end < 0) {
+                    offset = rawLine.length()
+                } else {
+                    inBlockComment = false
+                    offset = end + 2
+                }
+            } else {
+                int blockStart = rawLine.indexOf('/*', offset)
+                int lineStart = rawLine.indexOf('//', offset)
+                if (lineStart >= 0 && (blockStart < 0 || lineStart < blockStart)) {
+                    code.append(rawLine.substring(offset, lineStart))
+                    offset = rawLine.length()
+                } else if (blockStart >= 0) {
+                    code.append(rawLine.substring(offset, blockStart))
+                    inBlockComment = true
+                    offset = blockStart + 2
+                } else {
+                    code.append(rawLine.substring(offset))
+                    offset = rawLine.length()
+                }
+            }
+        }
+        codeLines << code.toString()
+    }
+
+    codeLines
+}
+
 def delosStorageFinding = { String rule, File sourceFile, int lineNumber, String line ->
     def relativePath = rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
     [
@@ -352,6 +390,50 @@ def delosHeapCompatibilityJavaSources = {
             .sort { a, b -> a.path <=> b.path }
 }
 
+def delosHeapStdoutClassificationFile = file('gradle/static-analysis/delosdb-heap-stdout-classification.txt')
+
+def delosHeapStdoutClassificationDecisions = [
+        'ALLOW_DEBUG_FLAG',
+        'ALLOW_DIAGNOSTIC_ENTRYPOINT',
+        'ALLOW_COMPAT_WARNING',
+        'ALLOW_EXPLICIT_DUMP_MODE'
+] as Set
+
+def delosLoadHeapStdoutClassifications = {
+    if (!delosHeapStdoutClassificationFile.exists()) {
+        return []
+    }
+
+    def rows = []
+    int lineNumber = 0
+    delosHeapStdoutClassificationFile.readLines('UTF-8').each { String rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 5) {
+            throw new GradleException('Malformed heap stdout/stderr classification line ' + lineNumber + ': expected 5 pipe-delimited fields')
+        }
+        if (!delosHeapStdoutClassificationDecisions.contains(parts[1])) {
+            throw new GradleException('Malformed heap stdout/stderr classification line ' + lineNumber + ': unknown decision ' + parts[1])
+        }
+        rows << [
+                id        : parts[0],
+                decision  : parts[1],
+                path      : parts[2],
+                normalized: delosStorageNormalize(parts[3]),
+                reason    : parts[4],
+                lineNumber: lineNumber,
+                key       : parts[2] + '|' + delosStorageNormalize(parts[3])
+        ]
+    }
+
+    rows
+}
+
 def delosHeapCompatibilityFinding = { String rule, File sourceFile, int lineNumber, String line ->
     def relativePath = rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
     [
@@ -402,15 +484,42 @@ def delosHeapCompatibilityClassifyFindings = {
     findings
 }
 
+def delosHeapCompatibilityClassifyStdoutStderr = {
+    def findings = []
+
+    delosHeapCompatibilityJavaSources().each { sourceFile ->
+        def lines = sourceFile.readLines('UTF-8')
+        def codeLines = delosStorageCodeLinesWithoutComments(lines)
+        codeLines.eachWithIndex { String codeLine, int index ->
+            if (codeLine.contains('System.out.') || codeLine.contains('System.err.')) {
+                findings << delosHeapCompatibilityFinding('HEAP_STDOUT_STDERR_SITE', sourceFile, index + 1, codeLine)
+            }
+        }
+    }
+
+    findings
+}
+
 tasks.register('delosHeapCompatibilityStaticAnalysis') {
     group = 'verification'
     description = 'Protects Derby-compatible heap/raw-store core from MVCC, quarantine, protocol, and foreign-memory drift.'
 
     inputs.files(delosHeapCompatibilityJavaSources())
+    inputs.file(delosHeapStdoutClassificationFile).optional()
     outputs.file(layout.buildDirectory.file('reports/delosdb/heap-compatibility-static-analysis.txt'))
 
     doLast {
         def findings = delosHeapCompatibilityClassifyFindings()
+        def stdoutFindings = delosHeapCompatibilityClassifyStdoutStderr()
+        def stdoutClassifications = delosLoadHeapStdoutClassifications()
+        def stdoutClassificationsByKey = stdoutClassifications.groupBy { it.key }
+        def stdoutActiveKeys = stdoutFindings.collect { it.path + '|' + it.normalized }.toSet()
+        def unclassifiedStdout = stdoutFindings.findAll { !stdoutClassificationsByKey.containsKey(it.path + '|' + it.normalized) }
+        def staleStdoutClassifications = stdoutClassifications.findAll { !stdoutActiveKeys.contains(it.key) }
+        def duplicateStdoutIds = stdoutClassifications.groupBy { it.id }
+                .findAll { ignored, rows -> rows.size() > 1 }
+                .keySet()
+
         def reportFile = layout.buildDirectory.file('reports/delosdb/heap-compatibility-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
         reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
@@ -419,7 +528,12 @@ tasks.register('delosHeapCompatibilityStaticAnalysis') {
             writer.println('Source roots:')
             delosHeapCompatibilityStaticSourceRoots.each { writer.println('  - ' + it) }
             writer.println()
-            writer.println('Total findings: ' + findings.size())
+            writer.println('Boundary findings: ' + findings.size())
+            writer.println('Active stdout/stderr sites: ' + stdoutFindings.size())
+            writer.println('Classified stdout/stderr sites: ' + stdoutClassifications.size())
+            writer.println('Unclassified stdout/stderr sites: ' + unclassifiedStdout.size())
+            writer.println('Stale stdout/stderr classifications: ' + staleStdoutClassifications.size())
+            writer.println('Duplicate stdout/stderr classification ids: ' + duplicateStdoutIds.size())
             writer.println()
 
             if (findings.isEmpty()) {
@@ -430,19 +544,59 @@ tasks.register('delosHeapCompatibilityStaticAnalysis') {
                     writer.println("${finding.rule} ${finding.path}:${finding.lineNumber}: ${finding.normalized}")
                 }
             }
+
+            writer.println()
+            if (unclassifiedStdout.isEmpty() && staleStdoutClassifications.isEmpty() && duplicateStdoutIds.isEmpty()) {
+                writer.println('Heap stdout/stderr classification gate passed.')
+            } else {
+                writer.println('Heap stdout/stderr classification gate failures:')
+                unclassifiedStdout.each { finding ->
+                    writer.println("  unclassified ${finding.path}:${finding.lineNumber}: ${finding.normalized}")
+                }
+                staleStdoutClassifications.each { row ->
+                    writer.println("  stale classification ${row.id}: ${row.path}: ${row.normalized}")
+                }
+                duplicateStdoutIds.each { id ->
+                    writer.println('  duplicate classification id: ' + id)
+                }
+            }
+
+            writer.println()
+            writer.println('Classified active stdout/stderr sites:')
+            stdoutFindings.each { finding ->
+                def key = finding.path + '|' + finding.normalized
+                def rows = stdoutClassificationsByKey[key] ?: []
+                def decisions = rows.collect { it.id + '/' + it.decision }.join(', ')
+                writer.println("${finding.rule} ${finding.path}:${finding.lineNumber}: ${finding.normalized}" +
+                        (decisions ? ' [' + decisions + ']' : ' [UNCLASSIFIED]'))
+            }
+
             writer.println()
             writer.println('Allowed DelosDB compatibility seams are intentionally outside this deny-list gate,')
             writer.println('including provider adapters, cost tuning hooks, and LegacyInternal annotations.')
+            writer.println('Inherited Derby stdout/stderr sites must be classified as debug-flagged, diagnostic,')
+            writer.println('compatibility warning, or explicit dump-mode output; new unclassified sites fail this gate.')
         }
 
-        if (!findings.isEmpty()) {
-            def preview = findings.take(20).collect { finding ->
-                "${finding.rule} ${finding.path}:${finding.lineNumber}: ${finding.normalized}"
-            }.join(System.lineSeparator())
+        if (!findings.isEmpty() || !unclassifiedStdout.isEmpty() || !staleStdoutClassifications.isEmpty() || !duplicateStdoutIds.isEmpty()) {
+            def preview = []
+            findings.take(20).each { finding ->
+                preview << "${finding.rule} ${finding.path}:${finding.lineNumber}: ${finding.normalized}"
+            }
+            unclassifiedStdout.take(20).each { finding ->
+                preview << "HEAP_UNCLASSIFIED_STDOUT_STDERR ${finding.path}:${finding.lineNumber}: ${finding.normalized}"
+            }
+            staleStdoutClassifications.take(20).each { row ->
+                preview << "HEAP_STALE_STDOUT_STDERR_CLASSIFICATION ${row.id}: ${row.path}: ${row.normalized}"
+            }
+            duplicateStdoutIds.take(20).each { id ->
+                preview << 'HEAP_DUPLICATE_STDOUT_STDERR_CLASSIFICATION_ID ' + id
+            }
             throw new GradleException(
-                    'DelosDB heap compatibility static analysis found ' + findings.size() +
-                            ' boundary violation(s). Report: ' + reportFile +
-                            System.lineSeparator() + preview)
+                    'DelosDB heap compatibility static analysis found ' +
+                            (findings.size() + unclassifiedStdout.size() + staleStdoutClassifications.size() + duplicateStdoutIds.size()) +
+                            ' boundary/classification violation(s). Report: ' + reportFile +
+                            System.lineSeparator() + preview.join(System.lineSeparator()))
         }
 
         logger.lifecycle('DelosDB heap compatibility static analysis passed. Report: {}', reportFile)
