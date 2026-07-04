@@ -53,8 +53,17 @@ public record DelosOptimizerPredicatePushdownDecision(String providerId,
         if (diagnosticLine.isEmpty()) {
             throw new IllegalArgumentException("diagnostic line must not be blank");
         }
-        if (consumedByDerbyOptimizer) {
-            throw new IllegalArgumentException("optimizer predicate consumption is not enabled by this gate");
+        if (consumedByDerbyOptimizer && !optInEnabled) {
+            throw new IllegalArgumentException("optimizer predicate consumption requires explicit opt-in");
+        }
+        if (consumedByDerbyOptimizer && !optimizerPlanningConsidered) {
+            throw new IllegalArgumentException("optimizer predicate consumption requires planning consideration");
+        }
+        if (consumedByDerbyOptimizer && !storagePlanPushable) {
+            throw new IllegalArgumentException("optimizer predicate consumption requires a storage-pushable plan");
+        }
+        if (consumedByDerbyOptimizer && pushedPredicates.isEmpty()) {
+            throw new IllegalArgumentException("optimizer predicate consumption requires pushed predicates");
         }
         if (optimizerPlanningConsidered && !optInEnabled) {
             throw new IllegalArgumentException("optimizer planning cannot be considered when opt-in is disabled");
@@ -93,6 +102,39 @@ public record DelosOptimizerPredicatePushdownDecision(String providerId,
                 plan.remainderPredicates(),
                 line);
     }
+    public static DelosOptimizerPredicatePushdownDecision optimizerConsumed(
+            boolean planningOptInEnabled,
+            boolean consumptionOptInEnabled,
+            DelosStoragePredicatePushdown plan) {
+        Objects.requireNonNull(plan, "plan");
+        boolean planningConsidered = planningOptInEnabled;
+        boolean consumed = planningOptInEnabled
+                && consumptionOptInEnabled
+                && plan.pushedToStorage();
+        String line = "path=optimizer-predicate-pushdown-consumption"
+                + " provider=" + plan.providerId()
+                + " container=" + plan.containerId()
+                + " planningOptIn=" + planningOptInEnabled
+                + " consumptionOptIn=" + consumptionOptInEnabled
+                + " planningConsidered=" + planningConsidered
+                + " storagePushable=" + plan.pushedToStorage()
+                + " optimizerConsumed=" + consumed
+                + " executionPushdownApplied=false"
+                + " derbyRemainderEvaluation=preserved";
+        return new DelosOptimizerPredicatePushdownDecision(
+                plan.providerId(),
+                plan.segment(),
+                plan.containerId(),
+                planningOptInEnabled,
+                planningConsidered,
+                plan.pushedToStorage(),
+                false,
+                consumed,
+                plan.pushedPredicates(),
+                plan.remainderPredicates(),
+                line);
+    }
+
     public static DelosOptimizerPredicatePushdownDecision executionApplied(
             String providerId,
             int segment,

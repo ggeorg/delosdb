@@ -34,6 +34,7 @@ import java.util.Objects;
  */
 public final class DelosOptimizerPredicatePushdownDiagnostics {
     public static final String PROPERTY_NAME = "delosdb.optimizer.predicatePushdown";
+    public static final String CONSUMPTION_PROPERTY_NAME = "delosdb.optimizer.predicatePushdown.consume";
 
     private static final Object LOCK = new Object();
     private static final List<DelosOptimizerPredicatePushdownDecision> DECISIONS = new ArrayList<>();
@@ -50,12 +51,34 @@ public final class DelosOptimizerPredicatePushdownDiagnostics {
                 || normalized.equals("1");
     }
 
+    public static boolean consumptionEnabledForTesting() {
+        String value = System.getProperty(CONSUMPTION_PROPERTY_NAME, "");
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("enabled")
+                || normalized.equals("true")
+                || normalized.equals("on")
+                || normalized.equals("1");
+    }
+
     public static DelosOptimizerPredicatePushdownDecision considerForTesting(
             DelosStoragePredicatePushdownRequest request) {
         Objects.requireNonNull(request, "request");
         DelosStoragePredicatePushdown plan = DelosStorageDiagnosticsRegistry.predicatePushdown(request);
         DelosOptimizerPredicatePushdownDecision decision =
                 DelosOptimizerPredicatePushdownDecision.from(enabledForTesting(), plan);
+        record(decision);
+        return decision;
+    }
+
+    public static DelosOptimizerPredicatePushdownDecision consumeForTesting(
+            DelosStoragePredicatePushdownRequest request) {
+        Objects.requireNonNull(request, "request");
+        DelosStoragePredicatePushdown plan = DelosStorageDiagnosticsRegistry.predicatePushdown(request);
+        DelosOptimizerPredicatePushdownDecision decision =
+                DelosOptimizerPredicatePushdownDecision.optimizerConsumed(
+                        enabledForTesting(),
+                        consumptionEnabledForTesting(),
+                        plan);
         record(decision);
         return decision;
     }
@@ -113,6 +136,18 @@ public final class DelosOptimizerPredicatePushdownDiagnostics {
         synchronized (LOCK) {
             for (DelosOptimizerPredicatePushdownDecision decision : DECISIONS) {
                 if (decision.executionPushdownApplied()) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    public static int optimizerConsumedCountForTesting() {
+        int count = 0;
+        synchronized (LOCK) {
+            for (DelosOptimizerPredicatePushdownDecision decision : DECISIONS) {
+                if (decision.consumedByDerbyOptimizer()) {
                     count++;
                 }
             }
