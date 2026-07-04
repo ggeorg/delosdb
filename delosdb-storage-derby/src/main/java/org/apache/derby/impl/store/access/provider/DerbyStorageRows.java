@@ -20,8 +20,6 @@
  */
 package org.apache.derby.impl.store.access.provider;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,7 +27,7 @@ import org.apache.derby.iapi.store.types.DelosProjection;
 import org.apache.derby.iapi.store.types.DelosRow;
 import org.apache.derby.iapi.store.types.DelosTableShape;
 import org.apache.derby.iapi.store.types.StoreDataValue;
-import org.apache.derby.iapi.store.types.StoreValueOperations;
+import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.shared.common.error.StandardException;
 
 final class DerbyStorageRows {
@@ -47,7 +45,7 @@ final class DerbyStorageRows {
         }
         StoreDataValue[] copy = new StoreDataValue[rowTemplate.length];
         for (int i = 0; i < rowTemplate.length; i++) {
-            copy[i] = cloneHolder(rowTemplate[i]);
+            copy[i] = StoreValueCopySupport.cloneHolderOrSelf(rowTemplate[i]);
         }
         return copy;
     }
@@ -59,7 +57,7 @@ final class DerbyStorageRows {
         List<Integer> indexes = projectionIndexes(rowShape, projection);
         List<StoreDataValue> values = new ArrayList<>(indexes.size());
         for (int index : indexes) {
-            values.add(cloneValue(row[index]));
+            values.add(StoreValueCopySupport.cloneValueOrSelf(row[index]));
         }
         return List.copyOf(values);
     }
@@ -97,78 +95,4 @@ final class DerbyStorageRows {
         return value == null ? "" : value.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
-    private static StoreDataValue cloneHolder(StoreDataValue value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof StoreValueOperations operations) {
-            return operations.cloneHolder();
-        }
-        StoreDataValue reflected = reflectStoreDataValue(value, "cloneHolder");
-        if (reflected != null) {
-            return reflected;
-        }
-        return value;
-    }
-
-    private static StoreDataValue cloneValue(StoreDataValue value) throws StandardException {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof StoreValueOperations operations) {
-            return operations.cloneValue(false);
-        }
-        StoreDataValue reflected = reflectCloneValue(value);
-        if (reflected != null) {
-            return reflected;
-        }
-        return value;
-    }
-
-    private static StoreDataValue reflectCloneValue(StoreDataValue value) throws StandardException {
-        try {
-            Method cloneValue = value.getClass().getMethod("cloneValue", boolean.class);
-            Object cloned = cloneValue.invoke(value, false);
-            return cloned instanceof StoreDataValue storeDataValue ? storeDataValue : null;
-        } catch (NoSuchMethodException e) {
-            return null;
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException("Cannot access Derby value clone operation on "
-                    + value.getClass().getName(), e);
-        } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof StandardException standardException) {
-                throw standardException;
-            }
-            if (cause instanceof RuntimeException runtimeException) {
-                throw runtimeException;
-            }
-            if (cause instanceof Error error) {
-                throw error;
-            }
-            throw new IllegalStateException(cause);
-        }
-    }
-
-    private static StoreDataValue reflectStoreDataValue(StoreDataValue value, String methodName) {
-        try {
-            Method method = value.getClass().getMethod(methodName);
-            Object result = method.invoke(value);
-            return result instanceof StoreDataValue storeDataValue ? storeDataValue : null;
-        } catch (NoSuchMethodException e) {
-            return null;
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException("Cannot access Derby value " + methodName
-                    + " operation on " + value.getClass().getName(), e);
-        } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException runtimeException) {
-                throw runtimeException;
-            }
-            if (cause instanceof Error error) {
-                throw error;
-            }
-            throw new IllegalStateException(cause);
-        }
-    }
 }

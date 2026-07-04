@@ -2,9 +2,6 @@ package io.github.ggeorg.delosdb.storage.mvcc.bridge;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -44,7 +41,7 @@ import org.apache.derby.iapi.store.types.DelosStorageTableDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
 import org.apache.derby.iapi.store.types.DelosVacuumOutcome;
 import org.apache.derby.iapi.store.types.StoreDataValue;
-import org.apache.derby.iapi.store.types.StoreValueOperations;
+import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.shared.common.error.StandardException;
 
 final class MvccInheritedTable implements DelosStorageTable,
@@ -1418,7 +1415,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         }
         List<String> keys = new ArrayList<>(values.length);
         for (StoreDataValue value : values) {
-            keys.add(value == null ? null : valueKeyRaw(value));
+            keys.add(StoreValueCopySupport.rawStringKey(value));
         }
         return List.copyOf(keys);
     }
@@ -1443,129 +1440,15 @@ final class MvccInheritedTable implements DelosStorageTable,
         }
     }
 
-    private static String valueKeyRaw(StoreDataValue value) {
-        if (value instanceof StoreValueOperations operations) {
-            try {
-                return valueKeyString(operations.getString());
-            } catch (StandardException e) {
-                throw new IllegalStateException("Cannot derive store value key from "
-                        + value.getClass().getName(), e);
-            }
-        }
-        Optional<Method> getString = publicNoArgMethod(value.getClass(), "getString");
-        if (getString.isEmpty()) {
-            return value.toString();
-        }
-        try {
-            Object result = getString.get().invoke(value);
-            return valueKeyString(result);
-        } catch (IllegalAccessException e) {
-            // Some Derby LOB values inherit public methods from package-private
-            // implementation classes.  Raw row/candidate diagnostics must not
-            // fail commits for those values; keep the existing fallback shape.
-            return value.toString();
-        } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException runtimeException) {
-                throw runtimeException;
-            }
-            if (cause instanceof Error error) {
-                throw error;
-            }
-            return value.toString();
-        }
-    }
-
-    private static String valueKeyString(Object value) {
-        return value == null ? "<null>" : value.toString();
-    }
-
-    private static Optional<Method> publicNoArgMethod(Class<?> type, String name) {
-        if (type == null) {
-            return Optional.empty();
-        }
-        for (Class<?> interfaceType : type.getInterfaces()) {
-            Optional<Method> method = publicNoArgMethod(interfaceType, name);
-            if (method.isPresent()) {
-                return method;
-            }
-        }
-        if (Modifier.isPublic(type.getModifiers())) {
-            try {
-                Method method = type.getMethod(name);
-                if (method.getParameterCount() == 0
-                        && Modifier.isPublic(method.getModifiers())
-                        && Modifier.isPublic(method.getDeclaringClass().getModifiers())) {
-                    return Optional.of(method);
-                }
-            } catch (NoSuchMethodException e) {
-                // Keep searching public super types below.
-            }
-        }
-        return publicNoArgMethod(type.getSuperclass(), name);
-    }
 
     private static StoreDataValue[] cloneRowUnchecked(StoreDataValue[] row) {
         try {
-            return cloneRow(row);
+            return StoreValueCopySupport.cloneRow(row);
         } catch (StandardException e) {
             throw new IllegalStateException("Could not clone inherited MVCC row", e);
         }
     }
 
-    private static StoreDataValue[] cloneRow(StoreDataValue[] row) throws StandardException {
-        if (row == null) {
-            return new StoreDataValue[0];
-        }
-        StoreDataValue[] copy = new StoreDataValue[row.length];
-        for (int i = 0; i < row.length; i++) {
-            copy[i] = cloneValue(row[i]);
-        }
-        return copy;
-    }
-
-    private static StoreDataValue cloneValue(StoreDataValue value) throws StandardException {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof StoreValueOperations operations) {
-            return operations.cloneValue(false);
-        }
-        StoreDataValue reflected = cloneSqlValueReflectively(value);
-        if (reflected != null) {
-            return reflected;
-        }
-        throw new IllegalArgumentException("MVCC storage provider requires cloneable StoreDataValue: "
-                + value.getClass().getName());
-    }
-
-    private static StoreDataValue cloneSqlValueReflectively(StoreDataValue value) throws StandardException {
-        try {
-            Method cloneValue = value.getClass().getMethod("cloneValue", boolean.class);
-            Object cloned = cloneValue.invoke(value, false);
-            if (cloned instanceof StoreDataValue storeDataValue) {
-                return storeDataValue;
-            }
-            return null;
-        } catch (NoSuchMethodException e) {
-            return null;
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException("Cannot access SQL value clone operation on "
-                    + value.getClass().getName(), e);
-        } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof StandardException standardException) {
-                throw standardException;
-            }
-            if (cause instanceof RuntimeException runtimeException) {
-                throw runtimeException;
-            }
-            if (cause instanceof Error error) {
-                throw error;
-            }
-            throw new IllegalStateException(cause);
-        }
-    }
 
     private static DelosVacuumOutcome vacuumOutcome(PageVolumeMvccStateStore.VacuumOutcome outcome) {
         return new DelosVacuumOutcome(
