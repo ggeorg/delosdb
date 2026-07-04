@@ -69,11 +69,21 @@ public final class DelosOptimizerPredicatePushdownDiagnostics {
     }
 
     /**
-     * True when a production optimizer hook should spend work recording a
-     * decision.  Default Derby mode remains side-effect free.
+     * True when the production optimizer hook should spend work recording a
+     * decision.  Planning opt-in is the root gate; the consumption property is
+     * deliberately a second-stage gate and is ignored by production hooks when
+     * planning itself is disabled.  Default Derby mode remains side-effect free.
      */
     public static boolean optimizerHookEnabled() {
-        return planningEnabled() || consumptionEnabled();
+        return planningEnabled();
+    }
+
+    /**
+     * True when the production optimizer hook may mark storage-predicate
+     * metadata as optimizer-consumed.  Both explicit opt-ins are required.
+     */
+    public static boolean optimizerConsumptionHookEnabled() {
+        return planningEnabled() && consumptionEnabled();
     }
 
     private static boolean propertyEnabled(String propertyName) {
@@ -116,6 +126,25 @@ public final class DelosOptimizerPredicatePushdownDiagnostics {
                         planningEnabled(),
                         consumptionEnabled(),
                         plan);
+        record(decision);
+        return decision;
+    }
+
+
+    /**
+     * Production optimizer hook for metadata already selected by Derby's
+     * optimizer path. This records the explicit consumption checkpoint without
+     * requiring a registered runtime storage snapshot at compile time. It still
+     * never mutates Derby predicate lists and never claims execution pushdown.
+     */
+    public static DelosOptimizerPredicatePushdownDecision consumeOptimizerMetadataFromProductionHook(
+            DelosStoragePredicatePushdownRequest request) {
+        Objects.requireNonNull(request, "request");
+        DelosOptimizerPredicatePushdownDecision decision =
+                DelosOptimizerPredicatePushdownDecision.optimizerConsumedFromRequest(
+                        planningEnabled(),
+                        consumptionEnabled(),
+                        request);
         record(decision);
         return decision;
     }

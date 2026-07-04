@@ -2102,7 +2102,11 @@ class FromBaseTable extends FromTable
                     false,
                     storageCandidates,
                     List.of("Derby RowUtil qualifier evaluation preserved"));
-            DelosOptimizerPredicatePushdownDiagnostics.consumeFromOptimizer(request);
+            if (DelosOptimizerPredicatePushdownDiagnostics.optimizerConsumptionHookEnabled()) {
+                DelosOptimizerPredicatePushdownDiagnostics.consumeOptimizerMetadataFromProductionHook(request);
+            } else {
+                DelosOptimizerPredicatePushdownDiagnostics.consider(request);
+            }
         } catch (StandardException | IllegalArgumentException | IllegalStateException ignored) {
             /*
              * Predicate consumption metadata must fail closed.  This hook is a
