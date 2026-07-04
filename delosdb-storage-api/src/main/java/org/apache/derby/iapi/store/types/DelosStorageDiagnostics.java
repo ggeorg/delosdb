@@ -47,24 +47,6 @@ public interface DelosStorageDiagnostics {
         return this;
     }
 
-    /**
-     * Optional database-directory context for file-based compatibility inspectors.
-     * Providers which do not need a database directory may ignore this hook.
-     *
-     * @deprecated Prefer {@link #withContext(DelosStorageDiagnosticsContext)} so
-     * callers pass explicit request context instead of mutating provider state.
-     */
-    @Deprecated
-    default void setDatabaseDirectoryForTesting(Path databaseDirectory) {
-    }
-
-    /**
-     * @deprecated Prefer {@link #withContext(DelosStorageDiagnosticsContext)}.
-     */
-    @Deprecated
-    default void clearDatabaseDirectoryForTesting() {
-    }
-
     void clearRuntimeStateForTesting();
 
     int runtimeStateCountForTesting();
