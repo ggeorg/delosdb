@@ -26,6 +26,7 @@ import java.util.List;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
@@ -521,6 +522,13 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public java.util.List<String> orderedIndexCandidateParityErrorSummariesForTesting(int segment, long containerId) {
         return MvccConglomerate.orderedIndexCandidateParityErrorSummariesForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public DelosStorageOrderedIndexDiagnostics.AuthorityMode orderedIndexAuthorityModeForTesting(
+            int segment,
+            long containerId) {
+        return MvccConglomerate.orderedIndexAuthorityModeForDiagnostics(segment, containerId);
     }
 
     @Override

@@ -334,12 +334,22 @@ public interface DelosStorageTableDiagnostics {
         return List.of();
     }
 
+    default DelosStorageOrderedIndexDiagnostics.AuthorityMode orderedIndexAuthorityModeForTesting() {
+        return DelosStorageOrderedIndexDiagnostics.AuthorityMode.UNAVAILABLE;
+    }
+
     default DelosStorageOrderedIndexDiagnostics orderedIndexDiagnosticsForTesting() {
         return new DelosStorageOrderedIndexDiagnostics(
+                orderedIndexAuthorityModeForTesting(),
                 orderedIndexPageCountForTesting(),
                 orderedIndexEntryCountForTesting(),
                 orderedIndexDistinctKeyCountForTesting(),
-                orderedIndexRebuildCountForTesting());
+                orderedIndexRebuildCountForTesting(),
+                orderedIndexLookupCountForTesting(),
+                orderedIndexHitCountForTesting(),
+                orderedIndexFallbackCountForTesting(),
+                orderedIndexRowIdCountForTesting(),
+                orderedIndexCandidateParityErrorCountForTesting());
     }
 
     long pageCacheMaxPageCountForTesting();

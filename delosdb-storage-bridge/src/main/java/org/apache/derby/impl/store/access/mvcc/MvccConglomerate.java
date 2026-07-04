@@ -47,6 +47,7 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
@@ -709,6 +710,12 @@ public final class MvccConglomerate
 
     static List<String> orderedIndexCandidateParityErrorSummariesForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).orderedIndexCandidateParityErrorSummariesForTesting();
+    }
+
+    static DelosStorageOrderedIndexDiagnostics.AuthorityMode orderedIndexAuthorityModeForDiagnostics(
+            int segment,
+            long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).orderedIndexAuthorityModeForTesting();
     }
 
     static long pageCacheMaxPageCountForDiagnostics(int segment, long containerId) {

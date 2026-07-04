@@ -400,12 +400,24 @@ public interface DelosStorageDiagnostics {
         return List.of();
     }
 
+    default DelosStorageOrderedIndexDiagnostics.AuthorityMode orderedIndexAuthorityModeForTesting(
+            int segment,
+            long containerId) {
+        return DelosStorageOrderedIndexDiagnostics.AuthorityMode.UNAVAILABLE;
+    }
+
     default DelosStorageOrderedIndexDiagnostics orderedIndexDiagnosticsForTesting(int segment, long containerId) {
         return new DelosStorageOrderedIndexDiagnostics(
+                orderedIndexAuthorityModeForTesting(segment, containerId),
                 orderedIndexPageCountForTesting(segment, containerId),
                 orderedIndexEntryCountForTesting(segment, containerId),
                 orderedIndexDistinctKeyCountForTesting(segment, containerId),
-                orderedIndexRebuildCountForTesting(segment, containerId));
+                orderedIndexRebuildCountForTesting(segment, containerId),
+                orderedIndexLookupCountForTesting(segment, containerId),
+                orderedIndexHitCountForTesting(segment, containerId),
+                orderedIndexFallbackCountForTesting(segment, containerId),
+                orderedIndexRowIdCountForTesting(segment, containerId),
+                orderedIndexCandidateParityErrorCountForTesting(segment, containerId));
     }
 
     long pageCacheMaxPageCountForTesting(int segment, long containerId);

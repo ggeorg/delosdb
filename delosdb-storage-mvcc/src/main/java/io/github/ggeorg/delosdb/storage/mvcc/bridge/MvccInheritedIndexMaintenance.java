@@ -11,6 +11,7 @@ import java.util.Objects;
 import io.github.ggeorg.delosdb.storage.mvcc.store.MvccCandidateIndex;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
 
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexKey;
 import org.apache.derby.iapi.store.types.StoreDataValue;
@@ -138,6 +139,10 @@ final class MvccInheritedIndexMaintenance {
 
     List<String> orderedIndexCandidateParityErrorSummariesForTesting() {
         return orderedIndexCandidateParityErrors();
+    }
+
+    DelosStorageOrderedIndexDiagnostics.AuthorityMode orderedIndexAuthorityModeForTesting() {
+        return DelosStorageOrderedIndexDiagnostics.AuthorityMode.CURRENT_COMMITTED_ROW_ID_AUTHORITY;
     }
 
     private Optional<List<Long>> recordOrderedIndexLookup(

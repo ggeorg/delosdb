@@ -24,6 +24,7 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 import java.sql.Connection;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexDiagnostics;
 
 /** Checkpoint gate for promoting ordered MVCC index pages over candidate indexes. */
 public final class MvccSqlOrderedIndexAuthorityCheckpointTest extends MvccSqlTestSupport {
@@ -45,6 +46,7 @@ public final class MvccSqlOrderedIndexAuthorityCheckpointTest extends MvccSqlTes
 
             containerId = mvccContainerId(connection, "ORDERED_INDEX_AUTHORITY_T");
             assertCandidateOrderedParityClean(diagnostics, containerId);
+            assertOrderedIndexAuthoritySnapshot(diagnostics, containerId);
             assertTrue("candidate index should remain populated for diagnostic/fallback comparison",
                     diagnostics.candidateIndexKeyCountForTesting(0, containerId) > 0);
             assertTrue("ordered index pages should be populated before authority checkpoint reads",
@@ -74,6 +76,18 @@ public final class MvccSqlOrderedIndexAuthorityCheckpointTest extends MvccSqlTes
                     0, diagnostics.candidateIndexFallbackLookupCountForTesting());
             assertTrue("ordered authority still feeds page-backed row-id reads",
                     diagnostics.rowIdFastPathReadCountForTesting() > 0);
+            DelosStorageOrderedIndexDiagnostics authoritySnapshot =
+                    diagnostics.orderedIndexDiagnosticsForTesting(0, containerId);
+            assertTrue("ordered authority snapshot should expose lookup activity",
+                    authoritySnapshot.lookupCount() >= lookupBefore + 2);
+            assertTrue("ordered authority snapshot should expose hit activity",
+                    authoritySnapshot.hitCount() >= hitBefore + 2);
+            assertEquals("ordered authority snapshot should keep covered fallback cold",
+                    fallbackBefore, authoritySnapshot.fallbackCount());
+            assertTrue("ordered authority snapshot should expose row-id narrowing",
+                    authoritySnapshot.rowIdCount() > 0L);
+            assertEquals("ordered authority snapshot should expose clean candidate parity",
+                    0, authoritySnapshot.candidateParityErrorCount());
             assertEquals("legacy snapshot fallback reads must remain closed",
                     0, diagnostics.legacySnapshotFallbackReadCountForTesting(0, containerId));
             assertEquals("legacy snapshot fallback scans must remain closed",
@@ -132,6 +146,24 @@ public final class MvccSqlOrderedIndexAuthorityCheckpointTest extends MvccSqlTes
                     0, diagnostics.candidateIndexFallbackLookupCountForTesting());
             diagnostics.assertConsistentForTesting(0, containerId);
         }
+    }
+
+    private static void assertOrderedIndexAuthoritySnapshot(
+            DelosStorageDiagnostics diagnostics,
+            long containerId) {
+        DelosStorageOrderedIndexDiagnostics snapshot =
+                diagnostics.orderedIndexDiagnosticsForTesting(0, containerId);
+        assertEquals("ordered index should be current-committed row-id authority",
+                DelosStorageOrderedIndexDiagnostics.AuthorityMode.CURRENT_COMMITTED_ROW_ID_AUTHORITY,
+                snapshot.authorityMode());
+        assertTrue("ordered index authority helper should report enabled",
+                snapshot.currentCommittedAuthorityEnabled());
+        assertEquals("snapshot page count should match legacy page counter",
+                diagnostics.orderedIndexPageCountForTesting(0, containerId),
+                snapshot.pageCount());
+        assertEquals("snapshot entry count should match legacy entry counter",
+                diagnostics.orderedIndexEntryCountForTesting(0, containerId),
+                snapshot.entryCount());
     }
 
     private static void assertCandidateOrderedParityClean(
