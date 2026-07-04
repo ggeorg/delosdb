@@ -69,28 +69,6 @@ public interface DelosStorageCandidateIndex {
         return Optional.empty();
     }
 
-    /**
-     * @deprecated The name predates ordered-page authority. Use
-     *             {@link #orderedIndexRowIdsFor(int, String)} instead.
-     */
-    @Deprecated
-    default Optional<List<Long>> orderedIndexCandidateRowIdsFor(int column, String value) {
-        return orderedIndexRowIdsFor(column, value);
-    }
-
-    /**
-     * @deprecated The name predates ordered-page authority. Use
-     *             {@link #orderedIndexRowIdsInRangeFor(int, String, boolean, String, boolean)} instead.
-     */
-    @Deprecated
-    default Optional<List<Long>> orderedIndexCandidateRowIdsInRangeFor(
-            int column,
-            String lowerValue,
-            boolean lowerInclusive,
-            String upperValue,
-            boolean upperInclusive) {
-        return orderedIndexRowIdsInRangeFor(column, lowerValue, lowerInclusive, upperValue, upperInclusive);
-    }
 
     int candidateIndexKeyCountForTesting();
 }

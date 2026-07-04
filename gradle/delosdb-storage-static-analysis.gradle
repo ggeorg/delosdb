@@ -106,6 +106,9 @@ def delosStorageJavaSources = {
 def delosStorageClassifyFindings = {
     def findings = []
 
+    def staleOrderedIndexAuthorityAlias = Pattern.compile('\\borderedIndexCandidateRowIds(?:For|InRangeFor)\\b')
+    def mutableDiagnosticsContextHook = Pattern.compile('\\b(?:setDatabaseDirectoryForTesting|clearDatabaseDirectoryForTesting|databaseDirectoryForTesting)\\b')
+
     delosStorageJavaSources().each { sourceFile ->
         def relativePath = rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
         def lines = sourceFile.readLines('UTF-8')
@@ -120,6 +123,12 @@ def delosStorageClassifyFindings = {
             }
             if (line.contains('System.out.') || line.contains('System.err.')) {
                 findings << delosStorageFinding('STORAGE_STDOUT_STDERR', sourceFile, lineNumber, line)
+            }
+            if (staleOrderedIndexAuthorityAlias.matcher(line).find()) {
+                findings << delosStorageFinding('STORAGE_ORDERED_INDEX_AUTHORITY_ALIAS', sourceFile, lineNumber, line)
+            }
+            if (mutableDiagnosticsContextHook.matcher(line).find()) {
+                findings << delosStorageFinding('STORAGE_MUTABLE_DIAGNOSTICS_CONTEXT', sourceFile, lineNumber, line)
             }
             if (relativePath.startsWith('delosdb-storage-mvcc/') && line.contains('io.github.ggeorg.delosdb.spi.storage.versioned')) {
                 findings << delosStorageFinding('MVCC_LEGACY_VERSIONED_SPI_IMPORT', sourceFile, lineNumber, line)
@@ -380,6 +389,7 @@ tasks.register('delosServerStaticAnalysis') {
 def delosHeapCompatibilityStaticSourceRoots = [
         'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap',
         'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree',
+        'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/provider',
         'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw'
 ]
 
@@ -502,7 +512,7 @@ def delosHeapCompatibilityClassifyStdoutStderr = {
 
 tasks.register('delosHeapCompatibilityStaticAnalysis') {
     group = 'verification'
-    description = 'Protects Derby-compatible heap/raw-store core from MVCC, quarantine, protocol, and foreign-memory drift.'
+    description = 'Protects Derby-compatible heap/provider/raw-store core from MVCC, quarantine, protocol, foreign-memory, and unclassified output drift.'
 
     inputs.files(delosHeapCompatibilityJavaSources())
     inputs.file(delosHeapStdoutClassificationFile).optional()
