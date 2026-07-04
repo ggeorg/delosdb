@@ -5,10 +5,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.EnumMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -21,7 +18,6 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionManager;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccWriteConflictException;
-import io.github.ggeorg.delosdb.storage.mvcc.store.MvccCandidateIndex;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
 
@@ -29,7 +25,6 @@ import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
 import org.apache.derby.iapi.store.types.DelosStorageCommittedRead;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
-import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexKey;
 import org.apache.derby.iapi.store.types.DelosStorageRow;
 import org.apache.derby.iapi.store.types.DelosStorageRowHead;
 import org.apache.derby.iapi.store.types.DelosStorageRowLocator;
@@ -56,9 +51,9 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final Path retiredSnapshotFile;
     private final Path transactionStatusFile;
     private final PageVolumeMvccStateStore<StoreDataValue[]> pageVolumeStateStore;
+    private final MvccInheritedIndexMaintenance indexMaintenance;
     private final MvccTransactionStatusStore transactionStatusStore;
     private final MvccTransactionManager transactions;
-    private final MvccCandidateIndex candidateIndex = new MvccCandidateIndex();
     private final List<MvccInheritedHandles.Transaction> activeTransactions = new ArrayList<>();
     private final ReentrantReadWriteLock tableLock = new ReentrantReadWriteLock();
     private final Lock readLock = tableLock.readLock();
@@ -78,13 +73,6 @@ final class MvccInheritedTable implements DelosStorageTable,
     private int transactionLocalPageBackedBaseScanCount;
     private int pageBackedHistoricalSnapshotReadCount;
     private int pageBackedHistoricalSnapshotScanCount;
-    private int pageBackedCandidateIndexRebuildCount;
-    private long orderedIndexLookupCount;
-    private long orderedIndexHitCount;
-    private long orderedIndexFallbackCount;
-    private final EnumMap<DelosStorageOrderedIndexFallbackReason, Long> orderedIndexFallbackReasonCounts =
-            new EnumMap<>(DelosStorageOrderedIndexFallbackReason.class);
-    private long orderedIndexRowIdCount;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
@@ -96,6 +84,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 databaseDirectory,
                 storageId(segmentId, containerId),
                 MvccInheritedRowCodec.INSTANCE);
+        this.indexMaintenance = new MvccInheritedIndexMaintenance(pageVolumeStateStore);
         this.transactionStatusStore = transactionStatusFile == null || containerId == 0L
                 ? MvccTransactionStatusStore.disabled()
                 : MvccTransactionStatusStore.open(transactionStatusFile);
@@ -344,13 +333,13 @@ final class MvccInheritedTable implements DelosStorageTable,
             List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes,
             MvccCommitSequence commitSequence) {
         pageVolumeStateStore.persistChangedRows(changes, commitSequence);
-        rebuildCandidateIndexFromPageBackedCommittedRows();
+        indexMaintenance.rebuildFromCommittedRows();
     }
 
     @Override
     public void dropDurableState() {
         writeLocked(() -> {
-            candidateIndex.clear();
+            indexMaintenance.clear();
             try {
                 pageVolumeStateStore.drop();
                 if (retiredSnapshotFile != null) {
@@ -386,13 +375,12 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public Optional<List<Long>> candidateRowIdsFor(int column, String value) {
-        return readLocked(() -> candidateIndex.candidatesFor(column, value));
+        return readLocked(() -> indexMaintenance.candidateRowIdsFor(column, value));
     }
 
     @Override
     public Optional<List<Long>> orderedIndexRowIdsFor(int column, String value) {
-        return writeLocked(() -> recordOrderedIndexLookup(
-                pageVolumeStateStore.orderedIndexLookupFor(column, value)));
+        return writeLocked(() -> indexMaintenance.orderedIndexRowIdsFor(column, value));
     }
 
     @Override
@@ -402,54 +390,18 @@ final class MvccInheritedTable implements DelosStorageTable,
             boolean lowerInclusive,
             String upperValue,
             boolean upperInclusive) {
-        return writeLocked(() -> recordOrderedIndexLookup(
-                pageVolumeStateStore.orderedIndexRangeLookupFor(
-                        column, lowerValue, lowerInclusive, upperValue, upperInclusive)));
+        return writeLocked(() -> indexMaintenance.orderedIndexRowIdsInRangeFor(
+                column, lowerValue, lowerInclusive, upperValue, upperInclusive));
     }
 
     @Override
     public void recordOrderedIndexFallbackForTesting(DelosStorageOrderedIndexFallbackReason reason) {
-        writeLocked(() -> recordOrderedIndexFallback(reason));
-    }
-
-    private Optional<List<Long>> recordOrderedIndexLookup(
-            PageVolumeMvccStateStore.OrderedIndexLookupResult lookup) {
-        orderedIndexLookupCount++;
-        Optional<List<Long>> rowIds = lookup.rowIds();
-        if (rowIds.isEmpty()) {
-            recordOrderedIndexFallback(toApiFallbackReason(lookup.fallbackReason()));
-            return Optional.empty();
-        }
-        List<Long> ids = rowIds.get();
-        orderedIndexRowIdCount += ids.size();
-        if (!ids.isEmpty()) {
-            orderedIndexHitCount++;
-        }
-        return Optional.of(ids);
-    }
-
-    private void recordOrderedIndexFallback(DelosStorageOrderedIndexFallbackReason reason) {
-        if (reason == null) {
-            return;
-        }
-        orderedIndexFallbackCount++;
-        orderedIndexFallbackReasonCounts.merge(reason, 1L, Long::sum);
-    }
-
-    private static DelosStorageOrderedIndexFallbackReason toApiFallbackReason(
-            PageVolumeMvccStateStore.OrderedIndexLookupFallbackReason reason) {
-        return switch (reason) {
-            case UNSUPPORTED_KEY_OR_TYPE -> DelosStorageOrderedIndexFallbackReason.UNSUPPORTED_KEY_OR_TYPE;
-            case MALFORMED_ORDERED_INDEX_SIDECAR ->
-                    DelosStorageOrderedIndexFallbackReason.MALFORMED_ORDERED_INDEX_SIDECAR;
-            case STALE_OR_MISSING_ORDERED_INDEX_SIDECAR ->
-                    DelosStorageOrderedIndexFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR;
-        };
+        writeLocked(() -> indexMaintenance.recordOrderedIndexFallbackForTesting(reason));
     }
 
     @Override
     public int candidateIndexKeyCountForTesting() {
-        return readLocked(candidateIndex::indexedKeyCountForTesting);
+        return readLocked(indexMaintenance::candidateIndexKeyCountForTesting);
     }
 
     @Override
@@ -553,7 +505,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public int pageBackedCandidateIndexRebuildCountForTesting() {
-        return readLocked(() -> pageBackedCandidateIndexRebuildCount);
+        return readLocked(indexMaintenance::pageBackedCandidateIndexRebuildCountForTesting);
     }
 
     @Override
@@ -635,7 +587,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public List<String> pageBackedVisibleRowSummariesForTesting() {
         return readLocked(() -> pageVolumeStateStore.loadVisibleRows().stream()
-                .map(row -> row.rowId() + "|" + String.join("|", valueKeysRaw(row.values())))
+                .map(row -> row.rowId() + "|" + String.join("|", MvccInheritedIndexMaintenance.valueKeysRaw(row.values())))
                 .sorted()
                 .toList());
     }
@@ -847,72 +799,68 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public long orderedIndexPageCountForTesting() {
-        return readLocked(pageVolumeStateStore::orderedIndexPageCount);
+        return readLocked(indexMaintenance::orderedIndexPageCountForTesting);
     }
 
     @Override
     public long orderedIndexEntryCountForTesting() {
-        return readLocked(pageVolumeStateStore::orderedIndexEntryCount);
+        return readLocked(indexMaintenance::orderedIndexEntryCountForTesting);
     }
 
     @Override
     public int orderedIndexDistinctKeyCountForTesting() {
-        return readLocked(pageVolumeStateStore::orderedIndexDistinctKeyCount);
+        return readLocked(indexMaintenance::orderedIndexDistinctKeyCountForTesting);
     }
 
     @Override
     public long orderedIndexRebuildCountForTesting() {
-        return readLocked(pageVolumeStateStore::orderedIndexRebuildCount);
+        return readLocked(indexMaintenance::orderedIndexRebuildCountForTesting);
     }
 
     @Override
     public List<String> orderedIndexEntrySummariesForTesting() {
-        return readLocked(pageVolumeStateStore::orderedIndexEntrySummaries);
+        return readLocked(indexMaintenance::orderedIndexEntrySummariesForTesting);
     }
 
     @Override
     public long orderedIndexLookupCountForTesting() {
-        return readLocked(() -> orderedIndexLookupCount);
+        return readLocked(indexMaintenance::orderedIndexLookupCountForTesting);
     }
 
     @Override
     public long orderedIndexHitCountForTesting() {
-        return readLocked(() -> orderedIndexHitCount);
+        return readLocked(indexMaintenance::orderedIndexHitCountForTesting);
     }
 
     @Override
     public long orderedIndexFallbackCountForTesting() {
-        return readLocked(() -> orderedIndexFallbackCount);
+        return readLocked(indexMaintenance::orderedIndexFallbackCountForTesting);
     }
 
     @Override
     public long orderedIndexFallbackReasonCountForTesting(
             DelosStorageOrderedIndexFallbackReason reason) {
-        return readLocked(() -> orderedIndexFallbackReasonCounts.getOrDefault(reason, 0L));
+        return readLocked(() -> indexMaintenance.orderedIndexFallbackReasonCountForTesting(reason));
     }
 
     @Override
     public List<String> orderedIndexFallbackReasonSummariesForTesting() {
-        return readLocked(() -> orderedIndexFallbackReasonCounts.entrySet().stream()
-                .filter(entry -> entry.getValue() > 0L)
-                .sorted(Map.Entry.comparingByKey())
-                .map(entry -> entry.getKey().name() + ":" + entry.getValue())
-                .toList());
+        return readLocked(indexMaintenance::orderedIndexFallbackReasonSummariesForTesting);
     }
 
     @Override
     public long orderedIndexRowIdCountForTesting() {
-        return readLocked(() -> orderedIndexRowIdCount);
+        return readLocked(indexMaintenance::orderedIndexRowIdCountForTesting);
     }
 
     @Override
     public int orderedIndexCandidateParityErrorCountForTesting() {
-        return readLocked(() -> orderedIndexCandidateParityErrorsUnlocked().size());
+        return readLocked(indexMaintenance::orderedIndexCandidateParityErrorCountForTesting);
     }
 
     @Override
     public List<String> orderedIndexCandidateParityErrorSummariesForTesting() {
-        return readLocked(this::orderedIndexCandidateParityErrorsUnlocked);
+        return readLocked(indexMaintenance::orderedIndexCandidateParityErrorSummariesForTesting);
     }
 
     @Override
@@ -1248,7 +1196,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private void hydrateCommittedRows(
             List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows,
             long storedNextRowId) {
-        rebuildCandidateIndexFromPageBackedRows(rows);
+        indexMaintenance.rebuildFromRows(rows);
         if (rows.isEmpty()) {
             nextRowId = Math.max(nextRowId, storedNextRowId);
             return;
@@ -1258,47 +1206,6 @@ final class MvccInheritedTable implements DelosStorageTable,
             maxRowId = Math.max(maxRowId, row.rowId());
         }
         nextRowId = Math.max(storedNextRowId, maxRowId + 1L);
-    }
-
-    private void rebuildCandidateIndexFromPageBackedCommittedRows() {
-        rebuildCandidateIndexFromPageBackedRows(pageVolumeStateStore.loadVisibleRows());
-    }
-
-    private void rebuildCandidateIndexFromPageBackedRows(
-            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows) {
-        candidateIndex.rebuildFromVisibleRows(toCandidateRows(rows));
-        pageVolumeStateStore.rebuildOrderedIndexPages(toOrderedIndexEntries(rows));
-        pageBackedCandidateIndexRebuildCount++;
-    }
-
-    private List<String> orderedIndexCandidateParityErrorsUnlocked() {
-        List<String> candidateEntries = candidateIndex.entrySummariesForTesting();
-        List<String> orderedEntries = new ArrayList<>(pageVolumeStateStore.orderedIndexEntrySummaries());
-        orderedEntries.sort(String::compareTo);
-        if (candidateEntries.equals(orderedEntries)) {
-            return List.of();
-        }
-
-        LinkedHashSet<String> candidateOnly = new LinkedHashSet<>(candidateEntries);
-        candidateOnly.removeAll(orderedEntries);
-        LinkedHashSet<String> orderedOnly = new LinkedHashSet<>(orderedEntries);
-        orderedOnly.removeAll(candidateEntries);
-
-        List<String> errors = new ArrayList<>();
-        errors.add("candidate-size:" + candidateEntries.size() + "|ordered-size:" + orderedEntries.size());
-        for (String missingOrdered : candidateOnly) {
-            errors.add("missing-ordered:" + missingOrdered);
-            if (errors.size() >= 20) {
-                return List.copyOf(errors);
-            }
-        }
-        for (String missingCandidate : orderedOnly) {
-            errors.add("missing-candidate:" + missingCandidate);
-            if (errors.size() >= 20) {
-                return List.copyOf(errors);
-            }
-        }
-        return List.copyOf(errors);
     }
 
     private List<MvccInheritedHandles.Transaction.WriteIntent> activeAppendedWriteIntents() {
@@ -1339,7 +1246,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             if (change.delete()) {
                 summaries.add(change.rowId() + "|DELETE");
             } else {
-                summaries.add(change.rowId() + "|UPSERT|" + String.join("|", valueKeysRaw(change.values())));
+                summaries.add(change.rowId() + "|UPSERT|" + String.join("|", MvccInheritedIndexMaintenance.valueKeysRaw(change.values())));
             }
         }
         return List.copyOf(summaries);
@@ -1352,7 +1259,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             if (intent.delete()) {
                 summaries.add(intent.rowId() + "|DELETE");
             } else {
-                summaries.add(intent.rowId() + "|UPSERT|" + String.join("|", valueKeysRaw(intent.row())));
+                summaries.add(intent.rowId() + "|UPSERT|" + String.join("|", MvccInheritedIndexMaintenance.valueKeysRaw(intent.row())));
             }
         }
         return List.copyOf(summaries);
@@ -1381,65 +1288,6 @@ final class MvccInheritedTable implements DelosStorageTable,
     private static MvccSnapshot nativeSnapshot(DelosStorageSnapshot snapshot) {
         return nativeSnapshotHandle(snapshot).nativeSnapshot();
     }
-
-    private static List<MvccCandidateIndex.CandidateRow> toCandidateRows(
-            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows) {
-        if (rows == null) {
-            return List.of();
-        }
-        List<MvccCandidateIndex.CandidateRow> candidates = new ArrayList<>(rows.size());
-        for (PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]> row : rows) {
-            candidates.add(new MvccCandidateIndex.CandidateRow(row.rowId(), valueKeysRaw(row.values())));
-        }
-        return List.copyOf(candidates);
-    }
-
-    private static List<PageVolumeMvccStateStore.OrderedIndexEntry> toOrderedIndexEntries(
-            List<PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]>> rows) {
-        if (rows == null) {
-            return List.of();
-        }
-        List<PageVolumeMvccStateStore.OrderedIndexEntry> entries = new ArrayList<>();
-        for (PageVolumeMvccStateStore.PersistedRow<StoreDataValue[]> row : rows) {
-            List<String> keys = valueKeysTyped(row.values());
-            for (int column = 0; column < keys.size(); column++) {
-                entries.add(new PageVolumeMvccStateStore.OrderedIndexEntry(column, keys.get(column), row.rowId()));
-            }
-        }
-        return List.copyOf(entries);
-    }
-
-    private static List<String> valueKeysRaw(StoreDataValue[] values) {
-        if (values == null || values.length == 0) {
-            return List.of();
-        }
-        List<String> keys = new ArrayList<>(values.length);
-        for (StoreDataValue value : values) {
-            keys.add(StoreValueCopySupport.rawStringKey(value));
-        }
-        return List.copyOf(keys);
-    }
-
-    private static List<String> valueKeysTyped(StoreDataValue[] values) {
-        if (values == null || values.length == 0) {
-            return List.of();
-        }
-        List<String> keys = new ArrayList<>(values.length);
-        for (StoreDataValue value : values) {
-            keys.add(value == null ? null : valueKeyTyped(value));
-        }
-        return List.copyOf(keys);
-    }
-
-    private static String valueKeyTyped(StoreDataValue value) {
-        try {
-            return DelosStorageOrderedIndexKey.encode(value);
-        } catch (StandardException e) {
-            throw new IllegalStateException("Cannot derive typed ordered-index key from "
-                    + value.getClass().getName(), e);
-        }
-    }
-
 
     private static StoreDataValue[] cloneRowUnchecked(StoreDataValue[] row) {
         try {
