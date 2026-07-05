@@ -139,7 +139,7 @@ def thirdPartyTestModules = rootProject.files(
 // generated/copy-only boot resources, patched store implementation classes, and
 // ServiceLoader-visible DelosDB storage-provider jars. Keep this derived from
 // the root runtime model so focused SQL gates cannot drift from binary packaging.
-def derbyRuntimeJars = rootProject.ext.delosdbRuntimeJarFiles()
+def derbyRuntimeJars = rootProject.ext.delosdbRuntimeJarFiles.call()
 
 // NativeAuthenticationServiceTest creates stored procedures while building
 // its jar-backed fixture. That path uses Derby's ASM bytecode backend, so the

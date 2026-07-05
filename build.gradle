@@ -405,37 +405,12 @@ def moduleDirsForRuntime = files(
         moduleClassDir(moduleNames.runner)
 )
 
-// Single source of truth for the Derby-compatible runtime jar set.
-// Keep this modeled instead of duplicating jar names in root packaging,
-// focused SQL integration tests, and provider-discovery gates. Runtime jars are
-// the jars placed on Derby-compatible launch/test classpaths. Patch/API jars
-// that are merged into derby.jar are assembled below but intentionally omitted
-// here to avoid split-package/module-path drift.
-def runtimeJarArtifacts = [
-        [key: 'annotations', gradleProject: 'delosdb-annotations',   jarTask: 'delosDbAnnotationsJar',  jarName: 'delosdb-annotations.jar'],
-        [key: 'spi',         gradleProject: 'delosdb-spi',           jarTask: 'delosDbSpiJar',          jarName: 'delosdb-spi.jar'],
-        [key: 'storageIo',   gradleProject: 'delosdb-storage-io',    jarTask: 'delosDbStorageIoJar',    jarName: 'delosdb-storage-io.jar'],
-        [key: 'osgi',        gradleProject: 'delosdb-osgi-stub',     jarTask: 'osgiFrameworkStubJar',   jarName: 'osgi-framework-stub.jar'],
-        [key: 'commons',     gradleProject: 'delosdb-commons',       jarTask: 'derbySharedJar',         jarName: 'derbyshared.jar'],
-        [key: 'runtimeApi',  gradleProject: 'delosdb-runtime-api',   jarTask: 'delosDbRuntimeApiJar',   jarName: 'delosdb-runtime-api.jar'],
-        [key: 'storageMvcc', gradleProject: 'delosdb-storage-mvcc',  jarTask: 'delosDbStorageMvccJar',  jarName: 'delosdb-storage-mvcc.jar'],
-        [key: 'engine',      gradleProject: 'delosdb-engine',        jarTask: 'derbyJar',               jarName: 'derby.jar'],
-        [key: 'client',      gradleProject: 'delosdb-client',        jarTask: 'derbyClientJar',         jarName: 'derbyclient.jar'],
-        [key: 'tools',       gradleProject: 'delosdb-tools',         jarTask: 'derbyToolsJar',          jarName: 'derbytools.jar'],
-        [key: 'server',      gradleProject: 'delosdb-server',        jarTask: 'derbyNetJar',            jarName: 'derbynet.jar'],
-        [key: 'optional',    gradleProject: 'delosdb-optionaltools', jarTask: 'derbyOptionalToolsJar',  jarName: 'derbyoptionaltools.jar'],
-        [key: 'runner',      gradleProject: 'delosdb-runner',        jarTask: 'derbyRunJar',            jarName: 'derbyrun.jar']
-]
+// Runtime artifact metadata and provider-discovery gates live in a dedicated
+// convention script. Keep root build.gradle focused on inherited Derby build
+// mechanics and distribution/publication tasks.
+apply from: 'gradle/delosdb-runtime-artifacts.gradle'
 
-def assembledSupportJarArtifacts = [
-        [key: 'storageApi', gradleProject: 'delosdb-storage-api',     jarTask: 'storageApiJar',   jarName: 'delosdb-storage-api.jar'],
-        [key: 'storeApi',   gradleProject: 'delosdb-derby-store-api', jarTask: 'derbyStoreApiJar', jarName: 'delosdb-derby-store-api.jar']
-]
-
-def assembledJarArtifacts = runtimeJarArtifacts + assembledSupportJarArtifacts
-def runtimeJarNames = runtimeJarArtifacts.collect { it.jarName }
-def assembledJarTaskPaths = assembledJarArtifacts.collect { ":${it.gradleProject}:${it.jarTask}" }
-
+def runtimeJars = rootProject.ext.delosdbRuntimeJars
 
 def moduleSplitInventory = [
         [
@@ -551,111 +526,6 @@ def moduleSplitInventory = [
                 extractionRisk   : 'high'
         ]
 ]
-
-def runtimeJarFiles = {
-    files(runtimeJarNames.collect { layout.buildDirectory.file("libs/${it}") })
-}
-
-def runtimeJars = {
-    // derby.jar now contains the permanent ASM bytecode backend. Keep ASM on
-    // the runtime classpath for jar-based smokes instead of relying on the
-    // old optional/static module edge.
-    files(runtimeJarFiles(), configurations.delosdbAsm)
-}
-
-def extensionRuntimeJars = {
-    runtimeJars()
-}
-
-// Plain `runtimeJars()` calls inside task configuration closures may resolve
-ext.delosdbRuntimeJarArtifacts = runtimeJarArtifacts
-ext.delosdbAssembledJarArtifacts = assembledJarArtifacts
-ext.delosdbRuntimeJarNames = runtimeJarNames
-ext.delosdbRuntimeJarFiles = runtimeJarFiles
-ext.delosdbRuntimeJars = runtimeJars
-
-def legalFileNames = ['LICENSE', 'NOTICE', 'NOTICE-FORK.md']
-def legalFiles = files(legalFileNames.collect { file(it) })
-
-
-def runtimeBuildTasks = [
-        ':delosdb-storage-io:compileDelosDbStorageIo',
-        ':delosdb-runtime-api:compileDelosDbRuntimeApi',
-        ':delosdb-storage-api:compileStorageApi',
-        ':delosdb-engine:compileClassSizeCatalog',
-        'splitEngineMessages',
-        'generateOdbcMetadata',
-        'ensureCatalogMetadataResources'
-]
-
-tasks.register('compileAll') {
-    dependsOn runtimeBuildTasks
-}
-
-tasks.register('jars') {
-    dependsOn assembledJarTaskPaths
-}
-
-tasks.register('verifyDelosRuntimeStorageProviders') {
-    group = 'verification'
-    description = 'Verifies that storage-provider jars are modeled in the DelosDB runtime jar set and discoverable through ServiceLoader.'
-    dependsOn 'jars'
-
-    def serviceResource = 'META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'
-    def serviceTypeName = 'org.apache.derby.iapi.store.types.DelosStorageProviderFactory'
-    def expectedProviderClass = 'io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccInheritedStorageProviderFactory'
-    def expectedProviderName = 'delos_mvcc'
-    def mvccProviderJar = layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar')
-
-    inputs.files(runtimeJarFiles())
-    inputs.files(configurations.delosdbAsm)
-
-    doLast {
-        def mvccJar = mvccProviderJar.get().asFile
-        if (!mvccJar.isFile()) {
-            throw new GradleException("Missing MVCC provider runtime jar: ${mvccJar}. The root :jars task must model :delosdb-storage-mvcc:delosDbStorageMvccJar.")
-        }
-
-        def serviceLines = []
-        new java.util.zip.ZipFile(mvccJar).withCloseable { zip ->
-            def entry = zip.getEntry(serviceResource)
-            if (entry == null) {
-                throw new GradleException("Missing ${serviceResource} in ${mvccJar}")
-            }
-            serviceLines = zip.getInputStream(entry).getText('UTF-8')
-                    .readLines()
-                    .collect { it.trim() }
-                    .findAll { it && !it.startsWith('#') }
-        }
-
-        if (!serviceLines.contains(expectedProviderClass)) {
-            throw new GradleException("${mvccJar} does not advertise ${expectedProviderClass} in ${serviceResource}; found ${serviceLines}")
-        }
-
-        def runtimeFiles = runtimeJarNames.collect { layout.buildDirectory.file("libs/${it}").get().asFile }
-        runtimeFiles.addAll(configurations.delosdbAsm.files)
-        def missingRuntimeFiles = runtimeFiles.findAll { !it.isFile() }
-        if (!missingRuntimeFiles.isEmpty()) {
-            throw new GradleException('DelosDB runtime jar set has missing file(s): ' + missingRuntimeFiles)
-        }
-
-        def loader = new java.net.URLClassLoader(
-                runtimeFiles.collect { it.toURI().toURL() } as java.net.URL[],
-                ClassLoader.getPlatformClassLoader())
-        try {
-            def serviceType = Class.forName(serviceTypeName, true, loader)
-            def providerNames = []
-            java.util.ServiceLoader.load(serviceType, loader).each { provider ->
-                providerNames << provider.providerName()
-            }
-            if (!providerNames.contains(expectedProviderName)) {
-                throw new GradleException("Runtime jar set does not load storage provider '${expectedProviderName}' through ServiceLoader; found ${providerNames}")
-            }
-        } finally {
-            loader.close()
-        }
-    }
-}
 
 tasks.named('assemble') {
     dependsOn 'jars'
