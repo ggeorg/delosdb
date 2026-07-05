@@ -29,6 +29,8 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.iapi.store.types.DelosStorageInspection;
+import org.apache.derby.iapi.store.types.DelosStorageMetadataContext;
+import org.apache.derby.iapi.store.types.DelosStorageMetadataQuery;
 import org.apache.derby.iapi.store.types.DelosStorageMetadataSnapshot;
 
 /** SQL gate for explicit storage metadata diagnostics context. */
@@ -39,40 +41,101 @@ public final class StorageMetadataContextPurityTest extends MvccSqlTestSupport {
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
-            executeUpdate(connection, "create table metadata_context_heap_t "
-                    + "(id int primary key, name varchar(32))");
-            executeUpdate(connection, "insert into metadata_context_heap_t values (1, 'heap-alpha')");
-            connection.commit();
+            try {
+                executeUpdate(connection, "create table metadata_context_heap_t "
+                        + "(id int primary key, name varchar(32))");
+                executeUpdate(connection, "insert into metadata_context_heap_t values (1, 'heap-alpha')");
+                connection.commit();
 
-            long heapContainerId = baseContainerId(connection, "METADATA_CONTEXT_HEAP_T", "heap");
-            DelosStorageDiagnostics heapDiagnostics = DelosStorageDiagnosticsRegistry.heap();
-            heapDiagnostics.clearRuntimeStateForTesting();
-            assertEquals("fresh heap diagnostics provider should have no mutable test context", 0,
-                    heapDiagnostics.runtimeStateCountForTesting());
+                long heapContainerId = baseContainerId(connection, "METADATA_CONTEXT_HEAP_T", "heap");
+                DelosStorageDiagnostics heapDiagnostics = DelosStorageDiagnosticsRegistry.heap();
+                heapDiagnostics.clearRuntimeStateForTesting();
+                assertEquals("fresh heap diagnostics provider should have no mutable test context", 0,
+                        heapDiagnostics.runtimeStateCountForTesting());
 
-            DelosStorageDiagnostics contextualDiagnostics = heapDiagnostics.withContext(
-                    DelosStorageDiagnosticsContext.databaseDirectory(databaseDirectory));
-            assertEquals("creating an explicit diagnostics context must not mutate the base provider", 0,
-                    heapDiagnostics.runtimeStateCountForTesting());
+                DelosStorageDiagnostics contextualDiagnostics = heapDiagnostics.withContext(
+                        DelosStorageDiagnosticsContext.databaseDirectory(databaseDirectory));
+                assertEquals("creating an explicit diagnostics context must not mutate the base provider", 0,
+                        heapDiagnostics.runtimeStateCountForTesting());
 
-            DelosStorageInspection inspection = DelosStorageInspection.fromDiagnostics(
-                    contextualDiagnostics, 0, heapContainerId);
-            assertEquals("contextual heap inspection should preserve provider id",
-                    DelosStorageDiagnosticsRegistry.HEAP_PROVIDER_ID, inspection.providerId());
-            assertTrue("contextual heap inspection should observe the heap container",
-                    inspection.file(DelosStorageInspection.PAGE_VOLUME_FILE).toString().contains("seg0"));
-            assertEquals("using contextual diagnostics must not leave hidden mutable state", 0,
-                    heapDiagnostics.runtimeStateCountForTesting());
+                DelosStorageInspection inspection = DelosStorageInspection.fromDiagnostics(
+                        contextualDiagnostics, 0, heapContainerId);
+                assertEquals("contextual heap inspection should preserve provider id",
+                        DelosStorageDiagnosticsRegistry.HEAP_PROVIDER_ID, inspection.providerId());
+                assertTrue("contextual heap inspection should observe the heap container",
+                        inspection.file(DelosStorageInspection.PAGE_VOLUME_FILE).toString().contains("seg0"));
+                assertEquals("using contextual diagnostics must not leave hidden mutable state", 0,
+                        heapDiagnostics.runtimeStateCountForTesting());
 
-            DelosStorageMetadataSnapshot snapshot = DelosStorageDiagnosticsRegistry.metadataSnapshot(
-                    DelosStorageConsistencyTarget.heap(databaseDirectory, 0, heapContainerId));
-            assertEquals("metadata snapshot should still use the heap provider",
-                    DelosStorageDiagnosticsRegistry.HEAP_PROVIDER_ID, snapshot.providerId());
-            assertTrue("metadata snapshot should remain read-only", snapshot.readOnly());
-            assertTrue("metadata snapshot should observe heap storage bytes",
-                    snapshot.statistics().observedStorageBytes() > 0L);
-            assertEquals("registry metadata snapshot must not mutate the sampled provider", 0,
-                    heapDiagnostics.runtimeStateCountForTesting());
+                DelosStorageMetadataSnapshot snapshot = DelosStorageDiagnosticsRegistry.metadataSnapshot(
+                        DelosStorageConsistencyTarget.heap(databaseDirectory, 0, heapContainerId));
+                assertEquals("metadata snapshot should still use the heap provider",
+                        DelosStorageDiagnosticsRegistry.HEAP_PROVIDER_ID, snapshot.providerId());
+                assertTrue("metadata snapshot should remain read-only", snapshot.readOnly());
+                assertTrue("metadata snapshot should observe heap storage bytes",
+                        snapshot.statistics().observedStorageBytes() > 0L);
+                assertEquals("registry metadata snapshot must not mutate the sampled provider", 0,
+                        heapDiagnostics.runtimeStateCountForTesting());
+            } finally {
+                // The diagnostics assertions above are read-only, but Derby can still
+                // consider the connection to have an active transaction after catalog
+                // or container inspection. End it explicitly so try-with-resources can
+                // close the embedded connection cleanly even if an assertion fails.
+                connection.rollback();
+            }
         }
     }
+
+    public void testMetadataQueryContextIsExplicitAndOptimizerSafe() {
+        DelosStorageMetadataQuery query = DelosStorageDiagnosticsRegistry.metadataQuery();
+        assertEquals("default metadata-query context should be a snapshot context",
+                DelosStorageMetadataContext.Purpose.METADATA_SNAPSHOT,
+                query.context().purpose());
+        assertTrue("default metadata-query context must be optimizer-safe",
+                query.context().optimizerSafe());
+
+        DelosStorageMetadataQuery costQuery = query.withContext(
+                DelosStorageMetadataContext.costReport());
+        assertEquals("explicit context should describe cost-report metadata use",
+                DelosStorageMetadataContext.Purpose.COST_REPORT,
+                costQuery.context().purpose());
+        assertEquals("withContext must not mutate the original query",
+                DelosStorageMetadataContext.Purpose.METADATA_SNAPSHOT,
+                query.context().purpose());
+        assertTrue("cost-report metadata context must remain read-only",
+                costQuery.context().readOnlyRequired());
+        assertFalse("cost-report metadata context must not enable optimizer consumption",
+                costQuery.context().optimizerConsumptionAllowed());
+        assertFalse("cost-report metadata context must not enable execution routing",
+                costQuery.context().executionRoutingAllowed());
+
+        assertInvalidMetadataContext("metadata context must require read-only access",
+                () -> new DelosStorageMetadataContext(
+                        DelosStorageMetadataContext.Purpose.METADATA_SNAPSHOT,
+                        false,
+                        false,
+                        false));
+        assertInvalidMetadataContext("metadata context must not enable optimizer consumption",
+                () -> new DelosStorageMetadataContext(
+                        DelosStorageMetadataContext.Purpose.COST_REPORT,
+                        true,
+                        true,
+                        false));
+        assertInvalidMetadataContext("metadata context must not enable execution routing",
+                () -> new DelosStorageMetadataContext(
+                        DelosStorageMetadataContext.Purpose.CAPABILITIES_REPORT,
+                        true,
+                        false,
+                        true));
+    }
+
+    private static void assertInvalidMetadataContext(String message, Runnable factory) {
+        try {
+            factory.run();
+            fail(message);
+        } catch (IllegalArgumentException expected) {
+            assertTrue("expected context validation failure", expected.getMessage().length() > 0);
+        }
+    }
+
 }

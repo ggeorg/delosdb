@@ -44,7 +44,6 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
  */
 public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostics {
     private final Path explicitDatabaseDirectory;
-    private volatile Path databaseDirectoryForTesting;
 
     public DerbyHeapStorageDiagnostics() {
         this(null);
@@ -67,25 +66,6 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
                 : this;
     }
 
-    @Override
-    public void setDatabaseDirectoryForTesting(Path databaseDirectory) {
-        this.databaseDirectoryForTesting = Objects.requireNonNull(databaseDirectory, "databaseDirectory");
-    }
-
-    @Override
-    public void clearDatabaseDirectoryForTesting() {
-        this.databaseDirectoryForTesting = null;
-    }
-
-    @Override
-    public void clearRuntimeStateForTesting() {
-        clearDatabaseDirectoryForTesting();
-    }
-
-    @Override
-    public int runtimeStateCountForTesting() {
-        return databaseDirectoryForTesting == null ? 0 : 1;
-    }
 
     @Override
     public Path pageVolumeStateFileForTesting(int segment, long containerId) {
@@ -462,13 +442,10 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
 
 
     private Path databaseDirectory() {
-        Path directory = explicitDatabaseDirectory != null
-                ? explicitDatabaseDirectory
-                : databaseDirectoryForTesting;
-        if (directory == null) {
-            throw new IllegalStateException("Heap diagnostics require a database directory");
+        if (explicitDatabaseDirectory == null) {
+            throw new IllegalStateException("Heap diagnostics require an explicit database directory context");
         }
-        return directory;
+        return explicitDatabaseDirectory;
     }
 
     private Path heapSegmentDirectory(int segment) {

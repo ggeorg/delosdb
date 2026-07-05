@@ -32,9 +32,17 @@ import java.util.Set;
  */
 public final class DelosStorageMetadataQuery {
     private final List<DelosStorageMetadataProvider> providers;
+    private final DelosStorageMetadataContext context;
 
     public DelosStorageMetadataQuery(List<DelosStorageMetadataProvider> providers) {
+        this(providers, DelosStorageMetadataContext.snapshot());
+    }
+
+    private DelosStorageMetadataQuery(
+            List<DelosStorageMetadataProvider> providers,
+            DelosStorageMetadataContext context) {
         Objects.requireNonNull(providers, "providers");
+        this.context = Objects.requireNonNull(context, "context");
         List<DelosStorageMetadataProvider> copy = new ArrayList<>();
         Set<String> providerIds = new LinkedHashSet<>();
         for (DelosStorageMetadataProvider provider : providers) {
@@ -48,6 +56,14 @@ public final class DelosStorageMetadataQuery {
         copy.sort(Comparator.comparingInt((DelosStorageMetadataProvider provider) -> providerRank(provider.providerId()))
                 .thenComparing(provider -> DelosStorageProviderIds.normalize(provider.providerId())));
         this.providers = List.copyOf(copy);
+    }
+
+    public DelosStorageMetadataQuery withContext(DelosStorageMetadataContext context) {
+        return new DelosStorageMetadataQuery(providers, context);
+    }
+
+    public DelosStorageMetadataContext context() {
+        return context;
     }
 
     public static DelosStorageMetadataQuery fromDiagnostics(List<DelosStorageDiagnostics> diagnostics) {
@@ -68,6 +84,17 @@ public final class DelosStorageMetadataQuery {
     }
 
     public DelosStorageMetadataSnapshot snapshot(DelosStorageConsistencyTarget target) {
+        return withContext(DelosStorageMetadataContext.snapshot()).snapshotWithCurrentContext(target);
+    }
+
+    public DelosStorageMetadataSnapshot snapshotWithContext(
+            DelosStorageConsistencyTarget target,
+            DelosStorageMetadataContext context) {
+        return withContext(context).snapshotWithCurrentContext(target);
+    }
+
+    private DelosStorageMetadataSnapshot snapshotWithCurrentContext(DelosStorageConsistencyTarget target) {
+        requireMetadataOnlyContext();
         Objects.requireNonNull(target, "target");
         for (DelosStorageMetadataProvider provider : providers) {
             if (provider.supports(target)) {
@@ -83,49 +110,90 @@ public final class DelosStorageMetadataQuery {
     }
 
     public List<DelosStorageMetadataSnapshot> snapshots(List<DelosStorageConsistencyTarget> targets) {
+        return withContext(DelosStorageMetadataContext.snapshot()).snapshotsWithCurrentContext(targets);
+    }
+
+    private List<DelosStorageMetadataSnapshot> snapshotsWithCurrentContext(
+            List<DelosStorageConsistencyTarget> targets) {
+        requireMetadataOnlyContext();
         Objects.requireNonNull(targets, "targets");
         List<DelosStorageMetadataSnapshot> snapshots = new ArrayList<>();
         for (DelosStorageConsistencyTarget target : targets) {
-            snapshots.add(snapshot(Objects.requireNonNull(target, "target")));
+            snapshots.add(snapshotWithCurrentContext(Objects.requireNonNull(target, "target")));
         }
         return List.copyOf(snapshots);
     }
 
     public DelosStorageInspectionReport inspectionReport(List<DelosStorageConsistencyTarget> targets) {
+        return withContext(DelosStorageMetadataContext.inspectionReport())
+                .inspectionReportWithCurrentContext(targets);
+    }
+
+    private DelosStorageInspectionReport inspectionReportWithCurrentContext(
+            List<DelosStorageConsistencyTarget> targets) {
+        requireMetadataOnlyContext();
         List<DelosStorageInspection> inspections = new ArrayList<>();
-        for (DelosStorageMetadataSnapshot snapshot : snapshots(targets)) {
+        for (DelosStorageMetadataSnapshot snapshot : snapshotsWithCurrentContext(targets)) {
             inspections.add(snapshot.inspection());
         }
         return new DelosStorageInspectionReport(inspections);
     }
 
     public DelosCrossEngineConsistencyReport consistencyReport(List<DelosStorageConsistencyTarget> targets) {
+        return withContext(DelosStorageMetadataContext.consistencyReport())
+                .consistencyReportWithCurrentContext(targets);
+    }
+
+    private DelosCrossEngineConsistencyReport consistencyReportWithCurrentContext(
+            List<DelosStorageConsistencyTarget> targets) {
+        requireMetadataOnlyContext();
         List<DelosStorageConsistencyFinding> findings = new ArrayList<>();
-        for (DelosStorageMetadataSnapshot snapshot : snapshots(targets)) {
+        for (DelosStorageMetadataSnapshot snapshot : snapshotsWithCurrentContext(targets)) {
             findings.add(snapshot.consistencyFinding());
         }
         return new DelosCrossEngineConsistencyReport(findings);
     }
 
     public DelosStorageStatisticsReport statisticsReport(List<DelosStorageConsistencyTarget> targets) {
+        return withContext(DelosStorageMetadataContext.statisticsReport())
+                .statisticsReportWithCurrentContext(targets);
+    }
+
+    private DelosStorageStatisticsReport statisticsReportWithCurrentContext(
+            List<DelosStorageConsistencyTarget> targets) {
+        requireMetadataOnlyContext();
         List<DelosStorageStatistics> statistics = new ArrayList<>();
-        for (DelosStorageMetadataSnapshot snapshot : snapshots(targets)) {
+        for (DelosStorageMetadataSnapshot snapshot : snapshotsWithCurrentContext(targets)) {
             statistics.add(snapshot.statistics());
         }
         return new DelosStorageStatisticsReport(statistics);
     }
 
     public DelosStorageCostReport costReport(List<DelosStorageConsistencyTarget> targets) {
+        return withContext(DelosStorageMetadataContext.costReport())
+                .costReportWithCurrentContext(targets);
+    }
+
+    private DelosStorageCostReport costReportWithCurrentContext(
+            List<DelosStorageConsistencyTarget> targets) {
+        requireMetadataOnlyContext();
         List<DelosStorageCostEstimate> estimates = new ArrayList<>();
-        for (DelosStorageMetadataSnapshot snapshot : snapshots(targets)) {
+        for (DelosStorageMetadataSnapshot snapshot : snapshotsWithCurrentContext(targets)) {
             estimates.add(snapshot.costEstimate());
         }
         return new DelosStorageCostReport(DelosStorageCostIntegration.enabled(), false, estimates);
     }
 
     public DelosStorageCapabilitiesReport capabilitiesReport(List<DelosStorageConsistencyTarget> targets) {
+        return withContext(DelosStorageMetadataContext.capabilitiesReport())
+                .capabilitiesReportWithCurrentContext(targets);
+    }
+
+    private DelosStorageCapabilitiesReport capabilitiesReportWithCurrentContext(
+            List<DelosStorageConsistencyTarget> targets) {
+        requireMetadataOnlyContext();
         List<DelosStorageCapabilities> capabilities = new ArrayList<>();
-        for (DelosStorageMetadataSnapshot snapshot : snapshots(targets)) {
+        for (DelosStorageMetadataSnapshot snapshot : snapshotsWithCurrentContext(targets)) {
             capabilities.add(snapshot.capabilities());
         }
         return new DelosStorageCapabilitiesReport(capabilities);
@@ -133,8 +201,15 @@ public final class DelosStorageMetadataQuery {
 
     public DelosStoragePredicatePushdown predicatePushdown(
             DelosStoragePredicatePushdownRequest request) {
+        return withContext(DelosStorageMetadataContext.predicatePushdownPlanning())
+                .predicatePushdownWithCurrentContext(request);
+    }
+
+    private DelosStoragePredicatePushdown predicatePushdownWithCurrentContext(
+            DelosStoragePredicatePushdownRequest request) {
+        requireMetadataOnlyContext();
         Objects.requireNonNull(request, "request");
-        DelosStorageMetadataSnapshot snapshot = snapshot(request.target());
+        DelosStorageMetadataSnapshot snapshot = snapshotWithCurrentContext(request.target());
         return DelosStoragePredicatePushdown.plan(snapshot.capabilities(), request);
     }
 
@@ -153,9 +228,19 @@ public final class DelosStorageMetadataQuery {
             List<DelosStoragePredicatePushdownRequest> requests) {
         Objects.requireNonNull(targets, "targets");
         Objects.requireNonNull(requests, "requests");
+        DelosStorageMetadataQuery reviewQuery = withContext(DelosStorageMetadataContext.optimizerReview());
         return DelosStorageOptimizerReviewReport.from(
-                snapshots(targets),
-                predicatePushdownReport(requests));
+                reviewQuery.snapshotsWithCurrentContext(targets),
+                reviewQuery.withContext(DelosStorageMetadataContext.predicatePushdownPlanning())
+                        .predicatePushdownReport(requests));
+    }
+
+    private void requireMetadataOnlyContext() {
+        if (!context.optimizerSafe()) {
+            throw new IllegalStateException(
+                    "storage metadata context must be read-only and optimizer-safe: "
+                            + context.summary());
+        }
     }
 
     private static int providerRank(String providerId) {
