@@ -47,9 +47,12 @@ public interface DelosStorageDiagnostics {
         return this;
     }
 
-    void clearRuntimeStateForTesting();
+    default void clearRuntimeStateForTesting() {
+    }
 
-    int runtimeStateCountForTesting();
+    default int runtimeStateCountForTesting() {
+        return 0;
+    }
 
     Path pageVolumeStateFileForTesting(int segment, long containerId);
 
