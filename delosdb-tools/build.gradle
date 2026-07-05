@@ -112,6 +112,13 @@ tasks.register('generateIjParsers') {
 
 tasks.named('compileJava', JavaCompile) {
     dependsOn tasks.named('generateIjParsers')
+    // The tools module compiles against the engine module output directory.
+    // Gradle 9 validates that every task writing into that directory is ordered
+    // before this compile; otherwise focused integration gates can fail with
+    // implicit-dependency errors when ODBC/catalog metadata generators update
+    // engine resources.
+    dependsOn rootProject.tasks.named('generateOdbcMetadata')
+    dependsOn rootProject.tasks.named('ensureCatalogMetadataResources')
     destinationDirectory.set(moduleClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'

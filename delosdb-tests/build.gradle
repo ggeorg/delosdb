@@ -136,22 +136,10 @@ def thirdPartyTestModules = rootProject.files(
 
 // Compile and execute inherited Derby tests against the assembled runtime jars.
 // The runtime jars are the supported Derby-compatible shape and include the
-// generated/copy-only boot resources and patched store implementation classes.
-def derbyRuntimeJars = rootProject.files(
-        rootProject.layout.buildDirectory.file('libs/delosdb-annotations.jar'),
-        rootProject.layout.buildDirectory.file('libs/delosdb-spi.jar'),
-        rootProject.layout.buildDirectory.file('libs/osgi-framework-stub.jar'),
-        rootProject.layout.buildDirectory.file('libs/derbyshared.jar'),
-        rootProject.layout.buildDirectory.file('libs/delosdb-runtime-api.jar'),
-        rootProject.layout.buildDirectory.file('libs/delosdb-storage-io.jar'),
-        rootProject.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar'),
-        rootProject.layout.buildDirectory.file('libs/derby.jar'),
-        rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
-        rootProject.layout.buildDirectory.file('libs/derbytools.jar'),
-        rootProject.layout.buildDirectory.file('libs/derbynet.jar'),
-        rootProject.layout.buildDirectory.file('libs/derbyoptionaltools.jar'),
-        rootProject.layout.buildDirectory.file('libs/derbyrun.jar')
-)
+// generated/copy-only boot resources, patched store implementation classes, and
+// ServiceLoader-visible DelosDB storage-provider jars. Keep this derived from
+// the root runtime model so focused SQL gates cannot drift from binary packaging.
+def derbyRuntimeJars = rootProject.ext.delosdbRuntimeJarFiles()
 
 // NativeAuthenticationServiceTest creates stored procedures while building
 // its jar-backed fixture. That path uses Derby's ASM bytecode backend, so the
@@ -788,6 +776,16 @@ registerDelosFocusedTest(
         'runDelosMvccDrdaNetworkClientTest',
         'Runs the focused DRDA/JDBC network-client integration gate for delos_mvcc.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class'])
+
+[
+        'runDelosMvccSqlIntegrationTest',
+        'runDelosMvccDrdaNetworkClientTest',
+        'runDelosMvccDrdaConcurrentNetworkClientTest'
+].each { taskName ->
+    tasks.named(taskName) {
+        dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    }
+}
 
 tasks.named('check') {
     dependsOn tasks.named('runDelosMvccSqlIntegrationTest'), tasks.named('runDelosMvccDrdaNetworkClientTest'), tasks.named('runDelosMvccDrdaConcurrentNetworkClientTest')
