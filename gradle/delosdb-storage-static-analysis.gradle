@@ -885,8 +885,159 @@ tasks.register('delosHeapRawStoreDuplicateClassificationReport') {
     }
 }
 
+
+def delosRuntimeArtifactModelFiles = [
+        'build.gradle',
+        'delosdb-tests/build.gradle',
+        'gradle/delosdb-runtime-artifacts.gradle'
+]
+
+def delosRuntimeArtifactModelRequire = { List<String> failures, boolean condition, String message ->
+    if (!condition) {
+        failures << message
+    }
+}
+
+tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
+    group = 'verification'
+    description = 'Fails if DelosDB runtime jar/provider packaging drifts back into duplicate hard-coded Gradle lists.'
+
+    inputs.files(delosRuntimeArtifactModelFiles.collect { file(it) }.findAll { it.exists() })
+    outputs.file(layout.buildDirectory.file('reports/delosdb/runtime-artifact-model-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def rootBuild = file('build.gradle')
+        def testsBuild = file('delosdb-tests/build.gradle')
+        def runtimeArtifactsScript = file('gradle/delosdb-runtime-artifacts.gradle')
+
+        def rootText = rootBuild.exists() ? rootBuild.getText('UTF-8') : ''
+        def testsText = testsBuild.exists() ? testsBuild.getText('UTF-8') : ''
+        def runtimeText = runtimeArtifactsScript.exists() ? runtimeArtifactsScript.getText('UTF-8') : ''
+
+        delosRuntimeArtifactModelRequire(failures, runtimeArtifactsScript.isFile(),
+                'Missing runtime artifact convention script: gradle/delosdb-runtime-artifacts.gradle')
+        delosRuntimeArtifactModelRequire(failures,
+                rootText.contains("apply from: 'gradle/delosdb-runtime-artifacts.gradle'")
+                        || rootText.contains('apply from: "gradle/delosdb-runtime-artifacts.gradle"'),
+                'Root build.gradle must apply gradle/delosdb-runtime-artifacts.gradle')
+
+        def forbiddenRootRuntimeFragments = [
+                'ext.delosdbRuntimeJarArtifacts = [',
+                'def delosdbRuntimeJarArtifacts = [',
+                'def runtimeJarArtifacts = [',
+                'def runtimeJarNames = [',
+                "tasks.register('jars')",
+                'tasks.register("jars")'
+        ]
+        forbiddenRootRuntimeFragments.each { fragment ->
+            if (rootText.contains(fragment)) {
+                failures << "Root build.gradle must not duplicate runtime artifact model fragment: ${fragment}"
+            }
+        }
+
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ext.delosdbRuntimeJarArtifacts = ['),
+                'Runtime artifact convention script must declare ext.delosdbRuntimeJarArtifacts')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ext.delosdbAssembledSupportJarArtifacts = ['),
+                'Runtime artifact convention script must declare ext.delosdbAssembledSupportJarArtifacts')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ext.delosdbAssembledJarArtifacts'),
+                'Runtime artifact convention script must derive ext.delosdbAssembledJarArtifacts')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ext.delosdbRuntimeJarNames'),
+                'Runtime artifact convention script must derive ext.delosdbRuntimeJarNames')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ext.delosdbRuntimeJarFiles'),
+                'Runtime artifact convention script must expose ext.delosdbRuntimeJarFiles')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains("tasks.register('jars')"),
+                'Runtime artifact convention script must own the root :jars task')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('project.ext.delosdbAssembledJarTaskPaths'),
+                'Root :jars task must be derived from ext.delosdbAssembledJarTaskPaths')
+
+        ['storageMvcc', 'delosdb-storage-mvcc', 'delosDbStorageMvccJar', 'delosdb-storage-mvcc.jar'].each { token ->
+            delosRuntimeArtifactModelRequire(failures, runtimeText.contains(token),
+                    "Runtime artifact convention script must model MVCC provider artifact token: ${token}")
+        }
+        ['delosdb-storage-api.jar', 'delosdb-derby-store-api.jar'].each { token ->
+            delosRuntimeArtifactModelRequire(failures, runtimeText.contains(token),
+                    "Runtime artifact convention script must keep support artifact modeled outside the runtime jar list: ${token}")
+        }
+
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains("tasks.register('verifyDelosRuntimeStorageProviders')"),
+                'Runtime artifact convention script must register verifyDelosRuntimeStorageProviders')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains("dependsOn 'jars'"),
+                'verifyDelosRuntimeStorageProviders must depend on root :jars')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ServiceLoader.load'),
+                'verifyDelosRuntimeStorageProviders must verify provider discovery through ServiceLoader')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'),
+                'verifyDelosRuntimeStorageProviders must check the DelosStorageProviderFactory service file')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains("expectedProviderName = 'delos_mvcc'"),
+                'verifyDelosRuntimeStorageProviders must check providerName() == delos_mvcc')
+
+        delosRuntimeArtifactModelRequire(failures, testsText.contains('rootProject.ext.delosdbRuntimeJarFiles.call()'),
+                'delosdb-tests/build.gradle must derive Derby runtime jars from rootProject.ext.delosdbRuntimeJarFiles.call()')
+        delosRuntimeArtifactModelRequire(failures, testsText.contains("dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')"),
+                'Focused MVCC SQL/DRDA gates must depend on verifyDelosRuntimeStorageProviders')
+        [
+                'runDelosMvccSqlIntegrationTest',
+                'runDelosMvccDrdaNetworkClientTest',
+                'runDelosMvccDrdaConcurrentNetworkClientTest'
+        ].each { taskName ->
+            delosRuntimeArtifactModelRequire(failures, testsText.contains(taskName),
+                    "delosdb-tests/build.gradle must keep ${taskName} wired to provider verification")
+        }
+
+        def forbiddenTestRuntimeJarNames = [
+                'delosdb-annotations.jar',
+                'delosdb-spi.jar',
+                'delosdb-storage-io.jar',
+                'osgi-framework-stub.jar',
+                'derbyshared.jar',
+                'delosdb-runtime-api.jar',
+                'delosdb-storage-mvcc.jar',
+                'derby.jar',
+                'derbyclient.jar',
+                'derbytools.jar',
+                'derbynet.jar',
+                'derbyoptionaltools.jar',
+                'derbyrun.jar'
+        ]
+        forbiddenTestRuntimeJarNames.each { jarName ->
+            if (testsText.contains("'${jarName}'") || testsText.contains('"' + jarName + '"')
+                    || testsText.contains("build/libs/${jarName}") || testsText.contains("libs/${jarName}")) {
+                failures << "delosdb-tests/build.gradle must not hard-code Derby runtime jar name; use rootProject.ext.delosdbRuntimeJarFiles instead: ${jarName}"
+            }
+        }
+
+        delosRuntimeArtifactModelRequire(failures, rootText.contains("tasks.named('s0CloseoutVerification')"),
+                'Root build.gradle must wire additional closeout dependencies through tasks.named(s0CloseoutVerification)')
+        delosRuntimeArtifactModelRequire(failures, rootText.contains("dependsOn 'verifyDelosRuntimeStorageProviders'"),
+                's0CloseoutVerification must depend on verifyDelosRuntimeStorageProviders')
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/runtime-artifact-model-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB runtime artifact model static analysis')
+            writer.println('================================================')
+            writer.println()
+            writer.println('Checked files:')
+            delosRuntimeArtifactModelFiles.each { writer.println('  - ' + it) }
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Runtime artifact model checks passed.')
+            } else {
+                writer.println('Runtime artifact model failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB runtime artifact model static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB runtime artifact model static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosRuntimeArtifactModelStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
 }
