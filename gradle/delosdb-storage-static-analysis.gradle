@@ -604,6 +604,114 @@ tasks.register('delosHeapCompatibilityStaticAnalysis') {
 }
 
 
+def delosHeapObjectDeserializationFilterStaticFiles = [
+        'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/DelosHeapObjectDeserializationFilter.java',
+        'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/FormatIdInputStream.java',
+        'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/ApplicationObjectInputStream.java',
+        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.java'
+]
+
+def delosHeapObjectFilterRequire = { List<String> failures, boolean condition, String message ->
+    if (!condition) {
+        failures << message
+    }
+}
+
+tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
+    group = 'verification'
+    description = 'Protects the opt-in heap JAVA_OBJECT deserialization filter from duplicate installation or accidental default behavior changes.'
+
+    inputs.files(delosHeapObjectDeserializationFilterStaticFiles.collect { file(it) }.findAll { it.exists() }).optional()
+    outputs.file(layout.buildDirectory.file('reports/delosdb/heap-object-deserialization-filter-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def filterFile = file('delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/DelosHeapObjectDeserializationFilter.java')
+        def formatIdInputStreamFile = file('delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/FormatIdInputStream.java')
+        def applicationObjectInputStreamFile = file('delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/ApplicationObjectInputStream.java')
+        def testFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.java')
+
+        delosHeapObjectDeserializationFilterStaticFiles.each { relativePath ->
+            delosHeapObjectFilterRequire(failures, file(relativePath).exists(), 'Missing heap object deserialization filter file: ' + relativePath)
+        }
+
+        def filterText = filterFile.exists() ? filterFile.getText('UTF-8') : ''
+        def formatIdText = formatIdInputStreamFile.exists() ? formatIdInputStreamFile.getText('UTF-8') : ''
+        def applicationStreamText = applicationObjectInputStreamFile.exists() ? applicationObjectInputStreamFile.getText('UTF-8') : ''
+        def testText = testFile.exists() ? testFile.getText('UTF-8') : ''
+
+        delosHeapObjectFilterRequire(failures, filterText.contains('delosdb.heap.objectDeserializationFilter'),
+                'Heap object deserialization filter must remain opt-in through delosdb.heap.objectDeserializationFilter')
+        delosHeapObjectFilterRequire(failures, filterText.contains('ObjectInputFilter.Config.createFilter'),
+                'Heap object deserialization filter must use ObjectInputFilter.Config.createFilter')
+        delosHeapObjectFilterRequire(failures, filterText.contains('stream.setObjectInputFilter'),
+                'DelosHeapObjectDeserializationFilter must be the only helper that calls setObjectInputFilter')
+        delosHeapObjectFilterRequire(failures, filterText.contains('pattern == null') && filterText.contains('pattern.isBlank()'),
+                'Heap object deserialization filter must preserve default Derby behavior when the property is unset or blank')
+
+        def formatApplyCount = (formatIdText =~ /DelosHeapObjectDeserializationFilter\.applyIfConfigured\s*\(/).count
+        delosHeapObjectFilterRequire(failures, formatApplyCount == 1,
+                'FormatIdInputStream must install the heap object deserialization filter exactly once; found ' + formatApplyCount)
+        delosHeapObjectFilterRequire(failures, formatIdText.contains('new ApplicationObjectInputStream'),
+                'FormatIdInputStream must keep ApplicationObjectInputStream as the heap JAVA_OBJECT stream constructor')
+        delosHeapObjectFilterRequire(failures, !applicationStreamText.contains('DelosHeapObjectDeserializationFilter.applyIfConfigured'),
+                'ApplicationObjectInputStream must not install DelosHeapObjectDeserializationFilter; FormatIdInputStream owns the single installation point')
+        delosHeapObjectFilterRequire(failures, !applicationStreamText.contains('setObjectInputFilter'),
+                'ApplicationObjectInputStream must not call setObjectInputFilter directly')
+
+        def extraSetFilterSites = []
+        [
+                filterFile,
+                formatIdInputStreamFile,
+                applicationObjectInputStreamFile
+        ].findAll { it.exists() }.each { sourceFile ->
+            int lineNumber = 0
+            sourceFile.eachLine('UTF-8') { line ->
+                lineNumber++
+                if (line.contains('setObjectInputFilter') && sourceFile != filterFile) {
+                    def relative = rootProject.projectDir.toPath().relativize(sourceFile.toPath()).toString().replace(File.separatorChar, '/' as char)
+                    extraSetFilterSites << relative + ':' + lineNumber + ': ' + delosStorageNormalize(line)
+                }
+            }
+        }
+        if (!extraSetFilterSites.isEmpty()) {
+            failures << 'Only DelosHeapObjectDeserializationFilter may call setObjectInputFilter. Extra sites: ' + extraSetFilterSites.join('; ')
+        }
+
+        ['testStrictModeAllowsConfiguredTypeAndBlocksUnlistedType',
+         'testUnsetFilterPreservesDerbySerializableObjectBehavior',
+         'testMvccStillRejectsJavaObjectRows'].each { testName ->
+            delosHeapObjectFilterRequire(failures, testText.contains(testName),
+                    'HeapObjectDeserializationFilterTest must keep coverage method: ' + testName)
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/heap-object-deserialization-filter-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB heap object deserialization filter static analysis')
+            writer.println('========================================================')
+            writer.println()
+            writer.println('Checked files:')
+            delosHeapObjectDeserializationFilterStaticFiles.each { writer.println('  - ' + it) }
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Heap object deserialization filter checks passed.')
+            } else {
+                writer.println('Heap object deserialization filter failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB heap object deserialization filter static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB heap object deserialization filter static analysis passed. Report: {}', reportFile)
+    }
+}
+
+
+
 def delosStaleGradleScripts = [
         'gradle/delosdb-runtime-distribution.gradle',
         'gradle/delosdb-verification-aliases.gradle',
@@ -1039,5 +1147,5 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosRuntimeArtifactModelStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosRuntimeArtifactModelStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
 }
