@@ -79,4 +79,17 @@ class OpenHeap extends OpenConglomerate
 
 		return new HeapRowLocation();
 	}
+
+    /**
+     * Check consistency of the heap through Derby's existing table-lock
+     * consistency-check path.
+     *
+     * @exception StandardException Standard exception policy.
+     */
+    public void checkConsistency()
+        throws StandardException
+    {
+        new HeapSanityChecker(this).check();
+    }
 }
+

@@ -76,6 +76,7 @@ public class _Suite extends BaseTestCase  {
         suite.addTest(BTreeMaxScanTest.suite());
         suite.addTest(BTreeDirectionalBoundaryScanTest.suite());
         suite.addTest(BTreeIndexConcurrencyArchitectureProofTest.suite());
+        suite.addTest(HeapSanityCheckerTest.suite());
         suite.addTest(VersionCleanupArchitectureProofTest.suite());
         suite.addTest(MadhareTest.suite());
         suite.addTest(LongColumnTest.suite());
