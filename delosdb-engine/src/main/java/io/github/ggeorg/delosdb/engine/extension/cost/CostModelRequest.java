@@ -22,7 +22,7 @@ public record CostModelRequest(
         return inputRowCount >= 0L
                 && groupSize >= 0
                 && Double.isFinite(derbyCost)
-                && derbyCost >= 0.0d
+                && derbyCost > 0.0d
                 && derbyEstimatedRows >= 0L;
     }
 }

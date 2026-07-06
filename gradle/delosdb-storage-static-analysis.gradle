@@ -4907,8 +4907,182 @@ tasks.register('delosStorageModernizationTradeoffAuditRound2StaticAnalysis') {
     }
 }
 
+
+
+def delosMvccStatisticsOptimizerCostIntegrationFile = file('gradle/static-analysis/delosdb-mvcc-statistics-optimizer-cost-integration.txt')
+
+def delosLoadMvccStatisticsOptimizerCostIntegrationRows = {
+    if (!delosMvccStatisticsOptimizerCostIntegrationFile.exists()) {
+        throw new GradleException('Missing MVCC statistics optimizer/cost integration classification: ' + delosMvccStatisticsOptimizerCostIntegrationFile)
+    }
+    def rows = []
+    delosMvccStatisticsOptimizerCostIntegrationFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed MVCC statistics optimizer/cost integration row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [
+                id      : parts[0].trim(),
+                category: parts[1].trim(),
+                path    : parts[2].trim(),
+                marker  : parts[3].trim(),
+                reason  : parts[4].trim()
+        ]
+    }
+    rows
+}
+
+tasks.register('delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the Phase K MVCC statistics and optimizer/cost integration boundary.'
+
+    inputs.file(delosMvccStatisticsOptimizerCostIntegrationFile)
+    inputs.file('docs/STORAGE-ROADMAP.md').optional()
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-statistics-optimizer-cost-integration-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccStatisticsOptimizerCostIntegrationRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC statistics optimizer/cost integration id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC statistics optimizer/cost integration proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC statistics optimizer/cost integration marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 40) {
+                failures << 'MVCC statistics optimizer/cost integration reason is too thin for ' + row.id
+            }
+        }
+
+        ['STORAGE_COST_REPORT', 'PROOF_ONLY_DEFAULT', 'FAIL_CLOSED', 'OPTIMIZER_REVIEW',
+         'EXPLICIT_OPT_IN', 'STORE_COST_CONTROLLER_PATH', 'SAFE_BASELINE', 'SAFE_REPLACEMENT',
+         'LEGACY_BRIDGE_DIAGNOSTIC_ONLY', 'SQL_GATE', 'ROADMAP_STATE', 'HONEST_LIMIT'].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'MVCC statistics optimizer/cost integration is missing category: ' + required
+            }
+        }
+
+        def costMode = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/CostModelMode.java')
+        if (costMode.exists()) {
+            def body = costMode.getText('UTF-8')
+            if (!body.contains('OFF(false, false)')) {
+                failures << 'CostModelMode default OFF mode must not probe or consume provider costs'
+            }
+            if (!body.contains('case "enabled", "on", "true" -> ENABLED')) {
+                failures << 'CostModelMode must keep provider consumption behind explicit enabled/on/true opt-in spellings'
+            }
+            if (!body.contains('default -> OFF')) {
+                failures << 'CostModelMode unknown values must fail closed to OFF'
+            }
+        }
+
+        def request = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/CostModelRequest.java')
+        if (request.exists()) {
+            def body = request.getText('UTF-8')
+            if (!body.contains('Double.isFinite(derbyCost)') || !body.contains('derbyCost > 0.0d')) {
+                failures << 'CostModelRequest must require a positive finite Derby baseline before provider replacement is safe'
+            }
+        }
+
+        def bridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/StoreCostControllerBridge.java')
+        if (bridge.exists()) {
+            def body = bridge.getText('UTF-8')
+            int guardIndex = body.indexOf('mode.consumesProviderCost() && probe.canSafelyReplaceDerbyCost()')
+            int setCostIndex = body.indexOf('costResult.setEstimatedCost(value.totalCost())')
+            int setRowsIndex = body.indexOf('costResult.setEstimatedRowCount(value.estimatedRows())')
+            if (guardIndex < 0 || setCostIndex < 0 || setRowsIndex < 0 || setCostIndex < guardIndex || setRowsIndex < guardIndex) {
+                failures << 'StoreCostControllerBridge must mutate Derby cost only after explicit opt-in and safety guard'
+            }
+            if (!body.contains('CostModelDiagnostics.record(probe)')) {
+                failures << 'StoreCostControllerBridge must record provider-cost diagnostics for opt-in review'
+            }
+        }
+
+        def fromBaseTable = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java')
+        if (fromBaseTable.exists()) {
+            def body = fromBaseTable.getText('UTF-8')
+            if (!body.contains('This bridge is intentionally diagnostic-only')) {
+                failures << 'FromBaseTable legacy index-provider bridge must document diagnostic-only behavior'
+            }
+            if (!body.contains('IndexProviderCostDiagnostics.record(probe)')) {
+                failures << 'FromBaseTable legacy index-provider bridge must record diagnostics instead of mutating planner state'
+            }
+        }
+
+        def testsBuild = file('delosdb-tests/build.gradle')
+        if (testsBuild.exists()) {
+            def body = testsBuild.getText('UTF-8')
+            ['StorageCostIntegrationCheckpointTest.class', 'StorageOptimizerReviewGateTest.class', 'OptimizerStorageCostOptInTest.class'].each { marker ->
+                if (!body.contains(marker)) {
+                    failures << 'MVCC SQL integration suite must include cost/optimizer gate: ' + marker
+                }
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (roadmap.exists()) {
+            def text = roadmap.getText('UTF-8')
+            if (!text.contains('## Phase K — MVCC statistics and optimizer/cost integration')) {
+                failures << 'Storage roadmap must open Phase K for MVCC statistics and optimizer/cost integration'
+            }
+            if (!text.contains('Status: current.')) {
+                failures << 'Storage roadmap must mark Phase K as the current executable slice'
+            }
+            if (!text.contains('This is not yet a full production MVCC cost model')) {
+                failures << 'Storage roadmap must explicitly avoid over-claiming production MVCC cost-model completeness'
+            }
+            if (!text.contains('A later K2 slice should connect MVCC container/statistics identity directly to the provider')) {
+                failures << 'Storage roadmap must identify the next K2 handoff for direct MVCC-statistics provider estimates'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-statistics-optimizer-cost-integration-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC statistics optimizer/cost integration static analysis')
+            writer.println('====================================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('MVCC statistics optimizer/cost integration static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC statistics optimizer/cost integration static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis'
 }
