@@ -744,6 +744,755 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
 }
 
 
+def delosStaleGradleScripts = [
+        'gradle/delosdb-runtime-distribution.gradle',
+        'gradle/delosdb-verification-aliases.gradle',
+        'gradle/delosdb-publication.gradle'
+]
+
+tasks.register('delosStaleGradleScriptCheck') {
+    group = 'verification'
+    description = 'Fails if obsolete DelosDB Gradle script fragments are present after build-script consolidation.'
+
+    inputs.files(delosStaleGradleScripts.collect { file(it) }.findAll { it.exists() }).optional()
+    outputs.file(layout.buildDirectory.file('reports/delosdb/stale-gradle-scripts.txt'))
+
+    doLast {
+        def staleFiles = delosStaleGradleScripts.collect { file(it) }.findAll { it.exists() }
+        def reportFile = layout.buildDirectory.file('reports/delosdb/stale-gradle-scripts.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB stale Gradle script check')
+            writer.println('=================================')
+            writer.println()
+            if (staleFiles.isEmpty()) {
+                writer.println('No obsolete Gradle script fragments found.')
+            } else {
+                writer.println('Obsolete Gradle script fragments still present:')
+                staleFiles.each { staleFile ->
+                    writer.println('  - ' + rootProject.projectDir.toPath().relativize(staleFile.toPath()).toString().replace(File.separatorChar, '/' as char))
+                }
+                writer.println()
+                writer.println('Remove the obsolete Gradle script fragments listed above; they are not maintained project tools.')
+            }
+        }
+
+        if (!staleFiles.isEmpty()) {
+            def stalePaths = staleFiles.collect {
+                rootProject.projectDir.toPath().relativize(it.toPath()).toString().replace(File.separatorChar, '/' as char)
+            }.join(', ')
+            throw new GradleException('Obsolete DelosDB Gradle script fragment(s) still present: ' + stalePaths)
+        }
+
+        logger.lifecycle('DelosDB stale Gradle script check passed. Report: {}', reportFile)
+    }
+}
+
+
+
+def delosDeadCodeCandidateFile = file('gradle/static-analysis/delosdb-dead-code-candidates.txt')
+
+def delosDeadCodeSearchRoots = [
+        'delosdb-storage-api/src/main/java',
+        'delosdb-storage-bridge/src/main/java',
+        'delosdb-storage-mvcc/src/main/java',
+        'delosdb-storage-mvcc/src/test/java',
+        'delosdb-storage-io/src/main/java',
+        'delosdb-server/src/main/java',
+        'delosdb-client/src/main/java',
+        'delosdb-tools/src/main/java',
+        'delosdb-tests/src/test/java'
+]
+
+def delosDeadCodeSearchFiles = {
+    def includes = ['**/*.java', '**/*.properties', '**/META-INF/services/**', '**/module-info.java']
+    delosDeadCodeSearchRoots.collect { file(it) }
+            .findAll { it.exists() }
+            .collectMany { root ->
+                fileTree(root) {
+                    includes.each { include it }
+                }.files
+            }
+            .sort { a, b -> a.path <=> b.path }
+}
+
+def delosLoadDeadCodeCandidates = {
+    if (!delosDeadCodeCandidateFile.exists()) {
+        return []
+    }
+    delosDeadCodeCandidateFile.readLines('UTF-8')
+            .collect { it.trim() }
+            .findAll { it && !it.startsWith('#') }
+            .collect { line ->
+                def parts = line.split('\\|', 3)
+                if (parts.length < 2) {
+                    throw new GradleException('Malformed dead-code candidate line: ' + line)
+                }
+                [
+                        path  : parts[0].trim(),
+                        symbol: parts[1].trim(),
+                        reason: parts.length == 3 ? parts[2].trim() : ''
+                ]
+            }
+}
+
+tasks.register('delosDeadCodeCandidateReport') {
+    group = 'verification'
+    description = 'Reports curated DelosDB dead-code/stale-code candidates without deleting them.'
+
+    inputs.file(delosDeadCodeCandidateFile).optional()
+    inputs.files(delosDeadCodeSearchFiles())
+    outputs.file(layout.buildDirectory.file('reports/delosdb/dead-code-candidates.txt'))
+
+    doLast {
+        def candidates = delosLoadDeadCodeCandidates()
+        def searchFiles = delosDeadCodeSearchFiles()
+        def reportFile = layout.buildDirectory.file('reports/delosdb/dead-code-candidates.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+
+        def rows = candidates.collect { candidate ->
+            def candidateFile = file(candidate.path)
+            def references = []
+            if (candidateFile.exists()) {
+                searchFiles.findAll { it.exists() && it.canonicalFile != candidateFile.canonicalFile }.each { sourceFile ->
+                    int lineNumber = 0
+                    sourceFile.eachLine('UTF-8') { line ->
+                        lineNumber++
+                        def symbolPattern = ~('(?<![A-Za-z0-9_$])' + Pattern.quote(candidate.symbol) + '(?![A-Za-z0-9_$])')
+                        if (symbolPattern.matcher(line).find()) {
+                            references << [file: sourceFile, lineNumber: lineNumber, line: delosStorageNormalize(line)]
+                        }
+                    }
+                }
+            }
+            [candidate: candidate, exists: candidateFile.exists(), references: references]
+        }
+
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB dead-code / stale-code candidate report')
+            writer.println('================================================')
+            writer.println()
+            writer.println('This is an evidence report, not a deletion gate.')
+            writer.println('ServiceLoader entries, public APIs, JPMS exports, tests, and reflection can make text-only dead-code scans noisy.')
+            writer.println()
+            writer.println('Candidates configured: ' + candidates.size())
+            writer.println()
+            writer.println('Search roots:')
+            delosDeadCodeSearchRoots.each { writer.println('  - ' + it) }
+            writer.println()
+
+            rows.each { row ->
+                def candidate = row.candidate
+                writer.println(candidate.path)
+                writer.println('  symbol:     ' + candidate.symbol)
+                writer.println('  exists:     ' + row.exists)
+                writer.println('  references: ' + row.references.size())
+                if (candidate.reason) {
+                    writer.println('  reason:     ' + candidate.reason)
+                }
+                if (row.exists && row.references.isEmpty()) {
+                    writer.println('  status:     deletion-review candidate')
+                } else if (!row.exists) {
+                    writer.println('  status:     already removed or renamed')
+                } else {
+                    writer.println('  status:     referenced; do not delete without deeper review')
+                    row.references.take(10).each { ref ->
+                        def refPath = rootProject.projectDir.toPath().relativize(ref.file.toPath()).toString().replace(File.separatorChar, '/' as char)
+                        writer.println('    - ' + refPath + ':' + ref.lineNumber + ': ' + ref.line)
+                    }
+                    if (row.references.size() > 10) {
+                        writer.println('    ... ' + (row.references.size() - 10) + ' more reference(s) omitted')
+                    }
+                }
+                writer.println()
+            }
+        }
+
+        logger.lifecycle('DelosDB dead-code candidate report written: {}', reportFile)
+    }
+}
+
+
+
+def delosHeapRawStoreDuplicateClassificationFile = file('gradle/static-analysis/delosdb-heap-rawstore-duplicate-classification.txt')
+
+def delosHeapRawStoreDuplicateDecisions = ['KEEP', 'CONSOLIDATE', 'DEFER'] as Set
+
+def delosLoadHeapRawStoreDuplicateClassifications = {
+    if (!delosHeapRawStoreDuplicateClassificationFile.exists()) {
+        return []
+    }
+
+    def rows = []
+    int lineNumber = 0
+    delosHeapRawStoreDuplicateClassificationFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed heap/raw-store duplicate classification line ' + lineNumber + ': expected 6 pipe-delimited fields')
+        }
+        if (!delosHeapRawStoreDuplicateDecisions.contains(parts[1])) {
+            throw new GradleException('Malformed heap/raw-store duplicate classification line ' + lineNumber + ': unknown decision ' + parts[1])
+        }
+        def files = parts[3].split(',').collect { it.trim() }.findAll { it }
+        if (files.isEmpty()) {
+            throw new GradleException('Malformed heap/raw-store duplicate classification line ' + lineNumber + ': no files listed')
+        }
+        rows << [
+                id        : parts[0],
+                decision  : parts[1],
+                scope     : parts[2],
+                files     : files,
+                reason    : parts[4],
+                nextAction: parts[5],
+                lineNumber: lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosHeapRawStoreDuplicateClassificationReport') {
+    group = 'verification'
+    description = 'Reports curated duplicate-code classification for inherited Derby heap/raw-store code.'
+
+    inputs.file(delosHeapRawStoreDuplicateClassificationFile).optional()
+    outputs.file(layout.buildDirectory.file('reports/delosdb/heap-rawstore-duplicate-classification.txt'))
+
+    doLast {
+        def rows = delosLoadHeapRawStoreDuplicateClassifications()
+        def ids = [] as Set
+        def duplicateIds = []
+        def missingFiles = []
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                duplicateIds << row.id
+            }
+            row.files.each { relativePath ->
+                if (!file(relativePath).exists()) {
+                    missingFiles << [id: row.id, path: relativePath]
+                }
+            }
+        }
+
+        def counts = delosHeapRawStoreDuplicateDecisions.collectEntries { decision ->
+            [decision, rows.count { it.decision == decision }]
+        }
+        def missingDecisions = delosHeapRawStoreDuplicateDecisions.findAll { decision -> counts[decision] == 0 }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/heap-rawstore-duplicate-classification.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB inherited heap/raw-store duplicate-code classification')
+            writer.println('===============================================================')
+            writer.println()
+            writer.println('This report classifies duplicate-looking inherited Derby heap/raw-store code.')
+            writer.println('It does not refactor code, delete code, or prove deletion safety.')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            delosHeapRawStoreDuplicateDecisions.sort().each { decision ->
+                writer.println('  ' + decision + ': ' + counts[decision])
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.decision + '] ' + row.scope)
+                writer.println('  reason:      ' + row.reason)
+                writer.println('  next action: ' + row.nextAction)
+                writer.println('  files:')
+                row.files.each { relativePath -> writer.println('    - ' + relativePath) }
+                writer.println()
+            }
+
+            if (!duplicateIds.isEmpty() || !missingFiles.isEmpty() || !missingDecisions.isEmpty()) {
+                writer.println('Validation failures:')
+                duplicateIds.each { id -> writer.println('  duplicate id: ' + id) }
+                missingFiles.each { missing -> writer.println('  missing file for ' + missing.id + ': ' + missing.path) }
+                missingDecisions.each { decision -> writer.println('  missing decision category: ' + decision) }
+            } else {
+                writer.println('Classification file validated.')
+            }
+        }
+
+        if (!duplicateIds.isEmpty() || !missingFiles.isEmpty() || !missingDecisions.isEmpty()) {
+            throw new GradleException('Heap/raw-store duplicate classification validation failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB heap/raw-store duplicate classification written: {}', reportFile)
+    }
+}
+
+
+
+def delosDerbyModuleParityFile = file('gradle/static-analysis/delosdb-derby-module-parity.txt')
+
+def delosDerbyModuleParityDecisions = ['KEEP_DERBY_PEER', 'DELOSDB_EXTENSION'] as Set
+
+def delosLoadDerbyModuleParityRows = {
+    if (!delosDerbyModuleParityFile.exists()) {
+        throw new GradleException('Missing Derby module parity classification file: ' + delosDerbyModuleParityFile)
+    }
+
+    def rows = []
+    int lineNumber = 0
+    delosDerbyModuleParityFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed Derby module parity line ' + lineNumber + ': expected 6 pipe-delimited fields')
+        }
+        if (!delosDerbyModuleParityDecisions.contains(parts[1])) {
+            throw new GradleException('Malformed Derby module parity line ' + lineNumber + ': unknown decision ' + parts[1])
+        }
+        if (!parts[3].startsWith(':delosdb-')) {
+            throw new GradleException('Malformed Derby module parity line ' + lineNumber + ': DelosDB module must be a :delosdb-* project path')
+        }
+        rows << [
+                id          : parts[0],
+                decision    : parts[1],
+                derbyRoot   : parts[2],
+                delosModule : parts[3],
+                artifactRole: parts[4],
+                reason      : parts[5],
+                lineNumber  : lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosDerbyModuleParityStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates Derby product/module parity decisions for cleanup/consolidation work.'
+
+    inputs.file(delosDerbyModuleParityFile)
+    inputs.file('settings.gradle')
+    inputs.file('docs/CLEANUP-CONSOLIDATION.md')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/derby-module-parity-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadDerbyModuleParityRows()
+        def settingsText = file('settings.gradle').getText('UTF-8')
+        def cleanupDoc = file('docs/CLEANUP-CONSOLIDATION.md')
+        def cleanupDocText = cleanupDoc.exists() ? cleanupDoc.getText('UTF-8') : ''
+        def failures = []
+        def ids = [] as Set
+        def modules = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate Derby module parity id: ' + row.id
+            }
+            if (!modules.add(row.delosModule)) {
+                failures << 'Duplicate Derby module parity DelosDB module: ' + row.delosModule
+            }
+            def projectName = row.delosModule.substring(1)
+            if (!settingsText.contains("include '" + projectName + "'")) {
+                failures << 'Derby module parity row references a project missing from settings.gradle: ' + row.delosModule
+            }
+            if (row.decision == 'KEEP_DERBY_PEER' && !row.derbyRoot.startsWith('java/')) {
+                failures << 'KEEP_DERBY_PEER row must name the original Derby java/ source root: ' + row.id
+            }
+            if (row.decision == 'DELOSDB_EXTENSION' && row.derbyRoot != 'none') {
+                failures << 'DELOSDB_EXTENSION row must use derby_source_root=none: ' + row.id
+            }
+        }
+
+        def requiredDerbyPeers = [
+                ':delosdb-engine',
+                ':delosdb-client',
+                ':delosdb-tools',
+                ':delosdb-server',
+                ':delosdb-runner',
+                ':delosdb-optionaltools',
+                ':delosdb-commons',
+                ':delosdb-tests',
+                ':delosdb-pptesting',
+                ':delosdb-storeless',
+                ':delosdb-osgi-stub',
+                ':delosdb-locales',
+                ':delosdb-demos',
+                ':delosdb-buildtools'
+        ]
+        requiredDerbyPeers.each { moduleName ->
+            def row = rows.find { it.delosModule == moduleName }
+            if (row == null) {
+                failures << 'Missing Derby module parity row for ' + moduleName
+            } else if (row.decision != 'KEEP_DERBY_PEER') {
+                failures << 'Original Derby peer module must be classified KEEP_DERBY_PEER: ' + moduleName
+            }
+        }
+
+        def requiredExtensions = [
+                ':delosdb-runtime-api',
+                ':delosdb-annotations',
+                ':delosdb-spi',
+                ':delosdb-storage-io',
+                ':delosdb-storage-api',
+                ':delosdb-derby-store-api',
+                ':delosdb-storage-derby',
+                ':delosdb-storage-bridge',
+                ':delosdb-storage-mvcc'
+        ]
+        requiredExtensions.each { moduleName ->
+            def row = rows.find { it.delosModule == moduleName }
+            if (row == null) {
+                failures << 'Missing DelosDB extension module parity row for ' + moduleName
+            } else if (row.decision != 'DELOSDB_EXTENSION') {
+                failures << 'DelosDB-only module must be classified DELOSDB_EXTENSION: ' + moduleName
+            }
+        }
+
+        def forbiddenDocPhrases = [
+                'These modules may deserve consolidation',
+                'Tools/server/runner/optionaltools module-boundary review',
+                ':delosdb-tools\n:delosdb-runner\n:delosdb-optionaltools\n:delosdb-server'
+        ]
+        forbiddenDocPhrases.each { phrase ->
+            if (cleanupDocText.contains(phrase)) {
+                failures << 'Cleanup doc still contains obsolete consolidation wording: ' + phrase
+            }
+        }
+        if (!cleanupDocText.contains('Do not consolidate these modules as part of cleanup')) {
+            failures << 'Cleanup doc must explicitly preserve Derby peer modules from cleanup consolidation.'
+        }
+        if (!cleanupDocText.contains('delosDerbyModuleParityStaticAnalysis')) {
+            failures << 'Cleanup doc must mention the Derby module parity static gate.'
+        }
+
+        def counts = delosDerbyModuleParityDecisions.collectEntries { decision ->
+            [decision, rows.count { it.decision == decision }]
+        }
+        def reportFile = layout.buildDirectory.file('reports/delosdb/derby-module-parity-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB Derby module parity static analysis')
+            writer.println('==========================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            delosDerbyModuleParityDecisions.sort().each { decision ->
+                writer.println('  ' + decision + ': ' + counts[decision])
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.decision + '] ' + row.delosModule)
+                writer.println('  derby root:    ' + row.derbyRoot)
+                writer.println('  artifact/role: ' + row.artifactRole)
+                writer.println('  reason:        ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Derby module parity checks passed.')
+            } else {
+                writer.println('Derby module parity failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB Derby module parity static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB Derby module parity static analysis passed. Report: {}', reportFile)
+    }
+}
+
+def delosRuntimeArtifactModelFiles = [
+        'build.gradle',
+        'delosdb-tests/build.gradle',
+        'gradle/delosdb-runtime-artifacts.gradle'
+]
+
+def delosRuntimeArtifactModelRequire = { List<String> failures, boolean condition, String message ->
+    if (!condition) {
+        failures << message
+    }
+}
+
+tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
+    group = 'verification'
+    description = 'Fails if DelosDB runtime jar/provider packaging drifts back into duplicate hard-coded Gradle lists.'
+
+    inputs.files(delosRuntimeArtifactModelFiles.collect { file(it) }.findAll { it.exists() })
+    outputs.file(layout.buildDirectory.file('reports/delosdb/runtime-artifact-model-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def rootBuild = file('build.gradle')
+        def testsBuild = file('delosdb-tests/build.gradle')
+        def runtimeArtifactsScript = file('gradle/delosdb-runtime-artifacts.gradle')
+
+        def rootText = rootBuild.exists() ? rootBuild.getText('UTF-8') : ''
+        def testsText = testsBuild.exists() ? testsBuild.getText('UTF-8') : ''
+        def runtimeText = runtimeArtifactsScript.exists() ? runtimeArtifactsScript.getText('UTF-8') : ''
+
+        delosRuntimeArtifactModelRequire(failures, runtimeArtifactsScript.isFile(),
+                'Missing runtime artifact convention script: gradle/delosdb-runtime-artifacts.gradle')
+        delosRuntimeArtifactModelRequire(failures,
+                rootText.contains("apply from: 'gradle/delosdb-runtime-artifacts.gradle'")
+                        || rootText.contains('apply from: "gradle/delosdb-runtime-artifacts.gradle"'),
+                'Root build.gradle must apply gradle/delosdb-runtime-artifacts.gradle')
+
+        def forbiddenRootRuntimeFragments = [
+                'ext.delosdbRuntimeJarArtifacts = [',
+                'def delosdbRuntimeJarArtifacts = [',
+                'def runtimeJarArtifacts = [',
+                'def runtimeJarNames = [',
+                "tasks.register('jars')",
+                'tasks.register("jars")'
+        ]
+        forbiddenRootRuntimeFragments.each { fragment ->
+            if (rootText.contains(fragment)) {
+                failures << "Root build.gradle must not duplicate runtime artifact model fragment: ${fragment}"
+            }
+        }
+
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ext.delosdbRuntimeJarArtifacts = ['),
+                'Runtime artifact convention script must declare ext.delosdbRuntimeJarArtifacts')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ext.delosdbAssembledSupportJarArtifacts = ['),
+                'Runtime artifact convention script must declare ext.delosdbAssembledSupportJarArtifacts')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ext.delosdbAssembledJarArtifacts'),
+                'Runtime artifact convention script must derive ext.delosdbAssembledJarArtifacts')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ext.delosdbRuntimeJarNames'),
+                'Runtime artifact convention script must derive ext.delosdbRuntimeJarNames')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ext.delosdbRuntimeJarFiles'),
+                'Runtime artifact convention script must expose ext.delosdbRuntimeJarFiles')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains("tasks.register('jars')"),
+                'Runtime artifact convention script must own the root :jars task')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('project.ext.delosdbAssembledJarTaskPaths'),
+                'Root :jars task must be derived from ext.delosdbAssembledJarTaskPaths')
+
+        ['storageMvcc', 'delosdb-storage-mvcc', 'delosDbStorageMvccJar', 'delosdb-storage-mvcc.jar'].each { token ->
+            delosRuntimeArtifactModelRequire(failures, runtimeText.contains(token),
+                    "Runtime artifact convention script must model MVCC provider artifact token: ${token}")
+        }
+        ['delosdb-storage-api.jar', 'delosdb-derby-store-api.jar'].each { token ->
+            delosRuntimeArtifactModelRequire(failures, runtimeText.contains(token),
+                    "Runtime artifact convention script must keep support artifact modeled outside the runtime jar list: ${token}")
+        }
+
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains("tasks.register('verifyDelosRuntimeStorageProviders')"),
+                'Runtime artifact convention script must register verifyDelosRuntimeStorageProviders')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains("dependsOn 'jars'"),
+                'verifyDelosRuntimeStorageProviders must depend on root :jars')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('ServiceLoader.load'),
+                'verifyDelosRuntimeStorageProviders must verify provider discovery through ServiceLoader')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains('META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'),
+                'verifyDelosRuntimeStorageProviders must check the DelosStorageProviderFactory service file')
+        delosRuntimeArtifactModelRequire(failures, runtimeText.contains("expectedProviderName = 'delos_mvcc'"),
+                'verifyDelosRuntimeStorageProviders must check providerName() == delos_mvcc')
+
+        delosRuntimeArtifactModelRequire(failures, testsText.contains('rootProject.ext.delosdbRuntimeJarFiles.call()'),
+                'delosdb-tests/build.gradle must derive Derby runtime jars from rootProject.ext.delosdbRuntimeJarFiles.call()')
+        delosRuntimeArtifactModelRequire(failures, testsText.contains("dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')"),
+                'Focused MVCC SQL/DRDA gates must depend on verifyDelosRuntimeStorageProviders')
+        [
+                'runDelosMvccSqlIntegrationTest',
+                'runDelosMvccDrdaNetworkClientTest',
+                'runDelosMvccDrdaConcurrentNetworkClientTest'
+        ].each { taskName ->
+            delosRuntimeArtifactModelRequire(failures, testsText.contains(taskName),
+                    "delosdb-tests/build.gradle must keep ${taskName} wired to provider verification")
+        }
+
+        def forbiddenTestRuntimeJarNames = [
+                'delosdb-annotations.jar',
+                'delosdb-spi.jar',
+                'delosdb-storage-io.jar',
+                'osgi-framework-stub.jar',
+                'derbyshared.jar',
+                'delosdb-runtime-api.jar',
+                'delosdb-storage-mvcc.jar',
+                'derby.jar',
+                'derbyclient.jar',
+                'derbytools.jar',
+                'derbynet.jar',
+                'derbyoptionaltools.jar',
+                'derbyrun.jar'
+        ]
+        forbiddenTestRuntimeJarNames.each { jarName ->
+            if (testsText.contains("'${jarName}'") || testsText.contains('"' + jarName + '"')
+                    || testsText.contains("build/libs/${jarName}") || testsText.contains("libs/${jarName}")) {
+                failures << "delosdb-tests/build.gradle must not hard-code Derby runtime jar name; use rootProject.ext.delosdbRuntimeJarFiles instead: ${jarName}"
+            }
+        }
+
+        delosRuntimeArtifactModelRequire(failures, rootText.contains("tasks.named('s0CloseoutVerification')"),
+                'Root build.gradle must wire additional closeout dependencies through tasks.named(s0CloseoutVerification)')
+        delosRuntimeArtifactModelRequire(failures, rootText.contains("dependsOn 'verifyDelosRuntimeStorageProviders'"),
+                's0CloseoutVerification must depend on verifyDelosRuntimeStorageProviders')
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/runtime-artifact-model-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB runtime artifact model static analysis')
+            writer.println('================================================')
+            writer.println()
+            writer.println('Checked files:')
+            delosRuntimeArtifactModelFiles.each { writer.println('  - ' + it) }
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Runtime artifact model checks passed.')
+            } else {
+                writer.println('Runtime artifact model failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB runtime artifact model static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB runtime artifact model static analysis passed. Report: {}', reportFile)
+    }
+}
+
+
+def delosCrossEngineConsistencyFrameworkFiles = [
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosCrossEngineConsistencyReport.java',
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyFinding.java',
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyTarget.java',
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyDiagnostics.java',
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java',
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java',
+        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.java'
+]
+
+def delosCrossEngineConsistencyRequire = { List<String> failures, boolean condition, String message ->
+    if (!condition) {
+        failures << message
+    }
+}
+
+tasks.register('delosCrossEngineConsistencyFrameworkStaticAnalysis') {
+    group = 'verification'
+    description = 'Fails if the cross-engine consistency framework loses its provider-neutral, read-only aggregation shape.'
+
+    inputs.files(delosCrossEngineConsistencyFrameworkFiles.collect { file(it) }.findAll { it.exists() })
+    outputs.file(layout.buildDirectory.file('reports/delosdb/cross-engine-consistency-framework-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def texts = delosCrossEngineConsistencyFrameworkFiles.collectEntries { relativePath ->
+            def sourceFile = file(relativePath)
+            [(relativePath): sourceFile.exists() ? sourceFile.getText('UTF-8') : '']
+        }
+
+        delosCrossEngineConsistencyFrameworkFiles.each { relativePath ->
+            delosCrossEngineConsistencyRequire(failures, file(relativePath).isFile(),
+                    "Missing cross-engine consistency framework file: ${relativePath}")
+        }
+
+        def reportText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosCrossEngineConsistencyReport.java']
+        def findingText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyFinding.java']
+        def targetText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyTarget.java']
+        def diagnosticsText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyDiagnostics.java']
+        def registryText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java']
+        def queryText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java']
+        def testText = texts['delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.java']
+
+        delosCrossEngineConsistencyRequire(failures,
+                reportText.contains('public record DelosCrossEngineConsistencyReport'),
+                'Cross-engine report must remain a provider-neutral immutable record')
+        delosCrossEngineConsistencyRequire(failures,
+                reportText.contains('List.copyOf') && reportText.contains('clean()')
+                        && reportText.contains('errorCount()') && reportText.contains('failedFindings()')
+                        && reportText.contains('summaries()') && reportText.contains('finding(String providerId, int segment, long containerId)'),
+                'Cross-engine report must expose immutable findings, clean/error totals, summaries, and provider/container lookup')
+        delosCrossEngineConsistencyRequire(failures,
+                !reportText.contains('PrintStream') && !reportText.contains('System.out') && !reportText.contains('System.err'),
+                'Cross-engine report must not write to stdout/stderr or diagnostic PrintStreams')
+
+        delosCrossEngineConsistencyRequire(failures,
+                findingText.contains('public record DelosStorageConsistencyFinding')
+                        && findingText.contains('from(String providerId')
+                        && findingText.contains('DelosStorageConsistencyDiagnostics diagnostics')
+                        && findingText.contains('clean()'),
+                'Consistency finding must remain a provider-neutral result derived from diagnostics')
+        delosCrossEngineConsistencyRequire(failures,
+                findingText.contains('errorCount < 0') && findingText.contains('provider id must not be blank'),
+                'Consistency finding must keep validation for provider id and non-negative error count')
+
+        delosCrossEngineConsistencyRequire(failures,
+                targetText.contains('public record DelosStorageConsistencyTarget')
+                        && targetText.contains('static DelosStorageConsistencyTarget heap')
+                        && targetText.contains('static DelosStorageConsistencyTarget mvcc')
+                        && targetText.contains('hasDatabaseDirectory()'),
+                'Consistency target must keep explicit heap/MVCC factories and database-directory awareness')
+        delosCrossEngineConsistencyRequire(failures,
+                diagnosticsText.contains('public record DelosStorageConsistencyDiagnostics')
+                        && diagnosticsText.contains('int errorCount')
+                        && diagnosticsText.contains('String summary'),
+                'Consistency diagnostics must remain a small error-count/summary value object')
+
+        delosCrossEngineConsistencyRequire(failures,
+                registryText.contains('DelosCrossEngineConsistencyReport consistencyReport')
+                        && registryText.contains('metadataQuery().consistencyReport'),
+                'Diagnostics registry must expose consistencyReport through the metadata query path')
+        delosCrossEngineConsistencyRequire(failures,
+                queryText.contains('DelosMetadataContext.consistencyReport')
+                        || queryText.contains('DelosStorageMetadataContext.consistencyReport'),
+                'Metadata query must use an explicit consistency-report metadata context')
+        delosCrossEngineConsistencyRequire(failures,
+                queryText.contains('requireMetadataOnlyContext()')
+                        && queryText.contains('snapshot.consistencyFinding()')
+                        && queryText.contains('new DelosCrossEngineConsistencyReport(findings)'),
+                'Consistency report aggregation must stay metadata-only and provider-neutral')
+
+        delosCrossEngineConsistencyRequire(failures,
+                testText.contains('testMixedHeapAndMvccConsistencyReportIsCleanAndReadOnly'),
+                'SQL gate must keep clean read-only mixed heap/MVCC report coverage')
+        delosCrossEngineConsistencyRequire(failures,
+                testText.contains('testCrossEngineConsistencyReportSurfacesHeapMissWithoutTouchingMvcc'),
+                'SQL gate must keep dirty-heap/clean-MVCC mixed report coverage')
+        delosCrossEngineConsistencyRequire(failures,
+                testText.contains('DelosStorageConsistencyTarget.heap')
+                        && testText.contains('DelosStorageConsistencyTarget.mvcc')
+                        && testText.contains('DelosStorageDiagnosticsRegistry.consistencyReport'),
+                'SQL gate must exercise the public heap/MVCC target factories and registry report API')
+        delosCrossEngineConsistencyRequire(failures,
+                testText.contains('assertRows(connection')
+                        && testText.contains('expected MVCC finding to stay clean'),
+                'SQL gate must prove the report is read-only and isolates heap findings from MVCC findings')
+
+        def frameworkTexts = reportText + '\n' + findingText + '\n' + targetText + '\n' + diagnosticsText + '\n' + registryText + '\n' + queryText
+        ['repair', 'auto-fix', 'autofix', 'cleanup', 'delete'].each { forbidden ->
+            if (frameworkTexts.toLowerCase(Locale.ROOT).contains(forbidden)) {
+                failures << "Cross-engine consistency framework must not expose repair/cleanup semantics: ${forbidden}"
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/cross-engine-consistency-framework-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB cross-engine consistency framework static analysis')
+            writer.println('=======================================================')
+            writer.println()
+            writer.println('Checked files:')
+            delosCrossEngineConsistencyFrameworkFiles.each { writer.println('  - ' + it) }
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Cross-engine consistency framework checks passed.')
+            } else {
+                writer.println('Cross-engine consistency framework failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB cross-engine consistency framework static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB cross-engine consistency framework static analysis passed. Report: {}', reportFile)
+    }
+}
+
+
 def delosOverlayCleanupScriptPatterns = [
         ~/cleanup-overlay-.*\.sh/,
         ~/cleanup-stale-gradle-scripts\.sh/
