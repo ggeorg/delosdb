@@ -1782,8 +1782,158 @@ tasks.register('delosWorkspaceChurnStaticAnalysis') {
     }
 }
 
+
+def delosDerbyForkDiffClassificationFile = file('gradle/static-analysis/delosdb-derby-fork-diff-classification.txt')
+
+def delosDerbyForkDiffDecisions = [
+        'COMPATIBILITY_PRESERVING',
+        'EXTENSION_SEAM',
+        'STORAGE_SPLIT',
+        'HARDENING',
+        'INTENTIONAL_REPLACEMENT'
+] as Set
+
+def delosLoadDerbyForkDiffRows = {
+    if (!delosDerbyForkDiffClassificationFile.exists()) {
+        throw new GradleException('Missing Derby fork-diff classification file: ' + delosDerbyForkDiffClassificationFile)
+    }
+
+    def rows = []
+    int lineNumber = 0
+    delosDerbyForkDiffClassificationFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed Derby fork-diff classification line ' + lineNumber + ': expected 6 pipe-delimited fields')
+        }
+        if (!delosDerbyForkDiffDecisions.contains(parts[1])) {
+            throw new GradleException('Malformed Derby fork-diff classification line ' + lineNumber + ': unknown decision ' + parts[1])
+        }
+        if (!parts[2].endsWith('.java')) {
+            throw new GradleException('Malformed Derby fork-diff classification line ' + lineNumber + ': path must be a Java source file')
+        }
+        rows << [
+                id        : parts[0],
+                decision  : parts[1],
+                path      : parts[2],
+                surface   : parts[3],
+                reason    : parts[4],
+                nextAction: parts[5],
+                lineNumber: lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosDerbyForkDiffClassificationStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates classification of high-risk inherited Derby source diffs.'
+
+    inputs.file(delosDerbyForkDiffClassificationFile)
+    inputs.file('docs/STORAGE-ROADMAP.md').optional()
+    outputs.file(layout.buildDirectory.file('reports/delosdb/derby-fork-diff-classification-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadDerbyForkDiffRows()
+        def failures = []
+        def ids = [] as Set
+        def paths = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate Derby fork-diff classification id: ' + row.id
+            }
+            if (!paths.add(row.path)) {
+                failures << 'Duplicate Derby fork-diff classification path: ' + row.path
+            }
+            if (!file(row.path).exists()) {
+                failures << 'Classified Derby fork-diff path does not exist: ' + row.path
+            }
+            if (row.reason.length() < 24) {
+                failures << 'Classification reason is too thin for ' + row.id
+            }
+            if (row.nextAction.length() < 12) {
+                failures << 'Classification next action is too thin for ' + row.id
+            }
+        }
+
+        def requiredPaths = [
+                'delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java',
+                'delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java',
+                'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMAccessManager.java',
+                'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/DataDictionaryImpl.java',
+                'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSTABLESRowFactory.java',
+                'delosdb-engine/src/main/java/org/apache/derby/iapi/sql/dictionary/TableDescriptor.java',
+                'delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/CreateTableNode.java',
+                'delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/CreateIndexNode.java',
+                'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/OpenHeap.java',
+                'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/FormatIdInputStream.java',
+                'delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java',
+                'delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java'
+        ]
+        requiredPaths.each { requiredPath ->
+            if (!paths.contains(requiredPath)) {
+                failures << 'Missing required high-risk Derby fork-diff classification: ' + requiredPath
+            }
+        }
+
+        delosDerbyForkDiffDecisions.each { decision ->
+            if (!rows.any { it.decision == decision } && decision != 'INTENTIONAL_REPLACEMENT') {
+                failures << 'No Derby fork-diff classification row uses decision category: ' + decision
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing storage roadmap documenting closed checkpoint cycles and fork-diff classification phase'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            ['Candidate-index authority removal', 'Heap internal cleanup phase 1', 'fork-diff classification'].each { marker ->
+                if (!roadmapText.contains(marker)) {
+                    failures << 'Storage roadmap is missing marker: ' + marker
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/derby-fork-diff-classification-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB Derby fork-diff classification static analysis')
+            writer.println('Rows: ' + rows.size())
+            writer.println()
+            delosDerbyForkDiffDecisions.sort().each { decision ->
+                writer.println('  ' + decision + ': ' + rows.count { it.decision == decision })
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.decision + '] ' + row.path)
+                writer.println('  surface:     ' + row.surface)
+                writer.println('  reason:      ' + row.reason)
+                writer.println('  next action: ' + row.nextAction)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Derby fork-diff classifications validated.')
+            } else {
+                writer.println('Validation failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Derby fork-diff classification static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB Derby fork-diff classification static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis'
 }
