@@ -1889,12 +1889,18 @@ tasks.register('delosDerbyForkDiffClassificationStaticAnalysis') {
 
         def roadmap = file('docs/STORAGE-ROADMAP.md')
         if (!roadmap.exists()) {
-            failures << 'Missing storage roadmap documenting closed checkpoint cycles and fork-diff classification phase'
+            failures << 'Missing storage roadmap documenting the balanced modernization roadmap and fork-diff classification phase'
         } else {
             def roadmapText = roadmap.getText('UTF-8')
-            ['Candidate-index authority removal', 'Heap internal cleanup phase 1', 'fork-diff classification'].each { marker ->
+            [
+                    'Cycle 0 — Baseline before more engine work',
+                    'Derby fork-diff classification',
+                    'MVCC candidate-index authority audit',
+                    'Heap/raw-store inherited-code audit',
+                    'Never do two major MVCC implementation phases in a row without a heap/inherited-code phase between them.'
+            ].each { marker ->
                 if (!roadmapText.contains(marker)) {
-                    failures << 'Storage roadmap is missing marker: ' + marker
+                    failures << 'Storage roadmap is missing balanced-roadmap marker: ' + marker
                 }
             }
         }

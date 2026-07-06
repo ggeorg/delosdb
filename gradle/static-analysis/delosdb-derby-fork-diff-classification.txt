@@ -2,6 +2,8 @@
 # Format:
 # id|decision|relative_path|surface|reason|next_action
 # decisions: COMPATIBILITY_PRESERVING, EXTENSION_SEAM, STORAGE_SPLIT, HARDENING, INTENTIONAL_REPLACEMENT
+# INTENTIONAL_REPLACEMENT is reserved for future rows where DelosDB deliberately replaces an inherited Derby behavior behind a compatibility gate.
+# This first Cycle 0 slice is classification/reporting only and must not change Java behavior.
 
 sql-exec-provider-resultset|EXTENSION_SEAM|delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericResultSetFactory.java|SQL executor / result-set factory|Routes storage-provider-aware execution while preserving Derby SQL behavior for default heap tables|Keep tests proving default heap behavior and opt-in delos_mvcc behavior separate
 optimizer-storage-hooks|EXTENSION_SEAM|delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java|Optimizer table access planning|Adds DelosDB storage-provider and ordered-index hooks without changing Derby remainder-predicate semantics|Guard future optimizer edits with explicit opt-in and fallback tests
