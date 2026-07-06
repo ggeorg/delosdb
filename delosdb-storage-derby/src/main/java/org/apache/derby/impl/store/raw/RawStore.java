@@ -150,7 +150,7 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
     private static final int COPY_STORAGE_FILE_TO_STORAGE_ACTION = 17;
     private static final int STORAGE_FILE_DELETE_ACTION = 18;
     private static final int STORAGE_FILE_DELETE_ALL_ACTION = 19;
-    private static final int README_FILE_OUTPUTSTREAM_WRITER_ACTION = 19;
+    private static final int README_FILE_OUTPUTSTREAM_WRITER_ACTION = 20;
 
 	public RawStore() {
 	}
