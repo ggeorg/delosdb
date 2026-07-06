@@ -2317,8 +2317,209 @@ tasks.register('delosMvccCandidateIndexQuarantineStaticAnalysis') {
     }
 }
 
+
+def delosMvccCandidateIndexAuthorityRemovalFile = file('gradle/static-analysis/delosdb-mvcc-candidate-index-authority-removal.txt')
+
+def delosMvccCandidateIndexAuthorityRemovalContracts = [
+        'AUDIT_CONTRACT',
+        'SQL_INTEGRATION_GATE',
+        'TEST_SUITE_WIRING',
+        'PRODUCTION_GATE',
+        'DIAGNOSTIC_CONTRACT',
+        'CAPABILITY_CONTRACT'
+] as Set
+
+def delosLoadMvccCandidateIndexAuthorityRemovalRows = {
+    if (!delosMvccCandidateIndexAuthorityRemovalFile.exists()) {
+        throw new GradleException('Missing MVCC candidate-index authority-removal file: ' + delosMvccCandidateIndexAuthorityRemovalFile)
+    }
+
+    def rows = []
+    int lineNumber = 0
+    delosMvccCandidateIndexAuthorityRemovalFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 5) {
+            throw new GradleException('Malformed MVCC candidate-index authority-removal line ' + lineNumber + ': expected 5 pipe-delimited fields')
+        }
+        if (!delosMvccCandidateIndexAuthorityRemovalContracts.contains(parts[2])) {
+            throw new GradleException('Malformed MVCC candidate-index authority-removal line ' + lineNumber + ': unknown contract ' + parts[2])
+        }
+        rows << [
+                id        : parts[0],
+                path      : parts[1],
+                contract  : parts[2],
+                marker    : parts[3],
+                reason    : parts[4],
+                lineNumber: lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosMvccCandidateIndexAuthorityRemovalStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates that MVCC candidate indexes are removed as normal SQL read authority and remain diagnostic/fallback surfaces only.'
+
+    inputs.file(delosMvccCandidateIndexAuthorityRemovalFile)
+    inputs.file(delosMvccCandidateIndexAuthorityAuditFile)
+    inputs.file(delosMvccCandidateIndexQuarantineFile)
+    inputs.files(
+            'delosdb-tests/build.gradle',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlCandidateIndexAuthorityRemovalTest.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccBridgeDiagnosticsSupport.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCapabilities.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/StorageCapabilitiesTest.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccStorageStatisticsTest.java',
+            'docs/STORAGE-ROADMAP.md'
+    )
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-candidate-index-authority-removal-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccCandidateIndexAuthorityRemovalRows()
+        def failures = []
+        def ids = [] as Set
+        def contracts = rows.groupBy { it.contract }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC candidate-index authority-removal id: ' + row.id
+            }
+            if (!file(row.path).exists()) {
+                failures << 'Authority-removal proof-point path does not exist: ' + row.path
+                return
+            }
+            def body = file(row.path).getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Authority-removal proof-point marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 36) {
+                failures << 'Authority-removal proof-point reason is too thin for ' + row.id
+            }
+        }
+
+        delosMvccCandidateIndexAuthorityRemovalContracts.each { contract ->
+            if (!contracts.containsKey(contract)) {
+                failures << 'Missing MVCC candidate-index authority-removal contract row for ' + contract
+            }
+        }
+
+        def auditRows = delosLoadMvccCandidateIndexAuthorityRows()
+        def normalAuthorityRows = auditRows.findAll { it.decision == 'NORMAL_SQL_AUTHORITY' }
+        if (!normalAuthorityRows.isEmpty()) {
+            normalAuthorityRows.each { row ->
+                failures << 'Candidate-index authority removal still has NORMAL_SQL_AUTHORITY row: ' + row.id + ' -> ' + row.path
+            }
+        }
+
+        def stateFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java')
+        if (stateFile.exists()) {
+            def stateText = stateFile.getText('UTF-8')
+            def fallbackMethod = (stateText =~ /static\s+boolean\s+candidateIndexDiagnosticFallbackEnabledForTesting\s*\(\s*\)\s*\{\s*return\s+false\s*;\s*\}/)
+            if (!fallbackMethod.find()) {
+                failures << 'candidateIndexDiagnosticFallbackEnabledForTesting must remain a hard false authority-removal gate'
+            }
+            def forbiddenNormalAuthority = (stateText =~ /candidateRowIdsFor\s*\(/)
+            if (forbiddenNormalAuthority.find()) {
+                failures << 'MvccConglomerateState must not call candidateRowIdsFor after authority removal'
+            }
+            if (!stateText.contains('candidateIndex.orderedIndexRowIdsFor(')
+                    || !stateText.contains('candidateIndex.orderedIndexRowIdsInRangeFor(')) {
+                failures << 'MvccConglomerateState must route covered equality/range narrowing through ordered-index methods'
+            }
+        }
+
+        def scanFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java')
+        if (scanFile.exists()) {
+            def scanText = scanFile.getText('UTF-8')
+            if (!scanText.contains('state.orderedIndexRowIdsFor(indexQualifiers)')) {
+                failures << 'MvccScanController must use ordered-index row ids for covered scans'
+            }
+            if (!scanText.contains('readCommittedImage(rowId, snapshot)')) {
+                failures << 'MvccScanController must feed ordered row ids through page-backed committed reads'
+            }
+        }
+
+        def bridgeFiles = [
+                file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java'),
+                file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java')
+        ]
+        bridgeFiles.findAll { it.exists() }.each { bridgeFile ->
+            def bridgeText = bridgeFile.getText('UTF-8')
+            if (bridgeText.contains('incrementCandidateIndexFallbackLookupCount(')) {
+                failures << bridgeFile.name + ' must not increment candidate-index fallback authority counters on normal scan paths'
+            }
+        }
+
+        def buildFile = file('delosdb-tests/build.gradle')
+        if (buildFile.exists()) {
+            def buildText = buildFile.getText('UTF-8')
+            if (!buildText.contains('MvccSqlCandidateIndexAuthorityRemovalTest.class')) {
+                failures << 'runDelosMvccSqlIntegrationTest must include MvccSqlCandidateIndexAuthorityRemovalTest'
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing storage roadmap documenting MVCC candidate-index authority removal'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Phase D — MVCC candidate-index authority removal',
+                    'candidate authority removed or hard-quarantined',
+                    'normal SQL reads should use ordered MVCC pages',
+                    'Phase E — Heap diagnostics expansion',
+                    'Do not skip the heap slice'
+            ].each { marker ->
+                if (!roadmapText.contains(marker)) {
+                    failures << 'Storage roadmap is missing MVCC candidate-index authority-removal marker: ' + marker
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-candidate-index-authority-removal-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC candidate-index authority-removal static analysis')
+            writer.println('=============================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('NORMAL_SQL_AUTHORITY audit rows: ' + normalAuthorityRows.size())
+            writer.println()
+            delosMvccCandidateIndexAuthorityRemovalContracts.sort().each { contract ->
+                writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.contract + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('MVCC candidate-index authority-removal proof points validated.')
+            } else {
+                writer.println('Validation failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('MVCC candidate-index authority-removal static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB MVCC candidate-index authority-removal static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis'
 }

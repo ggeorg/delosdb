@@ -141,7 +141,7 @@ compatibility, or stale vocabulary.
 
 ## Phase C — MVCC candidate-index quarantine
 
-Status: current executable slice.
+Status: closed green.
 
 Candidate indexes must no longer be silently used as normal authority on covered
 current-committed paths. They may remain only as:
@@ -173,12 +173,11 @@ legacy diagnostic fallback property remains hard-quarantined.
 
 ## Phase D — MVCC candidate-index authority removal
 
-Status: next MVCC slice after quarantine.
+Status: current executable slice after green quarantine.
 
 Only after quarantine is green should candidate-index authority removal be treated as a
 separate closeout. Candidate structures may remain temporarily for diagnostics,
-migration comparison, or explicit fallback, but normal SQL reads should use ordered
-MVCC pages.
+migration comparison, or explicit fallback, but normal SQL reads should use ordered MVCC pages.
 
 Required behavior:
 
@@ -191,6 +190,13 @@ updates/deletes/reopen correct
 read-your-writes still correct
 snapshot semantics unchanged
 ```
+
+The static gate for this phase validates that candidate-index fallback is not SQL
+authority, the legacy diagnostic property cannot re-enable it, covered equality/range
+reads use ordered index pages, ordered row ids feed page-backed committed reads,
+reopen keeps the removal contract, and capability/statistics metadata report the
+authority-removal fact. Candidate structures may still be populated for parity
+diagnostics until the later diagnostic-renaming cleanup.
 
 ## Phase E — Heap diagnostics expansion
 
