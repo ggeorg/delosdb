@@ -200,7 +200,7 @@ diagnostics until the later diagnostic-renaming cleanup.
 
 ## Phase E — Heap diagnostics expansion
 
-Status: current executable heap/inherited-code slice after green candidate-index authority removal.
+Status: closed green.
 
 After an MVCC modernization slice, return to inherited heap/Derby code. Expand
 read-only heap diagnostics without changing heap format, raw log format, catalog
@@ -214,12 +214,19 @@ Do not skip the heap slice.
 
 ## Phase F — Shared storage inspector consolidation
 
-Status: next shared-service slice after heap diagnostics expansion is green.
+Status: current shared-service slice after green heap diagnostics expansion.
 
 Once heap diagnostics and MVCC diagnostics both exist, consolidate the storage inspector
 shape across providers. The common inspection result should expose provider identity,
 container/table identity, page summary, index summary, overflow summary, consistency
 status, diagnostic findings, and read-only metadata.
+
+This phase is a shared-service consolidation gate, not a new engine feature. Heap
+inspection remains database-directory aware and Derby-format compatible. MVCC inspection
+remains provider-owned. Mixed reports should present both through one read-only metadata
+query/report surface.
+
+Shared inspection contract: provider identity, container/table identity, page summary, index summary, overflow summary, consistency status, diagnostic findings, and read-only metadata.
 
 No repair commands, behavior changes, format changes, SQL syntax, or module merging are
 allowed in this slice unless separately gated.

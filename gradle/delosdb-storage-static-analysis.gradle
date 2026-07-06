@@ -1467,7 +1467,7 @@ tasks.register('delosCrossEngineConsistencyFrameworkStaticAnalysis') {
 
         def frameworkTexts = reportText + '\n' + findingText + '\n' + targetText + '\n' + diagnosticsText + '\n' + registryText + '\n' + queryText
         ['repair', 'auto-fix', 'autofix', 'cleanup', 'delete'].each { forbidden ->
-            if (frameworkTexts.toLowerCase(Locale.ROOT).contains(forbidden)) {
+            if (frameworkTexts.toLowerCase(java.util.Locale.ROOT).contains(forbidden)) {
                 failures << "Cross-engine consistency framework must not expose repair/cleanup semantics: ${forbidden}"
             }
         }
@@ -2761,8 +2761,362 @@ tasks.register('delosHeapDiagnosticsExpansionStaticAnalysis') {
     }
 }
 
+
+def delosStorageInspectorConsolidationFile = file('gradle/static-analysis/delosdb-storage-inspector-consolidation.txt')
+
+def delosStorageInspectorConsolidationContracts = [
+        'COMMON_INSPECTION_SHAPE',
+        'PROVIDER_IDENTITY',
+        'TARGET_IDENTITY',
+        'PAGE_SUMMARY',
+        'OVERFLOW_SUMMARY',
+        'INDEX_SUMMARY',
+        'CONSISTENCY_STATUS',
+        'DIAGNOSTIC_FINDINGS',
+        'READ_ONLY_METADATA',
+        'HEAP_INSPECTION_TARGET',
+        'MVCC_INSPECTION_TARGET',
+        'MIXED_REPORT',
+        'PROVIDER_NORMALIZATION',
+        'METADATA_CHAIN',
+        'MIXED_HEAP_MVCC_TEST',
+        'READ_ONLY_TEST_GATE',
+        'TEST_SUITE_WIRING',
+        'ROADMAP_GATE',
+        'BOUNDARY_CONTRACT'
+] as Set
+
+def delosLoadStorageInspectorConsolidationRows = {
+    if (!delosStorageInspectorConsolidationFile.exists()) {
+        throw new GradleException('Missing storage inspector consolidation file: ' + delosStorageInspectorConsolidationFile)
+    }
+
+    def rows = []
+    int lineNumber = 0
+    delosStorageInspectorConsolidationFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 5) {
+            throw new GradleException('Malformed storage inspector consolidation line ' + lineNumber + ': expected 5 pipe-delimited fields')
+        }
+        if (!delosStorageInspectorConsolidationContracts.contains(parts[2])) {
+            throw new GradleException('Malformed storage inspector consolidation line ' + lineNumber + ': unknown contract ' + parts[2])
+        }
+        rows << [
+                id        : parts[0],
+                path      : parts[1],
+                contract  : parts[2],
+                marker    : parts[3],
+                reason    : parts[4],
+                lineNumber: lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosStorageInspectorConsolidationStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the shared read-only heap/MVCC storage inspector consolidation gate.'
+
+    inputs.file(delosStorageInspectorConsolidationFile)
+    inputs.files(
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageInspection.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageInspectionReport.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataSnapshot.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageProviderIds.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePageDiagnostics.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/StorageInspectorConsolidationTest.java',
+            'delosdb-tests/build.gradle',
+            'docs/STORAGE-ROADMAP.md'
+    )
+    outputs.file(layout.buildDirectory.file('reports/delosdb/storage-inspector-consolidation-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadStorageInspectorConsolidationRows()
+        def failures = []
+        def ids = [] as Set
+        def contracts = rows.groupBy { it.contract }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate storage inspector consolidation id: ' + row.id
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Storage inspector consolidation proof-point path does not exist: ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Storage inspector consolidation marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 40) {
+                failures << 'Storage inspector consolidation reason is too thin for ' + row.id
+            }
+        }
+
+        delosStorageInspectorConsolidationContracts.each { contract ->
+            if (!contracts.containsKey(contract)) {
+                failures << 'Missing storage inspector consolidation contract row for ' + contract
+            }
+        }
+
+        def inspectionFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageInspection.java')
+        if (inspectionFile.exists()) {
+            def inspectionText = inspectionFile.getText('UTF-8')
+            [
+                    'String providerId',
+                    'int segment',
+                    'long containerId',
+                    'String checkpointStatus',
+                    'DelosStoragePageDiagnostics pageDiagnostics',
+                    'DelosStoragePageCacheDiagnostics pageCacheDiagnostics',
+                    'DelosStorageConsistencyDiagnostics consistencyDiagnostics',
+                    'Map<String, Path> files',
+                    'Provider-neutral snapshot of storage state for one table/container',
+                    'stable vocabulary for heap and MVCC diagnostics'
+            ].each { markerText ->
+                if (!inspectionText.contains(markerText)) {
+                    failures << 'DelosStorageInspection is missing shared shape marker: ' + markerText
+                }
+            }
+        }
+
+        def pageDiagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePageDiagnostics.java')
+        if (pageDiagnosticsFile.exists()) {
+            def pageText = pageDiagnosticsFile.getText('UTF-8')
+            [
+                    'long pageCount',
+                    'long overflowPageCount',
+                    'long reusablePageCount',
+                    'int physicalVersionCount',
+                    'int logicalRowCount'
+            ].each { markerText ->
+                if (!pageText.contains(markerText)) {
+                    failures << 'DelosStoragePageDiagnostics is missing consolidated page marker: ' + markerText
+                }
+            }
+        }
+
+        def statisticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java')
+        if (statisticsFile.exists()) {
+            def statsText = statisticsFile.getText('UTF-8')
+            [
+                    'long orderedIndexPageCount',
+                    'long orderedIndexEntryCount',
+                    'long attributeOverflowValueBytes',
+                    'long observedStorageBytes',
+                    'public boolean hasOrderedIndexStatistics()',
+                    'storage statistics are read-only'
+            ].each { markerText ->
+                if (!statsText.contains(markerText)) {
+                    failures << 'DelosStorageStatistics is missing consolidated statistics marker: ' + markerText
+                }
+            }
+        }
+
+        def snapshotFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataSnapshot.java')
+        if (snapshotFile.exists()) {
+            def snapshotText = snapshotFile.getText('UTF-8')
+            [
+                    'DelosStorageInspection inspection',
+                    'DelosStorageConsistencyFinding consistencyFinding',
+                    'DelosStorageStatistics statistics',
+                    'DelosStorageCapabilities capabilities',
+                    'public boolean readOnly()',
+                    'metadata snapshot target coordinates do not match'
+            ].each { markerText ->
+                if (!snapshotText.contains(markerText)) {
+                    failures << 'DelosStorageMetadataSnapshot is missing consolidation marker: ' + markerText
+                }
+            }
+        }
+
+        def queryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java')
+        if (queryFile.exists()) {
+            def queryText = queryFile.getText('UTF-8')
+            [
+                    'Read-only metadata-query facade over a deterministic storage provider chain',
+                    'inspectionReport(List<DelosStorageConsistencyTarget> targets)',
+                    'snapshotsWithCurrentContext(targets)',
+                    'requireMetadataOnlyContext()',
+                    'storage metadata context must be read-only and optimizer-safe'
+            ].each { markerText ->
+                if (!queryText.contains(markerText)) {
+                    failures << 'DelosStorageMetadataQuery is missing shared query marker: ' + markerText
+                }
+            }
+        }
+
+        def registryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java')
+        if (registryFile.exists()) {
+            def registryText = registryFile.getText('UTF-8')
+            [
+                    'inspectMvcc(int segment, long containerId)',
+                    'inspectHeap(Path databaseDirectory, int segment, long containerId)',
+                    'inspectionReport(List<DelosStorageConsistencyTarget> targets)',
+                    'metadataQuery().inspectionReport(targets)',
+                    'inspectorForProvider(String providerId)'
+            ].each { markerText ->
+                if (!registryText.contains(markerText)) {
+                    failures << 'DelosStorageDiagnosticsRegistry is missing shared inspector marker: ' + markerText
+                }
+            }
+        }
+
+        def providerIdsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageProviderIds.java')
+        if (providerIdsFile.exists()) {
+            def providerIdsText = providerIdsFile.getText('UTF-8')
+            [
+                    'public static final String MVCC_PROVIDER_ID = "delos_mvcc"',
+                    'public static final String HEAP_PROVIDER_ID = "derby_heap"',
+                    'public static String normalize(String providerId)',
+                    'public static boolean matches(String leftProviderId, String rightProviderId)',
+                    'public static boolean isMvcc(String providerId)',
+                    'public static boolean isHeap(String providerId)'
+            ].each { markerText ->
+                if (!providerIdsText.contains(markerText)) {
+                    failures << 'DelosStorageProviderIds is missing canonical provider marker: ' + markerText
+                }
+            }
+        }
+
+        def reportFileSource = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageInspectionReport.java')
+        if (reportFileSource.exists()) {
+            def reportText = reportFileSource.getText('UTF-8')
+            [
+                    'Provider-neutral read-only inspection report for heap and MVCC storage',
+                    'public int targetCount()',
+                    'public boolean clean()',
+                    'public int errorCount()',
+                    'public Set<String> providerIds()',
+                    'public List<DelosStorageInspection> failedInspections()',
+                    'public DelosStorageInspection inspection(String providerId, int segment, long containerId)',
+                    'public List<String> summaries()'
+            ].each { markerText ->
+                if (!reportText.contains(markerText)) {
+                    failures << 'DelosStorageInspectionReport is missing report marker: ' + markerText
+                }
+            }
+        }
+
+        def testFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/StorageInspectorConsolidationTest.java')
+        if (testFile.exists()) {
+            def testText = testFile.getText('UTF-8')
+            [
+                    'testMixedHeapAndMvccInspectionReportIsStableAndReadOnly',
+                    'create table inspector_heap_t',
+                    'create table inspector_mvcc_t',
+                    'DelosStorageDiagnosticsRegistry.inspectionReport',
+                    'expected heap and MVCC inspection targets',
+                    'expected clean mixed storage-inspection report',
+                    'expected heap provider in inspection report',
+                    'expected MVCC provider in inspection report',
+                    'select id, name from inspector_heap_t order by id',
+                    'select id, name from inspector_mvcc_t order by id'
+            ].each { markerText ->
+                if (!testText.contains(markerText)) {
+                    failures << 'StorageInspectorConsolidationTest is missing proof marker: ' + markerText
+                }
+            }
+        }
+
+        def buildFile = file('delosdb-tests/build.gradle')
+        if (buildFile.exists()) {
+            def buildText = buildFile.getText('UTF-8')
+            if (!buildText.contains('StorageInspectorConsolidationTest.class')) {
+                failures << 'runDelosMvccSqlIntegrationTest must include StorageInspectorConsolidationTest'
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing storage roadmap documenting inspector consolidation'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Phase E — Heap diagnostics expansion',
+                    'Status: closed green.',
+                    'Phase F — Shared storage inspector consolidation',
+                    'Status: current shared-service slice after green heap diagnostics expansion.',
+                    'provider identity, container/table identity, page summary, index summary, overflow summary, consistency status, diagnostic findings, and read-only metadata',
+                    'No repair commands, behavior changes, format changes, SQL syntax, or module merging',
+                    'Phase G — MVCC pinned/dirty buffer cache'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Storage roadmap is missing inspector consolidation marker: ' + markerText
+                }
+            }
+        }
+
+        def forbiddenProductionMarkers = [
+                'create table',
+                'alter table',
+                'drop table',
+                'delete from',
+                'insert into',
+                'update ',
+                'repair',
+                'module merging'
+        ]
+        [
+                file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageInspection.java'),
+                file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageInspectionReport.java'),
+                file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java')
+        ].each { sourceFile ->
+            if (sourceFile.exists()) {
+                def lowerText = sourceFile.getText('UTF-8').toLowerCase(java.util.Locale.ROOT)
+                forbiddenProductionMarkers.each { forbidden ->
+                    if (lowerText.contains(forbidden)) {
+                        failures << sourceFile.path + ' must remain inspection-only; forbidden marker found: ' + forbidden
+                    }
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/storage-inspector-consolidation-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB storage inspector consolidation static analysis')
+            writer.println('======================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println()
+            delosStorageInspectorConsolidationContracts.sort().each { contract ->
+                writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.contract + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Storage inspector consolidation proof points validated.')
+            } else {
+                writer.println('Validation failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Storage inspector consolidation static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB storage inspector consolidation static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis'
 }
