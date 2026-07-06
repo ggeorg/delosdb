@@ -1470,8 +1470,110 @@ tasks.register('delosModuleDependencyBoundaryStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosWorkspaceChurnStaticAnalysis') {
+    group = 'verification'
+    description = 'Fails on accidental workspace churn such as Mac archive metadata and line-ending-only tracked diffs.'
+    outputs.file(layout.buildDirectory.file('reports/delosdb/workspace-churn-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def warnings = []
+
+        def archiveMetadataFiles = fileTree(rootDir) {
+            include '**/.DS_Store'
+            include '**/__MACOSX/**'
+            include '**/._*'
+            exclude '.git/**'
+            exclude '**/build/**'
+            exclude '**/.gradle/**'
+        }.files.collect { rootDir.toPath().relativize(it.toPath()).toString() }.sort()
+
+        if (!archiveMetadataFiles.isEmpty()) {
+            failures << 'Archive/OS metadata files are present in the workspace: ' + archiveMetadataFiles.join(', ')
+        }
+
+        def runGit = { List<String> args ->
+            def command = (['git'] + args).collect { it.toString() }
+            def process = new ProcessBuilder(command)
+                    .directory(rootDir)
+                    .start()
+            def stdout = new ByteArrayOutputStream()
+            def stderr = new ByteArrayOutputStream()
+            def stdoutThread = Thread.start { process.inputStream.transferTo(stdout) }
+            def stderrThread = Thread.start { process.errorStream.transferTo(stderr) }
+            def exitValue = process.waitFor()
+            stdoutThread.join()
+            stderrThread.join()
+            [exitValue: exitValue,
+             stdout: stdout.toString(StandardCharsets.UTF_8.name()),
+             stderr: stderr.toString(StandardCharsets.UTF_8.name())]
+        }
+
+        def gitRoot = runGit(['rev-parse', '--is-inside-work-tree'])
+        if (gitRoot.exitValue != 0) {
+            warnings << 'Git workspace not available; skipped tracked line-ending churn check.'
+        } else {
+            def diffModes = [
+                    [name: 'unstaged', base: ['diff', '--name-only', '--diff-filter=ACMRTUXB'],
+                     check: ['diff', '--exit-code', '--ignore-space-at-eol', '--ignore-cr-at-eol']],
+                    [name: 'staged', base: ['diff', '--cached', '--name-only', '--diff-filter=ACMRTUXB'],
+                     check: ['diff', '--cached', '--exit-code', '--ignore-space-at-eol', '--ignore-cr-at-eol']]
+            ]
+
+            diffModes.each { mode ->
+                def names = runGit(mode.base)
+                if (names.exitValue != 0) {
+                    warnings << "Could not inspect ${mode.name} tracked files: " + names.stderr.trim()
+                    return
+                }
+                names.stdout.readLines()
+                        .collect { it.trim() }
+                        .findAll { !it.isEmpty() }
+                        .unique()
+                        .sort()
+                        .each { String relativePath ->
+                            def ignored = runGit(mode.check + ['--', relativePath])
+                            if (ignored.exitValue == 0) {
+                                failures << "${mode.name} tracked change is only line-ending/trailing-whitespace churn: ${relativePath}"
+                            }
+                        }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/workspace-churn-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB workspace churn static analysis')
+            writer.println('========================================')
+            writer.println()
+            writer.println('Checked invariants:')
+            writer.println('  - no __MACOSX, .DS_Store, or AppleDouble ._* files in the workspace')
+            writer.println('  - no tracked staged/unstaged changes that are only CRLF/LF or trailing-whitespace churn')
+            writer.println()
+            if (!warnings.isEmpty()) {
+                writer.println('Warnings:')
+                warnings.each { warning -> writer.println('  - ' + warning) }
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Workspace churn checks passed.')
+            } else {
+                writer.println('Workspace churn failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB workspace churn static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB workspace churn static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
 }
