@@ -61,26 +61,34 @@ Never merge modules just because they look small.
 Never preserve Derby internals unless they are part of compatibility.
 ```
 
-## Cycle 0 — Baseline before more engine work
+## Updated near-term execution order
 
-Cycle 0 is audit and governance only. It must not change Java behavior.
+The active plan is no longer the closed storage-robustness closeout plan. The next
+execution order is:
 
 ```text
 1. Derby fork-diff classification
 2. MVCC candidate-index authority audit
-3. Heap/raw-store inherited-code audit
+3. MVCC candidate-index quarantine
+4. MVCC candidate-index authority removal
+5. Heap diagnostics expansion
+6. Shared storage inspector consolidation
+7. MVCC pinned/dirty buffer cache
+8. MVCC attribute-level overflow storage
+9. MVCC subsystem recovery records
+10. Heap internal cleanup phase 1
 ```
 
-### Derby fork-diff classification
+The first two items are audit/governance slices. The candidate-index quarantine and
+authority-removal slices are MVCC modernization slices. After them, execution must
+return to heap/inherited-code diagnostics before adding shared services.
+
+## Phase A — Baseline and fork-diff classification
 
 Status: closed green.
 
-High-risk inherited Derby diffs must be classified before deeper engine work. The gate
-is intentionally narrow: every known high-risk inherited Derby file from the current
-comparison must have a classification row, and the row must describe the surface,
-reason, and next action.
-
-Allowed classifications:
+Before touching more inherited Derby code, DelosDB needs a maintained map of where it
+intentionally diverges from Derby. High-risk inherited Derby diffs are classified as:
 
 ```text
 COMPATIBILITY_PRESERVING
@@ -90,8 +98,7 @@ HARDENING
 INTENTIONAL_REPLACEMENT
 ```
 
-The first fork-diff slice classifies the current high-risk files without modifying Java
-behavior:
+The gate classifies these high-risk files without Java behavior changes:
 
 ```text
 GenericResultSetFactory.java
@@ -108,13 +115,13 @@ NetworkServerControlImpl.java
 DRDAConnThread.java
 ```
 
-### MVCC candidate-index authority audit
+## Phase B — MVCC candidate-index authority audit
 
-Status: current Cycle 0 audit slice.
+Status: closed green.
 
-Every remaining MVCC candidate-index path must be classified before candidate-index
-quarantine, removal, or cleanup work continues. This is an audit/reporting gate only:
-it must not remove code, rename APIs, change read authority, or change Java behavior.
+Every remaining MVCC candidate-index path is classified before quarantine, removal, or
+cleanup work continues. This is an audit/reporting gate only: it must not remove code,
+rename APIs, change read authority, or change Java behavior.
 
 Allowed classifications:
 
@@ -127,57 +134,122 @@ LEGACY_COMPATIBILITY
 STALE_CANDIDATE
 ```
 
-The gate scans the storage API, MVCC implementation, MVCC Derby bridge, Derby heap
-provider diagnostics, and DelosDB MVCC SQL tests for active candidate-index authority
-mentions. Each active source path must have a single classification row. Stale rows,
-duplicate rows, and unclassified active paths fail S0.
+A `NORMAL_SQL_AUTHORITY` row is a quarantine target. In the current green tree, the
+audit is expected to have no active `NORMAL_SQL_AUTHORITY` rows; remaining production
+candidate-index mentions are diagnostics, explicit fallback accounting, legacy
+compatibility, or stale vocabulary.
 
-A NORMAL_SQL_AUTHORITY row is a quarantine target. In the current tree, remaining
-production candidate-index mentions are expected to be diagnostic/parity,
-explicit-fallback, legacy-compatibility, or stale diagnostic naming rather than normal
-SQL read authority.
+## Phase C — MVCC candidate-index quarantine
 
-## Cycle 1 — First balanced execution cycle
+Status: current executable slice.
 
-```text
-4. MVCC candidate-index quarantine
-5. Heap diagnostics expansion
-6. Shared storage inspector consolidation
-```
-
-Cycle 1 may start only after all Cycle 0 audits are green. Do not skip the heap slice.
-
-## Cycle 2 — Authority removal plus heap boundary cleanup
+Candidate indexes must no longer be silently used as normal authority on covered
+current-committed paths. They may remain only as:
 
 ```text
-7. MVCC candidate-index authority removal
-8. Heap/raw-store cleanup gate phase 2
-9. Cross-engine consistency/reporting expansion
+explicit fallback accounting
+diagnostic parity source
+test comparison source
+emergency compatibility seam
 ```
 
-## Cycle 3 — MVCC cache plus heap internal cleanup
+Required behavior:
 
 ```text
-10. MVCC pinned/dirty buffer cache
-11. Heap internal cleanup phase 1
-12. Shared page/cache/allocation abstraction audit
+normal equality reads prefer ordered pages
+normal range reads prefer ordered pages where supported
+candidate fallback counter exists
+candidate fallback counter is zero on covered paths
+explicit diagnostic mode can compare candidate vs ordered
+candidate indexes are not removed yet
+snapshot reads do not use unsafe shortcut
+writer-borrowed reads do not use unsafe shortcut
 ```
 
-## Cycle 4 — Overflow and large-value handling
+The static gate for this phase validates that the authority-audit file has no
+`NORMAL_SQL_AUTHORITY` rows, the focused SQL quarantine test is wired into the MVCC SQL
+integration task, ordered-index authority markers exist at the scan boundary, and the
+legacy diagnostic fallback property remains hard-quarantined.
+
+## Phase D — MVCC candidate-index authority removal
+
+Status: next MVCC slice after quarantine.
+
+Only after quarantine is green should candidate-index authority removal be treated as a
+separate closeout. Candidate structures may remain temporarily for diagnostics,
+migration comparison, or explicit fallback, but normal SQL reads should use ordered
+MVCC pages.
+
+Required behavior:
 
 ```text
-13. MVCC attribute-level overflow storage
-14. Heap overflow/long-row diagnostics
-15. Shared overflow/large-value inspection
+ordered pages are normal SQL index authority
+candidate authority removed or hard-quarantined
+fallback is explicit, counted, and gated
+unique behavior unchanged
+updates/deletes/reopen correct
+read-your-writes still correct
+snapshot semantics unchanged
 ```
 
-## Cycle 5 — Recovery and checkpoint boundaries
+## Phase E — Heap diagnostics expansion
 
-```text
-16. MVCC subsystem recovery records
-17. Heap recovery/logging boundary gate
-18. Shared recovery/checkpoint metadata model
-```
+Status: next heap/inherited-code slice after the candidate-index MVCC pair.
+
+After an MVCC modernization slice, return to inherited heap/Derby code. Expand
+read-only heap diagnostics without changing heap format, raw log format, catalog
+behavior, DRDA behavior, optimizer behavior, or repair semantics.
+
+Diagnostics should cover page counts, allocated/free pages, overflow pages, estimated
+storage size, index/table storage size, deleted/non-deleted row summaries, raw-store
+sanity summaries, and compress before/after stats where available.
+
+Do not skip the heap slice.
+
+## Phase F — Shared storage inspector consolidation
+
+Status: follows heap diagnostics expansion.
+
+Once heap diagnostics and MVCC diagnostics both exist, consolidate the storage inspector
+shape across providers. The common inspection result should expose provider identity,
+container/table identity, page summary, index summary, overflow summary, consistency
+status, diagnostic findings, and read-only metadata.
+
+No repair commands, behavior changes, format changes, SQL syntax, or module merging are
+allowed in this slice unless separately gated.
+
+## Phase G — MVCC pinned/dirty buffer cache
+
+Status: later MVCC infrastructure slice.
+
+Add or strengthen real pinned/dirty MVCC page-cache discipline: pin/unpin tracking,
+dirty-page tracking, flush-list tracking, bounded eviction respecting pins, deterministic
+flush behavior for tests, checksum/generation validation, and reopen correctness.
+
+## Phase H — Attribute-level MVCC overflow storage
+
+Status: later MVCC storage slice.
+
+Large values should spill at the attribute level using overflow descriptors. Small
+attributes remain inline. Multi-attribute rows can mix inline and overflow. Overflow
+chunks must be reusable and inspectable. Heap compatibility remains unaffected.
+
+## Phase I — MVCC subsystem recovery records
+
+Status: later MVCC recovery slice.
+
+Make MVCC recovery metadata explicit for row pages, index pages, overflow pages,
+free-space map changes, transaction outcomes, and checkpoints.
+
+## Phase J — Heap internal cleanup phase 1
+
+Status: later heap/inherited-code cleanup slice.
+
+Only after shared diagnostics and MVCC services mature should inherited heap internals
+be cleaned again. Allowed work includes helper extraction, accidental-coupling reduction,
+removing dead DelosDB-added branches, tightening assertions, adding diagnostics, and
+clarifying page/allocation helper boundaries. Heap page format, raw log format, catalog,
+DRDA, JDBC, and optimizer behavior are not allowed to change in this phase.
 
 ## Decision rules
 
