@@ -997,6 +997,183 @@ tasks.register('delosHeapRawStoreDuplicateClassificationReport') {
 }
 
 
+
+def delosDerbyModuleParityFile = file('gradle/static-analysis/delosdb-derby-module-parity.txt')
+
+def delosDerbyModuleParityDecisions = ['KEEP_DERBY_PEER', 'DELOSDB_EXTENSION'] as Set
+
+def delosLoadDerbyModuleParityRows = {
+    if (!delosDerbyModuleParityFile.exists()) {
+        throw new GradleException('Missing Derby module parity classification file: ' + delosDerbyModuleParityFile)
+    }
+
+    def rows = []
+    int lineNumber = 0
+    delosDerbyModuleParityFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed Derby module parity line ' + lineNumber + ': expected 6 pipe-delimited fields')
+        }
+        if (!delosDerbyModuleParityDecisions.contains(parts[1])) {
+            throw new GradleException('Malformed Derby module parity line ' + lineNumber + ': unknown decision ' + parts[1])
+        }
+        if (!parts[3].startsWith(':delosdb-')) {
+            throw new GradleException('Malformed Derby module parity line ' + lineNumber + ': DelosDB module must be a :delosdb-* project path')
+        }
+        rows << [
+                id          : parts[0],
+                decision    : parts[1],
+                derbyRoot   : parts[2],
+                delosModule : parts[3],
+                artifactRole: parts[4],
+                reason      : parts[5],
+                lineNumber  : lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosDerbyModuleParityStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates Derby product/module parity decisions for cleanup/consolidation work.'
+
+    inputs.file(delosDerbyModuleParityFile)
+    inputs.file('settings.gradle')
+    inputs.file('docs/CLEANUP-CONSOLIDATION.md')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/derby-module-parity-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadDerbyModuleParityRows()
+        def settingsText = file('settings.gradle').getText('UTF-8')
+        def cleanupDoc = file('docs/CLEANUP-CONSOLIDATION.md')
+        def cleanupDocText = cleanupDoc.exists() ? cleanupDoc.getText('UTF-8') : ''
+        def failures = []
+        def ids = [] as Set
+        def modules = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate Derby module parity id: ' + row.id
+            }
+            if (!modules.add(row.delosModule)) {
+                failures << 'Duplicate Derby module parity DelosDB module: ' + row.delosModule
+            }
+            def projectName = row.delosModule.substring(1)
+            if (!settingsText.contains("include '" + projectName + "'")) {
+                failures << 'Derby module parity row references a project missing from settings.gradle: ' + row.delosModule
+            }
+            if (row.decision == 'KEEP_DERBY_PEER' && !row.derbyRoot.startsWith('java/')) {
+                failures << 'KEEP_DERBY_PEER row must name the original Derby java/ source root: ' + row.id
+            }
+            if (row.decision == 'DELOSDB_EXTENSION' && row.derbyRoot != 'none') {
+                failures << 'DELOSDB_EXTENSION row must use derby_source_root=none: ' + row.id
+            }
+        }
+
+        def requiredDerbyPeers = [
+                ':delosdb-engine',
+                ':delosdb-client',
+                ':delosdb-tools',
+                ':delosdb-server',
+                ':delosdb-runner',
+                ':delosdb-optionaltools',
+                ':delosdb-commons',
+                ':delosdb-tests',
+                ':delosdb-pptesting',
+                ':delosdb-storeless',
+                ':delosdb-osgi-stub',
+                ':delosdb-locales',
+                ':delosdb-demos',
+                ':delosdb-buildtools'
+        ]
+        requiredDerbyPeers.each { moduleName ->
+            def row = rows.find { it.delosModule == moduleName }
+            if (row == null) {
+                failures << 'Missing Derby module parity row for ' + moduleName
+            } else if (row.decision != 'KEEP_DERBY_PEER') {
+                failures << 'Original Derby peer module must be classified KEEP_DERBY_PEER: ' + moduleName
+            }
+        }
+
+        def requiredExtensions = [
+                ':delosdb-runtime-api',
+                ':delosdb-annotations',
+                ':delosdb-spi',
+                ':delosdb-storage-io',
+                ':delosdb-storage-api',
+                ':delosdb-derby-store-api',
+                ':delosdb-storage-derby',
+                ':delosdb-storage-bridge',
+                ':delosdb-storage-mvcc'
+        ]
+        requiredExtensions.each { moduleName ->
+            def row = rows.find { it.delosModule == moduleName }
+            if (row == null) {
+                failures << 'Missing DelosDB extension module parity row for ' + moduleName
+            } else if (row.decision != 'DELOSDB_EXTENSION') {
+                failures << 'DelosDB-only module must be classified DELOSDB_EXTENSION: ' + moduleName
+            }
+        }
+
+        def forbiddenDocPhrases = [
+                'These modules may deserve consolidation',
+                'Tools/server/runner/optionaltools module-boundary review',
+                ':delosdb-tools\n:delosdb-runner\n:delosdb-optionaltools\n:delosdb-server'
+        ]
+        forbiddenDocPhrases.each { phrase ->
+            if (cleanupDocText.contains(phrase)) {
+                failures << 'Cleanup doc still contains obsolete consolidation wording: ' + phrase
+            }
+        }
+        if (!cleanupDocText.contains('Do not consolidate these modules as part of cleanup')) {
+            failures << 'Cleanup doc must explicitly preserve Derby peer modules from cleanup consolidation.'
+        }
+        if (!cleanupDocText.contains('delosDerbyModuleParityStaticAnalysis')) {
+            failures << 'Cleanup doc must mention the Derby module parity static gate.'
+        }
+
+        def counts = delosDerbyModuleParityDecisions.collectEntries { decision ->
+            [decision, rows.count { it.decision == decision }]
+        }
+        def reportFile = layout.buildDirectory.file('reports/delosdb/derby-module-parity-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB Derby module parity static analysis')
+            writer.println('==========================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            delosDerbyModuleParityDecisions.sort().each { decision ->
+                writer.println('  ' + decision + ': ' + counts[decision])
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.decision + '] ' + row.delosModule)
+                writer.println('  derby root:    ' + row.derbyRoot)
+                writer.println('  artifact/role: ' + row.artifactRole)
+                writer.println('  reason:        ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Derby module parity checks passed.')
+            } else {
+                writer.println('Derby module parity failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB Derby module parity static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB Derby module parity static analysis passed. Report: {}', reportFile)
+    }
+}
+
 def delosRuntimeArtifactModelFiles = [
         'build.gradle',
         'delosdb-tests/build.gradle',
@@ -1575,5 +1752,5 @@ tasks.register('delosWorkspaceChurnStaticAnalysis') {
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis'
 }

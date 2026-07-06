@@ -1,0 +1,35 @@
+# DelosDB Derby module parity classification.
+# Source baseline: Apache Derby 10.17.1.0 source distribution, java/ tree.
+# Format:
+# id|decision|derby_source_root|delosdb_module|artifact_or_role|reason
+#
+# decision values:
+#   KEEP_DERBY_PEER    DelosDB preserves an original Derby source/artifact boundary.
+#   DELOSDB_EXTENSION  DelosDB-owned extension/split that has no direct Derby source-root peer.
+#
+# This file is not a merge plan. It exists to prevent cleanup/consolidation work from
+# collapsing Derby-compatible product boundaries without evidence.
+
+DERBY-MOD-001|KEEP_DERBY_PEER|java/org.apache.derby.engine|:delosdb-engine|derby.jar|Embedded engine and SQL/catalog/runtime compatibility surface.
+DERBY-MOD-002|KEEP_DERBY_PEER|java/org.apache.derby.client|:delosdb-client|derbyclient.jar|Network client artifact and JDBC client compatibility surface.
+DERBY-MOD-003|KEEP_DERBY_PEER|java/org.apache.derby.tools|:delosdb-tools|derbytools.jar|ij/dblook/sysinfo/tools are a Derby product boundary, not a DelosDB cleanup target.
+DERBY-MOD-004|KEEP_DERBY_PEER|java/org.apache.derby.server|:delosdb-server|derbynet.jar|DRDA network server is a separate Derby product boundary.
+DERBY-MOD-005|KEEP_DERBY_PEER|java/org.apache.derby.runner|:delosdb-runner|derbyrun.jar|Runner/bootstrap entrypoint is a separate Derby product boundary.
+DERBY-MOD-006|KEEP_DERBY_PEER|java/org.apache.derby.optionaltools|:delosdb-optionaltools|derbyoptionaltools.jar|Optional tools are a separate Derby product boundary.
+DERBY-MOD-007|KEEP_DERBY_PEER|java/org.apache.derby.commons|:delosdb-commons|derbyshared.jar|Shared Derby utilities/messages remain an independent artifact boundary.
+DERBY-MOD-008|KEEP_DERBY_PEER|java/org.apache.derby.tests|:delosdb-tests|test module|Inherited and DelosDB-specific compatibility tests remain isolated from product code.
+DERBY-MOD-009|KEEP_DERBY_PEER|java/pptesting|:delosdb-pptesting|test helper module|Package-private inherited tests remain separate from production modules.
+DERBY-MOD-010|KEEP_DERBY_PEER|java/storeless|:delosdb-storeless|development/test module|Storeless compiler/optimizer boot support remains separate.
+DERBY-MOD-011|KEEP_DERBY_PEER|java/stubs|:delosdb-osgi-stub|stub module|Inherited stub surface remains separate from production code.
+DERBY-MOD-012|KEEP_DERBY_PEER|java/locales|:delosdb-locales|locale verification module|Localization resources remain separately verified.
+DERBY-MOD-013|KEEP_DERBY_PEER|java/demo|:delosdb-demos|demo module|Demos remain non-core and separately owned.
+DERBY-MOD-014|KEEP_DERBY_PEER|java/build|:delosdb-buildtools|build helper module|Build helper code remains separated from runtime artifacts.
+DERBY-MOD-015|DELOSDB_EXTENSION|none|:delosdb-runtime-api|runtime seam|DelosDB split for runtime-format and storage-provider integration seams.
+DERBY-MOD-016|DELOSDB_EXTENSION|none|:delosdb-annotations|annotation seam|DelosDB-owned annotations used by extension APIs.
+DERBY-MOD-017|DELOSDB_EXTENSION|none|:delosdb-spi|extension SPI|DelosDB-owned experimental SPI surface.
+DERBY-MOD-018|DELOSDB_EXTENSION|none|:delosdb-storage-io|storage IO seam|DelosDB-owned storage I/O helpers.
+DERBY-MOD-019|DELOSDB_EXTENSION|none|:delosdb-storage-api|storage provider API|DelosDB-owned storage diagnostics/provider API seam.
+DERBY-MOD-020|DELOSDB_EXTENSION|none|:delosdb-derby-store-api|inherited store API split|DelosDB split for inherited Derby store API exposure.
+DERBY-MOD-021|DELOSDB_EXTENSION|none|:delosdb-storage-derby|Derby heap/raw-store compatibility|DelosDB-owned module boundary for inherited Derby storage implementation.
+DERBY-MOD-022|DELOSDB_EXTENSION|none|:delosdb-storage-bridge|storage bridge|DelosDB-owned Derby access-method to storage-provider bridge.
+DERBY-MOD-023|DELOSDB_EXTENSION|none|:delosdb-storage-mvcc|MVCC engine|DelosDB-owned opt-in MVCC storage engine.

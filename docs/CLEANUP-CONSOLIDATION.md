@@ -65,25 +65,35 @@ tests
 
 These boundaries are useful because they separate compatibility inheritance from DelosDB-owned storage evolution.
 
-## Module boundaries to review later
+## Derby product/module parity to preserve
 
-These modules may deserve consolidation or sharper ownership after storage cleanup is stable:
+Do not consolidate these modules as part of cleanup:
 
 ```text
 :delosdb-tools
+:delosdb-server
 :delosdb-runner
 :delosdb-optionaltools
-:delosdb-server
+:delosdb-client
+:delosdb-commons
+:delosdb-engine
 ```
 
-Do not merge them just to reduce module count. Review them with concrete questions:
+They correspond to original Derby source/product boundaries such as:
 
 ```text
-Do they publish separate Derby-compatible runtime artifacts?
-Do they need separate module descriptors?
-Do they share generated resources or task wiring that causes cycles?
-Can runtime artifact modeling remove the pain without merging source sets?
+java/org.apache.derby.tools
+java/org.apache.derby.server
+java/org.apache.derby.runner
+java/org.apache.derby.optionaltools
+java/org.apache.derby.client
+java/org.apache.derby.commons
+java/org.apache.derby.engine
 ```
+
+Cleanup may improve their Gradle wiring, generated-resource handling, or runtime artifact modeling, but it should not collapse them into a single source set. A merge is allowed only if a later design explicitly proves the boundary is no longer Derby-compatible or no longer product-visible.
+
+The maintained parity classification is `gradle/static-analysis/delosdb-derby-module-parity.txt`, guarded by `delosDerbyModuleParityStaticAnalysis`.
 
 ## Cleanup priorities
 
@@ -187,7 +197,7 @@ Recommended order:
 3. Inherited storage dead-code and duplicate-code classification
 4. Heap/raw-store diagnostic helper review
 5. MVCC bridge policy extraction review
-6. Tools/server/runner/optionaltools module-boundary review
+6. Derby module-parity review for any future module-boundary change
 ```
 
 Each slice should produce either:
@@ -198,6 +208,22 @@ a static gate improvement
 a documentation update
 a classification report with no source behavior change
 ```
+
+
+## Cleanup/consolidation closeout
+
+This phase is considered closed for now after the following structural gates are green:
+
+```text
+delosModuleDependencyBoundaryStaticAnalysis
+delosOverlayCleanupScriptStaticAnalysis
+delosWorkspaceChurnStaticAnalysis
+delosDerbyModuleParityStaticAnalysis
+delosDeadCodeCandidateReport
+delosHeapRawStoreDuplicateClassificationReport
+```
+
+The exit decision is intentionally conservative: the repo now has reports and guards for module boundaries, one-shot overlay scripts, workspace churn, inherited duplicate classification, and Derby module parity. Future work should return to feature or correctness slices rather than continuing broad cleanup.
 
 ## Anti-goals for this phase
 
