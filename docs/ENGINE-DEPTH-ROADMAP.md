@@ -3,7 +3,7 @@
 This roadmap opens the next storage-engine depth pass after the Phase A-J balanced
 storage modernization roadmap and the two post-closeout tradeoff hardening audits.
 
-Execution state: specified; no implementation changes are made by the roadmap-contract overlay.
+Execution state: backup/restore sidecar verification implementation slice in progress.
 
 ## North star
 
@@ -47,7 +47,7 @@ would make recovery reasoning misleading.
 
 ## Micro-slice 0 — Backup/restore sidecar verification
 
-Execution state: next implementation slice.
+Execution state: implementation slice delivered by delosdb-backup-restore-sidecar-verification-overlay.zip.
 
 Overlay:
 
@@ -94,6 +94,14 @@ Commit message:
 
 ```text
 Verify MVCC sidecar backup and restore coverage
+```
+
+Implementation note:
+
+```text
+Derby's inherited backup path now copies the DelosDB provider-owned delos_mvcc sidecar directory into the backup image when it exists.
+Restore from backup replaces stale target delos_mvcc sidecar state with the backup image, or removes stale target sidecars when restoring a heap-only/older backup.
+SQL integration verifies both a delos_mvcc backup/createFrom/reopen round trip and a heap-only backup/restore compatibility path.
 ```
 
 ## Micro-slice 1 — DERBY-7107 review/apply-if-still-valid

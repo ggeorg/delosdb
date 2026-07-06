@@ -5075,8 +5075,180 @@ tasks.register('delosNextEngineDepthRoadmapContractsStaticAnalysis') {
     }
 }
 
+
+def delosBackupRestoreSidecarVerificationFile = file('gradle/static-analysis/delosdb-backup-restore-sidecar-verification.txt')
+
+def delosLoadBackupRestoreSidecarVerificationRows = {
+    if (!delosBackupRestoreSidecarVerificationFile.exists()) {
+        throw new GradleException('Missing backup/restore sidecar verification file: ' + delosBackupRestoreSidecarVerificationFile)
+    }
+    def rows = []
+    delosBackupRestoreSidecarVerificationFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed backup/restore sidecar verification row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [
+                id        : parts[0].trim(),
+                path      : parts[1].trim(),
+                category  : parts[2].trim(),
+                marker    : parts[3].trim(),
+                reason    : parts[4].trim(),
+                lineNumber: index + 1
+        ]
+    }
+    rows
+}
+
+tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates DelosDB MVCC sidecar backup/restore coverage and compatibility gates.'
+
+    inputs.file(delosBackupRestoreSidecarVerificationFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java')
+    inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.java')
+    inputs.file('delosdb-tests/build.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/backup-restore-sidecar-verification-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadBackupRestoreSidecarVerificationRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate backup/restore sidecar verification id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Backup/restore sidecar proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Backup/restore sidecar proof marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 50) {
+                failures << 'Backup/restore sidecar reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'ROADMAP_STATUS',
+                'BACKUP_SIDECAR_COPY',
+                'RESTORE_SIDECAR_COPY',
+                'RESTORE_SIDECAR_REPLACE',
+                'RESTORE_SIDECAR_PRIVILEGE',
+                'SQL_BACKUP_RESTORE_TEST',
+                'SQL_HEAP_COMPATIBILITY_TEST',
+                'SQL_RESTORE_GATE',
+                'TEST_SUITE_WIRING'
+        ].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'Backup/restore sidecar verification is missing category: ' + required
+            }
+        }
+
+        def rawStore = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java').getText('UTF-8')
+        if (!rawStore.contains('backupDelosMvccSidecars(backupcopy);')) {
+            failures << 'RawStore backup path must call backupDelosMvccSidecars after data backup'
+        }
+        if (!rawStore.contains('restoreDelosMvccSidecarsFromBackup(backupPath);')) {
+            failures << 'RawStore restore path must call restoreDelosMvccSidecarsFromBackup'
+        }
+        if (!rawStore.contains('privCopyDirectory(mvccDirectory, backupMvccDirectory)')) {
+            failures << 'RawStore backup path must copy delos_mvcc sidecars into the backup image'
+        }
+        if (!rawStore.contains('privCopyDirectory(backupMvccDirectory, dbMvccDirectory)')) {
+            failures << 'RawStore restore path must copy delos_mvcc sidecars from the backup image'
+        }
+        if (!rawStore.contains('privDeleteAll(dbMvccDirectory)')) {
+            failures << 'RawStore restore path must remove stale target delos_mvcc sidecars before restore'
+        }
+        if (rawStore.contains('import io.github.ggeorg.delosdb.storage.mvcc.MvccStorageNames')) {
+            failures << 'Inherited Derby raw-store backup code must not depend directly on the MVCC module'
+        }
+
+        def testText = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.java').getText('UTF-8')
+        [
+                'syscs_util.syscs_backup_database',
+                ';createFrom=',
+                'delos_mvcc',
+                'inherited-store',
+                'testHeapOnlyBackupDoesNotCreateMvccSidecars',
+                'testBackupAndCreateFromRestoreIncludesMvccSidecars'
+        ].each { markerText ->
+            if (!testText.contains(markerText)) {
+                failures << 'MVCC backup/restore SQL test is missing marker: ' + markerText
+            }
+        }
+
+        def buildText = file('delosdb-tests/build.gradle').getText('UTF-8')
+        if (!buildText.contains('MvccSqlBackupRestoreSidecarTest.class')) {
+            failures << 'runDelosMvccSqlIntegrationTest must include MvccSqlBackupRestoreSidecarTest'
+        }
+
+        def roadmap = file('docs/ENGINE-DEPTH-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing docs/ENGINE-DEPTH-ROADMAP.md'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Micro-slice 0 — Backup/restore sidecar verification',
+                    'Execution state: implementation slice delivered by delosdb-backup-restore-sidecar-verification-overlay.zip.',
+                    'Derby\'s inherited backup path now copies the DelosDB provider-owned delos_mvcc sidecar directory into the backup image when it exists.',
+                    'Restore from backup replaces stale target delos_mvcc sidecar state with the backup image',
+                    'SQL integration verifies both a delos_mvcc backup/createFrom/reopen round trip and a heap-only backup/restore compatibility path.'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Engine-depth roadmap is missing backup/restore sidecar marker: ' + markerText
+                }
+            }
+            if (roadmapText.contains('Status: current')) {
+                failures << 'Engine-depth roadmap must not use Status: current because the Phase A-J closeout gate treats that as reopening the closed roadmap'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/backup-restore-sidecar-verification-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB backup/restore sidecar verification static analysis')
+            writer.println('================================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Backup/restore sidecar verification static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB backup/restore sidecar verification static analysis passed. Report: ' + reportFile
+    }
+}
+
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis'
 }

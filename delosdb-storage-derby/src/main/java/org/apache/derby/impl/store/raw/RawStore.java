@@ -100,6 +100,7 @@ import org.apache.derby.iapi.store.replication.slave.SlaveFactory;
 public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSupportable
 {
 	private static final String BACKUP_HISTORY = "BACKUP.HISTORY";
+    private static final String DELOS_MVCC_STORAGE_DIRECTORY_NAME = "delos_mvcc";
 	protected TransactionFactory	xactFactory;
 	protected DataFactory			dataFactory;
 	protected LogFactory			logFactory;
@@ -148,6 +149,7 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
     private static final int STORAGE_FILE_GET_CANONICALPATH_ACTION = 16;
     private static final int COPY_STORAGE_FILE_TO_STORAGE_ACTION = 17;
     private static final int STORAGE_FILE_DELETE_ACTION = 18;
+    private static final int STORAGE_FILE_DELETE_ALL_ACTION = 19;
     private static final int README_FILE_OUTPUTSTREAM_WRITER_ACTION = 19;
 
 	public RawStore() {
@@ -985,6 +987,8 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
                    MessageId.STORE_DATA_SEG_BACKUP_COMPLETED,
                    getFilePath(segBackup)));
 
+            backupDelosMvccSidecars(backupcopy);
+
 
             // copy the log that got generated after the backup started to
 			// backup location and tell the logfactory that backup has come 
@@ -1169,6 +1173,70 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 	}
 
 	
+
+    /**
+     * Copy DelosDB MVCC provider-owned sidecars into Derby online backups.
+     *
+     * <p>Derby's inherited backup flow copies seg0, log, jars, and the backup
+     * history explicitly. DelosDB MVCC sidecar state lives in a sibling
+     * database directory named {@code delos_mvcc}, so it must be included here
+     * or a backup of a database with delos_mvcc tables can restore with catalog
+     * rows but missing provider-owned durable state.</p>
+     */
+    private void backupDelosMvccSidecars(File backupcopy)
+            throws StandardException
+    {
+        StorageFile mvccDirectory = storageFactory.newStorageFile(DELOS_MVCC_STORAGE_DIRECTORY_NAME);
+        if (!privExists(mvccDirectory)) {
+            return;
+        }
+
+        File backupMvccDirectory = new File(backupcopy, DELOS_MVCC_STORAGE_DIRECTORY_NAME);
+        if (privExists(backupMvccDirectory)) {
+            privRemoveDirectory(backupMvccDirectory);
+        }
+        if (!privCopyDirectory(mvccDirectory, backupMvccDirectory)) {
+            throw StandardException.newException(
+                    SQLState.RAWSTORE_ERROR_COPYING_FILE,
+                    mvccDirectory,
+                    backupMvccDirectory);
+        }
+    }
+
+    /**
+     * Restore DelosDB MVCC provider-owned sidecars alongside Derby data/log state.
+     *
+     * <p>If the backup contains sidecars, replace the target sidecar directory
+     * with the backup copy. If the backup does not contain sidecars, remove any
+     * target sidecar directory left over from the database being restored over;
+     * otherwise stale provider state could survive a restore of a heap-only or
+     * older backup.</p>
+     */
+    private void restoreDelosMvccSidecarsFromBackup(String backupPath)
+            throws StandardException
+    {
+        File backupMvccDirectory = new File(backupPath, DELOS_MVCC_STORAGE_DIRECTORY_NAME);
+        StorageFile dbMvccDirectory = storageFactory.newStorageFile(DELOS_MVCC_STORAGE_DIRECTORY_NAME);
+
+        if (privExists(dbMvccDirectory) && !privDeleteAll(dbMvccDirectory)) {
+            throw StandardException.newException(
+                    SQLState.UNABLE_TO_COPY_FILE_FROM_BACKUP,
+                    backupMvccDirectory,
+                    dbMvccDirectory);
+        }
+
+        if (!privExists(backupMvccDirectory)) {
+            return;
+        }
+
+        if (!privCopyDirectory(backupMvccDirectory, dbMvccDirectory)) {
+            throw StandardException.newException(
+                    SQLState.UNABLE_TO_COPY_FILE_FROM_BACKUP,
+                    backupMvccDirectory,
+                    dbMvccDirectory);
+        }
+    }
+
 	/*
 	 * Restore any remaining files from backup that are not 
 	 * restored by the individual factories.  
@@ -1197,6 +1265,8 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
                          backupJarDir, dbJarDir);
 			}
 		}
+
+		restoreDelosMvccSidecarsFromBackup(backupPath);
 
 		// copy the backup history file from the backup. 
 		StorageFile dbHistoryFile = 
@@ -2448,6 +2518,23 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
         }
     }
 
+    private synchronized boolean privDeleteAll(StorageFile file)
+    {
+        actionCode = STORAGE_FILE_DELETE_ALL_ACTION;
+        actionStorageFile = file;
+
+        try
+        {
+            Object ret = run();
+            return ((Boolean) ret).booleanValue();
+        }
+        catch( Exception pae) { return false;} // does not throw an exception
+        finally
+        {
+            actionStorageFile = null;
+        }
+    }
+
     private synchronized boolean privMkdirs(File file) throws IOException
     {
         actionCode = REGULAR_FILE_MKDIRS_ACTION;
@@ -2708,6 +2795,9 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 
         case STORAGE_FILE_DELETE_ACTION:
             return actionStorageFile.delete();
+
+        case STORAGE_FILE_DELETE_ALL_ACTION:
+            return actionStorageFile.deleteAll();
 
         case REGULAR_FILE_MKDIRS_ACTION:
             // SECURITY PERMISSION - OP4
