@@ -2518,8 +2518,251 @@ tasks.register('delosMvccCandidateIndexAuthorityRemovalStaticAnalysis') {
     }
 }
 
+
+def delosHeapDiagnosticsExpansionFile = file('gradle/static-analysis/delosdb-heap-diagnostics-expansion.txt')
+
+def delosHeapDiagnosticsExpansionContracts = [
+        'READ_ONLY_CONTRACT',
+        'STORAGE_SIZE_SUMMARY',
+        'PAGE_SUMMARY',
+        'OVERFLOW_SUMMARY',
+        'RAWSTORE_SUMMARY',
+        'COMPRESS_ESTIMATE',
+        'API_GATE',
+        'PROVIDER_IMPLEMENTATION',
+        'INDEX_SUMMARY',
+        'COMPATIBILITY_BOUNDARY',
+        'SQL_INTEGRATION_GATE',
+        'READ_ONLY_TEST_GATE',
+        'INDEX_SUMMARY_TEST_GATE',
+        'TEST_SUITE_WIRING',
+        'ROADMAP_GATE'
+] as Set
+
+def delosLoadHeapDiagnosticsExpansionRows = {
+    if (!delosHeapDiagnosticsExpansionFile.exists()) {
+        throw new GradleException('Missing heap diagnostics expansion file: ' + delosHeapDiagnosticsExpansionFile)
+    }
+
+    def rows = []
+    int lineNumber = 0
+    delosHeapDiagnosticsExpansionFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 5) {
+            throw new GradleException('Malformed heap diagnostics expansion line ' + lineNumber + ': expected 5 pipe-delimited fields')
+        }
+        if (!delosHeapDiagnosticsExpansionContracts.contains(parts[2])) {
+            throw new GradleException('Malformed heap diagnostics expansion line ' + lineNumber + ': unknown contract ' + parts[2])
+        }
+        rows << [
+                id        : parts[0],
+                path      : parts[1],
+                contract  : parts[2],
+                marker    : parts[3],
+                reason    : parts[4],
+                lineNumber: lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosHeapDiagnosticsExpansionStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates read-only Derby heap diagnostics expansion and its compatibility gate.'
+
+    inputs.file(delosHeapDiagnosticsExpansionFile)
+    inputs.files(
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosHeapStorageDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/provider/DerbyHeapStorageDiagnostics.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsExpansionTest.java',
+            'delosdb-tests/build.gradle',
+            'docs/STORAGE-ROADMAP.md'
+    )
+    outputs.file(layout.buildDirectory.file('reports/delosdb/heap-diagnostics-expansion-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadHeapDiagnosticsExpansionRows()
+        def failures = []
+        def ids = [] as Set
+        def contracts = rows.groupBy { it.contract }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate heap diagnostics expansion id: ' + row.id
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Heap diagnostics expansion proof-point path does not exist: ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Heap diagnostics expansion marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 40) {
+                failures << 'Heap diagnostics expansion reason is too thin for ' + row.id
+            }
+        }
+
+        delosHeapDiagnosticsExpansionContracts.each { contract ->
+            if (!contracts.containsKey(contract)) {
+                failures << 'Missing heap diagnostics expansion contract row for ' + contract
+            }
+        }
+
+        def diagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosHeapStorageDiagnostics.java')
+        if (diagnosticsFile.exists()) {
+            def diagnosticsText = diagnosticsFile.getText('UTF-8')
+            [
+                    'boolean readOnly',
+                    'long tableContainerBytes',
+                    'long indexContainerBytes',
+                    'long totalStorageBytes',
+                    'long estimatedPageCount',
+                    'long allocatedPageCount',
+                    'long freePageCount',
+                    'long overflowPageCount',
+                    'long reusablePageCount',
+                    'long estimatedCompressBeforeBytes',
+                    'long estimatedCompressAfterBytes',
+                    'String rawStoreSanitySummary',
+                    'List<String> observations'
+            ].each { marker ->
+                if (!diagnosticsText.contains(marker)) {
+                    failures << 'DelosHeapStorageDiagnostics is missing required diagnostic field marker: ' + marker
+                }
+            }
+            if (!diagnosticsText.contains('public boolean clean()')) {
+                failures << 'DelosHeapStorageDiagnostics must keep a clean() summary accessor'
+            }
+        }
+
+        def providerFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/provider/DerbyHeapStorageDiagnostics.java')
+        if (providerFile.exists()) {
+            def providerText = providerFile.getText('UTF-8')
+            [
+                    'heapStorageDiagnosticsForTesting',
+                    'DerbyHeapContainerFiles.snapshot',
+                    'List<Long> indexIds',
+                    'estimatedBeforeCompressBytes',
+                    'estimatedAfterCompressBytes',
+                    'heap diagnostics are read-only',
+                    'heap page format is Derby-compatible and unchanged',
+                    'raw log format is Derby-compatible and unchanged',
+                    'catalog behavior is Derby-compatible and unchanged'
+            ].each { marker ->
+                if (!providerText.contains(marker)) {
+                    failures << 'Derby heap diagnostics provider is missing required marker: ' + marker
+                }
+            }
+            [
+                    'Files.write',
+                    'Files.delete',
+                    'Files.createFile',
+                    'Files.createDirectories',
+                    'RandomAccessFile',
+                    'FileOutputStream',
+                    'OutputStream',
+                    'StandardOpenOption.WRITE',
+                    'StandardOpenOption.APPEND'
+            ].each { forbidden ->
+                if (providerText.contains(forbidden)) {
+                    failures << 'Derby heap diagnostics provider must remain read-only; forbidden marker found: ' + forbidden
+                }
+            }
+        }
+
+        def testFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsExpansionTest.java')
+        if (testFile.exists()) {
+            def testText = testFile.getText('UTF-8')
+            [
+                    'testHeapDiagnosticsExposeReadOnlyStorageSummary',
+                    'create table heap_diag_t',
+                    'create index heap_diag_name_idx',
+                    'DelosStorageDiagnosticsRegistry.inspectHeapStorage',
+                    'diagnostics should not rewrite heap table container',
+                    'diagnostics should not rewrite heap index container',
+                    'heap table diagnostics must remain read-only across reopen',
+                    'expected estimated heap page count',
+                    'expected raw-store sanity summary',
+                    'expected clean heap storage diagnostics'
+            ].each { marker ->
+                if (!testText.contains(marker)) {
+                    failures << 'Heap diagnostics expansion test is missing required marker: ' + marker
+                }
+            }
+        }
+
+        def buildFile = file('delosdb-tests/build.gradle')
+        if (buildFile.exists()) {
+            def buildText = buildFile.getText('UTF-8')
+            if (!buildText.contains('HeapDiagnosticsExpansionTest.class')) {
+                failures << 'runDelosMvccSqlIntegrationTest must include HeapDiagnosticsExpansionTest'
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing storage roadmap documenting heap diagnostics expansion'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Phase D — MVCC candidate-index authority removal',
+                    'Status: closed green.',
+                    'Phase E — Heap diagnostics expansion',
+                    'Status: current executable heap/inherited-code slice after green candidate-index authority removal.',
+                    'read-only heap diagnostics without changing heap format',
+                    'Do not skip the heap slice',
+                    'Phase F — Shared storage inspector consolidation'
+            ].each { marker ->
+                if (!roadmapText.contains(marker)) {
+                    failures << 'Storage roadmap is missing heap diagnostics expansion marker: ' + marker
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/heap-diagnostics-expansion-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB heap diagnostics expansion static analysis')
+            writer.println('=================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println()
+            delosHeapDiagnosticsExpansionContracts.sort().each { contract ->
+                writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.contract + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Heap diagnostics expansion proof points validated.')
+            } else {
+                writer.println('Validation failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Heap diagnostics expansion static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB heap diagnostics expansion static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis'
 }

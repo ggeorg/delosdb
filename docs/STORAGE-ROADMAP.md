@@ -173,7 +173,7 @@ legacy diagnostic fallback property remains hard-quarantined.
 
 ## Phase D — MVCC candidate-index authority removal
 
-Status: current executable slice after green quarantine.
+Status: closed green.
 
 Only after quarantine is green should candidate-index authority removal be treated as a
 separate closeout. Candidate structures may remain temporarily for diagnostics,
@@ -200,7 +200,7 @@ diagnostics until the later diagnostic-renaming cleanup.
 
 ## Phase E — Heap diagnostics expansion
 
-Status: next heap/inherited-code slice after the candidate-index MVCC pair.
+Status: current executable heap/inherited-code slice after green candidate-index authority removal.
 
 After an MVCC modernization slice, return to inherited heap/Derby code. Expand
 read-only heap diagnostics without changing heap format, raw log format, catalog
@@ -214,7 +214,7 @@ Do not skip the heap slice.
 
 ## Phase F — Shared storage inspector consolidation
 
-Status: follows heap diagnostics expansion.
+Status: next shared-service slice after heap diagnostics expansion is green.
 
 Once heap diagnostics and MVCC diagnostics both exist, consolidate the storage inspector
 shape across providers. The common inspection result should expose provider identity,
