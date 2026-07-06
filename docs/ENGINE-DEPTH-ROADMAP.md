@@ -1,0 +1,560 @@
+# DelosDB Engine-Depth Roadmap
+
+This roadmap opens the next storage-engine depth pass after the Phase A-J balanced
+storage modernization roadmap and the two post-closeout tradeoff hardening audits.
+
+Execution state: specified; no implementation changes are made by the roadmap-contract overlay.
+
+## North star
+
+```text
+Preserve Derby compatibility.
+Do not preserve Derby internals for their own sake.
+```
+
+DelosDB remains a modern Derby-compatible engine. Old-compatible SQL, JDBC, DRDA,
+catalog, heap, and durable-format behavior must keep running. Internals may evolve
+only behind explicit gates.
+
+## Standing rules
+
+```text
+Do not build a parallel optimizer statistics truth source.
+Do not treat recovery-record metadata as recovery replay.
+Do not treat a pinned/dirty cache boundary as a complete buffer manager.
+Do not extract shared services until heap and MVCC both have concrete proof points.
+Do not add benchmarks to S0 when they are nondeterministic or long-running.
+Do not change Derby heap page format, raw log format, catalog behavior, DRDA behavior, or module parity without a specific compatibility gate.
+```
+
+## Execution order
+
+```text
+0. Backup/restore sidecar verification micro-slice
+1. DERBY-7107 review/apply-if-still-valid micro-slice
+2. Phase K — MVCC statistics and Derby optimizer/cost integration
+3. Phase L — MVCC recovery replay engine
+4. Phase M — MVCC buffer manager phase 2
+5. Purge daemon scheduling micro-slice
+6. Phase N — Heap cleanup phase 2 and fork-diff expansion
+7. Phase O — Shared-service extraction audit
+8. Phase P — Performance, concurrency, and external validation closeout
+```
+
+The first implementation slice after this contract should be backup/restore sidecar
+verification. This comes before recovery replay because unrestorable sidecar state
+would make recovery reasoning misleading.
+
+## Micro-slice 0 — Backup/restore sidecar verification
+
+Execution state: next implementation slice.
+
+Overlay:
+
+```text
+delosdb-backup-restore-sidecar-verification-overlay.zip
+```
+
+Goal:
+Verify that DelosDB backup/restore flows include, restore, and validate MVCC sidecar
+state introduced by the page-volume and durable MVCC storage work.
+
+Required behavior:
+
+```text
+MVCC sidecar files are included in backup manifests or explicitly rejected as unsupported
+restore recreates the sidecar layout required by MVCC reopen
+backup/restore verification detects missing sidecar state
+backup/restore verification detects stale or mismatched sidecar state
+heap-only backup behavior remains Derby-compatible
+mixed heap + MVCC backup behavior is explicit and tested
+```
+
+Not allowed:
+
+```text
+no page-format changes
+no raw-log format changes
+no catalog behavior changes
+no DRDA behavior changes
+no repair commands disguised as backup
+no silent omission of provider-owned sidecar state
+```
+
+Gate:
+
+```text
+./gradlew delosBackupRestoreSidecarVerificationStaticAnalysis
+./gradlew s0CloseoutVerification
+./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
+./gradlew :delosdb-storage-derby:check :delosdb-storage-mvcc:check
+```
+
+Commit message:
+
+```text
+Verify MVCC sidecar backup and restore coverage
+```
+
+## Micro-slice 1 — DERBY-7107 review/apply-if-still-valid
+
+Execution state: specified.
+
+Overlay:
+
+```text
+delosdb-derby-7107-review-overlay.zip
+```
+
+Goal:
+Review the DERBY-7107 patch against DelosDB's current inherited Derby file shape and
+apply it only if still valid, compatibility-preserving, and covered by focused tests.
+
+Required behavior:
+
+```text
+patch provenance is documented
+modified inherited file receives or updates fork-diff classification
+focused regression test covers the DERBY-7107 behavior
+default Derby-compatible behavior remains unchanged except for the validated bug fix
+```
+
+Not allowed:
+
+```text
+no blind patch import
+no broad inherited-code cleanup piggybacking on the patch
+no catalog behavior change unless the Derby issue explicitly requires and tests it
+no DRDA/JDBC behavior change outside the issue scope
+```
+
+Gate:
+
+```text
+./gradlew delosDerby7107ReviewStaticAnalysis
+./gradlew delosDerbyForkDiffClassificationStaticAnalysis
+./gradlew s0CloseoutVerification
+```
+
+Commit message:
+
+```text
+Review DERBY-7107 against DelosDB fork
+```
+
+## Phase K — MVCC statistics and Derby optimizer/cost integration
+
+Execution state: specified.
+
+Overlay:
+
+```text
+delosdb-mvcc-statistics-optimizer-cost-integration-overlay.zip
+```
+
+Goal:
+Feed MVCC storage statistics into Derby's existing optimizer/cost path through the
+StoreCostController seam without creating a second optimizer truth source.
+
+Required behavior:
+
+```text
+MVCC physical statistics are exposed through the DelosDB storage statistics boundary
+MvccStoreCostController maps MVCC statistics into Derby StoreCostController estimates
+SYSSTATISTICS and existing Derby update-statistics semantics remain the optimizer-facing truth path
+logical-row-identity invariant check proves ordered entries reference rowKeys
+row-count, version-count, chain-depth, and index-entry stats are available for later benchmarks
+provider-cost override remains explicit, opt-in, and non-default until validated
+```
+
+Not allowed:
+
+```text
+no parallel optimizer statistics channel
+no default Derby optimizer behavior change without a compatibility gate
+no catalog fork that bypasses SYSSTATISTICS semantics
+no MVCC-only optimizer shortcut invisible to Derby costing hooks
+no candidate-index authority revival
+```
+
+Tests:
+
+```text
+MVCC stats report row count, version count, chain depth, and index entry count
+Derby optimizer consumes MVCC estimates only through the cost-controller seam
+logical-row-identity invariant fails on ordered entry / rowKey mismatch
+candidate-index fallback remains non-authoritative
+heap optimizer behavior remains unchanged
+```
+
+Gate:
+
+```text
+./gradlew delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis
+./gradlew s0CloseoutVerification
+./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
+./gradlew :delosdb-storage-bridge:check :delosdb-storage-mvcc:check
+```
+
+Commit message:
+
+```text
+Integrate MVCC statistics with Derby optimizer costing
+```
+
+## Phase L — MVCC recovery replay engine
+
+Execution state: specified.
+
+Overlay:
+
+```text
+delosdb-mvcc-recovery-replay-engine-overlay.zip
+```
+
+Goal:
+Turn subsystem recovery records into an actual replay engine that converges after
+adversarial crash and reopen scenarios.
+
+Required behavior:
+
+```text
+row-page redo replay is idempotent
+index-page redo replay is idempotent
+overflow-page redo replay is idempotent
+free-space-map redo replay is idempotent
+transaction-outcome replay is idempotent
+checkpoint restore chooses a consistent replay start boundary
+cross-subsystem atomicity converges when crash occurs between subsystem redo applications
+fault injection supports arbitrary WAL offsets, truncated records, torn sidecar rewrites, and duplicate replay
+```
+
+Not allowed:
+
+```text
+no repair-by-scanning as substitute for replay correctness
+no replay path that depends on candidate-index authority
+no silent ignore of torn/truncated records
+no heap raw-log behavior changes
+no Derby catalog or DRDA changes
+```
+
+Tests:
+
+```text
+insert/update/delete crash and reopen
+index redo replay after partial page mutation
+overflow redo replay after partial large-value update
+free-space map replay after allocation and reuse
+transaction outcome replay after commit/abort boundary interruption
+cross-subsystem atomicity crash between row/index/overflow/FSM replay steps
+arbitrary WAL-offset fault injection: truncate, duplicate, and torn rewrite cases
+```
+
+Gate:
+
+```text
+./gradlew delosMvccRecoveryReplayEngineStaticAnalysis
+./gradlew s0CloseoutVerification
+./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
+./gradlew :delosdb-storage-mvcc:check
+```
+
+Commit message:
+
+```text
+Add MVCC recovery replay engine
+```
+
+## Phase M — MVCC buffer manager phase 2
+
+Execution state: specified.
+
+Overlay:
+
+```text
+delosdb-mvcc-buffer-manager-phase2-overlay.zip
+```
+
+Goal:
+Move from a pinned/dirty cache boundary to a real bounded buffer manager with WAL-aware
+flush discipline, checkpoint interaction, and fsync batching.
+
+Required behavior:
+
+```text
+pin/unpin remains JMM-safe under contention
+bounded eviction chooses only evictable pages
+WAL-before-flush invariant prevents dirty page publication before covering log records are forced
+dirty-page flush scheduling integrates with checkpoints
+group commit batches compatible fsync work
+flush ordering is deterministic enough for tests and observable diagnostics
+Phase L recovery replay harness remains a standing gate for buffer-manager changes
+```
+
+Not allowed:
+
+```text
+no dirty page reaches disk before its covering WAL/sidecar record is durable
+no eviction of pinned pages
+no checkpoint metadata that lies about unflushed dirty pages
+no group-commit batching that changes commit visibility semantics
+no heap page-format or raw-log changes
+```
+
+Tests:
+
+```text
+pin prevents eviction under concurrent readers and writers
+unpin allows eviction
+dirty page enters flush scheduling
+WAL-before-flush violation is detected by a fault-injection test
+group commit reduces forced-write count under batched commits without changing visibility
+checkpoint/reopen remains clean under buffer pressure
+Phase L recovery replay tests rerun after buffer-manager changes
+```
+
+Gate:
+
+```text
+./gradlew delosMvccBufferManagerPhase2StaticAnalysis
+./gradlew s0CloseoutVerification
+./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
+./gradlew :delosdb-storage-mvcc:check
+```
+
+Commit message:
+
+```text
+Add MVCC buffer manager flush discipline
+```
+
+## Micro-slice 5 — Purge daemon scheduling
+
+Execution state: specified.
+
+Overlay:
+
+```text
+delosdb-mvcc-purge-daemon-scheduling-overlay.zip
+```
+
+Goal:
+Replace purely opportunistic purge behavior with a safe purge scheduler that cooperates
+with long readers, checkpoints, and buffer pressure.
+
+Required behavior:
+
+```text
+purge daemon observes oldest active snapshot
+purge daemon does not remove versions visible to long readers
+purge scheduling can be paused for tests
+purge progress is observable through diagnostics
+checkpoint and buffer-manager paths can request purge without violating visibility
+```
+
+Not allowed:
+
+```text
+no background thread that makes tests nondeterministic without a test control
+no purge of versions visible to active snapshots
+no heap behavior changes
+no SQL syntax changes
+```
+
+Tests:
+
+```text
+long reader blocks unsafe purge
+completed reader allows purge
+purge cooperates with checkpoint and buffer pressure
+purge progress counter advances deterministically under test control
+reopen after purge remains correct
+```
+
+Gate:
+
+```text
+./gradlew delosMvccPurgeDaemonSchedulingStaticAnalysis
+./gradlew s0CloseoutVerification
+./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
+./gradlew :delosdb-storage-mvcc:check
+```
+
+Commit message:
+
+```text
+Add MVCC purge daemon scheduling gate
+```
+
+## Phase N — Heap cleanup phase 2 and fork-diff expansion
+
+Execution state: specified.
+
+Overlay:
+
+```text
+delosdb-heap-cleanup-phase2-forkdiff-overlay.zip
+```
+
+Goal:
+Continue inherited heap/raw-store cleanup behind compatibility gates and expand the
+fork-diff classification beyond the initial high-risk file set when touched files justify it.
+
+Required behavior:
+
+```text
+classify-as-you-clean expands inherited Derby diff coverage
+heap/raw-store helper extraction remains compatibility-preserving
+SimpleDateFormat VTIs in demos are removed, made thread-safe, or explicitly quarantined
+heap diagnostics remain read-only
+existing Derby heap databases open and reopen unchanged
+```
+
+Not allowed:
+
+```text
+no heap page-format change
+no raw-log format change
+no catalog behavior change
+no DRDA/JDBC behavior change
+no optimizer behavior change
+no inherited-code cleanup without fork-diff classification update
+```
+
+Tests:
+
+```text
+existing heap DB open/reopen
+heap table scans and index scans
+heap sanity checker
+Derby compatibility static gate
+fork-diff classification expansion gate
+focused demos VTI thread-safety test if demos code is touched
+```
+
+Gate:
+
+```text
+./gradlew delosHeapCleanupPhase2ForkDiffStaticAnalysis
+./gradlew delosDerbyForkDiffClassificationStaticAnalysis
+./gradlew s0CloseoutVerification
+./gradlew :delosdb-storage-derby:check
+```
+
+Commit message:
+
+```text
+Expand Derby heap cleanup classification
+```
+
+## Phase O — Shared-service extraction audit
+
+Execution state: specified.
+
+Overlay:
+
+```text
+delosdb-shared-storage-service-extraction-audit-overlay.zip
+```
+
+Goal:
+Audit shared-service extraction candidates only where heap and MVCC both have concrete
+proof points. The first named candidate is page checksum/torn-write validation because
+heap and MVCC already have related mechanisms.
+
+Required behavior:
+
+```text
+shared-service candidates list heap proof path and MVCC proof path
+page checksum/torn-write validation is audited as a candidate, not blindly extracted
+allocation/free-space abstractions are not extracted until both providers prove matching semantics
+page/cache abstractions are not extracted until buffer-manager phase 2 and heap compatibility gates justify it
+```
+
+Not allowed:
+
+```text
+no shared service created from one-provider evidence
+no module merging
+no heap format/log behavior change
+no MVCC page-format change hidden inside an extraction
+```
+
+Tests:
+
+```text
+audit file lists both-provider proof for every candidate
+checksum/torn-write validation candidate cites heap and MVCC tests
+static gate rejects one-sided extraction claims
+```
+
+Gate:
+
+```text
+./gradlew delosSharedStorageServiceExtractionAuditStaticAnalysis
+./gradlew s0CloseoutVerification
+```
+
+Commit message:
+
+```text
+Audit shared storage service extraction candidates
+```
+
+## Phase P — Performance, concurrency, and external validation closeout
+
+Execution state: specified.
+
+Overlay:
+
+```text
+delosdb-performance-concurrency-validation-overlay.zip
+```
+
+Goal:
+Make DelosDB's engine improvements measurable and concurrency-validated without adding
+long or nondeterministic work to S0.
+
+Required behavior:
+
+```text
+JMH microbenchmarks cover MVCC write path, read path, index churn, sidecar force counts, and logical-id resolution cost
+jcstress tests cover RW-lock, pin/unpin, dirty-state, and purge/buffer concurrency structures
+SQLancer validation targets MVCC tables through compatible SQL/JDBC paths
+two-sided workload benchmark measures both update/index-churn wins and read-path costs
+long-reader-vs-vacuum soak is a separate validation task, not an S0 dependency
+benchmark baselines are stored as reports, not correctness assertions in fast gates
+```
+
+Not allowed:
+
+```text
+no nondeterministic performance benchmark in s0CloseoutVerification
+no benchmark-only behavior changes
+no SQLancer task that mutates normal developer databases
+no jcstress result treated as optional when concurrency structures are changed
+```
+
+Tests and validation tasks:
+
+```text
+./gradlew delosJmhMicrobenchmarks
+./gradlew delosJcstressConcurrencyValidation
+./gradlew delosSqlancerMvccValidation
+./gradlew delosTwoSidedMvccWorkloadBenchmark
+./gradlew delosLongReaderVacuumSoak
+```
+
+Gate:
+
+```text
+./gradlew delosPerformanceConcurrencyValidationStaticAnalysis
+./gradlew s0CloseoutVerification
+```
+
+Commit message:
+
+```text
+Add DelosDB performance and concurrency validation plan
+```

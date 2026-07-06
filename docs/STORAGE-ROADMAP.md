@@ -348,7 +348,7 @@ and raw-page debug assertion helpers without changing Derby-compatible behavior.
 
 ## Post-closeout tradeoff audit
 
-Status: closed green.
+Status: active audit.
 
 The Phase A-J pass closed the balanced modernization gates, but the first follow-up
 audit found two implementation tradeoffs that should be fixed before opening the
@@ -370,7 +370,7 @@ module boundaries.
 
 ## Second post-closeout tradeoff audit
 
-Status: closed green.
+Status: active audit.
 
 The second follow-up audit found a durability-hardening tradeoff in the MVCC sidecar
 rewrite helpers. Checksum-trailered sidecars used atomic replace semantics, but the
@@ -389,38 +389,6 @@ UTF-8 sidecar atomic rewrites attempt a parent-directory force after replacement
 sidecar lifecycle tests allow parent-directory forcing without assuming platform support
 successful checked sidecar rewrites leave no stale rewrite sibling behind
 ```
-
-
-## Phase K — MVCC statistics and optimizer/cost integration
-
-Status: current.
-
-This phase opens the next roadmap after the balanced storage-modernization closeout.
-The current tree already contains two cost-related boundaries: read-only storage
-statistics/cost reports and an explicit opt-in Derby StoreCostController cost-model
-provider bridge. This slice ties those boundaries together with a gate and keeps the
-claim honest: default Derby planning remains unchanged, opt-in provider consumption
-remains fail-closed behind `delosdb.optimizer.costModelProvider`, and the legacy
-optimizer-side index-provider bridge remains diagnostic-only.
-
-Required behavior for this slice:
-
-```text
-default Derby optimizer cost path remains unchanged
-storage-statistics-derived cost reports remain read-only and proof-only unless separately enabled
-provider cost consumption is explicit opt-in only
-provider cost consumption requires a positive finite Derby baseline before replacement
-StoreCostController is the only optimizer mutation path for cost-provider consumption
-legacy index-provider cost bridge records diagnostics but does not mutate Derby cost estimates
-MVCC statistics remain visible to cost reports and optimizer-review diagnostics
-SQL gates cover storage cost reports, optimizer review, and explicit opt-in consumption
-```
-
-This is not yet a full production MVCC cost model. The StoreCostController bridge is
-still selected through inherited Derby access-method factory ids, while MVCC storage
-statistics are exposed through read-only diagnostics and review reports. A later K2
-slice should connect MVCC container/statistics identity directly to the provider
-estimate path before any default optimizer consumption is considered.
 
 ## Decision rules
 
@@ -443,3 +411,14 @@ Status: closed green.
 All Phase A–J roadmap gates are now closed green. The next DelosDB storage roadmap
 should start from a fresh plan and preserve the standing execution rules above rather
 than reopening this completed pass.
+
+## Next engine-depth roadmap pointer
+
+Execution state: specified in separate roadmap.
+
+The balanced Phase A-J roadmap remains closed. The next DelosDB engine-depth roadmap is
+specified in `docs/ENGINE-DEPTH-ROADMAP.md` and starts with backup/restore sidecar
+verification before deeper MVCC optimizer, recovery, buffer-manager, purge, heap cleanup,
+shared-service extraction, and performance/concurrency validation work.
+
+This pointer does not reopen Phase A-J and does not change Java behavior.

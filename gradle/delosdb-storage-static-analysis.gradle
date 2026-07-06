@@ -4797,7 +4797,7 @@ def delosLoadStorageModernizationTradeoffAuditRound2Rows = {
     rows
 }
 
-tasks.register('delosStorageModernizationTradeoffAuditRound2StaticAnalysis') {
+tasks.register('delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis') {
     group = 'verification'
     description = 'Validates the second post-closeout storage modernization tradeoff audit and durable sidecar rewrite fixes.'
 
@@ -4909,153 +4909,147 @@ tasks.register('delosStorageModernizationTradeoffAuditRound2StaticAnalysis') {
 
 
 
-def delosMvccStatisticsOptimizerCostIntegrationFile = file('gradle/static-analysis/delosdb-mvcc-statistics-optimizer-cost-integration.txt')
+def delosNextEngineDepthRoadmapContractsFile = file('gradle/static-analysis/delosdb-next-engine-depth-roadmap-contracts.txt')
 
-def delosLoadMvccStatisticsOptimizerCostIntegrationRows = {
-    if (!delosMvccStatisticsOptimizerCostIntegrationFile.exists()) {
-        throw new GradleException('Missing MVCC statistics optimizer/cost integration classification: ' + delosMvccStatisticsOptimizerCostIntegrationFile)
+def delosLoadNextEngineDepthRoadmapContractRows = {
+    if (!delosNextEngineDepthRoadmapContractsFile.exists()) {
+        throw new GradleException('Missing next engine-depth roadmap contracts file: ' + delosNextEngineDepthRoadmapContractsFile)
     }
     def rows = []
-    delosMvccStatisticsOptimizerCostIntegrationFile.readLines('UTF-8').eachWithIndex { String line, int index ->
-        def trimmed = line.trim()
+    delosNextEngineDepthRoadmapContractsFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
         if (!trimmed || trimmed.startsWith('#')) {
             return
         }
         def parts = trimmed.split(/\|/, 5)
         if (parts.length != 5) {
-            throw new GradleException('Malformed MVCC statistics optimizer/cost integration row at line ' + (index + 1) + ': ' + line)
+            throw new GradleException('Malformed next engine-depth roadmap contract row at line ' + (index + 1) + ': ' + line)
         }
         rows << [
-                id      : parts[0].trim(),
-                category: parts[1].trim(),
-                path    : parts[2].trim(),
-                marker  : parts[3].trim(),
-                reason  : parts[4].trim()
+                id        : parts[0].trim(),
+                path      : parts[1].trim(),
+                category  : parts[2].trim(),
+                marker    : parts[3].trim(),
+                reason    : parts[4].trim(),
+                lineNumber: index + 1
         ]
     }
     rows
 }
 
-tasks.register('delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis') {
+tasks.register('delosNextEngineDepthRoadmapContractsStaticAnalysis') {
     group = 'verification'
-    description = 'Validates the Phase K MVCC statistics and optimizer/cost integration boundary.'
+    description = 'Validates the next DelosDB engine-depth roadmap contracts before implementation slices begin.'
 
-    inputs.file(delosMvccStatisticsOptimizerCostIntegrationFile)
-    inputs.file('docs/STORAGE-ROADMAP.md').optional()
-    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-statistics-optimizer-cost-integration-static-analysis.txt'))
+    inputs.file(delosNextEngineDepthRoadmapContractsFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    inputs.file('docs/STORAGE-ROADMAP.md')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/next-engine-depth-roadmap-contracts-static-analysis.txt'))
 
     doLast {
-        def rows = delosLoadMvccStatisticsOptimizerCostIntegrationRows()
+        def rows = delosLoadNextEngineDepthRoadmapContractRows()
         def failures = []
         def ids = [] as Set
         def categories = [] as Set
 
         rows.each { row ->
             if (!ids.add(row.id)) {
-                failures << 'Duplicate MVCC statistics optimizer/cost integration id: ' + row.id
+                failures << 'Duplicate next engine-depth roadmap contract id: ' + row.id
             }
             categories.add(row.category)
             def proofFile = file(row.path)
             if (!proofFile.exists()) {
-                failures << 'MVCC statistics optimizer/cost integration proof path does not exist for ' + row.id + ': ' + row.path
+                failures << 'Next engine-depth roadmap contract proof path does not exist for ' + row.id + ': ' + row.path
                 return
             }
             def body = proofFile.getText('UTF-8')
             if (!body.contains(row.marker)) {
-                failures << 'MVCC statistics optimizer/cost integration marker missing for ' + row.id + ': ' + row.marker
+                failures << 'Next engine-depth roadmap contract marker missing for ' + row.id + ': ' + row.marker
             }
-            if (row.reason.length() < 40) {
-                failures << 'MVCC statistics optimizer/cost integration reason is too thin for ' + row.id
+            if (row.reason.length() < 50) {
+                failures << 'Next engine-depth roadmap contract reason is too thin for ' + row.id
             }
         }
 
-        ['STORAGE_COST_REPORT', 'PROOF_ONLY_DEFAULT', 'FAIL_CLOSED', 'OPTIMIZER_REVIEW',
-         'EXPLICIT_OPT_IN', 'STORE_COST_CONTROLLER_PATH', 'SAFE_BASELINE', 'SAFE_REPLACEMENT',
-         'LEGACY_BRIDGE_DIAGNOSTIC_ONLY', 'SQL_GATE', 'ROADMAP_STATE', 'HONEST_LIMIT'].each { required ->
+        [
+                'ROADMAP_SCOPE',
+                'BACKUP_RESTORE_SIDECARS',
+                'DERBY_PATCH_REVIEW',
+                'STATISTICS_OPTIMIZER',
+                'LOGICAL_ROW_IDENTITY',
+                'RECOVERY_REPLAY',
+                'CROSS_SUBSYSTEM_ATOMICITY',
+                'BUFFER_MANAGER_PHASE2',
+                'WAL_BEFORE_FLUSH',
+                'GROUP_COMMIT',
+                'PURGE_DAEMON',
+                'HEAP_CLEANUP_PHASE2',
+                'SHARED_EXTRACTION_AUDIT',
+                'PERFORMANCE_VALIDATION',
+                'TOOLING_NON_S0',
+                'ROADMAP_POINTER'
+        ].each { required ->
             if (!categories.contains(required)) {
-                failures << 'MVCC statistics optimizer/cost integration is missing category: ' + required
+                failures << 'Next engine-depth roadmap contracts are missing category: ' + required
             }
         }
 
-        def costMode = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/CostModelMode.java')
-        if (costMode.exists()) {
-            def body = costMode.getText('UTF-8')
-            if (!body.contains('OFF(false, false)')) {
-                failures << 'CostModelMode default OFF mode must not probe or consume provider costs'
-            }
-            if (!body.contains('case "enabled", "on", "true" -> ENABLED')) {
-                failures << 'CostModelMode must keep provider consumption behind explicit enabled/on/true opt-in spellings'
-            }
-            if (!body.contains('default -> OFF')) {
-                failures << 'CostModelMode unknown values must fail closed to OFF'
-            }
-        }
-
-        def request = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/CostModelRequest.java')
-        if (request.exists()) {
-            def body = request.getText('UTF-8')
-            if (!body.contains('Double.isFinite(derbyCost)') || !body.contains('derbyCost > 0.0d')) {
-                failures << 'CostModelRequest must require a positive finite Derby baseline before provider replacement is safe'
-            }
-        }
-
-        def bridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/StoreCostControllerBridge.java')
-        if (bridge.exists()) {
-            def body = bridge.getText('UTF-8')
-            int guardIndex = body.indexOf('mode.consumesProviderCost() && probe.canSafelyReplaceDerbyCost()')
-            int setCostIndex = body.indexOf('costResult.setEstimatedCost(value.totalCost())')
-            int setRowsIndex = body.indexOf('costResult.setEstimatedRowCount(value.estimatedRows())')
-            if (guardIndex < 0 || setCostIndex < 0 || setRowsIndex < 0 || setCostIndex < guardIndex || setRowsIndex < guardIndex) {
-                failures << 'StoreCostControllerBridge must mutate Derby cost only after explicit opt-in and safety guard'
-            }
-            if (!body.contains('CostModelDiagnostics.record(probe)')) {
-                failures << 'StoreCostControllerBridge must record provider-cost diagnostics for opt-in review'
-            }
-        }
-
-        def fromBaseTable = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java')
-        if (fromBaseTable.exists()) {
-            def body = fromBaseTable.getText('UTF-8')
-            if (!body.contains('This bridge is intentionally diagnostic-only')) {
-                failures << 'FromBaseTable legacy index-provider bridge must document diagnostic-only behavior'
-            }
-            if (!body.contains('IndexProviderCostDiagnostics.record(probe)')) {
-                failures << 'FromBaseTable legacy index-provider bridge must record diagnostics instead of mutating planner state'
-            }
-        }
-
-        def testsBuild = file('delosdb-tests/build.gradle')
-        if (testsBuild.exists()) {
-            def body = testsBuild.getText('UTF-8')
-            ['StorageCostIntegrationCheckpointTest.class', 'StorageOptimizerReviewGateTest.class', 'OptimizerStorageCostOptInTest.class'].each { marker ->
-                if (!body.contains(marker)) {
-                    failures << 'MVCC SQL integration suite must include cost/optimizer gate: ' + marker
+        def roadmap = file('docs/ENGINE-DEPTH-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing docs/ENGINE-DEPTH-ROADMAP.md'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Micro-slice 0 — Backup/restore sidecar verification',
+                    'Micro-slice 1 — DERBY-7107 review/apply-if-still-valid',
+                    'Phase K — MVCC statistics and Derby optimizer/cost integration',
+                    'Phase L — MVCC recovery replay engine',
+                    'Phase M — MVCC buffer manager phase 2',
+                    'Micro-slice 5 — Purge daemon scheduling',
+                    'Phase N — Heap cleanup phase 2 and fork-diff expansion',
+                    'Phase O — Shared-service extraction audit',
+                    'Phase P — Performance, concurrency, and external validation closeout',
+                    'Do not build a parallel optimizer statistics truth source.',
+                    'WAL-before-flush invariant',
+                    'group commit batches compatible fsync work',
+                    'JMH microbenchmarks',
+                    'jcstress tests',
+                    'SQLancer validation',
+                    'not an S0 dependency'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Engine-depth roadmap is missing required contract marker: ' + markerText
                 }
             }
-        }
-
-        def roadmap = file('docs/STORAGE-ROADMAP.md')
-        if (roadmap.exists()) {
-            def text = roadmap.getText('UTF-8')
-            if (!text.contains('## Phase K — MVCC statistics and optimizer/cost integration')) {
-                failures << 'Storage roadmap must open Phase K for MVCC statistics and optimizer/cost integration'
+            if (roadmapText.contains('Status: current')) {
+                failures << 'Engine-depth roadmap must not use Status: current because the Phase A-J closeout gate treats that as reopening the closed roadmap'
             }
-            if (!text.contains('Status: current.')) {
-                failures << 'Storage roadmap must mark Phase K as the current executable slice'
-            }
-            if (!text.contains('This is not yet a full production MVCC cost model')) {
-                failures << 'Storage roadmap must explicitly avoid over-claiming production MVCC cost-model completeness'
-            }
-            if (!text.contains('A later K2 slice should connect MVCC container/statistics identity directly to the provider')) {
-                failures << 'Storage roadmap must identify the next K2 handoff for direct MVCC-statistics provider estimates'
+            if (!roadmapText.contains('no page-format changes') || !roadmapText.contains('no raw-log format changes')) {
+                failures << 'Engine-depth roadmap must keep page-format and raw-log non-goals explicit for early micro-slices'
             }
         }
 
-        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-statistics-optimizer-cost-integration-static-analysis.txt').get().asFile
+        def storageRoadmap = file('docs/STORAGE-ROADMAP.md')
+        if (!storageRoadmap.exists()) {
+            failures << 'Missing docs/STORAGE-ROADMAP.md'
+        } else {
+            def storageText = storageRoadmap.getText('UTF-8')
+            if (!storageText.contains('Next engine-depth roadmap pointer')) {
+                failures << 'Storage roadmap must point to the next engine-depth roadmap without reopening Phase A-J'
+            }
+            if (!storageText.contains('docs/ENGINE-DEPTH-ROADMAP.md')) {
+                failures << 'Storage roadmap pointer must name docs/ENGINE-DEPTH-ROADMAP.md'
+            }
+            if (!storageText.contains('The balanced Phase A-J roadmap remains closed')) {
+                failures << 'Storage roadmap pointer must keep the balanced Phase A-J roadmap closed'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/next-engine-depth-roadmap-contracts-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB MVCC statistics optimizer/cost integration static analysis')
-            writer.println('====================================================================')
+            writer.println('DelosDB next engine-depth roadmap contracts static analysis')
+            writer.println('================================================================')
             writer.println()
             writer.println('Proof rows: ' + rows.size())
             writer.println('Categories: ' + categories.sort().join(', '))
@@ -5075,14 +5069,14 @@ tasks.register('delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis') {
         }
 
         if (!failures.isEmpty()) {
-            throw new GradleException('MVCC statistics optimizer/cost integration static analysis failed. Report: ' + reportFile)
+            throw new GradleException('Next engine-depth roadmap contracts static analysis failed. Report: ' + reportFile)
         }
-        println 'DelosDB MVCC statistics optimizer/cost integration static analysis passed. Report: ' + reportFile
+        println 'DelosDB next engine-depth roadmap contracts static analysis passed. Report: ' + reportFile
     }
 }
 
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis'
 }
