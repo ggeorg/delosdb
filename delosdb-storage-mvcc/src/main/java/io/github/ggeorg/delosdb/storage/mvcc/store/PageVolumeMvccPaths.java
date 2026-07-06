@@ -66,11 +66,29 @@ public final class PageVolumeMvccPaths {
         return directory.resolve(requireStorageId(storageId) + ".recovery");
     }
 
+    static boolean isMissingStorageId(String storageId) {
+        return storageId == null || storageId.isBlank();
+    }
+
+    static boolean isUsableStorageId(String storageId) {
+        return !isMissingStorageId(storageId) && !hasUnsafeStorageIdCharacter(storageId);
+    }
+
     private static String requireStorageId(String storageId) {
         String id = Objects.requireNonNull(storageId, "storageId");
-        if (id.isBlank() || id.contains("/") || id.contains("\\\\")) {
+        if (id.isBlank() || hasUnsafeStorageIdCharacter(id)) {
             throw new IllegalArgumentException("Invalid MVCC storage id: " + storageId);
         }
         return id;
+    }
+
+    private static boolean hasUnsafeStorageIdCharacter(String storageId) {
+        for (int index = 0; index < storageId.length(); index++) {
+            char ch = storageId.charAt(index);
+            if (ch == '/' || ch == '\\' || Character.isISOControl(ch)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

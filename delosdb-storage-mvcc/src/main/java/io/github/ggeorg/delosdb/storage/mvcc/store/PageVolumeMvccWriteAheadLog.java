@@ -36,8 +36,11 @@ public final class PageVolumeMvccWriteAheadLog {
     }
 
     public static PageVolumeMvccWriteAheadLog open(Path databaseDirectory, String storageId) {
+        if (databaseDirectory == null || PageVolumeMvccPaths.isMissingStorageId(storageId)) {
+            return disabled();
+        }
         Path logFile = PageVolumeMvccPaths.writeAheadLogFile(databaseDirectory, storageId);
-        if (logFile == null || storageId == null || storageId.isBlank()) {
+        if (logFile == null) {
             return disabled();
         }
         AbstractSidecarStore.ensureParentDirectory(logFile, "MVCC page-volume WAL");

@@ -110,8 +110,11 @@ public final class PageVolumeMvccStateStore<T> {
             Path databaseDirectory,
             String storageId,
             RowCodec<T> rowCodec) {
+        if (databaseDirectory == null || PageVolumeMvccPaths.isMissingStorageId(storageId)) {
+            return disabled(rowCodec);
+        }
         Path pageFile = PageVolumeMvccPaths.pageFile(databaseDirectory, storageId);
-        if (pageFile == null || storageId == null || storageId.isBlank()) {
+        if (pageFile == null) {
             return disabled(rowCodec);
         }
         try {

@@ -63,8 +63,11 @@ public final class PageVolumeMvccCheckpointStore {
     }
 
     public static PageVolumeMvccCheckpointStore open(Path databaseDirectory, String storageId) {
+        if (databaseDirectory == null || PageVolumeMvccPaths.isMissingStorageId(storageId)) {
+            return disabled(storageId == null ? "disabled" : storageId);
+        }
         Path file = PageVolumeMvccPaths.checkpointFile(databaseDirectory, storageId);
-        if (file == null || storageId == null || storageId.isBlank()) {
+        if (file == null) {
             return disabled(storageId == null ? "disabled" : storageId);
         }
         return new PageVolumeMvccCheckpointStore(file, storageId);

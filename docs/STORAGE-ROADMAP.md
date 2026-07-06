@@ -345,6 +345,29 @@ clarity around OpenHeap, HeapController, OpenConglomerate, BasePage, StoredPage,
 FileContainer, AllocPage, D_StoredPage, D_HeapController, diagnostic formatting helpers,
 and raw-page debug assertion helpers without changing Derby-compatible behavior.
 
+
+## Post-closeout tradeoff audit
+
+Status: active audit.
+
+The Phase A-J pass closed the balanced modernization gates, but the first follow-up
+audit found two implementation tradeoffs that should be fixed before opening the
+next large roadmap:
+
+```text
+path/storage-id hardening must reject a single Windows backslash and control characters
+optional MVCC sidecar stores must disable cleanly on null or blank storage ids before path resolution
+Phase G remains a write-through pinned/dirty cache boundary, not a deferred dirty-page policy
+Phase I remains recovery-record metadata, not a redo executor
+```
+
+The first two items are concrete hardening fixes in this overlay. The latter two are
+kept as explicit tradeoffs so future plans do not over-claim the current state. A
+later cache/recovery implementation phase may replace write-through flushing or add
+redo execution, but this post-closeout audit does not change SQL behavior, page
+format, raw-log format, catalog behavior, DRDA behavior, optimizer behavior, or
+module boundaries.
+
 ## Decision rules
 
 Work on MVCC when a normal SQL authority still depends on temporary or diagnostic

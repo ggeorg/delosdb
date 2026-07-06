@@ -36,8 +36,11 @@ public final class MvccSubsystemRecoveryRecordStore {
     }
 
     public static MvccSubsystemRecoveryRecordStore open(Path databaseDirectory, String storageId) {
+        if (databaseDirectory == null || PageVolumeMvccPaths.isMissingStorageId(storageId)) {
+            return disabled();
+        }
         Path file = PageVolumeMvccPaths.subsystemRecoveryRecordsFile(databaseDirectory, storageId);
-        if (file == null || storageId == null || storageId.isBlank()) {
+        if (file == null) {
             return disabled();
         }
         AbstractSidecarStore.ensureParentDirectory(file, "MVCC subsystem recovery");

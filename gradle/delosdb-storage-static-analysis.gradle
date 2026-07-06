@@ -4618,8 +4618,157 @@ tasks.register('delosBalancedStorageModernizationCloseoutStaticAnalysis') {
     }
 }
 
+
+def delosStorageModernizationTradeoffAuditFile = file('gradle/static-analysis/delosdb-storage-modernization-tradeoff-audit.txt')
+
+def delosLoadStorageModernizationTradeoffAuditRows = {
+    if (!delosStorageModernizationTradeoffAuditFile.exists()) {
+        throw new GradleException('Missing storage modernization tradeoff audit file: ' + delosStorageModernizationTradeoffAuditFile)
+    }
+    def rows = []
+    delosStorageModernizationTradeoffAuditFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed storage modernization tradeoff audit row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [
+                id        : parts[0],
+                path      : parts[1],
+                category  : parts[2],
+                marker    : parts[3],
+                reason    : parts[4],
+                lineNumber: index + 1
+        ]
+    }
+    rows
+}
+
+tasks.register('delosStorageModernizationTradeoffAuditStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the post-closeout storage modernization tradeoff audit and concrete hardening fixes.'
+
+    inputs.file(delosStorageModernizationTradeoffAuditFile)
+    inputs.file('docs/STORAGE-ROADMAP.md').optional()
+    outputs.file(layout.buildDirectory.file('reports/delosdb/storage-modernization-tradeoff-audit-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadStorageModernizationTradeoffAuditRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate storage modernization tradeoff audit id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Storage modernization tradeoff proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Storage modernization tradeoff marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 40) {
+                failures << 'Storage modernization tradeoff reason is too thin for ' + row.id
+            }
+        }
+
+        ['PATH_HARDENING', 'DISABLED_STORE_GUARD', 'UNIT_TEST', 'ROADMAP_TRADEOFF'].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'Storage modernization tradeoff audit is missing category: ' + required
+            }
+        }
+
+        def paths = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccPaths.java')
+        if (paths.exists()) {
+            def body = paths.getText('UTF-8')
+            if (body.contains('id.contains("\\\\")')) {
+                failures << 'PageVolumeMvccPaths still checks for a doubled backslash string instead of a single backslash character'
+            }
+            if (!body.contains("ch == '\\\\'")) {
+                failures << 'PageVolumeMvccPaths must reject a single backslash path separator'
+            }
+            if (!body.contains('Character.isISOControl(ch)')) {
+                failures << 'PageVolumeMvccPaths must reject storage ids containing control characters'
+            }
+            if (!body.contains('isMissingStorageId(String storageId)')) {
+                failures << 'PageVolumeMvccPaths must expose a shared missing-storage-id guard for optional sidecar stores'
+            }
+        }
+
+        def guardTargets = [
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccStateStore.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccWriteAheadLog.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccCheckpointStore.java',
+                'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/MvccSubsystemRecoveryRecordStore.java'
+        ]
+        guardTargets.each { target ->
+            def targetFile = file(target)
+            if (targetFile.exists()) {
+                def text = targetFile.getText('UTF-8')
+                int guardIndex = text.indexOf('PageVolumeMvccPaths.isMissingStorageId(storageId)')
+                int pathIndex = text.indexOf('PageVolumeMvccPaths.')
+                if (guardIndex < 0) {
+                    failures << 'Missing missing-storage-id guard in ' + target
+                } else if (pathIndex >= 0 && pathIndex < guardIndex) {
+                    failures << 'Missing-storage-id guard must run before PageVolumeMvccPaths path resolution in ' + target
+                }
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (roadmap.exists()) {
+            def roadmapText = roadmap.getText('UTF-8')
+            if (!roadmapText.contains('Post-closeout tradeoff audit')) {
+                failures << 'Storage roadmap must include the post-closeout tradeoff audit section'
+            }
+            if (!roadmapText.contains('Phase G remains a write-through pinned/dirty cache boundary, not a deferred dirty-page policy')) {
+                failures << 'Storage roadmap must document the Phase G write-through cache tradeoff'
+            }
+            if (!roadmapText.contains('Phase I remains recovery-record metadata, not a redo executor')) {
+                failures << 'Storage roadmap must document the Phase I recovery metadata tradeoff'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/storage-modernization-tradeoff-audit-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB storage modernization tradeoff audit static analysis')
+            writer.println('================================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Storage modernization tradeoff audit static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB storage modernization tradeoff audit static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis'
 }
