@@ -368,6 +368,28 @@ redo execution, but this post-closeout audit does not change SQL behavior, page
 format, raw-log format, catalog behavior, DRDA behavior, optimizer behavior, or
 module boundaries.
 
+## Second post-closeout tradeoff audit
+
+Status: active audit.
+
+The second follow-up audit found a durability-hardening tradeoff in the MVCC sidecar
+rewrite helpers. Checksum-trailered sidecars used atomic replace semantics, but the
+rewrite helper did not force the temporary rewrite file before publication and did not
+attempt to force the parent directory after replacement. UTF-8 sidecar rewrites had
+similar parent-directory force coverage available but not wired into the rewrite path.
+
+This audit fixes those helper boundaries without changing SQL behavior, Derby heap
+format, MVCC page format, raw-log format, catalog behavior, DRDA behavior, optimizer
+behavior, or module boundaries:
+
+```text
+checksum-trailered sidecar rewrites force the rewrite file before publication
+checksum-trailered sidecar rewrites attempt a parent-directory force after replacement
+UTF-8 sidecar atomic rewrites attempt a parent-directory force after replacement
+sidecar lifecycle tests allow parent-directory forcing without assuming platform support
+successful checked sidecar rewrites leave no stale rewrite sibling behind
+```
+
 ## Decision rules
 
 Work on MVCC when a normal SQL authority still depends on temporary or diagnostic

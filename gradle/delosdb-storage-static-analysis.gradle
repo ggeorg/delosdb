@@ -4767,8 +4767,148 @@ tasks.register('delosStorageModernizationTradeoffAuditStaticAnalysis') {
     }
 }
 
+
+
+def delosStorageModernizationTradeoffAuditRound2File = file('gradle/static-analysis/delosdb-storage-modernization-tradeoff-audit-round2.txt')
+
+def delosLoadStorageModernizationTradeoffAuditRound2Rows = {
+    if (!delosStorageModernizationTradeoffAuditRound2File.exists()) {
+        throw new GradleException('Missing storage modernization tradeoff audit round 2 file: ' + delosStorageModernizationTradeoffAuditRound2File)
+    }
+    def rows = []
+    delosStorageModernizationTradeoffAuditRound2File.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed storage modernization tradeoff audit round 2 row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [
+                id        : parts[0],
+                path      : parts[1],
+                category  : parts[2],
+                marker    : parts[3],
+                reason    : parts[4],
+                lineNumber: index + 1
+        ]
+    }
+    rows
+}
+
+tasks.register('delosStorageModernizationTradeoffAuditRound2StaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the second post-closeout storage modernization tradeoff audit and durable sidecar rewrite fixes.'
+
+    inputs.file(delosStorageModernizationTradeoffAuditRound2File)
+    inputs.file('docs/STORAGE-ROADMAP.md').optional()
+    outputs.file(layout.buildDirectory.file('reports/delosdb/storage-modernization-tradeoff-audit-round2-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadStorageModernizationTradeoffAuditRound2Rows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate storage modernization tradeoff audit round 2 id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Storage modernization tradeoff audit round 2 proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Storage modernization tradeoff audit round 2 marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 40) {
+                failures << 'Storage modernization tradeoff audit round 2 reason is too thin for ' + row.id
+            }
+        }
+
+        ['DURABLE_REWRITE', 'PARENT_DIRECTORY_FORCE', 'UNIT_TEST', 'ROADMAP_TRADEOFF'].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'Storage modernization tradeoff audit round 2 is missing category: ' + required
+            }
+        }
+
+        def sidecarFiles = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccSidecarFiles.java')
+        if (sidecarFiles.exists()) {
+            def body = sidecarFiles.getText('UTF-8')
+            if (body.contains('Files.write(rewritePath, bytes)')) {
+                failures << 'MvccSidecarFiles must not use Files.write for checked sidecar rewrites because that bypasses forced publication'
+            }
+            if (!body.contains('writeFileForced(rewritePath, bytes)')) {
+                failures << 'MvccSidecarFiles must force the rewrite file before moving it into place'
+            }
+            if (!body.contains('forceParentDirectoryIfSupported(path)')) {
+                failures << 'MvccSidecarFiles must attempt a parent-directory force after replacing the sidecar file'
+            }
+            if (!body.contains('channel.force(true)')) {
+                failures << 'MvccSidecarFiles must force sidecar file contents before publication'
+            }
+        }
+
+        def abstractStore = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/AbstractSidecarStore.java')
+        if (abstractStore.exists()) {
+            def body = abstractStore.getText('UTF-8')
+            int moveIndex = body.indexOf('moveIntoPlace(temp);')
+            int forceIndex = body.indexOf('forceParentDirectoryIfSupported();')
+            if (moveIndex < 0 || forceIndex < 0 || forceIndex < moveIndex) {
+                failures << 'AbstractSidecarStore must force the parent directory after atomic UTF-8 sidecar rewrite publication'
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (roadmap.exists()) {
+            def roadmapText = roadmap.getText('UTF-8')
+            if (!roadmapText.contains('Second post-closeout tradeoff audit')) {
+                failures << 'Storage roadmap must include the second post-closeout tradeoff audit section'
+            }
+            if (!roadmapText.contains('checksum-trailered sidecar rewrites force the rewrite file before publication')) {
+                failures << 'Storage roadmap must document checked-sidecar forced rewrite publication'
+            }
+            if (!roadmapText.contains('UTF-8 sidecar atomic rewrites attempt a parent-directory force after replacement')) {
+                failures << 'Storage roadmap must document UTF-8 sidecar parent-directory force coverage'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/storage-modernization-tradeoff-audit-round2-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB storage modernization tradeoff audit round 2 static analysis')
+            writer.println('========================================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Storage modernization tradeoff audit round 2 static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB storage modernization tradeoff audit round 2 static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis'
 }

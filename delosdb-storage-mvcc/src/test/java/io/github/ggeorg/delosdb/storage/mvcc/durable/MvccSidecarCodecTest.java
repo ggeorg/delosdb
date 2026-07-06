@@ -49,6 +49,20 @@ final class MvccSidecarCodecTest {
         assertEquals(42L, recovered.getLong());
     }
 
+
+    @Test
+    void checksumRewriteDoesNotLeaveRewriteSibling() throws Exception {
+        Path path = tempDir.resolve("checked-cleanup.sidecar");
+        int payloadLength = Integer.BYTES;
+        ByteBuffer payload = MvccSidecarCodec.allocatePayload(payloadLength);
+        payload.putInt(99);
+
+        MvccSidecarCodec.rewritePayload(path, payload, payloadLength);
+
+        assertTrue(Files.exists(path));
+        assertTrue(Files.notExists(tempDir.resolve("checked-cleanup.sidecar.rewrite")));
+    }
+
     @Test
     void checksumMismatchFailsLoudly() throws Exception {
         Path path = tempDir.resolve("corrupt.sidecar");

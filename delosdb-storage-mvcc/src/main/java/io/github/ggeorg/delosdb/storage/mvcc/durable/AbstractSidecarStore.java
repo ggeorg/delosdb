@@ -174,6 +174,7 @@ public abstract class AbstractSidecarStore {
                     StandardOpenOption.WRITE);
             forceFile(temp);
             moveIntoPlace(temp);
+            forceParentDirectoryIfSupported();
         } catch (IOException failure) {
             try {
                 Files.deleteIfExists(temp);
