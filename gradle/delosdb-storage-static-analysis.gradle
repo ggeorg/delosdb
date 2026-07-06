@@ -3757,15 +3757,15 @@ tasks.register('delosMvccAttributeOverflowStorageStaticAnalysis') {
                     'Phase G — MVCC pinned/dirty buffer cache',
                     'Status: closed green.',
                     'Phase H — Attribute-level MVCC overflow storage',
-                    'Status: current MVCC storage slice after green pinned/dirty buffer-cache gate.',
+                    'Status: closed green.',
+                    'Phase I — MVCC subsystem recovery records',
                     'small attributes remain inline',
                     'large attributes spill through attribute-level overflow descriptors',
                     'overflow chains validate missing, extra, wrong-size, or wrong-order chunks',
                     'large-value update, delete, vacuum, and reopen paths remain correct',
                     'provider-neutral diagnostics expose attribute-overflow counters and byte summaries',
                     'MVCC capability metadata reports attribute-overflow support without optimizer consumption',
-                    'inherited heap compatibility paths',
-                    'Phase I — MVCC subsystem recovery records'
+                    'inherited heap compatibility paths'
             ].each { markerText ->
                 if (!roadmapText.contains(markerText)) {
                     failures << 'Storage roadmap is missing MVCC attribute-overflow marker: ' + markerText
@@ -3807,8 +3807,382 @@ tasks.register('delosMvccAttributeOverflowStorageStaticAnalysis') {
     }
 }
 
+
+def delosMvccSubsystemRecoveryRecordsFile = file('gradle/static-analysis/delosdb-mvcc-subsystem-recovery-records.txt')
+
+def delosMvccSubsystemRecoveryRecordsContracts = [
+        'RECOVERY_RECORD_STORE',
+        'ROW_PAGE_REDO_METADATA',
+        'INDEX_PAGE_REDO_METADATA',
+        'OVERFLOW_PAGE_REDO_METADATA',
+        'FREE_SPACE_MAP_REDO_METADATA',
+        'TRANSACTION_OUTCOME_REDO_METADATA',
+        'CHECKPOINT_METADATA',
+        'MONOTONIC_SEQUENCE',
+        'RECORD_KIND_ENUM',
+        'DURABLE_PATH_BOUNDARY',
+        'STATE_STORE_INTEGRATION',
+        'COMMIT_RECORDING_BOUNDARY',
+        'RECOVERY_DIAGNOSTICS_API',
+        'PROVIDER_NEUTRAL_DIAGNOSTICS',
+        'DIAGNOSTICS_API',
+        'TABLE_DIAGNOSTICS_API',
+        'STATISTICS_API',
+        'CHECKPOINT_BOUNDARY',
+        'SQL_RECOVERY_RECORD_TEST',
+        'REOPEN_TEST',
+        'TEST_SUITE_WIRING',
+        'ROADMAP_GATE',
+        'COMPATIBILITY_BOUNDARY'
+] as Set
+
+def delosLoadMvccSubsystemRecoveryRecordsRows = {
+    if (!delosMvccSubsystemRecoveryRecordsFile.exists()) {
+        throw new GradleException('Missing MVCC subsystem recovery-record classification file: ' + delosMvccSubsystemRecoveryRecordsFile)
+    }
+    def rows = []
+    int lineNumber = 0
+    delosMvccSubsystemRecoveryRecordsFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 5) {
+            throw new GradleException('Malformed MVCC subsystem recovery-record line ' + lineNumber + ': expected 5 pipe-delimited fields')
+        }
+        if (!delosMvccSubsystemRecoveryRecordsContracts.contains(parts[2])) {
+            throw new GradleException('Malformed MVCC subsystem recovery-record line ' + lineNumber + ': unknown contract ' + parts[2])
+        }
+        rows << [
+                id        : parts[0],
+                path      : parts[1],
+                contract  : parts[2],
+                marker    : parts[3],
+                reason    : parts[4],
+                lineNumber: lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosMvccSubsystemRecoveryRecordsStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the MVCC subsystem recovery-record metadata and diagnostics gate.'
+
+    inputs.file(delosMvccSubsystemRecoveryRecordsFile)
+    inputs.files(
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/MvccSubsystemRecoveryRecordStore.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccPaths.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccStateStore.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageRecoveryDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTableDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccStorageStatistics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSubsystemRecoveryRecordsTest.java',
+            'delosdb-tests/build.gradle',
+            'docs/STORAGE-ROADMAP.md'
+    )
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-subsystem-recovery-records-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccSubsystemRecoveryRecordsRows()
+        def failures = []
+        def ids = [] as Set
+        def proofMarkers = [] as Set
+        def contracts = rows.groupBy { it.contract }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC subsystem recovery-record id: ' + row.id
+            }
+            if (!proofMarkers.add(row.path + '|' + row.marker)) {
+                failures << 'Duplicate MVCC subsystem recovery-record proof marker: ' + row.path + ' -> ' + row.marker
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC subsystem recovery-record proof-point path does not exist: ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC subsystem recovery-record marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 40) {
+                failures << 'MVCC subsystem recovery-record reason is too thin for ' + row.id
+            }
+        }
+
+        delosMvccSubsystemRecoveryRecordsContracts.each { contract ->
+            if (!contracts.containsKey(contract)) {
+                failures << 'Missing MVCC subsystem recovery-record contract: ' + contract
+            }
+        }
+
+        def storeFile = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/MvccSubsystemRecoveryRecordStore.java')
+        if (storeFile.exists()) {
+            def storeText = storeFile.getText('UTF-8')
+            [
+                    'public final class MvccSubsystemRecoveryRecordStore',
+                    'appendRowPageRedo',
+                    'appendIndexPageRedo',
+                    'appendOverflowPageRedo',
+                    'appendFreeSpaceMapRedo',
+                    'appendTransactionOutcomeRedo',
+                    'appendCheckpoint',
+                    'ROW_PAGE',
+                    'INDEX_PAGE',
+                    'OVERFLOW_PAGE',
+                    'FREE_SPACE_MAP',
+                    'TRANSACTION_OUTCOME',
+                    'CHECKPOINT',
+                    'sequence must increase monotonically',
+                    'record must contain 9 tab-separated fields'
+            ].each { markerText ->
+                if (!storeText.contains(markerText)) {
+                    failures << 'MvccSubsystemRecoveryRecordStore is missing recovery-record marker: ' + markerText
+                }
+            }
+        }
+
+        def stateStoreFile = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccStateStore.java')
+        if (stateStoreFile.exists()) {
+            def stateStoreText = stateStoreFile.getText('UTF-8')
+            [
+                    'MvccSubsystemRecoveryRecordStore.open',
+                    'appendSubsystemRecoveryRecords(transactionId, durableCommitSequence)',
+                    'recoveryRecordStore.appendRowPageRedo',
+                    'recoveryRecordStore.appendIndexPageRedo',
+                    'recoveryRecordStore.appendOverflowPageRedo',
+                    'recoveryRecordStore.appendFreeSpaceMapRedo',
+                    'recoveryRecordStore.appendTransactionOutcomeRedo',
+                    'recoveryRecordStore.appendCheckpoint',
+                    'rowPageRedoRecordCount()',
+                    'indexPageRedoRecordCount()',
+                    'overflowPageRedoRecordCount()',
+                    'freeSpaceMapRedoRecordCount()',
+                    'transactionOutcomeRedoRecordCount()',
+                    'checkpointRecoveryRecordCount()',
+                    'subsystemRecoveryRecordSummaries()'
+            ].each { markerText ->
+                if (!stateStoreText.contains(markerText)) {
+                    failures << 'PageVolumeMvccStateStore is missing recovery-record marker: ' + markerText
+                }
+            }
+        }
+
+        def pathsFile = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccPaths.java')
+        if (pathsFile.exists()) {
+            def pathsText = pathsFile.getText('UTF-8')
+            [
+                    'subsystemRecoveryRecordsFile',
+                    '.recovery'
+            ].each { markerText ->
+                if (!pathsText.contains(markerText)) {
+                    failures << 'PageVolumeMvccPaths is missing recovery sidecar marker: ' + markerText
+                }
+            }
+        }
+
+        def recoveryDiagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageRecoveryDiagnostics.java')
+        if (recoveryDiagnosticsFile.exists()) {
+            def recoveryText = recoveryDiagnosticsFile.getText('UTF-8')
+            [
+                    'public record DelosStorageRecoveryDiagnostics',
+                    'hasRowPageRedoMetadata',
+                    'hasIndexPageRedoMetadata',
+                    'hasOverflowPageRedoMetadata',
+                    'hasFreeSpaceMapRedoMetadata',
+                    'hasTransactionOutcomeRedoMetadata',
+                    'hasCheckpointMetadata',
+                    'completeCheckpointBoundary',
+                    'recordSummaries = List.copyOf'
+            ].each { markerText ->
+                if (!recoveryText.contains(markerText)) {
+                    failures << 'DelosStorageRecoveryDiagnostics is missing API marker: ' + markerText
+                }
+            }
+        } else {
+            failures << 'Missing DelosStorageRecoveryDiagnostics provider-neutral API'
+        }
+
+        def diagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java')
+        if (diagnosticsFile.exists()) {
+            def diagnosticsText = diagnosticsFile.getText('UTF-8')
+            [
+                    'subsystemRecoveryRecordsFileForTesting',
+                    'subsystemRecoveryRecordCountForTesting',
+                    'subsystemRecoveryLastSequenceForTesting',
+                    'rowPageRedoRecordCountForTesting',
+                    'indexPageRedoRecordCountForTesting',
+                    'overflowPageRedoRecordCountForTesting',
+                    'freeSpaceMapRedoRecordCountForTesting',
+                    'transactionOutcomeRedoRecordCountForTesting',
+                    'checkpointRecoveryRecordCountForTesting',
+                    'subsystemRecoveryRecordSummariesForTesting',
+                    'recoveryDiagnosticsForTesting'
+            ].each { markerText ->
+                if (!diagnosticsText.contains(markerText)) {
+                    failures << 'DelosStorageDiagnostics is missing recovery diagnostics marker: ' + markerText
+                }
+            }
+        }
+
+        def tableDiagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTableDiagnostics.java')
+        if (tableDiagnosticsFile.exists()) {
+            def tableDiagnosticsText = tableDiagnosticsFile.getText('UTF-8')
+            [
+                    'subsystemRecoveryRecordCountForTesting',
+                    'rowPageRedoRecordCountForTesting',
+                    'indexPageRedoRecordCountForTesting',
+                    'overflowPageRedoRecordCountForTesting',
+                    'freeSpaceMapRedoRecordCountForTesting',
+                    'transactionOutcomeRedoRecordCountForTesting',
+                    'checkpointRecoveryRecordCountForTesting',
+                    'recoveryDiagnosticsForTesting'
+            ].each { markerText ->
+                if (!tableDiagnosticsText.contains(markerText)) {
+                    failures << 'DelosStorageTableDiagnostics is missing recovery diagnostics marker: ' + markerText
+                }
+            }
+        }
+
+        def statisticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccStorageStatistics.java')
+        if (statisticsFile.exists()) {
+            def statisticsText = statisticsFile.getText('UTF-8')
+            [
+                    'long subsystemRecoveryRecordCount',
+                    'long subsystemRecoveryLastSequence',
+                    'long rowPageRedoRecordCount',
+                    'long indexPageRedoRecordCount',
+                    'long overflowPageRedoRecordCount',
+                    'long freeSpaceMapRedoRecordCount',
+                    'long transactionOutcomeRedoRecordCount',
+                    'long checkpointRecoveryRecordCount',
+                    'public boolean hasRecoveryStatistics()',
+                    'public boolean recoveryBoundaryComplete()',
+                    'recoveryRecords='
+            ].each { markerText ->
+                if (!statisticsText.contains(markerText)) {
+                    failures << 'DelosMvccStorageStatistics is missing recovery statistics marker: ' + markerText
+                }
+            }
+        }
+
+        def genericStatisticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java')
+        if (genericStatisticsFile.exists()) {
+            def genericStatisticsText = genericStatisticsFile.getText('UTF-8')
+            [
+                    'long subsystemRecoveryRecordCount',
+                    'public boolean hasRecoveryStatistics()',
+                    'diagnostics.subsystemRecoveryRecordsFileForTesting(segment, containerId)'
+            ].each { markerText ->
+                if (!genericStatisticsText.contains(markerText)) {
+                    failures << 'DelosStorageStatistics is missing provider-neutral recovery marker: ' + markerText
+                }
+            }
+        }
+
+        def testFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSubsystemRecoveryRecordsTest.java')
+        if (testFile.exists()) {
+            def testText = testFile.getText('UTF-8')
+            [
+                    'testSubsystemRecoveryRecordsExistAndSurviveReopen',
+                    'recovery metadata file should exist',
+                    'row page redo metadata should exist',
+                    'index page redo metadata should exist',
+                    'overflow page redo metadata should exist',
+                    'free-space map redo metadata should exist',
+                    'transaction outcome redo metadata should exist',
+                    'checkpoint metadata should exist',
+                    'complete checkpoint boundary should be advertised',
+                    'reopen should preserve recovery metadata records',
+                    'reopen should preserve monotonic recovery sequence',
+                    'reopen recovery metadata should still be complete'
+            ].each { markerText ->
+                if (!testText.contains(markerText)) {
+                    failures << 'MvccSqlSubsystemRecoveryRecordsTest is missing recovery SQL marker: ' + markerText
+                }
+            }
+        } else {
+            failures << 'Missing MvccSqlSubsystemRecoveryRecordsTest SQL proof'
+        }
+
+        def buildFile = file('delosdb-tests/build.gradle')
+        if (buildFile.exists()) {
+            def buildText = buildFile.getText('UTF-8')
+            if (!buildText.contains('MvccSqlSubsystemRecoveryRecordsTest.class')) {
+                failures << 'runDelosMvccSqlIntegrationTest must include MvccSqlSubsystemRecoveryRecordsTest'
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing storage roadmap documenting MVCC subsystem recovery-record phase'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Phase H — Attribute-level MVCC overflow storage',
+                    'Status: closed green.',
+                    'Phase I — MVCC subsystem recovery records',
+                    'Status: current MVCC recovery-record slice after green attribute-overflow storage gate.',
+                    'row page redo metadata',
+                    'index page redo metadata',
+                    'overflow page redo metadata',
+                    'free-space map redo metadata',
+                    'transaction outcome redo metadata',
+                    'checkpoint metadata',
+                    'monotonic recovery-record sequence validation',
+                    'provider-neutral recovery diagnostics',
+                    'reopen preserves recovery metadata records',
+                    'complete checkpoint boundary is inspectable',
+                    'must not change Derby heap page format',
+                    'Phase J — Heap internal cleanup phase 1'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Storage roadmap is missing MVCC subsystem recovery-record marker: ' + markerText
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-subsystem-recovery-records-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC subsystem recovery-record static analysis')
+            writer.println('=========================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println()
+            delosMvccSubsystemRecoveryRecordsContracts.sort().each { contract ->
+                writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.contract + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('MVCC subsystem recovery-record proof points validated.')
+            } else {
+                writer.println('Validation failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('MVCC subsystem recovery-record static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB MVCC subsystem recovery-record static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis'
 }

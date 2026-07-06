@@ -258,7 +258,7 @@ inherited heap compatibility paths.
 
 ## Phase H — Attribute-level MVCC overflow storage
 
-Status: current MVCC storage slice after green pinned/dirty buffer-cache gate.
+Status: closed green.
 
 Large values spill at the attribute level using overflow descriptors. Small
 attributes remain inline. Multi-attribute rows can mix inline and overflow. Overflow
@@ -283,10 +283,32 @@ compatibility paths.
 
 ## Phase I — MVCC subsystem recovery records
 
-Status: later MVCC recovery slice.
+Status: current MVCC recovery-record slice after green attribute-overflow storage gate.
 
 Make MVCC recovery metadata explicit for row pages, index pages, overflow pages,
-free-space map changes, transaction outcomes, and checkpoints.
+free-space map changes, transaction outcomes, and checkpoints. This phase records
+subsystem-level recovery boundaries; it does not introduce repair commands, SQL
+syntax, DRDA behavior changes, Derby heap page-format changes, or Derby raw-log
+format changes.
+
+Required behavior:
+
+```text
+row page redo metadata
+index page redo metadata
+overflow page redo metadata
+free-space map redo metadata
+transaction outcome redo metadata
+checkpoint metadata
+monotonic recovery-record sequence validation
+provider-neutral recovery diagnostics
+reopen preserves recovery metadata records
+complete checkpoint boundary is inspectable
+```
+
+This phase is MVCC-owned recovery metadata. It must not change Derby heap page
+format, Derby raw log format, SQL syntax, DRDA behavior, module boundaries,
+optimizer behavior, or inherited heap compatibility paths.
 
 ## Phase J — Heap internal cleanup phase 1
 
