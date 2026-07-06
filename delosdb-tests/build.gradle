@@ -694,6 +694,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBasicTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVisibilityTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlIsolationLevelCheckpointTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlIndexTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLifecycleTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVacuumTest.class',

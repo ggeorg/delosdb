@@ -58,6 +58,7 @@ public final class MvccScanController implements ScanManager {
     private final TransactionManager transactionManager;
     private final boolean hold;
     private final boolean completeWithDerbyTransaction;
+    private final MvccBridgeIsolationPolicy isolationPolicy;
     private final boolean transactionScopedReader;
     private final boolean readerBorrowedFromWriter;
     private final DelosStorageTransactionRegistry.Reader registeredReader;
@@ -91,12 +92,13 @@ public final class MvccScanController implements ScanManager {
         this.hold = hold;
         this.completeWithDerbyTransaction = (openMode & TransactionController.OPENMODE_FORUPDATE)
                 == TransactionController.OPENMODE_FORUPDATE;
+        this.isolationPolicy = MvccBridgeIsolationPolicy.fromDerbyIsolationLevel(isolationLevel);
         this.scanColumnList = scanColumnList;
         this.qualifiers = qualifiers;
         DelosStorageTransaction activeWriter = DelosStorageTransactionRegistry.activeWriterTransaction(
                 transactionManager,
                 state.table());
-        this.transactionScopedReader = usesTransactionScopedSnapshot(isolationLevel);
+        this.transactionScopedReader = isolationPolicy.usesTransactionScopedSnapshot();
         if (activeWriter != null) {
             this.readerBorrowedFromWriter = true;
             this.reader = activeWriter;
@@ -544,11 +546,6 @@ public final class MvccScanController implements ScanManager {
         if (!transactionScopedReader) {
             state.abort(reader);
         }
-    }
-
-    private static boolean usesTransactionScopedSnapshot(int isolationLevel) {
-        return isolationLevel == TransactionController.ISOLATION_REPEATABLE_READ
-                || isolationLevel == TransactionController.ISOLATION_SERIALIZABLE;
     }
 
     private DelosStorageTransaction writer() {
