@@ -16,9 +16,9 @@ import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactory;
 /**
  * Page-volume backed store for MVCC overflow payload chunks.
  *
- * <p>This is intentionally not wired into SQL row writes yet. It is the durable
- * primitive needed before long rows/LOBs can move from a clean failure boundary
- * to real support.</p>
+ * <p>This store is used by MVCC row-level overflow and by attribute-level
+ * overflow descriptors.  The owning table store decides whether to spill the
+ * whole row payload or only the oversized value attribute.</p>
  */
 public final class MvccOverflowPayloadStore implements AutoCloseable {
     public static final int OVERFLOW_PAGE_TYPE = 2;

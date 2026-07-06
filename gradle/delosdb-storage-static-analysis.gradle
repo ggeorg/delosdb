@@ -3050,7 +3050,7 @@ tasks.register('delosStorageInspectorConsolidationStaticAnalysis') {
                     'provider identity, container/table identity, page summary, index summary, overflow summary, consistency status, diagnostic findings, and read-only metadata',
                     'No repair commands, behavior changes, format changes, SQL syntax, or module merging',
                     'Phase G — MVCC pinned/dirty buffer cache',
-                    'Status: current MVCC infrastructure slice after green shared storage inspector consolidation.'
+                    'Status: closed green.'
             ].each { markerText ->
                 if (!roadmapText.contains(markerText)) {
                     failures << 'Storage roadmap is missing inspector consolidation marker: ' + markerText
@@ -3402,7 +3402,7 @@ tasks.register('delosMvccPinnedDirtyBufferCacheStaticAnalysis') {
                     'Phase F — Shared storage inspector consolidation',
                     'Status: closed green.',
                     'Phase G — MVCC pinned/dirty buffer cache',
-                    'Status: current MVCC infrastructure slice after green shared storage inspector consolidation.',
+                    'Status: closed green.',
                     'pin/unpin tracking',
                     'dirty-page tracking',
                     'flush-list tracking',
@@ -3450,8 +3450,365 @@ tasks.register('delosMvccPinnedDirtyBufferCacheStaticAnalysis') {
     }
 }
 
+
+def delosMvccAttributeOverflowStorageFile = file('gradle/static-analysis/delosdb-mvcc-attribute-overflow-storage.txt')
+
+def delosMvccAttributeOverflowStorageContracts = [
+        'ATTRIBUTE_CODEC',
+        'ATTRIBUTE_DESCRIPTOR',
+        'INLINE_DESCRIPTOR_BOUNDARY',
+        'INLINE_SMALL_VALUE',
+        'OVERSIZED_VALUE_SPLIT',
+        'ATTRIBUTE_WRITE_ACCOUNTING',
+        'ATTRIBUTE_READ_REHYDRATION',
+        'OVERFLOW_CHAIN_VALIDATION',
+        'OVERFLOW_STORE_INTEGRATION',
+        'DIAGNOSTICS_API',
+        'STATISTICS_API',
+        'CAPABILITY_API',
+        'SQL_ATTRIBUTE_OVERFLOW_TEST',
+        'UPDATE_LIFECYCLE',
+        'DELETE_VACUUM_LIFECYCLE',
+        'REOPEN_TEST',
+        'TEST_SUITE_WIRING',
+        'ROADMAP_GATE',
+        'COMPATIBILITY_BOUNDARY'
+] as Set
+
+def delosLoadMvccAttributeOverflowStorageRows = {
+    if (!delosMvccAttributeOverflowStorageFile.exists()) {
+        throw new GradleException('Missing MVCC attribute-overflow storage classification file: ' + delosMvccAttributeOverflowStorageFile)
+    }
+    def rows = []
+    int lineNumber = 0
+    delosMvccAttributeOverflowStorageFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 5) {
+            throw new GradleException('Malformed MVCC attribute-overflow storage line ' + lineNumber + ': expected 5 pipe-delimited fields')
+        }
+        if (!delosMvccAttributeOverflowStorageContracts.contains(parts[2])) {
+            throw new GradleException('Malformed MVCC attribute-overflow storage line ' + lineNumber + ': unknown contract ' + parts[2])
+        }
+        rows << [
+                id        : parts[0],
+                path      : parts[1],
+                contract  : parts[2],
+                marker    : parts[3],
+                reason    : parts[4],
+                lineNumber: lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosMvccAttributeOverflowStorageStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the MVCC attribute-level overflow storage and diagnostics gate.'
+
+    inputs.file(delosMvccAttributeOverflowStorageFile)
+    inputs.files(
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccAttributeOverflowRowPayloadCodec.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccTableStore.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccOverflowPayloadStore.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTableDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccStorageStatistics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCapabilities.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlAttributeOverflowStorageTest.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOverflowLifecycleTest.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccStorageStatisticsTest.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/StorageCapabilitiesTest.java',
+            'delosdb-tests/build.gradle',
+            'docs/STORAGE-ROADMAP.md'
+    )
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-attribute-overflow-storage-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccAttributeOverflowStorageRows()
+        def failures = []
+        def ids = [] as Set
+        def paths = [] as Set
+        def contracts = rows.groupBy { it.contract }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC attribute-overflow storage id: ' + row.id
+            }
+            if (!paths.add(row.path + '|' + row.marker)) {
+                failures << 'Duplicate MVCC attribute-overflow storage proof marker: ' + row.path + ' -> ' + row.marker
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC attribute-overflow storage proof-point path does not exist: ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC attribute-overflow storage marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 40) {
+                failures << 'MVCC attribute-overflow storage reason is too thin for ' + row.id
+            }
+        }
+
+        delosMvccAttributeOverflowStorageContracts.each { contract ->
+            if (!contracts.containsKey(contract)) {
+                failures << 'Missing MVCC attribute-overflow storage contract row for ' + contract
+            }
+        }
+
+        def codecFile = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccAttributeOverflowRowPayloadCodec.java')
+        if (codecFile.exists()) {
+            def codecText = codecFile.getText('UTF-8')
+            [
+                    'public final class MvccAttributeOverflowRowPayloadCodec',
+                    'MAGIC = 0x444D5241',
+                    'FORMAT_VERSION = 1',
+                    'HEADER_SIZE = 28',
+                    'DESCRIPTOR_SIZE = MvccOverflowPayloadCodec.DESCRIPTOR_SIZE',
+                    'descriptor.totalLength() != valueLength',
+                    'MvccOverflowPayloadCodec.encodeDescriptor(descriptor)',
+                    'MvccOverflowPayloadCodec.decodeDescriptor(descriptorBytes)',
+                    'isAttributeOverflowPayload',
+                    'encodedLengthForKey',
+                    'record Reference(String key, long valueLength, MvccOverflowPayloadDescriptor descriptor)'
+            ].each { markerText ->
+                if (!codecText.contains(markerText)) {
+                    failures << 'MvccAttributeOverflowRowPayloadCodec is missing descriptor marker: ' + markerText
+                }
+            }
+        }
+
+        def storeFile = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccTableStore.java')
+        if (storeFile.exists()) {
+            def storeText = storeFile.getText('UTF-8')
+            [
+                    'if (encoded.length <= maxSingleRecordBytes())',
+                    'canStoreValueAsAttributeOverflow(record, payload)',
+                    'overflowStore.write(payload.value())',
+                    'MvccAttributeOverflowRowPayloadCodec.encode(',
+                    'attributeOverflowWriteCount++',
+                    'attributeOverflowInlineRowBytes += attributeReferencePayload.length',
+                    'attributeOverflowValueBytes += payload.value().length',
+                    'payload.value().length == 0',
+                    'MvccAttributeOverflowRowPayloadCodec.encodedLengthForKey(payload.key())',
+                    'MvccAttributeOverflowRowPayloadCodec.isAttributeOverflowPayload(payload)',
+                    'MvccAttributeOverflowRowPayloadCodec.decode(payload)',
+                    'overflowStore.read(reference.descriptor())',
+                    'attributeOverflowReadCount++',
+                    'MVCC attribute-overflow value length mismatch'
+            ].each { markerText ->
+                if (!storeText.contains(markerText)) {
+                    failures << 'PageBackedMvccTableStore is missing attribute-overflow marker: ' + markerText
+                }
+            }
+        }
+
+        def overflowStoreFile = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccOverflowPayloadStore.java')
+        if (overflowStoreFile.exists()) {
+            def overflowStoreText = overflowStoreFile.getText('UTF-8')
+            [
+                    'attribute-level\n * overflow descriptors',
+                    'overflow chain ended before chunk',
+                    'overflow chain contains extra chunk',
+                    'overflow chain total length mismatch',
+                    'overflow chain chunk index mismatch',
+                    'overflow chain chunk count mismatch',
+                    'expected overflow page type',
+                    'writableOverflowPage',
+                    'OVERFLOW_PAGE_TYPE'
+            ].each { markerText ->
+                if (!overflowStoreText.contains(markerText)) {
+                    failures << 'MvccOverflowPayloadStore is missing chain-validation marker: ' + markerText
+                }
+            }
+            if (overflowStoreText.contains('not wired into SQL row writes yet')) {
+                failures << 'MvccOverflowPayloadStore still claims overflow is not wired into SQL row writes'
+            }
+        }
+
+        def diagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java')
+        if (diagnosticsFile.exists()) {
+            def diagnosticsText = diagnosticsFile.getText('UTF-8')
+            [
+                    'attributeOverflowWriteCountForTesting',
+                    'attributeOverflowReadCountForTesting',
+                    'attributeOverflowInlineRowBytesForTesting',
+                    'attributeOverflowValueBytesForTesting'
+            ].each { markerText ->
+                if (!diagnosticsText.contains(markerText)) {
+                    failures << 'DelosStorageDiagnostics is missing attribute-overflow API marker: ' + markerText
+                }
+            }
+        }
+
+        def tableDiagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTableDiagnostics.java')
+        if (tableDiagnosticsFile.exists()) {
+            def tableDiagnosticsText = tableDiagnosticsFile.getText('UTF-8')
+            [
+                    'attributeOverflowWriteCountForTesting',
+                    'attributeOverflowReadCountForTesting',
+                    'attributeOverflowInlineRowBytesForTesting',
+                    'attributeOverflowValueBytesForTesting'
+            ].each { markerText ->
+                if (!tableDiagnosticsText.contains(markerText)) {
+                    failures << 'DelosStorageTableDiagnostics is missing attribute-overflow API marker: ' + markerText
+                }
+            }
+        }
+
+        def statisticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccStorageStatistics.java')
+        if (statisticsFile.exists()) {
+            def statisticsText = statisticsFile.getText('UTF-8')
+            [
+                    'long attributeOverflowWriteCount',
+                    'long attributeOverflowReadCount',
+                    'long attributeOverflowInlineRowBytes',
+                    'long attributeOverflowValueBytes',
+                    'diagnostics.attributeOverflowWriteCountForTesting(segment, containerId)',
+                    'diagnostics.attributeOverflowReadCountForTesting(segment, containerId)',
+                    'diagnostics.attributeOverflowInlineRowBytesForTesting(segment, containerId)',
+                    'diagnostics.attributeOverflowValueBytesForTesting(segment, containerId)',
+                    'public boolean hasAttributeOverflowStatistics()',
+                    'return attributeOverflowWriteCount > 0L || attributeOverflowValueBytes > 0L'
+            ].each { markerText ->
+                if (!statisticsText.contains(markerText)) {
+                    failures << 'DelosMvccStorageStatistics is missing attribute-overflow statistics marker: ' + markerText
+                }
+            }
+        }
+
+        def capabilitiesFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCapabilities.java')
+        if (capabilitiesFile.exists()) {
+            def capabilitiesText = capabilitiesFile.getText('UTF-8')
+            [
+                    'boolean supportsAttributeOverflow',
+                    'capabilities are not consumed by Derby optimizer',
+                    'false,',
+                    'mvcc,'
+            ].each { markerText ->
+                if (!capabilitiesText.contains(markerText)) {
+                    failures << 'DelosStorageCapabilities is missing attribute-overflow capability marker: ' + markerText
+                }
+            }
+        }
+
+        def attributeTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlAttributeOverflowStorageTest.java')
+        if (attributeTestFile.exists()) {
+            def attributeTestText = attributeTestFile.getText('UTF-8')
+            [
+                    'testLargeValueUsesAttributeOverflowAndSurvivesReopen',
+                    'small-inline-value',
+                    'repeated(\'x\', 24000)',
+                    'only the oversized row should use the attribute-overflow writer',
+                    'attribute overflow should store the value bytes outside the row page',
+                    'inline attribute-overflow descriptor should be smaller than the value bytes',
+                    'attribute overflow should allocate MVCC overflow pages',
+                    'consistency/read path should resolve attribute overflow descriptors',
+                    'updated large value must round trip',
+                    'large update should use another attribute-overflow descriptor',
+                    'reopen should hydrate attribute-overflow values from descriptors'
+            ].each { markerText ->
+                if (!attributeTestText.contains(markerText)) {
+                    failures << 'MvccSqlAttributeOverflowStorageTest is missing SQL proof marker: ' + markerText
+                }
+            }
+        }
+
+        def lifecycleTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOverflowLifecycleTest.java')
+        if (lifecycleTestFile.exists()) {
+            def lifecycleTestText = lifecycleTestFile.getText('UTF-8')
+            [
+                    'short-to-long',
+                    'short-after-long',
+                    'deleteRow(connection, 5)',
+                    'vacuum must retain live overflow chains',
+                    'vacuum should drop obsolete overflow chains',
+                    'overflow page count should remain stable after reopen'
+            ].each { markerText ->
+                if (!lifecycleTestText.contains(markerText)) {
+                    failures << 'MvccSqlOverflowLifecycleTest is missing overflow lifecycle marker: ' + markerText
+                }
+            }
+        }
+
+        def buildFile = file('delosdb-tests/build.gradle')
+        if (buildFile.exists()) {
+            def buildText = buildFile.getText('UTF-8')
+            if (!buildText.contains('MvccSqlAttributeOverflowStorageTest.class')) {
+                failures << 'runDelosMvccSqlIntegrationTest must include MvccSqlAttributeOverflowStorageTest'
+            }
+            if (!buildText.contains('MvccSqlOverflowLifecycleTest.class')) {
+                failures << 'runDelosMvccSqlIntegrationTest must include MvccSqlOverflowLifecycleTest'
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing storage roadmap documenting MVCC attribute-overflow storage phase'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Phase G — MVCC pinned/dirty buffer cache',
+                    'Status: closed green.',
+                    'Phase H — Attribute-level MVCC overflow storage',
+                    'Status: current MVCC storage slice after green pinned/dirty buffer-cache gate.',
+                    'small attributes remain inline',
+                    'large attributes spill through attribute-level overflow descriptors',
+                    'overflow chains validate missing, extra, wrong-size, or wrong-order chunks',
+                    'large-value update, delete, vacuum, and reopen paths remain correct',
+                    'provider-neutral diagnostics expose attribute-overflow counters and byte summaries',
+                    'MVCC capability metadata reports attribute-overflow support without optimizer consumption',
+                    'inherited heap compatibility paths',
+                    'Phase I — MVCC subsystem recovery records'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Storage roadmap is missing MVCC attribute-overflow marker: ' + markerText
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-attribute-overflow-storage-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC attribute-overflow storage static analysis')
+            writer.println('=======================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println()
+            delosMvccAttributeOverflowStorageContracts.sort().each { contract ->
+                writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.contract + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('MVCC attribute-overflow storage proof points validated.')
+            } else {
+                writer.println('Validation failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('MVCC attribute-overflow storage static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB MVCC attribute-overflow storage static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis'
 }

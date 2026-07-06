@@ -233,7 +233,7 @@ allowed in this slice unless separately gated.
 
 ## Phase G — MVCC pinned/dirty buffer cache
 
-Status: current MVCC infrastructure slice after green shared storage inspector consolidation.
+Status: closed green.
 
 Add or strengthen real pinned/dirty MVCC page-cache discipline: pin/unpin tracking,
 dirty-page tracking, flush-list tracking, bounded eviction respecting pins, deterministic
@@ -258,11 +258,28 @@ inherited heap compatibility paths.
 
 ## Phase H — Attribute-level MVCC overflow storage
 
-Status: later MVCC storage slice.
+Status: current MVCC storage slice after green pinned/dirty buffer-cache gate.
 
-Large values should spill at the attribute level using overflow descriptors. Small
+Large values spill at the attribute level using overflow descriptors. Small
 attributes remain inline. Multi-attribute rows can mix inline and overflow. Overflow
-chunks must be reusable and inspectable. Heap compatibility remains unaffected.
+chains remain page-backed, validated, vacuumable, and inspectable. Heap compatibility
+remains unaffected.
+
+Required behavior:
+
+```text
+small attributes remain inline
+large attributes spill through attribute-level overflow descriptors
+multi-row and multi-version tables can mix inline rows with attribute-overflow rows
+overflow chains validate missing, extra, wrong-size, or wrong-order chunks
+large-value update, delete, vacuum, and reopen paths remain correct
+provider-neutral diagnostics expose attribute-overflow counters and byte summaries
+MVCC capability metadata reports attribute-overflow support without optimizer consumption
+```
+
+This phase is MVCC-owned storage behavior. It must not change Derby heap page format,
+Derby raw log format, SQL syntax, DRDA behavior, module boundaries, or inherited heap
+compatibility paths.
 
 ## Phase I — MVCC subsystem recovery records
 
