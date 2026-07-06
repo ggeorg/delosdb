@@ -21,6 +21,7 @@ java {
 dependencies {
     implementation project(':delosdb-spi')
     implementation project(':delosdb-commons')
+    implementation project(':delosdb-runtime-api')
     api project(':delosdb-storage-api')
     api project(':delosdb-storage-io')
     testImplementation project(':delosdb-spi')

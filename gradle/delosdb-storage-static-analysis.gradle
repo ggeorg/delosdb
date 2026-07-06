@@ -1288,8 +1288,129 @@ tasks.register('delosCrossEngineConsistencyFrameworkStaticAnalysis') {
     }
 }
 
+
+def delosModuleDependencyReportDir = layout.buildDirectory.dir('reports/delosdb-module-dependencies')
+def delosModuleDependencyReportFiles = [
+        'missing-declared-project-dependencies.tsv',
+        'duplicate-resources.tsv',
+        'output-dir-backdoors.tsv',
+        'unresolved-imports.tsv',
+        'module-dependencies.md'
+]
+
+def delosModuleDependencyNonHeaderRows = { File tsvFile ->
+    if (!tsvFile.isFile()) {
+        return ['<missing report file: ' + tsvFile + '>']
+    }
+    def lines = tsvFile.readLines('UTF-8')
+    if (lines.isEmpty()) {
+        return ['<empty report file: ' + tsvFile + '>']
+    }
+    lines.drop(1).findAll { it.trim() }
+}
+
+tasks.register('delosModuleDependencyReport', Exec) {
+    group = 'verification'
+    description = 'Generates the DelosDB module dependency and resource ownership report.'
+
+    inputs.file('scripts/module-dependency-tree.py')
+    inputs.file('settings.gradle')
+    inputs.files(fileTree('.') {
+        include '*/build.gradle'
+        include '*/src/main/java/**/*.java'
+        include '*/src/test/java/**/*.java'
+        include '*/src/main/resources/**'
+        include '*/src/test/resources/**'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+    })
+    outputs.dir(delosModuleDependencyReportDir)
+
+    commandLine 'python3', 'scripts/module-dependency-tree.py'
+}
+
+tasks.register('delosModuleDependencyBoundaryStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies objective DelosDB module dependency and resource-boundary invariants.'
+    dependsOn 'delosModuleDependencyReport'
+
+    inputs.files(delosModuleDependencyReportFiles.collect { name ->
+        delosModuleDependencyReportDir.map { it.file(name) }
+    })
+    outputs.file(layout.buildDirectory.file('reports/delosdb/module-dependency-boundary-static-analysis.txt'))
+
+    doLast {
+        def reportDir = delosModuleDependencyReportDir.get().asFile
+        def failures = []
+        def summaryFile = new File(reportDir, 'module-dependencies.md')
+        def summaryText = summaryFile.isFile() ? summaryFile.getText('UTF-8') : ''
+
+        def expectedZeroSummaryLines = [
+                '| Missing declared production dependencies | 0 |',
+                '| Package owner collisions | 0 |',
+                '| Duplicate resource paths | 0 |',
+                '| Duplicate service resource paths | 0 |',
+                '| Cross-module output-dir backdoor lines | 0 |',
+                '| Unresolved project imports | 0 |'
+        ]
+        expectedZeroSummaryLines.each { line ->
+            if (!summaryText.contains(line)) {
+                failures << 'Module dependency summary must keep zero invariant: ' + line
+            }
+        }
+
+        [
+                'missing-declared-project-dependencies.tsv' : 'missing declared production dependencies',
+                'duplicate-resources.tsv'                  : 'duplicate resource paths',
+                'output-dir-backdoors.tsv'                 : 'cross-module output-dir backdoor lines',
+                'unresolved-imports.tsv'                   : 'unresolved project imports'
+        ].each { String fileName, String description ->
+            def rows = delosModuleDependencyNonHeaderRows(new File(reportDir, fileName))
+            if (!rows.isEmpty()) {
+                failures << "Unexpected ${description}: " + rows.join(' | ')
+            }
+        }
+
+        def mvccBuild = file('delosdb-storage-mvcc/build.gradle')
+        def mvccBuildText = mvccBuild.isFile() ? mvccBuild.getText('UTF-8') : ''
+        if (!mvccBuildText.contains("implementation project(':delosdb-runtime-api')")) {
+            failures << "delosdb-storage-mvcc must declare its direct runtime-api dependency; do not rely on transitive storage-api wiring."
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/module-dependency-boundary-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB module dependency boundary static analysis')
+            writer.println('=================================================')
+            writer.println()
+            writer.println('Source report directory: ' + reportDir)
+            writer.println('Checked invariants:')
+            writer.println('  - no missing declared production dependencies')
+            writer.println('  - no package owner collisions')
+            writer.println('  - no duplicate resource paths or service resources')
+            writer.println('  - no cross-module output-dir backdoor lines')
+            writer.println('  - no unresolved project imports')
+            writer.println('  - delosdb-storage-mvcc declares delosdb-runtime-api directly')
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Module dependency boundary checks passed.')
+            } else {
+                writer.println('Module dependency boundary failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB module dependency boundary static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB module dependency boundary static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosRuntimeArtifactModelStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
 }
