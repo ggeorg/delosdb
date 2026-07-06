@@ -33,6 +33,11 @@ import org.apache.derby.iapi.store.access.TransactionController;
  * snapshot held in {@code DelosStorageTransactionRegistry}. Keeping this
  * mapping here prevents future changes from hiding the isolation contract in a
  * boolean expression inside the scan controller.</p>
+ *
+ * <p>This policy is a read-view selection policy only. It does not introduce
+ * new predicate-lock, range-lock, or phantom-prevention semantics; those remain
+ * the responsibility of Derby's access/locking layers and must not be inferred
+ * from the SERIALIZABLE-to-transaction-snapshot mapping alone.</p>
  */
 final class MvccBridgeIsolationPolicy {
     private final int derbyIsolationLevel;

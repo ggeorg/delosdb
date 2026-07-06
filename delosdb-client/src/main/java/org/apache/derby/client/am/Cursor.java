@@ -21,6 +21,7 @@
 
 package org.apache.derby.client.am;
 import org.apache.derby.shared.common.reference.SQLState;
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 
 import java.sql.SQLException;
 import java.io.BufferedInputStream;
@@ -594,6 +595,7 @@ public abstract class Cursor {
         try {
             ByteArrayInputStream bais = new ByteArrayInputStream( bytes );
             ObjectInputStream ois = new ObjectInputStream( bais );
+            DelosObjectInputFilters.applyGeneralFilterIfConfigured(ois);
 
             return ois.readObject();
         }

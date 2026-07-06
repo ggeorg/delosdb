@@ -24,6 +24,8 @@ package org.apache.derby.iapi.services.io;
 import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
+
 /**
  * Optional DelosDB hardening hook for inherited Derby JAVA_OBJECT
  * deserialization.
@@ -38,17 +40,12 @@ public final class DelosHeapObjectDeserializationFilter {
      * Standard JDK ObjectInputFilter pattern for strict Derby heap UDT reads.
      * Unset or blank means Derby-compatible default behavior.
      */
-    public static final String FILTER_PROPERTY = "delosdb.heap.objectDeserializationFilter";
+    public static final String FILTER_PROPERTY = DelosObjectInputFilters.HEAP_FILTER_PROPERTY;
 
     private DelosHeapObjectDeserializationFilter() {
     }
 
     static void applyIfConfigured(ObjectInputStream stream) {
-        String pattern = System.getProperty(FILTER_PROPERTY);
-        if (pattern == null || pattern.isBlank()) {
-            return;
-        }
-
-        stream.setObjectInputFilter(ObjectInputFilter.Config.createFilter(pattern));
+        DelosObjectInputFilters.applyHeapFilterIfConfigured(stream);
     }
 }

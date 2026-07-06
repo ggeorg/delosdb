@@ -58,6 +58,7 @@ import org.apache.derby.shared.common.reference.Attribute;
 import org.apache.derby.shared.common.reference.DRDAConstants;
 import org.apache.derby.shared.common.reference.Property;
 import org.apache.derby.shared.common.reference.SQLState;
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 import org.apache.derby.shared.common.info.JVMInfo;
 import org.apache.derby.iapi.services.monitor.ModuleFactory;
 import org.apache.derby.iapi.services.monitor.Monitor;
@@ -5110,6 +5111,7 @@ class DRDAConnThread extends Thread {
         try {
             ByteArrayInputStream bais = new ByteArrayInputStream( bytes );
             ObjectInputStream ois = new ObjectInputStream( bais );
+            DelosObjectInputFilters.applyGeneralFilterIfConfigured(ois);
 
             return ois.readObject();
         }

@@ -32,6 +32,7 @@ import java.util.HashMap;
 import org.apache.derby.iapi.util.StringUtil;
 import org.apache.derby.shared.common.error.PublicAPI;
 import org.apache.derby.shared.common.reference.SQLState;
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 import org.apache.derby.shared.common.error.StandardException;
 
 
@@ -290,6 +291,7 @@ abstract class ImportAbstract extends VTITemplate {
     {
         ByteArrayInputStream bais = new ByteArrayInputStream( bytes );
         ObjectInputStream ois = new ObjectInputStream( bais );
+        DelosObjectInputFilters.applyGeneralFilterIfConfigured(ois);
 
         return ois.readObject();
     }

@@ -22,10 +22,13 @@
 package org.apache.derby.impl.store.access.heap;
 
 import java.util.HashSet;
+import java.util.Properties;
 import java.util.Set;
 
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.Page;
+import org.apache.derby.iapi.services.diag.DiagnosticUtil;
+import org.apache.derby.iapi.services.diag.Diagnosticable;
 import org.apache.derby.impl.store.raw.data.StoredPageSanityChecker;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -72,6 +75,7 @@ final class HeapSanityChecker {
 
                 checkPageNumber(context, pageNumber, seenPages);
                 checkRecordCounts(page, context);
+                checkDiagnosticProperties(page, context);
                 StoredPageSanityChecker.checkPage(page, context);
 
                 previousPageNumber = pageNumber;
@@ -113,6 +117,54 @@ final class HeapSanityChecker {
         if (nonDeletedRecordCount > recordCount) {
             fail(context, "nonDeletedRecordCountWithinRecordCount",
                     nonDeletedRecordCount, "<= " + recordCount);
+        }
+    }
+
+
+    private static void checkDiagnosticProperties(Page page, String context)
+            throws StandardException {
+        Properties properties = new Properties();
+        properties.put(Page.DIAG_BYTES_FREE, "");
+        properties.put(Page.DIAG_BYTES_RESERVED, "");
+        properties.put(Page.DIAG_NUMOVERFLOWED, "");
+        properties.put(Page.DIAG_ROWSIZE, "");
+        properties.put(Page.DIAG_MINROWSIZE, "");
+        properties.put(Page.DIAG_MAXROWSIZE, "");
+
+        Diagnosticable diagnostic = DiagnosticUtil.findDiagnostic(page);
+        if (diagnostic == null) {
+            return;
+        }
+        diagnostic.diag_detail(properties);
+
+        checkNonNegativeDiagnostic(properties, Page.DIAG_BYTES_FREE, context);
+        checkNonNegativeDiagnostic(properties, Page.DIAG_BYTES_RESERVED, context);
+        checkNonNegativeDiagnostic(properties, Page.DIAG_NUMOVERFLOWED, context);
+        checkNonNegativeDiagnostic(properties, Page.DIAG_ROWSIZE, context);
+        checkNonNegativeDiagnostic(properties, Page.DIAG_MINROWSIZE, context);
+        checkNonNegativeDiagnostic(properties, Page.DIAG_MAXROWSIZE, context);
+    }
+
+    private static void checkNonNegativeDiagnostic(Properties properties,
+            String propertyName, String context) throws StandardException {
+        String value = properties.getProperty(propertyName);
+        if (value == null || value.isBlank()) {
+            fail(context, "diagnosticPropertyPresent:" + propertyName,
+                    -1, "present parseable non-negative integer");
+        }
+
+        try {
+            long parsed = Long.parseLong(value);
+            if (parsed < 0) {
+                fail(context, "diagnosticPropertyNonNegative:" + propertyName,
+                        parsed, ">= 0");
+            }
+        } catch (NumberFormatException nfe) {
+            throw StandardException.newException(SQLState.DATA_CORRUPT_PAGE,
+                    "Heap consistency check failed: " + context
+                    + " invariant=diagnosticPropertyParseable:"
+                    + propertyName + " actual=" + value
+                    + " expected=parseable non-negative integer");
         }
     }
 

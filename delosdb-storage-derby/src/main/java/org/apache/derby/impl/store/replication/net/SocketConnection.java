@@ -26,6 +26,8 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
 
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
+
 /**
  * This class encapsulates a <code>Socket</code> connection and has
  * methods that allow to read and write into the Object streams
@@ -65,6 +67,7 @@ public class SocketConnection {
         objOutputStream = new ObjectOutputStream(socket.getOutputStream());
         //Get the InputStream from the socket
         objInputStream = new ObjectInputStream(socket.getInputStream());
+        DelosObjectInputFilters.applyGeneralFilterIfConfigured(objInputStream);
     }
     
     /**
