@@ -112,7 +112,21 @@ Protobuf
   not used on DRDA/JDBC wire and not the first choice for MVCC durable rows
 ```
 
-See `docs/MVCC-MISSION.md` for the detailed storage status and next lane.
+### Storage closeout baseline
+
+The current storage baseline includes four completed hardening lanes:
+
+```text
+Derby heap consistency checking through SYSCS_UTIL.SYSCS_CHECK_TABLE
+explicit MVCC isolation read-view policy
+opt-in Derby heap object deserialization filtering
+provider-neutral cross-engine consistency reporting
+```
+
+The runtime artifact model also verifies `delos_mvcc` provider discovery before the focused SQL integration gate runs. This prevents the MVCC engine from compiling successfully while being absent from the Derby-compatible runtime jar set.
+
+See `docs/STORAGE-ARCHITECTURE.md` for the storage architecture and closeout baseline.
+See `docs/CLEANUP-CONSOLIDATION.md` for the cleanup/consolidation phase.
 
 ### Network server path
 
@@ -145,6 +159,12 @@ Use the wrapper, not a system Gradle command:
 The inherited Ant workflow is not part of the supported DelosDB workflow.
 
 ## Main verification gates
+
+Runtime provider gate:
+
+```sh
+./gradlew verifyDelosRuntimeStorageProviders
+```
 
 Focused MVCC SQL gate:
 
@@ -186,7 +206,11 @@ Broader Derby compatibility checks remain useful before a release-style push:
 ./gradlew networkServerSmoke
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
 ./gradlew :delosdb-tests:runDelosServerSchedulerTest
+./gradlew verifyDelosRuntimeStorageProviders
 ./gradlew delosStorageStaticAnalysis
+./gradlew delosHeapObjectDeserializationFilterStaticAnalysis
+./gradlew delosCrossEngineConsistencyFrameworkStaticAnalysis
+./gradlew delosRuntimeArtifactModelStaticAnalysis
 ./gradlew delosServerStaticAnalysis
 ./gradlew s0CloseoutVerification
 ./gradlew dist
@@ -241,7 +265,8 @@ Maintained project documentation:
 ```text
 docs/BUILDING.md
 docs/DERBY-COMPATIBILITY.md
-docs/MVCC-MISSION.md
+docs/STORAGE-ARCHITECTURE.md
+docs/CLEANUP-CONSOLIDATION.md
 docs/DELOSDB-SERVER.md
 docs/sql-extensions.md
 ```

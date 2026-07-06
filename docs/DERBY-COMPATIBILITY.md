@@ -40,6 +40,27 @@ BLOB / CLOB
 
 This does not change inherited Derby heap compatibility.
 
+
+## Heap consistency checking
+
+Derby-compatible heap tables now participate in `SYSCS_UTIL.SYSCS_CHECK_TABLE(...)` through a read-only heap sanity checker. The checker validates page traversal, record counts, page diagnostic values, and slot-table invariants without changing heap pages, allocation metadata, raw logs, or diagnostic state.
+
+The checker assumes Derby's existing consistency-check locking discipline. It is not a background repair tool and is not a live unlocked corruption detector.
+
+## Heap object deserialization filter
+
+Default heap `JAVA_OBJECT` behavior remains Derby-compatible. DelosDB also provides an opt-in heap object deserialization filter through:
+
+```text
+delosdb.heap.objectDeserializationFilter
+```
+
+Unset or blank preserves default Derby-compatible behavior. Strict filtering is explicit and is installed through the central heap object stream path.
+
+## Cross-engine consistency diagnostics
+
+DelosDB exposes a provider-neutral consistency report shape for mixed heap and MVCC databases. The report is diagnostic and read-only. It must not grow repair, cleanup, or stdout/stderr behavior.
+
 ## Reuse rule
 
 Reuse direction is mostly Derby heap/raw-store patterns into MVCC:

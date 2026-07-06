@@ -43,3 +43,25 @@ MVCC SQL tests use the in-place MVCC compress/vacuum path when testing MVCC page
 ## Default-provider property
 
 The normal no-property path remains Derby heap storage. Any property-gated default-provider behavior is a guarded candidate path and must not be treated as a production default-store flip.
+
+## MVCC isolation behavior
+
+The MVCC bridge uses an explicit read-view policy:
+
+```text
+READ COMMITTED and weaker
+  statement-scoped current read view
+
+REPEATABLE READ / SERIALIZABLE
+  transaction-scoped stable read view
+```
+
+This is a storage-engine behavior checkpoint, not new SQL syntax. Applications continue to use Derby/JDBC transaction isolation controls.
+
+## Consistency diagnostics
+
+DelosDB keeps the inherited consistency-check surface and extends the storage diagnostics layer with provider-neutral consistency reporting.
+
+Heap tables participate in `SYSCS_UTIL.SYSCS_CHECK_TABLE(...)` through a read-only heap sanity checker. Mixed heap/MVCC diagnostics are exposed through DelosDB storage metadata/diagnostic APIs using a stable report shape.
+
+Consistency diagnostics do not repair storage, rewrite pages, or change table contents.

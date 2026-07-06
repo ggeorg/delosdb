@@ -19,6 +19,12 @@ Do not rely on a system `gradle` command.
 
 ## Main verification commands
 
+Runtime provider gate:
+
+```sh
+./gradlew verifyDelosRuntimeStorageProviders
+```
+
 Focused MVCC SQL gate:
 
 ```sh
@@ -65,6 +71,24 @@ Storage/MVCC static gate:
 
 ```sh
 ./gradlew delosStorageStaticAnalysis
+```
+
+Runtime artifact model gate:
+
+```sh
+./gradlew delosRuntimeArtifactModelStaticAnalysis
+```
+
+Heap object deserialization filter gate:
+
+```sh
+./gradlew delosHeapObjectDeserializationFilterStaticAnalysis
+```
+
+Cross-engine consistency framework gate:
+
+```sh
+./gradlew delosCrossEngineConsistencyFrameworkStaticAnalysis
 ```
 
 Server static gate:
