@@ -73,6 +73,8 @@ Cycle 0 is audit and governance only. It must not change Java behavior.
 
 ### Derby fork-diff classification
 
+Status: closed green.
+
 High-risk inherited Derby diffs must be classified before deeper engine work. The gate
 is intentionally narrow: every known high-risk inherited Derby file from the current
 comparison must have a classification row, and the row must describe the surface,
@@ -105,6 +107,35 @@ FormatIdInputStream.java
 NetworkServerControlImpl.java
 DRDAConnThread.java
 ```
+
+### MVCC candidate-index authority audit
+
+Status: current Cycle 0 audit slice.
+
+Every remaining MVCC candidate-index path must be classified before candidate-index
+quarantine, removal, or cleanup work continues. This is an audit/reporting gate only:
+it must not remove code, rename APIs, change read authority, or change Java behavior.
+
+Allowed classifications:
+
+```text
+NORMAL_SQL_AUTHORITY
+EXPLICIT_FALLBACK
+DIAGNOSTIC_PARITY
+TEST_ONLY
+LEGACY_COMPATIBILITY
+STALE_CANDIDATE
+```
+
+The gate scans the storage API, MVCC implementation, MVCC Derby bridge, Derby heap
+provider diagnostics, and DelosDB MVCC SQL tests for active candidate-index authority
+mentions. Each active source path must have a single classification row. Stale rows,
+duplicate rows, and unclassified active paths fail S0.
+
+A NORMAL_SQL_AUTHORITY row is a quarantine target. In the current tree, remaining
+production candidate-index mentions are expected to be diagnostic/parity,
+explicit-fallback, legacy-compatibility, or stale diagnostic naming rather than normal
+SQL read authority.
 
 ## Cycle 1 — First balanced execution cycle
 
