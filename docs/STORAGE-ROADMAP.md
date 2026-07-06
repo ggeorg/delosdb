@@ -214,7 +214,7 @@ Do not skip the heap slice.
 
 ## Phase F — Shared storage inspector consolidation
 
-Status: current shared-service slice after green heap diagnostics expansion.
+Status: closed green.
 
 Once heap diagnostics and MVCC diagnostics both exist, consolidate the storage inspector
 shape across providers. The common inspection result should expose provider identity,
@@ -233,11 +233,28 @@ allowed in this slice unless separately gated.
 
 ## Phase G — MVCC pinned/dirty buffer cache
 
-Status: later MVCC infrastructure slice.
+Status: current MVCC infrastructure slice after green shared storage inspector consolidation.
 
 Add or strengthen real pinned/dirty MVCC page-cache discipline: pin/unpin tracking,
 dirty-page tracking, flush-list tracking, bounded eviction respecting pins, deterministic
 flush behavior for tests, checksum/generation validation, and reopen correctness.
+
+Required behavior:
+
+```text
+pin/unpin tracked
+dirty pages tracked
+flush-list state tracked
+bounded eviction respects pinned and dirty pages
+dirty flush order remains deterministic enough for tests
+checksum/generation validation remains green
+reopen correctness remains green
+provider-neutral diagnostics expose cache lifecycle state
+```
+
+This phase is MVCC-owned infrastructure. It must not change Derby heap page
+format, Derby raw log format, SQL syntax, DRDA behavior, module boundaries, or
+inherited heap compatibility paths.
 
 ## Phase H — Attribute-level MVCC overflow storage
 

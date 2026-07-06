@@ -2720,7 +2720,7 @@ tasks.register('delosHeapDiagnosticsExpansionStaticAnalysis') {
                     'read-only heap diagnostics without changing heap format',
                     'Do not skip the heap slice',
                     'Phase F — Shared storage inspector consolidation',
-                    'Status: current shared-service slice after green heap diagnostics expansion.'
+                    'Status: closed green.'
             ].each { marker ->
                 if (!roadmapText.contains(marker)) {
                     failures << 'Storage roadmap is missing heap diagnostics expansion marker: ' + marker
@@ -3046,10 +3046,11 @@ tasks.register('delosStorageInspectorConsolidationStaticAnalysis') {
                     'Phase E — Heap diagnostics expansion',
                     'Status: closed green.',
                     'Phase F — Shared storage inspector consolidation',
-                    'Status: current shared-service slice after green heap diagnostics expansion.',
+                    'Status: closed green.',
                     'provider identity, container/table identity, page summary, index summary, overflow summary, consistency status, diagnostic findings, and read-only metadata',
                     'No repair commands, behavior changes, format changes, SQL syntax, or module merging',
-                    'Phase G — MVCC pinned/dirty buffer cache'
+                    'Phase G — MVCC pinned/dirty buffer cache',
+                    'Status: current MVCC infrastructure slice after green shared storage inspector consolidation.'
             ].each { markerText ->
                 if (!roadmapText.contains(markerText)) {
                     failures << 'Storage roadmap is missing inspector consolidation marker: ' + markerText
@@ -3116,8 +3117,341 @@ tasks.register('delosStorageInspectorConsolidationStaticAnalysis') {
     }
 }
 
+
+def delosMvccPinnedDirtyBufferCacheFile = file('gradle/static-analysis/delosdb-mvcc-pinned-dirty-buffer-cache.txt')
+
+def delosMvccPinnedDirtyBufferCacheContracts = [
+        'CACHE_BOUNDARY',
+        'PIN_SCOPE',
+        'UNPIN_BALANCE',
+        'DIRTY_TRACKING',
+        'FLUSH_LIST_TRACKING',
+        'FLUSH_BOUNDARY',
+        'BOUNDED_EVICTION',
+        'PINNED_EVICTION_PROTECTION',
+        'GENERATION_TRACKING',
+        'SNAPSHOT_DIAGNOSTICS',
+        'STORE_INTEGRATION',
+        'DIAGNOSTICS_API',
+        'STATISTICS_API',
+        'SQL_PAGE_CACHE_TEST',
+        'BOUNDED_CACHE_TEST',
+        'REOPEN_TEST',
+        'CONSISTENCY_SCAN_GATE',
+        'TEST_SUITE_WIRING',
+        'ROADMAP_GATE',
+        'COMPATIBILITY_BOUNDARY'
+] as Set
+
+def delosLoadMvccPinnedDirtyBufferCacheRows = {
+    if (!delosMvccPinnedDirtyBufferCacheFile.exists()) {
+        throw new GradleException('Missing MVCC pinned/dirty buffer-cache classification file: ' + delosMvccPinnedDirtyBufferCacheFile)
+    }
+    def rows = []
+    int lineNumber = 0
+    delosMvccPinnedDirtyBufferCacheFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 5) {
+            throw new GradleException('Malformed MVCC pinned/dirty buffer-cache line ' + lineNumber + ': expected 5 pipe-delimited fields')
+        }
+        if (!delosMvccPinnedDirtyBufferCacheContracts.contains(parts[2])) {
+            throw new GradleException('Malformed MVCC pinned/dirty buffer-cache line ' + lineNumber + ': unknown contract ' + parts[2])
+        }
+        rows << [
+                id        : parts[0],
+                path      : parts[1],
+                contract  : parts[2],
+                marker    : parts[3],
+                reason    : parts[4],
+                lineNumber: lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosMvccPinnedDirtyBufferCacheStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the MVCC pinned/dirty page-cache lifecycle and diagnostics gate.'
+
+    inputs.file(delosMvccPinnedDirtyBufferCacheFile)
+    inputs.files(
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageCache.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccTableStore.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePageCacheDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTableDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccStorageStatistics.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageCacheTest.java',
+            'delosdb-tests/build.gradle',
+            'docs/STORAGE-ROADMAP.md'
+    )
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-pinned-dirty-buffer-cache-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccPinnedDirtyBufferCacheRows()
+        def failures = []
+        def ids = [] as Set
+        def paths = [] as Set
+        def contracts = rows.groupBy { it.contract }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC pinned/dirty buffer-cache id: ' + row.id
+            }
+            if (!paths.add(row.path + '|' + row.marker)) {
+                failures << 'Duplicate MVCC pinned/dirty buffer-cache proof marker: ' + row.path + ' -> ' + row.marker
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC pinned/dirty buffer-cache proof-point path does not exist: ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC pinned/dirty buffer-cache marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 40) {
+                failures << 'MVCC pinned/dirty buffer-cache reason is too thin for ' + row.id
+            }
+        }
+
+        delosMvccPinnedDirtyBufferCacheContracts.each { contract ->
+            if (!contracts.containsKey(contract)) {
+                failures << 'Missing MVCC pinned/dirty buffer-cache contract row for ' + contract
+            }
+        }
+
+        def cacheFile = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageCache.java')
+        if (cacheFile.exists()) {
+            def cacheText = cacheFile.getText('UTF-8')
+            [
+                    'final class MvccPageCache',
+                    'private static final int DEFAULT_MAX_PAGES = 128',
+                    'synchronized PinnedPage readPinned',
+                    'final class PinnedPage implements AutoCloseable',
+                    'private synchronized void unpin',
+                    'synchronized void putDirty',
+                    'synchronized void flushAll',
+                    'private void trimToMaxPagesUnlocked',
+                    'cached.pinCount > 0 || cached.dirty',
+                    'pinnedEvictionSkips++',
+                    'long dirtyPages',
+                    'long flushListPages',
+                    'long lastPageGeneration',
+                    'record Snapshot'
+            ].each { markerText ->
+                if (!cacheText.contains(markerText)) {
+                    failures << 'MvccPageCache is missing lifecycle marker: ' + markerText
+                }
+            }
+        }
+
+        def storeFile = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccTableStore.java')
+        if (storeFile.exists()) {
+            def storeText = storeFile.getText('UTF-8')
+            [
+                    'private final MvccPageCache pageCache',
+                    'new MvccPageCache()',
+                    'pageCache.read(pageVolume, pageId)',
+                    'pageCache.putDirty(page)',
+                    'pageCache.flush(pageVolume, page.pageId())',
+                    'pageCache.flushAll(pageVolume)',
+                    'pageCache.snapshot().pins()',
+                    'pageCache.snapshot().unpins()',
+                    'pageCache.snapshot().dirtyPages()',
+                    'pageCache.snapshot().flushListPages()',
+                    'pageCache.snapshot().pinnedEvictionSkips()',
+                    'pageCache.snapshot().lastPageGeneration()'
+            ].each { markerText ->
+                if (!storeText.contains(markerText)) {
+                    failures << 'PageBackedMvccTableStore is missing page-cache integration marker: ' + markerText
+                }
+            }
+        }
+
+        def diagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePageCacheDiagnostics.java')
+        if (diagnosticsFile.exists()) {
+            def diagnosticsText = diagnosticsFile.getText('UTF-8')
+            [
+                    'long maxPageCount',
+                    'long size',
+                    'long hitCount',
+                    'long missCount',
+                    'long writeCount',
+                    'long evictionCount',
+                    'long pinCount',
+                    'long unpinCount',
+                    'long pinnedPageCount',
+                    'long dirtyPageCount',
+                    'long flushListPageCount',
+                    'long flushCount',
+                    'long pinnedEvictionSkipCount',
+                    'long lastPageGeneration'
+            ].each { markerText ->
+                if (!diagnosticsText.contains(markerText)) {
+                    failures << 'DelosStoragePageCacheDiagnostics is missing page-cache diagnostic marker: ' + markerText
+                }
+            }
+        }
+
+        def storageDiagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java')
+        if (storageDiagnosticsFile.exists()) {
+            def storageDiagnosticsText = storageDiagnosticsFile.getText('UTF-8')
+            [
+                    'pageCachePinCountForTesting',
+                    'pageCacheUnpinCountForTesting',
+                    'pageCachePinnedPageCountForTesting',
+                    'pageCacheDirtyPageCountForTesting',
+                    'pageCacheFlushListPageCountForTesting',
+                    'pageCacheFlushCountForTesting',
+                    'pageCachePinnedEvictionSkipCountForTesting',
+                    'pageCacheLastPageGenerationForTesting',
+                    'pageCacheDiagnosticsForTesting(int segment, long containerId)'
+            ].each { markerText ->
+                if (!storageDiagnosticsText.contains(markerText)) {
+                    failures << 'DelosStorageDiagnostics is missing page-cache API marker: ' + markerText
+                }
+            }
+        }
+
+        def tableDiagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTableDiagnostics.java')
+        if (tableDiagnosticsFile.exists()) {
+            def tableDiagnosticsText = tableDiagnosticsFile.getText('UTF-8')
+            [
+                    'pageCachePinCountForTesting',
+                    'pageCacheUnpinCountForTesting',
+                    'pageCachePinnedPageCountForTesting',
+                    'pageCacheDirtyPageCountForTesting',
+                    'pageCacheFlushListPageCountForTesting',
+                    'pageCacheFlushCountForTesting',
+                    'pageCachePinnedEvictionSkipCountForTesting',
+                    'pageCacheLastPageGenerationForTesting',
+                    'pageCacheDiagnosticsForTesting()'
+            ].each { markerText ->
+                if (!tableDiagnosticsText.contains(markerText)) {
+                    failures << 'DelosStorageTableDiagnostics is missing page-cache API marker: ' + markerText
+                }
+            }
+        }
+
+        def statisticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccStorageStatistics.java')
+        if (statisticsFile.exists()) {
+            def statisticsText = statisticsFile.getText('UTF-8')
+            [
+                    'long pageCachePinCount',
+                    'long pageCacheUnpinCount',
+                    'long pageCachePinnedPageCount',
+                    'long pageCacheDirtyPageCount',
+                    'long pageCacheFlushListPageCount',
+                    'long pageCacheFlushCount',
+                    'long pageCachePinnedEvictionSkipCount',
+                    'long pageCacheLastPageGeneration',
+                    'public boolean hasPageCacheStatistics()',
+                    'public boolean cachePinsBalanced()',
+                    'public boolean dirtyStateClean()'
+            ].each { markerText ->
+                if (!statisticsText.contains(markerText)) {
+                    failures << 'DelosMvccStorageStatistics is missing page-cache statistics marker: ' + markerText
+                }
+            }
+        }
+
+        def testFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageCacheTest.java')
+        if (testFile.exists()) {
+            def testText = testFile.getText('UTF-8')
+            [
+                    'testPageCacheTracksReadsWritesAndRehydratesOnReopen',
+                    'testBoundedPageCacheEvictsAndReloadsPages',
+                    'MVCC page reads should use scoped page-cache pins',
+                    'scoped MVCC page-cache pins should be released after reads',
+                    'MVCC page cache should not leave pages pinned after SQL work',
+                    'write-through MVCC page cache should have an empty dirty list after commit',
+                    'write-through MVCC page cache should have an empty flush list after commit',
+                    'MVCC page cache should flush dirty writes through the cache boundary',
+                    'MVCC page cache should advance page generations on cached writes',
+                    'reopen should hydrate MVCC pages through the cache boundary',
+                    'bounded MVCC cache should release read pins after operations',
+                    'bounded MVCC cache should not leave pages dirty after write-through flushes',
+                    'reopened MVCC page cache should not grow beyond the bounded capacity'
+            ].each { markerText ->
+                if (!testText.contains(markerText)) {
+                    failures << 'MvccSqlPageCacheTest is missing cache proof marker: ' + markerText
+                }
+            }
+        }
+
+        def buildFile = file('delosdb-tests/build.gradle')
+        if (buildFile.exists()) {
+            def buildText = buildFile.getText('UTF-8')
+            if (!buildText.contains('MvccSqlPageCacheTest.class')) {
+                failures << 'runDelosMvccSqlIntegrationTest must include MvccSqlPageCacheTest'
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing storage roadmap documenting MVCC pinned/dirty buffer-cache phase'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Phase F — Shared storage inspector consolidation',
+                    'Status: closed green.',
+                    'Phase G — MVCC pinned/dirty buffer cache',
+                    'Status: current MVCC infrastructure slice after green shared storage inspector consolidation.',
+                    'pin/unpin tracking',
+                    'dirty-page tracking',
+                    'flush-list tracking',
+                    'bounded eviction respecting pins',
+                    'provider-neutral diagnostics expose cache lifecycle state',
+                    'Phase H — Attribute-level MVCC overflow storage'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Storage roadmap is missing MVCC pinned/dirty buffer-cache marker: ' + markerText
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-pinned-dirty-buffer-cache-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC pinned/dirty buffer-cache static analysis')
+            writer.println('========================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println()
+            delosMvccPinnedDirtyBufferCacheContracts.sort().each { contract ->
+                writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.contract + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('MVCC pinned/dirty buffer-cache proof points validated.')
+            } else {
+                writer.println('Validation failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('MVCC pinned/dirty buffer-cache static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB MVCC pinned/dirty buffer-cache static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis'
 }
