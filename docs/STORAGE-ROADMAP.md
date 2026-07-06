@@ -283,7 +283,7 @@ compatibility paths.
 
 ## Phase I — MVCC subsystem recovery records
 
-Status: current MVCC recovery-record slice after green attribute-overflow storage gate.
+Status: closed green.
 
 Make MVCC recovery metadata explicit for row pages, index pages, overflow pages,
 free-space map changes, transaction outcomes, and checkpoints. This phase records
@@ -312,13 +312,31 @@ optimizer behavior, or inherited heap compatibility paths.
 
 ## Phase J — Heap internal cleanup phase 1
 
-Status: later heap/inherited-code cleanup slice.
+Status: current heap/inherited-code cleanup slice after green MVCC subsystem recovery-record gate.
 
 Only after shared diagnostics and MVCC services mature should inherited heap internals
 be cleaned again. Allowed work includes helper extraction, accidental-coupling reduction,
 removing dead DelosDB-added branches, tightening assertions, adding diagnostics, and
-clarifying page/allocation helper boundaries. Heap page format, raw log format, catalog,
-DRDA, JDBC, and optimizer behavior are not allowed to change in this phase.
+clarifying page/allocation helper boundaries. Heap page format, raw log format, catalog, DRDA, JDBC, and optimizer behavior remain unchanged in this phase.
+
+Required behavior:
+
+```text
+helper extraction stays diagnostic-only or compatibility-preserving
+raw-page debug assertion consolidation stays behind SanityManager boundaries
+heap/raw-store boundary diagnostics remain read-only
+heap page format mutation remains disallowed
+raw log format mutation remains disallowed
+catalog mutation remains disallowed
+existing heap SQL reads and index reads remain green
+shutdown and reopen preserve heap compatibility
+no SQL syntax, DRDA, JDBC, optimizer, catalog, module, page-format, or log-format changes
+```
+
+This phase is a heap/inherited-code cleanup gate. It records and tests service-boundary
+clarity around OpenHeap, HeapController, OpenConglomerate, BasePage, StoredPage,
+FileContainer, AllocPage, D_StoredPage, D_HeapController, diagnostic formatting helpers,
+and raw-page debug assertion helpers without changing Derby-compatible behavior.
 
 ## Decision rules
 

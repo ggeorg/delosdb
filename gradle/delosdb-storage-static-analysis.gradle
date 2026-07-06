@@ -4127,7 +4127,7 @@ tasks.register('delosMvccSubsystemRecoveryRecordsStaticAnalysis') {
                     'Phase H — Attribute-level MVCC overflow storage',
                     'Status: closed green.',
                     'Phase I — MVCC subsystem recovery records',
-                    'Status: current MVCC recovery-record slice after green attribute-overflow storage gate.',
+                    'Status: closed green.',
                     'row page redo metadata',
                     'index page redo metadata',
                     'overflow page redo metadata',
@@ -4139,7 +4139,8 @@ tasks.register('delosMvccSubsystemRecoveryRecordsStaticAnalysis') {
                     'reopen preserves recovery metadata records',
                     'complete checkpoint boundary is inspectable',
                     'must not change Derby heap page format',
-                    'Phase J — Heap internal cleanup phase 1'
+                    'Phase J — Heap internal cleanup phase 1',
+                    'Status: current heap/inherited-code cleanup slice after green MVCC subsystem recovery-record gate.'
             ].each { markerText ->
                 if (!roadmapText.contains(markerText)) {
                     failures << 'Storage roadmap is missing MVCC subsystem recovery-record marker: ' + markerText
@@ -4181,8 +4182,321 @@ tasks.register('delosMvccSubsystemRecoveryRecordsStaticAnalysis') {
     }
 }
 
+
+def delosHeapInternalCleanupPhase1File = file('gradle/static-analysis/delosdb-heap-internal-cleanup-phase1.txt')
+
+def delosHeapInternalCleanupPhase1Contracts = [
+        'HEAP_COMPATIBILITY_ANCHOR',
+        'HELPER_EXTRACTION_BOUNDARY',
+        'DIAGNOSTIC_ONLY_HELPER',
+        'ACCIDENTAL_COUPLING_BOUNDARY',
+        'PAGE_ALLOCATION_BOUNDARY',
+        'OVERFLOW_LONG_ROW_BOUNDARY',
+        'RECOVERY_LOGGING_BOUNDARY',
+        'ASSERTION_BOUNDARY',
+        'PAGE_FORMAT_BOUNDARY',
+        'CONTAINER_FORMAT_BOUNDARY',
+        'ALLOCATION_PAGE_BOUNDARY',
+        'HELPER_OUTPUT_STABILITY',
+        'DEBUG_ASSERTION_HELPER',
+        'RAW_STORE_DIAGNOSTIC_BOUNDARY',
+        'READ_ONLY_BOUNDARY_DIAGNOSTIC',
+        'RAW_LOG_FORMAT_BOUNDARY',
+        'CATALOG_BEHAVIOR_GUARD',
+        'COMPATIBILITY_SQL_GATE',
+        'READ_ONLY_TEST_GATE',
+        'DEBUG_ASSERTION_TEST_GATE',
+        'TEST_SUITE_WIRING',
+        'ROADMAP_GATE',
+        'COMPATIBILITY_BOUNDARY'
+] as Set
+
+def delosLoadHeapInternalCleanupPhase1Rows = {
+    if (!delosHeapInternalCleanupPhase1File.exists()) {
+        throw new GradleException('Missing heap internal cleanup phase 1 classification file: ' + delosHeapInternalCleanupPhase1File)
+    }
+    def rows = []
+    int lineNumber = 0
+    delosHeapInternalCleanupPhase1File.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 5) {
+            throw new GradleException('Malformed heap internal cleanup phase 1 line ' + lineNumber + ': expected 5 pipe-delimited fields')
+        }
+        if (!delosHeapInternalCleanupPhase1Contracts.contains(parts[2])) {
+            throw new GradleException('Malformed heap internal cleanup phase 1 line ' + lineNumber + ': unknown contract ' + parts[2])
+        }
+        rows << [
+                id        : parts[0],
+                path      : parts[1],
+                contract  : parts[2],
+                marker    : parts[3],
+                reason    : parts[4],
+                lineNumber: lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosHeapInternalCleanupPhase1StaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the Derby heap/raw-store internal cleanup phase 1 compatibility gate.'
+
+    inputs.file(delosHeapInternalCleanupPhase1File)
+    inputs.files(
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/OpenHeap.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapController.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericController.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/D_DiagnosticFormatting.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BasePage.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/StoredPage.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/FileContainer.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/AllocPage.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_StoredPage.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_RawPageSanityAssertions.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/D_HeapController.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/provider/DerbyHeapStorageDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosHeapRawStoreBoundaryDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapInternalCleanupPhase1Test.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapRawStoreDiagnosticFormattingTest.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapRawStoreDebugAssertionConsolidationTest.java',
+            'delosdb-tests/build.gradle',
+            'docs/STORAGE-ROADMAP.md'
+    )
+    outputs.file(layout.buildDirectory.file('reports/delosdb/heap-internal-cleanup-phase1-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadHeapInternalCleanupPhase1Rows()
+        def failures = []
+        def ids = [] as Set
+        def proofMarkers = [] as Set
+        def contracts = rows.groupBy { it.contract }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate heap internal cleanup phase 1 id: ' + row.id
+            }
+            if (!proofMarkers.add(row.path + '|' + row.marker)) {
+                failures << 'Duplicate heap internal cleanup phase 1 proof marker: ' + row.path + ' -> ' + row.marker
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Heap internal cleanup phase 1 proof-point path does not exist: ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Heap internal cleanup phase 1 marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 40) {
+                failures << 'Heap internal cleanup phase 1 reason is too thin for ' + row.id
+            }
+        }
+
+        delosHeapInternalCleanupPhase1Contracts.each { contract ->
+            if (!contracts.containsKey(contract)) {
+                failures << 'Missing heap internal cleanup phase 1 contract: ' + contract
+            }
+        }
+
+        def diagnosticFormattingFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/D_DiagnosticFormatting.java')
+        if (diagnosticFormattingFile.exists()) {
+            def text = diagnosticFormattingFile.getText('UTF-8')
+            [
+                    'Shared formatting helpers for inherited Derby diagnostic-only classes',
+                    'It must not acquire latches, inspect page bytes,',
+                    'change page/log/catalog state, or participate in normal execution paths.',
+                    'summaryOrNotApplicableForTinyRatio',
+                    'shortRatio'
+            ].each { markerText ->
+                if (!text.contains(markerText)) {
+                    failures << 'D_DiagnosticFormatting is missing diagnostic-only helper marker: ' + markerText
+                }
+            }
+        }
+
+        def rawAssertionsFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_RawPageSanityAssertions.java')
+        if (rawAssertionsFile.exists()) {
+            def text = rawAssertionsFile.getText('UTF-8')
+            [
+                    'Debug-only assertion message helpers for inherited Derby raw-page operations.',
+                    'SanityManager.DEBUG',
+                    'does not participate in log record',
+                    'SanityManager.THROWASSERT',
+                    'recordIdPageChangeMessage',
+                    'restoreSlotMismatchMessage'
+            ].each { markerText ->
+                if (!text.contains(markerText)) {
+                    failures << 'D_RawPageSanityAssertions is missing debug assertion marker: ' + markerText
+                }
+            }
+        }
+
+        def rawBoundaryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosHeapRawStoreBoundaryDiagnostics.java')
+        if (rawBoundaryFile.exists()) {
+            def text = rawBoundaryFile.getText('UTF-8')
+            [
+                    'heap raw-store boundary diagnostics must be read-only',
+                    'heapPageFormatMutationAllowed || rawLogFormatMutationAllowed || catalogMutationAllowed',
+                    'heap boundary diagnostics must not permit compatibility mutations',
+                    'public boolean clean()'
+            ].each { markerText ->
+                if (!text.contains(markerText)) {
+                    failures << 'DelosHeapRawStoreBoundaryDiagnostics is missing compatibility guard marker: ' + markerText
+                }
+            }
+        }
+
+        def providerFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/provider/DerbyHeapStorageDiagnostics.java')
+        if (providerFile.exists()) {
+            def text = providerFile.getText('UTF-8')
+            [
+                    'heap raw-store boundary diagnostics are read-only',
+                    'heap page format is Derby-compatible and unchanged',
+                    'raw log format is Derby-compatible and unchanged',
+                    'catalog behavior is Derby-compatible and unchanged',
+                    'false,',
+                    'lastVacuumReasonForTesting'
+            ].each { markerText ->
+                if (!text.contains(markerText)) {
+                    failures << 'DerbyHeapStorageDiagnostics is missing heap boundary marker: ' + markerText
+                }
+            }
+        }
+
+        def testFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapInternalCleanupPhase1Test.java')
+        if (testFile.exists()) {
+            def text = testFile.getText('UTF-8')
+            [
+                    'testHeapRawStoreBoundaryDiagnosticsPreserveCompatibilityBehavior',
+                    'select id, name, quantity from heap_cleanup_t order by id',
+                    'select id, name from heap_cleanup_t where name >=',
+                    'heap boundary diagnostics must not rewrite the heap container',
+                    'heap page format rewrite must remain disallowed',
+                    'raw log format rewrite must remain disallowed',
+                    'catalog mutation must remain disallowed',
+                    'heap boundary diagnostics must stay read-only across reopen'
+            ].each { markerText ->
+                if (!text.contains(markerText)) {
+                    failures << 'HeapInternalCleanupPhase1Test is missing compatibility SQL marker: ' + markerText
+                }
+            }
+        } else {
+            failures << 'Missing HeapInternalCleanupPhase1Test compatibility SQL proof'
+        }
+
+        def formattingTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapRawStoreDiagnosticFormattingTest.java')
+        if (formattingTestFile.exists()) {
+            def text = formattingTestFile.getText('UTF-8')
+            [
+                    'testSummaryKeepsInheritedRatioShape',
+                    'testHeapSummaryKeepsTinyRatioAsNotApplicable',
+                    '# of free bytes       = 20',
+                    'NA reserved bytes/page'
+            ].each { markerText ->
+                if (!text.contains(markerText)) {
+                    failures << 'HeapRawStoreDiagnosticFormattingTest is missing formatting stability marker: ' + markerText
+                }
+            }
+        }
+
+        def assertionTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapRawStoreDebugAssertionConsolidationTest.java')
+        if (assertionTestFile.exists()) {
+            def text = assertionTestFile.getText('UTF-8')
+            [
+                    'testRecordIdPageChangeMessageIsStable',
+                    'testRestoreSlotMismatchMessageIsStable',
+                    'recordId changed from 10 to 11 but page number did not change 42',
+                    'restoreMe cannot restore to a different slot. doMe slot:3 undoMe slot: 4 recordId:99'
+            ].each { markerText ->
+                if (!text.contains(markerText)) {
+                    failures << 'HeapRawStoreDebugAssertionConsolidationTest is missing assertion stability marker: ' + markerText
+                }
+            }
+        }
+
+        def buildFile = file('delosdb-tests/build.gradle')
+        if (buildFile.exists()) {
+            def buildText = buildFile.getText('UTF-8')
+            [
+                    'HeapInternalCleanupPhase1Test.class',
+                    'HeapRawStoreDiagnosticFormattingTest.class',
+                    'HeapRawStoreDebugAssertionConsolidationTest.class'
+            ].each { markerText ->
+                if (!buildText.contains(markerText)) {
+                    failures << 'runDelosMvccSqlIntegrationTest must include ' + markerText
+                }
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing storage roadmap documenting heap internal cleanup phase 1'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Phase I — MVCC subsystem recovery records',
+                    'Status: closed green.',
+                    'Phase J — Heap internal cleanup phase 1',
+                    'Status: current heap/inherited-code cleanup slice after green MVCC subsystem recovery-record gate.',
+                    'helper extraction stays diagnostic-only or compatibility-preserving',
+                    'raw-page debug assertion consolidation stays behind SanityManager boundaries',
+                    'heap/raw-store boundary diagnostics remain read-only',
+                    'heap page format mutation remains disallowed',
+                    'raw log format mutation remains disallowed',
+                    'catalog mutation remains disallowed',
+                    'shutdown and reopen preserve heap compatibility',
+                    'Heap page format, raw log format, catalog, DRDA, JDBC, and optimizer behavior remain unchanged',
+                    'without changing Derby-compatible behavior'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Storage roadmap is missing heap internal cleanup phase 1 marker: ' + markerText
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/heap-internal-cleanup-phase1-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB heap internal cleanup phase 1 static analysis')
+            writer.println('=======================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println()
+            delosHeapInternalCleanupPhase1Contracts.sort().each { contract ->
+                writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
+            }
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.contract + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Heap internal cleanup phase 1 proof points validated.')
+            } else {
+                writer.println('Validation failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Heap internal cleanup phase 1 static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB heap internal cleanup phase 1 static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis'
 }
