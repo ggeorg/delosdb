@@ -2716,10 +2716,11 @@ tasks.register('delosHeapDiagnosticsExpansionStaticAnalysis') {
                     'Phase D — MVCC candidate-index authority removal',
                     'Status: closed green.',
                     'Phase E — Heap diagnostics expansion',
-                    'Status: current executable heap/inherited-code slice after green candidate-index authority removal.',
+                    'Status: closed green.',
                     'read-only heap diagnostics without changing heap format',
                     'Do not skip the heap slice',
-                    'Phase F — Shared storage inspector consolidation'
+                    'Phase F — Shared storage inspector consolidation',
+                    'Status: current shared-service slice after green heap diagnostics expansion.'
             ].each { marker ->
                 if (!roadmapText.contains(marker)) {
                     failures << 'Storage roadmap is missing heap diagnostics expansion marker: ' + marker
