@@ -1893,10 +1893,11 @@ tasks.register('delosDerbyForkDiffClassificationStaticAnalysis') {
         } else {
             def roadmapText = roadmap.getText('UTF-8')
             [
-                    'Cycle 0 — Baseline before more engine work',
-                    'Derby fork-diff classification',
-                    'MVCC candidate-index authority audit',
-                    'Heap/raw-store inherited-code audit',
+                    'Phase A — Baseline and fork-diff classification',
+                    'Phase B — MVCC candidate-index authority audit',
+                    'Phase C — MVCC candidate-index quarantine',
+                    'Phase D — MVCC candidate-index authority removal',
+                    'Phase E — Heap diagnostics expansion',
                     'Never do two major MVCC implementation phases in a row without a heap/inherited-code phase between them.'
             ].each { marker ->
                 if (!roadmapText.contains(marker)) {
