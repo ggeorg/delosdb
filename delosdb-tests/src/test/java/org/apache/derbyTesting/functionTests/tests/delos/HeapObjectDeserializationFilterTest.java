@@ -21,6 +21,12 @@
 
 package org.apache.derbyTesting.functionTests.tests.delos;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InvalidClassException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -28,6 +34,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 
 import org.apache.derby.iapi.services.io.DelosHeapObjectDeserializationFilter;
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 
 /** SQL gate for optional Derby-compatible heap JAVA_OBJECT deserialization filtering. */
 public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSupport {
@@ -76,6 +83,28 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
         }
     }
 
+
+    public void testGeneralLeafObjectInputFilterDefaultAndStrictMode() throws Exception {
+        String oldFilter = System.getProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY);
+        System.clearProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY);
+
+        try {
+            assertGeneralPayload(readWithGeneralFilter(new AllowedPayload(30)),
+                    AllowedPayload.class, 30);
+            assertGeneralPayload(readWithGeneralFilter(new BlockedPayload(40)),
+                    BlockedPayload.class, 40);
+
+            System.setProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY,
+                    AllowedPayload.class.getName() + ";java.base/*;!*");
+
+            assertGeneralPayload(readWithGeneralFilter(new AllowedPayload(50)),
+                    AllowedPayload.class, 50);
+            assertGeneralBlockedByFilter(new BlockedPayload(60));
+        } finally {
+            restoreGeneralFilterProperty(oldFilter);
+        }
+    }
+
     public void testMvccStillRejectsJavaObjectRows() throws Exception {
         String databaseName = databaseName("heap-object-filter-mvcc-boundary-db");
         String oldFilter = System.getProperty(DelosHeapObjectDeserializationFilter.FILTER_PROPERTY);
@@ -115,6 +144,46 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
         executeUpdate(connection,
                 "create table " + tableName + " (id int primary key, payload mvcc_filter_java_serializable) "
                         + "using delos_mvcc");
+    }
+
+
+    private static Object readWithGeneralFilter(Serializable payload) throws IOException, ClassNotFoundException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+            output.writeObject(payload);
+        }
+
+        try (ObjectInputStream input = new ObjectInputStream(
+                new ByteArrayInputStream(bytes.toByteArray()))) {
+            DelosObjectInputFilters.applyGeneralFilterIfConfigured(input);
+            return input.readObject();
+        }
+    }
+
+    private static void assertGeneralPayload(Object payload, Class<?> expectedClass, int expectedValue) {
+        assertTrue("unexpected general payload class: " + payload,
+                expectedClass.isInstance(payload));
+        assertEquals("general payload value", expectedValue, ((PayloadValue) payload).value());
+    }
+
+    private static void assertGeneralBlockedByFilter(Serializable payload) throws Exception {
+        try {
+            readWithGeneralFilter(payload);
+            fail("Expected general object deserialization filter to reject blocked payload");
+        } catch (InvalidClassException expected) {
+            assertTrue("expected object input filter rejection, got: " + expected,
+                    expected.getMessage() != null
+                            && (expected.getMessage().contains("filter")
+                            || expected.getMessage().contains("REJECTED")));
+        }
+    }
+
+    private static void restoreGeneralFilterProperty(String oldFilter) {
+        if (oldFilter == null) {
+            System.clearProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY);
+        } else {
+            System.setProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY, oldFilter);
+        }
     }
 
     private static void rollbackAfterExpectedCommitFailure(Connection connection) {

@@ -703,6 +703,7 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         }
 
         ['testStrictModeAllowsConfiguredTypeAndBlocksUnlistedType',
+         'testGeneralLeafObjectInputFilterDefaultAndStrictMode',
          'testMvccStillRejectsJavaObjectRows'].each { testName ->
             delosHeapObjectFilterRequire(failures, testText.contains(testName),
                     'HeapObjectDeserializationFilterTest must keep coverage method: ' + testName)
@@ -712,6 +713,10 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
                 testText.contains('testDefaultModePreservesDerbyHeapJavaObjectBehavior')
                         || testText.contains('testUnsetFilterPreservesDerbySerializableObjectBehavior'),
                 'HeapObjectDeserializationFilterTest must keep default/unset compatibility coverage')
+        delosHeapObjectFilterRequire(failures,
+                testText.contains('DelosObjectInputFilters.GENERAL_FILTER_PROPERTY')
+                        && testText.contains('DelosObjectInputFilters.applyGeneralFilterIfConfigured'),
+                'HeapObjectDeserializationFilterTest must exercise the general leaf ObjectInputFilter helper directly')
 
         def reportFile = layout.buildDirectory.file('reports/delosdb/heap-object-deserialization-filter-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
