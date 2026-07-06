@@ -61,9 +61,15 @@ Never merge modules just because they look small.
 Never preserve Derby internals unless they are part of compatibility.
 ```
 
-## Updated near-term execution order
+## Balanced modernization roadmap closeout
 
-The active plan is no longer the closed storage-robustness closeout plan. The next
+Status: closed green.
+
+This Phase A–J balanced modernization pass is closed. The gates now preserve the completed proof chain across fork governance, MVCC authority cleanup, heap diagnostics, shared inspector consolidation, MVCC cache/overflow/recovery metadata, and heap internal cleanup phase 1. Future work should open a new roadmap instead of extending this closed one.
+
+## Completed execution order
+
+The active plan is no longer the closed storage-robustness closeout plan. The completed
 execution order is:
 
 ```text
@@ -79,9 +85,10 @@ execution order is:
 10. Heap internal cleanup phase 1
 ```
 
-The first two items are audit/governance slices. The candidate-index quarantine and
-authority-removal slices are MVCC modernization slices. After them, execution must
-return to heap/inherited-code diagnostics before adding shared services.
+The first two items were audit/governance slices. The candidate-index quarantine and
+authority-removal slices were MVCC modernization slices. Execution then returned to
+heap/inherited-code diagnostics before adding shared services. The final heap cleanup
+slice closed the balanced pass.
 
 ## Phase A — Baseline and fork-diff classification
 
@@ -312,7 +319,7 @@ optimizer behavior, or inherited heap compatibility paths.
 
 ## Phase J — Heap internal cleanup phase 1
 
-Status: current heap/inherited-code cleanup slice after green MVCC subsystem recovery-record gate.
+Status: closed green.
 
 Only after shared diagnostics and MVCC services mature should inherited heap internals
 be cleaned again. Allowed work includes helper extraction, accidental-coupling reduction,
@@ -351,3 +358,11 @@ common diagnostic/inspection/report shape prevents duplication.
 
 Work on fork governance when inherited Derby files become high-risk extension seams and
 need explicit classification before deeper edits.
+
+## Final closeout state
+
+Status: closed green.
+
+All Phase A–J roadmap gates are now closed green. The next DelosDB storage roadmap
+should start from a fresh plan and preserve the standing execution rules above rather
+than reopening this completed pass.

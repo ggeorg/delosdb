@@ -4140,7 +4140,7 @@ tasks.register('delosMvccSubsystemRecoveryRecordsStaticAnalysis') {
                     'complete checkpoint boundary is inspectable',
                     'must not change Derby heap page format',
                     'Phase J — Heap internal cleanup phase 1',
-                    'Status: current heap/inherited-code cleanup slice after green MVCC subsystem recovery-record gate.'
+                    'Status: closed green.'
             ].each { markerText ->
                 if (!roadmapText.contains(markerText)) {
                     failures << 'Storage roadmap is missing MVCC subsystem recovery-record marker: ' + markerText
@@ -4444,7 +4444,7 @@ tasks.register('delosHeapInternalCleanupPhase1StaticAnalysis') {
                     'Phase I — MVCC subsystem recovery records',
                     'Status: closed green.',
                     'Phase J — Heap internal cleanup phase 1',
-                    'Status: current heap/inherited-code cleanup slice after green MVCC subsystem recovery-record gate.',
+                    'Status: closed green.',
                     'helper extraction stays diagnostic-only or compatibility-preserving',
                     'raw-page debug assertion consolidation stays behind SanityManager boundaries',
                     'heap/raw-store boundary diagnostics remain read-only',
@@ -4495,8 +4495,131 @@ tasks.register('delosHeapInternalCleanupPhase1StaticAnalysis') {
     }
 }
 
+
+def delosBalancedStorageModernizationCloseoutFile = file('gradle/static-analysis/delosdb-balanced-storage-modernization-closeout.txt')
+
+def delosLoadBalancedStorageModernizationCloseoutRows = {
+    if (!delosBalancedStorageModernizationCloseoutFile.exists()) {
+        throw new GradleException('Missing balanced storage modernization closeout manifest: ' + delosBalancedStorageModernizationCloseoutFile)
+    }
+    def rows = []
+    int lineNumber = 0
+    delosBalancedStorageModernizationCloseoutFile.readLines('UTF-8').each { rawLine ->
+        lineNumber++
+        def line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 4) {
+            throw new GradleException('Malformed balanced storage modernization closeout line ' + lineNumber + ': expected 4 pipe-delimited fields')
+        }
+        rows << [
+                id        : parts[0],
+                path      : parts[1],
+                marker    : parts[2],
+                reason    : parts[3],
+                lineNumber: lineNumber
+        ]
+    }
+    rows
+}
+
+tasks.register('delosBalancedStorageModernizationCloseoutStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates that the balanced DelosDB storage modernization Phase A-J roadmap is fully closed.'
+
+    inputs.file(delosBalancedStorageModernizationCloseoutFile)
+    inputs.file('docs/STORAGE-ROADMAP.md')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/balanced-storage-modernization-closeout-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadBalancedStorageModernizationCloseoutRows()
+        def failures = []
+        def ids = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate balanced storage modernization closeout id: ' + row.id
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Balanced storage modernization closeout proof-point path does not exist: ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Balanced storage modernization closeout marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 40) {
+                failures << 'Balanced storage modernization closeout reason is too thin for ' + row.id
+            }
+        }
+
+        def roadmap = file('docs/STORAGE-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing storage roadmap for balanced modernization closeout'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Phase A — Baseline and fork-diff classification',
+                    'Phase B — MVCC candidate-index authority audit',
+                    'Phase C — MVCC candidate-index quarantine',
+                    'Phase D — MVCC candidate-index authority removal',
+                    'Phase E — Heap diagnostics expansion',
+                    'Phase F — Shared storage inspector consolidation',
+                    'Phase G — MVCC pinned/dirty buffer cache',
+                    'Phase H — Attribute-level MVCC overflow storage',
+                    'Phase I — MVCC subsystem recovery records',
+                    'Phase J — Heap internal cleanup phase 1',
+                    '## Final closeout state',
+                    'All Phase A–J roadmap gates are now closed green'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Storage roadmap is missing balanced closeout marker: ' + markerText
+                }
+            }
+            if (roadmapText.contains('Status: current')) {
+                failures << 'Storage roadmap still contains an open current phase status'
+            }
+            def closedCount = roadmapText.count('Status: closed green.')
+            if (closedCount < 12) {
+                failures << 'Storage roadmap should contain closed-green markers for roadmap, Phase A-J, and final closeout; found ' + closedCount
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/balanced-storage-modernization-closeout-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB balanced storage modernization closeout static analysis')
+            writer.println('================================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Balanced storage modernization closeout proof points validated.')
+            } else {
+                writer.println('Validation failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Balanced storage modernization closeout static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB balanced storage modernization closeout static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis'
 }
