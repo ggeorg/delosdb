@@ -39,6 +39,7 @@ public final class MvccSqlIsolationLevelCheckpointTest extends MvccSqlTestSuppor
             executeUpdate(setup, "insert into isolation_checkpoint_t values (1, 'before')");
             setup.commit();
             containerId = mvccContainerId(setup, "ISOLATION_CHECKPOINT_T");
+            setup.commit();
         }
 
         try (Connection reader = openDatabase(databaseName, false);

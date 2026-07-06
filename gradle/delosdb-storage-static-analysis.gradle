@@ -1148,8 +1148,148 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
     }
 }
 
+
+def delosCrossEngineConsistencyFrameworkFiles = [
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosCrossEngineConsistencyReport.java',
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyFinding.java',
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyTarget.java',
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyDiagnostics.java',
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java',
+        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java',
+        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.java'
+]
+
+def delosCrossEngineConsistencyRequire = { List<String> failures, boolean condition, String message ->
+    if (!condition) {
+        failures << message
+    }
+}
+
+tasks.register('delosCrossEngineConsistencyFrameworkStaticAnalysis') {
+    group = 'verification'
+    description = 'Fails if the cross-engine consistency framework loses its provider-neutral, read-only aggregation shape.'
+
+    inputs.files(delosCrossEngineConsistencyFrameworkFiles.collect { file(it) }.findAll { it.exists() })
+    outputs.file(layout.buildDirectory.file('reports/delosdb/cross-engine-consistency-framework-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def texts = delosCrossEngineConsistencyFrameworkFiles.collectEntries { relativePath ->
+            def sourceFile = file(relativePath)
+            [(relativePath): sourceFile.exists() ? sourceFile.getText('UTF-8') : '']
+        }
+
+        delosCrossEngineConsistencyFrameworkFiles.each { relativePath ->
+            delosCrossEngineConsistencyRequire(failures, file(relativePath).isFile(),
+                    "Missing cross-engine consistency framework file: ${relativePath}")
+        }
+
+        def reportText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosCrossEngineConsistencyReport.java']
+        def findingText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyFinding.java']
+        def targetText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyTarget.java']
+        def diagnosticsText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyDiagnostics.java']
+        def registryText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java']
+        def queryText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java']
+        def testText = texts['delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.java']
+
+        delosCrossEngineConsistencyRequire(failures,
+                reportText.contains('public record DelosCrossEngineConsistencyReport'),
+                'Cross-engine report must remain a provider-neutral immutable record')
+        delosCrossEngineConsistencyRequire(failures,
+                reportText.contains('List.copyOf') && reportText.contains('clean()')
+                        && reportText.contains('errorCount()') && reportText.contains('failedFindings()')
+                        && reportText.contains('summaries()') && reportText.contains('finding(String providerId, int segment, long containerId)'),
+                'Cross-engine report must expose immutable findings, clean/error totals, summaries, and provider/container lookup')
+        delosCrossEngineConsistencyRequire(failures,
+                !reportText.contains('PrintStream') && !reportText.contains('System.out') && !reportText.contains('System.err'),
+                'Cross-engine report must not write to stdout/stderr or diagnostic PrintStreams')
+
+        delosCrossEngineConsistencyRequire(failures,
+                findingText.contains('public record DelosStorageConsistencyFinding')
+                        && findingText.contains('from(String providerId')
+                        && findingText.contains('DelosStorageConsistencyDiagnostics diagnostics')
+                        && findingText.contains('clean()'),
+                'Consistency finding must remain a provider-neutral result derived from diagnostics')
+        delosCrossEngineConsistencyRequire(failures,
+                findingText.contains('errorCount < 0') && findingText.contains('provider id must not be blank'),
+                'Consistency finding must keep validation for provider id and non-negative error count')
+
+        delosCrossEngineConsistencyRequire(failures,
+                targetText.contains('public record DelosStorageConsistencyTarget')
+                        && targetText.contains('static DelosStorageConsistencyTarget heap')
+                        && targetText.contains('static DelosStorageConsistencyTarget mvcc')
+                        && targetText.contains('hasDatabaseDirectory()'),
+                'Consistency target must keep explicit heap/MVCC factories and database-directory awareness')
+        delosCrossEngineConsistencyRequire(failures,
+                diagnosticsText.contains('public record DelosStorageConsistencyDiagnostics')
+                        && diagnosticsText.contains('int errorCount')
+                        && diagnosticsText.contains('String summary'),
+                'Consistency diagnostics must remain a small error-count/summary value object')
+
+        delosCrossEngineConsistencyRequire(failures,
+                registryText.contains('DelosCrossEngineConsistencyReport consistencyReport')
+                        && registryText.contains('metadataQuery().consistencyReport'),
+                'Diagnostics registry must expose consistencyReport through the metadata query path')
+        delosCrossEngineConsistencyRequire(failures,
+                queryText.contains('DelosMetadataContext.consistencyReport')
+                        || queryText.contains('DelosStorageMetadataContext.consistencyReport'),
+                'Metadata query must use an explicit consistency-report metadata context')
+        delosCrossEngineConsistencyRequire(failures,
+                queryText.contains('requireMetadataOnlyContext()')
+                        && queryText.contains('snapshot.consistencyFinding()')
+                        && queryText.contains('new DelosCrossEngineConsistencyReport(findings)'),
+                'Consistency report aggregation must stay metadata-only and provider-neutral')
+
+        delosCrossEngineConsistencyRequire(failures,
+                testText.contains('testMixedHeapAndMvccConsistencyReportIsCleanAndReadOnly'),
+                'SQL gate must keep clean read-only mixed heap/MVCC report coverage')
+        delosCrossEngineConsistencyRequire(failures,
+                testText.contains('testCrossEngineConsistencyReportSurfacesHeapMissWithoutTouchingMvcc'),
+                'SQL gate must keep dirty-heap/clean-MVCC mixed report coverage')
+        delosCrossEngineConsistencyRequire(failures,
+                testText.contains('DelosStorageConsistencyTarget.heap')
+                        && testText.contains('DelosStorageConsistencyTarget.mvcc')
+                        && testText.contains('DelosStorageDiagnosticsRegistry.consistencyReport'),
+                'SQL gate must exercise the public heap/MVCC target factories and registry report API')
+        delosCrossEngineConsistencyRequire(failures,
+                testText.contains('assertRows(connection')
+                        && testText.contains('expected MVCC finding to stay clean'),
+                'SQL gate must prove the report is read-only and isolates heap findings from MVCC findings')
+
+        def frameworkTexts = reportText + '\n' + findingText + '\n' + targetText + '\n' + diagnosticsText + '\n' + registryText + '\n' + queryText
+        ['repair', 'auto-fix', 'autofix', 'cleanup', 'delete'].each { forbidden ->
+            if (frameworkTexts.toLowerCase(Locale.ROOT).contains(forbidden)) {
+                failures << "Cross-engine consistency framework must not expose repair/cleanup semantics: ${forbidden}"
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/cross-engine-consistency-framework-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB cross-engine consistency framework static analysis')
+            writer.println('=======================================================')
+            writer.println()
+            writer.println('Checked files:')
+            delosCrossEngineConsistencyFrameworkFiles.each { writer.println('  - ' + it) }
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Cross-engine consistency framework checks passed.')
+            } else {
+                writer.println('Cross-engine consistency framework failures:')
+                failures.each { failure -> writer.println('  - ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB cross-engine consistency framework static analysis failed. Report: ' + reportFile)
+        }
+
+        logger.lifecycle('DelosDB cross-engine consistency framework static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosRuntimeArtifactModelStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosRuntimeArtifactModelStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
 }
