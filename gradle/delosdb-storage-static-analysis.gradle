@@ -745,7 +745,7 @@ tasks.register('delosStaleGradleScriptCheck') {
                     writer.println('  - ' + rootProject.projectDir.toPath().relativize(staleFile.toPath()).toString().replace(File.separatorChar, '/' as char))
                 }
                 writer.println()
-                writer.println('Run scripts/cleanup-stale-gradle-scripts.sh after applying the cleanup overlay.')
+                writer.println('Remove the obsolete Gradle script fragments listed above; they are not maintained project tools.')
             }
         }
 
@@ -753,8 +753,7 @@ tasks.register('delosStaleGradleScriptCheck') {
             def stalePaths = staleFiles.collect {
                 rootProject.projectDir.toPath().relativize(it.toPath()).toString().replace(File.separatorChar, '/' as char)
             }.join(', ')
-            throw new GradleException('Obsolete DelosDB Gradle script fragment(s) still present: ' + stalePaths +
-                    '. Run scripts/cleanup-stale-gradle-scripts.sh')
+            throw new GradleException('Obsolete DelosDB Gradle script fragment(s) still present: ' + stalePaths)
         }
 
         logger.lifecycle('DelosDB stale Gradle script check passed. Report: {}', reportFile)
@@ -1289,6 +1288,68 @@ tasks.register('delosCrossEngineConsistencyFrameworkStaticAnalysis') {
 }
 
 
+def delosOverlayCleanupScriptPatterns = [
+        ~/cleanup-overlay-.*\.sh/,
+        ~/cleanup-stale-gradle-scripts\.sh/
+]
+
+def delosOverlayCleanupScriptRelativePath = { File candidate ->
+    rootProject.projectDir.toPath().relativize(candidate.toPath()).toString().replace(File.separatorChar, '/' as char)
+}
+
+def delosOverlayCleanupScriptCandidates = {
+    def scriptsDir = file('scripts')
+    if (!scriptsDir.isDirectory()) {
+        return []
+    }
+    scriptsDir.listFiles()
+            .findAll { File candidate -> candidate.isFile() }
+            .findAll { File candidate ->
+                delosOverlayCleanupScriptPatterns.any { pattern -> candidate.name ==~ pattern }
+            }
+            .sort { File left, File right -> left.name <=> right.name }
+}
+
+tasks.register('delosOverlayCleanupScriptStaticAnalysis') {
+    group = 'verification'
+    description = 'Fails if one-shot overlay cleanup scripts are left as permanent project tools.'
+
+    inputs.dir(file('scripts')).optional()
+    outputs.file(layout.buildDirectory.file('reports/delosdb/overlay-cleanup-scripts-static-analysis.txt'))
+
+    doLast {
+        def staleScripts = delosOverlayCleanupScriptCandidates.call()
+        def reportFile = layout.buildDirectory.file('reports/delosdb/overlay-cleanup-scripts-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB overlay cleanup script static analysis')
+            writer.println('==============================================')
+            writer.println()
+            writer.println('Checked policy: one-shot overlay cleanup scripts must not remain in scripts/.')
+            writer.println('Reusable maintenance scripts are allowed, but they must not use cleanup-overlay-* names.')
+            writer.println()
+            if (staleScripts.isEmpty()) {
+                writer.println('No one-shot overlay cleanup scripts found.')
+            } else {
+                writer.println('One-shot overlay cleanup scripts still present:')
+                staleScripts.each { File staleScript ->
+                    writer.println('  - ' + delosOverlayCleanupScriptRelativePath.call(staleScript))
+                }
+            }
+        }
+
+        if (!staleScripts.isEmpty()) {
+            def stalePaths = staleScripts.collect { File staleScript ->
+                delosOverlayCleanupScriptRelativePath.call(staleScript)
+            }.join(', ')
+            throw new GradleException('One-shot overlay cleanup script(s) still present: ' + stalePaths)
+        }
+
+        logger.lifecycle('DelosDB overlay cleanup script static analysis passed. Report: {}', reportFile)
+    }
+}
+
+
 def delosModuleDependencyReportDir = layout.buildDirectory.dir('reports/delosdb-module-dependencies')
 def delosModuleDependencyReportFiles = [
         'missing-declared-project-dependencies.tsv',
@@ -1412,5 +1473,5 @@ tasks.register('delosModuleDependencyBoundaryStaticAnalysis') {
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport'
 }
