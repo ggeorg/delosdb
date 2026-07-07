@@ -5642,8 +5642,172 @@ tasks.register('delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis') {
     }
 }
 
+
+def delosMvccRecoveryReplayEngineFile = file('gradle/static-analysis/delosdb-mvcc-recovery-replay-engine.txt')
+
+def delosLoadMvccRecoveryReplayEngineRows = {
+    if (!delosMvccRecoveryReplayEngineFile.exists()) {
+        throw new GradleException('Missing MVCC recovery replay engine proof file: ' + delosMvccRecoveryReplayEngineFile)
+    }
+    def rows = []
+    delosMvccRecoveryReplayEngineFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed MVCC recovery replay engine proof row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [id: parts[0], path: parts[1], category: parts[2], marker: parts[3], reason: parts[4], lineNumber: index + 1]
+    }
+    rows
+}
+
+tasks.register('delosMvccRecoveryReplayEngineStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the Phase L MVCC recovery replay engine implementation and adversarial replay proofs.'
+
+    inputs.file(delosMvccRecoveryReplayEngineFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-recovery-replay-engine-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccRecoveryReplayEngineRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC recovery replay engine proof id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC recovery replay proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC recovery replay marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 50) {
+                failures << 'MVCC recovery replay reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'ROADMAP_STATUS',
+                'REPLAY_ENGINE',
+                'TRANSACTION_OUTCOME_REPLAY',
+                'SUBSYSTEM_REPLAY_PLAN',
+                'CROSS_SUBSYSTEM_ATOMICITY',
+                'BOOT_PATH_WIRING',
+                'IDEMPOTENT_REPLAY',
+                'ARBITRARY_OFFSET_FAULT',
+                'CORRUPT_RECORD_REJECTION',
+                'TORN_REWRITE_REPLAY',
+                'CROSS_SUBSYSTEM_TEST',
+                'OUTCOME_MATCH_TEST'
+        ].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'MVCC recovery replay engine proof is missing category: ' + required
+            }
+        }
+
+        def engineText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccRecoveryReplayEngine.java').getText('UTF-8')
+        if (!engineText.contains('subsystemReplayPlan.requireCrossSubsystemCompleteness(requiredSubsystems)')) {
+            failures << 'MvccRecoveryReplayEngine must validate subsystem replay completeness before page replay'
+        }
+        if (!engineText.contains('new MvccPageRecoveryRunner(mutationLog, store).recoverStrict(outcomeLog)')) {
+            failures << 'MvccRecoveryReplayEngine must keep transaction-outcome-log strict page recovery authority'
+        }
+        if (!engineText.contains('rowIndexOverflowFreeSpaceOutcomeSubsystems()')) {
+            failures << 'MvccRecoveryReplayEngine must name the row/index/overflow/FSM/outcome subsystem completeness set'
+        }
+
+        def storeText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/MvccSubsystemRecoveryRecordStore.java').getText('UTF-8')
+        if (!storeText.contains('public ReplayPlan replayPlan()')) {
+            failures << 'MvccSubsystemRecoveryRecordStore must expose a replay plan for Phase L validation'
+        }
+        if (!storeText.contains('candidate.subsystem() == Subsystem.TRANSACTION_OUTCOME')) {
+            failures << 'Subsystem replay plan must require matching transaction outcome redo for row-page redo records'
+        }
+        if (!storeText.contains('missing required subsystem redo')) {
+            failures << 'Subsystem replay plan must fail loudly when required subsystem metadata is missing'
+        }
+
+        def tableText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccTable.java').getText('UTF-8')
+        if (!tableText.contains('new MvccRecoveryReplayEngine(log, outcomes, store).recoverStrict()')) {
+            failures << 'PageBackedMvccTable.openStrict must route recovery through MvccRecoveryReplayEngine'
+        }
+
+        def testText = file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccRecoveryReplayEngineTest.java').getText('UTF-8')
+        [
+                'duplicateReplayIsIdempotentWithinOneLogAndAcrossRepeatedBoots',
+                'arbitraryWalOffsetTruncationIgnoresOnlyTornFinalRecords',
+                'completeCorruptMutationRecordFailsLoudlyInsteadOfBeingIgnored',
+                'tornRewriteSiblingIsIgnoredDuringReplayAndReopen',
+                'crossSubsystemCompletenessRejectsCrashBetweenRedoApplications',
+                'rowPageRedoWithoutMatchingTransactionOutcomeIsRejectedBeforeReplay'
+        ].each { markerText ->
+            if (!testText.contains(markerText)) {
+                failures << 'Phase L recovery replay test is missing marker: ' + markerText
+            }
+        }
+
+        def roadmap = file('docs/ENGINE-DEPTH-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing docs/ENGINE-DEPTH-ROADMAP.md'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Phase L — MVCC recovery replay engine',
+                    'delosdb-mvcc-recovery-replay-engine-overlay.zip',
+                    'Execution state: implementation slice delivered by delosdb-mvcc-recovery-replay-engine-overlay.zip',
+                    'cross-subsystem atomicity converges when crash occurs between subsystem redo applications',
+                    'fault injection supports arbitrary WAL offsets, truncated records, torn sidecar rewrites, and duplicate replay',
+                    'MvccRecoveryReplayEngine now coordinates strict page-mutation replay through the transaction-outcome authority.'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Engine-depth roadmap is missing Phase L marker: ' + markerText
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-recovery-replay-engine-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC recovery replay engine static analysis')
+            writer.println('=======================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('MVCC recovery replay engine static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC recovery replay engine static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis'
 }

@@ -160,7 +160,7 @@ Regression coverage verifies the command-target resolver for IPv4 wildcard, IPv6
 
 ## Phase K — MVCC statistics and Derby optimizer/cost integration
 
-Execution state: implementation slice delivered by delosdb-mvcc-statistics-optimizer-cost-integration-overlay.zip.
+Execution state: closed green.
 
 Overlay:
 
@@ -230,7 +230,7 @@ This is not a parallel optimizer statistics channel and does not bypass SYSSTATI
 
 ## Phase L — MVCC recovery replay engine
 
-Execution state: specified.
+Execution state: implementation slice delivered by delosdb-mvcc-recovery-replay-engine-overlay.zip.
 
 Overlay:
 
@@ -290,6 +290,16 @@ Commit message:
 
 ```text
 Add MVCC recovery replay engine
+```
+
+Implementation note:
+
+```text
+MvccRecoveryReplayEngine now coordinates strict page-mutation replay through the transaction-outcome authority.
+Subsystem recovery metadata exposes a replay plan and cross-subsystem completeness validation so crash tests can reject row-page redo that lacks matching transaction-outcome, index-page, overflow-page, or free-space-map redo proof.
+The replay path is idempotent across duplicate records and repeated boots, tolerates only torn final log tails, and fails loudly on complete corrupt records.
+PageBackedMvccTable.openStrict now enters strict recovery through the replay engine.
+This is still not a full ARIES-style redo/undo system and does not change heap raw-log, catalog, or DRDA behavior.
 ```
 
 ## Phase M — MVCC buffer manager phase 2

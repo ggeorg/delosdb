@@ -7,6 +7,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import io.github.ggeorg.delosdb.storage.mvcc.durable.AbstractSidecarStore;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
@@ -90,6 +91,13 @@ public final class MvccSubsystemRecoveryRecordStore {
         return diagnostics(AbstractSidecarStore.readUtf8IfExists(path, LOG_NAME), path);
     }
 
+    public ReplayPlan replayPlan() {
+        if (!enabled() || !Files.exists(path)) {
+            return ReplayPlan.empty(path);
+        }
+        return replayPlan(AbstractSidecarStore.readUtf8IfExists(path, LOG_NAME), path);
+    }
+
     private synchronized void append(
             Subsystem subsystem,
             String action,
@@ -101,14 +109,14 @@ public final class MvccSubsystemRecoveryRecordStore {
             return;
         }
         RecoveryRecord record = new RecoveryRecord(
-                nextSequence++, subsystem, action, transactionId, commitSequence, primaryValue, secondaryValue);
+                nextSequence++, storageId, subsystem, action, transactionId, commitSequence, primaryValue, secondaryValue);
         AbstractSidecarStore.appendUtf8Forced(path, encode(record), "MVCC subsystem recovery record");
     }
 
     private String encode(RecoveryRecord record) {
         return LOG_VERSION
                 + '\t' + record.sequence()
-                + '\t' + storageId
+                + '\t' + record.storageId()
                 + '\t' + record.subsystem().name()
                 + '\t' + record.action()
                 + '\t' + record.transactionId()
@@ -119,45 +127,65 @@ public final class MvccSubsystemRecoveryRecordStore {
     }
 
     private static Diagnostics diagnostics(String content, Path path) {
-        long recordCount = 0L;
-        long lastSequence = 0L;
+        List<RecoveryRecord> records = parseRecords(content);
+        long lastSequence = records.isEmpty() ? 0L : records.get(records.size() - 1).sequence();
         Map<Subsystem, Long> counts = new EnumMap<>(Subsystem.class);
         List<String> summaries = new ArrayList<>();
+        for (RecoveryRecord record : records) {
+            counts.merge(record.subsystem(), 1L, Long::sum);
+            summaries.add(record.sequence() + "|" + record.subsystem().name() + "|" + record.action()
+                    + "|tx=" + record.transactionId()
+                    + "|commit=" + record.commitSequence()
+                    + "|primary=" + record.primaryValue()
+                    + "|secondary=" + record.secondaryValue());
+        }
+        return new Diagnostics(path, records.size(), lastSequence, counts, List.copyOf(summaries));
+    }
+
+    private static ReplayPlan replayPlan(String content, Path path) {
+        return new ReplayPlan(path, parseRecords(content));
+    }
+
+    private static List<RecoveryRecord> parseRecords(String content) {
+        long lastSequence = 0L;
+        List<RecoveryRecord> records = new ArrayList<>();
         for (MvccDurableLineRecords.LineRecord lineRecord
                 : MvccDurableLineRecords.completeRecords(content, false)) {
-            int lineIndex = lineRecord.lineIndex();
-            String[] parts = MvccDurableLineRecords.tabFields(lineRecord.line());
-            if (parts.length != 9) {
-                throw corrupt(lineIndex, "record must contain 9 tab-separated fields");
+            RecoveryRecord record = parseRecord(lineRecord.line(), lineRecord.lineIndex());
+            if (record.sequence() <= lastSequence) {
+                throw corrupt(lineRecord.lineIndex(), "sequence must increase monotonically: previous="
+                        + lastSequence + ", current=" + record.sequence());
             }
-            if (!LOG_VERSION.equals(parts[0])) {
-                throw corrupt(lineIndex, "unsupported MVCC subsystem recovery record version: " + parts[0]);
-            }
-            long sequence = parseLong(parts[1], lineIndex, "sequence");
-            if (sequence <= lastSequence) {
-                throw corrupt(lineIndex, "sequence must increase monotonically: previous="
-                        + lastSequence + ", current=" + sequence);
-            }
-            lastSequence = sequence;
-            Subsystem subsystem;
-            try {
-                subsystem = Subsystem.valueOf(parts[3]);
-            } catch (IllegalArgumentException e) {
-                throw corrupt(lineIndex, "unknown MVCC subsystem recovery record type: " + parts[3], e);
-            }
-            long transactionId = parseLong(parts[5], lineIndex, "transactionId");
-            long commitSequence = parseLong(parts[6], lineIndex, "commitSequence");
-            long primary = parseLong(parts[7], lineIndex, "primaryValue");
-            long secondary = parseLong(parts[8], lineIndex, "secondaryValue");
-            counts.merge(subsystem, 1L, Long::sum);
-            recordCount++;
-            summaries.add(sequence + "|" + parts[3] + "|" + parts[4]
-                    + "|tx=" + transactionId
-                    + "|commit=" + commitSequence
-                    + "|primary=" + primary
-                    + "|secondary=" + secondary);
+            lastSequence = record.sequence();
+            records.add(record);
         }
-        return new Diagnostics(path, recordCount, lastSequence, counts, List.copyOf(summaries));
+        return List.copyOf(records);
+    }
+
+    private static RecoveryRecord parseRecord(String line, int lineIndex) {
+        String[] parts = MvccDurableLineRecords.tabFields(line);
+        if (parts.length != 9) {
+            throw corrupt(lineIndex, "record must contain 9 tab-separated fields");
+        }
+        if (!LOG_VERSION.equals(parts[0])) {
+            throw corrupt(lineIndex, "unsupported MVCC subsystem recovery record version: " + parts[0]);
+        }
+        long sequence = parseLong(parts[1], lineIndex, "sequence");
+        Subsystem subsystem;
+        try {
+            subsystem = Subsystem.valueOf(parts[3]);
+        } catch (IllegalArgumentException e) {
+            throw corrupt(lineIndex, "unknown MVCC subsystem recovery record type: " + parts[3], e);
+        }
+        return new RecoveryRecord(
+                sequence,
+                parts[2],
+                subsystem,
+                parts[4],
+                parseLong(parts[5], lineIndex, "transactionId"),
+                parseLong(parts[6], lineIndex, "commitSequence"),
+                parseLong(parts[7], lineIndex, "primaryValue"),
+                parseLong(parts[8], lineIndex, "secondaryValue"));
     }
 
     private static long recoverLastSequence(Path path) {
@@ -188,22 +216,78 @@ public final class MvccSubsystemRecoveryRecordStore {
         CHECKPOINT
     }
 
-    private record RecoveryRecord(
+    public record RecoveryRecord(
             long sequence,
+            String storageId,
             Subsystem subsystem,
             String action,
             long transactionId,
             long commitSequence,
             long primaryValue,
             long secondaryValue) {
-        private RecoveryRecord {
+        public RecoveryRecord {
             if (sequence <= 0L) {
                 throw new IllegalArgumentException("recovery record sequence must be positive: " + sequence);
             }
+            storageId = Objects.requireNonNull(storageId, "storageId");
+            if (storageId.isBlank()) {
+                throw new IllegalArgumentException("recovery record storage id must not be blank");
+            }
             subsystem = Objects.requireNonNull(subsystem, "subsystem");
             action = Objects.requireNonNull(action, "action");
+            if (action.isBlank()) {
+                throw new IllegalArgumentException("recovery record action must not be blank");
+            }
             if (transactionId < 0L || commitSequence < 0L || primaryValue < 0L || secondaryValue < 0L) {
                 throw new IllegalArgumentException("recovery record values must not be negative");
+            }
+        }
+    }
+
+    public record ReplayPlan(Path path, List<RecoveryRecord> records) {
+        public ReplayPlan {
+            records = List.copyOf(Objects.requireNonNull(records, "records"));
+        }
+
+        public static ReplayPlan empty(Path path) {
+            return new ReplayPlan(path, List.of());
+        }
+
+        public long count(Subsystem subsystem) {
+            Objects.requireNonNull(subsystem, "subsystem");
+            return records.stream().filter(record -> record.subsystem() == subsystem).count();
+        }
+
+        public boolean has(Subsystem subsystem) {
+            return count(subsystem) > 0L;
+        }
+
+        public void requireCrossSubsystemCompleteness(Set<Subsystem> requiredSubsystems) {
+            Objects.requireNonNull(requiredSubsystems, "requiredSubsystems");
+            if (records.isEmpty()) {
+                return;
+            }
+            for (Subsystem subsystem : requiredSubsystems) {
+                Objects.requireNonNull(subsystem, "requiredSubsystems entry");
+                if (!has(subsystem)) {
+                    throw new IllegalStateException("MVCC recovery replay is missing required subsystem redo: "
+                            + subsystem);
+                }
+            }
+            for (RecoveryRecord rowRecord : records) {
+                if (rowRecord.subsystem() != Subsystem.ROW_PAGE || rowRecord.transactionId() == 0L) {
+                    continue;
+                }
+                boolean matchingOutcome = records.stream().anyMatch(candidate ->
+                        candidate.subsystem() == Subsystem.TRANSACTION_OUTCOME
+                                && candidate.transactionId() == rowRecord.transactionId()
+                                && candidate.commitSequence() == rowRecord.commitSequence()
+                                && candidate.sequence() >= rowRecord.sequence());
+                if (!matchingOutcome) {
+                    throw new IllegalStateException("MVCC recovery replay row-page redo has no matching "
+                            + "transaction-outcome redo for tx " + rowRecord.transactionId()
+                            + " at commit " + rowRecord.commitSequence());
+                }
             }
         }
     }

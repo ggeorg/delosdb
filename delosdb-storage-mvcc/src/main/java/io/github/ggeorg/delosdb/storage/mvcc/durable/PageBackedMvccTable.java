@@ -125,7 +125,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
                     if (outcomes == null) {
                         throw new IllegalArgumentException("strict MVCC recovery requires a transaction outcome log");
                     }
-                    recovery.recoverStrict(outcomes);
+                    new MvccRecoveryReplayEngine(log, outcomes, store).recoverStrict();
                 } else {
                     recovery.recover();
                 }
