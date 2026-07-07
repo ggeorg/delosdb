@@ -5247,8 +5247,182 @@ tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
 }
 
 
+
+
+def delosDerby7107ReviewFile = file('gradle/static-analysis/delosdb-derby-7107-review.txt')
+
+def delosLoadDerby7107ReviewRows = {
+    if (!delosDerby7107ReviewFile.exists()) {
+        throw new GradleException('Missing DERBY-7107 review file: ' + delosDerby7107ReviewFile)
+    }
+    def rows = []
+    delosDerby7107ReviewFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed DERBY-7107 review row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [
+                id        : parts[0].trim(),
+                path      : parts[1].trim(),
+                category  : parts[2].trim(),
+                marker    : parts[3].trim(),
+                reason    : parts[4].trim(),
+                lineNumber: index + 1
+        ]
+    }
+    rows
+}
+
+tasks.register('delosDerby7107ReviewStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the DelosDB DERBY-7107 INADDR_ANY NetworkServerControl fix and review evidence.'
+
+    inputs.file(delosDerby7107ReviewFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    inputs.file('gradle/static-analysis/delosdb-derby-fork-diff-classification.txt')
+    inputs.file('delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java')
+    inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/derbynet/NetworkServerControlInaddrAnyTest.java')
+    inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/derbynet/_Suite.java')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/derby-7107-review-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadDerby7107ReviewRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate DERBY-7107 review id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'DERBY-7107 proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'DERBY-7107 proof marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 50) {
+                failures << 'DERBY-7107 reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'ROADMAP_STATUS',
+                'UPSTREAM_PROVENANCE',
+                'SERVER_COMMAND_TARGET',
+                'REGRESSION_TEST',
+                'DERBYNET_SUITE_WIRING',
+                'FORK_DIFF_CLASSIFICATION',
+                'COMPATIBILITY_BOUNDARY'
+        ].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'DERBY-7107 review is missing category: ' + required
+            }
+        }
+
+        def serverText = file('delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java').getText('UTF-8')
+        if (!serverText.contains('address == null || !address.isAnyLocalAddress()')) {
+            failures << 'NetworkServerControlImpl must recognize wildcard command targets using isAnyLocalAddress()'
+        }
+        if (!serverText.contains('address instanceof Inet4Address') || !serverText.contains('InetAddress.getByName("127.0.0.1")')) {
+            failures << 'NetworkServerControlImpl must map IPv4 wildcard command targets to 127.0.0.1'
+        }
+        if (!serverText.contains('address instanceof Inet6Address') || !serverText.contains('InetAddress.getByName("::1")')) {
+            failures << 'NetworkServerControlImpl must map IPv6 wildcard command targets to ::1'
+        }
+        if (serverText.count('createSocket(commandTargetAddress, portNumber)') < 3) {
+            failures << 'All NetworkServerControl command socket paths must use commandTargetAddress'
+        }
+        if (serverText.contains('hostAddress = getCommandTargetAddress(hostAddress)')) {
+            failures << 'DERBY-7107 fix must not mutate the server bind/listen hostAddress'
+        }
+
+        def testText = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/derbynet/NetworkServerControlInaddrAnyTest.java').getText('UTF-8')
+        [
+                'testIpv4WildcardUsesIpv4LoopbackCommandTarget',
+                'testIpv6WildcardUsesIpv6LoopbackCommandTarget',
+                'testNonWildcardCommandTargetIsUnchanged',
+                'getCommandTargetAddress',
+                '0.0.0.0',
+                '::'
+        ].each { markerText ->
+            if (!testText.contains(markerText)) {
+                failures << 'DERBY-7107 regression test is missing marker: ' + markerText
+            }
+        }
+
+        def suiteText = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/derbynet/_Suite.java').getText('UTF-8')
+        if (!suiteText.contains('NetworkServerControlInaddrAnyTest.suite()')) {
+            failures << 'derbynet suite must include NetworkServerControlInaddrAnyTest'
+        }
+
+        def forkDiffText = file('gradle/static-analysis/delosdb-derby-fork-diff-classification.txt').getText('UTF-8')
+        if (!forkDiffText.contains('NetworkServerControlImpl.java')) {
+            failures << 'NetworkServerControlImpl must remain in the high-risk Derby fork-diff classification'
+        }
+
+        def roadmap = file('docs/ENGINE-DEPTH-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing docs/ENGINE-DEPTH-ROADMAP.md'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Micro-slice 1 — DERBY-7107 review/apply-if-still-valid',
+                    'Execution state: implementation slice delivered by delosdb-derby-7107-inaddr-any-overlay.zip.',
+                    'upstream Apache Derby Network Server bug',
+                    'NetworkServerControl can bind the server to INADDR_ANY',
+                    'command sockets use 127.0.0.1 for IPv4 wildcard and ::1 for IPv6 wildcard',
+                    'Regression coverage verifies the command-target resolver'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Engine-depth roadmap is missing DERBY-7107 marker: ' + markerText
+                }
+            }
+            if (roadmapText.contains('Status: current')) {
+                failures << 'Engine-depth roadmap must not use Status: current because the Phase A-J closeout gate treats that as reopening the closed roadmap'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/derby-7107-review-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB DERBY-7107 review static analysis')
+            writer.println('===========================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DERBY-7107 review static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB DERBY-7107 review static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis'
 }

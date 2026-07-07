@@ -30,6 +30,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.PrintWriter;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.ServerSocket;
@@ -2611,6 +2613,29 @@ public final class NetworkServerControlImpl {
     }
 
     /**
+     * Resolve the address used by NetworkServerControl command sockets.
+     *
+     * DERBY-7107: a server may intentionally bind to the wildcard address
+     * (0.0.0.0 or ::), but the wildcard address is not a valid remote command
+     * target. Keep the listen/bind address unchanged and redirect only the
+     * command socket to the equivalent loopback address.
+     */
+    private static InetAddress getCommandTargetAddress(InetAddress address)
+        throws UnknownHostException
+    {
+        if (address == null || !address.isAnyLocalAddress()) {
+            return address;
+        }
+        if (address instanceof Inet4Address) {
+            return InetAddress.getByName("127.0.0.1");
+        }
+        if (address instanceof Inet6Address) {
+            return InetAddress.getByName("::1");
+        }
+        return InetAddress.getLoopbackAddress();
+    }
+
+    /**
      * Set up client socket to send a command to the network server
      *
      * @exception Exception thrown if exception encountered
@@ -2621,13 +2646,14 @@ public final class NetworkServerControlImpl {
         try {
             if (hostAddress == null)
                 hostAddress = InetAddress.getByName(hostArg);
+            InetAddress commandTargetAddress = getCommandTargetAddress(hostAddress);
                                         
             switch(getSSLMode()) {
             case SSL_BASIC:
                 Properties sslProperties = getSSLProperties();
                 SSLSocket s1 = (SSLSocket)
                     NaiveTrustManager.getSocketFactory(sslProperties).
-                    createSocket(hostAddress, portNumber);
+                    createSocket(commandTargetAddress, portNumber);
                 //DERBY-6764(analyze impact of poodle security alert on 
                 // Derby client - server ssl support)
                 String[] removeTwoProtocols = 
@@ -2640,7 +2666,7 @@ public final class NetworkServerControlImpl {
 
             case SSL_PEER_AUTHENTICATION:
                 SSLSocket s2 = (SSLSocket)SSLSocketFactory.getDefault().
-                    createSocket(hostAddress, portNumber);
+                    createSocket(commandTargetAddress, portNumber);
                 //DERBY-6764(analyze impact of poodle security alert on 
                 // Derby client - server ssl support)
                 removeTwoProtocols = 
@@ -2654,7 +2680,7 @@ public final class NetworkServerControlImpl {
             case SSL_OFF:
             default:
                 clientSocket = SocketFactory.getDefault().
-                    createSocket(hostAddress, portNumber);
+                    createSocket(commandTargetAddress, portNumber);
             }
         } catch (Exception e1) {
             if (e1 instanceof UnknownHostException) {

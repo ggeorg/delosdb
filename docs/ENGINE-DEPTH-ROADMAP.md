@@ -3,7 +3,7 @@
 This roadmap opens the next storage-engine depth pass after the Phase A-J balanced
 storage modernization roadmap and the two post-closeout tradeoff hardening audits.
 
-Execution state: backup/restore sidecar verification implementation slice in progress.
+Execution state: backup/restore sidecar verification and DERBY-7107 review slices delivered.
 
 ## North star
 
@@ -106,7 +106,7 @@ SQL integration verifies both a delos_mvcc backup/createFrom/reopen round trip a
 
 ## Micro-slice 1 — DERBY-7107 review/apply-if-still-valid
 
-Execution state: specified.
+Execution state: implementation slice delivered by delosdb-derby-7107-inaddr-any-overlay.zip.
 
 Overlay:
 
@@ -148,6 +148,14 @@ Commit message:
 
 ```text
 Review DERBY-7107 against DelosDB fork
+```
+
+Implementation note:
+
+```text
+DERBY-7107 is an upstream Apache Derby Network Server bug: NetworkServerControl can bind the server to INADDR_ANY, but then command methods such as ping try to connect to the wildcard address itself. The upstream JIRA issue is open, unresolved, marked patch-available, and describes the safe fix as redirecting command sockets from INADDR_ANY to localhost.
+DelosDB applies the fix narrowly in NetworkServerControlImpl.setUpSocket(): the server bind/listen address remains unchanged, while command sockets use 127.0.0.1 for IPv4 wildcard and ::1 for IPv6 wildcard.
+Regression coverage verifies the command-target resolver for IPv4 wildcard, IPv6 wildcard, and normal non-wildcard addresses, and wires the test into the derbynet suite.
 ```
 
 ## Phase K — MVCC statistics and Derby optimizer/cost integration

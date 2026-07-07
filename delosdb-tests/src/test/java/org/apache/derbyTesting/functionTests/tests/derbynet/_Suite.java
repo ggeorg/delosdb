@@ -56,6 +56,7 @@ public class _Suite extends BaseTestCase  {
         suite.addTest(NetIjTest.suite());
         suite.addTest(NSinSameJVMTest.suite());
         suite.addTest(NetworkServerControlClientCommandTest.suite());
+        suite.addTest(NetworkServerControlInaddrAnyTest.suite());
         suite.addTest(ServerPropertiesTest.suite());
         suite.addTest(LOBLocatorReleaseTest.suite());
         suite.addTest(OutBufferedStreamTest.suite());
