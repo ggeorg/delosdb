@@ -6144,8 +6144,164 @@ tasks.register('delosMvccPurgeDaemonSchedulingStaticAnalysis') {
     }
 }
 
+
+def delosHeapCleanupPhase2ForkDiffFile = file('gradle/static-analysis/delosdb-heap-cleanup-phase2-forkdiff.txt')
+
+def delosLoadHeapCleanupPhase2ForkDiffRows = {
+    if (!delosHeapCleanupPhase2ForkDiffFile.exists()) {
+        throw new GradleException('Missing heap cleanup phase 2 fork-diff proof file: ' + delosHeapCleanupPhase2ForkDiffFile)
+    }
+    def rows = []
+    delosHeapCleanupPhase2ForkDiffFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed heap cleanup phase 2 proof row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [id: parts[0], path: parts[1], category: parts[2], marker: parts[3], reason: parts[4], lineNumber: index + 1]
+    }
+    rows
+}
+
+tasks.register('delosHeapCleanupPhase2ForkDiffStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates heap/inherited-code cleanup phase 2 and classify-as-you-clean fork-diff expansion.'
+
+    inputs.file(delosHeapCleanupPhase2ForkDiffFile)
+    inputs.file(delosDerbyForkDiffClassificationFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/heap-cleanup-phase2-forkdiff-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadHeapCleanupPhase2ForkDiffRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate heap cleanup phase 2 proof id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Heap cleanup phase 2 proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Heap cleanup phase 2 marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 50) {
+                failures << 'Heap cleanup phase 2 reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'ROADMAP_STATUS',
+                'FORK_DIFF_EXPANSION',
+                'DEMO_VTI_THREAD_SAFETY',
+                'DEMO_VTI_UNUSED_STATE_CLEANUP',
+                'COMPATIBILITY_BOUNDARY',
+                'STATIC_GATE'
+        ].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'Heap cleanup phase 2 proof is missing category: ' + required
+            }
+        }
+
+        def forkRows = delosLoadDerbyForkDiffRows()
+        [
+                'demo-vti-apache-dateformatter-hardening',
+                'demo-vti-subversion-dateformatter-hardening',
+                'demo-vti-jira-unused-date-cleanup',
+                'demo-vti-property-unused-date-cleanup',
+                'demo-vti-linelist-unused-date-cleanup'
+        ].each { requiredId ->
+            if (!forkRows.any { it.id == requiredId }) {
+                failures << 'Fork-diff classification is missing touched inherited demo VTI row: ' + requiredId
+            }
+        }
+
+        def demoFiles = [
+                file('delosdb-demos/src/main/demo/vtis/java/org/apache/derbyDemo/vtis/example/ApacheServerLogVTI.java'),
+                file('delosdb-demos/src/main/demo/vtis/java/org/apache/derbyDemo/vtis/example/SubversionLogVTI.java'),
+                file('delosdb-demos/src/main/demo/vtis/java/org/apache/derbyDemo/vtis/example/DerbyJiraReportVTI.java'),
+                file('delosdb-demos/src/main/demo/vtis/java/org/apache/derbyDemo/vtis/example/PropertyFileVTI.java'),
+                file('delosdb-demos/src/main/demo/vtis/java/org/apache/derbyDemo/vtis/example/LineListVTI.java')
+        ]
+        demoFiles.each { demoFile ->
+            def text = demoFile.getText('UTF-8')
+            if (text.contains('_dateFormatter')) {
+                failures << 'Inherited demo VTI must not retain shared SimpleDateFormat instance state: ' + demoFile
+            }
+        }
+
+        def apacheText = file('delosdb-demos/src/main/demo/vtis/java/org/apache/derbyDemo/vtis/example/ApacheServerLogVTI.java').getText('UTF-8')
+        if (!apacheText.contains('return new SimpleDateFormat( "dd/MMM/yyyy:HH:mm:ss Z" );')) {
+            failures << 'ApacheServerLogVTI must preserve its inherited timestamp pattern with a per-call formatter'
+        }
+
+        def subversionText = file('delosdb-demos/src/main/demo/vtis/java/org/apache/derbyDemo/vtis/example/SubversionLogVTI.java').getText('UTF-8')
+        if (!subversionText.contains('return new SimpleDateFormat( "yyyy-MM-dd HH:mm:ss Z (EEE, dd MMM yyyy)" );')) {
+            failures << 'SubversionLogVTI must preserve its inherited timestamp pattern with a per-call formatter'
+        }
+
+        ['DerbyJiraReportVTI.java', 'PropertyFileVTI.java', 'LineListVTI.java'].each { fileName ->
+            def text = file('delosdb-demos/src/main/demo/vtis/java/org/apache/derbyDemo/vtis/example/' + fileName).getText('UTF-8')
+            if (text.contains('import java.text.SimpleDateFormat;')) {
+                failures << fileName + ' must not retain an unused SimpleDateFormat import'
+            }
+        }
+
+        def roadmapText = file('docs/ENGINE-DEPTH-ROADMAP.md').getText('UTF-8')
+        [
+                'Phase N — Heap cleanup phase 2 and fork-diff expansion',
+                'Execution state: implementation slice delivered by delosdb-heap-cleanup-phase2-forkdiff-overlay.zip.',
+                'classify-as-you-clean expands inherited Derby diff coverage',
+                'No heap page-format, raw-log, catalog, DRDA/JDBC, or optimizer behavior changed.',
+                'Expand Derby heap cleanup classification'
+        ].each { markerText ->
+            if (!roadmapText.contains(markerText)) {
+                failures << 'Engine-depth roadmap is missing Phase N marker: ' + markerText
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/heap-cleanup-phase2-forkdiff-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB heap cleanup phase 2 fork-diff static analysis')
+            writer.println('======================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Heap cleanup phase 2 fork-diff static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB heap cleanup phase 2 fork-diff static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis', 'delosMvccBufferManagerPhase2StaticAnalysis', 'delosMvccPurgeDaemonSchedulingStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis', 'delosMvccBufferManagerPhase2StaticAnalysis', 'delosMvccPurgeDaemonSchedulingStaticAnalysis', 'delosHeapCleanupPhase2ForkDiffStaticAnalysis'
 }

@@ -51,8 +51,6 @@ public  class   ApacheServerLogVTI  extends XmlVTI
     //
     ///////////////////////////////////////////////////////////////////////////////////
 
-    private SimpleDateFormat    _dateFormatter;
-    
     ///////////////////////////////////////////////////////////////////////////////////
     //
     // CONSTRUCTORS
@@ -141,12 +139,7 @@ public  class   ApacheServerLogVTI  extends XmlVTI
      */
     private SimpleDateFormat    getDateFormatter()
     {
-        if ( _dateFormatter == null )
-        {
-            _dateFormatter = new SimpleDateFormat( "dd/MMM/yyyy:HH:mm:ss Z" );
-        }
-
-        return _dateFormatter;
+        return new SimpleDateFormat( "dd/MMM/yyyy:HH:mm:ss Z" );
     }
 
 

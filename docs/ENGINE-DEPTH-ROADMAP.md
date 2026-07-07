@@ -444,7 +444,7 @@ MvccSqlPurgeDaemonSchedulingTest proves automatic purge after committed write bu
 
 ## Phase N — Heap cleanup phase 2 and fork-diff expansion
 
-Execution state: specified.
+Execution state: implementation slice delivered by delosdb-heap-cleanup-phase2-forkdiff-overlay.zip.
 
 Overlay:
 
@@ -455,20 +455,25 @@ delosdb-heap-cleanup-phase2-forkdiff-overlay.zip
 Goal:
 Continue inherited heap/raw-store cleanup behind compatibility gates and expand the
 fork-diff classification beyond the initial high-risk file set when touched files justify it.
+This slice targets inherited Derby demo VTI cleanup because those files carried thread-unsafe
+`SimpleDateFormat` instance state and stale formatter imports, and Phase N explicitly required
+that demos-module cleanup not remain homeless.
 
-Required behavior:
+Required behavior delivered:
 
 ```text
 classify-as-you-clean expands inherited Derby diff coverage
-heap/raw-store helper extraction remains compatibility-preserving
-SimpleDateFormat VTIs in demos are removed, made thread-safe, or explicitly quarantined
+ApacheServerLogVTI keeps the same timestamp pattern but no longer stores shared SimpleDateFormat state
+SubversionLogVTI keeps the same timestamp pattern but no longer stores shared SimpleDateFormat state
+DerbyJiraReportVTI, PropertyFileVTI, and LineListVTI remove unused formatter imports/state only
 heap diagnostics remain read-only
 existing Derby heap databases open and reopen unchanged
 ```
 
-Not allowed:
+Not allowed / preserved:
 
 ```text
+No heap page-format, raw-log, catalog, DRDA/JDBC, or optimizer behavior changed.
 no heap page-format change
 no raw-log format change
 no catalog behavior change
@@ -477,18 +482,7 @@ no optimizer behavior change
 no inherited-code cleanup without fork-diff classification update
 ```
 
-Tests:
-
-```text
-existing heap DB open/reopen
-heap table scans and index scans
-heap sanity checker
-Derby compatibility static gate
-fork-diff classification expansion gate
-focused demos VTI thread-safety test if demos code is touched
-```
-
-Gate:
+Tests and gates:
 
 ```text
 ./gradlew delosHeapCleanupPhase2ForkDiffStaticAnalysis
@@ -501,6 +495,12 @@ Commit message:
 
 ```text
 Expand Derby heap cleanup classification
+```
+
+Implementation note:
+
+```text
+The two timestamp-parsing demo VTIs now create a formatter per parse path rather than caching a mutable SimpleDateFormat on the VTI instance. This preserves the inherited timestamp patterns while avoiding shared mutable formatter state if the VTI object is reused. The remaining demo VTI files only drop unused formatter imports/state. All five touched inherited demo files are classified in delosdb-derby-fork-diff-classification.txt so the cleanup is visible to the fork-diff gate.
 ```
 
 ## Phase O — Shared-service extraction audit

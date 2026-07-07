@@ -24,7 +24,6 @@ package org.apache.derbyDemo.vtis.example;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.sql.*;
-import java.text.SimpleDateFormat;
 
 import org.apache.derby.vti.XmlVTI;
 import org.apache.derbyDemo.vtis.core.*;
@@ -50,8 +49,6 @@ public  class   DerbyJiraReportVTI  extends XmlVTI
     //
     ///////////////////////////////////////////////////////////////////////////////////
 
-    private SimpleDateFormat    _dateFormatter;
-    
     ///////////////////////////////////////////////////////////////////////////////////
     //
     // CONSTRUCTORS

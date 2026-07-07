@@ -23,7 +23,6 @@ package org.apache.derbyDemo.vtis.example;
 
 import java.io.*;
 import java.sql.*;
-import java.text.SimpleDateFormat;
 
 import org.apache.derbyDemo.vtis.core.*;
 

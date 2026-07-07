@@ -60,8 +60,6 @@ public    class   SubversionLogVTI  extends FlatFileVTI
     //
     ///////////////////////////////////////////////////////////////////////////////////
 
-    private SimpleDateFormat    _dateFormatter;
-    
     ///////////////////////////////////////////////////////////////////////////////////
     //
     // CONSTRUCTORS
@@ -268,12 +266,7 @@ public    class   SubversionLogVTI  extends FlatFileVTI
      */
     private SimpleDateFormat    getDateFormatter()
     {
-        if ( _dateFormatter == null )
-        {
-            _dateFormatter = new SimpleDateFormat( "yyyy-MM-dd HH:mm:ss Z (EEE, dd MMM yyyy)" );
-        }
-
-        return _dateFormatter;
+        return new SimpleDateFormat( "yyyy-MM-dd HH:mm:ss Z (EEE, dd MMM yyyy)" );
     }
 
 
