@@ -1002,7 +1002,7 @@ tasks.register('delosHeapRawStoreDuplicateClassificationReport') {
                 writer.println('  ' + decision + ': ' + counts[decision])
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.decision + '] ' + row.scope)
                 writer.println('  reason:      ' + row.reason)
                 writer.println('  next action: ' + row.nextAction)
@@ -1184,7 +1184,7 @@ tasks.register('delosDerbyModuleParityStaticAnalysis') {
                 writer.println('  ' + decision + ': ' + counts[decision])
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.decision + '] ' + row.delosModule)
                 writer.println('  derby root:    ' + row.derbyRoot)
                 writer.println('  artifact/role: ' + row.artifactRole)
@@ -2094,7 +2094,7 @@ tasks.register('delosMvccCandidateIndexAuthorityAuditStaticAnalysis') {
                 writer.println('  ' + decision + ': ' + rows.count { it.decision == decision })
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.decision + '] ' + row.path)
                 writer.println('  surface:     ' + row.surface)
                 writer.println('  reason:      ' + row.reason)
@@ -2269,14 +2269,14 @@ tasks.register('delosMvccCandidateIndexQuarantineStaticAnalysis') {
             writer.println('DelosDB MVCC candidate-index quarantine static analysis')
             writer.println('====================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('NORMAL_SQL_AUTHORITY audit rows: ' + normalAuthorityRows.size())
             writer.println()
             delosMvccCandidateIndexQuarantineContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -2470,14 +2470,14 @@ tasks.register('delosMvccCandidateIndexAuthorityRemovalStaticAnalysis') {
             writer.println('DelosDB MVCC candidate-index authority-removal static analysis')
             writer.println('=============================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('NORMAL_SQL_AUTHORITY audit rows: ' + normalAuthorityRows.size())
             writer.println()
             delosMvccCandidateIndexAuthorityRemovalContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -2715,13 +2715,13 @@ tasks.register('delosHeapDiagnosticsExpansionStaticAnalysis') {
             writer.println('DelosDB heap diagnostics expansion static analysis')
             writer.println('=================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosHeapDiagnosticsExpansionContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -3070,13 +3070,13 @@ tasks.register('delosStorageInspectorConsolidationStaticAnalysis') {
             writer.println('DelosDB storage inspector consolidation static analysis')
             writer.println('======================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosStorageInspectorConsolidationContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -3403,13 +3403,13 @@ tasks.register('delosMvccPinnedDirtyBufferCacheStaticAnalysis') {
             writer.println('DelosDB MVCC pinned/dirty buffer-cache static analysis')
             writer.println('========================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosMvccPinnedDirtyBufferCacheContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -3760,13 +3760,13 @@ tasks.register('delosMvccAttributeOverflowStorageStaticAnalysis') {
             writer.println('DelosDB MVCC attribute-overflow storage static analysis')
             writer.println('=======================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosMvccAttributeOverflowStorageContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -4135,13 +4135,13 @@ tasks.register('delosMvccSubsystemRecoveryRecordsStaticAnalysis') {
             writer.println('DelosDB MVCC subsystem recovery-record static analysis')
             writer.println('=========================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosMvccSubsystemRecoveryRecordsContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -4448,13 +4448,13 @@ tasks.register('delosHeapInternalCleanupPhase1StaticAnalysis') {
             writer.println('DelosDB heap internal cleanup phase 1 static analysis')
             writer.println('=======================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosHeapInternalCleanupPhase1Contracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -4580,9 +4580,9 @@ tasks.register('delosBalancedStorageModernizationCloseoutStaticAnalysis') {
             writer.println('DelosDB balanced storage modernization closeout static analysis')
             writer.println('================================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -4728,10 +4728,10 @@ tasks.register('delosStorageModernizationTradeoffAuditStaticAnalysis') {
             writer.println('DelosDB storage modernization tradeoff audit static analysis')
             writer.println('================================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -4867,10 +4867,10 @@ tasks.register('delosStorageModernizationTradeoffAuditRound2StaticAnalysis') {
             writer.println('DelosDB storage modernization tradeoff audit round 2 static analysis')
             writer.println('========================================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5035,10 +5035,10 @@ tasks.register('delosNextEngineDepthRoadmapContractsStaticAnalysis') {
             writer.println('DelosDB next engine-depth roadmap contracts static analysis')
             writer.println('================================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5206,10 +5206,10 @@ tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
             writer.println('DelosDB backup/restore sidecar verification static analysis')
             writer.println('================================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5381,10 +5381,10 @@ tasks.register('delosDerby7107ReviewStaticAnalysis') {
             writer.println('DelosDB DERBY-7107 review static analysis')
             writer.println('===========================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5597,10 +5597,10 @@ tasks.register('delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis') {
             writer.println('DelosDB MVCC statistics optimizer cost integration static analysis')
             writer.println('=====================================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5761,10 +5761,10 @@ tasks.register('delosMvccRecoveryReplayEngineStaticAnalysis') {
             writer.println('DelosDB MVCC recovery replay engine static analysis')
             writer.println('=======================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5925,10 +5925,10 @@ tasks.register('delosMvccBufferManagerPhase2StaticAnalysis') {
             writer.println('DelosDB MVCC buffer manager phase 2 static analysis')
             writer.println('====================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -6099,10 +6099,10 @@ tasks.register('delosMvccPurgeDaemonSchedulingStaticAnalysis') {
             writer.println('DelosDB MVCC purge daemon scheduling static analysis')
             writer.println('=====================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -6255,10 +6255,10 @@ tasks.register('delosHeapCleanupPhase2ForkDiffStaticAnalysis') {
             writer.println('DelosDB heap cleanup phase 2 fork-diff static analysis')
             writer.println('======================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -6431,11 +6431,11 @@ tasks.register('delosSharedStorageServiceExtractionAuditStaticAnalysis') {
             writer.println('DelosDB shared storage service extraction audit static analysis')
             writer.println('================================================================')
             writer.println()
-            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
+            writer.println('Proof rows: ' + rows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Candidates: ' + candidates.sort().join(', '))
             writer.println('Decisions: ' + decisions.sort().join(', '))
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.candidate + ' / ' + row.decision + ']')
                 writer.println('  heap: ' + row.heapPath + ' :: ' + row.heapMarker)
                 writer.println('  mvcc: ' + row.mvccPath + ' :: ' + row.mvccMarker)

@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
@@ -56,6 +58,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final MvccTransactionStatusStore transactionStatusStore;
     private final MvccTransactionManager transactions;
     private final MvccPurgeDaemon purgeDaemon = new MvccPurgeDaemon();
+    private final ExecutorService purgeDaemonExecutor;
     private final List<MvccInheritedHandles.Transaction> activeTransactions = new ArrayList<>();
     private final ReentrantReadWriteLock tableLock = new ReentrantReadWriteLock();
     private final Lock readLock = tableLock.readLock();
@@ -91,6 +94,10 @@ final class MvccInheritedTable implements DelosStorageTable,
                 ? MvccTransactionStatusStore.disabled()
                 : MvccTransactionStatusStore.open(transactionStatusFile);
         this.transactions = new MvccTransactionManager(transactionStatusStore);
+        this.purgeDaemonExecutor = Executors.newSingleThreadExecutor(runnable ->
+                Thread.ofVirtual()
+                        .name("delosdb-mvcc-purge-daemon-" + segmentId + '-' + containerId)
+                        .unstarted(runnable));
         loadCommittedState();
     }
 
@@ -292,7 +299,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 return;
             }
             purgeDaemon.recordAsyncScheduled(changedRows);
-            Thread worker = new Thread(() -> writeLocked(() -> {
+            purgeDaemonExecutor.execute(() -> writeLocked(() -> {
                 if (hasRetainedInheritedSnapshot()) {
                     purgeDaemon.recordAsyncSkip("retained inherited MVCC transaction or scan");
                     return;
@@ -300,9 +307,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 DelosVacuumOutcome outcome = vacuumOutcome(pageVolumeStateStore.vacuumSafely(false));
                 lastVacuumOutcome = outcome;
                 purgeDaemon.recordAsyncRun(outcome);
-            }), "delosdb-mvcc-purge-daemon-" + segmentId + '-' + containerId);
-            worker.setDaemon(true);
-            worker.start();
+            }));
             return;
         }
         purgeDaemon.maybeRunAfterCommit(
@@ -1108,7 +1113,10 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public void close() {
-        writeLocked(pageVolumeStateStore::close);
+        writeLocked(() -> {
+            purgeDaemonExecutor.shutdownNow();
+            pageVolumeStateStore.close();
+        });
     }
 
 
