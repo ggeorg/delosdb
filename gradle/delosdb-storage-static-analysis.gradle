@@ -4579,10 +4579,15 @@ tasks.register('delosBalancedStorageModernizationCloseoutStaticAnalysis') {
                     failures << 'Storage roadmap is missing balanced closeout marker: ' + markerText
                 }
             }
-            if (roadmapText.contains('Status: current')) {
-                failures << 'Storage roadmap still contains an open current phase status'
+            def closedRoadmapText = roadmapText
+            def nextDepthPointer = roadmapText.indexOf('## Next engine-depth roadmap pointer')
+            if (nextDepthPointer >= 0) {
+                closedRoadmapText = roadmapText.substring(0, nextDepthPointer)
             }
-            def closedCount = roadmapText.count('Status: closed green.')
+            if (closedRoadmapText.contains('Status: current')) {
+                failures << 'Storage roadmap still contains an open current phase status inside the closed Phase A-J section'
+            }
+            def closedCount = closedRoadmapText.count('Status: closed green.')
             if (closedCount < 12) {
                 failures << 'Storage roadmap should contain closed-green markers for roadmap, Phase A-J, and final closeout; found ' + closedCount
             }
@@ -4909,153 +4914,147 @@ tasks.register('delosStorageModernizationTradeoffAuditRound2StaticAnalysis') {
 
 
 
-def delosMvccStatisticsOptimizerCostIntegrationFile = file('gradle/static-analysis/delosdb-mvcc-statistics-optimizer-cost-integration.txt')
+def delosNextEngineDepthRoadmapContractsFile = file('gradle/static-analysis/delosdb-next-engine-depth-roadmap-contracts.txt')
 
-def delosLoadMvccStatisticsOptimizerCostIntegrationRows = {
-    if (!delosMvccStatisticsOptimizerCostIntegrationFile.exists()) {
-        throw new GradleException('Missing MVCC statistics optimizer/cost integration classification: ' + delosMvccStatisticsOptimizerCostIntegrationFile)
+def delosLoadNextEngineDepthRoadmapContractRows = {
+    if (!delosNextEngineDepthRoadmapContractsFile.exists()) {
+        throw new GradleException('Missing next engine-depth roadmap contracts file: ' + delosNextEngineDepthRoadmapContractsFile)
     }
     def rows = []
-    delosMvccStatisticsOptimizerCostIntegrationFile.readLines('UTF-8').eachWithIndex { String line, int index ->
-        def trimmed = line.trim()
+    delosNextEngineDepthRoadmapContractsFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
         if (!trimmed || trimmed.startsWith('#')) {
             return
         }
         def parts = trimmed.split(/\|/, 5)
         if (parts.length != 5) {
-            throw new GradleException('Malformed MVCC statistics optimizer/cost integration row at line ' + (index + 1) + ': ' + line)
+            throw new GradleException('Malformed next engine-depth roadmap contract row at line ' + (index + 1) + ': ' + line)
         }
         rows << [
-                id      : parts[0].trim(),
-                category: parts[1].trim(),
-                path    : parts[2].trim(),
-                marker  : parts[3].trim(),
-                reason  : parts[4].trim()
+                id        : parts[0].trim(),
+                path      : parts[1].trim(),
+                category  : parts[2].trim(),
+                marker    : parts[3].trim(),
+                reason    : parts[4].trim(),
+                lineNumber: index + 1
         ]
     }
     rows
 }
 
-tasks.register('delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis') {
+tasks.register('delosNextEngineDepthRoadmapContractsStaticAnalysis') {
     group = 'verification'
-    description = 'Validates the Phase K MVCC statistics and optimizer/cost integration boundary.'
+    description = 'Validates the next DelosDB engine-depth roadmap contracts before implementation slices begin.'
 
-    inputs.file(delosMvccStatisticsOptimizerCostIntegrationFile)
-    inputs.file('docs/STORAGE-ROADMAP.md').optional()
-    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-statistics-optimizer-cost-integration-static-analysis.txt'))
+    inputs.file(delosNextEngineDepthRoadmapContractsFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    inputs.file('docs/STORAGE-ROADMAP.md')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/next-engine-depth-roadmap-contracts-static-analysis.txt'))
 
     doLast {
-        def rows = delosLoadMvccStatisticsOptimizerCostIntegrationRows()
+        def rows = delosLoadNextEngineDepthRoadmapContractRows()
         def failures = []
         def ids = [] as Set
         def categories = [] as Set
 
         rows.each { row ->
             if (!ids.add(row.id)) {
-                failures << 'Duplicate MVCC statistics optimizer/cost integration id: ' + row.id
+                failures << 'Duplicate next engine-depth roadmap contract id: ' + row.id
             }
             categories.add(row.category)
             def proofFile = file(row.path)
             if (!proofFile.exists()) {
-                failures << 'MVCC statistics optimizer/cost integration proof path does not exist for ' + row.id + ': ' + row.path
+                failures << 'Next engine-depth roadmap contract proof path does not exist for ' + row.id + ': ' + row.path
                 return
             }
             def body = proofFile.getText('UTF-8')
             if (!body.contains(row.marker)) {
-                failures << 'MVCC statistics optimizer/cost integration marker missing for ' + row.id + ': ' + row.marker
+                failures << 'Next engine-depth roadmap contract marker missing for ' + row.id + ': ' + row.marker
             }
-            if (row.reason.length() < 40) {
-                failures << 'MVCC statistics optimizer/cost integration reason is too thin for ' + row.id
+            if (row.reason.length() < 50) {
+                failures << 'Next engine-depth roadmap contract reason is too thin for ' + row.id
             }
         }
 
-        ['STORAGE_COST_REPORT', 'PROOF_ONLY_DEFAULT', 'FAIL_CLOSED', 'OPTIMIZER_REVIEW',
-         'EXPLICIT_OPT_IN', 'STORE_COST_CONTROLLER_PATH', 'SAFE_BASELINE', 'SAFE_REPLACEMENT',
-         'LEGACY_BRIDGE_DIAGNOSTIC_ONLY', 'SQL_GATE', 'ROADMAP_STATE', 'HONEST_LIMIT'].each { required ->
+        [
+                'ROADMAP_SCOPE',
+                'BACKUP_RESTORE_SIDECARS',
+                'DERBY_PATCH_REVIEW',
+                'STATISTICS_OPTIMIZER',
+                'LOGICAL_ROW_IDENTITY',
+                'RECOVERY_REPLAY',
+                'CROSS_SUBSYSTEM_ATOMICITY',
+                'BUFFER_MANAGER_PHASE2',
+                'WAL_BEFORE_FLUSH',
+                'GROUP_COMMIT',
+                'PURGE_DAEMON',
+                'HEAP_CLEANUP_PHASE2',
+                'SHARED_EXTRACTION_AUDIT',
+                'PERFORMANCE_VALIDATION',
+                'TOOLING_NON_S0',
+                'ROADMAP_POINTER'
+        ].each { required ->
             if (!categories.contains(required)) {
-                failures << 'MVCC statistics optimizer/cost integration is missing category: ' + required
+                failures << 'Next engine-depth roadmap contracts are missing category: ' + required
             }
         }
 
-        def costMode = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/CostModelMode.java')
-        if (costMode.exists()) {
-            def body = costMode.getText('UTF-8')
-            if (!body.contains('OFF(false, false)')) {
-                failures << 'CostModelMode default OFF mode must not probe or consume provider costs'
-            }
-            if (!body.contains('case "enabled", "on", "true" -> ENABLED')) {
-                failures << 'CostModelMode must keep provider consumption behind explicit enabled/on/true opt-in spellings'
-            }
-            if (!body.contains('default -> OFF')) {
-                failures << 'CostModelMode unknown values must fail closed to OFF'
-            }
-        }
-
-        def request = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/CostModelRequest.java')
-        if (request.exists()) {
-            def body = request.getText('UTF-8')
-            if (!body.contains('Double.isFinite(derbyCost)') || !body.contains('derbyCost > 0.0d')) {
-                failures << 'CostModelRequest must require a positive finite Derby baseline before provider replacement is safe'
-            }
-        }
-
-        def bridge = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/StoreCostControllerBridge.java')
-        if (bridge.exists()) {
-            def body = bridge.getText('UTF-8')
-            int guardIndex = body.indexOf('mode.consumesProviderCost() && probe.canSafelyReplaceDerbyCost()')
-            int setCostIndex = body.indexOf('costResult.setEstimatedCost(value.totalCost())')
-            int setRowsIndex = body.indexOf('costResult.setEstimatedRowCount(value.estimatedRows())')
-            if (guardIndex < 0 || setCostIndex < 0 || setRowsIndex < 0 || setCostIndex < guardIndex || setRowsIndex < guardIndex) {
-                failures << 'StoreCostControllerBridge must mutate Derby cost only after explicit opt-in and safety guard'
-            }
-            if (!body.contains('CostModelDiagnostics.record(probe)')) {
-                failures << 'StoreCostControllerBridge must record provider-cost diagnostics for opt-in review'
-            }
-        }
-
-        def fromBaseTable = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java')
-        if (fromBaseTable.exists()) {
-            def body = fromBaseTable.getText('UTF-8')
-            if (!body.contains('This bridge is intentionally diagnostic-only')) {
-                failures << 'FromBaseTable legacy index-provider bridge must document diagnostic-only behavior'
-            }
-            if (!body.contains('IndexProviderCostDiagnostics.record(probe)')) {
-                failures << 'FromBaseTable legacy index-provider bridge must record diagnostics instead of mutating planner state'
-            }
-        }
-
-        def testsBuild = file('delosdb-tests/build.gradle')
-        if (testsBuild.exists()) {
-            def body = testsBuild.getText('UTF-8')
-            ['StorageCostIntegrationCheckpointTest.class', 'StorageOptimizerReviewGateTest.class', 'OptimizerStorageCostOptInTest.class'].each { marker ->
-                if (!body.contains(marker)) {
-                    failures << 'MVCC SQL integration suite must include cost/optimizer gate: ' + marker
+        def roadmap = file('docs/ENGINE-DEPTH-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing docs/ENGINE-DEPTH-ROADMAP.md'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Micro-slice 0 — Backup/restore sidecar verification',
+                    'Micro-slice 1 — DERBY-7107 review/apply-if-still-valid',
+                    'Phase K — MVCC statistics and Derby optimizer/cost integration',
+                    'Phase L — MVCC recovery replay engine',
+                    'Phase M — MVCC buffer manager phase 2',
+                    'Micro-slice 5 — Purge daemon scheduling',
+                    'Phase N — Heap cleanup phase 2 and fork-diff expansion',
+                    'Phase O — Shared-service extraction audit',
+                    'Phase P — Performance, concurrency, and external validation closeout',
+                    'Do not build a parallel optimizer statistics truth source.',
+                    'WAL-before-flush invariant',
+                    'group commit batches compatible fsync work',
+                    'JMH microbenchmarks',
+                    'jcstress tests',
+                    'SQLancer validation',
+                    'not an S0 dependency'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Engine-depth roadmap is missing required contract marker: ' + markerText
                 }
             }
-        }
-
-        def roadmap = file('docs/STORAGE-ROADMAP.md')
-        if (roadmap.exists()) {
-            def text = roadmap.getText('UTF-8')
-            if (!text.contains('## Phase K — MVCC statistics and optimizer/cost integration')) {
-                failures << 'Storage roadmap must open Phase K for MVCC statistics and optimizer/cost integration'
+            if (roadmapText.contains('Status: current')) {
+                failures << 'Engine-depth roadmap must not use Status: current because the Phase A-J closeout gate treats that as reopening the closed roadmap'
             }
-            if (!text.contains('Status: current.')) {
-                failures << 'Storage roadmap must mark Phase K as the current executable slice'
-            }
-            if (!text.contains('This is not yet a full production MVCC cost model')) {
-                failures << 'Storage roadmap must explicitly avoid over-claiming production MVCC cost-model completeness'
-            }
-            if (!text.contains('A later K2 slice should connect MVCC container/statistics identity directly to the provider')) {
-                failures << 'Storage roadmap must identify the next K2 handoff for direct MVCC-statistics provider estimates'
+            if (!roadmapText.contains('no page-format changes') || !roadmapText.contains('no raw-log format changes')) {
+                failures << 'Engine-depth roadmap must keep page-format and raw-log non-goals explicit for early micro-slices'
             }
         }
 
-        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-statistics-optimizer-cost-integration-static-analysis.txt').get().asFile
+        def storageRoadmap = file('docs/STORAGE-ROADMAP.md')
+        if (!storageRoadmap.exists()) {
+            failures << 'Missing docs/STORAGE-ROADMAP.md'
+        } else {
+            def storageText = storageRoadmap.getText('UTF-8')
+            if (!storageText.contains('Next engine-depth roadmap pointer')) {
+                failures << 'Storage roadmap must point to the next engine-depth roadmap without reopening Phase A-J'
+            }
+            if (!storageText.contains('docs/ENGINE-DEPTH-ROADMAP.md')) {
+                failures << 'Storage roadmap pointer must name docs/ENGINE-DEPTH-ROADMAP.md'
+            }
+            if (!storageText.contains('The balanced Phase A-J roadmap remains closed')) {
+                failures << 'Storage roadmap pointer must keep the balanced Phase A-J roadmap closed'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/next-engine-depth-roadmap-contracts-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB MVCC statistics optimizer/cost integration static analysis')
-            writer.println('====================================================================')
+            writer.println('DelosDB next engine-depth roadmap contracts static analysis')
+            writer.println('================================================================')
             writer.println()
             writer.println('Proof rows: ' + rows.size())
             writer.println('Categories: ' + categories.sort().join(', '))
@@ -5075,14 +5074,576 @@ tasks.register('delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis') {
         }
 
         if (!failures.isEmpty()) {
-            throw new GradleException('MVCC statistics optimizer/cost integration static analysis failed. Report: ' + reportFile)
+            throw new GradleException('Next engine-depth roadmap contracts static analysis failed. Report: ' + reportFile)
         }
-        println 'DelosDB MVCC statistics optimizer/cost integration static analysis passed. Report: ' + reportFile
+        println 'DelosDB next engine-depth roadmap contracts static analysis passed. Report: ' + reportFile
+    }
+}
+
+
+def delosBackupRestoreSidecarVerificationFile = file('gradle/static-analysis/delosdb-backup-restore-sidecar-verification.txt')
+
+def delosLoadBackupRestoreSidecarVerificationRows = {
+    if (!delosBackupRestoreSidecarVerificationFile.exists()) {
+        throw new GradleException('Missing backup/restore sidecar verification file: ' + delosBackupRestoreSidecarVerificationFile)
+    }
+    def rows = []
+    delosBackupRestoreSidecarVerificationFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed backup/restore sidecar verification row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [
+                id        : parts[0].trim(),
+                path      : parts[1].trim(),
+                category  : parts[2].trim(),
+                marker    : parts[3].trim(),
+                reason    : parts[4].trim(),
+                lineNumber: index + 1
+        ]
+    }
+    rows
+}
+
+tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates DelosDB MVCC sidecar backup/restore coverage and compatibility gates.'
+
+    inputs.file(delosBackupRestoreSidecarVerificationFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java')
+    inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.java')
+    inputs.file('delosdb-tests/build.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/backup-restore-sidecar-verification-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadBackupRestoreSidecarVerificationRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate backup/restore sidecar verification id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Backup/restore sidecar proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Backup/restore sidecar proof marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 50) {
+                failures << 'Backup/restore sidecar reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'ROADMAP_STATUS',
+                'BACKUP_SIDECAR_COPY',
+                'RESTORE_SIDECAR_COPY',
+                'RESTORE_SIDECAR_REPLACE',
+                'RESTORE_SIDECAR_PRIVILEGE',
+                'SQL_BACKUP_RESTORE_TEST',
+                'SQL_HEAP_COMPATIBILITY_TEST',
+                'SQL_RESTORE_GATE',
+                'TEST_SUITE_WIRING'
+        ].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'Backup/restore sidecar verification is missing category: ' + required
+            }
+        }
+
+        def rawStore = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java').getText('UTF-8')
+        if (!rawStore.contains('backupDelosMvccSidecars(backupcopy);')) {
+            failures << 'RawStore backup path must call backupDelosMvccSidecars after data backup'
+        }
+        if (!rawStore.contains('restoreDelosMvccSidecarsFromBackup(backupPath);')) {
+            failures << 'RawStore restore path must call restoreDelosMvccSidecarsFromBackup'
+        }
+        if (!rawStore.contains('privCopyDirectory(mvccDirectory, backupMvccDirectory)')) {
+            failures << 'RawStore backup path must copy delos_mvcc sidecars into the backup image'
+        }
+        if (!rawStore.contains('privCopyDirectory(backupMvccDirectory, dbMvccDirectory)')) {
+            failures << 'RawStore restore path must copy delos_mvcc sidecars from the backup image'
+        }
+        if (!rawStore.contains('privDeleteAll(dbMvccDirectory)')) {
+            failures << 'RawStore restore path must remove stale target delos_mvcc sidecars before restore'
+        }
+        if (rawStore.contains('import io.github.ggeorg.delosdb.storage.mvcc.MvccStorageNames')) {
+            failures << 'Inherited Derby raw-store backup code must not depend directly on the MVCC module'
+        }
+
+        def testText = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.java').getText('UTF-8')
+        [
+                'syscs_util.syscs_backup_database',
+                ';createFrom=',
+                'delos_mvcc',
+                'inherited-store',
+                'testHeapOnlyBackupDoesNotCreateMvccSidecars',
+                'testBackupAndCreateFromRestoreIncludesMvccSidecars'
+        ].each { markerText ->
+            if (!testText.contains(markerText)) {
+                failures << 'MVCC backup/restore SQL test is missing marker: ' + markerText
+            }
+        }
+
+        def buildText = file('delosdb-tests/build.gradle').getText('UTF-8')
+        if (!buildText.contains('MvccSqlBackupRestoreSidecarTest.class')) {
+            failures << 'runDelosMvccSqlIntegrationTest must include MvccSqlBackupRestoreSidecarTest'
+        }
+
+        def roadmap = file('docs/ENGINE-DEPTH-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing docs/ENGINE-DEPTH-ROADMAP.md'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Micro-slice 0 — Backup/restore sidecar verification',
+                    'Execution state: implementation slice delivered by delosdb-backup-restore-sidecar-verification-overlay.zip.',
+                    'Derby\'s inherited backup path now copies the DelosDB provider-owned delos_mvcc sidecar directory into the backup image when it exists.',
+                    'Restore from backup replaces stale target delos_mvcc sidecar state with the backup image',
+                    'SQL integration verifies both a delos_mvcc backup/createFrom/reopen round trip and a heap-only backup/restore compatibility path.'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Engine-depth roadmap is missing backup/restore sidecar marker: ' + markerText
+                }
+            }
+            if (roadmapText.contains('Status: current')) {
+                failures << 'Engine-depth roadmap must not use Status: current because the Phase A-J closeout gate treats that as reopening the closed roadmap'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/backup-restore-sidecar-verification-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB backup/restore sidecar verification static analysis')
+            writer.println('================================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Backup/restore sidecar verification static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB backup/restore sidecar verification static analysis passed. Report: ' + reportFile
+    }
+}
+
+
+
+
+def delosDerby7107ReviewFile = file('gradle/static-analysis/delosdb-derby-7107-review.txt')
+
+def delosLoadDerby7107ReviewRows = {
+    if (!delosDerby7107ReviewFile.exists()) {
+        throw new GradleException('Missing DERBY-7107 review file: ' + delosDerby7107ReviewFile)
+    }
+    def rows = []
+    delosDerby7107ReviewFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed DERBY-7107 review row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [
+                id        : parts[0].trim(),
+                path      : parts[1].trim(),
+                category  : parts[2].trim(),
+                marker    : parts[3].trim(),
+                reason    : parts[4].trim(),
+                lineNumber: index + 1
+        ]
+    }
+    rows
+}
+
+tasks.register('delosDerby7107ReviewStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the DelosDB DERBY-7107 INADDR_ANY NetworkServerControl fix and review evidence.'
+
+    inputs.file(delosDerby7107ReviewFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    inputs.file('gradle/static-analysis/delosdb-derby-fork-diff-classification.txt')
+    inputs.file('delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java')
+    inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/derbynet/NetworkServerControlInaddrAnyTest.java')
+    inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/derbynet/_Suite.java')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/derby-7107-review-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadDerby7107ReviewRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate DERBY-7107 review id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'DERBY-7107 proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'DERBY-7107 proof marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 50) {
+                failures << 'DERBY-7107 reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'ROADMAP_STATUS',
+                'UPSTREAM_PROVENANCE',
+                'SERVER_COMMAND_TARGET',
+                'REGRESSION_TEST',
+                'DERBYNET_SUITE_WIRING',
+                'FORK_DIFF_CLASSIFICATION',
+                'COMPATIBILITY_BOUNDARY'
+        ].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'DERBY-7107 review is missing category: ' + required
+            }
+        }
+
+        def serverText = file('delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java').getText('UTF-8')
+        if (!serverText.contains('address == null || !address.isAnyLocalAddress()')) {
+            failures << 'NetworkServerControlImpl must recognize wildcard command targets using isAnyLocalAddress()'
+        }
+        if (!serverText.contains('address instanceof Inet4Address') || !serverText.contains('InetAddress.getByName("127.0.0.1")')) {
+            failures << 'NetworkServerControlImpl must map IPv4 wildcard command targets to 127.0.0.1'
+        }
+        if (!serverText.contains('address instanceof Inet6Address') || !serverText.contains('InetAddress.getByName("::1")')) {
+            failures << 'NetworkServerControlImpl must map IPv6 wildcard command targets to ::1'
+        }
+        if (serverText.count('createSocket(commandTargetAddress, portNumber)') < 3) {
+            failures << 'All NetworkServerControl command socket paths must use commandTargetAddress'
+        }
+        if (serverText.contains('hostAddress = getCommandTargetAddress(hostAddress)')) {
+            failures << 'DERBY-7107 fix must not mutate the server bind/listen hostAddress'
+        }
+
+        def testText = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/derbynet/NetworkServerControlInaddrAnyTest.java').getText('UTF-8')
+        [
+                'testIpv4WildcardUsesIpv4LoopbackCommandTarget',
+                'testIpv6WildcardUsesIpv6LoopbackCommandTarget',
+                'testNonWildcardCommandTargetIsUnchanged',
+                'getCommandTargetAddress',
+                '0.0.0.0',
+                '::'
+        ].each { markerText ->
+            if (!testText.contains(markerText)) {
+                failures << 'DERBY-7107 regression test is missing marker: ' + markerText
+            }
+        }
+
+        def suiteText = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/derbynet/_Suite.java').getText('UTF-8')
+        if (!suiteText.contains('NetworkServerControlInaddrAnyTest.suite()')) {
+            failures << 'derbynet suite must include NetworkServerControlInaddrAnyTest'
+        }
+
+        def forkDiffText = file('gradle/static-analysis/delosdb-derby-fork-diff-classification.txt').getText('UTF-8')
+        if (!forkDiffText.contains('NetworkServerControlImpl.java')) {
+            failures << 'NetworkServerControlImpl must remain in the high-risk Derby fork-diff classification'
+        }
+
+        def roadmap = file('docs/ENGINE-DEPTH-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing docs/ENGINE-DEPTH-ROADMAP.md'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Micro-slice 1 — DERBY-7107 review/apply-if-still-valid',
+                    'Execution state: implementation slice delivered by delosdb-derby-7107-inaddr-any-overlay.zip.',
+                    'upstream Apache Derby Network Server bug',
+                    'NetworkServerControl can bind the server to INADDR_ANY',
+                    'command sockets use 127.0.0.1 for IPv4 wildcard and ::1 for IPv6 wildcard',
+                    'Regression coverage verifies the command-target resolver'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Engine-depth roadmap is missing DERBY-7107 marker: ' + markerText
+                }
+            }
+            if (roadmapText.contains('Status: current')) {
+                failures << 'Engine-depth roadmap must not use Status: current because the Phase A-J closeout gate treats that as reopening the closed roadmap'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/derby-7107-review-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB DERBY-7107 review static analysis')
+            writer.println('===========================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DERBY-7107 review static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB DERBY-7107 review static analysis passed. Report: ' + reportFile
+    }
+}
+
+
+
+def delosMvccStatisticsOptimizerCostIntegrationFile = file('gradle/static-analysis/delosdb-mvcc-statistics-optimizer-cost-integration.txt')
+
+def delosLoadMvccStatisticsOptimizerCostIntegrationRows = {
+    if (!delosMvccStatisticsOptimizerCostIntegrationFile.exists()) {
+        throw new GradleException('Missing MVCC statistics optimizer cost integration file: ' + delosMvccStatisticsOptimizerCostIntegrationFile)
+    }
+    def rows = []
+    delosMvccStatisticsOptimizerCostIntegrationFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed MVCC statistics optimizer cost integration row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [
+                id        : parts[0].trim(),
+                path      : parts[1].trim(),
+                category  : parts[2].trim(),
+                marker    : parts[3].trim(),
+                reason    : parts[4].trim(),
+                lineNumber: index + 1
+        ]
+    }
+    rows
+}
+
+tasks.register('delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates Phase K MVCC statistics integration with Derby StoreCostController costing.'
+
+    inputs.file(delosMvccStatisticsOptimizerCostIntegrationFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    inputs.file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccOptimizerCostDiagnostics.java')
+    inputs.file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java')
+    inputs.file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCostEstimate.java')
+    inputs.file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java')
+    inputs.file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java')
+    inputs.file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/CostModelRequest.java')
+    inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccStatisticsOptimizerCostIntegrationTest.java')
+    inputs.file('delosdb-tests/build.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-statistics-optimizer-cost-integration-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccStatisticsOptimizerCostIntegrationRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC statistics optimizer cost integration id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC statistics optimizer proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC statistics optimizer proof marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 50) {
+                failures << 'MVCC statistics optimizer reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'ROADMAP_STATUS',
+                'NO_PARALLEL_STATS_CHANNEL',
+                'EXPLICIT_OPT_IN',
+                'OPEN_TABLE_STATS',
+                'MVCC_STATS_BOUNDARY',
+                'STORE_COST_INTEGRATION',
+                'ROW_COUNT_INTEGRATION',
+                'STORE_COST_SEAM_PROOF',
+                'SAFE_BASELINE',
+                'SQL_INTEGRATION_TEST',
+                'DEFAULT_COMPATIBILITY',
+                'TEST_SUITE_WIRING'
+        ].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'MVCC statistics optimizer integration is missing category: ' + required
+            }
+        }
+
+        def diagnosticsText = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccOptimizerCostDiagnostics.java').getText('UTF-8')
+        if (!diagnosticsText.contains('delosdb.mvcc.optimizer.storageStatistics.enabled')) {
+            failures << 'Phase K diagnostics must define the explicit MVCC optimizer statistics opt-in property'
+        }
+        if (!diagnosticsText.contains('path=store-cost-controller') || !diagnosticsText.contains('source=mvcc-storage-statistics')) {
+            failures << 'Phase K diagnostics must prove the StoreCostController seam and MVCC statistics source'
+        }
+
+        def statisticsText = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java').getText('UTF-8')
+        if (!statisticsText.contains('fromTableDiagnostics(')) {
+            failures << 'DelosStorageStatistics must expose an open-table diagnostics factory for the MVCC bridge'
+        }
+        if (!statisticsText.contains('statistics source: open table diagnostics')) {
+            failures << 'Open-table statistics snapshots must document their source'
+        }
+
+        def stateText = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java').getText('UTF-8')
+        if (!stateText.contains('storageStatisticsSnapshot()')) {
+            failures << 'MvccConglomerateState must expose the narrow storageStatisticsSnapshot boundary'
+        }
+        if (stateText.contains('io.github.ggeorg.delosdb.storage.mvcc.durable')) {
+            failures << 'Storage bridge must not import concrete durable MVCC implementation classes for costing'
+        }
+
+        def estimateText = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCostEstimate.java').getText('UTF-8')
+        if (!estimateText.contains('fromStatisticsForOptimizerCosting(')) {
+            failures << 'DelosStorageCostEstimate must have an honest optimizer-consumed factory for the StoreCostController path'
+        }
+        if (!estimateText.contains('Derby optimizer consumption occurs through the StoreCostController seam')) {
+            failures << 'Optimizer-consumed storage estimates must document the StoreCostController seam'
+        }
+
+        def costText = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java').getText('UTF-8')
+        if (!costText.contains('DelosMvccOptimizerCostDiagnostics.enabled()')) {
+            failures << 'MvccStoreCostController must keep MVCC statistics costing explicitly opt-in'
+        }
+        if (!costText.contains('DelosStorageCostEstimate.fromStatisticsForOptimizerCosting(statistics)')) {
+            failures << 'MvccStoreCostController must derive estimates from provider-neutral storage statistics'
+        }
+        if (!costText.contains('costResult.setEstimatedRowCount(rows)') || !costText.contains('statistics.logicalRowCount()')) {
+            failures << 'MvccStoreCostController must feed logical row count into Derby estimated rows'
+        }
+        if (!costText.contains('recordStatisticsEstimate(')) {
+            failures << 'MvccStoreCostController must record deterministic diagnostics for the SQL proof'
+        }
+
+        def requestText = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/CostModelRequest.java').getText('UTF-8')
+        if (!requestText.contains('derbyCost > 0.0d')) {
+            failures << 'CostModelRequest must require strictly positive Derby baseline cost before provider replacement is safe'
+        }
+        if (requestText.contains('derbyCost >= 0.0d')) {
+            failures << 'CostModelRequest must not accept zero Derby baseline cost as safe'
+        }
+
+        def testText = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccStatisticsOptimizerCostIntegrationTest.java').getText('UTF-8')
+        [
+                'testMvccStatisticsFeedDerbyStoreCostControllerOnlyWhenOptedIn',
+                'default MVCC optimizer path must not consume storage-statistics estimates',
+                'lastLogicalRowCountForTesting',
+                'path=store-cost-controller',
+                'source=mvcc-storage-statistics'
+        ].each { markerText ->
+            if (!testText.contains(markerText)) {
+                failures << 'Phase K SQL test is missing marker: ' + markerText
+            }
+        }
+
+        def buildText = file('delosdb-tests/build.gradle').getText('UTF-8')
+        if (!buildText.contains('MvccStatisticsOptimizerCostIntegrationTest.class')) {
+            failures << 'runDelosMvccSqlIntegrationTest must include MvccStatisticsOptimizerCostIntegrationTest'
+        }
+
+        def roadmap = file('docs/ENGINE-DEPTH-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing docs/ENGINE-DEPTH-ROADMAP.md'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            def phaseKMarkers = [
+                    'Phase K — MVCC statistics and Derby optimizer/cost integration',
+                    'delosdb-mvcc-statistics-optimizer-cost-integration-overlay.zip',
+                    'Do not build a parallel optimizer statistics truth source.',
+                    'MvccStoreCostController',
+                    'delosdb.mvcc.optimizer.storageStatistics.enabled',
+                    'Default behavior remains unchanged: the statistics bridge is disabled unless explicitly opted in.',
+                    'This is not a parallel optimizer statistics channel and does not bypass SYSSTATISTICS semantics.'
+            ]
+            phaseKMarkers.each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Engine-depth roadmap is missing Phase K marker: ' + markerText
+                }
+            }
+            if (roadmapText.contains('Status: current')) {
+                failures << 'Engine-depth roadmap must not use Status: current; use Execution state markers for in-progress/deployed depth slices'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-statistics-optimizer-cost-integration-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC statistics optimizer cost integration static analysis')
+            writer.println('=====================================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('MVCC statistics optimizer cost integration static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC statistics optimizer cost integration static analysis passed. Report: ' + reportFile
     }
 }
 
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis'
 }
