@@ -2,6 +2,8 @@ package io.github.ggeorg.delosdb.storage.mvcc.store;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
@@ -89,6 +91,43 @@ public final class PageVolumeMvccWriteAheadLog {
         }
     }
 
+
+    public List<DelosLogSequenceNumber> appendVersionBatch(
+            long transactionId,
+            long commitSequence,
+            List<VersionWrite> writes) {
+        Objects.requireNonNull(writes, "writes");
+        if (writes.isEmpty()) {
+            return List.of();
+        }
+        if (!enabled()) {
+            List<DelosLogSequenceNumber> disabledLsns = new ArrayList<>(writes.size());
+            for (int i = 0; i < writes.size(); i++) {
+                disabledLsns.add(DelosLogSequenceNumber.NONE);
+            }
+            return List.copyOf(disabledLsns);
+        }
+        StringBuilder batch = new StringBuilder();
+        List<DelosLogSequenceNumber> pageLsns = new ArrayList<>(writes.size());
+        synchronized (this) {
+            DelosLogSequenceNumber beginLsn = new DelosLogSequenceNumber(nextLsnValue++);
+            batch.append(encodeLine(beginLsn, "BEGIN", transactionId, 0L, 0L));
+            for (VersionWrite write : writes) {
+                write = Objects.requireNonNull(write, "writes entry");
+                DelosLogSequenceNumber lsn = new DelosLogSequenceNumber(nextLsnValue++);
+                pageLsns.add(lsn);
+                batch.append(encodeLine(lsn, write.type(), transactionId, 0L, write.rowId()));
+            }
+            DelosLogSequenceNumber commitLsn = new DelosLogSequenceNumber(nextLsnValue++);
+            batch.append(encodeLine(commitLsn, "COMMIT", transactionId, commitSequence, 0L));
+            AbstractSidecarStore.appendUtf8Forced(
+                    path,
+                    batch.toString(),
+                    "MVCC page-volume WAL transaction batch");
+            return List.copyOf(pageLsns);
+        }
+    }
+
     private DelosLogSequenceNumber appendVersion(String type, long transactionId, long rowId) {
         if (!enabled()) {
             return DelosLogSequenceNumber.NONE;
@@ -106,6 +145,32 @@ public final class PageVolumeMvccWriteAheadLog {
                 encodeLine(lsn, type, transactionId, commitSequence, rowId),
                 "MVCC page-volume WAL record");
         return lsn;
+    }
+
+
+    public record VersionWrite(String type, long rowId) {
+        public VersionWrite {
+            type = Objects.requireNonNull(type, "type");
+            if (!"INSERT_VERSION".equals(type) && !"UPDATE_VERSION".equals(type)
+                    && !"DELETE_VERSION".equals(type)) {
+                throw new IllegalArgumentException("unsupported MVCC page-volume WAL version write type: " + type);
+            }
+            if (rowId <= 0L) {
+                throw new IllegalArgumentException("MVCC page-volume WAL row id must be positive: " + rowId);
+            }
+        }
+
+        public static VersionWrite insert(long rowId) {
+            return new VersionWrite("INSERT_VERSION", rowId);
+        }
+
+        public static VersionWrite update(long rowId) {
+            return new VersionWrite("UPDATE_VERSION", rowId);
+        }
+
+        public static VersionWrite delete(long rowId) {
+            return new VersionWrite("DELETE_VERSION", rowId);
+        }
     }
 
     private String encodeLine(

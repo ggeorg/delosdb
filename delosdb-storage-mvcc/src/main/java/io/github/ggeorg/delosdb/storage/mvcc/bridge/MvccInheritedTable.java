@@ -287,6 +287,24 @@ final class MvccInheritedTable implements DelosStorageTable,
 
 
     private void runPurgeDaemonAfterCommit(int changedRows) {
+        if (purgeDaemon.asynchronousEnabled()) {
+            if (!purgeDaemon.eligibleChangedRows(changedRows)) {
+                return;
+            }
+            purgeDaemon.recordAsyncScheduled(changedRows);
+            Thread worker = new Thread(() -> writeLocked(() -> {
+                if (hasRetainedInheritedSnapshot()) {
+                    purgeDaemon.recordAsyncSkip("retained inherited MVCC transaction or scan");
+                    return;
+                }
+                DelosVacuumOutcome outcome = vacuumOutcome(pageVolumeStateStore.vacuumSafely(false));
+                lastVacuumOutcome = outcome;
+                purgeDaemon.recordAsyncRun(outcome);
+            }), "delosdb-mvcc-purge-daemon-" + segmentId + '-' + containerId);
+            worker.setDaemon(true);
+            worker.start();
+            return;
+        }
         purgeDaemon.maybeRunAfterCommit(
                 changedRows,
                 this::hasRetainedInheritedSnapshot,

@@ -30,17 +30,19 @@ import org.apache.derby.iapi.store.types.DelosVacuumOutcome;
 /**
  * Deterministic cooperative purge-daemon scheduler for inherited MVCC tables.
  *
- * <p>This is intentionally not a free-running background thread.  The scheduler
- * is triggered at safe commit boundaries, checks for retained readers/snapshots,
- * and then invokes the existing provider-owned vacuum path.  That gives DelosDB
- * a daemon-style automatic purge boundary without making tests race a timer.</p>
+ * <p>The default mode remains deterministic and commit-boundary driven.  An
+ * explicit async property can move the actual purge work to a short-lived daemon
+ * thread, but scheduling still happens at safe commit boundaries and still
+ * rechecks retained readers/snapshots before vacuuming.</p>
  */
 final class MvccPurgeDaemon {
     static final String ENABLED_PROPERTY = "delosdb.mvcc.purgeDaemon.enabled";
     static final String CHANGED_ROWS_THRESHOLD_PROPERTY = "delosdb.mvcc.purgeDaemon.changedRowsThreshold";
+    static final String ASYNC_ENABLED_PROPERTY = "delosdb.mvcc.purgeDaemon.async.enabled";
     static final int DEFAULT_CHANGED_ROWS_THRESHOLD = 8;
 
     private long scheduleCount;
+    private long asyncScheduleCount;
     private long runCount;
     private long skipCount;
     private long lastTriggerChangedRows;
@@ -61,9 +63,7 @@ final class MvccPurgeDaemon {
             skip("no committed row changes");
             return Optional.empty();
         }
-        int threshold = changedRowsThreshold();
-        if (changedRows < threshold) {
-            skip("changed rows below threshold " + threshold);
+        if (!eligibleChangedRows(changedRows)) {
             return Optional.empty();
         }
         scheduleCount++;
@@ -77,8 +77,45 @@ final class MvccPurgeDaemon {
         return Optional.of(outcome);
     }
 
+    boolean asynchronousEnabled() {
+        return enabled() && asyncEnabled();
+    }
+
+    boolean eligibleChangedRows(int changedRows) {
+        if (changedRows <= 0) {
+            skip("no committed row changes");
+            return false;
+        }
+        int threshold = changedRowsThreshold();
+        if (changedRows < threshold) {
+            skip("changed rows below threshold " + threshold);
+            return false;
+        }
+        return true;
+    }
+
+    void recordAsyncScheduled(int changedRows) {
+        lastTriggerChangedRows = Math.max(0, changedRows);
+        scheduleCount++;
+        asyncScheduleCount++;
+        lastDecision = "scheduled async";
+    }
+
+    void recordAsyncRun(DelosVacuumOutcome outcome) {
+        runCount++;
+        lastDecision = "async ran: " + Objects.requireNonNull(outcome, "outcome").reason();
+    }
+
+    void recordAsyncSkip(String reason) {
+        skip(reason);
+    }
+
     long scheduleCount() {
         return scheduleCount;
+    }
+
+    long asyncScheduleCount() {
+        return asyncScheduleCount;
     }
 
     long runCount() {
@@ -104,6 +141,11 @@ final class MvccPurgeDaemon {
 
     private static boolean enabled() {
         String value = System.getProperty(ENABLED_PROPERTY);
+        return "true".equalsIgnoreCase(value) || "enabled".equalsIgnoreCase(value);
+    }
+
+    private static boolean asyncEnabled() {
+        String value = System.getProperty(ASYNC_ENABLED_PROPERTY);
         return "true".equalsIgnoreCase(value) || "enabled".equalsIgnoreCase(value);
     }
 

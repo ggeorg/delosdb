@@ -126,7 +126,11 @@ public final class PageVolumeMvccStateStore<T> {
                     databaseDirectory, storageId);
             MvccSubsystemRecoveryRecordStore recoveryRecordStore = MvccSubsystemRecoveryRecordStore.open(
                     databaseDirectory, storageId);
-            PageBackedMvccTable table = PageBackedMvccTable.open(pageFile, pageMutationLog, transactionOutcomeLog);
+            PageBackedMvccTable table = PageBackedMvccTable.open(
+                    pageFile,
+                    pageMutationLog,
+                    transactionOutcomeLog,
+                    recoveryRecordStore.replayPlan());
             Path orderedIndexPagesPath = PageBackedMvccTable.orderedIndexPagesPath(pageFile);
             boolean orderedIndexPagesExisted = Files.exists(orderedIndexPagesPath);
             OrderedIndexOpenResult orderedIndexOpenResult = openOrderedIndexPagesSafely(
@@ -847,55 +851,62 @@ public final class PageVolumeMvccStateStore<T> {
             existingHeads.put(head.key(), head);
         }
         long transactionId = nextTransactionId();
-        boolean beganWalTransaction = false;
+        boolean wroteWalTransaction = false;
         try {
+            List<PlannedPageWrite<T>> plannedWrites = new ArrayList<>();
+            List<PageVolumeMvccWriteAheadLog.VersionWrite> walWrites = new ArrayList<>();
             for (PersistedChange<T> change : changes) {
                 String key = keyFor(change.rowId());
                 MvccRowDirectoryStore.RowHeadRecord existingHead = existingHeads.get(key);
                 if (change.delete()) {
                     if (existingHead != null && !existingHead.tombstone()) {
-                        if (!beganWalTransaction) {
-                            writeAheadLog.appendBegin(transactionId);
-                            beganWalTransaction = true;
-                        }
-                        DelosLogSequenceNumber pageLsn = writeAheadLog.appendDeleteVersion(
-                                transactionId, change.rowId());
-                        table.deleteCommitted(key, transactionId, durableCommitSequence, pageLsn);
+                        plannedWrites.add(PlannedPageWrite.delete(key, change.rowId()));
+                        walWrites.add(PageVolumeMvccWriteAheadLog.VersionWrite.delete(change.rowId()));
                     }
                     continue;
                 }
                 byte[] encoded = rowCodec.encode(change.values());
                 if (existingHead == null) {
-                    if (!beganWalTransaction) {
-                        writeAheadLog.appendBegin(transactionId);
-                        beganWalTransaction = true;
-                    }
-                    DelosLogSequenceNumber pageLsn = writeAheadLog.appendInsertVersion(transactionId, change.rowId());
-                    table.insertCommitted(key, encoded, transactionId, durableCommitSequence, pageLsn);
+                    plannedWrites.add(PlannedPageWrite.insert(key, change.rowId(), encoded));
+                    walWrites.add(PageVolumeMvccWriteAheadLog.VersionWrite.insert(change.rowId()));
                 } else if (existingHead.tombstone() || table.readPayload(key, LATEST_COMMITTED)
                         .map(payload -> !java.util.Arrays.equals(payload.value(), encoded))
                         .orElse(true)) {
-                    if (!beganWalTransaction) {
-                        writeAheadLog.appendBegin(transactionId);
-                        beganWalTransaction = true;
-                    }
-                    DelosLogSequenceNumber pageLsn = writeAheadLog.appendUpdateVersion(transactionId, change.rowId());
-                    table.updateCommitted(key, encoded, transactionId, durableCommitSequence, pageLsn);
+                    plannedWrites.add(PlannedPageWrite.update(key, change.rowId(), encoded));
+                    walWrites.add(PageVolumeMvccWriteAheadLog.VersionWrite.update(change.rowId()));
                 }
             }
-            if (beganWalTransaction) {
-                writeAheadLog.appendCommit(transactionId, durableCommitSequence);
+            if (!plannedWrites.isEmpty()) {
+                List<DelosLogSequenceNumber> pageLsns = writeAheadLog.appendVersionBatch(
+                        transactionId,
+                        durableCommitSequence,
+                        walWrites);
+                wroteWalTransaction = true;
+                for (int i = 0; i < plannedWrites.size(); i++) {
+                    PlannedPageWrite<T> planned = plannedWrites.get(i);
+                    DelosLogSequenceNumber pageLsn = pageLsns.get(i);
+                    switch (planned.operation()) {
+                        case DELETE -> table.deleteCommitted(
+                                planned.key(), transactionId, durableCommitSequence, pageLsn);
+                        case INSERT -> table.insertCommitted(
+                                planned.key(), planned.encodedValues(), transactionId, durableCommitSequence, pageLsn);
+                        case UPDATE -> table.updateCommitted(
+                                planned.key(), planned.encodedValues(), transactionId, durableCommitSequence, pageLsn);
+                        default -> throw new IllegalStateException("unknown MVCC planned page write: "
+                                + planned.operation());
+                    }
+                }
                 appendSubsystemRecoveryRecords(transactionId, durableCommitSequence);
                 rewriteCheckpoint();
             }
         } catch (IOException e) {
-            if (beganWalTransaction) {
+            if (wroteWalTransaction) {
                 writeAheadLog.appendAbort(transactionId);
             }
             throw new UncheckedIOException("Could not persist inherited MVCC changed rows to page volume "
                     + pageFile, e);
         } catch (RuntimeException e) {
-            if (beganWalTransaction) {
+            if (wroteWalTransaction) {
                 writeAheadLog.appendAbort(transactionId);
             }
             throw e;
@@ -989,6 +1000,9 @@ public final class PageVolumeMvccStateStore<T> {
                 commitSequence,
                 pageCount(),
                 physicalVersionCount());
+        recoveryRecordStore.appendIndexPageRedo(
+                orderedIndexPageCount(),
+                orderedIndexEntryCount());
         recoveryRecordStore.appendOverflowPageRedo(
                 overflowPageCount(),
                 attributeOverflowValueBytes());
@@ -1024,6 +1038,49 @@ public final class PageVolumeMvccStateStore<T> {
         return nextCommitSequence++;
     }
 
+
+
+    private enum PlannedPageWriteOperation {
+        INSERT,
+        UPDATE,
+        DELETE
+    }
+
+    private record PlannedPageWrite<T>(
+            PlannedPageWriteOperation operation,
+            String key,
+            long rowId,
+            byte[] encodedValues) {
+        private PlannedPageWrite {
+            operation = Objects.requireNonNull(operation, "operation");
+            key = Objects.requireNonNull(key, "key");
+            if (rowId <= 0L) {
+                throw new IllegalArgumentException("planned inherited MVCC row id must be positive: " + rowId);
+            }
+            if (operation == PlannedPageWriteOperation.DELETE) {
+                encodedValues = null;
+            } else {
+                encodedValues = Objects.requireNonNull(encodedValues, "encodedValues").clone();
+            }
+        }
+
+        static <T> PlannedPageWrite<T> insert(String key, long rowId, byte[] encodedValues) {
+            return new PlannedPageWrite<>(PlannedPageWriteOperation.INSERT, key, rowId, encodedValues);
+        }
+
+        static <T> PlannedPageWrite<T> update(String key, long rowId, byte[] encodedValues) {
+            return new PlannedPageWrite<>(PlannedPageWriteOperation.UPDATE, key, rowId, encodedValues);
+        }
+
+        static <T> PlannedPageWrite<T> delete(String key, long rowId) {
+            return new PlannedPageWrite<>(PlannedPageWriteOperation.DELETE, key, rowId, null);
+        }
+
+        @Override
+        public byte[] encodedValues() {
+            return encodedValues == null ? null : encodedValues.clone();
+        }
+    }
 
     private static String keyFor(long rowId) {
         if (rowId <= 0L) {

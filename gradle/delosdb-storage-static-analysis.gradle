@@ -6480,39 +6480,66 @@ def delosLoadPerformanceConcurrencyValidationRows = {
     rows
 }
 
+def delosRunExternalValidationCommand = { String propertyName, String displayName ->
+    def configured = providers.gradleProperty(propertyName).orNull
+    if (configured == null || configured.trim().isEmpty()) {
+        throw new GradleException(displayName + ' requires -P' + propertyName
+                + '="<command>"; this external validation task is intentionally not an S0 dependency.')
+    }
+    exec {
+        commandLine configured.trim().split(/\s+/) as List
+    }
+}
+
 tasks.register('delosJmhMicrobenchmarks') {
     group = 'verification'
-    description = 'Runs the Phase P no-dependency MVCC microbenchmark validation harness; reserved as the future JMH wrapper slot.'
+    description = 'Runs built-in MVCC microbenchmark validation, or an external JMH command with -Pdelosdb.jmh.command.'
     dependsOn ':delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation'
+    doLast {
+        if (providers.gradleProperty('delosdb.jmh.command').orNull != null) {
+            delosRunExternalValidationCommand('delosdb.jmh.command', 'delosJmhMicrobenchmarks')
+        }
+    }
 }
 
 tasks.register('delosJcstressConcurrencyValidation') {
     group = 'verification'
-    description = 'Runs the Phase P no-dependency MVCC concurrency validation harness; reserved as the future jcstress wrapper slot.'
+    description = 'Runs built-in MVCC concurrency validation, or an external jcstress command with -Pdelosdb.jcstress.command.'
     dependsOn ':delosdb-storage-mvcc:runDelosMvccConcurrencyValidation'
+    doLast {
+        if (providers.gradleProperty('delosdb.jcstress.command').orNull != null) {
+            delosRunExternalValidationCommand('delosdb.jcstress.command', 'delosJcstressConcurrencyValidation')
+        }
+    }
 }
 
 tasks.register('delosTwoSidedMvccWorkloadBenchmark') {
     group = 'verification'
-    description = 'Runs the Phase P two-sided MVCC workload counter benchmark harness.'
+    description = 'Runs built-in two-sided MVCC workload validation, or an external command with -Pdelosdb.twoSided.command.'
     dependsOn ':delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation'
+    doLast {
+        if (providers.gradleProperty('delosdb.twoSided.command').orNull != null) {
+            delosRunExternalValidationCommand('delosdb.twoSided.command', 'delosTwoSidedMvccWorkloadBenchmark')
+        }
+    }
 }
 
 tasks.register('delosLongReaderVacuumSoak') {
     group = 'verification'
-    description = 'Runs the Phase P built-in long-reader buffer-pressure harness; full SQL long-reader/vacuum soak remains external.'
+    description = 'Runs built-in long-reader validation, or an external soak command with -Pdelosdb.longReaderSoak.command.'
     dependsOn ':delosdb-storage-mvcc:runDelosMvccLongReaderValidation'
+    doLast {
+        if (providers.gradleProperty('delosdb.longReaderSoak.command').orNull != null) {
+            delosRunExternalValidationCommand('delosdb.longReaderSoak.command', 'delosLongReaderVacuumSoak')
+        }
+    }
 }
 
 tasks.register('delosSqlancerMvccValidation') {
     group = 'verification'
-    description = 'External SQLancer validation slot for MVCC tables. Requires -Pdelosdb.sqlancer.command=<command>.'
+    description = 'Runs external SQLancer validation for MVCC tables. Requires -Pdelosdb.sqlancer.command=<command>.'
     doLast {
-        def configured = providers.gradleProperty('delosdb.sqlancer.command').orNull
-        if (configured == null || configured.trim().isEmpty()) {
-            throw new GradleException('delosSqlancerMvccValidation requires -Pdelosdb.sqlancer.command=<command>; this task is intentionally not an S0 dependency.')
-        }
-        println 'SQLancer MVCC validation command is configured but execution is intentionally left to the caller/environment: ' + configured
+        delosRunExternalValidationCommand('delosdb.sqlancer.command', 'delosSqlancerMvccValidation')
     }
 }
 

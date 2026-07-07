@@ -160,6 +160,42 @@ final class MvccRecoveryReplayEngineTest {
         assertEquals(5, result.subsystemRecords());
     }
 
+
+    @Test
+    void pageBackedOpenStrictEnforcesSubsystemRecoveryPlanOnProductionOpen() throws Exception {
+        Path tableFile = tempDir.resolve("accounts.dmvcc");
+        Path mutationLogFile = tempDir.resolve("accounts.dmvcc.pagemut");
+        Path outcomeLogFile = tempDir.resolve("accounts.dmvcc.txoutcome");
+        MvccPageMutationLog.open(mutationLogFile)
+                .appendVersion(1L, version("account:1", "alpha", 1L, 1L, 0L, 1L, 0L, 0));
+        MvccTransactionOutcomeLog.open(outcomeLogFile).appendCommit(1L, 1L);
+
+        MvccSubsystemRecoveryRecordStore subsystemRecords = MvccSubsystemRecoveryRecordStore.open(
+                tempDir, "conglomerate-0-10");
+        subsystemRecords.appendRowPageRedo(1L, 1L, 1L, 1L);
+        subsystemRecords.appendTransactionOutcomeRedo(1L, 1L);
+
+        IllegalStateException incomplete = assertThrows(IllegalStateException.class,
+                () -> PageBackedMvccTable.openStrict(
+                        tableFile,
+                        mutationLogFile,
+                        outcomeLogFile,
+                        subsystemRecords.replayPlan()));
+        assertTrue(incomplete.getMessage().contains("missing required subsystem redo"));
+
+        subsystemRecords.appendIndexPageRedo(1L, 1L);
+        subsystemRecords.appendOverflowPageRedo(1L, 16L);
+        subsystemRecords.appendFreeSpaceMapRedo(1L, 1L);
+        try (PageBackedMvccTable table = PageBackedMvccTable.openStrict(
+                tableFile,
+                mutationLogFile,
+                outcomeLogFile,
+                subsystemRecords.replayPlan())) {
+            assertEquals("alpha", table.read("account:1", new MvccCommitSequence(100L)).orElseThrow());
+            assertTrue(table.validateConsistency().valid());
+        }
+    }
+
     @Test
     void rowPageRedoWithoutMatchingTransactionOutcomeIsRejectedBeforeReplay() throws Exception {
         Path tableFile = tempDir.resolve("accounts.dmvcc");

@@ -73,11 +73,13 @@ import java.io.Serializable;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
+import java.io.FileOutputStream;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import org.apache.derby.iapi.services.context.StoreExecutionContext;
 import org.apache.derby.iapi.services.property.DatabaseVersionIds;
@@ -101,6 +103,7 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 {
 	private static final String BACKUP_HISTORY = "BACKUP.HISTORY";
     private static final String DELOS_MVCC_STORAGE_DIRECTORY_NAME = "delos_mvcc";
+    private static final String DELOS_MVCC_BACKUP_MANIFEST = "delos_mvcc.BACKUP-MANIFEST";
 	protected TransactionFactory	xactFactory;
 	protected DataFactory			dataFactory;
 	protected LogFactory			logFactory;
@@ -1201,6 +1204,7 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
                     mvccDirectory,
                     backupMvccDirectory);
         }
+        writeDelosMvccBackupManifest(backupcopy, backupMvccDirectory);
     }
 
     /**
@@ -1229,11 +1233,100 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
             return;
         }
 
+        verifyDelosMvccBackupManifest(backupPath, backupMvccDirectory);
         if (!privCopyDirectory(backupMvccDirectory, dbMvccDirectory)) {
             throw StandardException.newException(
                     SQLState.UNABLE_TO_COPY_FILE_FROM_BACKUP,
                     backupMvccDirectory,
                     dbMvccDirectory);
+        }
+    }
+
+    private void writeDelosMvccBackupManifest(File backupcopy, File backupMvccDirectory)
+            throws StandardException
+    {
+        File manifestFile = new File(backupcopy, DELOS_MVCC_BACKUP_MANIFEST);
+        SidecarBackupManifest manifest = SidecarBackupManifest.from(backupMvccDirectory);
+        try (OutputStreamWriter writer = new OutputStreamWriter(
+                new FileOutputStream(manifestFile), StandardCharsets.UTF_8)) {
+            writer.write("version=1\n");
+            writer.write("directory=" + DELOS_MVCC_STORAGE_DIRECTORY_NAME + "\n");
+            writer.write("fileCount=" + manifest.fileCount() + "\n");
+            writer.write("totalBytes=" + manifest.totalBytes() + "\n");
+        } catch (IOException e) {
+            throw StandardException.plainWrapException(e);
+        }
+    }
+
+    private void verifyDelosMvccBackupManifest(String backupPath, File backupMvccDirectory)
+            throws StandardException
+    {
+        File manifestFile = new File(backupPath, DELOS_MVCC_BACKUP_MANIFEST);
+        if (!privExists(manifestFile)) {
+            // Legacy DelosDB sidecar backups created before the manifest proof
+            // are still restorable; all new backups write and verify this file.
+            return;
+        }
+        SidecarBackupManifest actual = SidecarBackupManifest.from(backupMvccDirectory);
+        SidecarBackupManifest expected = SidecarBackupManifest.read(manifestFile);
+        if (!actual.equals(expected)) {
+            throw StandardException.newException(
+                    SQLState.UNABLE_TO_COPY_FILE_FROM_BACKUP,
+                    manifestFile,
+                    backupMvccDirectory);
+        }
+    }
+
+
+    private record SidecarBackupManifest(long fileCount, long totalBytes) {
+        private static SidecarBackupManifest from(File directory) {
+            if (directory == null || !directory.exists()) {
+                return new SidecarBackupManifest(0L, 0L);
+            }
+            if (directory.isFile()) {
+                return new SidecarBackupManifest(1L, directory.length());
+            }
+            long files = 0L;
+            long bytes = 0L;
+            File[] children = directory.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    SidecarBackupManifest childManifest = from(child);
+                    files += childManifest.fileCount();
+                    bytes += childManifest.totalBytes();
+                }
+            }
+            return new SidecarBackupManifest(files, bytes);
+        }
+
+        private static SidecarBackupManifest read(File manifestFile) throws StandardException {
+            long files = -1L;
+            long bytes = -1L;
+            try {
+                for (String line : java.nio.file.Files.readAllLines(
+                        manifestFile.toPath(), StandardCharsets.UTF_8)) {
+                    if (line.startsWith("fileCount=")) {
+                        files = Long.parseLong(line.substring("fileCount=".length()));
+                    } else if (line.startsWith("totalBytes=")) {
+                        bytes = Long.parseLong(line.substring("totalBytes=".length()));
+                    }
+                }
+            } catch (IOException | NumberFormatException e) {
+                throw StandardException.plainWrapException(e);
+            }
+            if (files < 0L || bytes < 0L) {
+                throw StandardException.newException(
+                        SQLState.UNABLE_TO_COPY_FILE_FROM_BACKUP,
+                        manifestFile,
+                        DELOS_MVCC_STORAGE_DIRECTORY_NAME);
+            }
+            return new SidecarBackupManifest(files, bytes);
+        }
+
+        SidecarBackupManifest {
+            if (fileCount < 0L || totalBytes < 0L) {
+                throw new IllegalArgumentException("DelosDB MVCC backup manifest counts must not be negative");
+            }
         }
     }
 

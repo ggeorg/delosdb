@@ -1150,6 +1150,45 @@ tasks.register('runDelosMvccLongReaderValidation', Test) {
     }
 }
 
+
+
+def delosRegisterSingleMvccTest = { String taskName, String classPattern, String descriptionText ->
+    tasks.register(taskName, Test) {
+        group = 'verification'
+        description = descriptionText
+        dependsOn 'compileDelosDbStorageMvccTests'
+
+        useJUnitPlatform()
+        testClassesDirs = files(testClassDir)
+        classpath = sourceSets.test.runtimeClasspath
+        include classPattern
+
+        binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/' + taskName))
+        reports {
+            junitXml.required.set(true)
+            junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/' + taskName))
+            html.required.set(true)
+            html.outputLocation.set(layout.buildDirectory.dir('reports/tests/' + taskName))
+        }
+
+        testLogging {
+            events 'failed'
+            exceptionFormat 'full'
+            showStandardStreams = true
+        }
+    }
+}
+
+delosRegisterSingleMvccTest(
+        'runMvccRecoveryReplayEngineTest',
+        '**/MvccRecoveryReplayEngineTest.class',
+        'Runs MVCC recovery replay engine adversarial and production-path tests.')
+
+delosRegisterSingleMvccTest(
+        'runPageVolumeMvccWriteAheadLogBatchTest',
+        '**/PageVolumeMvccWriteAheadLogBatchTest.class',
+        'Runs MVCC page-volume WAL transaction-batch tests.')
+
 tasks.named('jar', Jar) {
     archiveFileName = 'delosdb-storage-mvcc.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
@@ -1172,5 +1211,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke', 'runMvccStaticAnalysisHardeningTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccRecoveryReplayEngineTest', 'runPageVolumeMvccWriteAheadLogBatchTest', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke', 'runMvccStaticAnalysisHardeningTest'
 }

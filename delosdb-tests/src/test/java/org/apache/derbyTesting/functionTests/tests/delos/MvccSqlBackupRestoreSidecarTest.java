@@ -28,6 +28,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.List;
 
 /** SQL backup/restore regression tests for delos_mvcc provider sidecar state. */
 public final class MvccSqlBackupRestoreSidecarTest extends MvccSqlTestSupport {
@@ -67,8 +68,15 @@ public final class MvccSqlBackupRestoreSidecarTest extends MvccSqlTestSupport {
         Path backupSidecars = backupDatabase.resolve("delos_mvcc").resolve("inherited-store");
         assertTrue("backup must include delos_mvcc inherited-store sidecar directory: " + backupSidecars,
                 Files.isDirectory(backupSidecars));
+        long backupSidecarFileCount = regularFileCount(backupSidecars);
         assertTrue("backup must include delos_mvcc inherited-store sidecar files",
-                regularFileCount(backupSidecars) > 0L);
+                backupSidecarFileCount > 0L);
+        Path backupManifest = backupDatabase.resolve("delos_mvcc.BACKUP-MANIFEST");
+        assertTrue("backup must include delos_mvcc sidecar manifest proof: " + backupManifest,
+                Files.isRegularFile(backupManifest));
+        List<String> manifestLines = Files.readAllLines(backupManifest);
+        assertTrue("backup sidecar manifest must record file count",
+                manifestLines.stream().anyMatch(line -> line.equals("fileCount=" + regularFileCount(backupDatabase.resolve("delos_mvcc")))));
 
         shutdownDatabase(sourceDatabase);
 
@@ -119,6 +127,8 @@ public final class MvccSqlBackupRestoreSidecarTest extends MvccSqlTestSupport {
         Path backupDatabase = backupRoot.resolve(Path.of(sourceDatabase).getFileName());
         assertFalse("heap-only backup should not synthesize a delos_mvcc directory",
                 Files.exists(backupDatabase.resolve("delos_mvcc")));
+        assertFalse("heap-only backup should not synthesize a delos_mvcc sidecar manifest",
+                Files.exists(backupDatabase.resolve("delos_mvcc.BACKUP-MANIFEST")));
 
         shutdownDatabase(sourceDatabase);
 

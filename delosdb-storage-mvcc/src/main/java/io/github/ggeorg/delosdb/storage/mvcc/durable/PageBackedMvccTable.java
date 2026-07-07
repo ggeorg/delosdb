@@ -10,6 +10,8 @@ import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+
+import io.github.ggeorg.delosdb.storage.mvcc.store.MvccSubsystemRecoveryRecordStore;
 import java.util.TreeMap;
 import java.util.function.Function;
 
@@ -79,7 +81,8 @@ public final class PageBackedMvccTable implements AutoCloseable {
      * committed log records before rebuilding the row directory from pages.
      */
     public static PageBackedMvccTable open(Path path, Path mutationLogPath) throws IOException {
-        return openInternal(path, mutationLogPath, null, false);
+        return openInternal(path, mutationLogPath, null, false,
+                MvccSubsystemRecoveryRecordStore.ReplayPlan.empty(null));
     }
 
     /**
@@ -93,8 +96,17 @@ public final class PageBackedMvccTable implements AutoCloseable {
             Path path,
             Path mutationLogPath,
             Path outcomeLogPath) throws IOException {
+        return open(path, mutationLogPath, outcomeLogPath,
+                MvccSubsystemRecoveryRecordStore.ReplayPlan.empty(null));
+    }
+
+    public static PageBackedMvccTable open(
+            Path path,
+            Path mutationLogPath,
+            Path outcomeLogPath,
+            MvccSubsystemRecoveryRecordStore.ReplayPlan subsystemReplayPlan) throws IOException {
         boolean strictRecovery = outcomeLogPath != null && Files.exists(outcomeLogPath);
-        return openInternal(path, mutationLogPath, outcomeLogPath, strictRecovery);
+        return openInternal(path, mutationLogPath, outcomeLogPath, strictRecovery, subsystemReplayPlan);
     }
 
     /** Opens a table and always requires transaction-outcome-log recovery. */
@@ -104,14 +116,26 @@ public final class PageBackedMvccTable implements AutoCloseable {
             Path outcomeLogPath) throws IOException {
         Objects.requireNonNull(mutationLogPath, "mutationLogPath");
         Objects.requireNonNull(outcomeLogPath, "outcomeLogPath");
-        return openInternal(path, mutationLogPath, outcomeLogPath, true);
+        return openInternal(path, mutationLogPath, outcomeLogPath, true,
+                MvccSubsystemRecoveryRecordStore.ReplayPlan.empty(null));
+    }
+
+    public static PageBackedMvccTable openStrict(
+            Path path,
+            Path mutationLogPath,
+            Path outcomeLogPath,
+            MvccSubsystemRecoveryRecordStore.ReplayPlan subsystemReplayPlan) throws IOException {
+        Objects.requireNonNull(mutationLogPath, "mutationLogPath");
+        Objects.requireNonNull(outcomeLogPath, "outcomeLogPath");
+        return openInternal(path, mutationLogPath, outcomeLogPath, true, subsystemReplayPlan);
     }
 
     private static PageBackedMvccTable openInternal(
             Path path,
             Path mutationLogPath,
             Path outcomeLogPath,
-            boolean strictRecovery) throws IOException {
+            boolean strictRecovery,
+            MvccSubsystemRecoveryRecordStore.ReplayPlan subsystemReplayPlan) throws IOException {
         PageBackedMvccTableStore store = PageBackedMvccTableStore.open(path);
         try {
             MvccPageMutationLog log = null;
@@ -125,7 +149,12 @@ public final class PageBackedMvccTable implements AutoCloseable {
                     if (outcomes == null) {
                         throw new IllegalArgumentException("strict MVCC recovery requires a transaction outcome log");
                     }
-                    new MvccRecoveryReplayEngine(log, outcomes, store).recoverStrict();
+                    new MvccRecoveryReplayEngine(
+                            log,
+                            outcomes,
+                            store,
+                            subsystemReplayPlan,
+                            MvccRecoveryReplayEngine.rowIndexOverflowFreeSpaceOutcomeSubsystems()).recoverStrict();
                 } else {
                     recovery.recover();
                 }
