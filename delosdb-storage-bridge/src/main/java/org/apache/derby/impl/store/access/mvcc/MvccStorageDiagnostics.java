@@ -481,6 +481,16 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public long purgeDaemonLastVisibilityDebtScoreForTesting(int segment, long containerId) {
+        return MvccConglomerate.purgeDaemonLastVisibilityDebtScoreForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public String purgeDaemonLastVisibilityDebtSummaryForTesting(int segment, long containerId) {
+        return MvccConglomerate.purgeDaemonLastVisibilityDebtSummaryForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public long orderedIndexPageCountForTesting(int segment, long containerId) {
         return MvccConglomerate.orderedIndexPageCountForDiagnostics(segment, containerId);
     }

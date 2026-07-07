@@ -294,14 +294,18 @@ final class MvccInheritedTable implements DelosStorageTable,
 
 
     private void runPurgeDaemonAfterCommit(int changedRows) {
+        MvccVisibilityDebtPolicy.Snapshot debt = visibilityDebtSnapshot();
         if (purgeDaemon.asynchronousEnabled()) {
-            if (!purgeDaemon.eligibleChangedRows(changedRows)) {
+            if (!purgeDaemon.eligibleAfterCommit(changedRows, debt)) {
                 return;
             }
-            purgeDaemon.recordAsyncScheduled(changedRows);
+            purgeDaemon.recordAsyncScheduled(changedRows, debt);
             purgeDaemonExecutor.execute(() -> writeLocked(() -> {
                 if (hasRetainedInheritedSnapshot()) {
                     purgeDaemon.recordAsyncSkip("retained inherited MVCC transaction or scan");
+                    return;
+                }
+                if (!purgeDaemon.eligibleVisibilityDebt(visibilityDebtSnapshot())) {
                     return;
                 }
                 DelosVacuumOutcome outcome = vacuumOutcome(pageVolumeStateStore.vacuumSafely(false));
@@ -312,9 +316,22 @@ final class MvccInheritedTable implements DelosStorageTable,
         }
         purgeDaemon.maybeRunAfterCommit(
                 changedRows,
+                this::visibilityDebtSnapshot,
                 this::hasRetainedInheritedSnapshot,
                 () -> vacuumOutcome(pageVolumeStateStore.vacuumSafely(false)))
                 .ifPresent(outcome -> lastVacuumOutcome = outcome);
+    }
+
+    private MvccVisibilityDebtPolicy.Snapshot visibilityDebtSnapshot() {
+        long obsoleteVersions = Math.max(
+                0L,
+                (long) pageVolumeStateStore.physicalVersionCount() - pageVolumeStateStore.logicalRowCount());
+        return new MvccVisibilityDebtPolicy.Snapshot(
+                pageVolumeStateStore.visibilityMapPrunablePageCount(),
+                pageVolumeStateStore.visibilityMapOldVersionPageCount(),
+                pageVolumeStateStore.visibilityMapTombstonePageCount(),
+                pageVolumeStateStore.purgeQueuePendingCount(),
+                obsoleteVersions);
     }
 
     private boolean hasRetainedInheritedSnapshot() {
@@ -865,6 +882,16 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public String purgeDaemonLastDecisionForTesting() {
         return readLocked(purgeDaemon::lastDecision);
+    }
+
+    @Override
+    public long purgeDaemonLastVisibilityDebtScoreForTesting() {
+        return readLocked(purgeDaemon::lastVisibilityDebtScore);
+    }
+
+    @Override
+    public String purgeDaemonLastVisibilityDebtSummaryForTesting() {
+        return readLocked(purgeDaemon::lastVisibilityDebtSummary);
     }
 
     @Override

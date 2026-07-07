@@ -676,6 +676,14 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).purgeDaemonLastDecisionForTesting();
     }
 
+    static long purgeDaemonLastVisibilityDebtScoreForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeDaemonLastVisibilityDebtScoreForTesting();
+    }
+
+    static String purgeDaemonLastVisibilityDebtSummaryForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeDaemonLastVisibilityDebtSummaryForTesting();
+    }
+
     static long orderedIndexPageCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).orderedIndexPageCountForTesting();
     }

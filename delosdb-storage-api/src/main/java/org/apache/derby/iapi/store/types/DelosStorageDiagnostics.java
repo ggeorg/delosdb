@@ -368,6 +368,14 @@ public interface DelosStorageDiagnostics {
         return "disabled";
     }
 
+    default long purgeDaemonLastVisibilityDebtScoreForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default String purgeDaemonLastVisibilityDebtSummaryForTesting(int segment, long containerId) {
+        return "none";
+    }
+
     default long orderedIndexPageCountForTesting(int segment, long containerId) {
         return 0L;
     }

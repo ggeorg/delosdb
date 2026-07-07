@@ -301,6 +301,14 @@ public interface DelosStorageTableDiagnostics {
         return "disabled";
     }
 
+    default long purgeDaemonLastVisibilityDebtScoreForTesting() {
+        return 0L;
+    }
+
+    default String purgeDaemonLastVisibilityDebtSummaryForTesting() {
+        return "none";
+    }
+
     default long orderedIndexPageCountForTesting() {
         return 0L;
     }

@@ -46,24 +46,20 @@ final class MvccPurgeDaemon {
     private long runCount;
     private long skipCount;
     private long lastTriggerChangedRows;
+    private long lastVisibilityDebtScore;
+    private String lastVisibilityDebtSummary = "none";
     private String lastDecision = "disabled";
 
     Optional<DelosVacuumOutcome> maybeRunAfterCommit(
             int changedRows,
+            Supplier<MvccVisibilityDebtPolicy.Snapshot> debtSupplier,
             BooleanSupplier retainedReaderSupplier,
             Supplier<DelosVacuumOutcome> vacuumSupplier) {
+        Objects.requireNonNull(debtSupplier, "debtSupplier");
         Objects.requireNonNull(retainedReaderSupplier, "retainedReaderSupplier");
         Objects.requireNonNull(vacuumSupplier, "vacuumSupplier");
-        lastTriggerChangedRows = Math.max(0, changedRows);
-        if (!enabled()) {
-            skip("disabled");
-            return Optional.empty();
-        }
-        if (changedRows <= 0) {
-            skip("no committed row changes");
-            return Optional.empty();
-        }
-        if (!eligibleChangedRows(changedRows)) {
+        MvccVisibilityDebtPolicy.Snapshot debt = debtSupplier.get();
+        if (!eligibleAfterCommit(changedRows, debt)) {
             return Optional.empty();
         }
         scheduleCount++;
@@ -73,12 +69,26 @@ final class MvccPurgeDaemon {
         }
         DelosVacuumOutcome outcome = vacuumSupplier.get();
         runCount++;
-        lastDecision = "ran: " + outcome.reason();
+        lastDecision = "ran: " + outcome.reason() + "; debt " + lastVisibilityDebtSummary;
         return Optional.of(outcome);
     }
 
     boolean asynchronousEnabled() {
         return enabled() && asyncEnabled();
+    }
+
+    boolean eligibleAfterCommit(int changedRows, MvccVisibilityDebtPolicy.Snapshot debt) {
+        Objects.requireNonNull(debt, "debt");
+        lastTriggerChangedRows = Math.max(0, changedRows);
+        recordVisibilityDebt(debt);
+        if (!enabled()) {
+            skip("disabled");
+            return false;
+        }
+        if (!eligibleChangedRows(changedRows)) {
+            return false;
+        }
+        return eligibleVisibilityDebt(debt);
     }
 
     boolean eligibleChangedRows(int changedRows) {
@@ -94,16 +104,30 @@ final class MvccPurgeDaemon {
         return true;
     }
 
-    void recordAsyncScheduled(int changedRows) {
+    boolean eligibleVisibilityDebt(MvccVisibilityDebtPolicy.Snapshot debt) {
+        Objects.requireNonNull(debt, "debt");
+        recordVisibilityDebt(debt);
+        if (!MvccVisibilityDebtPolicy.eligible(debt)) {
+            skip("visibility debt below threshold "
+                    + MvccVisibilityDebtPolicy.threshold()
+                    + ": " + lastVisibilityDebtSummary);
+            return false;
+        }
+        return true;
+    }
+
+    void recordAsyncScheduled(int changedRows, MvccVisibilityDebtPolicy.Snapshot debt) {
         lastTriggerChangedRows = Math.max(0, changedRows);
+        recordVisibilityDebt(debt);
         scheduleCount++;
         asyncScheduleCount++;
-        lastDecision = "scheduled async";
+        lastDecision = "scheduled async; debt " + lastVisibilityDebtSummary;
     }
 
     void recordAsyncRun(DelosVacuumOutcome outcome) {
         runCount++;
-        lastDecision = "async ran: " + Objects.requireNonNull(outcome, "outcome").reason();
+        lastDecision = "async ran: " + Objects.requireNonNull(outcome, "outcome").reason()
+                + "; debt " + lastVisibilityDebtSummary;
     }
 
     void recordAsyncSkip(String reason) {
@@ -130,8 +154,22 @@ final class MvccPurgeDaemon {
         return lastTriggerChangedRows;
     }
 
+    long lastVisibilityDebtScore() {
+        return lastVisibilityDebtScore;
+    }
+
+    String lastVisibilityDebtSummary() {
+        return lastVisibilityDebtSummary;
+    }
+
     String lastDecision() {
         return lastDecision;
+    }
+
+    private void recordVisibilityDebt(MvccVisibilityDebtPolicy.Snapshot debt) {
+        Objects.requireNonNull(debt, "debt");
+        lastVisibilityDebtScore = debt.score();
+        lastVisibilityDebtSummary = debt.summary();
     }
 
     private void skip(String reason) {

@@ -29,6 +29,8 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlPurgeDaemonSchedulingTest extends MvccSqlTestSupport {
     private static final String ENABLED_PROPERTY = "delosdb.mvcc.purgeDaemon.enabled";
     private static final String THRESHOLD_PROPERTY = "delosdb.mvcc.purgeDaemon.changedRowsThreshold";
+    private static final String VISIBILITY_DEBT_THRESHOLD_PROPERTY =
+            "delosdb.mvcc.purgeDaemon.visibilityDebtThreshold";
 
     public void testPurgeDaemonRunsDeterministicallyAfterCommittedWriteBurst() throws Exception {
         String databaseName = databaseName("mvcc-purge-daemon-db");
@@ -82,6 +84,55 @@ public final class MvccSqlPurgeDaemonSchedulingTest extends MvccSqlTestSupport {
         try (Connection reopened = openDatabase(databaseName, false)) {
             assertRows(reopened, "select id, payload from purge_daemon_t", "1|v3");
             diagnostics.assertConsistentForTesting(0, containerId);
+        }
+    }
+
+    public void testPurgeDaemonUsesVisibilityDebtPolicy() throws Exception {
+        String databaseName = databaseName("mvcc-purge-daemon-visibility-debt-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+
+        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
+             SystemPropertyScope changedRowsThreshold = setSystemProperty(THRESHOLD_PROPERTY, "1");
+             SystemPropertyScope debtThreshold = setSystemProperty(VISIBILITY_DEBT_THRESHOLD_PROPERTY, "100");
+             Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table purge_debt_t "
+                    + "(id int primary key, payload varchar(64)) using delos_mvcc");
+            connection.commit();
+            long containerId = mvccContainerId(connection, "PURGE_DEBT_T");
+            connection.rollback();
+
+            executeUpdate(connection, "insert into purge_debt_t values (1, 'v1')");
+            connection.commit();
+            executeUpdate(connection, "update purge_debt_t set payload = 'v2' where id = 1");
+            connection.commit();
+
+            assertEquals("changed-row threshold alone must not schedule purge when visibility debt is too low",
+                    0L, diagnostics.purgeDaemonScheduleCountForTesting(0, containerId));
+            assertEquals("purge should not run below the visibility-debt threshold",
+                    0L, diagnostics.purgeDaemonRunCountForTesting(0, containerId));
+            assertTrue("last decision should explain the visibility-debt policy",
+                    diagnostics.purgeDaemonLastDecisionForTesting(0, containerId)
+                            .contains("visibility debt below threshold 100"));
+            assertTrue("visibility-debt diagnostics should expose obsolete version pressure",
+                    diagnostics.purgeDaemonLastVisibilityDebtScoreForTesting(0, containerId) > 0L);
+            assertTrue("visibility-debt summary should include obsolete version pressure",
+                    diagnostics.purgeDaemonLastVisibilityDebtSummaryForTesting(0, containerId)
+                            .contains("obsoleteVersions="));
+
+            debtThreshold.set("1");
+            executeUpdate(connection, "update purge_debt_t set payload = 'v3' where id = 1");
+            connection.commit();
+
+            assertTrue("purge should schedule when visibility debt reaches the configured threshold",
+                    diagnostics.purgeDaemonScheduleCountForTesting(0, containerId) > 0L);
+            assertTrue("purge should run when visibility debt reaches the configured threshold",
+                    diagnostics.purgeDaemonRunCountForTesting(0, containerId) > 0L);
+            assertTrue("last decision should include the measured visibility debt",
+                    diagnostics.purgeDaemonLastDecisionForTesting(0, containerId).contains("debt score="));
+            diagnostics.assertConsistentForTesting(0, containerId);
+            assertRows(connection, "select id, payload from purge_debt_t", "1|v3");
+            connection.rollback();
         }
     }
 
