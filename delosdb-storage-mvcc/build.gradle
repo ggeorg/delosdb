@@ -1189,6 +1189,82 @@ delosRegisterSingleMvccTest(
         '**/PageVolumeMvccWriteAheadLogBatchTest.class',
         'Runs MVCC page-volume WAL transaction-batch tests.')
 
+// Lifecycle/depth tests added after the initial named-proof-task migration must
+// remain part of the module verification contract.  Keep them grouped so future
+// slices can add proof classes without silently leaving them outside `check`.
+def delosMvccLifecycleProofTasks = [
+        ['runMvccDurableIndexCandidateTest', '**/MvccDurableIndexCandidateTest.class',
+         'Runs MVCC durable index-candidate authority tests.'],
+        ['runMvccDurableVacuumTest', '**/MvccDurableVacuumTest.class',
+         'Runs MVCC durable vacuum lifecycle tests.'],
+        ['runMvccTableConcurrencyLockTest', '**/MvccTableConcurrencyLockTest.class',
+         'Runs MVCC table concurrency lock tests.'],
+        ['runMvccVersionChainConcurrencyLockTest', '**/MvccVersionChainConcurrencyLockTest.class',
+         'Runs MVCC version-chain concurrency lock tests.'],
+        ['runMvccInheritedTableConcurrencyLockTest', '**/MvccInheritedTableConcurrencyLockTest.class',
+         'Runs MVCC inherited-table concurrency lock tests.'],
+        ['runMvccInheritedTransactionLifecycleTest', '**/MvccInheritedTransactionLifecycleTest.class',
+         'Runs MVCC inherited transaction lifecycle tests.'],
+        ['runMvccAttributeOverflowRowPayloadCodecTest', '**/MvccAttributeOverflowRowPayloadCodecTest.class',
+         'Runs MVCC attribute-overflow row payload codec tests.'],
+        ['runMvccBufferManagerPhase2Test', '**/MvccBufferManagerPhase2Test.class',
+         'Runs MVCC buffer manager phase 2 tests.'],
+        ['runMvccBufferReplacementPolicyTest', '**/MvccBufferReplacementPolicyTest.class',
+         'Runs MVCC buffer replacement policy tests.'],
+        ['runMvccConcurrentReadWriteTest', '**/MvccConcurrentReadWriteTest.class',
+         'Runs MVCC concurrent read/write tests.'],
+        ['runMvccConcurrentUniqueConflictTest', '**/MvccConcurrentUniqueConflictTest.class',
+         'Runs MVCC concurrent unique-conflict tests.'],
+        ['runMvccConcurrentVacuumSafetyTest', '**/MvccConcurrentVacuumSafetyTest.class',
+         'Runs MVCC concurrent vacuum-safety tests.'],
+        ['runMvccCrashBoundaryRecoveryTest', '**/MvccCrashBoundaryRecoveryTest.class',
+         'Runs MVCC crash-boundary recovery tests.'],
+        ['runMvccDurableConsistencyCheckTest', '**/MvccDurableConsistencyCheckTest.class',
+         'Runs MVCC durable consistency-check tests.'],
+        ['runMvccDurablePageScanTest', '**/MvccDurablePageScanTest.class',
+         'Runs MVCC durable page-scan tests.'],
+        ['runMvccOrderedIndexPageStoreTest', '**/MvccOrderedIndexPageStoreTest.class',
+         'Runs MVCC ordered index page-store tests.'],
+        ['runMvccOverflowPayloadCodecTest', '**/MvccOverflowPayloadCodecTest.class',
+         'Runs MVCC overflow payload codec tests.'],
+        ['runMvccOverflowPayloadStoreTest', '**/MvccOverflowPayloadStoreTest.class',
+         'Runs MVCC overflow payload store tests.'],
+        ['runMvccPageCachePinDirtyTest', '**/MvccPageCachePinDirtyTest.class',
+         'Runs MVCC page-cache pin/dirty lifecycle tests.'],
+        ['runMvccSidecarCodecTest', '**/MvccSidecarCodecTest.class',
+         'Runs MVCC sidecar codec tests.'],
+        ['runMvccSidecarStoreLifecycleTest', '**/MvccSidecarStoreLifecycleTest.class',
+         'Runs MVCC sidecar store lifecycle tests.'],
+        ['runMvccStrictOutcomeOpenTest', '**/MvccStrictOutcomeOpenTest.class',
+         'Runs MVCC strict outcome open tests.'],
+        ['runPageBackedMvccTableStoreConcurrencyLockTest', '**/PageBackedMvccTableStoreConcurrencyLockTest.class',
+         'Runs page-backed MVCC table-store concurrency lock tests.'],
+        ['runMvccBinaryFormatTest', '**/MvccBinaryFormatTest.class',
+         'Runs MVCC binary format tests.'],
+        ['runMvccDurableLineRecordsTest', '**/MvccDurableLineRecordsTest.class',
+         'Runs MVCC durable line-record format tests.'],
+        ['runMvccPageRecordCodecTest', '**/MvccPageRecordCodecTest.class',
+         'Runs MVCC page-record codec tests.'],
+        ['runMvccSubsystemRecoveryRecordStoreTest', '**/MvccSubsystemRecoveryRecordStoreTest.class',
+         'Runs MVCC subsystem recovery-record store tests.'],
+        ['runPageVolumeMvccCheckpointLifecycleTest', '**/PageVolumeMvccCheckpointLifecycleTest.class',
+         'Runs page-volume MVCC checkpoint lifecycle tests.'],
+        ['runPageVolumeMvccStateStoreDropTest', '**/PageVolumeMvccStateStoreDropTest.class',
+         'Runs page-volume MVCC state-store drop tests.'],
+        ['runPageVolumeMvccStorageIdHardeningTest', '**/PageVolumeMvccStorageIdHardeningTest.class',
+         'Runs page-volume MVCC storage-id hardening tests.']
+]
+
+delosMvccLifecycleProofTasks.each { proof ->
+    delosRegisterSingleMvccTest(proof[0], proof[1], proof[2])
+}
+
+tasks.register('runDelosMvccLifecycleProofs') {
+    group = 'verification'
+    description = 'Runs MVCC lifecycle/depth proof tests wired into the storage MVCC check task.'
+    dependsOn delosMvccLifecycleProofTasks.collect { proof -> proof[0] }
+}
+
 tasks.named('jar', Jar) {
     archiveFileName = 'delosdb-storage-mvcc.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
@@ -1211,5 +1287,5 @@ tasks.named('assemble') {
 }
 
 tasks.named('check') {
-    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccRecoveryReplayEngineTest', 'runPageVolumeMvccWriteAheadLogBatchTest', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke', 'runMvccStaticAnalysisHardeningTest'
+    dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccRecoveryReplayEngineTest', 'runPageVolumeMvccWriteAheadLogBatchTest', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke', 'runMvccStaticAnalysisHardeningTest', 'runDelosMvccLifecycleProofs'
 }

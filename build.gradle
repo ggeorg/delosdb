@@ -1027,6 +1027,12 @@ tasks.register('mvccVersionedStorageProviderTest') {
     dependsOn 'mvccStorageModelTest'
 }
 
+tasks.register('mvccLifecycleProofs') {
+    group = 'verification'
+    description = 'Runs MVCC lifecycle/depth proof tests wired into the storage MVCC module check.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccLifecycleProofs'
+}
+
 tasks.register('mvccTransactionOutcomeLogProof') {
     group = 'verification'
     description = 'Runs A49 durable transaction outcome-log proof for strict MVCC recovery paths.'
