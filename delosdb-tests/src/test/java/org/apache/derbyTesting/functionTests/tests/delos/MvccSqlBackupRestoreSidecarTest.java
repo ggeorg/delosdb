@@ -78,6 +78,10 @@ public final class MvccSqlBackupRestoreSidecarTest extends MvccSqlTestSupport {
         long manifestFileCount = regularFileCount(backupDatabase.resolve("delos_mvcc"));
         assertTrue("backup sidecar manifest must record file count",
                 manifestLines.stream().anyMatch(line -> line.equals("fileCount=" + manifestFileCount)));
+        assertTrue("backup sidecar manifest must record total bytes",
+                manifestLines.stream().anyMatch(line -> line.startsWith("totalBytes=")));
+        assertTrue("backup sidecar manifest must record stable content digest",
+                manifestLines.stream().anyMatch(line -> line.matches("digest=[0-9a-f]{64}")));
 
         shutdownDatabase(sourceDatabase);
 

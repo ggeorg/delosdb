@@ -104,6 +104,8 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 	private static final String BACKUP_HISTORY = "BACKUP.HISTORY";
     private static final String DELOS_MVCC_STORAGE_DIRECTORY_NAME = "delos_mvcc";
     private static final String DELOS_MVCC_BACKUP_MANIFEST = "delos_mvcc.BACKUP-MANIFEST";
+    private static final int DELOS_MVCC_BACKUP_MAX_COPY_ATTEMPTS = 3;
+    private static final String DELOS_MVCC_BACKUP_DIGEST_ALGORITHM = "SHA-256";
 	protected TransactionFactory	xactFactory;
 	protected DataFactory			dataFactory;
 	protected LogFactory			logFactory;
@@ -1194,17 +1196,35 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
             return;
         }
 
+        File sourceMvccDirectory = new File(mvccDirectory.getPath());
         File backupMvccDirectory = new File(backupcopy, DELOS_MVCC_STORAGE_DIRECTORY_NAME);
-        if (privExists(backupMvccDirectory)) {
-            privRemoveDirectory(backupMvccDirectory);
+        SidecarBackupManifest sourceManifest = SidecarBackupManifest.from(sourceMvccDirectory);
+
+        for (int attempt = 1; attempt <= DELOS_MVCC_BACKUP_MAX_COPY_ATTEMPTS; attempt++) {
+            if (privExists(backupMvccDirectory)) {
+                privRemoveDirectory(backupMvccDirectory);
+            }
+            if (!privCopyDirectory(mvccDirectory, backupMvccDirectory)) {
+                throw StandardException.newException(
+                        SQLState.RAWSTORE_ERROR_COPYING_FILE,
+                        mvccDirectory,
+                        backupMvccDirectory);
+            }
+
+            SidecarBackupManifest sourceAfterCopy = SidecarBackupManifest.from(sourceMvccDirectory);
+            SidecarBackupManifest backupManifest = SidecarBackupManifest.from(backupMvccDirectory);
+            if (sourceManifest.equals(sourceAfterCopy) && sourceAfterCopy.equals(backupManifest)) {
+                writeDelosMvccBackupManifest(backupcopy, backupManifest);
+                return;
+            }
+
+            sourceManifest = sourceAfterCopy;
         }
-        if (!privCopyDirectory(mvccDirectory, backupMvccDirectory)) {
-            throw StandardException.newException(
-                    SQLState.RAWSTORE_ERROR_COPYING_FILE,
-                    mvccDirectory,
-                    backupMvccDirectory);
-        }
-        writeDelosMvccBackupManifest(backupcopy, backupMvccDirectory);
+
+        throw StandardException.newException(
+                SQLState.RAWSTORE_ERROR_COPYING_FILE,
+                mvccDirectory,
+                backupMvccDirectory);
     }
 
     /**
@@ -1242,17 +1262,17 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
         }
     }
 
-    private void writeDelosMvccBackupManifest(File backupcopy, File backupMvccDirectory)
+    private void writeDelosMvccBackupManifest(File backupcopy, SidecarBackupManifest manifest)
             throws StandardException
     {
         File manifestFile = new File(backupcopy, DELOS_MVCC_BACKUP_MANIFEST);
-        SidecarBackupManifest manifest = SidecarBackupManifest.from(backupMvccDirectory);
         try (OutputStreamWriter writer = new OutputStreamWriter(
                 new FileOutputStream(manifestFile), StandardCharsets.UTF_8)) {
-            writer.write("version=1\n");
+            writer.write("version=2\n");
             writer.write("directory=" + DELOS_MVCC_STORAGE_DIRECTORY_NAME + "\n");
             writer.write("fileCount=" + manifest.fileCount() + "\n");
             writer.write("totalBytes=" + manifest.totalBytes() + "\n");
+            writer.write("digest=" + manifest.digest() + "\n");
         } catch (IOException e) {
             throw StandardException.plainWrapException(e);
         }
@@ -1269,7 +1289,7 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
         }
         SidecarBackupManifest actual = SidecarBackupManifest.from(backupMvccDirectory);
         SidecarBackupManifest expected = SidecarBackupManifest.read(manifestFile);
-        if (!actual.equals(expected)) {
+        if (!expected.matches(actual)) {
             throw StandardException.newException(
                     SQLState.UNABLE_TO_COPY_FILE_FROM_BACKUP,
                     manifestFile,
@@ -1278,30 +1298,55 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
     }
 
 
-    private record SidecarBackupManifest(long fileCount, long totalBytes) {
-        private static SidecarBackupManifest from(File directory) {
+    private record SidecarBackupManifest(long fileCount, long totalBytes, String digest) {
+        private static SidecarBackupManifest from(File directory) throws StandardException {
             if (directory == null || !directory.exists()) {
-                return new SidecarBackupManifest(0L, 0L);
+                return empty();
             }
-            if (directory.isFile()) {
-                return new SidecarBackupManifest(1L, directory.length());
-            }
-            long files = 0L;
-            long bytes = 0L;
-            File[] children = directory.listFiles();
-            if (children != null) {
-                for (File child : children) {
-                    SidecarBackupManifest childManifest = from(child);
-                    files += childManifest.fileCount();
-                    bytes += childManifest.totalBytes();
+            try {
+                java.security.MessageDigest messageDigest = java.security.MessageDigest.getInstance(
+                        DELOS_MVCC_BACKUP_DIGEST_ALGORITHM);
+                java.nio.file.Path root = directory.toPath();
+                java.util.List<java.nio.file.Path> files = new java.util.ArrayList<>();
+                try (var paths = java.nio.file.Files.walk(root)) {
+                    paths.filter(java.nio.file.Files::isRegularFile)
+                            .forEach(files::add);
                 }
+                files.sort(java.util.Comparator.comparing(path -> normalizeRelativePath(root, path)));
+
+                long fileCount = 0L;
+                long totalBytes = 0L;
+                byte[] buffer = new byte[8192];
+                for (java.nio.file.Path file : files) {
+                    String relativeName = normalizeRelativePath(root, file);
+                    byte[] relativeBytes = relativeName.getBytes(StandardCharsets.UTF_8);
+                    messageDigest.update(relativeBytes);
+                    messageDigest.update((byte) 0);
+
+                    long size = java.nio.file.Files.size(file);
+                    totalBytes += size;
+                    updateLong(messageDigest, size);
+                    messageDigest.update((byte) 0);
+
+                    try (java.io.InputStream input = java.nio.file.Files.newInputStream(file)) {
+                        int read;
+                        while ((read = input.read(buffer)) >= 0) {
+                            messageDigest.update(buffer, 0, read);
+                        }
+                    }
+                    messageDigest.update((byte) 0);
+                    fileCount++;
+                }
+                return new SidecarBackupManifest(fileCount, totalBytes, hex(messageDigest.digest()));
+            } catch (IOException | SecurityException | java.security.NoSuchAlgorithmException e) {
+                throw StandardException.plainWrapException(e);
             }
-            return new SidecarBackupManifest(files, bytes);
         }
 
         private static SidecarBackupManifest read(File manifestFile) throws StandardException {
             long files = -1L;
             long bytes = -1L;
+            String digest = null;
             try {
                 for (String line : java.nio.file.Files.readAllLines(
                         manifestFile.toPath(), StandardCharsets.UTF_8)) {
@@ -1309,6 +1354,8 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
                         files = Long.parseLong(line.substring("fileCount=".length()));
                     } else if (line.startsWith("totalBytes=")) {
                         bytes = Long.parseLong(line.substring("totalBytes=".length()));
+                    } else if (line.startsWith("digest=")) {
+                        digest = line.substring("digest=".length());
                     }
                 }
             } catch (IOException | NumberFormatException e) {
@@ -1320,12 +1367,57 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
                         manifestFile,
                         DELOS_MVCC_STORAGE_DIRECTORY_NAME);
             }
-            return new SidecarBackupManifest(files, bytes);
+            return new SidecarBackupManifest(files, bytes, digest);
+        }
+
+        private static SidecarBackupManifest empty() throws StandardException {
+            try {
+                java.security.MessageDigest messageDigest = java.security.MessageDigest.getInstance(
+                        DELOS_MVCC_BACKUP_DIGEST_ALGORITHM);
+                return new SidecarBackupManifest(0L, 0L, hex(messageDigest.digest()));
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw StandardException.plainWrapException(e);
+            }
+        }
+
+        private boolean matches(SidecarBackupManifest actual) {
+            if (actual == null) {
+                return false;
+            }
+            if (fileCount != actual.fileCount || totalBytes != actual.totalBytes) {
+                return false;
+            }
+            return digest == null || digest.equals(actual.digest);
+        }
+
+        private static String normalizeRelativePath(java.nio.file.Path root, java.nio.file.Path file) {
+            return root.relativize(file).toString().replace(File.separatorChar, '/');
+        }
+
+        private static void updateLong(java.security.MessageDigest digest, long value) {
+            for (int shift = 56; shift >= 0; shift -= 8) {
+                digest.update((byte) (value >>> shift));
+            }
+        }
+
+        private static String hex(byte[] bytes) {
+            StringBuilder builder = new StringBuilder(bytes.length * 2);
+            for (byte value : bytes) {
+                int unsigned = value & 0xff;
+                if (unsigned < 0x10) {
+                    builder.append('0');
+                }
+                builder.append(Integer.toHexString(unsigned));
+            }
+            return builder.toString();
         }
 
         SidecarBackupManifest {
             if (fileCount < 0L || totalBytes < 0L) {
                 throw new IllegalArgumentException("DelosDB MVCC backup manifest counts must not be negative");
+            }
+            if (digest != null && digest.isBlank()) {
+                throw new IllegalArgumentException("DelosDB MVCC backup manifest digest must not be blank");
             }
         }
     }
