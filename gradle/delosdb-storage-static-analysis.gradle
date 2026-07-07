@@ -6300,8 +6300,186 @@ tasks.register('delosHeapCleanupPhase2ForkDiffStaticAnalysis') {
     }
 }
 
+
+def delosSharedStorageServiceExtractionAuditFile = file('gradle/static-analysis/delosdb-shared-storage-service-extraction-audit.txt')
+
+def delosLoadSharedStorageServiceExtractionAuditRows = {
+    if (!delosSharedStorageServiceExtractionAuditFile.exists()) {
+        throw new GradleException('Missing shared storage service extraction audit file: ' + delosSharedStorageServiceExtractionAuditFile)
+    }
+    def rows = []
+    delosSharedStorageServiceExtractionAuditFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 8)
+        if (parts.length != 8) {
+            throw new GradleException('Malformed shared storage service extraction audit row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [
+                id: parts[0],
+                candidate: parts[1],
+                decision: parts[2],
+                heapPath: parts[3],
+                heapMarker: parts[4],
+                mvccPath: parts[5],
+                mvccMarker: parts[6],
+                reason: parts[7],
+                lineNumber: index + 1
+        ]
+    }
+    rows
+}
+
+tasks.register('delosSharedStorageServiceExtractionAuditStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates Phase O shared-service extraction audit proof before any service extraction.'
+
+    inputs.file(delosSharedStorageServiceExtractionAuditFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    inputs.file('docs/SHARED-STORAGE-SERVICE-EXTRACTION-AUDIT.md')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/shared-storage-service-extraction-audit-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadSharedStorageServiceExtractionAuditRows()
+        def failures = []
+        def ids = [] as Set
+        def candidates = [] as Set
+        def decisions = [] as Set
+        def allowedDecisions = [
+                'AUDIT_DELIVERED',
+                'READY_FOR_NARROW_DESIGN',
+                'DEFER_SEMANTIC_MISMATCH',
+                'DEFER_PROVIDER_SEMANTICS',
+                'DEFER_FORMAT_BOUNDARY',
+                'ALREADY_SHARED_DIAGNOSTIC_BOUNDARY',
+                'DEFER_MVCC_ONLY_PROOF',
+                'AUDIT_ONLY'
+        ] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate shared-service extraction audit id: ' + row.id
+            }
+            candidates.add(row.candidate)
+            decisions.add(row.decision)
+            if (!allowedDecisions.contains(row.decision)) {
+                failures << 'Unknown shared-service extraction audit decision for ' + row.id + ': ' + row.decision
+            }
+            [
+                    [label: 'heap', path: row.heapPath, marker: row.heapMarker],
+                    [label: 'mvcc', path: row.mvccPath, marker: row.mvccMarker]
+            ].each { proof ->
+                def proofFile = file(proof.path)
+                if (!proofFile.exists()) {
+                    failures << 'Shared-service extraction ' + proof.label + ' proof path does not exist for ' + row.id + ': ' + proof.path
+                    return
+                }
+                def body = proofFile.getText('UTF-8')
+                if (!body.contains(proof.marker)) {
+                    failures << 'Shared-service extraction ' + proof.label + ' marker missing for ' + row.id + ': ' + proof.marker
+                }
+            }
+            if (row.reason.length() < 80) {
+                failures << 'Shared-service extraction audit reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'ROADMAP_STATUS',
+                'CHECKSUM_TORN_WRITE_VALIDATION',
+                'ALLOCATION_FREE_SPACE',
+                'PAGE_CACHE_FLUSH_DISCIPLINE',
+                'RECOVERY_CHECKPOINT',
+                'STATISTICS_COST_EVIDENCE',
+                'PURGE_MAINTENANCE',
+                'INSPECTION_REPORTING',
+                'EXTRACTION_GUARD'
+        ].each { requiredCandidate ->
+            if (!candidates.contains(requiredCandidate)) {
+                failures << 'Shared-service extraction audit is missing candidate: ' + requiredCandidate
+            }
+        }
+
+        [
+                'READY_FOR_NARROW_DESIGN',
+                'DEFER_SEMANTIC_MISMATCH',
+                'DEFER_PROVIDER_SEMANTICS',
+                'DEFER_FORMAT_BOUNDARY',
+                'ALREADY_SHARED_DIAGNOSTIC_BOUNDARY',
+                'DEFER_MVCC_ONLY_PROOF',
+                'AUDIT_ONLY'
+        ].each { requiredDecision ->
+            if (!decisions.contains(requiredDecision)) {
+                failures << 'Shared-service extraction audit is missing decision: ' + requiredDecision
+            }
+        }
+
+        def auditText = file('docs/SHARED-STORAGE-SERVICE-EXTRACTION-AUDIT.md').getText('UTF-8')
+        [
+                'No service is extracted in Phase O.',
+                'Checksum/torn-write validation is the strongest candidate for the next narrow design slice.',
+                'Decision: `READY_FOR_NARROW_DESIGN`',
+                'Decision: `DEFER_SEMANTIC_MISMATCH`',
+                'Decision: `DEFER_PROVIDER_SEMANTICS`',
+                'Decision: `DEFER_FORMAT_BOUNDARY`',
+                'Decision: `ALREADY_SHARED_DIAGNOSTIC_BOUNDARY`',
+                'Decision: `DEFER_MVCC_ONLY_PROOF`',
+                'It must not own physical heap log-record encoding or MVCC page/sidecar encoding.'
+        ].each { markerText ->
+            if (!auditText.contains(markerText)) {
+                failures << 'Shared-service extraction audit document is missing marker: ' + markerText
+            }
+        }
+
+        def roadmapText = file('docs/ENGINE-DEPTH-ROADMAP.md').getText('UTF-8')
+        [
+                'Phase O — Shared-service extraction audit',
+                'Execution state: audit slice delivered by delosdb-shared-storage-service-extraction-audit-overlay.zip.',
+                'No service is extracted in Phase O.',
+                'statistics/cost and storage-inspector surfaces are recorded as already-shared diagnostic boundaries',
+                'Audit shared storage service extraction candidates'
+        ].each { markerText ->
+            if (!roadmapText.contains(markerText)) {
+                failures << 'Engine-depth roadmap is missing Phase O marker: ' + markerText
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/shared-storage-service-extraction-audit-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB shared storage service extraction audit static analysis')
+            writer.println('================================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Candidates: ' + candidates.sort().join(', '))
+            writer.println('Decisions: ' + decisions.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.candidate + ' / ' + row.decision + ']')
+                writer.println('  heap: ' + row.heapPath + ' :: ' + row.heapMarker)
+                writer.println('  mvcc: ' + row.mvccPath + ' :: ' + row.mvccMarker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Shared storage service extraction audit static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB shared storage service extraction audit static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis', 'delosMvccBufferManagerPhase2StaticAnalysis', 'delosMvccPurgeDaemonSchedulingStaticAnalysis', 'delosHeapCleanupPhase2ForkDiffStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis', 'delosMvccBufferManagerPhase2StaticAnalysis', 'delosMvccPurgeDaemonSchedulingStaticAnalysis', 'delosHeapCleanupPhase2ForkDiffStaticAnalysis', 'delosSharedStorageServiceExtractionAuditStaticAnalysis'
 }

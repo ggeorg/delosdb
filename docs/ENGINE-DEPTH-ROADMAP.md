@@ -3,7 +3,7 @@
 This roadmap opens the next storage-engine depth pass after the Phase A-J balanced
 storage modernization roadmap and the two post-closeout tradeoff hardening audits.
 
-Execution state: backup/restore sidecar verification and DERBY-7107 review slices delivered; Phase K implementation slice delivered by delosdb-mvcc-statistics-optimizer-cost-integration-overlay.zip.
+Execution state: backup/restore, DERBY-7107, Phase K, Phase L, Phase M, purge scheduling, Phase N, and Phase O audit slices delivered.
 
 ## North star
 
@@ -505,7 +505,7 @@ The two timestamp-parsing demo VTIs now create a formatter per parse path rather
 
 ## Phase O — Shared-service extraction audit
 
-Execution state: specified.
+Execution state: audit slice delivered by delosdb-shared-storage-service-extraction-audit-overlay.zip.
 
 Overlay:
 
@@ -518,33 +518,29 @@ Audit shared-service extraction candidates only where heap and MVCC both have co
 proof points. The first named candidate is page checksum/torn-write validation because
 heap and MVCC already have related mechanisms.
 
-Required behavior:
+Required behavior delivered:
 
 ```text
 shared-service candidates list heap proof path and MVCC proof path
 page checksum/torn-write validation is audited as a candidate, not blindly extracted
-allocation/free-space abstractions are not extracted until both providers prove matching semantics
-page/cache abstractions are not extracted until buffer-manager phase 2 and heap compatibility gates justify it
+allocation/free-space abstractions are deferred because provider semantics differ
+page/cache abstractions are deferred because heap raw-store cache and MVCC flush coordinator semantics differ
+recovery/checkpoint abstractions are deferred because Derby raw-log and MVCC sidecar replay are different format boundaries
+statistics/cost and storage-inspector surfaces are recorded as already-shared diagnostic boundaries
 ```
 
-Not allowed:
+Not allowed / preserved:
 
 ```text
+No service is extracted in Phase O.
 no shared service created from one-provider evidence
 no module merging
 no heap format/log behavior change
 no MVCC page-format change hidden inside an extraction
+no optimizer, catalog, JDBC, or DRDA behavior change
 ```
 
-Tests:
-
-```text
-audit file lists both-provider proof for every candidate
-checksum/torn-write validation candidate cites heap and MVCC tests
-static gate rejects one-sided extraction claims
-```
-
-Gate:
+Tests and gates:
 
 ```text
 ./gradlew delosSharedStorageServiceExtractionAuditStaticAnalysis
@@ -555,6 +551,14 @@ Commit message:
 
 ```text
 Audit shared storage service extraction candidates
+```
+
+Implementation note:
+
+```text
+Phase O adds docs/SHARED-STORAGE-SERVICE-EXTRACTION-AUDIT.md plus an S0 static gate.
+The audit identifies checksum/torn-write validation as READY_FOR_NARROW_DESIGN, but only for a provider-neutral read-only integrity evidence model. Physical heap LOGOP_CHECKSUM encoding, MVCC page-record checksums, MVCC sidecar trailers, allocation/free-space, page-cache flushing, recovery replay, and purge scheduling remain provider-owned.
+The audit records storage statistics/cost and storage inspection as already-shared diagnostic boundaries.
 ```
 
 ## Phase P — Performance, concurrency, and external validation closeout
