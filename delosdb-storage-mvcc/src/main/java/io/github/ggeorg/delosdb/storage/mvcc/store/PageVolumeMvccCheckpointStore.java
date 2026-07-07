@@ -23,12 +23,16 @@ package io.github.ggeorg.delosdb.storage.mvcc.store;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.HexFormat;
 import java.util.Map;
@@ -43,22 +47,31 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 /**
  * Small Derby-visible checkpoint metadata store for inherited MVCC tables.
  *
- * <p>MODULE14 deliberately checkpoints the inherited Derby provider boundary,
- * not a side MVCC engine: the checkpoint binds a provider storage id
- * to the page-volume file, row-directory sidecar, mutation log, WAL, and row
- * head digest. Version pages and
- * row-directory records remain the storage authority; this file is a compact
- * recovery contract and validation boundary.</p>
+ * <p>The checkpoint file is a compact recovery contract that binds the provider
+ * storage id to the page-volume file, row-directory sidecar, mutation log, WAL,
+ * and row-head digest. Version pages and row-directory records remain the
+ * storage authority.</p>
+ *
+ * <p>The R1 checkpoint lifecycle adds a forced prepare marker before publishing
+ * the checkpoint and a forced completion marker after publication. This does not
+ * turn the checkpoint file into storage authority; it makes interrupted
+ * checkpoint publication observable and recoverable by falling back to the
+ * durable page state.</p>
  */
 public final class PageVolumeMvccCheckpointStore {
     private static final String MAGIC = "DELOS_INHERITED_MVCC_CHECKPOINT";
-    private static final String VERSION = "1";
+    private static final String VERSION = "2";
+    private static final String LIFECYCLE_MAGIC = "DELOS_INHERITED_MVCC_CHECKPOINT_LIFECYCLE";
 
     private final Path path;
+    private final Path pendingPath;
+    private final Path lifecyclePath;
     private final String storageId;
 
-    private PageVolumeMvccCheckpointStore(Path path, String storageId) {
+    private PageVolumeMvccCheckpointStore(Path path, Path pendingPath, Path lifecyclePath, String storageId) {
         this.path = path;
+        this.pendingPath = pendingPath;
+        this.lifecyclePath = lifecyclePath;
         this.storageId = Objects.requireNonNull(storageId, "storageId");
     }
 
@@ -70,15 +83,27 @@ public final class PageVolumeMvccCheckpointStore {
         if (file == null) {
             return disabled(storageId == null ? "disabled" : storageId);
         }
-        return new PageVolumeMvccCheckpointStore(file, storageId);
+        return new PageVolumeMvccCheckpointStore(
+                file,
+                PageVolumeMvccPaths.checkpointPendingFile(databaseDirectory, storageId),
+                PageVolumeMvccPaths.checkpointLifecycleFile(databaseDirectory, storageId),
+                storageId);
     }
 
     public static PageVolumeMvccCheckpointStore disabled(String storageId) {
-        return new PageVolumeMvccCheckpointStore(null, storageId == null ? "disabled" : storageId);
+        return new PageVolumeMvccCheckpointStore(null, null, null, storageId == null ? "disabled" : storageId);
     }
 
     public Path path() {
         return path;
+    }
+
+    public Path pendingPath() {
+        return pendingPath;
+    }
+
+    public Path lifecyclePath() {
+        return lifecyclePath;
     }
 
     boolean enabled() {
@@ -96,6 +121,9 @@ public final class PageVolumeMvccCheckpointStore {
             long nextRowId) {
         if (!enabled()) {
             return Status.DISABLED;
+        }
+        if (hasInterruptedLifecycle()) {
+            return Status.INCOMPLETE;
         }
         if (!Files.exists(path)) {
             return Status.ABSENT;
@@ -135,32 +163,25 @@ public final class PageVolumeMvccCheckpointStore {
             if (parent != null) {
                 Files.createDirectories(parent);
             }
-            Properties properties = new Properties();
-            properties.setProperty("magic", MAGIC);
-            properties.setProperty("version", VERSION);
-            properties.setProperty("storageId", storageId);
-            properties.setProperty("segment", storageSegment(storageId));
-            properties.setProperty("container", storageContainer(storageId));
-            properties.setProperty("pageFile", fileName(pageFile));
-            properties.setProperty("rowDirectoryFile", fileName(rowDirectoryFile));
-            properties.setProperty("pageMutationLogFile", fileName(pageMutationLogFile));
-            properties.setProperty("writeAheadLogFile", fileName(writeAheadLogFile));
-            properties.setProperty("pageFileSize", Long.toString(size(pageFile)));
-            properties.setProperty("rowDirectoryFileSize", Long.toString(size(rowDirectoryFile)));
-            properties.setProperty("pageMutationLogFileSize", Long.toString(size(pageMutationLogFile)));
-            properties.setProperty("writeAheadLogFileSize", Long.toString(size(writeAheadLogFile)));
-            properties.setProperty("physicalVersionCount", Long.toString(physicalVersionCount));
-            properties.setProperty("logicalRowCount", Long.toString(logicalRowCount));
-            properties.setProperty("headCount", Integer.toString(heads.size()));
-            properties.setProperty("nextRowId", Long.toString(nextRowId));
-            properties.setProperty("rowHeadDigest", rowHeadDigest(heads));
-            String content = properties.stringPropertyNames().stream()
-                    .sorted()
-                    .map(name -> name + "=" + properties.getProperty(name))
-                    .collect(Collectors.joining(System.lineSeparator(), "", System.lineSeparator()));
+            long generation = nextGeneration();
+            String checkpointContent = checkpointContent(
+                    generation,
+                    pageFile,
+                    rowDirectoryFile,
+                    pageMutationLogFile,
+                    writeAheadLogFile,
+                    heads,
+                    physicalVersionCount,
+                    logicalRowCount,
+                    nextRowId);
+            writeUtf8Forced(pendingPath, lifecycleContent(generation, LifecycleState.PREPARED));
+            writeUtf8Forced(lifecyclePath, lifecycleContent(generation, LifecycleState.PREPARED));
             Path rewrite = path.resolveSibling(path.getFileName() + ".rewrite");
-            Files.writeString(rewrite, content, StandardCharsets.UTF_8);
-            Files.move(rewrite, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            writeUtf8Forced(rewrite, checkpointContent);
+            moveIntoPlace(rewrite, path);
+            writeUtf8Forced(lifecyclePath, lifecycleContent(generation, LifecycleState.COMPLETED));
+            Files.deleteIfExists(pendingPath);
+            forceParentDirectoryIfSupported(path);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not write inherited MVCC checkpoint: " + path, e);
         }
@@ -169,15 +190,99 @@ public final class PageVolumeMvccCheckpointStore {
     public void delete() throws IOException {
         if (enabled()) {
             Files.deleteIfExists(path);
+            Files.deleteIfExists(pendingPath);
+            Files.deleteIfExists(lifecyclePath);
+        }
+    }
+
+    private boolean hasInterruptedLifecycle() {
+        if (pendingPath != null && Files.exists(pendingPath)) {
+            return true;
+        }
+        if (lifecyclePath == null || !Files.exists(lifecyclePath)) {
+            return false;
+        }
+        try {
+            Properties properties = readProperties(lifecyclePath);
+            return !LifecycleState.COMPLETED.name().equals(properties.getProperty("state"));
+        } catch (IOException | RuntimeException e) {
+            return true;
+        }
+    }
+
+    private String checkpointContent(
+            long generation,
+            Path pageFile,
+            Path rowDirectoryFile,
+            Path pageMutationLogFile,
+            Path writeAheadLogFile,
+            Collection<MvccRowDirectoryStore.RowHeadRecord> heads,
+            long physicalVersionCount,
+            long logicalRowCount,
+            long nextRowId) throws IOException {
+        Properties properties = new Properties();
+        properties.setProperty("magic", MAGIC);
+        properties.setProperty("version", VERSION);
+        properties.setProperty("storageId", storageId);
+        properties.setProperty("generation", Long.toString(generation));
+        properties.setProperty("completed", Boolean.TRUE.toString());
+        properties.setProperty("segment", storageSegment(storageId));
+        properties.setProperty("container", storageContainer(storageId));
+        properties.setProperty("pageFile", fileName(pageFile));
+        properties.setProperty("rowDirectoryFile", fileName(rowDirectoryFile));
+        properties.setProperty("pageMutationLogFile", fileName(pageMutationLogFile));
+        properties.setProperty("writeAheadLogFile", fileName(writeAheadLogFile));
+        properties.setProperty("pageFileSize", Long.toString(size(pageFile)));
+        properties.setProperty("rowDirectoryFileSize", Long.toString(size(rowDirectoryFile)));
+        properties.setProperty("pageMutationLogFileSize", Long.toString(size(pageMutationLogFile)));
+        properties.setProperty("writeAheadLogFileSize", Long.toString(size(writeAheadLogFile)));
+        properties.setProperty("physicalVersionCount", Long.toString(physicalVersionCount));
+        properties.setProperty("logicalRowCount", Long.toString(logicalRowCount));
+        properties.setProperty("headCount", Integer.toString(heads.size()));
+        properties.setProperty("nextRowId", Long.toString(nextRowId));
+        properties.setProperty("rowHeadDigest", rowHeadDigest(heads));
+        return encodeProperties(properties);
+    }
+
+    private String lifecycleContent(long generation, LifecycleState state) {
+        Properties properties = new Properties();
+        properties.setProperty("magic", LIFECYCLE_MAGIC);
+        properties.setProperty("version", "1");
+        properties.setProperty("storageId", storageId);
+        properties.setProperty("generation", Long.toString(generation));
+        properties.setProperty("state", state.name());
+        properties.setProperty("timestamp", Instant.now().toString());
+        return encodeProperties(properties);
+    }
+
+    private static String encodeProperties(Properties properties) {
+        return properties.stringPropertyNames().stream()
+                .sorted()
+                .map(name -> name + "=" + properties.getProperty(name))
+                .collect(Collectors.joining(System.lineSeparator(), "", System.lineSeparator()));
+    }
+
+    private long nextGeneration() throws IOException {
+        if (!Files.exists(path)) {
+            return 1L;
+        }
+        try {
+            return Math.max(0L, Long.parseLong(readCheckpoint().properties.getProperty("generation", "0"))) + 1L;
+        } catch (RuntimeException e) {
+            return 1L;
         }
     }
 
     private Checkpoint readCheckpoint() throws IOException {
+        return new Checkpoint(readProperties(path));
+    }
+
+    private static Properties readProperties(Path file) throws IOException {
         Properties properties = new Properties();
-        try (java.io.Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+        try (java.io.Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             properties.load(reader);
         }
-        return new Checkpoint(properties);
+        return properties;
     }
 
     private static String fileName(Path path) {
@@ -217,6 +322,51 @@ public final class PageVolumeMvccCheckpointStore {
         digest.update((byte) '\n');
     }
 
+    private static void writeUtf8Forced(Path file, String content) throws IOException {
+        Objects.requireNonNull(file, "file");
+        Objects.requireNonNull(content, "content");
+        Path parent = file.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        try (FileChannel channel = FileChannel.open(file,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE)) {
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            while (buffer.hasRemaining()) {
+                channel.write(buffer);
+            }
+            channel.force(true);
+        }
+    }
+
+    private static void moveIntoPlace(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException atomicMoveFailure) {
+            try {
+                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException fallbackFailure) {
+                atomicMoveFailure.addSuppressed(fallbackFailure);
+                throw atomicMoveFailure;
+            }
+        }
+        forceParentDirectoryIfSupported(target);
+    }
+
+    private static void forceParentDirectoryIfSupported(Path file) throws IOException {
+        Path parent = file.getParent();
+        if (parent == null) {
+            return;
+        }
+        try (FileChannel channel = FileChannel.open(parent, StandardOpenOption.READ)) {
+            channel.force(true);
+        } catch (IOException ignored) {
+            // Some platforms do not support forcing directories. File data has already been forced.
+        }
+    }
 
     private static String storageSegment(String storageId) {
         ConglomerateStorageId parsed = ConglomerateStorageId.parse(storageId);
@@ -249,7 +399,13 @@ public final class PageVolumeMvccCheckpointStore {
         ABSENT,
         WRITTEN,
         VALID,
-        FALLBACK
+        FALLBACK,
+        INCOMPLETE
+    }
+
+    private enum LifecycleState {
+        PREPARED,
+        COMPLETED
     }
 
     private final class Checkpoint {
@@ -269,7 +425,11 @@ public final class PageVolumeMvccCheckpointStore {
                 long logicalRowCount,
                 long nextRowId) throws IOException {
             require("magic", MAGIC);
-            require("version", VERSION);
+            String storedVersion = properties.getProperty("version");
+            if (!VERSION.equals(storedVersion) && !"1".equals(storedVersion)) {
+                throw new IllegalStateException("Inherited MVCC checkpoint mismatch for version: expected "
+                        + VERSION + " or legacy 1 but found " + storedVersion);
+            }
             require("storageId", storageId);
             require("segment", storageSegment(storageId));
             require("container", storageContainer(storageId));

@@ -34,6 +34,8 @@ final class PageVolumeMvccStateStoreDropTest {
         Path outcomeLogFile = PageVolumeMvccPaths.transactionOutcomeLogFileFor(pageFile);
         Path walFile = PageVolumeMvccPaths.writeAheadLogFile(tempDir, "conglomerate-7-9");
         Path checkpointFile = PageVolumeMvccPaths.checkpointFile(tempDir, "conglomerate-7-9");
+        Path checkpointLifecycleFile = PageVolumeMvccPaths.checkpointLifecycleFile(tempDir, "conglomerate-7-9");
+        Path checkpointPendingFile = PageVolumeMvccPaths.checkpointPendingFile(tempDir, "conglomerate-7-9");
 
         assertTrue(Files.exists(pageFile));
         assertTrue(Files.exists(rowDirectoryFile));
@@ -42,6 +44,8 @@ final class PageVolumeMvccStateStoreDropTest {
         assertTrue(Files.exists(outcomeLogFile));
         assertTrue(Files.exists(walFile));
         assertTrue(Files.exists(checkpointFile));
+        assertTrue(Files.exists(checkpointLifecycleFile));
+        assertFalse(Files.exists(checkpointPendingFile));
 
         PageVolumeMvccStateStore.open(tempDir, "conglomerate-7-9", new StringListCodec()).drop();
 
@@ -52,6 +56,8 @@ final class PageVolumeMvccStateStoreDropTest {
         assertFalse(Files.exists(outcomeLogFile));
         assertFalse(Files.exists(walFile));
         assertFalse(Files.exists(checkpointFile));
+        assertFalse(Files.exists(checkpointLifecycleFile));
+        assertFalse(Files.exists(checkpointPendingFile));
     }
 
     private static final class StringListCodec implements PageVolumeMvccStateStore.RowCodec<List<String>> {

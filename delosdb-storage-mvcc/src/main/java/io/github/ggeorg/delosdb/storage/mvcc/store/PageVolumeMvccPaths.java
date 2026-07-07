@@ -58,6 +58,16 @@ public final class PageVolumeMvccPaths {
         return directory.resolve(requireStorageId(storageId) + ".checkpoint");
     }
 
+    public static Path checkpointPendingFile(Path databaseDirectory, String storageId) {
+        Path checkpoint = checkpointFile(databaseDirectory, storageId);
+        return checkpoint == null ? null : checkpoint.resolveSibling(checkpoint.getFileName() + ".pending");
+    }
+
+    public static Path checkpointLifecycleFile(Path databaseDirectory, String storageId) {
+        Path checkpoint = checkpointFile(databaseDirectory, storageId);
+        return checkpoint == null ? null : checkpoint.resolveSibling(checkpoint.getFileName() + ".lifecycle");
+    }
+
     public static Path subsystemRecoveryRecordsFile(Path databaseDirectory, String storageId) {
         Path directory = inheritedStoreDirectory(databaseDirectory);
         if (directory == null) {

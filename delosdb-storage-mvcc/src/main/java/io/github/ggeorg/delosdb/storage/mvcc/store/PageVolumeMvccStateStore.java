@@ -909,10 +909,7 @@ public final class PageVolumeMvccStateStore<T> {
             if (wal != null) {
                 Files.deleteIfExists(wal);
             }
-            Path checkpoint = checkpointStore.path();
-            if (checkpoint != null) {
-                Files.deleteIfExists(checkpoint);
-            }
+            checkpointStore.delete();
             Path recoveryRecords = recoveryRecordStore.path();
             if (recoveryRecords != null) {
                 Files.deleteIfExists(recoveryRecords);
