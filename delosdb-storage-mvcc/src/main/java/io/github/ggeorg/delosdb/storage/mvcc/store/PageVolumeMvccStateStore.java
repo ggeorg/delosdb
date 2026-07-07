@@ -113,56 +113,21 @@ public final class PageVolumeMvccStateStore<T> {
         if (databaseDirectory == null || PageVolumeMvccPaths.isMissingStorageId(storageId)) {
             return disabled(rowCodec);
         }
-        Path pageFile = PageVolumeMvccPaths.pageFile(databaseDirectory, storageId);
-        if (pageFile == null) {
-            return disabled(rowCodec);
-        }
         try {
-            Path pageMutationLog = PageVolumeMvccPaths.pageMutationLogFileFor(pageFile);
-            Path transactionOutcomeLog = PageVolumeMvccPaths.transactionOutcomeLogFileFor(pageFile);
-            PageVolumeMvccWriteAheadLog writeAheadLog = PageVolumeMvccWriteAheadLog.open(
-                    databaseDirectory, storageId);
-            PageVolumeMvccCheckpointStore checkpointStore = PageVolumeMvccCheckpointStore.open(
-                    databaseDirectory, storageId);
-            MvccSubsystemRecoveryRecordStore recoveryRecordStore = MvccSubsystemRecoveryRecordStore.open(
-                    databaseDirectory, storageId);
-            PageBackedMvccTable table = PageBackedMvccTable.open(
-                    pageFile,
-                    pageMutationLog,
-                    transactionOutcomeLog,
-                    recoveryRecordStore.replayPlan());
-            Path orderedIndexPagesPath = PageBackedMvccTable.orderedIndexPagesPath(pageFile);
-            boolean orderedIndexPagesExisted = Files.exists(orderedIndexPagesPath);
-            OrderedIndexOpenResult orderedIndexOpenResult = openOrderedIndexPagesSafely(
-                    orderedIndexPagesPath,
-                    orderedIndexPagesExisted,
-                    table.logicalRowCount());
-            MvccOrderedIndexPageStore orderedIndexPageStore = orderedIndexOpenResult.store();
-            PageVolumeMvccCheckpointStore.Status checkpointStatus = checkpointStore.validate(
-                    pageFile,
-                    PageBackedMvccTable.rowDirectoryPath(pageFile),
-                    pageMutationLog,
-                    writeAheadLog.path(),
-                    table.durableRowDirectoryHeads(),
-                    table.physicalVersionCount(),
-                    table.logicalRowCount(),
-                    table.durableRowDirectoryHeads().keySet().stream()
-                            .mapToLong(io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId::value)
-                            .max()
-                            .orElse(0L) + 1L);
+            PageVolumeMvccOpenContext openContext = PageVolumeMvccOpenContext.open(databaseDirectory, storageId);
             return new PageVolumeMvccStateStore<>(
-                    storageId,
+                    openContext.storageId,
                     rowCodec,
-                    pageFile,
-                    pageMutationLog,
-                    transactionOutcomeLog,
-                    writeAheadLog,
-                    checkpointStore,
-                    recoveryRecordStore,
-                    table,
-                    orderedIndexPageStore,
-                    orderedIndexOpenResult.fallbackReason(),
-                    checkpointStatus);
+                    openContext.pageFile,
+                    openContext.pageMutationLogFile,
+                    openContext.transactionOutcomeLogFile,
+                    openContext.writeAheadLog,
+                    openContext.checkpointStore,
+                    openContext.recoveryRecordStore,
+                    openContext.table,
+                    openContext.orderedIndexPageStore,
+                    openContext.orderedIndexOpenFallbackReason,
+                    openContext.checkpointStatus);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not open MVCC page-volume state for " + storageId, e);
         }
@@ -182,25 +147,6 @@ public final class PageVolumeMvccStateStore<T> {
                 null,
                 OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR,
                 PageVolumeMvccCheckpointStore.Status.DISABLED);
-    }
-
-    private static OrderedIndexOpenResult openOrderedIndexPagesSafely(
-            Path orderedIndexPagesPath,
-            boolean orderedIndexPagesExisted,
-            int logicalRowCount) {
-        try {
-            MvccOrderedIndexPageStore store = MvccOrderedIndexPageStore.open(orderedIndexPagesPath);
-            OrderedIndexLookupFallbackReason fallbackReason = null;
-            if (!orderedIndexPagesExisted && logicalRowCount > 0) {
-                fallbackReason = OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR;
-            }
-            return new OrderedIndexOpenResult(store, fallbackReason);
-        } catch (IOException | RuntimeException e) {
-            OrderedIndexLookupFallbackReason fallbackReason = Files.exists(orderedIndexPagesPath)
-                    ? OrderedIndexLookupFallbackReason.MALFORMED_ORDERED_INDEX_SIDECAR
-                    : OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR;
-            return new OrderedIndexOpenResult(null, fallbackReason);
-        }
     }
 
     public boolean enabled() {
@@ -1173,11 +1119,6 @@ public final class PageVolumeMvccStateStore<T> {
             }
             values = Objects.requireNonNull(values, "values");
         }
-    }
-
-    private record OrderedIndexOpenResult(
-            MvccOrderedIndexPageStore store,
-            OrderedIndexLookupFallbackReason fallbackReason) {
     }
 
     public record OrderedIndexLookupResult(
