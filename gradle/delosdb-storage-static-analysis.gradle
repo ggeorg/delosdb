@@ -1898,7 +1898,7 @@ tasks.register('delosDerbyForkDiffClassificationStaticAnalysis') {
                 writer.println('  ' + decision + ': ' + rows.count { it.decision == decision })
             }
             writer.println()
-            engineeringRows.each { row ->
+            rows.each { row ->
                 writer.println(row.id + ' [' + row.decision + '] ' + row.path)
                 writer.println('  surface:     ' + row.surface)
                 writer.println('  reason:      ' + row.reason)
