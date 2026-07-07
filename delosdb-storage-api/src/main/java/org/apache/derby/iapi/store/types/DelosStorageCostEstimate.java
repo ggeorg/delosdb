@@ -72,6 +72,25 @@ public record DelosStorageCostEstimate(String providerId,
     public static DelosStorageCostEstimate fromStatistics(
             DelosStorageStatistics statistics,
             boolean storageStatisticsEnabled) {
+        return fromStatistics(statistics, storageStatisticsEnabled, false, true,
+                "Derby optimizer consumption remains disabled for this checkpoint",
+                "optimizer consumption eligibility: fail-closed proof-only checkpoint");
+    }
+
+    public static DelosStorageCostEstimate fromStatisticsForOptimizerCosting(
+            DelosStorageStatistics statistics) {
+        return fromStatistics(statistics, true, true, false,
+                "Derby optimizer consumption occurs through the StoreCostController seam",
+                "optimizer consumption eligibility: explicit MVCC StoreCostController opt-in");
+    }
+
+    private static DelosStorageCostEstimate fromStatistics(
+            DelosStorageStatistics statistics,
+            boolean storageStatisticsEnabled,
+            boolean consumedByDerbyOptimizer,
+            boolean proofOnly,
+            String optimizerObservation,
+            String eligibilityObservation) {
         Objects.requireNonNull(statistics, "statistics");
 
         long observedStoragePages = pagesForBytes(statistics.observedStorageBytes());
@@ -93,7 +112,7 @@ public record DelosStorageCostEstimate(String providerId,
         List<String> observations = new ArrayList<>();
         observations.add("storage cost estimate is derived from read-only storage statistics");
         observations.add("storage statistics integration enabled: " + storageStatisticsEnabled);
-        observations.add("Derby optimizer consumption remains disabled for this checkpoint");
+        observations.add(optimizerObservation);
         observations.add("provider: " + statistics.providerId());
         observations.add("estimated pages: " + estimatedPages);
         observations.add("estimated storage bytes: " + statistics.observedStorageBytes());
@@ -103,7 +122,7 @@ public record DelosStorageCostEstimate(String providerId,
         observations.add("free-space map pages: " + statistics.freeSpaceMapPageCount());
         observations.add("visibility map pages: " + statistics.visibilityMapPageCount());
         observations.add("physical/logical version bloat: " + versionBloat);
-        observations.add("optimizer consumption eligibility: fail-closed proof-only checkpoint");
+        observations.add(eligibilityObservation);
 
         return new DelosStorageCostEstimate(
                 statistics.providerId(),
@@ -111,8 +130,8 @@ public record DelosStorageCostEstimate(String providerId,
                 statistics.containerId(),
                 true,
                 storageStatisticsEnabled,
-                false,
-                true,
+                consumedByDerbyOptimizer,
+                proofOnly,
                 statistics.logicalRowCount(),
                 statistics.physicalVersionCount(),
                 estimatedPages,

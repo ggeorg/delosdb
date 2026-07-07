@@ -3,7 +3,7 @@
 This roadmap opens the next storage-engine depth pass after the Phase A-J balanced
 storage modernization roadmap and the two post-closeout tradeoff hardening audits.
 
-Execution state: backup/restore sidecar verification and DERBY-7107 review slices delivered.
+Execution state: backup/restore sidecar verification and DERBY-7107 review slices delivered; Phase K implementation slice delivered by delosdb-mvcc-statistics-optimizer-cost-integration-overlay.zip.
 
 ## North star
 
@@ -160,7 +160,7 @@ Regression coverage verifies the command-target resolver for IPv4 wildcard, IPv6
 
 ## Phase K — MVCC statistics and Derby optimizer/cost integration
 
-Execution state: specified.
+Execution state: implementation slice delivered by delosdb-mvcc-statistics-optimizer-cost-integration-overlay.zip.
 
 Overlay:
 
@@ -216,6 +216,16 @@ Commit message:
 
 ```text
 Integrate MVCC statistics with Derby optimizer costing
+```
+
+Implementation note:
+
+```text
+MVCC statistics now feed Derby's inherited StoreCostController path through MvccStoreCostController when delosdb.mvcc.optimizer.storageStatistics.enabled=true.
+Default behavior remains unchanged: the statistics bridge is disabled unless explicitly opted in.
+The bridge derives row/page/version/index facts from the open provider diagnostics surface and records DelosMvccOptimizerCostDiagnostics proof counters.
+CostModelRequest now requires a strictly positive Derby baseline before provider replacement can be considered safe.
+This is not a parallel optimizer statistics channel and does not bypass SYSSTATISTICS semantics.
 ```
 
 ## Phase L — MVCC recovery replay engine

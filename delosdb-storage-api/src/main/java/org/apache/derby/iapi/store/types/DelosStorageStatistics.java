@@ -112,6 +112,49 @@ public record DelosStorageStatistics(String providerId,
                 observations);
     }
 
+    /**
+     * Builds the same provider-neutral snapshot from an already-open table
+     * diagnostics surface.  This keeps MVCC optimizer costing on Derby's
+     * StoreCostController path without forcing the bridge through a separate
+     * ServiceLoader diagnostics lookup.
+     */
+    public static DelosStorageStatistics fromTableDiagnostics(
+            String providerId,
+            int segment,
+            long containerId,
+            DelosStorageTableDiagnostics diagnostics) {
+        Objects.requireNonNull(diagnostics, "diagnostics");
+
+        List<String> observations = new ArrayList<>();
+        observations.add("storage statistics are read-only");
+        observations.add("provider: " + providerId);
+        observations.add("segment: " + segment);
+        observations.add("container: " + containerId);
+        observations.add("statistics source: open table diagnostics");
+
+        long observedBytes = observedStorageBytes(diagnostics, observations);
+        return new DelosStorageStatistics(
+                providerId,
+                segment,
+                containerId,
+                true,
+                diagnostics.logicalRowCountForTesting(),
+                diagnostics.physicalVersionCountForTesting(),
+                diagnostics.pageCountForTesting(),
+                diagnostics.overflowPageCountForTesting(),
+                diagnostics.reusablePageCountForTesting(),
+                diagnostics.freeSpaceMapPageCountForTesting(),
+                diagnostics.visibilityMapPageCountForTesting(),
+                diagnostics.orderedIndexPageCountForTesting(),
+                diagnostics.orderedIndexEntryCountForTesting(),
+                diagnostics.pageCacheSizeForTesting(),
+                diagnostics.pageCacheDirtyPageCountForTesting(),
+                diagnostics.attributeOverflowValueBytesForTesting(),
+                diagnostics.subsystemRecoveryRecordCountForTesting(),
+                observedBytes,
+                observations);
+    }
+
     public boolean hasRows() {
         return logicalRowCount > 0L;
     }
@@ -157,6 +200,35 @@ public record DelosStorageStatistics(String providerId,
         add(paths, diagnostics.checkpointFileForTesting(segment, containerId));
         add(paths, diagnostics.subsystemRecoveryRecordsFileForTesting(segment, containerId));
         add(paths, diagnostics.legacySnapshotFileForTesting(segment, containerId));
+
+        long bytes = 0L;
+        for (Path path : paths) {
+            long fileBytes = regularFileBytes(path);
+            if (fileBytes > 0L) {
+                observations.add("observed storage file: " + path + " bytes=" + fileBytes);
+            }
+            bytes += fileBytes;
+        }
+        observations.add("observed storage bytes: " + bytes);
+        return bytes;
+    }
+
+    private static long observedStorageBytes(
+            DelosStorageTableDiagnostics diagnostics,
+            List<String> observations) {
+        Set<Path> paths = new LinkedHashSet<>();
+        add(paths, diagnostics.pageVolumeStateFileForTesting());
+        add(paths, diagnostics.rowDirectoryStateFileForTesting());
+        add(paths, diagnostics.reusablePageIndexFileForTesting());
+        add(paths, diagnostics.freeSpaceMapFileForTesting());
+        add(paths, diagnostics.visibilityMapFileForTesting());
+        add(paths, diagnostics.purgeQueueFileForTesting());
+        add(paths, diagnostics.orderedIndexPagesFileForTesting());
+        add(paths, diagnostics.pageMutationLogFileForTesting());
+        add(paths, diagnostics.writeAheadLogFileForTesting());
+        add(paths, diagnostics.checkpointFileForTesting());
+        add(paths, diagnostics.subsystemRecoveryRecordsFileForTesting());
+        add(paths, diagnostics.legacySnapshotFileForTesting());
 
         long bytes = 0L;
         for (Path path : paths) {

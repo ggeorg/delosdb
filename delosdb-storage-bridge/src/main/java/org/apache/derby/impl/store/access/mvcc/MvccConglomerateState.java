@@ -39,6 +39,7 @@ import org.apache.derby.iapi.store.types.DelosStorageRow;
 import org.apache.derby.iapi.store.types.DelosStorageRowHead;
 import org.apache.derby.iapi.store.types.DelosStorageRowLocator;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
+import org.apache.derby.iapi.store.types.DelosStorageStatistics;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageStore;
 import org.apache.derby.iapi.store.types.DelosStorageTable;
@@ -206,6 +207,14 @@ final class MvccConglomerateState {
 
     synchronized int logicalRowCountForTesting() {
         return diagnostics.logicalRowCountForTesting();
+    }
+
+    synchronized DelosStorageStatistics storageStatisticsSnapshot() {
+        return DelosStorageStatistics.fromTableDiagnostics(
+                MVCC_PROVIDER_NAME,
+                (int) key.getSegmentId(),
+                key.getContainerId(),
+                diagnostics);
     }
 
     synchronized List<String> pageBackedVisibleRowSummariesForTesting() {

@@ -24,6 +24,9 @@ package org.apache.derby.impl.store.access.mvcc;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.StoreCostResult;
+import org.apache.derby.iapi.store.types.DelosMvccOptimizerCostDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageCostEstimate;
+import org.apache.derby.iapi.store.types.DelosStorageStatistics;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
@@ -33,8 +36,10 @@ import org.apache.derby.shared.common.error.StandardException;
  *
  * <p>This is deliberately conservative. It exists so Derby's inherited
  * optimizer can prepare a normal {@code TableScanResultSet} against an MVCC
- * physical conglomerate and then open {@link MvccScanController}. It is not a
- * final MVCC cost model.</p>
+ * physical conglomerate and then open {@link MvccScanController}.  When the
+ * explicit Phase K diagnostic property is enabled, it derives estimates from
+ * MVCC storage statistics through this inherited Derby cost-controller seam
+ * rather than through a parallel optimizer statistics channel.</p>
  */
 final class MvccStoreCostController implements StoreCostController {
     private final MvccConglomerate conglomerate;
@@ -80,10 +85,34 @@ final class MvccStoreCostController implements StoreCostController {
             int accessType,
             StoreCostResult costResult) {
         ensureOpen();
-        long rows = rowCount >= 0 ? rowCount : estimatedRowCount;
-        if (rows <= 0) {
-            rows = 1L;
+        if (DelosMvccOptimizerCostDiagnostics.enabled()) {
+            DelosStorageStatistics statistics = conglomerate.state().storageStatisticsSnapshot();
+            DelosStorageCostEstimate estimate = DelosStorageCostEstimate.fromStatisticsForOptimizerCosting(statistics);
+            long rows = statistics.logicalRowCount() > 0L
+                    ? statistics.logicalRowCount()
+                    : fallbackRows(rowCount);
+            double cost = boundedCost(estimate.estimatedFullScanCost());
+            if (scanType == STORECOST_SCAN_SET) {
+                cost += Math.max(1.0d, rows * BASE_HASHSCAN_ROW_FETCH_COST);
+            }
+            if (groupSize > 1) {
+                cost += Math.max(1.0d, rows * BASE_GROUPSCAN_ROW_COST);
+            }
+            if (forUpdate) {
+                cost += Math.max(1.0d, rows * BASE_CACHED_ROW_FETCH_COST);
+            }
+            if (reopenScan) {
+                cost += BASE_CACHED_ROW_FETCH_COST;
+            }
+            cost = Math.max(1.0d, cost);
+            costResult.setEstimatedRowCount(rows);
+            costResult.setEstimatedCost(cost);
+            DelosMvccOptimizerCostDiagnostics.recordStatisticsEstimate(
+                    conglomerate.getContainerid(), statistics, cost, rows);
+            return;
         }
+
+        long rows = fallbackRows(rowCount);
         double perRow = scanType == STORECOST_SCAN_SET
                 ? BASE_HASHSCAN_ROW_FETCH_COST
                 : BASE_NONGROUPSCAN_ROW_FETCH_COST;
@@ -110,6 +139,10 @@ final class MvccStoreCostController implements StoreCostController {
     @Override
     public long getEstimatedRowCount() {
         ensureOpen();
+        if (DelosMvccOptimizerCostDiagnostics.enabled()) {
+            long rows = conglomerate.state().storageStatisticsSnapshot().logicalRowCount();
+            return rows > 0L ? rows : estimatedRowCount;
+        }
         return estimatedRowCount;
     }
 
@@ -117,6 +150,18 @@ final class MvccStoreCostController implements StoreCostController {
     public void setEstimatedRowCount(long count) {
         ensureOpen();
         estimatedRowCount = Math.max(0L, count);
+    }
+
+    private long fallbackRows(long rowCount) {
+        long rows = rowCount >= 0L ? rowCount : estimatedRowCount;
+        return rows > 0L ? rows : 1L;
+    }
+
+    private static double boundedCost(long cost) {
+        if (cost <= 0L) {
+            return 1.0d;
+        }
+        return Math.min((double) cost, Double.MAX_VALUE / 4.0d);
     }
 
     private void ensureOpen() {
