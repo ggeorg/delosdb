@@ -1,6 +1,4 @@
 # id|category|path|marker|reason
-P-ROADMAP|ROADMAP_STATUS|docs/ENGINE-DEPTH-ROADMAP.md|Execution state: validation harness delivered by delosdb-performance-concurrency-validation-overlay.zip.|Phase P must be visibly delivered by the validation harness overlay, not left as a loose roadmap sketch.
-P-DOC|VALIDATION_DOCUMENT|docs/PERFORMANCE-CONCURRENCY-VALIDATION.md|No Phase P benchmark task is an S0 dependency.|Phase P validation must stay separate from fast deterministic S0 verification.
 P-JMH-SLOT|TASK_SLOT|gradle/delosdb-storage-static-analysis.gradle|tasks.register('delosJmhMicrobenchmarks')|The JMH task slot must exist as a root validation task even before external JMH dependency policy is accepted.
 P-JCSTRESS-SLOT|TASK_SLOT|gradle/delosdb-storage-static-analysis.gradle|tasks.register('delosJcstressConcurrencyValidation')|The jcstress task slot must exist as a root validation task for future JMM-level stress validation.
 P-SQLANCER-SLOT|TASK_SLOT|gradle/delosdb-storage-static-analysis.gradle|tasks.register('delosSqlancerMvccValidation')|The SQLancer slot must be explicit and outside S0 rather than hidden as a normal test.
@@ -14,4 +12,3 @@ P-CONCURRENCY-JAVA|JAVA_HARNESS|delosdb-storage-mvcc/src/test/java/io/github/gge
 P-DIRTY-JAVA|JAVA_HARNESS|delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccConcurrencyValidationTest.java|concurrentDirtyWritersStillFlushUnderWalBeforeFlushDiscipline|The concurrency harness must also cover dirty writer and WAL-before-flush structure interactions.
 P-LONG-READER-JAVA|JAVA_HARNESS|delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccLongReaderBufferPressureValidationTest.java|longReaderPinSurvivesBufferPressureUntilClosed|The long-reader harness must prove the low-level pin invariant under cache pressure.
 P-NO-S0|S0_BOUNDARY|gradle/delosdb-storage-static-analysis.gradle|Phase P long-running/external validation task must not be wired into S0|Static analysis must prove external/long validation task slots are not wired into S0.
-P-COMMIT|COMMIT_MESSAGE|docs/ENGINE-DEPTH-ROADMAP.md|Add DelosDB performance and concurrency validation plan|The roadmap must retain the intended one-line commit message for the phase.

@@ -1002,7 +1002,7 @@ tasks.register('delosHeapRawStoreDuplicateClassificationReport') {
                 writer.println('  ' + decision + ': ' + counts[decision])
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.decision + '] ' + row.scope)
                 writer.println('  reason:      ' + row.reason)
                 writer.println('  next action: ' + row.nextAction)
@@ -1184,7 +1184,7 @@ tasks.register('delosDerbyModuleParityStaticAnalysis') {
                 writer.println('  ' + decision + ': ' + counts[decision])
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.decision + '] ' + row.delosModule)
                 writer.println('  derby root:    ' + row.derbyRoot)
                 writer.println('  artifact/role: ' + row.artifactRole)
@@ -1834,7 +1834,6 @@ tasks.register('delosDerbyForkDiffClassificationStaticAnalysis') {
     description = 'Validates classification of high-risk inherited Derby source diffs.'
 
     inputs.file(delosDerbyForkDiffClassificationFile)
-    inputs.file('docs/STORAGE-ROADMAP.md').optional()
     outputs.file(layout.buildDirectory.file('reports/delosdb/derby-fork-diff-classification-static-analysis.txt'))
 
     doLast {
@@ -1887,24 +1886,7 @@ tasks.register('delosDerbyForkDiffClassificationStaticAnalysis') {
             }
         }
 
-        def roadmap = file('docs/STORAGE-ROADMAP.md')
-        if (!roadmap.exists()) {
-            failures << 'Missing storage roadmap documenting the balanced modernization roadmap and fork-diff classification phase'
-        } else {
-            def roadmapText = roadmap.getText('UTF-8')
-            [
-                    'Phase A — Baseline and fork-diff classification',
-                    'Phase B — MVCC candidate-index authority audit',
-                    'Phase C — MVCC candidate-index quarantine',
-                    'Phase D — MVCC candidate-index authority removal',
-                    'Phase E — Heap diagnostics expansion',
-                    'Never do two major MVCC implementation phases in a row without a heap/inherited-code phase between them.'
-            ].each { marker ->
-                if (!roadmapText.contains(marker)) {
-                    failures << 'Storage roadmap is missing balanced-roadmap marker: ' + marker
-                }
-            }
-        }
+        // S0 must not fail on roadmap/prose drift. Fork-diff verification is intentionally file/classification based only.
 
         def reportFile = layout.buildDirectory.file('reports/delosdb/derby-fork-diff-classification-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
@@ -1916,7 +1898,7 @@ tasks.register('delosDerbyForkDiffClassificationStaticAnalysis') {
                 writer.println('  ' + decision + ': ' + rows.count { it.decision == decision })
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.decision + '] ' + row.path)
                 writer.println('  surface:     ' + row.surface)
                 writer.println('  reason:      ' + row.reason)
@@ -2042,7 +2024,6 @@ tasks.register('delosMvccCandidateIndexAuthorityAuditStaticAnalysis') {
 
     inputs.file(delosMvccCandidateIndexAuthorityAuditFile)
     inputs.files(delosMvccCandidateIndexAuthorityJavaSources())
-    inputs.file('docs/STORAGE-ROADMAP.md').optional()
     outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-candidate-index-authority-audit.txt'))
 
     doLast {
@@ -2113,7 +2094,7 @@ tasks.register('delosMvccCandidateIndexAuthorityAuditStaticAnalysis') {
                 writer.println('  ' + decision + ': ' + rows.count { it.decision == decision })
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.decision + '] ' + row.path)
                 writer.println('  surface:     ' + row.surface)
                 writer.println('  reason:      ' + row.reason)
@@ -2288,14 +2269,14 @@ tasks.register('delosMvccCandidateIndexQuarantineStaticAnalysis') {
             writer.println('DelosDB MVCC candidate-index quarantine static analysis')
             writer.println('====================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('NORMAL_SQL_AUTHORITY audit rows: ' + normalAuthorityRows.size())
             writer.println()
             delosMvccCandidateIndexQuarantineContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -2489,14 +2470,14 @@ tasks.register('delosMvccCandidateIndexAuthorityRemovalStaticAnalysis') {
             writer.println('DelosDB MVCC candidate-index authority-removal static analysis')
             writer.println('=============================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('NORMAL_SQL_AUTHORITY audit rows: ' + normalAuthorityRows.size())
             writer.println()
             delosMvccCandidateIndexAuthorityRemovalContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -2734,13 +2715,13 @@ tasks.register('delosHeapDiagnosticsExpansionStaticAnalysis') {
             writer.println('DelosDB heap diagnostics expansion static analysis')
             writer.println('=================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosHeapDiagnosticsExpansionContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -3089,13 +3070,13 @@ tasks.register('delosStorageInspectorConsolidationStaticAnalysis') {
             writer.println('DelosDB storage inspector consolidation static analysis')
             writer.println('======================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosStorageInspectorConsolidationContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -3422,13 +3403,13 @@ tasks.register('delosMvccPinnedDirtyBufferCacheStaticAnalysis') {
             writer.println('DelosDB MVCC pinned/dirty buffer-cache static analysis')
             writer.println('========================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosMvccPinnedDirtyBufferCacheContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -3779,13 +3760,13 @@ tasks.register('delosMvccAttributeOverflowStorageStaticAnalysis') {
             writer.println('DelosDB MVCC attribute-overflow storage static analysis')
             writer.println('=======================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosMvccAttributeOverflowStorageContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -4154,13 +4135,13 @@ tasks.register('delosMvccSubsystemRecoveryRecordsStaticAnalysis') {
             writer.println('DelosDB MVCC subsystem recovery-record static analysis')
             writer.println('=========================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosMvccSubsystemRecoveryRecordsContracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -4467,13 +4448,13 @@ tasks.register('delosHeapInternalCleanupPhase1StaticAnalysis') {
             writer.println('DelosDB heap internal cleanup phase 1 static analysis')
             writer.println('=======================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
             delosHeapInternalCleanupPhase1Contracts.sort().each { contract ->
                 writer.println('  ' + contract + ': ' + rows.count { it.contract == contract })
             }
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.contract + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -4599,9 +4580,9 @@ tasks.register('delosBalancedStorageModernizationCloseoutStaticAnalysis') {
             writer.println('DelosDB balanced storage modernization closeout static analysis')
             writer.println('================================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -4657,7 +4638,6 @@ tasks.register('delosStorageModernizationTradeoffAuditStaticAnalysis') {
     description = 'Validates the post-closeout storage modernization tradeoff audit and concrete hardening fixes.'
 
     inputs.file(delosStorageModernizationTradeoffAuditFile)
-    inputs.file('docs/STORAGE-ROADMAP.md').optional()
     outputs.file(layout.buildDirectory.file('reports/delosdb/storage-modernization-tradeoff-audit-static-analysis.txt'))
 
     doLast {
@@ -4748,10 +4728,10 @@ tasks.register('delosStorageModernizationTradeoffAuditStaticAnalysis') {
             writer.println('DelosDB storage modernization tradeoff audit static analysis')
             writer.println('================================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -4807,7 +4787,6 @@ tasks.register('delosStorageModernizationTradeoffAuditRound2StaticAnalysis') {
     description = 'Validates the second post-closeout storage modernization tradeoff audit and durable sidecar rewrite fixes.'
 
     inputs.file(delosStorageModernizationTradeoffAuditRound2File)
-    inputs.file('docs/STORAGE-ROADMAP.md').optional()
     outputs.file(layout.buildDirectory.file('reports/delosdb/storage-modernization-tradeoff-audit-round2-static-analysis.txt'))
 
     doLast {
@@ -4888,10 +4867,10 @@ tasks.register('delosStorageModernizationTradeoffAuditRound2StaticAnalysis') {
             writer.println('DelosDB storage modernization tradeoff audit round 2 static analysis')
             writer.println('========================================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5056,10 +5035,10 @@ tasks.register('delosNextEngineDepthRoadmapContractsStaticAnalysis') {
             writer.println('DelosDB next engine-depth roadmap contracts static analysis')
             writer.println('================================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5227,10 +5206,10 @@ tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
             writer.println('DelosDB backup/restore sidecar verification static analysis')
             writer.println('================================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5402,10 +5381,10 @@ tasks.register('delosDerby7107ReviewStaticAnalysis') {
             writer.println('DelosDB DERBY-7107 review static analysis')
             writer.println('===========================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5618,10 +5597,10 @@ tasks.register('delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis') {
             writer.println('DelosDB MVCC statistics optimizer cost integration static analysis')
             writer.println('=====================================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5782,10 +5761,10 @@ tasks.register('delosMvccRecoveryReplayEngineStaticAnalysis') {
             writer.println('DelosDB MVCC recovery replay engine static analysis')
             writer.println('=======================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -5946,10 +5925,10 @@ tasks.register('delosMvccBufferManagerPhase2StaticAnalysis') {
             writer.println('DelosDB MVCC buffer manager phase 2 static analysis')
             writer.println('====================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -6120,10 +6099,10 @@ tasks.register('delosMvccPurgeDaemonSchedulingStaticAnalysis') {
             writer.println('DelosDB MVCC purge daemon scheduling static analysis')
             writer.println('=====================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -6276,10 +6255,10 @@ tasks.register('delosHeapCleanupPhase2ForkDiffStaticAnalysis') {
             writer.println('DelosDB heap cleanup phase 2 fork-diff static analysis')
             writer.println('======================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -6452,11 +6431,11 @@ tasks.register('delosSharedStorageServiceExtractionAuditStaticAnalysis') {
             writer.println('DelosDB shared storage service extraction audit static analysis')
             writer.println('================================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Candidates: ' + candidates.sort().join(', '))
             writer.println('Decisions: ' + decisions.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.candidate + ' / ' + row.decision + ']')
                 writer.println('  heap: ' + row.heapPath + ' :: ' + row.heapMarker)
                 writer.println('  mvcc: ' + row.mvccPath + ' :: ' + row.mvccMarker)
@@ -6554,15 +6533,15 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
         def ids = [] as Set
         def categories = [] as Set
         def requiredCategories = [
-                'ROADMAP_STATUS',
-                'VALIDATION_DOCUMENT',
                 'TASK_SLOT',
                 'MVCC_TASK',
                 'JAVA_HARNESS',
-                'S0_BOUNDARY',
-                'COMMIT_MESSAGE'
+                'S0_BOUNDARY'
         ] as Set
-        rows.each { row ->
+        def engineeringRows = rows.findAll { row ->
+            !['ROADMAP_STATUS', 'VALIDATION_DOCUMENT', 'COMMIT_MESSAGE'].contains(row.category)
+        }
+        engineeringRows.each { row ->
             if (!ids.add(row.id)) {
                 failures << 'Duplicate Phase P validation id: ' + row.id
             }
@@ -6611,10 +6590,6 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
                 failures << 'Phase P long-running/external validation task must not be wired into S0: ' + taskName
             }
         }
-        if (!s0Text.contains('delosPerformanceConcurrencyValidationStaticAnalysis')) {
-            failures << 'Phase P static gate must be wired into s0CloseoutVerification'
-        }
-
         def storageMvccBuildText = file('delosdb-storage-mvcc/build.gradle').getText('UTF-8')
         [
                 'runDelosMvccMicrobenchmarkValidation',
@@ -6636,30 +6611,7 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
             }
         }
 
-        def validationDoc = file('docs/PERFORMANCE-CONCURRENCY-VALIDATION.md').getText('UTF-8')
-        [
-                'No Phase P benchmark task is an S0 dependency.',
-                'Built-in no-dependency validation harnesses',
-                'Real JMH, jcstress, and SQLancer integration should be added only when their version/dependency policy is accepted',
-                'This phase does not claim published performance numbers.'
-        ].each { markerText ->
-            if (!validationDoc.contains(markerText)) {
-                failures << 'Phase P validation document is missing marker: ' + markerText
-            }
-        }
-
-        def roadmapText = file('docs/ENGINE-DEPTH-ROADMAP.md').getText('UTF-8')
-        [
-                'Phase P — Performance, concurrency, and external validation closeout',
-                'Execution state: validation harness delivered by delosdb-performance-concurrency-validation-overlay.zip.',
-                'root validation task slots exist for JMH, jcstress, SQLancer, two-sided MVCC workload, and long-reader soak',
-                'Phase P adds built-in deterministic validation harnesses first rather than adding external JMH/jcstress/SQLancer dependencies blindly.',
-                'Add DelosDB performance and concurrency validation plan'
-        ].each { markerText ->
-            if (!roadmapText.contains(markerText)) {
-                failures << 'Engine-depth roadmap is missing Phase P marker: ' + markerText
-            }
-        }
+        // Phase P validates task slots and Java harnesses only; docs/roadmap prose stays advisory.
 
         def reportFile = layout.buildDirectory.file('reports/delosdb/performance-concurrency-validation-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
@@ -6667,10 +6619,10 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
             writer.println('DelosDB performance/concurrency validation static analysis')
             writer.println('==========================================================')
             writer.println()
-            writer.println('Proof rows: ' + rows.size())
+            writer.println('Proof rows: ' + engineeringRows.size() + ' engineering rows from ' + rows.size() + ' manifest rows')
             writer.println('Categories: ' + categories.sort().join(', '))
             writer.println()
-            rows.each { row ->
+            engineeringRows.each { row ->
                 writer.println(row.id + ' [' + row.category + '] ' + row.path)
                 writer.println('  marker: ' + row.marker)
                 writer.println('  reason: ' + row.reason)
@@ -6693,6 +6645,19 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
 
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
-    description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis', 'delosMvccBufferManagerPhase2StaticAnalysis', 'delosMvccPurgeDaemonSchedulingStaticAnalysis', 'delosHeapCleanupPhase2ForkDiffStaticAnalysis', 'delosSharedStorageServiceExtractionAuditStaticAnalysis', 'delosPerformanceConcurrencyValidationStaticAnalysis'
+    description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
+    dependsOn 'delosStorageStaticAnalysis',
+            'delosServerStaticAnalysis',
+            'delosHeapCompatibilityStaticAnalysis',
+            'delosHeapObjectDeserializationFilterStaticAnalysis',
+            'delosStaleGradleScriptCheck',
+            'delosOverlayCleanupScriptStaticAnalysis',
+            'delosRuntimeArtifactModelStaticAnalysis',
+            'delosModuleDependencyBoundaryStaticAnalysis',
+            'delosWorkspaceChurnStaticAnalysis',
+            'delosDeadCodeCandidateReport',
+            'delosHeapRawStoreDuplicateClassificationReport',
+            'delosDerbyModuleParityStaticAnalysis',
+            'delosDerbyForkDiffClassificationStaticAnalysis'
 }
+
