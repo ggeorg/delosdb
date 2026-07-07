@@ -6478,8 +6478,221 @@ tasks.register('delosSharedStorageServiceExtractionAuditStaticAnalysis') {
     }
 }
 
+
+
+def delosPerformanceConcurrencyValidationFile = file('gradle/static-analysis/delosdb-performance-concurrency-validation.txt')
+
+def delosLoadPerformanceConcurrencyValidationRows = {
+    if (!delosPerformanceConcurrencyValidationFile.exists()) {
+        throw new GradleException('Missing performance/concurrency validation file: ' + delosPerformanceConcurrencyValidationFile)
+    }
+    def rows = []
+    delosPerformanceConcurrencyValidationFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed performance/concurrency validation row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [id: parts[0], category: parts[1], path: parts[2], marker: parts[3], reason: parts[4], lineNumber: index + 1]
+    }
+    rows
+}
+
+tasks.register('delosJmhMicrobenchmarks') {
+    group = 'verification'
+    description = 'Runs the Phase P no-dependency MVCC microbenchmark validation harness; reserved as the future JMH wrapper slot.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation'
+}
+
+tasks.register('delosJcstressConcurrencyValidation') {
+    group = 'verification'
+    description = 'Runs the Phase P no-dependency MVCC concurrency validation harness; reserved as the future jcstress wrapper slot.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccConcurrencyValidation'
+}
+
+tasks.register('delosTwoSidedMvccWorkloadBenchmark') {
+    group = 'verification'
+    description = 'Runs the Phase P two-sided MVCC workload counter benchmark harness.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation'
+}
+
+tasks.register('delosLongReaderVacuumSoak') {
+    group = 'verification'
+    description = 'Runs the Phase P built-in long-reader buffer-pressure harness; full SQL long-reader/vacuum soak remains external.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccLongReaderValidation'
+}
+
+tasks.register('delosSqlancerMvccValidation') {
+    group = 'verification'
+    description = 'External SQLancer validation slot for MVCC tables. Requires -Pdelosdb.sqlancer.command=<command>.'
+    doLast {
+        def configured = providers.gradleProperty('delosdb.sqlancer.command').orNull
+        if (configured == null || configured.trim().isEmpty()) {
+            throw new GradleException('delosSqlancerMvccValidation requires -Pdelosdb.sqlancer.command=<command>; this task is intentionally not an S0 dependency.')
+        }
+        println 'SQLancer MVCC validation command is configured but execution is intentionally left to the caller/environment: ' + configured
+    }
+}
+
+tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates Phase P performance/concurrency validation harnesses and keeps long-running tools outside S0.'
+
+    inputs.file(delosPerformanceConcurrencyValidationFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    inputs.file('docs/PERFORMANCE-CONCURRENCY-VALIDATION.md')
+    inputs.file('delosdb-storage-mvcc/build.gradle')
+    inputs.file('gradle/delosdb-storage-static-analysis.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/performance-concurrency-validation-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadPerformanceConcurrencyValidationRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+        def requiredCategories = [
+                'ROADMAP_STATUS',
+                'VALIDATION_DOCUMENT',
+                'TASK_SLOT',
+                'MVCC_TASK',
+                'JAVA_HARNESS',
+                'S0_BOUNDARY',
+                'COMMIT_MESSAGE'
+        ] as Set
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate Phase P validation id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Phase P proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Phase P marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 60) {
+                failures << 'Phase P validation reason is too thin for ' + row.id
+            }
+        }
+        requiredCategories.each { requiredCategory ->
+            if (!categories.contains(requiredCategory)) {
+                failures << 'Phase P validation manifest missing category: ' + requiredCategory
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        [
+                'tasks.register(\'delosJmhMicrobenchmarks\')',
+                'tasks.register(\'delosJcstressConcurrencyValidation\')',
+                'tasks.register(\'delosSqlancerMvccValidation\')',
+                'tasks.register(\'delosTwoSidedMvccWorkloadBenchmark\')',
+                'tasks.register(\'delosLongReaderVacuumSoak\')'
+        ].each { markerText ->
+            if (!staticText.contains(markerText)) {
+                failures << 'Phase P root validation task is missing: ' + markerText
+            }
+        }
+
+        def s0Text = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+        [
+                'delosJmhMicrobenchmarks',
+                'delosJcstressConcurrencyValidation',
+                'delosSqlancerMvccValidation',
+                'delosTwoSidedMvccWorkloadBenchmark',
+                'delosLongReaderVacuumSoak'
+        ].each { taskName ->
+            if (s0Text.contains(taskName)) {
+                failures << 'Phase P long-running/external validation task must not be wired into S0: ' + taskName
+            }
+        }
+        if (!s0Text.contains('delosPerformanceConcurrencyValidationStaticAnalysis')) {
+            failures << 'Phase P static gate must be wired into s0CloseoutVerification'
+        }
+
+        def storageMvccBuildText = file('delosdb-storage-mvcc/build.gradle').getText('UTF-8')
+        [
+                'runDelosMvccMicrobenchmarkValidation',
+                'runDelosMvccConcurrencyValidation',
+                'runDelosMvccLongReaderValidation'
+        ].each { taskName ->
+            if (!storageMvccBuildText.contains(taskName)) {
+                failures << 'Phase P MVCC validation task missing from delosdb-storage-mvcc/build.gradle: ' + taskName
+            }
+        }
+        def checkSection = storageMvccBuildText.substring(storageMvccBuildText.indexOf("tasks.named('check')"))
+        [
+                'runDelosMvccMicrobenchmarkValidation',
+                'runDelosMvccConcurrencyValidation',
+                'runDelosMvccLongReaderValidation'
+        ].each { taskName ->
+            if (checkSection.contains(taskName)) {
+                failures << 'Phase P validation task must not be wired into :delosdb-storage-mvcc:check: ' + taskName
+            }
+        }
+
+        def validationDoc = file('docs/PERFORMANCE-CONCURRENCY-VALIDATION.md').getText('UTF-8')
+        [
+                'No Phase P benchmark task is an S0 dependency.',
+                'Built-in no-dependency validation harnesses',
+                'Real JMH, jcstress, and SQLancer integration should be added only when their version/dependency policy is accepted',
+                'This phase does not claim published performance numbers.'
+        ].each { markerText ->
+            if (!validationDoc.contains(markerText)) {
+                failures << 'Phase P validation document is missing marker: ' + markerText
+            }
+        }
+
+        def roadmapText = file('docs/ENGINE-DEPTH-ROADMAP.md').getText('UTF-8')
+        [
+                'Phase P — Performance, concurrency, and external validation closeout',
+                'Execution state: validation harness delivered by delosdb-performance-concurrency-validation-overlay.zip.',
+                'root validation task slots exist for JMH, jcstress, SQLancer, two-sided MVCC workload, and long-reader soak',
+                'Phase P adds built-in deterministic validation harnesses first rather than adding external JMH/jcstress/SQLancer dependencies blindly.',
+                'Add DelosDB performance and concurrency validation plan'
+        ].each { markerText ->
+            if (!roadmapText.contains(markerText)) {
+                failures << 'Engine-depth roadmap is missing Phase P marker: ' + markerText
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/performance-concurrency-validation-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB performance/concurrency validation static analysis')
+            writer.println('==========================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Performance/concurrency validation static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB performance/concurrency validation static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis', 'delosMvccBufferManagerPhase2StaticAnalysis', 'delosMvccPurgeDaemonSchedulingStaticAnalysis', 'delosHeapCleanupPhase2ForkDiffStaticAnalysis', 'delosSharedStorageServiceExtractionAuditStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis', 'delosMvccBufferManagerPhase2StaticAnalysis', 'delosMvccPurgeDaemonSchedulingStaticAnalysis', 'delosHeapCleanupPhase2ForkDiffStaticAnalysis', 'delosSharedStorageServiceExtractionAuditStaticAnalysis', 'delosPerformanceConcurrencyValidationStaticAnalysis'
 }

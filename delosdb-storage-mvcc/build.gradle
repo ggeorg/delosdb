@@ -1073,6 +1073,83 @@ tasks.register('runMvccStaticAnalysisHardeningTest', Test) {
 
 
 
+
+
+tasks.register('runDelosMvccMicrobenchmarkValidation', Test) {
+    group = 'verification'
+    description = 'Runs Phase P built-in MVCC microbenchmark validation harness without external JMH dependencies.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/MvccPerformanceValidationTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccMicrobenchmarkValidation'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccMicrobenchmarkValidation'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccMicrobenchmarkValidation'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+tasks.register('runDelosMvccConcurrencyValidation', Test) {
+    group = 'verification'
+    description = 'Runs Phase P built-in MVCC concurrency validation harness for pin/unpin and dirty flush structures.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/MvccConcurrencyValidationTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccConcurrencyValidation'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccConcurrencyValidation'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccConcurrencyValidation'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
+tasks.register('runDelosMvccLongReaderValidation', Test) {
+    group = 'verification'
+    description = 'Runs Phase P built-in long-reader buffer-pressure validation harness.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/MvccLongReaderBufferPressureValidationTest.class'
+
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccLongReaderValidation'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccLongReaderValidation'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccLongReaderValidation'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
+
 tasks.named('jar', Jar) {
     archiveFileName = 'delosdb-storage-mvcc.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')

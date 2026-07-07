@@ -563,7 +563,7 @@ The audit records storage statistics/cost and storage inspection as already-shar
 
 ## Phase P — Performance, concurrency, and external validation closeout
 
-Execution state: specified.
+Execution state: validation harness delivered by delosdb-performance-concurrency-validation-overlay.zip.
 
 Overlay:
 
@@ -575,15 +575,16 @@ Goal:
 Make DelosDB's engine improvements measurable and concurrency-validated without adding
 long or nondeterministic work to S0.
 
-Required behavior:
+Required behavior delivered:
 
 ```text
-JMH microbenchmarks cover MVCC write path, read path, index churn, sidecar force counts, and logical-id resolution cost
-jcstress tests cover RW-lock, pin/unpin, dirty-state, and purge/buffer concurrency structures
-SQLancer validation targets MVCC tables through compatible SQL/JDBC paths
-two-sided workload benchmark measures both update/index-churn wins and read-path costs
-long-reader-vs-vacuum soak is a separate validation task, not an S0 dependency
-benchmark baselines are stored as reports, not correctness assertions in fast gates
+root validation task slots exist for JMH, jcstress, SQLancer, two-sided MVCC workload, and long-reader soak
+JMH/jcstress/SQLancer slots are not wired into S0
+built-in no-dependency MVCC microbenchmark harness records deterministic operation counters
+built-in concurrency harness stress-validates pin/unpin and dirty flush structures
+two-sided workload harness measures dirty write batching and warm read-path cache hits
+long-reader buffer-pressure harness validates the low-level pin invariant behind long-reader-vs-vacuum soak
+benchmark baselines are invariant/counter reports, not wall-clock correctness assertions in fast gates
 ```
 
 Not allowed:
@@ -610,6 +611,22 @@ Gate:
 ```text
 ./gradlew delosPerformanceConcurrencyValidationStaticAnalysis
 ./gradlew s0CloseoutVerification
+```
+
+Optional validation tasks:
+
+```text
+./gradlew delosJmhMicrobenchmarks
+./gradlew delosJcstressConcurrencyValidation
+./gradlew delosTwoSidedMvccWorkloadBenchmark
+./gradlew delosLongReaderVacuumSoak
+./gradlew delosSqlancerMvccValidation
+```
+
+Implementation note:
+
+```text
+Phase P adds built-in deterministic validation harnesses first rather than adding external JMH/jcstress/SQLancer dependencies blindly. The root task names are present and kept out of S0. Real external tool integration can replace or wrap these task slots after dependency policy is accepted.
 ```
 
 Commit message:
