@@ -543,9 +543,10 @@ no optimizer, catalog, JDBC, or DRDA behavior change
 Tests and gates:
 
 ```text
-./gradlew delosSharedStorageServiceExtractionAuditStaticAnalysis
 ./gradlew s0CloseoutVerification
 ```
+
+The shared-service extraction audit is documented in `docs/SHARED-STORAGE-SERVICE-EXTRACTION-AUDIT.md`; it is advisory documentation, not a roadmap/prose S0 gate.
 
 Commit message:
 
@@ -556,7 +557,7 @@ Audit shared storage service extraction candidates
 Implementation note:
 
 ```text
-Phase O adds docs/SHARED-STORAGE-SERVICE-EXTRACTION-AUDIT.md plus an S0 static gate.
+Phase O adds docs/SHARED-STORAGE-SERVICE-EXTRACTION-AUDIT.md as advisory design evidence. It does not add an S0 roadmap/prose gate.
 The audit identifies checksum/torn-write validation as READY_FOR_NARROW_DESIGN, but only for a provider-neutral read-only integrity evidence model. Physical heap LOGOP_CHECKSUM encoding, MVCC page-record checksums, MVCC sidecar trailers, allocation/free-space, page-cache flushing, recovery replay, and purge scheduling remain provider-owned.
 The audit records storage statistics/cost and storage inspection as already-shared diagnostic boundaries.
 ```

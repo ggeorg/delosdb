@@ -37,3 +37,15 @@ Examples of forbidden S0 criteria:
 ## Long-running validation
 
 Performance, concurrency, JMH, jcstress, SQLancer, long-reader soak, and benchmark tasks must stay outside S0. They should remain opt-in validation tasks.
+
+## Removed obsolete roadmap/prose tasks
+
+The following historical roadmap/prose tasks were removed from Gradle registration after the engine-depth closeout cleanup. Their source documents may remain useful as design notes, but they must not be executable gates:
+
+- `delosBalancedStorageModernizationCloseoutStaticAnalysis`
+- `delosStorageModernizationTradeoffAuditStaticAnalysis`
+- `delosStorageModernizationTradeoffAuditRound2StaticAnalysis`
+- `delosNextEngineDepthRoadmapContractsStaticAnalysis`
+- `delosSharedStorageServiceExtractionAuditStaticAnalysis`
+
+Implementation or compatibility checks should be expressed as code/test markers or normal Gradle test tasks, not as roadmap-status prose validation.
