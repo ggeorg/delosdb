@@ -1,7 +1,6 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -27,6 +26,7 @@ final class MvccPageCache {
 
     private final int maxPages;
     private final LinkedHashMap<Long, CachedPage> pages;
+    private final MvccBufferReplacementPolicy replacementPolicy;
     private long hits;
     private long misses;
     private long writes;
@@ -40,6 +40,9 @@ final class MvccPageCache {
     private long walBeforeFlushChecks;
     private long walBeforeFlushFailures;
     private long pinnedEvictionSkips;
+    private long replacementScans;
+    private long replacementDirtyProtectionSkips;
+    private long replacementNoVictimCount;
     private long nextGeneration = 1L;
     private long lastPageGeneration;
 
@@ -53,6 +56,7 @@ final class MvccPageCache {
         }
         this.maxPages = maxPages;
         this.pages = new LinkedHashMap<>(16, 0.75f, true);
+        this.replacementPolicy = new MvccBufferReplacementPolicy();
     }
 
     DelosPage read(DelosPageVolume volume, DelosPageId pageId) throws IOException {
@@ -191,6 +195,9 @@ final class MvccPageCache {
                 walBeforeFlushChecks,
                 walBeforeFlushFailures,
                 pinnedEvictionSkips,
+                replacementScans,
+                replacementDirtyProtectionSkips,
+                replacementNoVictimCount,
                 lastPageGeneration);
     }
 
@@ -216,22 +223,16 @@ final class MvccPageCache {
 
     private void trimToMaxPagesUnlocked() {
         while (pages.size() > maxPages) {
-            boolean removed = false;
-            Iterator<Map.Entry<Long, CachedPage>> iterator = pages.entrySet().iterator();
-            while (iterator.hasNext()) {
-                Map.Entry<Long, CachedPage> entry = iterator.next();
-                CachedPage cached = entry.getValue();
-                if (cached.pinCount > 0 || cached.dirty) {
-                    pinnedEvictionSkips++;
-                    continue;
-                }
-                iterator.remove();
-                evictions++;
-                removed = true;
-                break;
-            }
-            if (!removed) {
+            MvccBufferReplacementPolicy.Decision decision = replacementPolicy.chooseVictim(pages);
+            replacementScans += decision.scannedPages();
+            pinnedEvictionSkips += decision.pinnedProtectedPages();
+            replacementDirtyProtectionSkips += decision.dirtyProtectedPages();
+            if (!decision.hasVictim()) {
+                replacementNoVictimCount++;
                 return;
+            }
+            if (pages.remove(decision.victimPageNumber()) != null) {
+                evictions++;
             }
         }
     }
@@ -275,7 +276,7 @@ final class MvccPageCache {
         }
     }
 
-    private static final class CachedPage {
+    private static final class CachedPage implements MvccBufferReplacementPolicy.PageState {
         private byte[] bytes;
         private boolean dirty;
         private int pinCount;
@@ -285,6 +286,16 @@ final class MvccPageCache {
             this.bytes = Objects.requireNonNull(bytes, "bytes");
             this.dirty = dirty;
             this.generation = generation;
+        }
+
+        @Override
+        public boolean dirty() {
+            return dirty;
+        }
+
+        @Override
+        public int pinCount() {
+            return pinCount;
         }
     }
 
@@ -307,6 +318,9 @@ final class MvccPageCache {
             long walBeforeFlushChecks,
             long walBeforeFlushFailures,
             long pinnedEvictionSkips,
+            long replacementScans,
+            long replacementDirtyProtectionSkips,
+            long replacementNoVictimCount,
             long lastPageGeneration) {
     }
 }
