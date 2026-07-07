@@ -35,6 +35,10 @@ final class MvccPageCache {
     private long pins;
     private long unpins;
     private long flushes;
+    private long groupedForceBatches;
+    private long groupedForcedPages;
+    private long walBeforeFlushChecks;
+    private long walBeforeFlushFailures;
     private long pinnedEvictionSkips;
     private long nextGeneration = 1L;
     private long lastPageGeneration;
@@ -100,18 +104,49 @@ final class MvccPageCache {
     }
 
     synchronized void flushAll(DelosPageVolume volume) throws IOException {
+        flushAll(volume, null);
+    }
+
+    synchronized long flushAll(
+            DelosPageVolume volume,
+            MvccBufferFlushCoordinator flushCoordinator) throws IOException {
         Objects.requireNonNull(volume, "volume");
+        long flushedPages = 0L;
+        long checksBefore = coordinatorSnapshot(flushCoordinator).walBeforeFlushChecks();
+        long failuresBefore = coordinatorSnapshot(flushCoordinator).walBeforeFlushFailures();
         for (Map.Entry<Long, CachedPage> entry : pages.entrySet()) {
             CachedPage cached = entry.getValue();
             if (!cached.dirty) {
                 continue;
             }
             DelosPageId pageId = new DelosPageId(entry.getKey());
-            volume.writePage(DelosPageIo.decode(cached.bytes, pageId));
+            DelosPage page = DelosPageIo.decode(cached.bytes, pageId);
+            if (flushCoordinator != null) {
+                flushCoordinator.beforePageFlush(page);
+            }
+            volume.writePage(page);
             cached.dirty = false;
             flushes++;
+            flushedPages++;
+        }
+        if (flushCoordinator != null) {
+            flushCoordinator.forcePageVolumeAfterBatch(volume, flushedPages);
+            MvccBufferFlushCoordinator.Snapshot after = flushCoordinator.snapshot();
+            groupedForceBatches = after.groupCommitBatches();
+            groupedForcedPages = after.groupedPageFlushes();
+            walBeforeFlushChecks += Math.max(0L, after.walBeforeFlushChecks() - checksBefore);
+            walBeforeFlushFailures += Math.max(0L, after.walBeforeFlushFailures() - failuresBefore);
         }
         trimToMaxPagesUnlocked();
+        return flushedPages;
+    }
+
+    private static MvccBufferFlushCoordinator.Snapshot coordinatorSnapshot(
+            MvccBufferFlushCoordinator flushCoordinator) {
+        if (flushCoordinator == null) {
+            return new MvccBufferFlushCoordinator.Snapshot(0L, 0L, 0L, 0L, 0L, 0L);
+        }
+        return flushCoordinator.snapshot();
     }
 
     synchronized void invalidate(DelosPageId pageId) {
@@ -151,6 +186,10 @@ final class MvccPageCache {
                 dirtyPages,
                 dirtyPages,
                 flushes,
+                groupedForceBatches,
+                groupedForcedPages,
+                walBeforeFlushChecks,
+                walBeforeFlushFailures,
                 pinnedEvictionSkips,
                 lastPageGeneration);
     }
@@ -263,6 +302,10 @@ final class MvccPageCache {
             long dirtyPages,
             long flushListPages,
             long flushes,
+            long groupedForceBatches,
+            long groupedForcedPages,
+            long walBeforeFlushChecks,
+            long walBeforeFlushFailures,
             long pinnedEvictionSkips,
             long lastPageGeneration) {
     }

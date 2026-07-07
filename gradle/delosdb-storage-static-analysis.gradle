@@ -5806,8 +5806,172 @@ tasks.register('delosMvccRecoveryReplayEngineStaticAnalysis') {
     }
 }
 
+
+def delosMvccBufferManagerPhase2File = file('gradle/static-analysis/delosdb-mvcc-buffer-manager-phase2.txt')
+
+def delosLoadMvccBufferManagerPhase2Rows = {
+    if (!delosMvccBufferManagerPhase2File.exists()) {
+        throw new GradleException('Missing MVCC buffer manager phase 2 proof file: ' + delosMvccBufferManagerPhase2File)
+    }
+    def rows = []
+    delosMvccBufferManagerPhase2File.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed MVCC buffer manager phase 2 proof row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [id: parts[0], path: parts[1], category: parts[2], marker: parts[3], reason: parts[4], lineNumber: index + 1]
+    }
+    rows
+}
+
+tasks.register('delosMvccBufferManagerPhase2StaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the Phase M MVCC buffer-manager flush discipline implementation.'
+
+    inputs.file(delosMvccBufferManagerPhase2File)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-buffer-manager-phase2-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccBufferManagerPhase2Rows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC buffer manager phase 2 proof id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC buffer manager phase 2 proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC buffer manager phase 2 marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 50) {
+                failures << 'MVCC buffer manager phase 2 reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'ROADMAP_STATUS',
+                'WAL_BEFORE_FLUSH_COORDINATOR',
+                'GROUP_COMMIT_COORDINATOR',
+                'OBSERVABLE_DIAGNOSTICS',
+                'DIRTY_FLUSH_SCHEDULING',
+                'WAL_GUARD_WIRING',
+                'GROUP_FORCE_WIRING',
+                'CACHE_DIAGNOSTICS',
+                'STORE_LOG_LSN_WIRING',
+                'STORE_GROUP_FLUSH_WIRING',
+                'STORE_DIAGNOSTICS',
+                'WAL_BEFORE_FLUSH_TEST',
+                'GROUP_COMMIT_TEST',
+                'STATIC_GATE',
+                'L_STANDING_GATE'
+        ].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'MVCC buffer manager phase 2 proof is missing category: ' + required
+            }
+        }
+
+        def coordinatorText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccBufferFlushCoordinator.java').getText('UTF-8')
+        if (!coordinatorText.contains('page.pageLsn()') || !coordinatorText.contains('durableLogLsn')) {
+            failures << 'MvccBufferFlushCoordinator must compare pageLSN to durable log LSN before page flush'
+        }
+        if (!coordinatorText.contains('volume.force()') || !coordinatorText.contains('groupCommitBatches++')) {
+            failures << 'MvccBufferFlushCoordinator must provide a grouped page-volume force boundary'
+        }
+
+        def cacheText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageCache.java').getText('UTF-8')
+        if (!cacheText.contains('flushCoordinator.beforePageFlush(page)')) {
+            failures << 'MvccPageCache must call the WAL-before-flush guard before writing a dirty page'
+        }
+        if (!cacheText.contains('flushCoordinator.forcePageVolumeAfterBatch(volume, flushedPages)')) {
+            failures << 'MvccPageCache must force the page volume once after a dirty-page flush batch'
+        }
+
+        def storeText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccTableStore.java').getText('UTF-8')
+        if (!storeText.contains('bufferFlushCoordinator.recordLogForcedThrough(pageLsn)')) {
+            failures << 'PageBackedMvccTableStore must record forced WAL LSNs before dirty page flush'
+        }
+        if (storeText.contains('pageCache.flush(pageVolume, page.pageId())')) {
+            failures << 'PageBackedMvccTableStore must not bypass the Phase M grouped flush coordinator'
+        }
+        if (!storeText.contains('pageCache.flushAll(pageVolume, bufferFlushCoordinator)')) {
+            failures << 'PageBackedMvccTableStore must route dirty-page publication through the Phase M coordinator'
+        }
+
+        def testText = file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccBufferManagerPhase2Test.java').getText('UTF-8')
+        [
+                'walBeforeFlushRejectsDirtyPageUntilCoveringLogRecordIsForced',
+                'groupCommitForcesOnceForMultipleDirtyPagesInTheSameFlushBatch',
+                'assertEquals(1L, volume.forceCount)',
+                'walBeforeFlushFailures()'
+        ].each { markerText ->
+            if (!testText.contains(markerText)) {
+                failures << 'Phase M buffer manager test is missing marker: ' + markerText
+            }
+        }
+
+        def roadmap = file('docs/ENGINE-DEPTH-ROADMAP.md')
+        if (!roadmap.exists()) {
+            failures << 'Missing docs/ENGINE-DEPTH-ROADMAP.md'
+        } else {
+            def roadmapText = roadmap.getText('UTF-8')
+            [
+                    'Phase M — MVCC buffer manager phase 2',
+                    'Execution state: implementation slice delivered by delosdb-mvcc-buffer-manager-phase2-overlay.zip.',
+                    'WAL-before-flush invariant prevents dirty page publication before covering log records are forced',
+                    'group commit batches compatible fsync work',
+                    'Phase L recovery replay remains a standing gate after this buffer-manager change.'
+            ].each { markerText ->
+                if (!roadmapText.contains(markerText)) {
+                    failures << 'Engine-depth roadmap is missing Phase M marker: ' + markerText
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-buffer-manager-phase2-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC buffer manager phase 2 static analysis')
+            writer.println('====================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('MVCC buffer manager phase 2 static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC buffer manager phase 2 static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis', 'delosMvccBufferManagerPhase2StaticAnalysis'
 }

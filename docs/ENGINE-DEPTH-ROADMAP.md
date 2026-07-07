@@ -304,7 +304,7 @@ This is still not a full ARIES-style redo/undo system and does not change heap r
 
 ## Phase M — MVCC buffer manager phase 2
 
-Execution state: specified.
+Execution state: implementation slice delivered by delosdb-mvcc-buffer-manager-phase2-overlay.zip.
 
 Overlay:
 
@@ -363,6 +363,16 @@ Commit message:
 
 ```text
 Add MVCC buffer manager flush discipline
+```
+
+Implementation note:
+
+```text
+MvccBufferFlushCoordinator now enforces the MVCC WAL-before-page-flush rule for non-zero pageLSN dirty pages.
+MvccPageCache can flush dirty pages through a grouped force boundary so multiple dirty pages in one flush batch produce one page-volume force.
+PageBackedMvccTableStore records forced page-volume WAL LSNs before flushing pageLSN-bearing dirty pages and routes durable page writes through the coordinator.
+MvccBufferManagerPhase2Test covers WAL-before-flush fault injection and grouped force batching.
+Phase L recovery replay remains a standing gate after this buffer-manager change.
 ```
 
 ## Micro-slice 5 — Purge daemon scheduling

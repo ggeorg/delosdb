@@ -39,6 +39,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     private final MvccFreeSpaceMapStore freeSpaceMapStore;
     private final NavigableMap<Long, Integer> freeBytesByPageId;
     private final MvccPageCache pageCache;
+    private final MvccBufferFlushCoordinator bufferFlushCoordinator;
     private long freeSpaceMapLookupCount;
     private long freeSpaceMapHitCount;
     private long freeSpaceMapNonLastHitCount;
@@ -70,7 +71,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             NavigableSet<Long> reusablePageIds,
             MvccFreeSpaceMapStore freeSpaceMapStore,
             NavigableMap<Long, Integer> freeBytesByPageId,
-            MvccPageCache pageCache) {
+            MvccPageCache pageCache,
+            MvccBufferFlushCoordinator bufferFlushCoordinator) {
         this.path = Objects.requireNonNull(path, "path");
         this.overflowPath = overflowPath(path);
         this.volumeFactory = Objects.requireNonNull(volumeFactory, "volumeFactory");
@@ -81,6 +83,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         this.freeSpaceMapStore = Objects.requireNonNull(freeSpaceMapStore, "freeSpaceMapStore");
         this.freeBytesByPageId = Objects.requireNonNull(freeBytesByPageId, "freeBytesByPageId");
         this.pageCache = Objects.requireNonNull(pageCache, "pageCache");
+        this.bufferFlushCoordinator = Objects.requireNonNull(bufferFlushCoordinator, "bufferFlushCoordinator");
     }
 
     public static PageBackedMvccTableStore open(Path path) throws IOException {
@@ -102,7 +105,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 reusablePageIds,
                 freeSpaceMapStore,
                 freeBytesByPageId,
-                new MvccPageCache());
+                new MvccPageCache(),
+                new MvccBufferFlushCoordinator());
         store.freeSpaceMapRebuildCount++;
         return store;
     }
@@ -125,7 +129,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                     reusablePageIds,
                     freeSpaceMapStore,
                     freeBytesByPageId,
-                    new MvccPageCache());
+                    new MvccPageCache(),
+                new MvccBufferFlushCoordinator());
             store.freeSpaceMapRebuildCount++;
             return store;
         } catch (IOException e) {
@@ -153,6 +158,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         record = encodedVersion.record();
 
         int requiredBytes = Math.addExact(encoded.length, SLOT_OVERHEAD_BYTES);
+        bufferFlushCoordinator.recordLogForcedThrough(pageLsn);
         try (MvccPageMutationContext context = beginPageMutationContext("append-version")) {
             context.reservePageCapacity(requiredBytes);
             DelosPage page = writablePage(encoded.length);
@@ -160,7 +166,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             DelosPage writtenPage = page.withPageLsn(pageLsn.value());
             writePage(writtenPage, context);
             updateFreeSpaceMap(writtenPage, context);
-            pageVolume.force();
+            forceDirtyPages();
             context.commit();
             return new MvccVersionLocator(page.pageId(), slotId);
         }
@@ -196,7 +202,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                     new TreeSet<>(),
                     MvccFreeSpaceMapStore.open(freeSpaceMapPath(rewritePath)),
                     new TreeMap<>(),
-                    new MvccPageCache())) {
+                    new MvccPageCache(),
+                new MvccBufferFlushCoordinator())) {
                 for (MvccVersionRecord record : records) {
                     rewrite.append(record);
                 }
@@ -247,7 +254,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 }
                 persistReusablePageIndex(context);
                 updateFreeSpaceMap(page, context);
-                pageVolume.force();
+                forceDirtyPages();
                 context.commit();
                 return loadAllUnlocked();
             }
@@ -407,6 +414,23 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return readLockedUnchecked(() -> pageCache.snapshot().pinnedEvictionSkips());
     }
 
+
+    public long pageCacheGroupedForceBatchCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().groupedForceBatches());
+    }
+
+    public long pageCacheGroupedForcedPageCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().groupedForcedPages());
+    }
+
+    public long pageCacheWalBeforeFlushCheckCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().walBeforeFlushChecks());
+    }
+
+    public long pageCacheWalBeforeFlushFailureCount() {
+        return readLockedUnchecked(() -> pageCache.snapshot().walBeforeFlushFailures());
+    }
+
     public long pageCacheLastPageGeneration() {
         return readLockedUnchecked(() -> pageCache.snapshot().lastPageGeneration());
     }
@@ -544,7 +568,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         writeLockedIo(() -> {
             IOException failure = null;
             try {
-                pageCache.flushAll(pageVolume);
+                pageCache.flushAll(pageVolume, bufferFlushCoordinator);
                 pageCache.clear();
                 pageVolume.close();
             } catch (IOException e) {
@@ -771,7 +795,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         for (long pageNumber = retainedPageCount; pageNumber < pageCount; pageNumber++) {
             writePage(DelosPage.empty(new DelosPageId(pageNumber), DelosPage.DATA_PAGE_TYPE));
         }
-        pageVolume.force();
+        forceDirtyPages();
     }
 
     private void ensurePageCapacity(long requiredPageCount) throws IOException {
@@ -932,10 +956,13 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     private void writePage(DelosPage page, MvccPageMutationContext context) throws IOException {
         pageCache.putDirty(page);
-        pageCache.flush(pageVolume, page.pageId());
         if (context != null) {
             context.recordPageWrite();
         }
+    }
+
+    private void forceDirtyPages() throws IOException {
+        pageCache.flushAll(pageVolume, bufferFlushCoordinator);
     }
 
     private DelosPage allocatePage(int pageType) throws IOException {
