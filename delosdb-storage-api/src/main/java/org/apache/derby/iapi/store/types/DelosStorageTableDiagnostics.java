@@ -281,6 +281,26 @@ public interface DelosStorageTableDiagnostics {
         return List.of();
     }
 
+    default long purgeDaemonScheduleCountForTesting() {
+        return 0L;
+    }
+
+    default long purgeDaemonRunCountForTesting() {
+        return 0L;
+    }
+
+    default long purgeDaemonSkipCountForTesting() {
+        return 0L;
+    }
+
+    default long purgeDaemonLastTriggerChangedRowsForTesting() {
+        return 0L;
+    }
+
+    default String purgeDaemonLastDecisionForTesting() {
+        return "disabled";
+    }
+
     default long orderedIndexPageCountForTesting() {
         return 0L;
     }

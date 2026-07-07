@@ -662,6 +662,26 @@ final class MvccConglomerateState {
         return diagnostics.lastVacuumOutcomeForTesting();
     }
 
+    synchronized long purgeDaemonScheduleCountForTesting() {
+        return diagnostics.purgeDaemonScheduleCountForTesting();
+    }
+
+    synchronized long purgeDaemonRunCountForTesting() {
+        return diagnostics.purgeDaemonRunCountForTesting();
+    }
+
+    synchronized long purgeDaemonSkipCountForTesting() {
+        return diagnostics.purgeDaemonSkipCountForTesting();
+    }
+
+    synchronized long purgeDaemonLastTriggerChangedRowsForTesting() {
+        return diagnostics.purgeDaemonLastTriggerChangedRowsForTesting();
+    }
+
+    synchronized String purgeDaemonLastDecisionForTesting() {
+        return diagnostics.purgeDaemonLastDecisionForTesting();
+    }
+
     synchronized DelosVacuumOutcome vacuumSafely() {
         return maintenance.vacuumSafely();
     }

@@ -348,6 +348,26 @@ public interface DelosStorageDiagnostics {
         return List.of();
     }
 
+    default long purgeDaemonScheduleCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long purgeDaemonRunCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long purgeDaemonSkipCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long purgeDaemonLastTriggerChangedRowsForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default String purgeDaemonLastDecisionForTesting(int segment, long containerId) {
+        return "disabled";
+    }
+
     default long orderedIndexPageCountForTesting(int segment, long containerId) {
         return 0L;
     }

@@ -656,6 +656,26 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).purgeQueueEntrySummariesForTesting();
     }
 
+    static long purgeDaemonScheduleCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeDaemonScheduleCountForTesting();
+    }
+
+    static long purgeDaemonRunCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeDaemonRunCountForTesting();
+    }
+
+    static long purgeDaemonSkipCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeDaemonSkipCountForTesting();
+    }
+
+    static long purgeDaemonLastTriggerChangedRowsForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeDaemonLastTriggerChangedRowsForTesting();
+    }
+
+    static String purgeDaemonLastDecisionForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).purgeDaemonLastDecisionForTesting();
+    }
+
     static long orderedIndexPageCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).orderedIndexPageCountForTesting();
     }

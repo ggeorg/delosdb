@@ -377,7 +377,7 @@ Phase L recovery replay remains a standing gate after this buffer-manager change
 
 ## Micro-slice 5 — Purge daemon scheduling
 
-Execution state: specified.
+Execution state: implementation slice delivered by delosdb-mvcc-purge-daemon-scheduling-overlay.zip.
 
 Overlay:
 
@@ -430,7 +430,16 @@ Gate:
 Commit message:
 
 ```text
-Add MVCC purge daemon scheduling gate
+Add MVCC purge daemon scheduling
+```
+
+Implementation note:
+
+```text
+MvccPurgeDaemon adds a deterministic cooperative purge scheduler for inherited MVCC tables.
+It is not a free-running background thread: commit boundaries call maybeRunAfterCommit(), tests can pause it by leaving delosdb.mvcc.purgeDaemon.enabled unset, and delosdb.mvcc.purgeDaemon.changedRowsThreshold controls deterministic triggering.
+The scheduler observes retained inherited MVCC transactions/snapshots before calling the existing provider-owned vacuum path, exposes schedule/run/skip/last-decision diagnostics, and keeps manual compress/purge behavior unchanged.
+MvccSqlPurgeDaemonSchedulingTest proves automatic purge after committed write bursts and default-paused behavior.
 ```
 
 ## Phase N — Heap cleanup phase 2 and fork-diff expansion

@@ -55,6 +55,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final MvccInheritedIndexMaintenance indexMaintenance;
     private final MvccTransactionStatusStore transactionStatusStore;
     private final MvccTransactionManager transactions;
+    private final MvccPurgeDaemon purgeDaemon = new MvccPurgeDaemon();
     private final List<MvccInheritedHandles.Transaction> activeTransactions = new ArrayList<>();
     private final ReentrantReadWriteLock tableLock = new ReentrantReadWriteLock();
     private final Lock readLock = tableLock.readLock();
@@ -242,6 +243,8 @@ final class MvccInheritedTable implements DelosStorageTable,
     public void commit(DelosStorageTransaction transaction) {
         writeLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            int committedChangedRows = 0;
+            boolean committed = false;
             try {
                 MvccTransaction nativeTx = handle.nativeTransaction();
                 List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes = changedRows(handle);
@@ -254,12 +257,17 @@ final class MvccInheritedTable implements DelosStorageTable,
                 }
                 MvccCommitSequence commitSequence = transactions.commit(nativeTx);
                 persistCommittedChangesUnlocked(changes, commitSequence);
+                committedChangedRows = changes.size();
+                committed = true;
                 lastCommittedChangedRowCount = changes.size();
                 lastCommittedWriteIntentCount = handle.writeIntentCount();
                 lastCommittedWriteIntentPayloadSummaries = committedChangePayloadSummaries(changes);
                 handle.clearWriteIntents();
             } finally {
                 activeTransactions.remove(handle);
+            }
+            if (committed) {
+                runPurgeDaemonAfterCommit(committedChangedRows);
             }
         });
     }
@@ -275,6 +283,19 @@ final class MvccInheritedTable implements DelosStorageTable,
                 activeTransactions.remove(handle);
             }
         });
+    }
+
+
+    private void runPurgeDaemonAfterCommit(int changedRows) {
+        purgeDaemon.maybeRunAfterCommit(
+                changedRows,
+                this::hasRetainedInheritedSnapshot,
+                () -> vacuumOutcome(pageVolumeStateStore.vacuumSafely(false)))
+                .ifPresent(outcome -> lastVacuumOutcome = outcome);
+    }
+
+    private boolean hasRetainedInheritedSnapshot() {
+        return transactions.activeTransactionCount() > 0 || transactions.retainedSnapshotCount() > 0;
     }
 
     @Override
@@ -799,6 +820,31 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public long purgeDaemonScheduleCountForTesting() {
+        return readLocked(purgeDaemon::scheduleCount);
+    }
+
+    @Override
+    public long purgeDaemonRunCountForTesting() {
+        return readLocked(purgeDaemon::runCount);
+    }
+
+    @Override
+    public long purgeDaemonSkipCountForTesting() {
+        return readLocked(purgeDaemon::skipCount);
+    }
+
+    @Override
+    public long purgeDaemonLastTriggerChangedRowsForTesting() {
+        return readLocked(purgeDaemon::lastTriggerChangedRows);
+    }
+
+    @Override
+    public String purgeDaemonLastDecisionForTesting() {
+        return readLocked(purgeDaemon::lastDecision);
+    }
+
+    @Override
     public long orderedIndexPageCountForTesting() {
         return readLocked(indexMaintenance::orderedIndexPageCountForTesting);
     }
@@ -1027,9 +1073,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public DelosVacuumOutcome vacuumSafely() {
         return writeLocked(() -> {
-            boolean hasRetainedInheritedSnapshot = transactions.activeTransactionCount() > 0
-                    || transactions.retainedSnapshotCount() > 0;
-            lastVacuumOutcome = vacuumOutcome(pageVolumeStateStore.vacuumSafely(hasRetainedInheritedSnapshot));
+            lastVacuumOutcome = vacuumOutcome(pageVolumeStateStore.vacuumSafely(hasRetainedInheritedSnapshot()));
             return lastVacuumOutcome;
         });
     }

@@ -5970,8 +5970,182 @@ tasks.register('delosMvccBufferManagerPhase2StaticAnalysis') {
     }
 }
 
+
+def delosMvccPurgeDaemonSchedulingFile = file('gradle/static-analysis/delosdb-mvcc-purge-daemon-scheduling.txt')
+
+def delosLoadMvccPurgeDaemonSchedulingRows = {
+    if (!delosMvccPurgeDaemonSchedulingFile.exists()) {
+        throw new GradleException('Missing MVCC purge daemon scheduling proof file: ' + delosMvccPurgeDaemonSchedulingFile)
+    }
+    def rows = []
+    delosMvccPurgeDaemonSchedulingFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed MVCC purge daemon scheduling proof row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [id: parts[0], path: parts[1], category: parts[2], marker: parts[3], reason: parts[4], lineNumber: index + 1]
+    }
+    rows
+}
+
+tasks.register('delosMvccPurgeDaemonSchedulingStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the MVCC purge-daemon scheduling implementation and diagnostics.'
+
+    inputs.file(delosMvccPurgeDaemonSchedulingFile)
+    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-purge-daemon-scheduling-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccPurgeDaemonSchedulingRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC purge daemon scheduling proof id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC purge daemon scheduling proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC purge daemon scheduling marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 50) {
+                failures << 'MVCC purge daemon scheduling reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'ROADMAP_STATUS',
+                'COOPERATIVE_SCHEDULER',
+                'DETERMINISTIC_TEST_CONTROL',
+                'SCHEDULING_THRESHOLD',
+                'COMMIT_SCHEDULING',
+                'LONG_READER_GUARD',
+                'EXISTING_VACUUM_PATH',
+                'OBSERVABLE_DIAGNOSTICS',
+                'BRIDGE_DIAGNOSTIC_WIRING',
+                'SQL_INTEGRATION_TEST',
+                'DEFAULT_COMPATIBILITY_TEST',
+                'SQL_TEST_WIRING',
+                'STATIC_GATE'
+        ].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'MVCC purge daemon scheduling proof is missing category: ' + required
+            }
+        }
+
+        def daemonText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccPurgeDaemon.java').getText('UTF-8')
+        if (daemonText.contains('new Thread') || daemonText.contains('ExecutorService') || daemonText.contains('ScheduledExecutorService')) {
+            failures << 'MvccPurgeDaemon must remain cooperative/deterministic, not background-thread driven'
+        }
+        [
+                'maybeRunAfterCommit',
+                'ENABLED_PROPERTY',
+                'CHANGED_ROWS_THRESHOLD_PROPERTY',
+                'retainedReaderSupplier.getAsBoolean()',
+                'vacuumSupplier.get()',
+                'scheduleCount++',
+                'runCount++',
+                'skipCount++'
+        ].each { markerText ->
+            if (!daemonText.contains(markerText)) {
+                failures << 'MvccPurgeDaemon is missing scheduler marker: ' + markerText
+            }
+        }
+
+        def tableText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTable.java').getText('UTF-8')
+        if (!tableText.contains('activeTransactions.remove(handle);')
+                || !tableText.contains('runPurgeDaemonAfterCommit(committedChangedRows)')) {
+            failures << 'MvccInheritedTable must remove the committing handle before scheduling daemon purge'
+        }
+        if (!tableText.contains('pageVolumeStateStore.vacuumSafely(false)')
+                || !tableText.contains('hasRetainedInheritedSnapshot()')) {
+            failures << 'MvccInheritedTable must schedule the existing vacuum path with retained-snapshot guarding'
+        }
+
+        def diagnosticsText = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java').getText('UTF-8')
+        [
+                'purgeDaemonScheduleCountForTesting',
+                'purgeDaemonRunCountForTesting',
+                'purgeDaemonSkipCountForTesting',
+                'purgeDaemonLastTriggerChangedRowsForTesting',
+                'purgeDaemonLastDecisionForTesting'
+        ].each { markerText ->
+            if (!diagnosticsText.contains(markerText)) {
+                failures << 'DelosStorageDiagnostics is missing purge-daemon marker: ' + markerText
+            }
+        }
+
+        def testText = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPurgeDaemonSchedulingTest.java').getText('UTF-8')
+        [
+                'testPurgeDaemonRunsDeterministicallyAfterCommittedWriteBurst',
+                'testPurgeDaemonIsPausedByDefault',
+                'delosdb.mvcc.purgeDaemon.enabled',
+                'delosdb.mvcc.purgeDaemon.changedRowsThreshold',
+                'purgeDaemonRunCountForTesting',
+                'lastVacuumRemovedVersionsForTesting'
+        ].each { markerText ->
+            if (!testText.contains(markerText)) {
+                failures << 'MVCC purge daemon SQL test is missing marker: ' + markerText
+            }
+        }
+
+        def roadmapText = file('docs/ENGINE-DEPTH-ROADMAP.md').getText('UTF-8')
+        [
+                'Micro-slice 5 — Purge daemon scheduling',
+                'Execution state: implementation slice delivered by delosdb-mvcc-purge-daemon-scheduling-overlay.zip.',
+                'MvccPurgeDaemon adds a deterministic cooperative purge scheduler',
+                'It is not a free-running background thread',
+                'Add MVCC purge daemon scheduling'
+        ].each { markerText ->
+            if (!roadmapText.contains(markerText)) {
+                failures << 'Engine-depth roadmap is missing purge-daemon marker: ' + markerText
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-purge-daemon-scheduling-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC purge daemon scheduling static analysis')
+            writer.println('=====================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('MVCC purge daemon scheduling static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC purge daemon scheduling static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs S0 closeout verification gates that are safe before the next MVCC/server feature phase.'
-    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis', 'delosMvccBufferManagerPhase2StaticAnalysis'
+    dependsOn 'delosStorageStaticAnalysis', 'delosServerStaticAnalysis', 'delosHeapCompatibilityStaticAnalysis', 'delosHeapObjectDeserializationFilterStaticAnalysis', 'delosCrossEngineConsistencyFrameworkStaticAnalysis', 'delosStaleGradleScriptCheck', 'delosOverlayCleanupScriptStaticAnalysis', 'delosRuntimeArtifactModelStaticAnalysis', 'delosModuleDependencyBoundaryStaticAnalysis', 'delosWorkspaceChurnStaticAnalysis', 'delosDeadCodeCandidateReport', 'delosHeapRawStoreDuplicateClassificationReport', 'delosDerbyModuleParityStaticAnalysis', 'delosDerbyForkDiffClassificationStaticAnalysis', 'delosMvccCandidateIndexAuthorityAuditStaticAnalysis', 'delosMvccCandidateIndexQuarantineStaticAnalysis', 'delosMvccCandidateIndexAuthorityRemovalStaticAnalysis', 'delosHeapDiagnosticsExpansionStaticAnalysis', 'delosStorageInspectorConsolidationStaticAnalysis', 'delosMvccPinnedDirtyBufferCacheStaticAnalysis', 'delosMvccAttributeOverflowStorageStaticAnalysis', 'delosMvccSubsystemRecoveryRecordsStaticAnalysis', 'delosHeapInternalCleanupPhase1StaticAnalysis', 'delosBalancedStorageModernizationCloseoutStaticAnalysis', 'delosStorageModernizationTradeoffAuditStaticAnalysis', 'delosStorageModernizationTradeoffAuditRound2StaticAnalysis', 'delosNextEngineDepthRoadmapContractsStaticAnalysis', 'delosBackupRestoreSidecarVerificationStaticAnalysis', 'delosDerby7107ReviewStaticAnalysis', 'delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis', 'delosMvccRecoveryReplayEngineStaticAnalysis', 'delosMvccBufferManagerPhase2StaticAnalysis', 'delosMvccPurgeDaemonSchedulingStaticAnalysis'
 }
