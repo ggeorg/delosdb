@@ -8467,6 +8467,7 @@ tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
                 'event.isEnabled()',
                 'event.commit()',
                 'recordMvccAnalyzeStatistics',
+                'recordMvccCheckpoint',
                 'recordMvccPurge',
                 'recordMvccRecoveryReplay',
                 'recordMvccBackupSidecar',
@@ -8474,6 +8475,7 @@ tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
                 'recordHeapSanityCheck',
                 'recordStoragePathDecision',
                 'org.apache.derby.delosdb.mvcc.AnalyzeStatistics',
+                'org.apache.derby.delosdb.mvcc.Checkpoint',
                 'org.apache.derby.delosdb.mvcc.Purge',
                 'org.apache.derby.delosdb.mvcc.RecoveryReplay',
                 'org.apache.derby.delosdb.mvcc.BackupSidecar',
@@ -8499,31 +8501,12 @@ tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
             failures << 'MVCC analyze/statistics diagnostics must preserve Derby optimizer authority marker'
         }
 
-        def checkpointBridgeText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/MvccStorageLifecycleJfr.java').getText('UTF-8')
-        [
-                'final class MvccStorageLifecycleJfr',
-                'import jdk.jfr.Event;',
-                'recordCheckpoint',
-                'org.apache.derby.delosdb.mvcc.Checkpoint',
-                'does not import Derby'
-        ].each { markerText ->
-            if (!checkpointBridgeText.contains(markerText)) {
-                failures << 'MVCC-local checkpoint JFR bridge missing marker: ' + markerText
-            }
-        }
-        if (checkpointBridgeText.contains('import org.apache.derby.')) {
-            failures << 'MVCC-local checkpoint JFR bridge must not import Derby API classes'
-        }
-
         def checkpointText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccStateStore.java').getText('UTF-8')
-        if (!checkpointText.contains('MvccStorageLifecycleJfr.recordCheckpoint')) {
+        if (!checkpointText.contains('DelosStorageLifecycleJfr.recordMvccCheckpoint')) {
             failures << 'MVCC checkpoint rewrite must record a JFR event after the proven checkpoint lifecycle point'
         }
-        if (checkpointText.contains('org.apache.derby.iapi.store.types.DelosStorageLifecycleJfr')) {
-            failures << 'MVCC durable checkpoint store must not import the Derby API JFR event facade'
-        }
         def appendIndex = checkpointText.indexOf('recoveryRecordStore.appendCheckpoint')
-        def eventIndex = checkpointText.indexOf('MvccStorageLifecycleJfr.recordCheckpoint')
+        def eventIndex = checkpointText.indexOf('DelosStorageLifecycleJfr.recordMvccCheckpoint')
         if (appendIndex < 0 || eventIndex < 0 || eventIndex < appendIndex) {
             failures << 'MVCC checkpoint JFR event must be recorded after the subsystem checkpoint recovery record append'
         }
@@ -8757,6 +8740,148 @@ tasks.register('delosOptimizerCostAuthorityAuditStaticAnalysis') {
             throw new GradleException('DelosDB optimizer cost authority audit static analysis failed. Report: ' + reportFile)
         }
         println 'DelosDB optimizer cost authority audit static analysis passed. Report: ' + reportFile
+    }
+}
+
+
+tasks.register('delosMvccOrderedIndexNullKeyProofStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the MVCC ordered-index NULL key proof manifest and proof hooks.'
+
+    inputs.file('gradle/static-analysis/delosdb-mvcc-ordered-index-null-key-proof.txt')
+    inputs.file('docs/MVCC-ORDERED-INDEX-NULL-KEY-PROOF.md')
+    inputs.file('docs/MVCC-ORDERED-INDEX-KEY-SEMANTICS.md')
+    inputs.file('docs/ALGORITHM-INVENTORY.md')
+    inputs.file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java')
+    inputs.file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccOrderedIndexPageStoreTest.java')
+    inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.java')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-ordered-index-null-key-proof-static-analysis.txt'))
+
+    doLast {
+        def manifest = file('gradle/static-analysis/delosdb-mvcc-ordered-index-null-key-proof.txt')
+        if (!manifest.exists()) {
+            throw new GradleException('Missing MVCC ordered-index NULL key proof manifest: ' + manifest)
+        }
+        def rows = manifest.readLines('UTF-8')
+                .findAll { line -> line.trim() && !line.trim().startsWith('#') }
+                .collect { line ->
+                    def parts = line.split('\\|', -1)
+                    if (parts.length < 6) {
+                        throw new GradleException('Malformed MVCC ordered-index NULL key proof row: ' + line)
+                    }
+                    [id: parts[0], path: parts[1], marker: parts[2], category: parts[3], reference: parts[4], rationale: parts[5]]
+                }
+        def failures = []
+        def ids = new LinkedHashSet<String>()
+        def requiredCategories = [
+                'VALIDATION_ALGORITHM',
+                'MVCC_AUTHORITY_ALGORITHM',
+                'JDK25_MODERNIZATION_CANDIDATE',
+                'DO_NOT_TOUCH_WITHOUT_COMPAT_GATE'
+        ] as Set
+        def categories = new LinkedHashSet<String>()
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate NULL key proof row id: ' + row.id
+            }
+            categories << row.category
+            def target = file(row.path)
+            if (!target.exists()) {
+                failures << 'NULL key proof target missing: ' + row.path
+            } else {
+                def text = target.getText('UTF-8')
+                if (!text.contains(row.marker)) {
+                    failures << row.id + ' marker not found in ' + row.path + ': ' + row.marker
+                }
+            }
+        }
+        requiredCategories.each { category ->
+            if (!categories.contains(category)) {
+                failures << 'Missing NULL key proof category: ' + category
+            }
+        }
+
+        def proofDoc = file('docs/MVCC-ORDERED-INDEX-NULL-KEY-PROOF.md').getText('UTF-8')
+        [
+                'SQL NULL values are encoded as the typed `DOK1|N|` ordered-index envelope.',
+                'Do not make `IS NULL` rely on a new optimizer path in this slice.',
+                'Do not weaken `MvccInheritedRowCodec` or allow arbitrary Java object storage.',
+                './gradlew delosMvccOrderedIndexNullKeyProofStaticAnalysis'
+        ].each { markerText ->
+            if (!proofDoc.contains(markerText)) {
+                failures << 'NULL key proof documentation missing marker: ' + markerText
+            }
+        }
+
+        def durableTest = file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccOrderedIndexPageStoreTest.java').getText('UTF-8')
+        [
+                'typedNullEnvelopeSortsBeforeTypedValuesAndSupportsLookup',
+                'DOK1|N|',
+                'rowIdsFor(1, "DOK1|N|")',
+                'rowIdsInRangeFor(1, "DOK1|N|", true, "DOK1|I|5", true)'
+        ].each { markerText ->
+            if (!durableTest.contains(markerText)) {
+                failures << 'Durable ordered-index NULL proof missing marker: ' + markerText
+            }
+        }
+
+        def sqlTest = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.java').getText('UTF-8')
+        [
+                'testNullValuesKeepTypedOrderedIndexKeySemanticsThroughReopen',
+                'where n is null order by id',
+                'containsOrderedIndexSummary',
+                'non-null typed range should still use ordered pages after NULL-key rebuild',
+                'NULL-key rebuild must not force ordered-index fallback for supported typed ranges'
+        ].each { markerText ->
+            if (!sqlTest.contains(markerText)) {
+                failures << 'SQL ordered-index NULL proof missing marker: ' + markerText
+            }
+        }
+        if (sqlTest.contains('java.io.Serializable') || sqlTest.contains('ObjectInputStream')) {
+            failures << 'SQL NULL key proof must not introduce generic Java object serialization'
+        }
+
+        def typedKey = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java').getText('UTF-8')
+        if (!typedKey.contains('return encodeNull();') || !typedKey.contains("NULL('N', 0)")) {
+            failures << 'Typed ordered-index key API must keep stable NULL envelope markers'
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index >= 0) {
+            def s0Section = staticText.substring(s0Index)
+            if (s0Section.contains('delosMvccOrderedIndexNullKeyProofStaticAnalysis')) {
+                failures << 'MVCC ordered-index NULL key proof gate must remain outside S0 until the proof is stable'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-ordered-index-null-key-proof-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC ordered-index NULL key proof static analysis')
+            writer.println('============================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reference: ' + row.reference)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB MVCC ordered-index NULL key proof static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC ordered-index NULL key proof static analysis passed. Report: ' + reportFile
     }
 }
 

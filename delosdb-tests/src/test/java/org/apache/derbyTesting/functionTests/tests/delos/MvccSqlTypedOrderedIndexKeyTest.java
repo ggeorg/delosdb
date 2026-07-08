@@ -22,6 +22,7 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
+import java.util.List;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
@@ -162,6 +163,71 @@ public final class MvccSqlTypedOrderedIndexKeyTest extends MvccSqlTestSupport {
             diagnostics.assertConsistentForTesting(0, containerId);
             connection.rollback();
         }
+    }
+
+
+    public void testNullValuesKeepTypedOrderedIndexKeySemanticsThroughReopen() throws Exception {
+        String databaseName = databaseName("mvcc-typed-ordered-index-key-null-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        long containerId;
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table typed_ordered_key_null_t "
+                    + "(id int primary key, n int, label varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into typed_ordered_key_null_t values (1, null, 'null-a')");
+            executeUpdate(connection, "insert into typed_ordered_key_null_t values (2, 2, 'two')");
+            executeUpdate(connection, "insert into typed_ordered_key_null_t values (3, null, 'null-b')");
+            executeUpdate(connection, "insert into typed_ordered_key_null_t values (4, 10, 'ten')");
+            connection.commit();
+
+            containerId = mvccContainerId(connection, "TYPED_ORDERED_KEY_NULL_T");
+            assertTrue("typed NULL ordered-index key should be present in durable summaries",
+                    containsOrderedIndexSummary(
+                            diagnostics.orderedIndexEntrySummariesForTesting(0, containerId),
+                            "col:1|key:|"));
+            diagnostics.assertConsistentForTesting(0, containerId);
+
+            assertRows(connection,
+                    "select id, label from typed_ordered_key_null_t where n is null order by id",
+                    "1|null-a", "3|null-b");
+
+            long lookupBefore = diagnostics.orderedIndexLookupCountForTesting(0, containerId);
+            long fallbackBefore = diagnostics.orderedIndexFallbackCountForTesting(0, containerId);
+            diagnostics.resetCandidateIndexCountersForTesting();
+            diagnostics.resetScanCountersForTesting();
+            assertRows(connection,
+                    "select id, n from typed_ordered_key_null_t where n >= 2 and n <= 10",
+                    "2|2", "4|10");
+            assertTrue("non-null typed range should still use ordered pages after NULL-key rebuild",
+                    diagnostics.orderedIndexLookupCountForTesting(0, containerId) > lookupBefore);
+            assertEquals("NULL-key rebuild must not force ordered-index fallback for supported typed ranges",
+                    fallbackBefore, diagnostics.orderedIndexFallbackCountForTesting(0, containerId));
+            diagnostics.assertConsistentForTesting(0, containerId);
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, label from typed_ordered_key_null_t where n is null order by id",
+                    "1|null-a", "3|null-b");
+            assertTrue("reopened ordered-index summaries should preserve typed NULL key entries",
+                    containsOrderedIndexSummary(
+                            diagnostics.orderedIndexEntrySummariesForTesting(0, containerId),
+                            "col:1|key:|"));
+            diagnostics.assertConsistentForTesting(0, containerId);
+        }
+    }
+
+    private static boolean containsOrderedIndexSummary(List<String> summaries, String token) {
+        for (String summary : summaries) {
+            if (summary.contains(token)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

@@ -43,6 +43,23 @@ final class MvccOrderedIndexPageStoreTest {
         }
     }
 
+
+    @Test
+    void typedNullEnvelopeSortsBeforeTypedValuesAndSupportsLookup() throws Exception {
+        try (MvccOrderedIndexPageStore store = MvccOrderedIndexPageStore.open(tempDir.resolve("ordered-index.pages"))) {
+            store.rewrite(List.of(
+                    new MvccOrderedIndexPageStore.Entry(1, "DOK1|I|5", 3L),
+                    new MvccOrderedIndexPageStore.Entry(1, "DOK1|N|", 1L),
+                    new MvccOrderedIndexPageStore.Entry(1, "DOK1|S|alpha", 2L)));
+
+            assertEquals(List.of(1L), store.rowIdsFor(1, "DOK1|N|"));
+            assertEquals(List.of(1L, 3L),
+                    store.rowIdsInRangeFor(1, "DOK1|N|", true, "DOK1|I|5", true));
+            assertEquals(List.of(3L),
+                    store.rowIdsInRangeFor(1, "DOK1|N|", false, "DOK1|I|5", true));
+        }
+    }
+
     @Test
     void malformedVersionedEnvelopeIsRejectedBeforeRewrite() throws Exception {
         try (MvccOrderedIndexPageStore store = MvccOrderedIndexPageStore.open(tempDir.resolve("ordered-index.pages"))) {

@@ -110,3 +110,16 @@ Calcite is a reference model for explicit traits, metadata, and path explanation
    - Oversized key equality and range restrictions.
    - Overflow-backed attribute materialization.
    - Reopen/backup/vacuum stability.
+
+## NULL key proof checkpoint
+
+`delosdb-mvcc-ordered-index-null-key-proof-overlay.zip` adds the first semantic
+proof after this audit.  The proof keeps `DelosStorageOrderedIndexKey` as the
+bridge boundary, preserves Derby SQL NULL semantics, and verifies that the
+durable ordered-index page store can sort, lookup, and range-scan the typed
+`DOK1|N|` NULL envelope.
+
+The SQL bridge proof deliberately checks that a table containing SQL NULL values
+can commit, reopen, remain consistent, and still use ordered pages for supported
+non-NULL typed range lookups.  It does not make `IS NULL` a new ordered-index
+shortcut and does not change optimizer authority.

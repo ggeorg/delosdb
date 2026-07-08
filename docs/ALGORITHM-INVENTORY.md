@@ -586,3 +586,23 @@ Verification:
 ```bash
 ./gradlew delosOptimizerCostAuthorityAuditStaticAnalysis
 ```
+
+## MVCC ordered-index NULL key proof update
+
+The first semantic proof after the ordered-index key semantics audit is the
+MVCC ordered-index NULL key proof.  It keeps Derby SQL NULL semantics and the
+MVCC durable typed row codec unchanged while proving that typed NULL envelopes
+are durable ordered-index keys.
+
+| Layer | Algorithm | Owner | Classification | Reference model | Proof gate |
+|---|---|---|---|---|---|
+| MVCC durable ordered-index page store | Typed NULL key equality/range lookup | DelosDB MVCC | VALIDATION_ALGORITHM | MapDB typed serializers; PostgreSQL NULL-index semantics | `MvccOrderedIndexPageStoreTest#typedNullEnvelopeSortsBeforeTypedValuesAndSupportsLookup` |
+| Derby SQL to MVCC bridge | SQL NULL commit/reopen/query with typed ordered-index summaries | DelosDB bridge over Derby semantics | MVCC_AUTHORITY_ALGORITHM | Derby SQL NULL semantics | `MvccSqlTypedOrderedIndexKeyTest#testNullValuesKeepTypedOrderedIndexKeySemanticsThroughReopen` |
+| Storage API typed key boundary | `DOK1|N|` NULL envelope | DelosDB storage API | JDK25_MODERNIZATION_CANDIDATE | Typed codec boundary, no generic Java serialization | `delosMvccOrderedIndexNullKeyProofStaticAnalysis` |
+
+Rules for this proof:
+
+* Do not make `IS NULL` depend on a new optimizer shortcut in this slice.
+* Do not change Derby NULL comparison semantics.
+* Do not resurrect candidate indexes as SQL authority.
+* Do not weaken `MvccInheritedRowCodec` or allow arbitrary Java object storage.
