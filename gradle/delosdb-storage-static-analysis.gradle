@@ -8578,6 +8578,171 @@ tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
 }
 
 
+
+def delosLoadOptimizerCostAuthorityRows = {
+    def manifest = file('gradle/static-analysis/delosdb-optimizer-cost-authority.txt')
+    manifest.readLines('UTF-8')
+            .findAll { line -> line.trim() && !line.startsWith('#') }
+            .collect { line ->
+                def parts = line.split('\\|', -1)
+                if (parts.length != 5) {
+                    throw new GradleException('Invalid optimizer cost authority manifest row: ' + line)
+                }
+                [id: parts[0], category: parts[1], path: parts[2], marker: parts[3], authority: parts[4]]
+            }
+}
+
+tasks.register('delosOptimizerCostAuthorityAuditStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the DelosDB optimizer cost authority audit and Derby optimizer guardrails.'
+    doLast {
+        def rows = delosLoadOptimizerCostAuthorityRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        if (rows.size() < 18) {
+            failures << 'Optimizer cost authority manifest must contain at least 18 rows; found ' + rows.size()
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate optimizer cost authority manifest id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Optimizer cost authority proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Optimizer cost authority marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.authority.length() < 90) {
+                failures << 'Optimizer cost authority explanation is too thin for ' + row.id
+            }
+        }
+
+        [
+                'DOCUMENTATION',
+                'NO_PARALLEL_OPTIMIZER',
+                'DERBY_OPTIMIZER_AUTHORITY',
+                'STORE_COST_CONTROLLER_SEAM',
+                'MVCC_STATISTICS_HINT',
+                'EXPLICIT_OPT_IN',
+                'DIAGNOSTIC_ONLY',
+                'LEGACY_INDEX_PROVIDER_DIAGNOSTIC',
+                'ANALYZE_STATISTICS_LIFECYCLE',
+                'ALGORITHM_INVENTORY_LINK',
+                'STATIC_GATE'
+        ].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'Optimizer cost authority manifest missing category: ' + category
+            }
+        }
+
+        def docText = file('docs/OPTIMIZER-COST-AUTHORITY.md').getText('UTF-8')
+        [
+                'Derby optimizer remains the authority.',
+                'Do not replace Derby optimizer.',
+                'Do not create a parallel MVCC optimizer statistics channel.',
+                'Do not add Calcite as a DelosDB optimizer dependency.',
+                'Do not make MVCC storage statistics a hidden default plan-choice source.',
+                'Do not consume provider cost without a safe Derby baseline.',
+                'Keep IndexProvider cost diagnostics diagnostic-only.',
+                'No optimizer behavior change in this audit.',
+                './gradlew delosOptimizerCostAuthorityAuditStaticAnalysis'
+        ].each { markerText ->
+            if (!docText.contains(markerText)) {
+                failures << 'Optimizer cost authority documentation missing marker: ' + markerText
+            }
+        }
+
+        def inventoryText = file('docs/ALGORITHM-INVENTORY.md').getText('UTF-8')
+        [
+                'Optimizer cost authority audit update',
+                'Derby optimizer remains the authority.',
+                'Do not replace Derby optimizer.',
+                'StoreCostController',
+                'DelosMvccOptimizerCostDiagnostics',
+                './gradlew delosOptimizerCostAuthorityAuditStaticAnalysis'
+        ].each { markerText ->
+            if (!inventoryText.contains(markerText)) {
+                failures << 'Algorithm inventory missing optimizer cost authority marker: ' + markerText
+            }
+        }
+
+        def mvccCostText = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java').getText('UTF-8')
+        [
+                'DelosMvccOptimizerCostDiagnostics.enabled()',
+                'storageStatisticsSnapshot()',
+                'DelosStorageCostEstimate.fromStatisticsForOptimizerCosting',
+                'rather than through a parallel optimizer statistics channel'
+        ].each { markerText ->
+            if (!mvccCostText.contains(markerText)) {
+                failures << 'MVCC StoreCostController missing authority marker: ' + markerText
+            }
+        }
+
+        def costModeText = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/CostModelMode.java').getText('UTF-8')
+        if (!costModeText.contains('OFF(false, false)') || !costModeText.contains('DIAGNOSTIC(true, false)')) {
+            failures << 'CostModelMode must preserve OFF and DIAGNOSTIC non-consuming modes'
+        }
+        if (!costModeText.contains('The default is Derby-compatible.')) {
+            failures << 'CostModelMode must document Derby-compatible default authority'
+        }
+
+        def indexModeText = file('delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/index/IndexProviderCostMode.java').getText('UTF-8')
+        if (!indexModeText.contains('ENABLED(true, false)')
+                || !indexModeText.contains("without replacing")) {
+            failures << 'Legacy IndexProvider cost mode must remain diagnostic-only even for enabled spelling'
+        }
+
+        def analyzeText = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java').getText('UTF-8')
+        if (!analyzeText.contains('optimizerAuthority=derby')) {
+            failures << 'MVCC analyze/statistics lifecycle must keep optimizerAuthority=derby marker'
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index >= 0) {
+            def s0Section = staticText.substring(s0Index)
+            if (s0Section.contains('delosOptimizerCostAuthorityAuditStaticAnalysis')) {
+                failures << 'Optimizer cost authority audit gate must remain outside S0 until the audit is proven stable'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/optimizer-cost-authority-audit-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB optimizer cost authority audit static analysis')
+            writer.println('============================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  authority: ' + row.authority)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB optimizer cost authority audit static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB optimizer cost authority audit static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'

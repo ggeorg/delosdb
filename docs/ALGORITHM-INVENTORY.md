@@ -533,3 +533,56 @@ Verification:
 ```bash
 ./gradlew delosJfrStorageLifecycleEventsStaticAnalysis
 ```
+
+## Optimizer cost authority audit update
+
+DelosDB now has an explicit optimizer/cost authority audit. The audit records
+which cost inputs are Derby authority, which are DelosDB diagnostic-only, and
+which are explicit opt-in storage hints through the inherited Derby
+`StoreCostController` seam.
+
+Classification:
+
+```text
+DERBY_COMPATIBILITY_ALGORITHM
+DELOSDB_OWNED_ALGORITHM
+DIAGNOSTIC_ONLY_ALGORITHM
+VALIDATION_ALGORITHM
+REFERENCE_MODEL_ONLY
+DO_NOT_TOUCH_WITHOUT_COMPAT_GATE
+```
+
+Current authority rule:
+
+```text
+Derby optimizer remains the authority.
+Do not replace Derby optimizer.
+Do not create a parallel MVCC optimizer statistics channel.
+```
+
+Current DelosDB seams:
+
+* `StoreCostController` and `StoreCostControllerWrapper`
+* `MvccStoreCostController`
+* `DelosMvccOptimizerCostDiagnostics`
+* `DelosStorageCostIntegration`
+* `CostModelProvider` and `StoreCostControllerBridge`
+* legacy `IndexProviderCostMode` diagnostics
+* `optimizerAuthority=derby` analyze/statistics lifecycle marker
+
+Reference models:
+
+```text
+Calcite metadata/rules/cost explanation
+HerdDB planner/storage bridge and table statistics
+PostgreSQL statistics and access-path costing discipline
+InnoDB handler/buffer/storage cost boundaries
+H2 compact Java store statistics and tooling
+JDK 25 JFR/JMH/JClassFile verification lanes
+```
+
+Verification:
+
+```bash
+./gradlew delosOptimizerCostAuthorityAuditStaticAnalysis
+```
