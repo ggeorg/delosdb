@@ -6331,6 +6331,347 @@ tasks.register('delosHeapRawStoreBoundaryCleanupPhase3StaticAnalysis') {
     }
 }
 
+
+def delosAlgorithmInventoryFile = file('gradle/static-analysis/delosdb-algorithm-inventory.txt')
+
+def delosLoadAlgorithmInventoryRows = {
+    if (!delosAlgorithmInventoryFile.exists()) {
+        throw new GradleException('Missing DelosDB algorithm inventory manifest: ' + delosAlgorithmInventoryFile)
+    }
+    def rows = []
+    delosAlgorithmInventoryFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed DelosDB algorithm inventory line ' + (index + 1) + ': expected 6 pipe-delimited fields')
+        }
+        rows << [id: parts[0], layer: parts[1], path: parts[2], category: parts[3], marker: parts[4], reason: parts[5]]
+    }
+    rows
+}
+
+tasks.register('delosAlgorithmInventoryStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the DelosDB algorithm inventory and reference-model classifications.'
+
+    inputs.file(delosAlgorithmInventoryFile)
+    inputs.file('docs/ALGORITHM-INVENTORY.md')
+    inputs.file('gradle/delosdb-storage-static-analysis.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/algorithm-inventory-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadAlgorithmInventoryRows()
+        def failures = []
+        def ids = [] as Set
+        def layers = [] as Set
+        def categories = [] as Set
+
+        if (rows.size() < 20) {
+            failures << 'Algorithm inventory must cover at least 20 algorithm rows; found ' + rows.size()
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate algorithm inventory id: ' + row.id
+            }
+            layers.add(row.layer)
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Algorithm inventory proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Algorithm inventory marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 70) {
+                failures << 'Algorithm inventory reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'DERBY_COMPATIBILITY_ALGORITHM',
+                'DELOSDB_OWNED_ALGORITHM',
+                'MVCC_AUTHORITY_ALGORITHM',
+                'HEAP_COMPATIBILITY_BOUNDARY',
+                'SHARED_SERVICE_ALGORITHM',
+                'DIAGNOSTIC_ONLY_ALGORITHM',
+                'VALIDATION_ALGORITHM',
+                'JDK25_MODERNIZATION_CANDIDATE',
+                'REFERENCE_MODEL_ONLY',
+                'DO_NOT_TOUCH_WITHOUT_COMPAT_GATE'
+        ].each { requiredCategory ->
+            if (!categories.contains(requiredCategory)) {
+                failures << 'Algorithm inventory missing classification category: ' + requiredCategory
+            }
+        }
+
+        [
+                'SQL_CODEGEN',
+                'OPTIMIZER_COSTING',
+                'PREDICATE_PUSHDOWN',
+                'STORAGE_DISPATCH',
+                'HEAP_COMPATIBILITY',
+                'MVCC_VISIBILITY',
+                'MVCC_INDEX_MAINTENANCE',
+                'MVCC_ORDERED_INDEX',
+                'FREE_SPACE_MAP',
+                'VISIBILITY_MAP',
+                'PAGE_CODECS',
+                'OVERFLOW_STORAGE',
+                'BUFFER_REPLACEMENT',
+                'PURGE_VACUUM',
+                'CHECKPOINT_RECOVERY',
+                'BACKUP_RESTORE',
+                'DRDA_RUNTIME',
+                'EXTERNAL_VALIDATION',
+                'SHARED_STATISTICS',
+                'DIAGNOSTICS',
+                'JDK25_PAGE_IO',
+                'RAW_LOG_BOUNDARY',
+                'REFERENCE_MODELS'
+        ].each { requiredLayer ->
+            if (!layers.contains(requiredLayer)) {
+                failures << 'Algorithm inventory missing layer: ' + requiredLayer
+            }
+        }
+
+        def docsText = file('docs/ALGORITHM-INVENTORY.md').getText('UTF-8')
+        [
+                'H2 reference model',
+                'PostgreSQL reference model',
+                'MariaDB / InnoDB reference model',
+                'Calcite reference model',
+                'HerdDB reference model',
+                'MapDB reference model',
+                'JDK 25 reference model',
+                'SQL/codegen',
+                'Optimizer/costing',
+                'Storage dispatch',
+                'MVCC visibility',
+                'MVCC index maintenance',
+                'Page codecs',
+                'Buffer replacement',
+                'Checkpoint/recovery',
+                'DRDA/runtime concurrency',
+                'External validation',
+                'Do not create a second SQL optimizer beside Derby',
+                'Do not add Calcite, HerdDB, or MapDB as runtime dependencies in this phase'
+        ].each { markerText ->
+            if (!docsText.contains(markerText)) {
+                failures << 'Algorithm inventory documentation missing marker: ' + markerText
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Section = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+        if (s0Section.contains('delosAlgorithmInventoryStaticAnalysis')) {
+            failures << 'Algorithm inventory gate must remain outside S0 because it is a roadmap/prose review gate'
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/algorithm-inventory-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB algorithm inventory static analysis')
+            writer.println('============================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Layers: ' + layers.sort().join(', '))
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.layer + ' / ' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB algorithm inventory static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB algorithm inventory static analysis passed. Report: ' + reportFile
+    }
+}
+
+
+def delosStorageAccessDecisionManifestFile = file('gradle/static-analysis/delosdb-storage-access-decisions.txt')
+
+def delosLoadStorageAccessDecisionRows = {
+    if (!delosStorageAccessDecisionManifestFile.exists()) {
+        throw new GradleException('Missing DelosDB storage access decision manifest: ' + delosStorageAccessDecisionManifestFile)
+    }
+    def rows = []
+    delosStorageAccessDecisionManifestFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed storage access decision line ' + (index + 1) + ': expected 6 pipe-delimited fields')
+        }
+        rows << [id: parts[0], decision: parts[1], path: parts[2], category: parts[3], marker: parts[4], reason: parts[5]]
+    }
+    rows
+}
+
+tasks.register('delosStorageAccessDecisionAuditStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the DelosDB storage access decision audit and typed decision vocabulary.'
+
+    inputs.file(delosStorageAccessDecisionManifestFile)
+    inputs.file('docs/STORAGE-ACCESS-DECISIONS.md')
+    inputs.file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageAccessDecisionKind.java')
+    inputs.file('gradle/delosdb-storage-static-analysis.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/storage-access-decision-audit-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadStorageAccessDecisionRows()
+        def failures = []
+        def ids = [] as Set
+        def decisions = [] as Set
+        def categories = [] as Set
+
+        def requiredDecisions = [
+                'FULL_HEAP_SCAN',
+                'HEAP_INDEX_SCAN',
+                'MVCC_FULL_SCAN',
+                'MVCC_ORDERED_EQUALITY_LOOKUP',
+                'MVCC_ORDERED_RANGE_SCAN',
+                'MVCC_ROW_ID_LOOKUP',
+                'MVCC_VISIBILITY_FILTERED_INDEX_LOOKUP',
+                'DIAGNOSTIC_CANDIDATE_PARITY_SCAN',
+                'EXPLICIT_COMPATIBILITY_FALLBACK',
+                'TEST_ONLY_PATH'
+        ]
+
+        if (rows.size() < requiredDecisions.size()) {
+            failures << 'Storage access decision audit must cover at least ' + requiredDecisions.size() + ' rows; found ' + rows.size()
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate storage access decision id: ' + row.id
+            }
+            decisions.add(row.decision)
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Storage access decision proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Storage access decision marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 85) {
+                failures << 'Storage access decision reason is too thin for ' + row.id
+            }
+        }
+
+        requiredDecisions.each { decision ->
+            if (!decisions.contains(decision)) {
+                failures << 'Storage access decision manifest missing decision: ' + decision
+            }
+        }
+
+        [
+                'DERBY_COMPATIBILITY_ANCHOR',
+                'MVCC_AUTHORITY_PATH',
+                'MVCC_SHORTCUT_PATH',
+                'DIAGNOSTIC_ONLY_PATH',
+                'FALLBACK_CLASSIFICATION',
+                'TEST_DIAGNOSTIC_PATH'
+        ].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'Storage access decision manifest missing category: ' + category
+            }
+        }
+
+        def decisionEnum = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageAccessDecisionKind.java').getText('UTF-8')
+        if (!decisionEnum.contains('diagnostic vocabulary only')) {
+            failures << 'DelosStorageAccessDecisionKind must remain explicitly diagnostic vocabulary in this audit slice'
+        }
+        requiredDecisions.each { decision ->
+            if (!decisionEnum.contains(decision)) {
+                failures << 'DelosStorageAccessDecisionKind missing enum constant: ' + decision
+            }
+        }
+        if (decisionEnum.contains('Calcite') || decisionEnum.contains('HerdDB') || decisionEnum.contains('MapDB')) {
+            failures << 'Typed access-decision vocabulary must not create source-level dependency language on reference frameworks'
+        }
+
+        def docsText = file('docs/STORAGE-ACCESS-DECISIONS.md').getText('UTF-8')
+        [
+                'This document defines the first shared vocabulary',
+                'It is an audit artifact, not a behavior change',
+                'Do not replace Derby\'s optimizer',
+                'FULL_HEAP_SCAN',
+                'HEAP_INDEX_SCAN',
+                'MVCC_FULL_SCAN',
+                'MVCC_ORDERED_EQUALITY_LOOKUP',
+                'MVCC_ORDERED_RANGE_SCAN',
+                'MVCC_ROW_ID_LOOKUP',
+                'MVCC_VISIBILITY_FILTERED_INDEX_LOOKUP',
+                'DIAGNOSTIC_CANDIDATE_PARITY_SCAN',
+                'EXPLICIT_COMPATIBILITY_FALLBACK',
+                'TEST_ONLY_PATH',
+                'Candidate indexes are retained for diagnostics and parity checks, not as normal SQL read authority',
+                'This audit does not import any of those frameworks'
+        ].each { markerText ->
+            if (!docsText.contains(markerText)) {
+                failures << 'Storage access decision documentation missing marker: ' + markerText
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Section = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+        if (s0Section.contains('delosStorageAccessDecisionAuditStaticAnalysis')) {
+            failures << 'Storage access decision audit gate must remain outside S0 until it becomes a stable behavior gate'
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/storage-access-decision-audit-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB storage access decision audit static analysis')
+            writer.println('=======================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Decisions: ' + decisions.sort().join(', '))
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.decision + ' / ' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB storage access decision audit static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB storage access decision audit static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
