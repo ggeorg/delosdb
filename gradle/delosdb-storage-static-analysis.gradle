@@ -5739,8 +5739,17 @@ def delosRunExternalValidationCommand = { String propertyName, String displayNam
         throw new GradleException(displayName + ' requires -P' + propertyName
                 + '="<command>"; this external validation task is intentionally not an S0 dependency.')
     }
+    def commandText = configured.trim()
     exec {
-        commandLine configured.trim().split(/\s+/) as List
+        // R6 external validation executes caller-supplied shell commands so
+        // tool-specific quoting, classpaths, JDBC URLs, and JVM options remain
+        // under the CI/release job that opted into the external tool.
+        def osName = System.getProperty('os.name', '').toLowerCase(java.util.Locale.ROOT)
+        if (osName.contains('windows')) {
+            commandLine 'cmd', '/c', commandText
+        } else {
+            commandLine 'sh', '-c', commandText
+        }
     }
 }
 
@@ -5920,6 +5929,246 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
             throw new GradleException('Performance/concurrency validation static analysis failed. Report: ' + reportFile)
         }
         println 'DelosDB performance/concurrency validation static analysis passed. Report: ' + reportFile
+    }
+}
+
+
+
+def delosExternalValidationToolingFile = file('gradle/static-analysis/delosdb-external-validation-tooling.txt')
+
+def delosExternalValidationSpecs = [
+        [id: 'R6-JMH', taskName: 'delosJmhMicrobenchmarks', propertyName: 'delosdb.jmh.command',
+         category: 'microbenchmark', builtInTask: ':delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation',
+         reason: 'Focused JMH runs must wrap the existing deterministic MVCC microbenchmark validation instead of replacing the correctness proof.'],
+        [id: 'R6-JCSTRESS', taskName: 'delosJcstressConcurrencyValidation', propertyName: 'delosdb.jcstress.command',
+         category: 'concurrency', builtInTask: ':delosdb-storage-mvcc:runDelosMvccConcurrencyValidation',
+         reason: 'Jcstress-style checks must remain opt-in because JMM stress runs are long-running and environment-sensitive.'],
+        [id: 'R6-TWO-SIDED', taskName: 'delosTwoSidedMvccWorkloadBenchmark', propertyName: 'delosdb.twoSided.command',
+         category: 'workload', builtInTask: ':delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation',
+         reason: 'Two-sided read/write workload validation must be externally configurable while keeping the built-in no-dependency baseline available.'],
+        [id: 'R6-LONG-READER', taskName: 'delosLongReaderVacuumSoak', propertyName: 'delosdb.longReaderSoak.command',
+         category: 'soak', builtInTask: ':delosdb-storage-mvcc:runDelosMvccLongReaderValidation',
+         reason: 'Long-reader versus vacuum/buffer-pressure soaks must be explicit because they are intentionally slower than S0 and module checks.'],
+        [id: 'R6-SQLANCER', taskName: 'delosSqlancerMvccValidation', propertyName: 'delosdb.sqlancer.command',
+         category: 'sqlancer', builtInTask: 'none',
+         reason: 'SQLancer-compatible validation is an external JDBC/SQL generator path and must never become a hidden normal build dependency.']
+]
+
+def delosExternalValidationConfiguredCommand = { Map spec ->
+    def configured = providers.gradleProperty(spec.propertyName).orNull
+    if (configured == null) {
+        return null
+    }
+    def trimmed = configured.trim()
+    trimmed.isEmpty() ? null : trimmed
+}
+
+tasks.register('delosExternalMvccValidationPlan') {
+    group = 'verification'
+    description = 'Writes the R6 MVCC external-validation plan and the currently configured opt-in tool commands.'
+
+    inputs.file(delosExternalValidationToolingFile)
+    delosExternalValidationSpecs.each { spec ->
+        inputs.property(spec.propertyName, providers.gradleProperty(spec.propertyName).orElse(''))
+    }
+    inputs.property('delosdb.external.validation.required', providers.gradleProperty('delosdb.external.validation.required').orElse('false'))
+    outputs.file(layout.buildDirectory.file('reports/delosdb/external-mvcc-validation-plan.txt'))
+
+    doLast {
+        def reportFile = layout.buildDirectory.file('reports/delosdb/external-mvcc-validation-plan.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        def configuredSpecs = delosExternalValidationSpecs.findAll { spec ->
+            delosExternalValidationConfiguredCommand(spec) != null
+        }
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB R6 external MVCC validation plan')
+            writer.println('==========================================')
+            writer.println()
+            writer.println('Configured external tools: ' + configuredSpecs.size() + ' of ' + delosExternalValidationSpecs.size())
+            writer.println('Required mode: ' + providers.gradleProperty('delosdb.external.validation.required').orElse('false').get())
+            writer.println()
+            delosExternalValidationSpecs.each { spec ->
+                def configured = delosExternalValidationConfiguredCommand(spec)
+                writer.println(spec.id + ' [' + spec.category + ']')
+                writer.println('  root task: ' + spec.taskName)
+                writer.println('  command property: -P' + spec.propertyName + '="<command>"')
+                writer.println('  built-in baseline: ' + spec.builtInTask)
+                writer.println('  status: ' + (configured == null ? 'not configured' : 'configured'))
+                if (configured != null) {
+                    writer.println('  command: ' + configured)
+                }
+                writer.println('  reason: ' + spec.reason)
+                writer.println()
+            }
+            writer.println('Aggregate task: delosExternalMvccValidation')
+            writer.println('S0 boundary: external validation remains opt-in and is not wired into s0CloseoutVerification.')
+        }
+        println 'DelosDB external MVCC validation plan written: ' + reportFile
+    }
+}
+
+tasks.register('delosExternalMvccValidation') {
+    group = 'verification'
+    description = 'Runs the configured R6 external MVCC validation tools; unconfigured tools are reported but skipped.'
+    dependsOn 'delosExternalMvccValidationPlan'
+    dependsOn {
+        delosExternalValidationSpecs.findAll { spec ->
+            delosExternalValidationConfiguredCommand(spec) != null
+        }.collect { spec ->
+            spec.taskName
+        }
+    }
+    doFirst {
+        def configuredSpecs = delosExternalValidationSpecs.findAll { spec ->
+            delosExternalValidationConfiguredCommand(spec) != null
+        }
+        def required = providers.gradleProperty('delosdb.external.validation.required').orElse('false').get().toBoolean()
+        if (configuredSpecs.isEmpty()) {
+            if (required) {
+                throw new GradleException('delosExternalMvccValidation requires at least one configured external command when -Pdelosdb.external.validation.required=true')
+            }
+            logger.lifecycle('No R6 external MVCC validation commands configured; wrote the plan report only.')
+        } else {
+            logger.lifecycle('Running configured R6 external MVCC validation tasks: ' + configuredSpecs.collect { it.taskName }.join(', '))
+        }
+    }
+}
+
+def delosLoadExternalValidationToolingRows = {
+    if (!delosExternalValidationToolingFile.exists()) {
+        throw new GradleException('Missing external validation tooling file: ' + delosExternalValidationToolingFile)
+    }
+    def rows = []
+    delosExternalValidationToolingFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        String trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = trimmed.split(/\|/, 5)
+        if (parts.length != 5) {
+            throw new GradleException('Malformed external validation tooling row at line ' + (index + 1) + ': ' + line)
+        }
+        rows << [id: parts[0], category: parts[1], path: parts[2], marker: parts[3], reason: parts[4], lineNumber: index + 1]
+    }
+    rows
+}
+
+tasks.register('delosExternalValidationToolingStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates R6 external MVCC validation tooling and keeps it outside S0.'
+
+    inputs.file(delosExternalValidationToolingFile)
+    inputs.file('gradle/delosdb-storage-static-analysis.gradle')
+    inputs.file('docs/EXTERNAL-VALIDATION.md')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/external-validation-tooling-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadExternalValidationToolingRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+        def requiredCategories = [
+                'TASK_SLOT',
+                'AGGREGATE_TASK',
+                'PLAN_REPORT',
+                'COMMAND_PROPERTY',
+                'CI_OPT_IN',
+                'S0_BOUNDARY',
+                'DOCUMENTATION'
+        ] as Set
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate R6 external validation id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'R6 external validation proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'R6 external validation marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 70) {
+                failures << 'R6 external validation reason is too thin for ' + row.id
+            }
+        }
+        requiredCategories.each { requiredCategory ->
+            if (!categories.contains(requiredCategory)) {
+                failures << 'R6 external validation manifest missing category: ' + requiredCategory
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        [
+                'tasks.register(\'delosExternalMvccValidationPlan\')',
+                'tasks.register(\'delosExternalMvccValidation\')',
+                'delosExternalValidationSpecs',
+                'delosdb.external.validation.required',
+                'delosdb.jmh.command',
+                'delosdb.jcstress.command',
+                'delosdb.sqlancer.command',
+                'delosdb.twoSided.command',
+                'delosdb.longReaderSoak.command'
+        ].each { markerText ->
+            if (!staticText.contains(markerText)) {
+                failures << 'R6 external validation tooling is missing marker: ' + markerText
+            }
+        }
+
+        def s0Text = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+        [
+                'delosExternalMvccValidation',
+                'delosExternalMvccValidationPlan',
+                'delosJmhMicrobenchmarks',
+                'delosJcstressConcurrencyValidation',
+                'delosSqlancerMvccValidation',
+                'delosTwoSidedMvccWorkloadBenchmark',
+                'delosLongReaderVacuumSoak'
+        ].each { taskName ->
+            if (s0Text.contains(taskName)) {
+                failures << 'R6 external validation task must not be wired into S0: ' + taskName
+            }
+        }
+
+        def docsText = file('docs/EXTERNAL-VALIDATION.md').getText('UTF-8')
+        delosExternalValidationSpecs.each { spec ->
+            if (!docsText.contains(spec.propertyName)) {
+                failures << 'R6 external validation docs missing property: ' + spec.propertyName
+            }
+            if (!docsText.contains(spec.taskName)) {
+                failures << 'R6 external validation docs missing task: ' + spec.taskName
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/external-validation-tooling-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB R6 external validation tooling static analysis')
+            writer.println('=======================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('External validation tooling static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB external validation tooling static analysis passed. Report: ' + reportFile
     }
 }
 
