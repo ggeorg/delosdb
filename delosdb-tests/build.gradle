@@ -699,6 +699,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlStoragePathDiagnosticsRuntimeTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccOrderedIndexCompositeRangeProofTest',
+        'Runs the MVCC ordered-index composite/range predicate proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexCompositeRangeProofTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccSqlIntegrationTest',
         'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.',
         [
@@ -766,6 +771,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexRangeScanTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexAuthorityCheckpointTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexCompositeRangeProofTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlStoragePathDiagnosticsRuntimeTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlCandidateIndexQuarantineTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlCandidateIndexAuthorityRemovalTest.class',
@@ -797,6 +803,7 @@ registerDelosFocusedTest(
 [
         'runDelosMvccAnalyzeStatisticsLifecycleTest',
         'runDelosMvccStoragePathDiagnosticsRuntimeTest',
+        'runDelosMvccOrderedIndexCompositeRangeProofTest',
         'runDelosMvccSqlIntegrationTest',
         'runDelosMvccDrdaNetworkClientTest',
         'runDelosMvccDrdaConcurrentNetworkClientTest'

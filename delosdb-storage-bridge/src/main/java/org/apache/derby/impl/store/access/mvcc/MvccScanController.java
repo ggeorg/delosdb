@@ -477,9 +477,15 @@ public final class MvccScanController implements ScanManager {
         Optional<List<Long>> indexedRowIds = state.orderedIndexRowIdsFor(indexQualifiers);
         if (indexedRowIds.isEmpty()) {
             if (MvccConglomerateState.hasIndexQualifiers(indexQualifiers)) {
+                DelosStorageAccessDecisionKind rejectedKind = rejectedOrderedIndexDecisionKind(indexQualifiers);
+                recordRejectedStoragePath(
+                        rejectedKind,
+                        "ordered MVCC index could not derive a single supported typed key",
+                        List.of("fallbackReason=" + DelosStorageOrderedIndexFallbackReason.UNSUPPORTED_KEY_OR_TYPE));
                 recordStoragePathFallback(
                         "ordered MVCC index could not derive a supported typed key; full scan remains authority",
-                        List.of("fallbackReason=" + DelosStorageOrderedIndexFallbackReason.UNSUPPORTED_KEY_OR_TYPE));
+                        List.of("fallbackReason=" + DelosStorageOrderedIndexFallbackReason.UNSUPPORTED_KEY_OR_TYPE,
+                                "rejectedStoragePath=" + rejectedKind));
             }
             orderedIndexRowIdScan = false;
             orderedIndexRowIds = null;
@@ -507,6 +513,13 @@ public final class MvccScanController implements ScanManager {
     }
 
     private DelosStorageAccessDecisionKind orderedIndexDecisionKind(Qualifier[][] indexQualifiers) {
+        if (containsEqualityQualifier(indexQualifiers)) {
+            return DelosStorageAccessDecisionKind.MVCC_ORDERED_EQUALITY_LOOKUP;
+        }
+        return DelosStorageAccessDecisionKind.MVCC_ORDERED_RANGE_SCAN;
+    }
+
+    private DelosStorageAccessDecisionKind rejectedOrderedIndexDecisionKind(Qualifier[][] indexQualifiers) {
         if (containsEqualityQualifier(indexQualifiers)) {
             return DelosStorageAccessDecisionKind.MVCC_ORDERED_EQUALITY_LOOKUP;
         }
@@ -548,6 +561,21 @@ public final class MvccScanController implements ScanManager {
                         storagePathReadMode(),
                         shortcutSafe,
                         rowIdCount,
+                        details));
+    }
+
+    private void recordRejectedStoragePath(
+            DelosStorageAccessDecisionKind decisionKind,
+            String reason,
+            List<String> details) {
+        MvccBridgeDiagnosticsSupport.recordStoragePathDiagnostic(
+                DelosStoragePathDiagnostic.rejected(
+                        decisionKind,
+                        "delos_mvcc",
+                        Math.toIntExact(state.key().getSegmentId()),
+                        state.key().getContainerId(),
+                        reason,
+                        storagePathReadMode(),
                         details));
     }
 

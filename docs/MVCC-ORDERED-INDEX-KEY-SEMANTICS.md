@@ -31,9 +31,9 @@ Classification: `KNOWN_SEMANTIC_GAP` until focused SQL NULL ordered-index tests 
 
 The current ordered-index sidecar stores entries by `column + typed key + row id`. That is enough for current single-column equality/range shortcut proofs, but it is not yet a physical composite-key envelope.
 
-Composite Derby index semantics need an explicit tuple-key codec before DelosDB claims composite ordered-index authority.
+Composite Derby index semantics need an explicit tuple-key codec before DelosDB claims composite ordered-index authority. The runtime composite/range proof now verifies the safe interim rule: DelosDB may use one safe single-column equality narrowing and then apply Derby qualifier filtering to residual predicates, but a multi-column range that cannot be represented as one ordered key must record `MVCC_ORDERED_RANGE_SCAN` as `REJECTED` and use explicit compatibility fallback/full-scan authority.
 
-Classification: `KNOWN_SEMANTIC_GAP`.
+Classification: `KNOWN_SEMANTIC_GAP` for true composite tuple-key authority; `VALIDATION_ALGORITHM` for safe single-column narrowing plus residual qualifier filtering.
 
 ### duplicate keys
 
@@ -97,9 +97,9 @@ Calcite is a reference model for explicit traits, metadata, and path explanation
    - Candidate diagnostic parity remains quarantined.
 
 2. `delosdb-mvcc-ordered-index-composite-range-proof-overlay.zip`
-   - Composite tuple-key envelope design.
-   - Equality and range determinism.
-   - Visibility filtering remains correct.
+   - Safe single-column narrowing for composite predicates.
+   - Explicit rejection/fallback for unsupported multi-column range predicates.
+   - Derby qualifier filtering remains the residual predicate authority.
 
 3. `delosdb-mvcc-ordered-index-collation-direction-audit-overlay.zip`
    - Collation-sensitive text comparison.
@@ -110,16 +110,3 @@ Calcite is a reference model for explicit traits, metadata, and path explanation
    - Oversized key equality and range restrictions.
    - Overflow-backed attribute materialization.
    - Reopen/backup/vacuum stability.
-
-## NULL key proof checkpoint
-
-`delosdb-mvcc-ordered-index-null-key-proof-overlay.zip` adds the first semantic
-proof after this audit.  The proof keeps `DelosStorageOrderedIndexKey` as the
-bridge boundary, preserves Derby SQL NULL semantics, and verifies that the
-durable ordered-index page store can sort, lookup, and range-scan the typed
-`DOK1|N|` NULL envelope.
-
-The SQL bridge proof deliberately checks that a table containing SQL NULL values
-can commit, reopen, remain consistent, and still use ordered pages for supported
-non-NULL typed range lookups.  It does not make `IS NULL` a new ordered-index
-shortcut and does not change optimizer authority.

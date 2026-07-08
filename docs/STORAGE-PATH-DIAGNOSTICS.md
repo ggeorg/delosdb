@@ -118,3 +118,20 @@ visibility rules.  It does not resurrect candidate indexes as SQL read authority
 Derby optimizer authority remains unchanged, candidate-index paths remain
 diagnostic/parity only, and MVCC ordered-index shortcuts still obey visibility
 and snapshot safety.
+
+## Composite/range predicate proof checkpoint
+
+Runtime diagnostics now distinguish two important ordered-index cases without changing
+execution semantics:
+
+* composite predicates with a safe single-column equality key may record
+  `MVCC_ORDERED_EQUALITY_LOOKUP` and still rely on Derby qualifier filtering for
+  residual predicates on other columns;
+* multi-column range predicates that cannot be represented as one current
+  single-column ordered key record `MVCC_ORDERED_RANGE_SCAN` as `REJECTED`, then
+  record `EXPLICIT_COMPATIBILITY_FALLBACK` while the full scan remains authority.
+
+This is not a composite-index implementation. It is a runtime proof that DelosDB
+will not silently pretend a single-column ordered sidecar is a composite ordered
+index. Composite tuple-key authority still requires a separate key codec,
+compatibility gate, and visibility proof.
