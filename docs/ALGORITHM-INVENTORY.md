@@ -446,3 +446,56 @@ Algorithmic goal:
 * This inventory does not add external dependencies.
 * This inventory does not change Java production code.
 * Future overlays should update this file when they promote an algorithm from audit to implementation.
+
+## JDK 25 Class-File API verifier update
+
+The algorithm inventory now includes a JDK 25 bytecode verification lane.
+
+Classification:
+
+```text
+JDK25_MODERNIZATION_CANDIDATE
+VALIDATION_ALGORITHM
+DIAGNOSTIC_ONLY_ALGORITHM
+```
+
+Current owner:
+
+```text
+DelosDB build tooling
+```
+
+Reference model:
+
+```text
+JDK 25 java.lang.classfile.ClassFile
+```
+
+Current rule:
+
+```text
+ASM remains the production generator.
+The Class-File API is used as a verifier around compiled runtime class files.
+```
+
+Verification task:
+
+```text
+./gradlew delosJdk25ClassFileBytecodeVerifier
+```
+
+Static audit task:
+
+```text
+./gradlew delosJdk25ClassFileBytecodeVerifierStaticAnalysis
+```
+
+Next possible follow-up:
+
+```text
+delosdb-jdk25-asm-generated-class-fixture-overlay.zip
+```
+
+That future slice may capture a small ASM-generated Derby execution class and
+verify that generated class through the same JDK API. It must not replace ASM or
+change generated SQL execution behavior.

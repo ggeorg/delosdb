@@ -1054,6 +1054,43 @@ tasks.register('mvccCapturedVisibilitySnapshotProof') {
     dependsOn 'mvccUnresolvedOutcomeRecoveryProof', ':delosdb-storage-mvcc:runMvccCapturedVisibilitySnapshotTest'
 }
 
+
+// JDK 25 bytecode verification lane. This uses the standard Class-File API as
+// a verifier around compiled Derby/DelosDB runtime outputs; ASM remains the
+// production generated-bytecode backend.
+def delosJdk25ClassFileBytecodeVerifierReport = layout.buildDirectory.file('reports/delosdb/jdk25-classfile-bytecode-verifier.txt')
+
+tasks.register('delosJdk25ClassFileBytecodeVerifier', org.gradle.api.tasks.JavaExec) {
+    group = 'verification'
+    description = 'Verifies compiled DelosDB runtime class files with the JDK 25 Class-File API.'
+    dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
+    dependsOn runtimeCompileTasks
+    classpath = files(buildToolsClassDir)
+    mainClass = 'org.apache.derbyBuild.DelosJdk25ClassFileVerifier'
+    outputs.file(delosJdk25ClassFileBytecodeVerifierReport)
+    doFirst {
+        def roots = [
+                moduleNames.commons,
+                moduleNames.runtimeApi,
+                moduleNames.engine,
+                moduleNames.client,
+                moduleNames.tools,
+                moduleNames.server,
+                moduleNames.optionaltools,
+                moduleNames.runner
+        ].collect { moduleClassDir(it).get().asFile }.findAll { it.exists() }
+        def verifierArgs = [
+                '--expected-major', (javaRelease + 44).toString(),
+                '--report', delosJdk25ClassFileBytecodeVerifierReport.get().asFile.absolutePath
+        ]
+        roots.each { root ->
+            verifierArgs.add('--root')
+            verifierArgs.add(root.absolutePath)
+        }
+        setArgs(verifierArgs)
+    }
+}
+
 // DelosDB storage/static-analysis closeout gates.
 apply from: 'gradle/delosdb-storage-static-analysis.gradle'
 

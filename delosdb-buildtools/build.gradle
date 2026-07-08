@@ -18,6 +18,7 @@ def buildToolSourceIncludes = [
         'org/apache/derbyBuild/ODBCMetadataGenerator.java',
         'org/apache/derbyBuild/ClassSizeCrawler.java',
         'org/apache/derbyBuild/SecureXmlFactoryProbe.java',
+        'org/apache/derbyBuild/DelosJdk25ClassFileVerifier.java',
         'org/apache/derby/impl/store/access/sort/SortMemoryPolicyProbe.java'
 ]
 

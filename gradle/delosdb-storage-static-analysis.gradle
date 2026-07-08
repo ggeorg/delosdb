@@ -8220,6 +8220,175 @@ tasks.register('delosMvccVisibilityAlgorithmAuditStaticAnalysis') {
 }
 
 
+def delosLoadJdk25ClassFileVerifierRows = {
+    def manifest = file('gradle/static-analysis/delosdb-jdk25-classfile-bytecode-verifier.txt')
+    manifest.readLines('UTF-8')
+            .findAll { line -> line.trim() && !line.startsWith('#') }
+            .collect { line ->
+                def parts = line.split('\\|', -1)
+                if (parts.length != 5) {
+                    throw new GradleException('Invalid JDK 25 class-file verifier manifest row: ' + line)
+                }
+                [id: parts[0], category: parts[1], path: parts[2], marker: parts[3], risk: parts[4]]
+            }
+}
+
+tasks.register('delosJdk25ClassFileBytecodeVerifierStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the JDK 25 Class-File API bytecode verifier manifest and wiring.'
+    doLast {
+        def rows = delosLoadJdk25ClassFileVerifierRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        if (rows.size() < 20) {
+            failures << 'JDK 25 class-file verifier manifest must contain at least 20 rows; found ' + rows.size()
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate JDK 25 class-file verifier manifest id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'JDK 25 class-file verifier proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'JDK 25 class-file verifier marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.risk.length() < 85) {
+                failures << 'JDK 25 class-file verifier risk is too thin for ' + row.id
+            }
+        }
+
+        [
+                'BUILD_TOOL',
+                'BUILD_TOOL_WIRING',
+                'ROOT_TASK',
+                'DOCUMENTATION',
+                'STATIC_GATE',
+                'ALGORITHM_INVENTORY_LINK',
+                'NO_BEHAVIOR_CHANGE'
+        ].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'JDK 25 class-file verifier manifest missing category: ' + category
+            }
+        }
+
+        def verifierText = file('delosdb-buildtools/src/main/java/org/apache/derbyBuild/DelosJdk25ClassFileVerifier.java').getText('UTF-8')
+        [
+                'import java.lang.classfile.ClassFile;',
+                'import java.lang.classfile.ClassModel;',
+                'ClassFile.of()',
+                'classFile.parse',
+                'model.majorVersion()',
+                'model.minorVersion()',
+                'No class files were found in verifier roots'
+        ].each { markerText ->
+            if (!verifierText.contains(markerText)) {
+                failures << 'Verifier source missing marker: ' + markerText
+            }
+        }
+        ['org.objectweb.asm', 'jdk.internal', 'sun.misc.Unsafe'].each { forbidden ->
+            if (verifierText.contains(forbidden)) {
+                failures << 'Verifier source must not depend on forbidden API: ' + forbidden
+            }
+        }
+
+        def buildToolsText = file('delosdb-buildtools/build.gradle').getText('UTF-8')
+        if (!buildToolsText.contains('DelosJdk25ClassFileVerifier.java')) {
+            failures << 'Build-tools source include list must include DelosJdk25ClassFileVerifier.java'
+        }
+
+        def rootBuildText = file('build.gradle').getText('UTF-8')
+        [
+                "tasks.register('delosJdk25ClassFileBytecodeVerifier'",
+                'org.gradle.api.tasks.JavaExec',
+                'org.apache.derbyBuild.DelosJdk25ClassFileVerifier',
+                'javaRelease + 44',
+                'moduleNames.engine',
+                'moduleNames.server',
+                'reports/delosdb/jdk25-classfile-bytecode-verifier.txt'
+        ].each { markerText ->
+            if (!rootBuildText.contains(markerText)) {
+                failures << 'Root build missing JDK 25 verifier marker: ' + markerText
+            }
+        }
+
+        def docsText = file('docs/JDK25-CLASSFILE-BYTECODE-VERIFIER.md').getText('UTF-8')
+        [
+                'This is a verifier artifact, not a bytecode-generation rewrite.',
+                'ASM remains the production generator.',
+                'No ASM removal.',
+                'No generated SQL execution behavior change.',
+                'No S0 wiring yet.',
+                'java.lang.classfile.ClassFile',
+                'Expected class-file major',
+                '69',
+                'build/reports/delosdb/jdk25-classfile-bytecode-verifier.txt'
+        ].each { markerText ->
+            if (!docsText.contains(markerText)) {
+                failures << 'JDK 25 class-file verifier documentation missing marker: ' + markerText
+            }
+        }
+
+        def inventoryText = file('docs/ALGORITHM-INVENTORY.md').getText('UTF-8')
+        [
+                'JDK 25 Class-File API verifier update',
+                'JDK 25 java.lang.classfile.ClassFile',
+                './gradlew delosJdk25ClassFileBytecodeVerifier',
+                'ASM remains the production generator.'
+        ].each { markerText ->
+            if (!inventoryText.contains(markerText)) {
+                failures << 'Algorithm inventory missing JDK 25 class-file verifier marker: ' + markerText
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index >= 0) {
+            def s0Section = staticText.substring(s0Index)
+            if (s0Section.contains('delosJdk25ClassFileBytecodeVerifier')
+                    || s0Section.contains('delosJdk25ClassFileBytecodeVerifierStaticAnalysis')) {
+                failures << 'JDK 25 class-file verifier tasks must remain outside S0 until the verifier lane is proven stable'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/jdk25-classfile-bytecode-verifier-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB JDK 25 Class-File API verifier static analysis')
+            writer.println('============================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  risk: ' + row.risk)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB JDK 25 Class-File API verifier static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB JDK 25 Class-File API verifier static analysis passed. Report: ' + reportFile
+    }
+}
+
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
