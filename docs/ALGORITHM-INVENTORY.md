@@ -606,3 +606,8 @@ Rules for this proof:
 * Do not change Derby NULL comparison semantics.
 * Do not resurrect candidate indexes as SQL authority.
 * Do not weaken `MvccInheritedRowCodec` or allow arbitrary Java object storage.
+
+
+## Shared lifecycle consistency report
+
+The shared lifecycle consistency report aggregates heap and MVCC checkpoint, recovery, purge/vacuum, analyze/update-statistics, backup-marker, and consistency signals into read-only diagnostic snapshots. It is a `SHARED_SERVICE_ALGORITHM` and `DIAGNOSTIC_ONLY_ALGORITHM`; it must not change storage formats, Derby optimizer authority, or heap/MVCC runtime behavior.

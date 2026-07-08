@@ -196,6 +196,41 @@ public final class DelosStorageDiagnosticsRegistry {
         return metadataQuery().costReport(targets);
     }
 
+
+    public static DelosStorageLifecycleConsistencySnapshot lifecycleConsistencySnapshot(
+            String providerId,
+            int segment,
+            long containerId) {
+        return DelosStorageLifecycleConsistencySnapshot.fromDiagnostics(
+                forProvider(providerId), segment, containerId);
+    }
+
+    public static DelosStorageLifecycleConsistencySnapshot lifecycleConsistencySnapshot(
+            DelosStorageConsistencyTarget target) {
+        Objects.requireNonNull(target, "target");
+        DelosStorageDiagnostics diagnostics = target.hasDatabaseDirectory()
+                ? forProvider(target.providerId()).withContext(
+                        DelosStorageDiagnosticsContext.databaseDirectory(target.databaseDirectory()))
+                : forProvider(target.providerId());
+        return DelosStorageLifecycleConsistencySnapshot.fromDiagnostics(
+                diagnostics, target.segment(), target.containerId());
+    }
+
+    public static DelosStorageLifecycleConsistencyReport lifecycleConsistencyReport(
+            DelosStorageConsistencyTarget... targets) {
+        Objects.requireNonNull(targets, "targets");
+        return lifecycleConsistencyReport(List.of(targets));
+    }
+
+    public static DelosStorageLifecycleConsistencyReport lifecycleConsistencyReport(
+            List<DelosStorageConsistencyTarget> targets) {
+        Objects.requireNonNull(targets, "targets");
+        return new DelosStorageLifecycleConsistencyReport(
+                targets.stream()
+                        .map(DelosStorageDiagnosticsRegistry::lifecycleConsistencySnapshot)
+                        .toList());
+    }
+
     public static DelosStoragePredicatePushdown predicatePushdown(
             DelosStoragePredicatePushdownRequest request) {
         return metadataQuery().predicatePushdown(Objects.requireNonNull(request, "request"));
