@@ -7292,6 +7292,217 @@ tasks.register('delosStoragePathDiagnosticsStaticAnalysis') {
     }
 }
 
+
+def delosHeapAlgorithmBoundaryPhase4ManifestFile = file('gradle/static-analysis/delosdb-heap-algorithm-boundary-phase4.txt')
+
+def delosLoadHeapAlgorithmBoundaryPhase4Rows = {
+    if (!delosHeapAlgorithmBoundaryPhase4ManifestFile.exists()) {
+        throw new GradleException('Missing DelosDB heap algorithm boundary phase-4 manifest: ' + delosHeapAlgorithmBoundaryPhase4ManifestFile)
+    }
+    def rows = []
+    delosHeapAlgorithmBoundaryPhase4ManifestFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed heap algorithm boundary phase-4 line ' + (index + 1) + ': expected 6 pipe-delimited fields')
+        }
+        rows << [id: parts[0], path: parts[1], marker: parts[2], category: parts[3], reference: parts[4], risk: parts[5]]
+    }
+    rows
+}
+
+tasks.register('delosHeapAlgorithmBoundaryAuditPhase4StaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the heap/raw-store algorithm boundary phase-4 audit and compatibility-risk classifications.'
+
+    inputs.file(delosHeapAlgorithmBoundaryPhase4ManifestFile)
+    inputs.file('docs/HEAP-ALGORITHM-BOUNDARIES.md')
+    inputs.file('docs/ALGORITHM-INVENTORY.md')
+    inputs.file('gradle/static-analysis/delosdb-derby-fork-diff-classification.txt')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/OpenHeap.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapController.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/GenericController.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BasePage.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/StoredPage.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/FileContainer.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/AllocPage.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_StoredPage.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/D_HeapController.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/DelosMvccBackupSidecarSupport.java')
+    inputs.file('gradle/delosdb-storage-static-analysis.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/heap-algorithm-boundary-phase4-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadHeapAlgorithmBoundaryPhase4Rows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+        def references = [] as Set
+
+        if (rows.size() < 18) {
+            failures << 'Heap algorithm boundary phase-4 audit must cover at least 18 rows; found ' + rows.size()
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate heap algorithm boundary phase-4 id: ' + row.id
+            }
+            categories.add(row.category)
+            row.reference.split(';').each { reference ->
+                if (reference.trim()) {
+                    references.add(reference.trim())
+                }
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Heap algorithm boundary phase-4 proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Heap algorithm boundary phase-4 marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.risk.length() < 90) {
+                failures << 'Heap algorithm boundary phase-4 risk is too thin for ' + row.id
+            }
+        }
+
+        [
+                'DOCUMENTATION',
+                'NO_BEHAVIOR_CHANGE',
+                'DERBY_COMPATIBILITY_ANCHOR',
+                'FORMAT_BOUNDARY',
+                'LOG_FORMAT_BOUNDARY',
+                'READ_ONLY_DIAGNOSTIC',
+                'CLEANUP_CANDIDATE',
+                'SHARED_SERVICE_CANDIDATE',
+                'DO_NOT_TOUCH_WITHOUT_FORMAT_PLAN',
+                'BACKUP_RESTORE_EXTENSION_SEAM',
+                'FORK_DIFF_LINK',
+                'ALGORITHM_INVENTORY_LINK'
+        ].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'Heap algorithm boundary phase-4 manifest missing category: ' + category
+            }
+        }
+
+        ['Derby', 'PostgreSQL', 'InnoDB', 'HerdDB', 'MapDB', 'JDK 25'].each { reference ->
+            if (!references.any { value -> value.contains(reference) }) {
+                failures << 'Heap algorithm boundary phase-4 manifest missing reference model: ' + reference
+            }
+        }
+
+        def docsText = file('docs/HEAP-ALGORITHM-BOUNDARIES.md').getText('UTF-8')
+        [
+                'This is an audit artifact, not a behavior change',
+                'No Java runtime behavior change',
+                'No heap page format change',
+                'No raw log format change',
+                'No catalog behavior change',
+                'No DRDA or JDBC behavior change',
+                'No shared-service extraction is authorized by this audit',
+                'Shared-service extraction is not authorized by this audit',
+                'Do not touch without a format plan',
+                'Derby heap/raw-store remains the compatibility anchor',
+                'DERBY_COMPATIBILITY_ANCHOR',
+                'FORMAT_BOUNDARY',
+                'LOG_FORMAT_BOUNDARY',
+                'READ_ONLY_DIAGNOSTIC',
+                'CLEANUP_CANDIDATE',
+                'SHARED_SERVICE_CANDIDATE',
+                'DO_NOT_TOUCH_WITHOUT_FORMAT_PLAN',
+                'BACKUP_RESTORE_EXTENSION_SEAM',
+                'OpenHeap',
+                'HeapController',
+                'OpenConglomerate',
+                'GenericController',
+                'BasePage',
+                'StoredPage',
+                'FileContainer',
+                'AllocPage',
+                'D_StoredPage',
+                'D_HeapController',
+                'DelosMvccBackupSidecarSupport',
+                'Derby is the compatibility anchor',
+                'PostgreSQL and InnoDB are recovery',
+                'HerdDB is a Java-engine reference',
+                'MapDB is a compact-codec reference',
+                'JDK 25 MemorySegment and VarHandle'
+        ].each { markerText ->
+            if (!docsText.contains(markerText)) {
+                failures << 'Heap algorithm boundary phase-4 documentation missing marker: ' + markerText
+            }
+        }
+
+        def forkDiff = file('gradle/static-analysis/delosdb-derby-fork-diff-classification.txt').getText('UTF-8')
+        ['heap-checker-wiring', 'rawstore-mvcc-sidecar-backup', 'rawstore-mvcc-sidecar-helper'].each { markerText ->
+            if (!forkDiff.contains(markerText)) {
+                failures << 'Derby fork-diff classification missing heap/raw-store marker: ' + markerText
+            }
+        }
+
+        def algorithmInventory = file('docs/ALGORITHM-INVENTORY.md').getText('UTF-8')
+        [
+                'Do not modernize heap/raw-store algorithms without compatibility gates',
+                'delosdb-heap-algorithm-boundary-audit-phase4-overlay.zip'
+        ].each { markerText ->
+            if (!algorithmInventory.contains(markerText)) {
+                failures << 'Algorithm inventory missing heap boundary marker: ' + markerText
+            }
+        }
+
+        def sidecarSupport = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/DelosMvccBackupSidecarSupport.java').getText('UTF-8')
+        ['must not depend on the MVCC module', 'BACKUP_MANIFEST = "delos_mvcc.BACKUP-MANIFEST"'].each { markerText ->
+            if (!sidecarSupport.contains(markerText)) {
+                failures << 'DelosMvccBackupSidecarSupport missing marker: ' + markerText
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index >= 0) {
+            def s0Section = staticText.substring(s0Index)
+            if (s0Section.contains('delosHeapAlgorithmBoundaryAuditPhase4StaticAnalysis')) {
+                failures << 'Heap algorithm boundary phase-4 audit gate must remain outside S0 until it becomes a stable compatibility gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/heap-algorithm-boundary-phase4-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB heap algorithm boundary phase-4 static analysis')
+            writer.println('======================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println('Reference markers: ' + references.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reference: ' + row.reference)
+                writer.println('  risk: ' + row.risk)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB heap algorithm boundary phase-4 static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB heap algorithm boundary phase-4 static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'

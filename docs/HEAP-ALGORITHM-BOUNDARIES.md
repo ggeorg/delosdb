@@ -1,0 +1,90 @@
+# DelosDB Heap Algorithm Boundary Audit — Phase 4
+
+This is an audit artifact, not a behavior change.
+
+Phase 4 classifies inherited Derby heap/raw-store algorithms by compatibility risk after the
+R5/R6/R7 lifecycle work closed green. The goal is to make the next cleanup decisions explicit
+before any inherited-code algorithm is touched.
+
+## Safety rules
+
+* No Java runtime behavior change.
+* No heap page format change.
+* No raw log format change.
+* No catalog behavior change.
+* No DRDA or JDBC behavior change.
+* No shared-service extraction is authorized by this audit.
+* Shared-service extraction is not authorized by this audit.
+* Do not touch without a format plan where the boundary is page-format or log-format sensitive.
+* Derby heap/raw-store remains the compatibility anchor.
+* DelosDB MVCC sidecar backup/restore remains an extension seam, not a rewrite of RawStore authority.
+
+## Classification vocabulary
+
+| Classification | Meaning |
+| --- | --- |
+| `DERBY_COMPATIBILITY_ANCHOR` | Inherited Derby algorithm that defines heap compatibility. Changes require a compatibility gate. |
+| `FORMAT_BOUNDARY` | Heap/raw-store page, record, field, allocation, or container format boundary. Do not change without a format-version plan. |
+| `LOG_FORMAT_BOUNDARY` | Raw-store logging or recovery ordering boundary. Do not change without a log-format/recovery plan. |
+| `READ_ONLY_DIAGNOSTIC` | Safe diagnostic surface that may be expanded if it remains read-only. |
+| `CLEANUP_CANDIDATE` | Code may be clarified or extracted only if behavior, format, and log semantics are unchanged. |
+| `SHARED_SERVICE_CANDIDATE` | Possible future shared service only after heap and MVCC both have concrete proof gates. |
+| `DO_NOT_TOUCH_WITHOUT_FORMAT_PLAN` | High-risk inherited area where cleanup must stop until the format/recovery plan exists. |
+| `BACKUP_RESTORE_EXTENSION_SEAM` | DelosDB-owned sidecar hook attached to Derby backup/restore without changing heap backup semantics. |
+
+## Audited inherited-code boundaries
+
+### OpenHeap / HeapController
+
+`OpenHeap` and `HeapController` are Derby heap compatibility anchors. They bridge the access layer to
+raw-store page behavior. Cleanup is allowed only around names, helper extraction, diagnostics, or
+explicit invariants. Insert, load, overflow, and row-location algorithms must stay compatibility-gated.
+
+### OpenConglomerate / GenericController
+
+`OpenConglomerate` and `GenericController` own inherited scan/controller state and unlogged row-count
+behavior. These areas are cleanup candidates only when tests prove that heap scans, updates, locking,
+open/reopen, and row-count semantics remain unchanged.
+
+### BasePage / StoredPage
+
+`BasePage` is both a latch/logging boundary and a page-mutation algorithm boundary. `StoredPage` is a
+page-format boundary: record headers, field headers, overflow pointers, slot tables, logical data
+streams, and page header placement must not be rewritten without a format plan.
+
+### FileContainer / AllocPage
+
+`FileContainer` and `AllocPage` are allocation-format and allocation-cache boundaries. They are useful
+reference points for future shared allocation diagnostics, but not shared-service extraction targets yet.
+The current audit only records the boundary.
+
+### D_StoredPage / D_HeapController
+
+`D_StoredPage` and `D_HeapController` are the safe side of heap modernization: read-only diagnostics.
+They may expand as long as they do not repair, rewrite, compact, or mutate inherited heap state.
+
+### RawStore sidecar seam
+
+`DelosMvccBackupSidecarSupport` is an extension seam created by DelosDB to keep MVCC sidecar backup and
+restore outside inherited RawStore control-flow noise. It must not import or depend on the MVCC module.
+RawStore remains the Derby backup/restore compatibility authority.
+
+## Reference models
+
+* Derby is the compatibility anchor and source of heap/raw-store semantics.
+* PostgreSQL and InnoDB are recovery, pruning, and storage-lifecycle reference models only.
+* HerdDB is a Java-engine reference for checkpoint/page-cache lifecycle, not a heap replacement.
+* MapDB is a compact-codec reference for future DelosDB-owned page/metadata encodings, not a heap format input.
+* JDK 25 MemorySegment and VarHandle may be used in DelosDB-owned storage code, not in Derby heap format code until a compatibility plan exists.
+
+## Next allowed work
+
+This audit permits only bounded follow-up slices:
+
+1. read-only heap diagnostics cost/performance audit,
+2. shared-service readiness report,
+3. explicit no-format-change helper extraction proposals,
+4. backup/restore mixed-engine matrix expansion.
+
+It does not permit heap page-format rewrite, raw-log rewrite, allocation algorithm replacement, or
+shared page/cache/allocation service extraction.
