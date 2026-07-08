@@ -6672,6 +6672,167 @@ tasks.register('delosStorageAccessDecisionAuditStaticAnalysis') {
     }
 }
 
+
+def delosStoragePathDiagnosticsManifestFile = file('gradle/static-analysis/delosdb-storage-path-diagnostics.txt')
+
+def delosLoadStoragePathDiagnosticsRows = {
+    if (!delosStoragePathDiagnosticsManifestFile.exists()) {
+        throw new GradleException('Missing DelosDB storage path diagnostics manifest: ' + delosStoragePathDiagnosticsManifestFile)
+    }
+    def rows = []
+    delosStoragePathDiagnosticsManifestFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 5) {
+            throw new GradleException('Malformed storage path diagnostics line ' + (index + 1) + ': expected 5 pipe-delimited fields')
+        }
+        rows << [id: parts[0], path: parts[1], marker: parts[2], category: parts[3], reason: parts[4]]
+    }
+    rows
+}
+
+tasks.register('delosStoragePathDiagnosticsStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the DelosDB storage path diagnostics surface and safety markers.'
+
+    inputs.file(delosStoragePathDiagnosticsManifestFile)
+    inputs.file('docs/STORAGE-PATH-DIAGNOSTICS.md')
+    inputs.file('docs/STORAGE-ACCESS-DECISIONS.md')
+    inputs.file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageAccessDecisionKind.java')
+    inputs.file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageAccessDecisionState.java')
+    inputs.file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePathDiagnostic.java')
+    inputs.file('gradle/delosdb-storage-static-analysis.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/storage-path-diagnostics-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadStoragePathDiagnosticsRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        if (rows.size() < 6) {
+            failures << 'Storage path diagnostics manifest must cover the enum, record, report line, invariants, and docs'
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate storage path diagnostics id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Storage path diagnostics proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Storage path diagnostics marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 90) {
+                failures << 'Storage path diagnostics reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'DIAGNOSTIC_API',
+                'REPORTING_SURFACE',
+                'SAFETY_INVARIANT',
+                'CANDIDATE_QUARANTINE',
+                'DOCUMENTATION'
+        ].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'Storage path diagnostics manifest missing category: ' + category
+            }
+        }
+
+        def stateEnum = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageAccessDecisionState.java').getText('UTF-8')
+        [
+                'CHOSEN',
+                'REJECTED',
+                'FALLBACK',
+                'DIAGNOSTIC_ONLY',
+                'TEST_ONLY',
+                'inert reporting vocabulary',
+                'must not be used to alter'
+        ].each { markerText ->
+            if (!stateEnum.contains(markerText)) {
+                failures << 'DelosStorageAccessDecisionState missing marker: ' + markerText
+            }
+        }
+
+        def diagnosticRecord = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePathDiagnostic.java').getText('UTF-8')
+        [
+                'public record DelosStoragePathDiagnostic',
+                'UNKNOWN_ROW_ID_COUNT',
+                'DelosStorageProviderIds.normalize',
+                'diagnosticLine()',
+                'explicit compatibility fallback must be recorded as FALLBACK',
+                'diagnostic-only state is reserved for diagnostic candidate parity scans',
+                'test-only state requires TEST_ONLY_PATH',
+                'rejected/fallback shortcut diagnostics cannot claim shortcutSafe=true'
+        ].each { markerText ->
+            if (!diagnosticRecord.contains(markerText)) {
+                failures << 'DelosStoragePathDiagnostic missing marker: ' + markerText
+            }
+        }
+
+        def docsText = file('docs/STORAGE-PATH-DIAGNOSTICS.md').getText('UTF-8')
+        [
+                'It does not change plan selection',
+                'It does not replace Derby',
+                'It does not change heap scan or B-tree scan behavior',
+                'It does not change MVCC visibility rules',
+                'It does not resurrect candidate indexes as SQL read authority',
+                'It does not make Calcite, HerdDB, or MapDB runtime dependencies',
+                'diagnostics are side-effect free',
+                'Derby optimizer authority remains unchanged',
+                'candidate-index paths remain diagnostic/parity only',
+                'MVCC ordered-index shortcuts still obey visibility and snapshot safety'
+        ].each { markerText ->
+            if (!docsText.contains(markerText)) {
+                failures << 'Storage path diagnostics documentation missing marker: ' + markerText
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Section = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+        if (s0Section.contains('delosStoragePathDiagnosticsStaticAnalysis')) {
+            failures << 'Storage path diagnostics gate must remain outside S0 until runtime diagnostics become a stable behavior gate'
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/storage-path-diagnostics-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB storage path diagnostics static analysis')
+            writer.println('=================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB storage path diagnostics static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB storage path diagnostics static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
