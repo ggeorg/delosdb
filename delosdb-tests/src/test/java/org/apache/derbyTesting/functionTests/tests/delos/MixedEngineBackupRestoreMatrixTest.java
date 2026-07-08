@@ -86,6 +86,7 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
                     "20");
             assertTrue("mixed source database should have delos_mvcc sidecar files before backup",
                     inheritedMvccStateFileCount(sourceDatabase) > 0L);
+            connection.commit();
 
             backupDatabase(connection, backupRoot);
         }
@@ -139,6 +140,7 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
                     "10|mvcc-alpha",
                     "20|mvcc-beta-restored",
                     "30|mvcc-gamma");
+            restored.commit();
         }
 
         shutdownDatabase(restoredDatabase);
