@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 
@@ -28,6 +29,8 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.access.SpaceInfo;
+import org.apache.derby.iapi.store.types.DelosStorageAccessDecisionKind;
+import org.apache.derby.iapi.store.types.DelosStoragePathDiagnostic;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
@@ -140,12 +143,41 @@ public final class MvccConglomerateController implements ConglomerateController 
             MvccBridgeDiagnosticsSupport.incrementRowIdFastPathReadCount();
             MvccBridgeDiagnosticsSupport.incrementPageBackedCommittedReadCount();
             Optional<StoreDataValue[]> visible = state.readCommittedImage(rowId, snapshot);
+            recordRowIdStoragePath(rowId, visible.isPresent());
             if (visible.isPresent()) {
                 MvccBridgeDiagnosticsSupport.incrementRowIdFastPathHitCount();
                 return visible;
             }
+            recordRowIdStoragePathFallback(rowId);
         }
         return state.read(rowId, snapshot);
+    }
+
+    private void recordRowIdStoragePath(long rowId, boolean hit) {
+        MvccBridgeDiagnosticsSupport.recordStoragePathDiagnostic(
+                DelosStoragePathDiagnostic.chosen(
+                        DelosStorageAccessDecisionKind.MVCC_ROW_ID_LOOKUP,
+                        "delos_mvcc",
+                        Math.toIntExact(state.key().getSegmentId()),
+                        state.key().getContainerId(),
+                        hit
+                                ? "current-committed row-id point read returned a visible row"
+                                : "current-committed row-id point read missed and will check MVCC visibility",
+                        "current-committed",
+                        true,
+                        1L,
+                        List.of("rowId=" + rowId, "hit=" + hit)));
+    }
+
+    private void recordRowIdStoragePathFallback(long rowId) {
+        MvccBridgeDiagnosticsSupport.recordStoragePathDiagnostic(
+                DelosStoragePathDiagnostic.fallback(
+                        "delos_mvcc",
+                        Math.toIntExact(state.key().getSegmentId()),
+                        state.key().getContainerId(),
+                        "row-id point read missed; MVCC version-chain visibility remains authority",
+                        "current-committed",
+                        List.of("rowId=" + rowId)));
     }
 
     @Override

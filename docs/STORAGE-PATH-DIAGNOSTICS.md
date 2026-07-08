@@ -95,3 +95,26 @@ That later overlay must still prove:
 * heap compatibility paths remain unchanged,
 * candidate-index paths remain diagnostic/parity only,
 * MVCC ordered-index shortcuts still obey visibility and snapshot safety.
+
+## Runtime wiring checkpoint
+
+The diagnostic vocabulary is now connected to selected MVCC runtime paths through
+`MvccBridgeDiagnosticsSupport` and exposed by `MvccStorageDiagnostics` through
+`DelosStorageDiagnostics.storagePathDiagnosticLinesForTesting()`.
+
+The wired paths are still diagnostic-only with respect to behavior:
+
+* current-committed MVCC full scans record `MVCC_FULL_SCAN`;
+* ordered page-backed equality narrowing records `MVCC_ORDERED_EQUALITY_LOOKUP`;
+* ordered page-backed range narrowing records `MVCC_ORDERED_RANGE_SCAN`;
+* row-id point reads record `MVCC_ROW_ID_LOOKUP`;
+* snapshot, writer-borrowed, stale-image, unsupported-key, and row-id miss cases
+  record `EXPLICIT_COMPATIBILITY_FALLBACK` instead of pretending to be normal
+  shortcut authority.
+
+The runtime wiring does not change plan selection.  It does not replace Derby.
+It does not change heap scan or B-tree scan behavior.  It does not change MVCC
+visibility rules.  It does not resurrect candidate indexes as SQL read authority.
+Derby optimizer authority remains unchanged, candidate-index paths remain
+diagnostic/parity only, and MVCC ordered-index shortcuts still obey visibility
+and snapshot safety.

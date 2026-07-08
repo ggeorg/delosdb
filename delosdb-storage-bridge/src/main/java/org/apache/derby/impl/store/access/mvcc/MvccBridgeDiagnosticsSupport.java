@@ -21,7 +21,13 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.apache.derby.iapi.store.types.DelosStorageLifecycleJfr;
+import org.apache.derby.iapi.store.types.DelosStoragePathDiagnostic;
 
 /**
  * Package-local owner for MVCC bridge diagnostics counters.
@@ -46,6 +52,7 @@ final class MvccBridgeDiagnosticsSupport {
     private static final AtomicInteger PAGE_BACKED_COMMITTED_READ_COUNT = new AtomicInteger();
     private static final AtomicInteger ROW_ID_FAST_PATH_READ_COUNT = new AtomicInteger();
     private static final AtomicInteger ROW_ID_FAST_PATH_HIT_COUNT = new AtomicInteger();
+    private static final List<DelosStoragePathDiagnostic> STORAGE_PATH_DIAGNOSTICS = new CopyOnWriteArrayList<>();
 
     private MvccBridgeDiagnosticsSupport() {
     }
@@ -97,6 +104,7 @@ final class MvccBridgeDiagnosticsSupport {
         resetQualifierRejectCountForDiagnostics();
         resetCandidateIndexCountersForDiagnostics();
         resetPageBackedCommittedReadCountersForDiagnostics();
+        resetStoragePathDiagnosticsForDiagnostics();
     }
 
     static void resetOpenCountForDiagnostics() {
@@ -212,6 +220,27 @@ final class MvccBridgeDiagnosticsSupport {
 
     static int rowIdFastPathHitCountForDiagnostics() {
         return ROW_ID_FAST_PATH_HIT_COUNT.get();
+    }
+
+    static void resetStoragePathDiagnosticsForDiagnostics() {
+        STORAGE_PATH_DIAGNOSTICS.clear();
+    }
+
+    static void recordStoragePathDiagnostic(DelosStoragePathDiagnostic diagnostic) {
+        STORAGE_PATH_DIAGNOSTICS.add(diagnostic);
+        DelosStorageLifecycleJfr.recordStoragePathDecision(diagnostic);
+    }
+
+    static List<DelosStoragePathDiagnostic> storagePathDiagnosticsForDiagnostics() {
+        return List.copyOf(STORAGE_PATH_DIAGNOSTICS);
+    }
+
+    static List<String> storagePathDiagnosticLinesForDiagnostics() {
+        List<String> lines = new ArrayList<>(STORAGE_PATH_DIAGNOSTICS.size());
+        for (DelosStoragePathDiagnostic diagnostic : STORAGE_PATH_DIAGNOSTICS) {
+            lines.add(diagnostic.diagnosticLine());
+        }
+        return List.copyOf(lines);
     }
 
 }

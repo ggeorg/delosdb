@@ -27,6 +27,7 @@ import java.util.List;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStoragePathDiagnostic;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
@@ -839,6 +840,21 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public int rowIdFastPathHitCountForTesting() {
         return MvccBridgeDiagnosticsSupport.rowIdFastPathHitCountForDiagnostics();
+    }
+
+    @Override
+    public void resetStoragePathDiagnosticsForTesting() {
+        MvccBridgeDiagnosticsSupport.resetStoragePathDiagnosticsForDiagnostics();
+    }
+
+    @Override
+    public List<DelosStoragePathDiagnostic> storagePathDiagnosticsForTesting() {
+        return MvccBridgeDiagnosticsSupport.storagePathDiagnosticsForDiagnostics();
+    }
+
+    @Override
+    public List<String> storagePathDiagnosticLinesForTesting() {
+        return MvccBridgeDiagnosticsSupport.storagePathDiagnosticLinesForDiagnostics();
     }
 
     @Override

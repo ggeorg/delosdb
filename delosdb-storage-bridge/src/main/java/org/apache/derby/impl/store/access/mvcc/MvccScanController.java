@@ -34,7 +34,9 @@ import org.apache.derby.iapi.store.access.ScanInfo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.types.DelosOptimizerPredicatePushdownDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageAccessDecisionKind;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
+import org.apache.derby.iapi.store.types.DelosStoragePathDiagnostic;
 import org.apache.derby.iapi.store.types.DelosStorageRow;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
@@ -230,14 +232,29 @@ public final class MvccScanController implements ScanManager {
                 scan = state.openCommittedImageScan(snapshot);
                 pageBackedCommittedRead = true;
                 MvccBridgeDiagnosticsSupport.incrementPageBackedCommittedScanCount();
+                recordChosenStoragePath(
+                        DelosStorageAccessDecisionKind.MVCC_FULL_SCAN,
+                        "current-committed page-backed image scan selected",
+                        true,
+                        DelosStoragePathDiagnostic.UNKNOWN_ROW_ID_COUNT,
+                        List.of("pageBackedCommittedRead=true"));
                 return;
             } catch (IllegalStateException staleCommittedImage) {
                 // A commit advanced the current committed image after the
                 // statement snapshot was captured. Fall back to the MVCC
                 // version-chain scan, which can evaluate the captured snapshot.
+                recordStoragePathFallback(
+                        "current-committed image was stale; falling back to MVCC version-chain scan",
+                        List.of("exception=" + staleCommittedImage.getClass().getSimpleName()));
             }
         }
         scan = state.openScan(snapshot);
+        recordChosenStoragePath(
+                DelosStorageAccessDecisionKind.MVCC_FULL_SCAN,
+                "MVCC version-chain full scan selected",
+                false,
+                DelosStoragePathDiagnostic.UNKNOWN_ROW_ID_COUNT,
+                List.of("pageBackedCommittedRead=false"));
     }
 
     @Override
@@ -426,10 +443,21 @@ public final class MvccScanController implements ScanManager {
             MvccBridgeDiagnosticsSupport.incrementRowIdFastPathReadCount();
             MvccBridgeDiagnosticsSupport.incrementPageBackedCommittedReadCount();
             Optional<StoreDataValue[]> visible = state.readCommittedImage(rowId, snapshot);
+            recordChosenStoragePath(
+                    DelosStorageAccessDecisionKind.MVCC_ROW_ID_LOOKUP,
+                    visible.isPresent()
+                            ? "current-committed row-id lookup returned a visible row"
+                            : "current-committed row-id lookup missed and will check MVCC visibility",
+                    true,
+                    1L,
+                    List.of("rowId=" + rowId, "hit=" + visible.isPresent()));
             if (visible.isPresent()) {
                 MvccBridgeDiagnosticsSupport.incrementRowIdFastPathHitCount();
                 return visible;
             }
+            recordStoragePathFallback(
+                    "row-id fast path miss; MVCC version-chain visibility remains authority",
+                    List.of("rowId=" + rowId));
         }
         return state.read(rowId, snapshot);
     }
@@ -438,6 +466,9 @@ public final class MvccScanController implements ScanManager {
         if (!canUseCommittedOrderedIndex()) {
             if (shouldRecordOrderedIndexNonShortcut(indexQualifiers)) {
                 state.recordOrderedIndexFallbackForDiagnostics(nonShortcutFallbackReason());
+                recordStoragePathFallback(
+                        "ordered MVCC index shortcut rejected because the read is not current-committed",
+                        List.of("fallbackReason=" + nonShortcutFallbackReason()));
             }
             orderedIndexRowIdScan = false;
             orderedIndexRowIds = null;
@@ -445,6 +476,11 @@ public final class MvccScanController implements ScanManager {
         }
         Optional<List<Long>> indexedRowIds = state.orderedIndexRowIdsFor(indexQualifiers);
         if (indexedRowIds.isEmpty()) {
+            if (MvccConglomerateState.hasIndexQualifiers(indexQualifiers)) {
+                recordStoragePathFallback(
+                        "ordered MVCC index could not derive a supported typed key; full scan remains authority",
+                        List.of("fallbackReason=" + DelosStorageOrderedIndexFallbackReason.UNSUPPORTED_KEY_OR_TYPE));
+            }
             orderedIndexRowIdScan = false;
             orderedIndexRowIds = null;
             return;
@@ -452,6 +488,13 @@ public final class MvccScanController implements ScanManager {
         List<Long> rowIds = indexedRowIds.get();
         orderedIndexRowIdScan = true;
         orderedIndexRowIds = rowIds.iterator();
+        DelosStorageAccessDecisionKind decisionKind = orderedIndexDecisionKind(indexQualifiers);
+        recordChosenStoragePath(
+                decisionKind,
+                "ordered MVCC index page lookup selected row-id narrowing",
+                true,
+                rowIds.size(),
+                List.of("orderedIndexRowIdScan=true", "rowIds=" + rowIds.size()));
         // Keep the historical diagnostic counter names for existing gates, but
         // the normal row-id source here is the ordered MVCC index page store.
         MvccBridgeDiagnosticsSupport.incrementCandidateIndexLookupCount();
@@ -461,6 +504,75 @@ public final class MvccScanController implements ScanManager {
                 Math.toIntExact(state.key().getSegmentId()),
                 state.key().getContainerId(),
                 rowIds.size());
+    }
+
+    private DelosStorageAccessDecisionKind orderedIndexDecisionKind(Qualifier[][] indexQualifiers) {
+        if (containsEqualityQualifier(indexQualifiers)) {
+            return DelosStorageAccessDecisionKind.MVCC_ORDERED_EQUALITY_LOOKUP;
+        }
+        return DelosStorageAccessDecisionKind.MVCC_ORDERED_RANGE_SCAN;
+    }
+
+    private static boolean containsEqualityQualifier(Qualifier[][] indexQualifiers) {
+        if (indexQualifiers == null) {
+            return false;
+        }
+        for (Qualifier[] andTerm : indexQualifiers) {
+            if (andTerm == null) {
+                continue;
+            }
+            for (Qualifier qualifier : andTerm) {
+                if (qualifier != null
+                        && qualifier.getOperator() == org.apache.derby.iapi.store.types.StoreOrderable.ORDER_OP_EQUALS
+                        && !qualifier.negateCompareResult()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private void recordChosenStoragePath(
+            DelosStorageAccessDecisionKind decisionKind,
+            String reason,
+            boolean shortcutSafe,
+            long rowIdCount,
+            List<String> details) {
+        MvccBridgeDiagnosticsSupport.recordStoragePathDiagnostic(
+                DelosStoragePathDiagnostic.chosen(
+                        decisionKind,
+                        "delos_mvcc",
+                        Math.toIntExact(state.key().getSegmentId()),
+                        state.key().getContainerId(),
+                        reason,
+                        storagePathReadMode(),
+                        shortcutSafe,
+                        rowIdCount,
+                        details));
+    }
+
+    private void recordStoragePathFallback(String reason, List<String> details) {
+        MvccBridgeDiagnosticsSupport.recordStoragePathDiagnostic(
+                DelosStoragePathDiagnostic.fallback(
+                        "delos_mvcc",
+                        Math.toIntExact(state.key().getSegmentId()),
+                        state.key().getContainerId(),
+                        reason,
+                        storagePathReadMode(),
+                        details));
+    }
+
+    private String storagePathReadMode() {
+        if (readerBorrowedFromWriter) {
+            return "writer-borrowed";
+        }
+        if (transactionScopedReader) {
+            return "transaction-scoped-snapshot";
+        }
+        if (pageBackedCommittedRead) {
+            return "current-committed";
+        }
+        return "statement-scoped";
     }
 
     /**
