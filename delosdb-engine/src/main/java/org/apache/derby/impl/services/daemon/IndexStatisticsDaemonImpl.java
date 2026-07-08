@@ -39,6 +39,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.context.ContextService;
 import org.apache.derby.iapi.services.daemon.IndexStatisticsDaemon;
+import org.apache.derby.iapi.store.types.DelosMvccAnalyzeStatisticsLifecycleDiagnostics;
 import org.apache.derby.iapi.services.property.PropertyUtil;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.stream.HeaderPrintWriter;
@@ -1018,10 +1019,28 @@ public class IndexStatisticsDaemonImpl
         TableDescriptor td = (TableDescriptor) tdObject;
         ConglomerateDescriptor[] cds = (ConglomerateDescriptor[]) cdsObject;
         updateIndexStatsMinion(lcc, td, cds, AS_EXPLICIT_TASK);
+        recordDelosMvccAnalyzeStatisticsLifecycle(td, runContext);
         trace(0, "explicit run completed" + (runContext != null
                                         ? " (" + runContext + "): "
                                         : ": ") +
                                     td.getQualifiedName());
+    }
+
+    private static void recordDelosMvccAnalyzeStatisticsLifecycle(TableDescriptor td, String runContext) {
+        try {
+            DelosMvccAnalyzeStatisticsLifecycleDiagnostics.recordExplicitUpdateStatistics(
+                    td.getStorageProviderName(),
+                    td.getQualifiedName(),
+                    td.getHeapConglomerateId(),
+                    runContext);
+        } catch (StandardException e) {
+            DelosMvccAnalyzeStatisticsLifecycleDiagnostics.recordDiagnosticFailure(
+                    td.getStorageProviderName(),
+                    td.getQualifiedName(),
+                    0L,
+                    runContext,
+                    e);
+        }
     }
 
     /**

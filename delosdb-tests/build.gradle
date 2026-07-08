@@ -688,6 +688,11 @@ tasks.named('check') {
 
 
 registerDelosFocusedTest(
+        'runDelosMvccAnalyzeStatisticsLifecycleTest',
+        'Runs the MVCC analyze/update-statistics lifecycle proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccAnalyzeStatisticsLifecycleTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccSqlIntegrationTest',
         'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.',
         [
@@ -724,6 +729,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageOptimizerReviewGateTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/OptimizerStorageCostOptInTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccStatisticsOptimizerCostIntegrationTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccAnalyzeStatisticsLifecycleTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownOptInTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownExecutionCheckpointTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownConsumptionOptInTest.class',
@@ -782,6 +788,7 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class'])
 
 [
+        'runDelosMvccAnalyzeStatisticsLifecycleTest',
         'runDelosMvccSqlIntegrationTest',
         'runDelosMvccDrdaNetworkClientTest',
         'runDelosMvccDrdaConcurrentNetworkClientTest'
