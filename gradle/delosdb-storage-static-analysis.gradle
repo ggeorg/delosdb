@@ -5941,6 +5941,465 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
 }
 
 
+def delosMvccOrderedIndexKeySemanticsManifestFile = file('gradle/static-analysis/delosdb-mvcc-ordered-index-key-semantics.txt')
+
+def delosLoadMvccOrderedIndexKeySemanticsRows = {
+    if (!delosMvccOrderedIndexKeySemanticsManifestFile.exists()) {
+        throw new GradleException('Missing DelosDB MVCC ordered-index key semantics manifest: ' + delosMvccOrderedIndexKeySemanticsManifestFile)
+    }
+    def rows = []
+    delosMvccOrderedIndexKeySemanticsManifestFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed MVCC ordered-index key semantics line ' + (index + 1) + ': expected 6 pipe-delimited fields')
+        }
+        rows << [id: parts[0], path: parts[1], marker: parts[2], category: parts[3], reference: parts[4], risk: parts[5]]
+    }
+    rows
+}
+
+tasks.register('delosMvccOrderedIndexKeySemanticsAuditStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the MVCC ordered-index key semantics audit and known semantic boundaries.'
+
+    inputs.file(delosMvccOrderedIndexKeySemanticsManifestFile)
+    inputs.file('docs/MVCC-ORDERED-INDEX-KEY-SEMANTICS.md')
+    inputs.file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedIndexMaintenance.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccOrderedIndexPageStore.java')
+    inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.java')
+    inputs.file('gradle/delosdb-storage-static-analysis.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-ordered-index-key-semantics-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccOrderedIndexKeySemanticsRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+        def references = [] as Set
+
+        if (rows.size() < 14) {
+            failures << 'MVCC ordered-index key semantics audit must cover at least 14 rows; found ' + rows.size()
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC ordered-index key semantics id: ' + row.id
+            }
+            categories.add(row.category)
+            row.reference.split(';').each { reference ->
+                if (reference.trim()) {
+                    references.add(reference.trim())
+                }
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC ordered-index key semantics proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC ordered-index key semantics marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.risk.length() < 80) {
+                failures << 'MVCC ordered-index key semantics risk is too thin for ' + row.id
+            }
+        }
+
+        [
+                'TYPED_KEY_BOUNDARY',
+                'BRIDGE_KEY_PRODUCTION',
+                'DURABLE_SORT_AND_RANGE',
+                'SQL_PROOF_EXISTING',
+                'SNAPSHOT_SAFETY',
+                'LARGE_KEY_BOUNDARY',
+                'KNOWN_SEMANTIC_GAP',
+                'DO_NOT_TOUCH_WITHOUT_COMPAT_GATE',
+                'CANDIDATE_PARITY_DIAGNOSTIC',
+                'REFERENCE_MODEL'
+        ].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'MVCC ordered-index key semantics manifest missing category: ' + category
+            }
+        }
+
+        ['Calcite', 'HerdDB', 'MapDB', 'PostgreSQL', 'InnoDB', 'H2', 'Derby'].each { reference ->
+            if (!references.any { value -> value.contains(reference) }) {
+                failures << 'MVCC ordered-index key semantics manifest missing reference model: ' + reference
+            }
+        }
+
+        def docsText = file('docs/MVCC-ORDERED-INDEX-KEY-SEMANTICS.md').getText('UTF-8')
+        [
+                'This is an audit artifact, not a behavior change',
+                'No storage format change',
+                'No Java runtime path-selection change',
+                'No candidate-index authority is restored',
+                'NULL',
+                'multi-column keys',
+                'duplicate keys',
+                'unique constraints',
+                'ASC/DESC',
+                'collation-sensitive comparison',
+                'typed Derby values',
+                'large keys',
+                'overflow-backed key attributes',
+                'range boundaries',
+                'Candidate paths remain diagnostic/parity only',
+                'These are reference models only; this audit does not add them as dependencies',
+                'SQL NULL through a Derby value holder',
+                'Raw Java `null` cells',
+                'Composite Derby index semantics need an explicit tuple-key codec',
+                'Derby collation-sensitive comparison must not be assumed',
+                'does not encode physical sort direction',
+                'must not become an independent uniqueness oracle'
+        ].each { markerText ->
+            if (!docsText.contains(markerText)) {
+                failures << 'MVCC ordered-index key semantics documentation missing marker: ' + markerText
+            }
+        }
+
+        def typedKey = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java').getText('UTF-8')
+        [
+                'ENVELOPE_PREFIX',
+                'DOK1|',
+                'NULL',
+                'INTEGER',
+                'DECIMAL',
+                'FLOAT',
+                'TEMPORAL',
+                'TEXT',
+                'LEGACY'
+        ].each { markerText ->
+            if (!typedKey.contains(markerText)) {
+                failures << 'DelosStorageOrderedIndexKey missing marker: ' + markerText
+            }
+        }
+
+        def durableStore = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccOrderedIndexPageStore.java').getText('UTF-8')
+        [
+                'OrderedIndexKeyCodec::compare',
+                'rowIdsInRangeFor',
+                'rowIdsFor',
+                'legacy untyped keys',
+                '<oversized:',
+                'typed key envelope'
+        ].each { markerText ->
+            if (!durableStore.contains(markerText)) {
+                failures << 'MvccOrderedIndexPageStore missing marker: ' + markerText
+            }
+        }
+
+        def bridge = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedIndexMaintenance.java').getText('UTF-8')
+        [
+                'valueKeysTyped',
+                'DelosStorageOrderedIndexKey.encode(value)',
+                'orderedIndexCandidateParityErrors',
+                'valueKeysRaw'
+        ].each { markerText ->
+            if (!bridge.contains(markerText)) {
+                failures << 'MvccInheritedIndexMaintenance missing marker: ' + markerText
+            }
+        }
+
+        def testText = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.java').getText('UTF-8')
+        [
+                'testIntegerRangeUsesNumericOrderedIndexKeySemantics',
+                'testDecimalAndBigintRangesUseTypedOrderedIndexKeySemantics',
+                'testTextValuesThatResembleLegacyTypedEnvelopeUseTextSemantics',
+                'typed numeric range should not fall back'
+        ].each { markerText ->
+            if (!testText.contains(markerText)) {
+                failures << 'MvccSqlTypedOrderedIndexKeyTest missing marker: ' + markerText
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Section = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+        if (s0Section.contains('delosMvccOrderedIndexKeySemanticsAuditStaticAnalysis')) {
+            failures << 'MVCC ordered-index key semantics audit gate must remain outside S0 until it becomes a stable behavior gate'
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-ordered-index-key-semantics-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC ordered-index key semantics static analysis')
+            writer.println('===========================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println('Reference markers: ' + references.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reference: ' + row.reference)
+                writer.println('  risk: ' + row.risk)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB MVCC ordered-index key semantics static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC ordered-index key semantics static analysis passed. Report: ' + reportFile
+    }
+}
+
+
+
+def delosMvccCheckpointRecoveryOrderingManifestFile = file('gradle/static-analysis/delosdb-mvcc-checkpoint-recovery-ordering.txt')
+
+def delosLoadMvccCheckpointRecoveryOrderingRows = {
+    if (!delosMvccCheckpointRecoveryOrderingManifestFile.exists()) {
+        throw new GradleException('Missing DelosDB MVCC checkpoint/recovery ordering manifest: ' + delosMvccCheckpointRecoveryOrderingManifestFile)
+    }
+    def rows = []
+    delosMvccCheckpointRecoveryOrderingManifestFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed MVCC checkpoint/recovery ordering line ' + (index + 1) + ': expected 6 pipe-delimited fields')
+        }
+        rows << [id: parts[0], path: parts[1], marker: parts[2], category: parts[3], reference: parts[4], risk: parts[5]]
+    }
+    rows
+}
+
+tasks.register('delosMvccCheckpointRecoveryOrderingAuditStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the MVCC checkpoint/recovery ordering audit and lifecycle safety markers.'
+
+    inputs.file(delosMvccCheckpointRecoveryOrderingManifestFile)
+    inputs.file('docs/MVCC-CHECKPOINT-RECOVERY-ORDERING.md')
+    inputs.file('docs/ALGORITHM-INVENTORY.md')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccCheckpointStore.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccStateStore.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccBufferFlushCoordinator.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccTransactionOutcomeLog.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccRecoveryReplayEngine.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/MvccSubsystemRecoveryRecordStore.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccTable.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccPurgeDaemon.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/DelosMvccBackupSidecarSupport.java')
+    inputs.file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccRecoveryReplayEngineTest.java')
+    inputs.file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccBufferManagerPhase2Test.java')
+    inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.java')
+    inputs.file('gradle/delosdb-storage-static-analysis.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-checkpoint-recovery-ordering-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccCheckpointRecoveryOrderingRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+        def references = [] as Set
+
+        if (rows.size() < 15) {
+            failures << 'MVCC checkpoint/recovery ordering audit must cover at least 15 rows; found ' + rows.size()
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC checkpoint/recovery ordering id: ' + row.id
+            }
+            categories.add(row.category)
+            row.reference.split(';').each { reference ->
+                if (reference.trim()) {
+                    references.add(reference.trim())
+                }
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC checkpoint/recovery ordering proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC checkpoint/recovery ordering marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.risk.length() < 90) {
+                failures << 'MVCC checkpoint/recovery ordering risk is too thin for ' + row.id
+            }
+        }
+
+        [
+                'DOCUMENTATION',
+                'NO_BEHAVIOR_CHANGE',
+                'CHECKPOINT_MARKER_ORDER',
+                'CHECKPOINT_PUBLICATION',
+                'DIRTY_PAGE_FLUSH_ORDER',
+                'TRANSACTION_OUTCOME_REPLAY',
+                'SUBSYSTEM_REPLAY_ORDER',
+                'SUBSYSTEM_RECOVERY_RECORD_ORDER',
+                'CHECKPOINT_COMPACTION',
+                'PURGE_CHECKPOINT_INTERACTION',
+                'BACKUP_SNAPSHOT_BOUNDARY',
+                'BACKUP_RESTORE_BOUNDARY',
+                'RECOVERY_PROOF_EXISTING',
+                'FLUSH_PROOF_EXISTING',
+                'BACKUP_PROOF_EXISTING',
+                'ALGORITHM_INVENTORY_LINK'
+        ].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'MVCC checkpoint/recovery ordering manifest missing category: ' + category
+            }
+        }
+
+        ['PostgreSQL', 'InnoDB', 'HerdDB', 'H2', 'Derby'].each { reference ->
+            if (!references.any { value -> value.contains(reference) }) {
+                failures << 'MVCC checkpoint/recovery ordering manifest missing reference model: ' + reference
+            }
+        }
+
+        def docsText = file('docs/MVCC-CHECKPOINT-RECOVERY-ORDERING.md').getText('UTF-8')
+        [
+                'This is an audit artifact, not a behavior change',
+                'No Java runtime behavior change',
+                'No storage format change',
+                'No recovery replay behavior change',
+                'No backup/restore behavior change',
+                'No external framework dependency',
+                'checkpoint marker order',
+                'dirty-page flush order',
+                'subsystem recovery record order',
+                'transaction outcome replay',
+                'purge/checkpoint interaction',
+                'backup snapshot boundary',
+                'Derby RawStore remains compatibility authority',
+                'MVCC recovery replay remains provider-owned',
+                'PostgreSQL, InnoDB, HerdDB, H2, and Derby are reference models only',
+                'Any future implementation that changes checkpoint marker order'
+        ].each { markerText ->
+            if (!docsText.contains(markerText)) {
+                failures << 'MVCC checkpoint/recovery ordering documentation missing marker: ' + markerText
+            }
+        }
+
+        def checkpointStore = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccCheckpointStore.java').getText('UTF-8')
+        [
+                'forced prepare marker before publishing',
+                'forced completion marker after publication',
+                'turn the checkpoint file into storage authority',
+                'writeUtf8Forced(rewrite, checkpointContent)'
+        ].each { markerText ->
+            if (!checkpointStore.contains(markerText)) {
+                failures << 'PageVolumeMvccCheckpointStore missing marker: ' + markerText
+            }
+        }
+
+        def stateStore = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccStateStore.java').getText('UTF-8')
+        [
+                'appendSubsystemRecoveryRecords(transactionId, durableCommitSequence)',
+                'rewriteCheckpoint()',
+                'checkpointStore.rewrite(',
+                'checkpointRecoveryRecordCount()'
+        ].each { markerText ->
+            if (!stateStore.contains(markerText)) {
+                failures << 'PageVolumeMvccStateStore missing marker: ' + markerText
+            }
+        }
+
+        def flushCoordinator = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccBufferFlushCoordinator.java').getText('UTF-8')
+        [
+                'WAL-before-flush',
+                'may not be flushed until the caller has recorded',
+                'forcePageVolumeAfterBatch'
+        ].each { markerText ->
+            if (!flushCoordinator.contains(markerText)) {
+                failures << 'MvccBufferFlushCoordinator missing marker: ' + markerText
+            }
+        }
+
+        def outcomeLog = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccTransactionOutcomeLog.java').getText('UTF-8')
+        [
+                'Authoritative transaction-outcome log for strict durable MVCC recovery',
+                'Unknown outcomes fail loudly',
+                'rewriteCheckpoint(List<MvccVersionRecord> committedImage)',
+                'committedRecordOrEmpty(MvccVersionRecord record)'
+        ].each { markerText ->
+            if (!outcomeLog.contains(markerText)) {
+                failures << 'MvccTransactionOutcomeLog missing marker: ' + markerText
+            }
+        }
+
+        def replayEngine = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccRecoveryReplayEngine.java').getText('UTF-8')
+        [
+                'Subsystem metadata validation happens before any page mutation replay',
+                'subsystemReplayPlan.requireCrossSubsystemCompleteness(requiredSubsystems)',
+                'new MvccPageRecoveryRunner(mutationLog, store).recoverStrict(outcomeLog)',
+                'rowIndexOverflowFreeSpaceOutcomeSubsystems()'
+        ].each { markerText ->
+            if (!replayEngine.contains(markerText)) {
+                failures << 'MvccRecoveryReplayEngine missing marker: ' + markerText
+            }
+        }
+
+        def sidecarSupport = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/DelosMvccBackupSidecarSupport.java').getText('UTF-8')
+        [
+                'void backupSidecars(File backupcopy)',
+                'void restoreSidecarsFromBackup(String backupPath)',
+                'must not depend on the MVCC module',
+                'BACKUP_MANIFEST = "delos_mvcc.BACKUP-MANIFEST"'
+        ].each { markerText ->
+            if (!sidecarSupport.contains(markerText)) {
+                failures << 'DelosMvccBackupSidecarSupport missing marker: ' + markerText
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index >= 0) {
+            def s0Section = staticText.substring(s0Index)
+            if (s0Section.contains('delosMvccCheckpointRecoveryOrderingAuditStaticAnalysis')) {
+                failures << 'MVCC checkpoint/recovery ordering audit gate must remain outside S0 until it becomes a stable behavior gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-checkpoint-recovery-ordering-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC checkpoint/recovery ordering static analysis')
+            writer.println('===========================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println('Reference markers: ' + references.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reference: ' + row.reference)
+                writer.println('  risk: ' + row.risk)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB MVCC checkpoint/recovery ordering static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC checkpoint/recovery ordering static analysis passed. Report: ' + reportFile
+    }
+}
 
 def delosExternalValidationToolingFile = file('gradle/static-analysis/delosdb-external-validation-tooling.txt')
 
