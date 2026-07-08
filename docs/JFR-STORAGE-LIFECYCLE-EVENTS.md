@@ -93,6 +93,11 @@ or fallback-only. `DelosStoragePathDiagnostic` remains the diagnostic authority
 for storage-path vocabulary, and `DelosStorageLifecycleJfr.recordStoragePathDecision`
 is only an adapter for future reporting.
 
+
+## Durable MVCC boundary
+
+MVCC checkpoint JFR wiring uses `MvccStorageLifecycleJfr` inside `delosdb-storage-mvcc` rather than importing the Derby API event facade into `PageVolumeMvccStateStore`. This preserves the existing storage static-analysis rule that durable MVCC store classes must not import `org.apache.derby.*` APIs.
+
 ## Verification
 
 Focused gate:

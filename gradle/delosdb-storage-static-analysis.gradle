@@ -8467,7 +8467,6 @@ tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
                 'event.isEnabled()',
                 'event.commit()',
                 'recordMvccAnalyzeStatistics',
-                'recordMvccCheckpoint',
                 'recordMvccPurge',
                 'recordMvccRecoveryReplay',
                 'recordMvccBackupSidecar',
@@ -8475,7 +8474,6 @@ tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
                 'recordHeapSanityCheck',
                 'recordStoragePathDecision',
                 'org.apache.derby.delosdb.mvcc.AnalyzeStatistics',
-                'org.apache.derby.delosdb.mvcc.Checkpoint',
                 'org.apache.derby.delosdb.mvcc.Purge',
                 'org.apache.derby.delosdb.mvcc.RecoveryReplay',
                 'org.apache.derby.delosdb.mvcc.BackupSidecar',
@@ -8501,12 +8499,31 @@ tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
             failures << 'MVCC analyze/statistics diagnostics must preserve Derby optimizer authority marker'
         }
 
+        def checkpointBridgeText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/MvccStorageLifecycleJfr.java').getText('UTF-8')
+        [
+                'final class MvccStorageLifecycleJfr',
+                'import jdk.jfr.Event;',
+                'recordCheckpoint',
+                'org.apache.derby.delosdb.mvcc.Checkpoint',
+                'does not import Derby'
+        ].each { markerText ->
+            if (!checkpointBridgeText.contains(markerText)) {
+                failures << 'MVCC-local checkpoint JFR bridge missing marker: ' + markerText
+            }
+        }
+        if (checkpointBridgeText.contains('import org.apache.derby.')) {
+            failures << 'MVCC-local checkpoint JFR bridge must not import Derby API classes'
+        }
+
         def checkpointText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccStateStore.java').getText('UTF-8')
-        if (!checkpointText.contains('DelosStorageLifecycleJfr.recordMvccCheckpoint')) {
+        if (!checkpointText.contains('MvccStorageLifecycleJfr.recordCheckpoint')) {
             failures << 'MVCC checkpoint rewrite must record a JFR event after the proven checkpoint lifecycle point'
         }
+        if (checkpointText.contains('org.apache.derby.iapi.store.types.DelosStorageLifecycleJfr')) {
+            failures << 'MVCC durable checkpoint store must not import the Derby API JFR event facade'
+        }
         def appendIndex = checkpointText.indexOf('recoveryRecordStore.appendCheckpoint')
-        def eventIndex = checkpointText.indexOf('DelosStorageLifecycleJfr.recordMvccCheckpoint')
+        def eventIndex = checkpointText.indexOf('MvccStorageLifecycleJfr.recordCheckpoint')
         if (appendIndex < 0 || eventIndex < 0 || eventIndex < appendIndex) {
             failures << 'MVCC checkpoint JFR event must be recorded after the subsystem checkpoint recovery record append'
         }

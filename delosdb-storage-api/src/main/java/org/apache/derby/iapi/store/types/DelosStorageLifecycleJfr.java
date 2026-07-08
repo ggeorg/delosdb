@@ -71,26 +71,6 @@ public final class DelosStorageLifecycleJfr {
         event.commit();
     }
 
-    public static void recordMvccCheckpoint(
-            String storageId,
-            long physicalVersionCount,
-            long logicalRowCount,
-            String status,
-            boolean success,
-            String failure) {
-        MvccCheckpointEvent event = new MvccCheckpointEvent();
-        if (!event.isEnabled()) {
-            return;
-        }
-        event.storageId = normalize(storageId);
-        event.physicalVersionCount = physicalVersionCount;
-        event.logicalRowCount = logicalRowCount;
-        event.status = normalize(status);
-        event.success = success;
-        event.failure = normalize(failure);
-        event.commit();
-    }
-
     public static void recordMvccPurge(
             String storageId,
             long visibleDebt,
@@ -243,25 +223,6 @@ public final class DelosStorageLifecycleJfr {
         public long estimatedIndexLookupCost;
         @Label("Run Context")
         public String runContext;
-        @Label("Success")
-        public boolean success;
-        @Label("Failure")
-        public String failure;
-    }
-
-    @Name("org.apache.derby.delosdb.mvcc.Checkpoint")
-    @Label("DelosDB MVCC Checkpoint")
-    @Category({"DelosDB", "Storage", "MVCC"})
-    @Description("Records MVCC checkpoint rewrite lifecycle points.")
-    public static final class MvccCheckpointEvent extends Event {
-        @Label("Storage ID")
-        public String storageId;
-        @Label("Physical Versions")
-        public long physicalVersionCount;
-        @Label("Logical Rows")
-        public long logicalRowCount;
-        @Label("Status")
-        public String status;
         @Label("Success")
         public boolean success;
         @Label("Failure")
