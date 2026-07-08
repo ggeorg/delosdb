@@ -5740,10 +5740,12 @@ def delosRunExternalValidationCommand = { String propertyName, String displayNam
                 + '="<command>"; this external validation task is intentionally not an S0 dependency.')
     }
     def commandText = configured.trim()
-    exec {
+    def execution = providers.exec {
         // R6 external validation executes caller-supplied shell commands so
         // tool-specific quoting, classpaths, JDBC URLs, and JVM options remain
-        // under the CI/release job that opted into the external tool.
+        // under the CI/release job that opted into the external tool. Use
+        // ProviderFactory.exec instead of the removed Project.exec API so this
+        // stays compatible with the Gradle 9.x build used by DelosDB.
         def osName = System.getProperty('os.name', '').toLowerCase(java.util.Locale.ROOT)
         if (osName.contains('windows')) {
             commandLine 'cmd', '/c', commandText
@@ -5751,6 +5753,7 @@ def delosRunExternalValidationCommand = { String propertyName, String displayNam
             commandLine 'sh', '-c', commandText
         }
     }
+    execution.result.get().assertNormalExitValue()
 }
 
 tasks.register('delosJmhMicrobenchmarks') {

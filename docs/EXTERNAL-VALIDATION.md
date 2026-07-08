@@ -25,13 +25,16 @@ root task, and the built-in baseline task when one exists.
 
 ## Aggregate opt-in task
 
-Run all configured external MVCC validation tools:
+Run all configured external MVCC validation tools. For a local smoke check of
+the command runner, use harmless shell commands such as `echo jmh-ok`; real CI
+should replace them with approved JMH, jcstress, SQLancer, workload, or soak
+commands.
 
 ```bash
 ./gradlew delosExternalMvccValidation \
-  -Pdelosdb.jmh.command="<jmh command>" \
-  -Pdelosdb.jcstress.command="<jcstress command>" \
-  -Pdelosdb.sqlancer.command="<sqlancer command>"
+  -Pdelosdb.jmh.command="echo jmh-ok" \
+  -Pdelosdb.jcstress.command="echo jcstress-ok" \
+  -Pdelosdb.sqlancer.command="echo sqlancer-ok"
 ```
 
 Unconfigured tools are skipped and shown in the plan report. CI can require at
@@ -40,7 +43,7 @@ least one configured external tool with:
 ```bash
 ./gradlew delosExternalMvccValidation \
   -Pdelosdb.external.validation.required=true \
-  -Pdelosdb.sqlancer.command="<sqlancer command>"
+  -Pdelosdb.sqlancer.command="echo sqlancer-ok"
 ```
 
 ## Individual task slots
