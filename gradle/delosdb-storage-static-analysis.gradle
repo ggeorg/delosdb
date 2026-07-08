@@ -4524,6 +4524,7 @@ tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
     inputs.file(delosBackupRestoreSidecarVerificationFile)
     inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
     inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/DelosMvccBackupSidecarSupport.java')
     inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.java')
     inputs.file('delosdb-tests/build.gradle')
     outputs.file(layout.buildDirectory.file('reports/delosdb/backup-restore-sidecar-verification-static-analysis.txt'))
@@ -4570,22 +4571,26 @@ tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
         }
 
         def rawStore = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java').getText('UTF-8')
+        def sidecarSupport = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/DelosMvccBackupSidecarSupport.java').getText('UTF-8')
         if (!rawStore.contains('backupDelosMvccSidecars(backupcopy);')) {
             failures << 'RawStore backup path must call backupDelosMvccSidecars after data backup'
         }
         if (!rawStore.contains('restoreDelosMvccSidecarsFromBackup(backupPath);')) {
             failures << 'RawStore restore path must call restoreDelosMvccSidecarsFromBackup'
         }
-        if (!rawStore.contains('privCopyDirectory(mvccDirectory, backupMvccDirectory)')) {
-            failures << 'RawStore backup path must copy delos_mvcc sidecars into the backup image'
+        if (!rawStore.contains('DelosMvccBackupSidecarSupport')) {
+            failures << 'RawStore must delegate DelosDB sidecar mechanics to DelosMvccBackupSidecarSupport'
         }
-        if (!rawStore.contains('privCopyDirectory(backupMvccDirectory, dbMvccDirectory)')) {
-            failures << 'RawStore restore path must copy delos_mvcc sidecars from the backup image'
+        if (!sidecarSupport.contains('files.copyDirectory(mvccDirectory, backupMvccDirectory)')) {
+            failures << 'Sidecar helper backup path must copy delos_mvcc sidecars into the backup image'
         }
-        if (!rawStore.contains('privDeleteAll(dbMvccDirectory)')) {
-            failures << 'RawStore restore path must remove stale target delos_mvcc sidecars before restore'
+        if (!sidecarSupport.contains('files.copyDirectory(backupMvccDirectory, dbMvccDirectory)')) {
+            failures << 'Sidecar helper restore path must copy delos_mvcc sidecars from the backup image'
         }
-        if (rawStore.contains('import io.github.ggeorg.delosdb.storage.mvcc.MvccStorageNames')) {
+        if (!sidecarSupport.contains('files.deleteAll(dbMvccDirectory)')) {
+            failures << 'Sidecar helper restore path must remove stale target delos_mvcc sidecars before restore'
+        }
+        if ((rawStore + sidecarSupport).contains('import io.github.ggeorg.delosdb.storage.mvcc.')) {
             failures << 'Inherited Derby raw-store backup code must not depend directly on the MVCC module'
         }
 
@@ -6172,6 +6177,157 @@ tasks.register('delosExternalValidationToolingStaticAnalysis') {
             throw new GradleException('External validation tooling static analysis failed. Report: ' + reportFile)
         }
         println 'DelosDB external validation tooling static analysis passed. Report: ' + reportFile
+    }
+}
+
+
+def delosHeapRawStoreBoundaryCleanupPhase3File = file('gradle/static-analysis/delosdb-heap-rawstore-boundary-cleanup-phase3.txt')
+
+def delosLoadHeapRawStoreBoundaryCleanupPhase3Rows = {
+    if (!delosHeapRawStoreBoundaryCleanupPhase3File.exists()) {
+        throw new GradleException('Missing heap/raw-store boundary cleanup phase 3 file: ' + delosHeapRawStoreBoundaryCleanupPhase3File)
+    }
+    def rows = []
+    delosHeapRawStoreBoundaryCleanupPhase3File.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 5) {
+            throw new GradleException('Malformed heap/raw-store boundary cleanup phase 3 line ' + (index + 1) + ': expected 5 pipe-delimited fields')
+        }
+        rows << [id: parts[0], path: parts[1], category: parts[2], marker: parts[3], reason: parts[4]]
+    }
+    rows
+}
+
+tasks.register('delosHeapRawStoreBoundaryCleanupPhase3StaticAnalysis') {
+    group = 'verification'
+    description = 'Validates heap/raw-store boundary cleanup phase 3 helper extraction and guardrails.'
+
+    inputs.file(delosHeapRawStoreBoundaryCleanupPhase3File)
+    inputs.file('docs/COMPARATIVE-ENGINE-AUDIT.md')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java')
+    inputs.file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/DelosMvccBackupSidecarSupport.java')
+    inputs.file('gradle/static-analysis/delosdb-derby-fork-diff-classification.txt')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/heap-rawstore-boundary-cleanup-phase3-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadHeapRawStoreBoundaryCleanupPhase3Rows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate heap/raw-store phase 3 id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Heap/raw-store phase 3 proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Heap/raw-store phase 3 proof marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 50) {
+                failures << 'Heap/raw-store phase 3 reason is too thin for ' + row.id
+            }
+        }
+
+        [
+                'ROADMAP_STATUS',
+                'RAWSTORE_CONTROL_FLOW',
+                'HELPER_EXTRACTION',
+                'NO_MVCC_MODULE_DEPENDENCY',
+                'MANIFEST_PRESERVATION',
+                'COPY_PRESERVATION',
+                'RESTORE_PRESERVATION',
+                'STALE_RESTORE_REPLACEMENT',
+                'FORK_DIFF_CLASSIFICATION'
+        ].each { required ->
+            if (!categories.contains(required)) {
+                failures << 'Heap/raw-store phase 3 classification is missing category: ' + required
+            }
+        }
+
+        def rawStore = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java').getText('UTF-8')
+        def sidecarSupport = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/DelosMvccBackupSidecarSupport.java').getText('UTF-8')
+        if (!rawStore.contains('backupDelosMvccSidecars(backupcopy);')) {
+            failures << 'RawStore backup control flow must keep the DelosDB sidecar backup hook'
+        }
+        if (!rawStore.contains('restoreDelosMvccSidecarsFromBackup(backupPath);')) {
+            failures << 'RawStore restore control flow must keep the DelosDB sidecar restore hook'
+        }
+        if (!rawStore.contains('delosMvccBackupSidecarSupport().backupSidecars(backupcopy);')) {
+            failures << 'RawStore backup hook must delegate to DelosMvccBackupSidecarSupport'
+        }
+        if (!rawStore.contains('delosMvccBackupSidecarSupport().restoreSidecarsFromBackup(backupPath);')) {
+            failures << 'RawStore restore hook must delegate to DelosMvccBackupSidecarSupport'
+        }
+        if (!sidecarSupport.contains('final class DelosMvccBackupSidecarSupport')) {
+            failures << 'DelosMvccBackupSidecarSupport must stay a package-private final helper'
+        }
+        if (!sidecarSupport.contains('STORAGE_DIRECTORY_NAME = "delos_mvcc"')) {
+            failures << 'Sidecar helper must preserve the provider-owned delos_mvcc directory name'
+        }
+        if (!sidecarSupport.contains('BACKUP_MANIFEST = "delos_mvcc.BACKUP-MANIFEST"')) {
+            failures << 'Sidecar helper must preserve the backup manifest name'
+        }
+        if (!sidecarSupport.contains('files.copyDirectory(mvccDirectory, backupMvccDirectory)')) {
+            failures << 'Sidecar helper must preserve backup directory copy semantics'
+        }
+        if (!sidecarSupport.contains('files.copyDirectory(backupMvccDirectory, dbMvccDirectory)')) {
+            failures << 'Sidecar helper must preserve restore directory copy semantics'
+        }
+        if (!sidecarSupport.contains('files.deleteAll(dbMvccDirectory)')) {
+            failures << 'Sidecar helper must preserve stale target sidecar replacement semantics'
+        }
+        if ((rawStore + sidecarSupport).contains('io.github.ggeorg.delosdb.storage.mvcc.')) {
+            failures << 'Raw-store sidecar helper must not import or reference the MVCC implementation module'
+        }
+        if (rawStore.contains('private record SidecarBackupManifest')) {
+            failures << 'Sidecar manifest details should live in DelosMvccBackupSidecarSupport, not inherited RawStore'
+        }
+        if (rawStore.contains('MessageDigest.getInstance') || rawStore.contains('Files.walk(root)')) {
+            failures << 'RawStore should not retain low-level sidecar manifest/digest mechanics after helper extraction'
+        }
+        def s0Text = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Section = s0Text.substring(s0Text.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+        if (s0Section.contains('delosHeapRawStoreBoundaryCleanupPhase3StaticAnalysis')) {
+            failures << 'Heap/raw-store phase 3 focused gate must remain outside S0 as an implementation-phase review gate'
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/heap-rawstore-boundary-cleanup-phase3-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB heap/raw-store boundary cleanup phase 3 static analysis')
+            writer.println('=================================================================')
+            writer.println()
+            writer.println('Proof rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reason: ' + row.reason)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Heap/raw-store boundary cleanup phase 3 static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB heap/raw-store boundary cleanup phase 3 static analysis passed. Report: ' + reportFile
     }
 }
 

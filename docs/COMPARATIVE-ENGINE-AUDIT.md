@@ -418,6 +418,8 @@ Purge should be driven by measured debt and reader safety, not only commit-count
 
 ### R5 — MVCC analyze/statistics lifecycle
 
+Execution state: implementation slice delivered by `delosdb-mvcc-analyze-statistics-lifecycle-overlay.zip`.
+
 Overlay:
 
 `delosdb-mvcc-analyze-statistics-lifecycle-overlay.zip`
@@ -431,6 +433,8 @@ Why fifth:
 Cost integration exists, but mature engines connect statistics refresh, table changes, and optimizer decisions.
 
 ### R6 — External validation tooling
+
+Execution state: implementation slice delivered by `delosdb-external-validation-tooling-overlay.zip`; Gradle 9 command execution compatibility fixed by `delosdb-external-validation-gradle9-exec-fix-overlay.zip`.
 
 Overlay:
 
@@ -446,6 +450,8 @@ Once the lifecycle subsystems exist, measure them with real external tools.
 
 ### R7 — Heap raw-store cleanup phase 3
 
+Execution state: implementation slice delivered by `delosdb-heap-rawstore-boundary-cleanup-phase3-overlay.zip`.
+
 Overlay:
 
 `delosdb-heap-rawstore-boundary-cleanup-phase3-overlay.zip`
@@ -456,7 +462,7 @@ Commit message:
 
 Why seventh:
 
-Return to inherited Derby code after the MVCC lifecycle work, but do it behind compatibility gates.
+Return to inherited Derby code after the MVCC lifecycle work, but do it behind compatibility gates. This slice extracts the DelosDB MVCC sidecar backup/restore manifest mechanics from inherited `RawStore` into `DelosMvccBackupSidecarSupport`, preserving RawStore backup/restore hooks and avoiding any MVCC-module dependency in the Derby raw-store package.
 
 ## Current DelosDB position against mature systems
 

@@ -112,12 +112,15 @@ Suggested cleanup overlay:
 
 `delosdb-mvcc-purge-scheduler-consolidation-overlay.zip`
 
-### 3. `RawStore` now contains DelosDB sidecar backup logic
+### 3. `RawStore` DelosDB sidecar backup helper
+
+Execution state: implementation slice delivered by `delosdb-heap-rawstore-boundary-cleanup-phase3-overlay.zip`.
 
 The backup/restore sidecar fix was necessary, but it increased inherited
-`RawStore` fork surface. The behavior is correct, but the DelosDB-specific helper
-logic should be isolated behind a small package-private helper in the Derby storage
-module.
+`RawStore` fork surface. The DelosDB-specific helper logic is now isolated behind
+`DelosMvccBackupSidecarSupport`, a package-private helper in the Derby storage
+module. `RawStore` keeps only the inherited backup/restore control flow plus the
+DelosDB hook calls.
 
 Suggested shape:
 
@@ -132,9 +135,9 @@ Required constraints:
 - manifest verification behavior preserved
 - fork-diff classification remains explicit
 
-Suggested cleanup overlay:
+Delivered cleanup overlay:
 
-`delosdb-rawstore-sidecar-backup-helper-overlay.zip`
+`delosdb-heap-rawstore-boundary-cleanup-phase3-overlay.zip`
 
 ### 4. Buffer/recovery diagnostics names should be normalized
 
@@ -177,7 +180,7 @@ coverage and the manifest is no longer useful.
 
 1. `delosdb-mvcc-sidecar-open-context-cleanup-overlay.zip`
 2. `delosdb-mvcc-purge-scheduler-consolidation-overlay.zip`
-3. `delosdb-rawstore-sidecar-backup-helper-overlay.zip`
+3. `delosdb-heap-rawstore-boundary-cleanup-phase3-overlay.zip` — delivered
 4. `delosdb-mvcc-diagnostics-naming-cleanup-overlay.zip`
 5. optional historical static-manifest archive/removal after a final green pass
 
