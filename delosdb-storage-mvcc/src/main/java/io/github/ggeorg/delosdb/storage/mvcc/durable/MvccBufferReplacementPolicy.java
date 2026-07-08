@@ -12,8 +12,14 @@ import java.util.Objects;
  * separate lifecycle operations and must happen before replacement can reclaim
  * those entries.</p>
  */
-final class MvccBufferReplacementPolicy {
-    Decision chooseVictim(Map<Long, ? extends PageState> pages) {
+final class MvccBufferReplacementPolicy implements MvccBufferReplacementStrategy {
+    @Override
+    public String name() {
+        return "ACCESS_ORDER_LRU";
+    }
+
+    @Override
+    public Decision chooseVictim(Map<Long, ? extends PageState> pages) {
         Objects.requireNonNull(pages, "pages");
         long scannedPages = 0L;
         long pinnedProtectedPages = 0L;

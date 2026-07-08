@@ -26,7 +26,7 @@ final class MvccPageCache {
 
     private final int maxPages;
     private final LinkedHashMap<Long, CachedPage> pages;
-    private final MvccBufferReplacementPolicy replacementPolicy;
+    private final MvccBufferReplacementStrategy replacementPolicy;
     private long hits;
     private long misses;
     private long writes;
@@ -51,12 +51,16 @@ final class MvccPageCache {
     }
 
     MvccPageCache(int maxPages) {
+        this(maxPages, new MvccBufferReplacementPolicy());
+    }
+
+    MvccPageCache(int maxPages, MvccBufferReplacementStrategy replacementPolicy) {
         if (maxPages <= 0) {
             throw new IllegalArgumentException("maxPages must be positive: " + maxPages);
         }
         this.maxPages = maxPages;
         this.pages = new LinkedHashMap<>(16, 0.75f, true);
-        this.replacementPolicy = new MvccBufferReplacementPolicy();
+        this.replacementPolicy = Objects.requireNonNull(replacementPolicy, "replacementPolicy");
     }
 
     DelosPage read(DelosPageVolume volume, DelosPageId pageId) throws IOException {
@@ -198,7 +202,8 @@ final class MvccPageCache {
                 replacementScans,
                 replacementDirtyProtectionSkips,
                 replacementNoVictimCount,
-                lastPageGeneration);
+                lastPageGeneration,
+                replacementPolicy.name());
     }
 
     private CachedPage putUnlocked(DelosPage page, boolean dirty, boolean pinned) {
@@ -321,6 +326,7 @@ final class MvccPageCache {
             long replacementScans,
             long replacementDirtyProtectionSkips,
             long replacementNoVictimCount,
-            long lastPageGeneration) {
+            long lastPageGeneration,
+            String replacementPolicyName) {
     }
 }

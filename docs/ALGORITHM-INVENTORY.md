@@ -611,3 +611,11 @@ Rules for this proof:
 ## Shared lifecycle consistency report
 
 The shared lifecycle consistency report aggregates heap and MVCC checkpoint, recovery, purge/vacuum, analyze/update-statistics, backup-marker, and consistency signals into read-only diagnostic snapshots. It is a `SHARED_SERVICE_ALGORITHM` and `DIAGNOSTIC_ONLY_ALGORITHM`; it must not change storage formats, Derby optimizer authority, or heap/MVCC runtime behavior.
+
+## Buffer policy abstraction status
+
+The MVCC buffer replacement policy now has a package-local testability seam:
+`MvccBufferReplacementStrategy`. The default production policy remains
+`MvccBufferReplacementPolicy` / `ACCESS_ORDER_LRU`, and the new injection path is
+for package-local proofs and future JMH comparison lanes only. This does not
+authorize a policy replacement or shared heap/MVCC buffer extraction.

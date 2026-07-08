@@ -1,6 +1,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -80,6 +81,93 @@ final class MvccBufferReplacementPolicyTest {
             assertTrue(snapshot.pinnedEvictionSkips() > 0L);
             assertTrue(snapshot.replacementDirtyProtectionSkips() > 0L);
             assertTrue(snapshot.replacementNoVictimCount() > 0L);
+        }
+    }
+
+
+    @Test
+    void defaultReplacementPolicyNameIsExposedForDiagnostics() throws Exception {
+        CountingPageVolume volume = new CountingPageVolume();
+        DelosPage page = volume.allocatePage(DelosPage.DATA_PAGE_TYPE);
+        MvccPageCache cache = new MvccPageCache(1);
+
+        cache.putClean(page);
+
+        assertEquals("ACCESS_ORDER_LRU", cache.snapshot().replacementPolicyName());
+    }
+
+    @Test
+    void replacementPolicyCanBeInjectedForProofsWithoutChangingDefaultPolicy() throws Exception {
+        CountingPageVolume volume = new CountingPageVolume();
+        DelosPage page0 = volume.allocatePage(DelosPage.DATA_PAGE_TYPE);
+        DelosPage page1 = volume.allocatePage(DelosPage.DATA_PAGE_TYPE);
+        DelosPage page2 = volume.allocatePage(DelosPage.DATA_PAGE_TYPE);
+        NewestCleanPagePolicy newestCleanPagePolicy = new NewestCleanPagePolicy();
+        MvccPageCache cache = new MvccPageCache(2, newestCleanPagePolicy);
+
+        cache.putClean(page0);
+        cache.putClean(page1);
+        cache.putClean(page2);
+
+        assertEquals("NEWEST_CLEAN_TEST_POLICY", cache.snapshot().replacementPolicyName());
+        assertEquals(1L, newestCleanPagePolicy.invocations);
+
+        try (MvccPageCache.PinnedPage ignored = cache.readPinned(volume, page0.pageId())) {
+            assertEquals(1L, cache.snapshot().hits());
+        }
+        try (MvccPageCache.PinnedPage ignored = cache.readPinned(volume, page1.pageId())) {
+            assertEquals(2L, cache.snapshot().hits());
+        }
+        try (MvccPageCache.PinnedPage ignored = cache.readPinned(volume, page2.pageId())) {
+            assertEquals(1L, cache.snapshot().misses());
+        }
+    }
+
+    @Test
+    void replacementPolicyInjectionRejectsNullPolicy() {
+        assertThrows(NullPointerException.class, () -> new MvccPageCache(1, null));
+    }
+
+    private static final class NewestCleanPagePolicy implements MvccBufferReplacementStrategy {
+        private long invocations;
+
+        @Override
+        public String name() {
+            return "NEWEST_CLEAN_TEST_POLICY";
+        }
+
+        @Override
+        public MvccBufferReplacementPolicy.Decision chooseVictim(
+                Map<Long, ? extends MvccBufferReplacementPolicy.PageState> pages) {
+            invocations++;
+            long scannedPages = 0L;
+            long pinnedProtectedPages = 0L;
+            long dirtyProtectedPages = 0L;
+            Long newestCleanPage = null;
+            for (Map.Entry<Long, ? extends MvccBufferReplacementPolicy.PageState> entry : pages.entrySet()) {
+                scannedPages++;
+                MvccBufferReplacementPolicy.PageState page = entry.getValue();
+                if (page.pinCount() > 0) {
+                    pinnedProtectedPages++;
+                    continue;
+                }
+                if (page.dirty()) {
+                    dirtyProtectedPages++;
+                    continue;
+                }
+                newestCleanPage = entry.getKey();
+            }
+            if (newestCleanPage == null) {
+                return MvccBufferReplacementPolicy.Decision.noVictim(
+                        scannedPages,
+                        pinnedProtectedPages,
+                        dirtyProtectedPages);
+            }
+            return MvccBufferReplacementPolicy.Decision.victim(
+                    newestCleanPage,
+                    scannedPages,
+                    pinnedProtectedPages,
+                    dirtyProtectedPages);
         }
     }
 

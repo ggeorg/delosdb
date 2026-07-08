@@ -111,3 +111,29 @@ A future buffer-policy implementation must keep these constraints:
 3. Add JMH storage benchmark adapters after the abstraction is testable.
 4. Add JFR events for eviction/no-victim/flush pressure after the event vocabulary is stable.
 5. Revisit shared cache services only after heap diagnostics and compatibility gates prove a safe common boundary.
+
+## D2 implementation update: testable policy boundary
+
+The follow-up buffer policy abstraction slice keeps the default policy unchanged while making the replacement decision boundary injectable for deterministic proofs.
+
+Current behavior remains:
+
+```text
+access-order LRU candidate selection
++ pin protection
++ dirty-page protection
++ no-victim reporting
+```
+
+Implementation points:
+
+* `MvccBufferReplacementStrategy` is the package-local strategy boundary.
+* `MvccBufferReplacementPolicy` remains the default production strategy.
+* `MvccPageCache(int maxPages)` still uses `ACCESS_ORDER_LRU` by default.
+* `MvccPageCache(int maxPages, MvccBufferReplacementStrategy replacementPolicy)` exists for package-local proof and benchmark lanes.
+* `MvccPageCache.Snapshot.replacementPolicyName()` exposes which strategy was used in diagnostics.
+* `MvccBufferReplacementPolicyTest` proves default naming, custom strategy injection, and null-strategy rejection.
+
+This does not select CLOCK, CLOCK-Pro, CAR, ARC, or page-class-aware replacement. It only creates the testable seam required before JMH and future policy comparisons.
+
+The original audit constraints still stand: No Java runtime behavior change for the default path, No default replacement policy change, No cache format change, No page flush ordering change, No checkpoint/recovery ordering change, No heap raw-store cache dependency, and no shared buffer manager extraction is authorized by this audit.
