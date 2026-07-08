@@ -7503,6 +7503,238 @@ tasks.register('delosHeapAlgorithmBoundaryAuditPhase4StaticAnalysis') {
     }
 }
 
+
+def delosMvccBufferReplacementPolicyManifestFile = file('gradle/static-analysis/delosdb-mvcc-buffer-replacement-policy.txt')
+
+def delosLoadMvccBufferReplacementPolicyRows = {
+    if (!delosMvccBufferReplacementPolicyManifestFile.exists()) {
+        throw new GradleException('Missing DelosDB MVCC buffer replacement policy manifest: ' + delosMvccBufferReplacementPolicyManifestFile)
+    }
+    def rows = []
+    delosMvccBufferReplacementPolicyManifestFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed MVCC buffer replacement policy line ' + (index + 1) + ': expected 6 pipe-delimited fields')
+        }
+        rows << [id: parts[0], path: parts[1], marker: parts[2], category: parts[3], reference: parts[4], risk: parts[5]]
+    }
+    rows
+}
+
+tasks.register('delosMvccBufferReplacementPolicyAuditStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the MVCC buffer replacement policy audit and reference-model classifications.'
+
+    inputs.file(delosMvccBufferReplacementPolicyManifestFile)
+    inputs.file('docs/MVCC-BUFFER-REPLACEMENT-POLICY.md')
+    inputs.file('docs/ALGORITHM-INVENTORY.md')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccBufferReplacementPolicy.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageCache.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccBufferFlushCoordinator.java')
+    inputs.file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccBufferReplacementPolicyTest.java')
+    inputs.file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageCachePinDirtyTest.java')
+    inputs.file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccBufferManagerPhase2Test.java')
+    inputs.file('delosdb-storage-mvcc/build.gradle')
+    inputs.file('gradle/delosdb-storage-static-analysis.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-buffer-replacement-policy-audit-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccBufferReplacementPolicyRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+        def references = [] as Set
+
+        if (rows.size() < 18) {
+            failures << 'MVCC buffer replacement policy audit must cover at least 18 rows; found ' + rows.size()
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC buffer replacement policy audit id: ' + row.id
+            }
+            categories.add(row.category)
+            row.reference.split(';').each { reference ->
+                if (reference.trim()) {
+                    references.add(reference.trim())
+                }
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC buffer replacement policy proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC buffer replacement policy marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.risk.length() < 90) {
+                failures << 'MVCC buffer replacement policy risk is too thin for ' + row.id
+            }
+        }
+
+        [
+                'DOCUMENTATION',
+                'NO_BEHAVIOR_CHANGE',
+                'CURRENT_POLICY',
+                'VICTIM_SELECTION',
+                'PIN_PROTECTION',
+                'DIRTY_PROTECTION',
+                'NO_VICTIM_REPORTING',
+                'ACCESS_ORDER_CACHE',
+                'EVICTION_BOUNDARY',
+                'POLICY_METRICS',
+                'FLUSH_SAFETY_BOUNDARY',
+                'TEST_PROOF_EXISTING',
+                'PIN_DIRTY_PROOF_EXISTING',
+                'FLUSH_PROOF_EXISTING',
+                'LIFECYCLE_WIRING',
+                'ALGORITHM_INVENTORY_LINK',
+                'REFERENCE_MODEL',
+                'SHARED_SERVICE_BLOCK'
+        ].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'MVCC buffer replacement policy manifest missing category: ' + category
+            }
+        }
+
+        ['HerdDB', 'InnoDB', 'PostgreSQL', 'H2', 'JDK 25'].each { reference ->
+            if (!references.any { value -> value.contains(reference) }) {
+                failures << 'MVCC buffer replacement policy manifest missing reference model: ' + reference
+            }
+        }
+
+        def docsText = file('docs/MVCC-BUFFER-REPLACEMENT-POLICY.md').getText('UTF-8')
+        [
+                'This is an audit artifact, not a behavior change',
+                'No Java runtime behavior change',
+                'No default replacement policy change',
+                'No cache format change',
+                'No page flush ordering change',
+                'No checkpoint/recovery ordering change',
+                'No heap raw-store cache dependency',
+                'No shared buffer manager extraction is authorized by this audit',
+                'access-order LRU candidate selection',
+                'pin protection',
+                'dirty-page protection',
+                'no-victim reporting',
+                'Linear replacement scans may become expensive',
+                'all-pinned states can retain more pages',
+                'page-class-aware weighting',
+                'HerdDB ClockProPolicy and ClockAdaptiveReplacement',
+                'InnoDB is the reference model for production buffer-pool lifecycle',
+                'PostgreSQL is a reference model for buffer clock-sweep',
+                'JDK 25 is relevant through JFR observability and JMH validation lanes',
+                'Default behavior remains unchanged',
+                'Pinned pages are never evicted',
+                'Dirty pages are not evicted without a safe flush path',
+                'WAL-before-flush remains enforced by `MvccBufferFlushCoordinator`',
+                'Shared heap/MVCC buffer services are not authorized'
+        ].each { markerText ->
+            if (!docsText.contains(markerText)) {
+                failures << 'MVCC buffer replacement policy documentation missing marker: ' + markerText
+            }
+        }
+
+        def policyText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccBufferReplacementPolicy.java').getText('UTF-8')
+        [
+                'Deterministic replacement policy for the MVCC decoded-page cache',
+                'clean and unpinned page',
+                'pinnedProtectedPages',
+                'dirtyProtectedPages',
+                'Decision.noVictim'
+        ].each { markerText ->
+            if (!policyText.contains(markerText)) {
+                failures << 'MvccBufferReplacementPolicy missing marker: ' + markerText
+            }
+        }
+
+        def cacheText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageCache.java').getText('UTF-8')
+        [
+                'new LinkedHashMap<>(16, 0.75f, true)',
+                'trimToMaxPagesUnlocked',
+                'replacementNoVictimCount',
+                'replacementDirtyProtectionSkips',
+                'pinnedEvictionSkips',
+                'pinCount',
+                'dirty'
+        ].each { markerText ->
+            if (!cacheText.contains(markerText)) {
+                failures << 'MvccPageCache missing marker: ' + markerText
+            }
+        }
+
+        def flushCoordinator = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccBufferFlushCoordinator.java').getText('UTF-8')
+        ['MVCC WAL-before-flush violation', 'forcePageVolumeAfterBatch', 'groupCommitBatches'].each { markerText ->
+            if (!flushCoordinator.contains(markerText)) {
+                failures << 'MvccBufferFlushCoordinator missing marker: ' + markerText
+            }
+        }
+
+        def buildText = file('delosdb-storage-mvcc/build.gradle').getText('UTF-8')
+        ['runMvccBufferReplacementPolicyTest', 'runMvccBufferManagerPhase2Test', 'runMvccPageCachePinDirtyTest', 'runDelosMvccLifecycleProofs'].each { markerText ->
+            if (!buildText.contains(markerText)) {
+                failures << 'MVCC storage build missing lifecycle proof task marker: ' + markerText
+            }
+        }
+
+        def algorithmInventory = file('docs/ALGORITHM-INVENTORY.md').getText('UTF-8')
+        [
+                'Buffer replacement',
+                'MvccBufferReplacementPolicy',
+                'HerdDB ClockProPolicy and ClockAdaptiveReplacement',
+                'delosdb-mvcc-buffer-replacement-policy-audit-overlay.zip'
+        ].each { markerText ->
+            if (!algorithmInventory.contains(markerText)) {
+                failures << 'Algorithm inventory missing buffer replacement marker: ' + markerText
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index >= 0) {
+            def s0Section = staticText.substring(s0Index)
+            if (s0Section.contains('delosMvccBufferReplacementPolicyAuditStaticAnalysis')) {
+                failures << 'MVCC buffer replacement policy audit gate must remain outside S0 until it becomes a stable behavior gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-buffer-replacement-policy-audit-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC buffer replacement policy audit static analysis')
+            writer.println('============================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println('Reference markers: ' + references.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reference: ' + row.reference)
+                writer.println('  risk: ' + row.risk)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB MVCC buffer replacement policy audit static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC buffer replacement policy audit static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
