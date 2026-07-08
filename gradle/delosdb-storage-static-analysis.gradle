@@ -7735,6 +7735,491 @@ tasks.register('delosMvccBufferReplacementPolicyAuditStaticAnalysis') {
     }
 }
 
+
+def delosPageCodecAlgorithmManifestFile = file('gradle/static-analysis/delosdb-page-codec-algorithms.txt')
+
+def delosLoadPageCodecAlgorithmRows = {
+    if (!delosPageCodecAlgorithmManifestFile.exists()) {
+        throw new GradleException('Missing DelosDB page codec algorithm manifest: ' + delosPageCodecAlgorithmManifestFile)
+    }
+    def rows = []
+    delosPageCodecAlgorithmManifestFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed page codec algorithm line ' + (index + 1) + ': expected 6 pipe-delimited fields')
+        }
+        rows << [id: parts[0], path: parts[1], marker: parts[2], category: parts[3], reference: parts[4], risk: parts[5]]
+    }
+    rows
+}
+
+tasks.register('delosPageCodecAlgorithmAuditStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the DelosDB page codec algorithm audit and reference-model classifications.'
+
+    inputs.file(delosPageCodecAlgorithmManifestFile)
+    inputs.file('docs/PAGE-CODEC-ALGORITHMS.md')
+    inputs.file('docs/ALGORITHM-INVENTORY.md')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/format/MvccBinaryFormat.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/format/MvccPageRecordCodec.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/format/MvccVersionRecordCodec.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccRowPayloadCodec.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/DurableMvccSqlRowCodec.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedRowCodec.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccIndexTupleCodec.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccOverflowPayloadCodec.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccOverflowPayloadReferenceCodec.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccAttributeOverflowRowPayloadCodec.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccSidecarCodec.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccFreeSpaceMapStore.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccVisibilityMapStore.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccWriteAheadLog.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/MvccSubsystemRecoveryRecordStore.java')
+    inputs.file('gradle/delosdb-storage-static-analysis.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/page-codec-algorithm-audit-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadPageCodecAlgorithmRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+        def references = [] as Set
+
+        if (rows.size() < 24) {
+            failures << 'Page codec algorithm audit must cover at least 24 rows; found ' + rows.size()
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate page codec algorithm audit id: ' + row.id
+            }
+            categories.add(row.category)
+            row.reference.split(';').each { reference ->
+                if (reference.trim()) {
+                    references.add(reference.trim())
+                }
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'Page codec algorithm proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Page codec algorithm marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.risk.length() < 90) {
+                failures << 'Page codec algorithm risk is too thin for ' + row.id
+            }
+        }
+
+        [
+                'DOCUMENTATION',
+                'NO_BEHAVIOR_CHANGE',
+                'SHARED_BINARY_FORMAT',
+                'PAGE_RECORD_CODEC',
+                'VERSION_RECORD_CODEC',
+                'ROW_PAYLOAD_CODEC',
+                'SQL_ROW_CODEC',
+                'TYPED_DERBY_VALUE_BOUNDARY',
+                'INDEX_TUPLE_CODEC',
+                'OVERFLOW_DESCRIPTOR_CODEC',
+                'OVERFLOW_REFERENCE_CODEC',
+                'ATTRIBUTE_OVERFLOW_CODEC',
+                'SIDECAR_CODEC',
+                'FREE_SPACE_MAP_CODEC',
+                'VISIBILITY_MAP_CODEC',
+                'WAL_TEXT_CODEC',
+                'RECOVERY_RECORD_CODEC',
+                'CODEC_TEST_PROOF',
+                'ALGORITHM_INVENTORY_LINK',
+                'REFERENCE_MODEL',
+                'JDK25_CANDIDATE',
+                'HEAP_COMPATIBILITY_BLOCK'
+        ].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'Page codec algorithm manifest missing category: ' + category
+            }
+        }
+
+        ['MapDB', 'PostgreSQL', 'InnoDB', 'H2', 'JDK 25', 'Derby'].each { reference ->
+            if (!references.any { value -> value.contains(reference) }) {
+                failures << 'Page codec algorithm manifest missing reference model: ' + reference
+            }
+        }
+
+        def docsText = file('docs/PAGE-CODEC-ALGORITHMS.md').getText('UTF-8')
+        [
+                'This is an audit artifact, not a behavior change',
+                'No Java runtime behavior change',
+                'No storage format change',
+                'No page format replacement',
+                'No heap raw-store format dependency',
+                'No object serialization authority',
+                'No Derby heap page or raw log rewrite',
+                'MapDB Serializer and GroupSerializer',
+                'PostgreSQL and InnoDB page-layout discipline',
+                'JDK 25 MemorySegment/VarHandle is a candidate',
+                'MvccBinaryFormat',
+                'MvccPageRecordCodec',
+                'MvccVersionRecordCodec',
+                'MvccRowPayloadCodec',
+                'DurableMvccSqlRowCodec',
+                'MvccIndexTupleCodec',
+                'MvccOverflowPayloadCodec',
+                'MvccOverflowPayloadReferenceCodec',
+                'MvccAttributeOverflowRowPayloadCodec',
+                'MvccSidecarCodec',
+                'MvccFreeSpaceMapStore',
+                'MvccVisibilityMapStore',
+                'PageVolumeMvccWriteAheadLog',
+                'MvccSubsystemRecoveryRecordStore',
+                'checksum-region discipline',
+                'binary-searchable key area',
+                'packed row-id lists',
+                'typed Derby value boundary',
+                'Default behavior remains unchanged'
+        ].each { markerText ->
+            if (!docsText.contains(markerText)) {
+                failures << 'Page codec algorithm documentation missing marker: ' + markerText
+            }
+        }
+
+        def binaryFormatText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/format/MvccBinaryFormat.java').getText('UTF-8')
+        ['ByteOrder.BIG_ENDIAN', 'requireHeader', 'requireExactLength'].each { markerText ->
+            if (!binaryFormatText.contains(markerText)) {
+                failures << 'MvccBinaryFormat missing marker: ' + markerText
+            }
+        }
+
+        def pageRecordText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/format/MvccPageRecordCodec.java').getText('UTF-8')
+        ['MAGIC', 'FORMAT_VERSION', 'checksum(body)', 'legacyFormat'].each { markerText ->
+            if (!pageRecordText.contains(markerText)) {
+                failures << 'MvccPageRecordCodec missing marker: ' + markerText
+            }
+        }
+
+        def indexTupleText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccIndexTupleCodec.java').getText('UTF-8')
+        ['KEY_NULL', 'KEY_STRING', 'KEY_INTEGER', 'KEY_LONG', 'decodeWithKey'].each { markerText ->
+            if (!indexTupleText.contains(markerText)) {
+                failures << 'MvccIndexTupleCodec missing marker: ' + markerText
+            }
+        }
+
+        def sidecarText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccSidecarCodec.java').getText('UTF-8')
+        ['checksum trailer', 'readPayloadIfExists', 'rewritePayload'].each { markerText ->
+            if (!sidecarText.contains(markerText)) {
+                failures << 'MvccSidecarCodec missing marker: ' + markerText
+            }
+        }
+
+        def algorithmInventory = file('docs/ALGORITHM-INVENTORY.md').getText('UTF-8')
+        [
+                'Page codecs',
+                'MvccPageRecordCodec',
+                'MapDB serializers and packed/delta encodings',
+                'delosdb-page-codec-algorithm-audit-overlay.zip'
+        ].each { markerText ->
+            if (!algorithmInventory.contains(markerText)) {
+                failures << 'Algorithm inventory missing page codec marker: ' + markerText
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index >= 0) {
+            def s0Section = staticText.substring(s0Index)
+            if (s0Section.contains('delosPageCodecAlgorithmAuditStaticAnalysis')) {
+                failures << 'Page codec algorithm audit gate must remain outside S0 until it becomes a stable format/behavior gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/page-codec-algorithm-audit-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB page codec algorithm audit static analysis')
+            writer.println('============================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println('Reference markers: ' + references.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reference: ' + row.reference)
+                writer.println('  risk: ' + row.risk)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB page codec algorithm audit static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB page codec algorithm audit static analysis passed. Report: ' + reportFile
+    }
+}
+
+def delosMvccVisibilityAlgorithmManifestFile = file('gradle/static-analysis/delosdb-mvcc-visibility-algorithms.txt')
+
+def delosLoadMvccVisibilityAlgorithmRows = {
+    if (!delosMvccVisibilityAlgorithmManifestFile.exists()) {
+        throw new GradleException('Missing DelosDB MVCC visibility algorithm manifest: ' + delosMvccVisibilityAlgorithmManifestFile)
+    }
+    def rows = []
+    delosMvccVisibilityAlgorithmManifestFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) {
+            return
+        }
+        def parts = line.split('\\|', -1).collect { it.trim() }
+        if (parts.size() != 6) {
+            throw new GradleException('Malformed MVCC visibility algorithm line ' + (index + 1) + ': expected 6 pipe-delimited fields')
+        }
+        rows << [id: parts[0], path: parts[1], marker: parts[2], category: parts[3], reference: parts[4], risk: parts[5]]
+    }
+    rows
+}
+
+tasks.register('delosMvccVisibilityAlgorithmAuditStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the MVCC visibility algorithm audit and reference-model classifications.'
+
+    inputs.file(delosMvccVisibilityAlgorithmManifestFile)
+    inputs.file('docs/MVCC-VISIBILITY-ALGORITHMS.md')
+    inputs.file('docs/ALGORITHM-INVENTORY.md')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccVisibility.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccSnapshot.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccStatementSnapshot.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccSnapshotLease.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccTransactionManager.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccVersionChain.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccTable.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccPrunedVersionMarker.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccHistoryPrunedException.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccTransactionStatusStore.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccTransactionOutcomeLog.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTable.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccPurgeDaemon.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccVisibilityDebtPolicy.java')
+    inputs.file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccTable.java')
+    inputs.file('delosdb-storage-mvcc/build.gradle')
+    inputs.file('gradle/delosdb-storage-static-analysis.gradle')
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-visibility-algorithm-audit-static-analysis.txt'))
+
+    doLast {
+        def rows = delosLoadMvccVisibilityAlgorithmRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+        def references = [] as Set
+
+        if (rows.size() < 28) {
+            failures << 'MVCC visibility algorithm audit must cover at least 28 rows; found ' + rows.size()
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate MVCC visibility algorithm audit id: ' + row.id
+            }
+            categories.add(row.category)
+            row.reference.split(';').each { reference ->
+                if (reference.trim()) {
+                    references.add(reference.trim())
+                }
+            }
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'MVCC visibility algorithm proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'MVCC visibility algorithm marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.risk.length() < 95) {
+                failures << 'MVCC visibility algorithm risk is too thin for ' + row.id
+            }
+        }
+
+        [
+                'DOCUMENTATION',
+                'NO_BEHAVIOR_CHANGE',
+                'SNAPSHOT_VISIBILITY',
+                'STATEMENT_VISIBILITY',
+                'MVCC_AUTHORITY_ALGORITHM',
+                'PURGE_HORIZON_ALGORITHM',
+                'TRANSACTION_OUTCOME_AUTHORITY',
+                'VERSION_CHAIN_VISIBILITY',
+                'HISTORY_PRUNED_FAILURE',
+                'ROLLBACK_SAVEPOINT_VISIBILITY',
+                'SCAN_VISIBILITY',
+                'WRITER_BORROWED_READS',
+                'SHORTCUT_SAFETY',
+                'DIAGNOSTIC_ONLY_ALGORITHM',
+                'VALIDATION_ALGORITHM',
+                'ALGORITHM_INVENTORY_LINK',
+                'REFERENCE_MODEL',
+                'JDK25_CANDIDATE'
+        ].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'MVCC visibility algorithm manifest missing category: ' + category
+            }
+        }
+
+        ['PostgreSQL', 'InnoDB', 'HerdDB', 'Calcite', 'JDK 25', 'Derby'].each { reference ->
+            if (!references.any { value -> value.contains(reference) }) {
+                failures << 'MVCC visibility algorithm manifest missing reference model: ' + reference
+            }
+        }
+
+        def docsText = file('docs/MVCC-VISIBILITY-ALGORITHMS.md').getText('UTF-8')
+        [
+                'This is an audit artifact, not a behavior change',
+                'No Java runtime behavior change',
+                'No MVCC visibility rule change',
+                'No snapshot isolation change',
+                'No purge horizon change',
+                'No transaction outcome authority change',
+                'No candidate-index authority change',
+                'No Derby heap behavior change',
+                'No optimizer behavior change',
+                'No storage format change',
+                'Snapshot visibility',
+                'Statement snapshot and read-your-own-writes',
+                'Writer-borrowed reads and write-intent reads',
+                'Version-chain visibility and write conflicts',
+                'Rollback and savepoint visibility',
+                'Purge horizon and snapshot leases',
+                'History-pruned failure behavior',
+                'Transaction outcome publication and recovery visibility',
+                'Visibility map and purge queue metadata',
+                'PostgreSQL is the primary reference model',
+                'InnoDB is the primary reference model for purge/history-list lifecycle',
+                'HerdDB is a reference model for small-Java-engine lifecycle pinning',
+                'Calcite is a reference model only for future access-path diagnostics',
+                'delosdb-jcstress-mvcc-visibility-probes-overlay.zip',
+                'delosdb-mvcc-long-reader-purge-stress-overlay.zip',
+                'Default behavior remains unchanged'
+        ].each { markerText ->
+            if (!docsText.contains(markerText)) {
+                failures << 'MVCC visibility algorithm documentation missing marker: ' + markerText
+            }
+        }
+
+        def visibilityText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccVisibility.java').getText('UTF-8')
+        ['isVisible', 'isSafeToPrune', 'isCreationVisible', 'isDeletionVisible'].each { markerText ->
+            if (!visibilityText.contains(markerText)) {
+                failures << 'MvccVisibility missing marker: ' + markerText
+            }
+        }
+
+        def snapshotText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccSnapshot.java').getText('UTF-8')
+        ['activeAtCapture', 'visibleThroughCommand', 'isOwnerCommandVisible', 'isTransactionVisible'].each { markerText ->
+            if (!snapshotText.contains(markerText)) {
+                failures << 'MvccSnapshot missing marker: ' + markerText
+            }
+        }
+
+        def managerText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccTransactionManager.java').getText('UTF-8')
+        ['retainedSnapshotWatermarks', 'oldestRetainedVisibleThrough', 'compactRetainedOutcomes', 'recoverDurableStatuses'].each { markerText ->
+            if (!managerText.contains(markerText)) {
+                failures << 'MvccTransactionManager missing marker: ' + markerText
+            }
+        }
+
+        def chainText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccVersionChain.java').getText('UTF-8')
+        ['visibleValue', 'rollbackTransactionChangesAfter', 'throwIfPrunedHistoryWouldHaveBeenVisible', 'MvccWriteConflictException'].each { markerText ->
+            if (!chainText.contains(markerText)) {
+                failures << 'MvccVersionChain missing marker: ' + markerText
+            }
+        }
+
+        def inheritedText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTable.java').getText('UTF-8')
+        ['latestWriteIntent', 'canReadCommittedImageUnlocked', 'visibleThroughCommand', 'retained inherited MVCC transaction or scan'].each { markerText ->
+            if (!inheritedText.contains(markerText)) {
+                failures << 'MvccInheritedTable missing marker: ' + markerText
+            }
+        }
+
+        def outcomeText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccTransactionOutcomeLog.java').getText('UTF-8')
+        ['Unknown outcomes fail loudly', 'committedRecordOrEmpty', 'rewriteCheckpoint'].each { markerText ->
+            if (!outcomeText.contains(markerText)) {
+                failures << 'MvccTransactionOutcomeLog missing marker: ' + markerText
+            }
+        }
+
+        def pageBackedText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/PageBackedMvccTable.java').getText('UTF-8')
+        ['visibilityMapPageStates', 'purgeQueuePendingCount', 'visibilityMapFor'].each { markerText ->
+            if (!pageBackedText.contains(markerText)) {
+                failures << 'PageBackedMvccTable missing marker: ' + markerText
+            }
+        }
+
+        def algorithmInventory = file('docs/ALGORITHM-INVENTORY.md').getText('UTF-8')
+        [
+                'Visibility algorithm audit update',
+                'delosdb-mvcc-visibility-algorithm-audit-overlay.zip',
+                'History-pruned failure behavior',
+                'Visibility-map and purge-queue metadata remain hints'
+        ].each { markerText ->
+            if (!algorithmInventory.contains(markerText)) {
+                failures << 'Algorithm inventory missing visibility algorithm marker: ' + markerText
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index >= 0) {
+            def s0Section = staticText.substring(s0Index)
+            if (s0Section.contains('delosMvccVisibilityAlgorithmAuditStaticAnalysis')) {
+                failures << 'MVCC visibility algorithm audit gate must remain outside S0 until it becomes a stable behavior gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-visibility-algorithm-audit-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC visibility algorithm audit static analysis')
+            writer.println('============================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println('Reference markers: ' + references.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  reference: ' + row.reference)
+                writer.println('  risk: ' + row.risk)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB MVCC visibility algorithm audit static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC visibility algorithm audit static analysis passed. Report: ' + reportFile
+    }
+}
+
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'

@@ -171,6 +171,27 @@ Forbidden without explicit plan:
 
 ### MVCC visibility
 
+#### Visibility algorithm audit update
+
+Audit overlay: `delosdb-mvcc-visibility-algorithm-audit-overlay.zip`.
+
+Current status:
+
+* Snapshot visibility is owned by `MvccSnapshot` and `MvccVisibility`.
+* Statement visibility is bounded by `visibleThroughCommand` through `MvccStatementSnapshot`.
+* Read-your-own-writes and writer-borrowed reads are preserved through command-sequence-aware write intents in `MvccInheritedTable`.
+* Purge horizon safety is protected by retained snapshot leases and `oldestRetainedVisibleThrough`.
+* History-pruned failure behavior is explicit through `MvccHistoryPrunedException` and `MvccPrunedVersionMarker`.
+* Transaction outcome publication is authority for recovered visibility through status/outcome stores.
+* Visibility-map and purge-queue metadata remain hints, not visibility authority.
+
+Next proof candidates:
+
+* `delosdb-jcstress-mvcc-visibility-probes-overlay.zip`.
+* `delosdb-mvcc-long-reader-purge-stress-overlay.zip`.
+* `delosdb-storage-path-diagnostics-runtime-overlay.zip`.
+
+
 Current owner: DelosDB MVCC.
 
 Classification: `MVCC_AUTHORITY_ALGORITHM`.
