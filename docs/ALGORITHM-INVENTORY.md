@@ -499,3 +499,37 @@ delosdb-jdk25-asm-generated-class-fixture-overlay.zip
 That future slice may capture a small ASM-generated Derby execution class and
 verify that generated class through the same JDK API. It must not replace ASM or
 change generated SQL execution behavior.
+
+## JDK 25 JFR storage lifecycle events update
+
+DelosDB now has an observability-only JFR event surface for storage lifecycle
+algorithms:
+
+* `org.apache.derby.iapi.store.types.DelosStorageLifecycleJfr`
+* `org.apache.derby.delosdb.mvcc.AnalyzeStatistics`
+* `org.apache.derby.delosdb.mvcc.Checkpoint`
+* `org.apache.derby.delosdb.mvcc.Purge`
+* `org.apache.derby.delosdb.mvcc.RecoveryReplay`
+* `org.apache.derby.delosdb.mvcc.BackupSidecar`
+* `org.apache.derby.delosdb.mvcc.BufferEviction`
+* `org.apache.derby.delosdb.heap.SanityCheck`
+* `org.apache.derby.delosdb.storage.PathDecision`
+
+Classification:
+
+```text
+JDK25_MODERNIZATION_CANDIDATE
+DIAGNOSTIC_ONLY_ALGORITHM
+VALIDATION_ALGORITHM
+NO_BEHAVIOR_CHANGE
+```
+
+The first wiring points are MVCC analyze/statistics lifecycle and MVCC checkpoint
+rewrite lifecycle. JFR events remain inert unless JFR is recording. ASM remains
+the production generator, and Derby optimizer authority remains unchanged.
+
+Verification:
+
+```bash
+./gradlew delosJfrStorageLifecycleEventsStaticAnalysis
+```

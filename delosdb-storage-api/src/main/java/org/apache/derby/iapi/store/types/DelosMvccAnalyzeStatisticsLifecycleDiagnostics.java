@@ -90,6 +90,18 @@ public final class DelosMvccAnalyzeStatisticsLifecycleDiagnostics {
                         + ", runContext=" + lastRunContext
                         + ", optimizerAuthority=derby"
                         + "}";
+                DelosStorageLifecycleJfr.recordMvccAnalyzeStatistics(
+                        statistics.providerId(),
+                        lastQualifiedTableName,
+                        containerId,
+                        statistics.logicalRowCount(),
+                        statistics.physicalVersionCount(),
+                        statistics.orderedIndexEntryCount(),
+                        estimate.estimatedFullScanCost(),
+                        estimate.estimatedIndexLookupCost(),
+                        lastRunContext,
+                        true,
+                        "");
             }
         } catch (RuntimeException e) {
             recordDiagnosticFailure(providerId, qualifiedTableName, containerId, runContext, e);
@@ -128,6 +140,18 @@ public final class DelosMvccAnalyzeStatisticsLifecycleDiagnostics {
                     + ", diagnosticFailure=true"
                     + ", optimizerAuthority=derby"
                     + "}";
+            DelosStorageLifecycleJfr.recordMvccAnalyzeStatistics(
+                    providerId,
+                    lastQualifiedTableName,
+                    containerId,
+                    0L,
+                    0L,
+                    0L,
+                    0L,
+                    0L,
+                    lastRunContext,
+                    false,
+                    lastFailure);
         }
     }
 

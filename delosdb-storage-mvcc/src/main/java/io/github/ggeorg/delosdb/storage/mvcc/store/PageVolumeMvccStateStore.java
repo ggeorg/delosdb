@@ -32,6 +32,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+import org.apache.derby.iapi.store.types.DelosStorageLifecycleJfr;
+
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccDurableConsistencyCheck;
@@ -971,6 +973,13 @@ public final class PageVolumeMvccStateStore<T> {
                 heads.keySet().stream().mapToLong(MvccRowId::value).max().orElse(0L) + 1L);
         recoveryRecordStore.appendCheckpoint(table.physicalVersionCount(), table.logicalRowCount());
         checkpointStatus = PageVolumeMvccCheckpointStore.Status.WRITTEN;
+        DelosStorageLifecycleJfr.recordMvccCheckpoint(
+                storageId,
+                table.physicalVersionCount(),
+                table.logicalRowCount(),
+                checkpointStatus.name(),
+                true,
+                "");
     }
 
     private long nextTransactionId() {

@@ -8389,6 +8389,195 @@ tasks.register('delosJdk25ClassFileBytecodeVerifierStaticAnalysis') {
 }
 
 
+
+def delosLoadJfrStorageLifecycleRows = {
+    def manifest = file('gradle/static-analysis/delosdb-jfr-storage-lifecycle-events.txt')
+    manifest.readLines('UTF-8')
+            .findAll { line -> line.trim() && !line.startsWith('#') }
+            .collect { line ->
+                def parts = line.split('\\|', -1)
+                if (parts.length != 5) {
+                    throw new GradleException('Invalid JFR storage lifecycle manifest row: ' + line)
+                }
+                [id: parts[0], category: parts[1], path: parts[2], marker: parts[3], risk: parts[4]]
+            }
+}
+
+tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the DelosDB JDK 25 JFR storage lifecycle event surface and first safe hooks.'
+    doLast {
+        def rows = delosLoadJfrStorageLifecycleRows()
+        def failures = []
+        def ids = [] as Set
+        def categories = [] as Set
+
+        if (rows.size() < 16) {
+            failures << 'JFR storage lifecycle manifest must contain at least 16 rows; found ' + rows.size()
+        }
+
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate JFR storage lifecycle manifest id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = file(row.path)
+            if (!proofFile.exists()) {
+                failures << 'JFR storage lifecycle proof path does not exist for ' + row.id + ': ' + row.path
+                return
+            }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'JFR storage lifecycle marker missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.risk.length() < 85) {
+                failures << 'JFR storage lifecycle risk is too thin for ' + row.id
+            }
+        }
+
+        [
+                'STORAGE_API_EVENT_SURFACE',
+                'JDK25_JFR_API',
+                'MVCC_ANALYZE_EVENT',
+                'MVCC_CHECKPOINT_EVENT',
+                'MVCC_PURGE_EVENT',
+                'MVCC_RECOVERY_EVENT',
+                'MVCC_BACKUP_EVENT',
+                'MVCC_BUFFER_EVENT',
+                'HEAP_DIAGNOSTIC_EVENT',
+                'STORAGE_PATH_EVENT',
+                'MVCC_ANALYZE_WIRING',
+                'MVCC_CHECKPOINT_WIRING',
+                'DOCUMENTATION',
+                'NO_BEHAVIOR_CHANGE',
+                'ALGORITHM_INVENTORY_LINK',
+                'STATIC_GATE'
+        ].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'JFR storage lifecycle manifest missing category: ' + category
+            }
+        }
+
+        def sourceText = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageLifecycleJfr.java').getText('UTF-8')
+        [
+                'import jdk.jfr.Category;',
+                'import jdk.jfr.Event;',
+                'import jdk.jfr.Label;',
+                'import jdk.jfr.Name;',
+                'event.isEnabled()',
+                'event.commit()',
+                'recordMvccAnalyzeStatistics',
+                'recordMvccCheckpoint',
+                'recordMvccPurge',
+                'recordMvccRecoveryReplay',
+                'recordMvccBackupSidecar',
+                'recordMvccBufferEviction',
+                'recordHeapSanityCheck',
+                'recordStoragePathDecision',
+                'org.apache.derby.delosdb.mvcc.AnalyzeStatistics',
+                'org.apache.derby.delosdb.mvcc.Checkpoint',
+                'org.apache.derby.delosdb.mvcc.Purge',
+                'org.apache.derby.delosdb.mvcc.RecoveryReplay',
+                'org.apache.derby.delosdb.mvcc.BackupSidecar',
+                'org.apache.derby.delosdb.mvcc.BufferEviction',
+                'org.apache.derby.delosdb.heap.SanityCheck',
+                'org.apache.derby.delosdb.storage.PathDecision'
+        ].each { markerText ->
+            if (!sourceText.contains(markerText)) {
+                failures << 'JFR event source missing marker: ' + markerText
+            }
+        }
+        ['org.objectweb.asm', 'sun.misc.Unsafe', 'jdk.internal'].each { forbidden ->
+            if (sourceText.contains(forbidden)) {
+                failures << 'JFR event source must not depend on forbidden API: ' + forbidden
+            }
+        }
+
+        def analyzeText = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java').getText('UTF-8')
+        if (!analyzeText.contains('DelosStorageLifecycleJfr.recordMvccAnalyzeStatistics')) {
+            failures << 'MVCC analyze/statistics lifecycle must record a JFR event at the proven diagnostic checkpoint'
+        }
+        if (!analyzeText.contains('optimizerAuthority=derby')) {
+            failures << 'MVCC analyze/statistics diagnostics must preserve Derby optimizer authority marker'
+        }
+
+        def checkpointText = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccStateStore.java').getText('UTF-8')
+        if (!checkpointText.contains('DelosStorageLifecycleJfr.recordMvccCheckpoint')) {
+            failures << 'MVCC checkpoint rewrite must record a JFR event after the proven checkpoint lifecycle point'
+        }
+        def appendIndex = checkpointText.indexOf('recoveryRecordStore.appendCheckpoint')
+        def eventIndex = checkpointText.indexOf('DelosStorageLifecycleJfr.recordMvccCheckpoint')
+        if (appendIndex < 0 || eventIndex < 0 || eventIndex < appendIndex) {
+            failures << 'MVCC checkpoint JFR event must be recorded after the subsystem checkpoint recovery record append'
+        }
+
+        def docsText = file('docs/JFR-STORAGE-LIFECYCLE-EVENTS.md').getText('UTF-8')
+        [
+                'This is an observability artifact, not a storage algorithm rewrite.',
+                'JFR events are observability only.',
+                'Events must be inert unless JFR is recording.',
+                'No JFR event currently decides whether a storage path is legal',
+                'The JFR gate is intentionally not wired into S0 yet.',
+                './gradlew delosJfrStorageLifecycleEventsStaticAnalysis'
+        ].each { markerText ->
+            if (!docsText.contains(markerText)) {
+                failures << 'JFR documentation missing marker: ' + markerText
+            }
+        }
+
+        def inventoryText = file('docs/ALGORITHM-INVENTORY.md').getText('UTF-8')
+        [
+                'JDK 25 JFR storage lifecycle events update',
+                'DelosStorageLifecycleJfr',
+                'DIAGNOSTIC_ONLY_ALGORITHM',
+                'VALIDATION_ALGORITHM',
+                './gradlew delosJfrStorageLifecycleEventsStaticAnalysis'
+        ].each { markerText ->
+            if (!inventoryText.contains(markerText)) {
+                failures << 'Algorithm inventory missing JFR marker: ' + markerText
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index >= 0) {
+            def s0Section = staticText.substring(s0Index)
+            if (s0Section.contains('delosJfrStorageLifecycleEventsStaticAnalysis')) {
+                failures << 'JFR storage lifecycle static gate must remain outside S0 until the event lane is proven stable'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/jfr-storage-lifecycle-events-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB JFR storage lifecycle events static analysis')
+            writer.println('============================================================')
+            writer.println()
+            writer.println('Rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println()
+            rows.each { row ->
+                writer.println(row.id + ' [' + row.category + '] ' + row.path)
+                writer.println('  marker: ' + row.marker)
+                writer.println('  risk: ' + row.risk)
+                writer.println()
+            }
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB JFR storage lifecycle events static analysis failed. Report: ' + reportFile)
+        }
+        println 'DelosDB JFR storage lifecycle events static analysis passed. Report: ' + reportFile
+    }
+}
+
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
