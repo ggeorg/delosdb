@@ -702,3 +702,17 @@ The built-in deterministic baseline remains
 `:delosdb-storage-mvcc:runDelosMvccConcurrencyValidation`. The jcstress lane is
 not an S0 dependency and must not be used to change production semantics without
 a separate proof and compatibility gate.
+
+## DRDA concurrent client stress
+
+Classification: VALIDATION_ALGORITHM, DRDA_COMPATIBILITY_BOUNDARY,
+MVCC_RUNTIME_PROOF.
+
+Current proof: `MvccDrdaConcurrentClientStressTest` and
+`runDelosDrdaConcurrentClientStressTest`.
+
+The proof runs through the Derby network client with virtual DRDA worker mode
+and stresses mixed heap plus `delos_mvcc` traffic using concurrent committed
+writers, rollback-only clients, read-only probes, and MVCC compress/vacuum. It
+must remain protocol-compatible and must not justify replacing DRDA, changing
+JDBC wire behavior, or changing transaction semantics without a separate gate.

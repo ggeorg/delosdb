@@ -104,3 +104,21 @@ scheduler deletion before behavior is locked
 ```
 
 A future Jakarta servlet adapter, if needed, should be separate from the legacy `javax.servlet` compatibility surface.
+
+## Concurrent client stress
+
+The mixed heap/MVCC DRDA concurrent-client stress proof runs through the Derby
+network client with DelosDB virtual DRDA worker mode enabled. It creates one
+heap table and one `using delos_mvcc` table, then runs concurrent clients that
+perform committed heap updates, committed MVCC updates/inserts, rollback-only
+work, read-only probes, and MVCC compress/vacuum.
+
+The proof is intentionally protocol-preserving: it does not alter DRDA message
+syntax, JDBC wire semantics, the accept loop, or transaction semantics. It only
+locks the current runtime behavior under a heavier concurrent client shape.
+
+Focused verification:
+
+```sh
+./gradlew :delosdb-tests:runDelosDrdaConcurrentClientStressTest
+```

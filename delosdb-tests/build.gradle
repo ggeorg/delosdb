@@ -688,6 +688,15 @@ registerDelosFocusedTest(
                 'delos.drda.extdta.spoolThresholdBytes': '32768'
         ])
 
+registerDelosFocusedTest(
+        'runDelosDrdaConcurrentClientStressTest',
+        'Runs the mixed heap/MVCC DRDA concurrent-client stress gate.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaConcurrentClientStressTest.class'],
+        [
+                'delos.drda.threadMode': 'virtual',
+                'delos.drda.extdta.spoolThresholdBytes': '32768'
+        ])
+
 tasks.named('check') {
     dependsOn tasks.named('compileTestJava')
 }
@@ -847,7 +856,8 @@ registerDelosFocusedTest(
         'runDelosMvccLongReaderPurgeStressTest',
         'runDelosMvccSqlIntegrationTest',
         'runDelosMvccDrdaNetworkClientTest',
-        'runDelosMvccDrdaConcurrentNetworkClientTest'
+        'runDelosMvccDrdaConcurrentNetworkClientTest',
+        'runDelosDrdaConcurrentClientStressTest'
 ].each { taskName ->
     tasks.named(taskName) {
         dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
@@ -855,5 +865,8 @@ registerDelosFocusedTest(
 }
 
 tasks.named('check') {
-    dependsOn tasks.named('runDelosMvccSqlIntegrationTest'), tasks.named('runDelosMvccDrdaNetworkClientTest'), tasks.named('runDelosMvccDrdaConcurrentNetworkClientTest')
+    dependsOn tasks.named('runDelosMvccSqlIntegrationTest'),
+            tasks.named('runDelosMvccDrdaNetworkClientTest'),
+            tasks.named('runDelosMvccDrdaConcurrentNetworkClientTest'),
+            tasks.named('runDelosDrdaConcurrentClientStressTest')
 }
