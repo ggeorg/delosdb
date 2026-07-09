@@ -82,7 +82,8 @@ public final class HeapDiagnosticsPerformanceAuditTest extends MvccSqlTestSuppor
                     tableBytesBefore, Files.size(report.lastSnapshot().tableContainerFile()));
             assertEquals("heap diagnostics performance audit must not rewrite index container",
                     indexBytesBefore, Files.size(report.lastSnapshot().indexContainerFiles().get(0)));
-            assertTrue("expected summary to name heap provider", report.summaryLine().contains("provider=heap"));
+            assertTrue("expected summary to include provider id",
+                    report.summaryLine().contains("provider=" + report.providerId()));
             connection.commit();
         }
 
