@@ -8885,6 +8885,80 @@ tasks.register('delosMvccOrderedIndexNullKeyProofStaticAnalysis') {
     }
 }
 
+tasks.register('delosJmhStorageBenchmarkAdapter') {
+    group = 'verification'
+    description = 'Validates the opt-in JMH storage benchmark adapter and optionally runs -Pdelosdb.jmh.storage.command.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation'
+    doLast {
+        def benchmarkRoot = file('benchmarks/jmh/delosdb-storage-mvcc')
+        def benchmarkSourceRoot = file('benchmarks/jmh/delosdb-storage-mvcc/src/main/java')
+        def benchmarkFiles = [
+                file('benchmarks/jmh/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/DelosMvccPageCodecBenchmark.java'),
+                file('benchmarks/jmh/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/DelosMvccOrderedIndexBenchmark.java'),
+                file('benchmarks/jmh/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/DelosMvccBufferCacheBenchmark.java')
+        ]
+        def failures = []
+        if (!benchmarkRoot.isDirectory()) {
+            failures << 'Missing JMH benchmark root: ' + benchmarkRoot
+        }
+        if (!benchmarkSourceRoot.isDirectory()) {
+            failures << 'Missing JMH benchmark source root: ' + benchmarkSourceRoot
+        }
+        benchmarkFiles.each { sourceFile ->
+            if (!sourceFile.exists()) {
+                failures << 'Missing JMH benchmark source: ' + sourceFile
+                return
+            }
+            def text = sourceFile.getText('UTF-8')
+            ['org.openjdk.jmh.annotations.Benchmark', '@Benchmark', '@State', '@Warmup', '@Measurement'].each { marker ->
+                if (!text.contains(marker)) {
+                    failures << 'JMH benchmark source ' + sourceFile + ' missing marker: ' + marker
+                }
+            }
+        }
+
+        def docsText = file('benchmarks/jmh/delosdb-storage-mvcc/README.md').exists()
+                ? file('benchmarks/jmh/delosdb-storage-mvcc/README.md').getText('UTF-8')
+                : ''
+        ['delosJmhStorageBenchmarkAdapter', 'delosdb.jmh.storage.command', 'DelosMvccPageCodecBenchmark',
+         'DelosMvccOrderedIndexBenchmark', 'DelosMvccBufferCacheBenchmark'].each { marker ->
+            if (!docsText.contains(marker)) {
+                failures << 'JMH storage benchmark README missing marker: ' + marker
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/jmh-storage-benchmark-adapter.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB JMH storage benchmark adapter')
+            writer.println('====================================')
+            writer.println()
+            writer.println('Benchmark root: ' + benchmarkRoot)
+            writer.println('Benchmark sources:')
+            benchmarkFiles.each { writer.println('  - ' + it) }
+            writer.println()
+            writer.println('Built-in baseline task: :delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation')
+            writer.println('External command property: delosdb.jmh.storage.command')
+            writer.println('External command configured: ' + (providers.gradleProperty('delosdb.jmh.storage.command').orNull != null))
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB JMH storage benchmark adapter validation failed. Report: ' + reportFile)
+        }
+        if (providers.gradleProperty('delosdb.jmh.storage.command').orNull != null) {
+            delosRunExternalValidationCommand('delosdb.jmh.storage.command', 'delosJmhStorageBenchmarkAdapter')
+        }
+        println 'DelosDB JMH storage benchmark adapter passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'

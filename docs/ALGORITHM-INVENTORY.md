@@ -634,3 +634,24 @@ Reference models: PostgreSQL inspection tooling and InnoDB status diagnostics.
 Rule: performance observations are read-only diagnostic measurements. They must
 not authorize heap page-format changes, raw-log changes, hidden repair, or shared
 service extraction without a separate compatibility gate.
+
+## JMH storage benchmark adapter
+
+Classification: VALIDATION_ALGORITHM and JDK25_MODERNIZATION_CANDIDATE.
+
+Current code:
+
+* `benchmarks/jmh/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/DelosMvccPageCodecBenchmark.java`
+* `benchmarks/jmh/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/DelosMvccOrderedIndexBenchmark.java`
+* `benchmarks/jmh/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/DelosMvccBufferCacheBenchmark.java`
+* `delosJmhStorageBenchmarkAdapter`
+
+Reference models: OpenJDK JMH, MapDB codec benchmarking discipline, HerdDB page-cache policy comparison, PostgreSQL/InnoDB storage-operation profiling.
+
+Rules:
+
+* JMH sources remain outside normal Gradle source sets.
+* S0 and module checks must not require JMH dependencies.
+* The built-in deterministic MVCC microbenchmark validation remains the baseline.
+* External JMH execution is opt-in through `-Pdelosdb.jmh.storage.command`.
+* Benchmark results do not authorize behavior changes without a separate proof and compatibility gate.

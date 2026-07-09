@@ -70,3 +70,40 @@ External validation is deliberately not wired into:
 
 This keeps compatibility and normal verification deterministic while allowing CI
 or release validation to opt into slower tools explicitly.
+
+## JMH storage benchmark adapter
+
+`delosJmhStorageBenchmarkAdapter` is the opt-in storage/index/page JMH lane.
+It first runs the built-in deterministic MVCC microbenchmark validation and then
+validates the dedicated benchmark sources under:
+
+```text
+benchmarks/jmh/delosdb-storage-mvcc
+```
+
+The benchmark source is intentionally outside normal Gradle source sets. Normal
+S0, module checks, and SQL integration tests do not compile JMH sources and do
+not require JMH dependencies.
+
+Run the adapter report and deterministic baseline:
+
+```bash
+./gradlew delosJmhStorageBenchmarkAdapter
+```
+
+Run an approved external JMH command:
+
+```bash
+./gradlew delosJmhStorageBenchmarkAdapter \
+  -Pdelosdb.jmh.storage.command="<compile-and-run JMH command>"
+```
+
+The current benchmark classes are:
+
+* `DelosMvccPageCodecBenchmark`
+* `DelosMvccOrderedIndexBenchmark`
+* `DelosMvccBufferCacheBenchmark`
+
+Benchmark results are advisory. They must not drive storage-format, optimizer,
+recovery, or heap/raw-store changes without a separate proof slice and normal
+DelosDB gates.
