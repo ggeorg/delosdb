@@ -498,6 +498,220 @@ public class ProtocolTestAdapter {
 
 
     /**
+     * Adapter for white-box tests of the virtual-thread DRDA fairness seam.
+     */
+    public static final class VirtualThreadFairnessProbe {
+        public String platformModeName() {
+            return DrdaThreading.THREAD_MODE_PLATFORM;
+        }
+
+        public String virtualModeName() {
+            return DrdaThreading.THREAD_MODE_VIRTUAL;
+        }
+
+        public FairnessReport audit(String propertyValue, int sessionCount)
+                throws Exception {
+            if (sessionCount < 1) {
+                throw new IllegalArgumentException(
+                        "sessionCount must be positive");
+            }
+
+            DrdaThreading threading =
+                    DrdaThreading.fromPropertyValueForTesting(propertyValue);
+            DrdaSessionScheduler scheduler = new DrdaSessionScheduler();
+            for (int i = 1; i <= sessionCount; i++) {
+                scheduler.enqueue(session(i));
+            }
+
+            final java.util.concurrent.CountDownLatch completed =
+                    new java.util.concurrent.CountDownLatch(sessionCount);
+            final java.util.concurrent.atomic.AtomicInteger startedWorkers =
+                    new java.util.concurrent.atomic.AtomicInteger();
+            final java.util.concurrent.atomic.AtomicInteger virtualWorkers =
+                    new java.util.concurrent.atomic.AtomicInteger();
+            final java.util.concurrent.atomic.AtomicReference<Throwable> failure =
+                    new java.util.concurrent.atomic.AtomicReference<Throwable>();
+            final java.util.concurrent.atomic.AtomicReferenceArray<Integer> selected =
+                    new java.util.concurrent.atomic.AtomicReferenceArray<Integer>(
+                            sessionCount);
+            java.util.List<Thread> workers = new java.util.ArrayList<Thread>();
+
+            for (int i = 0; i < sessionCount; i++) {
+                final int slot = i;
+                Thread worker = threading.startThreadForTesting(
+                        "drda-fairness-probe-" + i,
+                        () -> {
+                            try {
+                                startedWorkers.incrementAndGet();
+                                if (Thread.currentThread().isVirtual()) {
+                                    virtualWorkers.incrementAndGet();
+                                }
+                                Session next = scheduler.nextSession(null,
+                                        () -> false);
+                                selected.set(slot, Integer.valueOf(
+                                        next == null ? -1 : next.getConnNum()));
+                            } catch (Throwable t) {
+                                failure.compareAndSet(null, t);
+                            } finally {
+                                completed.countDown();
+                            }
+                        });
+                workers.add(worker);
+            }
+
+            if (!completed.await(5L, java.util.concurrent.TimeUnit.SECONDS)) {
+                for (Thread worker : workers) {
+                    worker.interrupt();
+                }
+                throw new AssertionError(
+                        "DRDA fairness probe workers did not finish");
+            }
+
+            for (Thread worker : workers) {
+                worker.join(5000L);
+                if (worker.isAlive()) {
+                    worker.interrupt();
+                    throw new AssertionError(
+                            "DRDA fairness probe worker did not stop");
+                }
+            }
+            if (failure.get() != null) {
+                throw new AssertionError(failure.get());
+            }
+
+            int[] selectedSessionIds = new int[sessionCount];
+            for (int i = 0; i < sessionCount; i++) {
+                Integer value = selected.get(i);
+                selectedSessionIds[i] = value == null ? -1 : value.intValue();
+            }
+
+            return new FairnessReport(
+                    threading.modeName(),
+                    sessionCount,
+                    startedWorkers.get(),
+                    virtualWorkers.get(),
+                    scheduler.waitingSessionCount(),
+                    selectedSessionIds);
+        }
+
+        private static Session session(int connectionNumber) throws Exception {
+            return new Session(null, connectionNumber,
+                    new ProbeSocket(), null, false);
+        }
+    }
+
+    /**
+     * Immutable DRDA fairness audit result used by white-box tests.
+     */
+    public static final class FairnessReport {
+        private final String modeName;
+        private final int queuedSessionCount;
+        private final int startedWorkerCount;
+        private final int virtualWorkerCount;
+        private final int waitingSessionCount;
+        private final int[] selectedSessionIds;
+        private final int selectedSessionCount;
+        private final int duplicateSelectionCount;
+        private final int missingSessionCount;
+
+        private FairnessReport(
+                String modeName,
+                int queuedSessionCount,
+                int startedWorkerCount,
+                int virtualWorkerCount,
+                int waitingSessionCount,
+                int[] selectedSessionIds) {
+            this.modeName = modeName;
+            this.queuedSessionCount = queuedSessionCount;
+            this.startedWorkerCount = startedWorkerCount;
+            this.virtualWorkerCount = virtualWorkerCount;
+            this.waitingSessionCount = waitingSessionCount;
+            this.selectedSessionIds = selectedSessionIds.clone();
+
+            int selected = 0;
+            int duplicates = 0;
+            boolean[] seen = new boolean[queuedSessionCount + 1];
+            for (int selectedSessionId : selectedSessionIds) {
+                if (selectedSessionId >= 1
+                        && selectedSessionId <= queuedSessionCount) {
+                    selected++;
+                    if (seen[selectedSessionId]) {
+                        duplicates++;
+                    }
+                    seen[selectedSessionId] = true;
+                }
+            }
+            int missing = 0;
+            for (int i = 1; i <= queuedSessionCount; i++) {
+                if (!seen[i]) {
+                    missing++;
+                }
+            }
+
+            this.selectedSessionCount = selected;
+            this.duplicateSelectionCount = duplicates;
+            this.missingSessionCount = missing;
+        }
+
+        public String modeName() {
+            return modeName;
+        }
+
+        public int queuedSessionCount() {
+            return queuedSessionCount;
+        }
+
+        public int startedWorkerCount() {
+            return startedWorkerCount;
+        }
+
+        public int virtualWorkerCount() {
+            return virtualWorkerCount;
+        }
+
+        public int waitingSessionCount() {
+            return waitingSessionCount;
+        }
+
+        public int selectedSessionCount() {
+            return selectedSessionCount;
+        }
+
+        public int duplicateSelectionCount() {
+            return duplicateSelectionCount;
+        }
+
+        public int missingSessionCount() {
+            return missingSessionCount;
+        }
+
+        public int[] selectedSessionIds() {
+            return selectedSessionIds.clone();
+        }
+
+        public boolean fair() {
+            return startedWorkerCount == queuedSessionCount
+                    && selectedSessionCount == queuedSessionCount
+                    && duplicateSelectionCount == 0
+                    && missingSessionCount == 0
+                    && waitingSessionCount == 0;
+        }
+
+        public String summaryLine() {
+            return "mode=" + modeName
+                    + ", queuedSessions=" + queuedSessionCount
+                    + ", startedWorkers=" + startedWorkerCount
+                    + ", virtualWorkers=" + virtualWorkerCount
+                    + ", selectedSessions=" + selectedSessionCount
+                    + ", duplicateSelections=" + duplicateSelectionCount
+                    + ", missingSessions=" + missingSessionCount
+                    + ", waitingSessions=" + waitingSessionCount
+                    + ", fair=" + fair();
+        }
+    }
+
+
+    /**
      * Adapter for white-box tests of EXTDTA materialization and spooling.
      */
     public static final class ExtdtaSpoolProbe {

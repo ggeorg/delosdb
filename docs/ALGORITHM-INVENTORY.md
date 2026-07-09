@@ -405,12 +405,13 @@ Current owner: inherited Derby DRDA with opt-in DelosDB virtual-thread support.
 
 Classification: `DERBY_COMPATIBILITY_ALGORITHM`, `JDK25_MODERNIZATION_CANDIDATE`.
 
-Current anchor: `DRDAConnThread` and `DrdaThreading`.
+Current anchor: `DRDAConnThread`, `DrdaThreading`, and `DrdaVirtualThreadFairnessAuditTest`.
 
 Algorithmic goal:
 
 * Audit fairness, cancellation, timeout, and stress behavior.
 * Keep virtual-thread mode opt-in until compatibility/stress gates prove it.
+* Current fairness audit verifies one-dispatch-per-session coverage for both platform and virtual worker modes without changing DRDA wire semantics.
 
 ### Diagnostics
 

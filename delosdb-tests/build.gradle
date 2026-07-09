@@ -377,12 +377,18 @@ def registerDelosFocusedTest = { String taskName,
 
 registerDelosFocusedTest(
         'runDelosServerSchedulerTest',
-        'Runs focused DRDA server scheduler, threading, and EXTDTA cleanup tests.',
+        'Runs focused DRDA server scheduler, threading, fairness, and EXTDTA cleanup tests.',
         [
                 'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaSessionSchedulerTest.class',
                 'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaThreadingTest.class',
+                'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaVirtualThreadFairnessAuditTest.class',
                 'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaExtdtaSpoolTest.class'
         ])
+
+registerDelosFocusedTest(
+        'runDelosDrdaVirtualThreadFairnessAuditTest',
+        'Runs the opt-in DRDA virtual-thread fairness audit proof.',
+        ['org/apache/derbyTesting/functionTests/tests/derbynet/DrdaVirtualThreadFairnessAuditTest.class'])
 
 tasks.register('runDerbyLangSuite', Test) {
     group = 'verification'

@@ -26,6 +26,7 @@ runtimeinfo no longer forces JVM GC
 DRDA session scheduler isolated in DrdaSessionScheduler
 scheduler behavior gate added
 optional virtual-thread DRDA worker mode added
+virtual-thread fairness audit added for queued-session dispatch
 large EXTDTA values spool to temp storage above threshold
 DelosDB-owned DRDA configuration centralized in DrdaServerConfiguration
 ```
@@ -45,6 +46,8 @@ Optional virtual-thread worker mode:
 ```
 
 The listener/accept behavior and DRDA protocol semantics are not replaced by this option. The option only centralizes DRDA connection-worker thread creation behind the DelosDB threading seam.
+
+The fairness audit is intentionally white-box and protocol-neutral: it enqueues a bounded set of synthetic DRDA sessions, dispatches one worker per session through the selected threading mode, and verifies that every queued session is selected exactly once with no duplicates, no missing sessions, and no leftover waiting sessions. The virtual mode proof additionally verifies that all workers used by the audit are virtual threads.
 
 ## EXTDTA spooling
 
@@ -87,7 +90,7 @@ Run:
 Focused server verification:
 
 ```sh
-./gradlew :delosdb-tests:runDelosServerSchedulerTest :delosdb-server:compileJava delosServerStaticAnalysis
+./gradlew :delosdb-tests:runDelosServerSchedulerTest :delosdb-tests:runDelosDrdaVirtualThreadFairnessAuditTest :delosdb-server:compileJava delosServerStaticAnalysis
 ```
 
 ## Not currently planned
