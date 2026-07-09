@@ -129,6 +129,37 @@ Reference influence:
 * Calcite rule applicability diagnostics.
 * PostgreSQL table-access predicate separation.
 
+
+### Shared-service readiness
+
+Overlay: `delosdb-shared-service-readiness-report-overlay.zip`.
+
+Current owner: DelosDB storage diagnostics API.
+
+Classification: `DIAGNOSTIC_ONLY_ALGORITHM`, `EXTRACTION_GUARD`.
+
+Current anchor: `DelosStorageSharedServiceReadinessReport`,
+`DelosStorageSharedServiceReadinessItem`, and
+`StorageSharedServiceReadinessReportTest`.
+
+Algorithmic goal:
+
+* Classify which heap/MVCC seams are ready for read-only shared reporting.
+* Keep execution authority provider-local where semantics are not yet shared.
+* Prevent premature service extraction for buffer management, page codecs,
+  ordered-index authority, and purge/vacuum.
+
+Current decision:
+
+* Diagnostics and lifecycle read models are ready for read-only shared services.
+* Statistics/cost and backup/restore are report-only.
+* Buffer, page-codec, ordered-index, and purge/vacuum remain provider-owned.
+
+Reference influence:
+
+* PostgreSQL access-method boundary discipline.
+* Derby heap/raw-store compatibility boundary preservation.
+
 ### Storage dispatch
 
 Current owner: DelosDB bridge between Derby access paths and heap/MVCC providers.

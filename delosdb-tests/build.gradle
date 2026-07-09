@@ -715,6 +715,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/StorageLifecycleConsistencyReportTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosStorageSharedServiceReadinessReportTest',
+        'Runs the conservative shared-service readiness report proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/StorageSharedServiceReadinessReportTest.class'])
+
+registerDelosFocusedTest(
         'runDelosHeapDiagnosticsPerformanceAuditTest',
         'Runs the heap diagnostics performance/read-only audit proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsPerformanceAuditTest.class'])
@@ -737,6 +742,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageLifecycleConsistencyReportTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/StorageSharedServiceReadinessReportTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVacuumTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConsistencyCheckTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBloatMeasurementTest.class',
@@ -830,6 +836,7 @@ registerDelosFocusedTest(
         'runDelosMvccStoragePathDiagnosticsRuntimeTest',
         'runDelosMvccOrderedIndexCompositeRangeProofTest',
         'runDelosStorageLifecycleConsistencyReportTest',
+        'runDelosStorageSharedServiceReadinessReportTest',
         'runDelosHeapDiagnosticsPerformanceAuditTest',
         'runDelosMvccLongReaderPurgeStressTest',
         'runDelosMvccSqlIntegrationTest',

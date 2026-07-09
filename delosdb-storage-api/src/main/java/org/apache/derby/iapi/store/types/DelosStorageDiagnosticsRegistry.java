@@ -264,6 +264,20 @@ public final class DelosStorageDiagnosticsRegistry {
                         .toList());
     }
 
+    public static DelosStorageSharedServiceReadinessReport sharedServiceReadinessReport(
+            DelosStorageConsistencyTarget... targets) {
+        Objects.requireNonNull(targets, "targets");
+        return sharedServiceReadinessReport(List.of(targets));
+    }
+
+    public static DelosStorageSharedServiceReadinessReport sharedServiceReadinessReport(
+            List<DelosStorageConsistencyTarget> targets) {
+        Objects.requireNonNull(targets, "targets");
+        return DelosStorageSharedServiceReadinessReport.from(
+                lifecycleConsistencyReport(targets),
+                capabilitiesReport(targets));
+    }
+
     public static DelosStoragePredicatePushdown predicatePushdown(
             DelosStoragePredicatePushdownRequest request) {
         return metadataQuery().predicatePushdown(Objects.requireNonNull(request, "request"));
