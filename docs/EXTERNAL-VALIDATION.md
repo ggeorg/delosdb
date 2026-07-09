@@ -107,3 +107,37 @@ The current benchmark classes are:
 Benchmark results are advisory. They must not drive storage-format, optimizer,
 recovery, or heap/raw-store changes without a separate proof slice and normal
 DelosDB gates.
+
+## Jcstress MVCC visibility probes
+
+`delosJcstressMvccVisibilityProbes` validates the opt-in jcstress probe layout
+for MVCC visibility, transaction outcome publication, retained snapshot horizon,
+and buffer pin/dirty publication. It runs the existing deterministic baseline
+first:
+
+```bash
+./gradlew :delosdb-storage-mvcc:runDelosMvccConcurrencyValidation
+```
+
+Then it validates the external probe sources under:
+
+```text
+benchmarks/jcstress/delosdb-storage-mvcc
+```
+
+Run the adapter without requiring jcstress:
+
+```bash
+./gradlew delosJcstressMvccVisibilityProbes
+```
+
+Run a CI-provided jcstress command explicitly:
+
+```bash
+./gradlew delosJcstressMvccVisibilityProbes \
+  -Pdelosdb.jcstress.visibility.command="<compile-and-run jcstress command>"
+```
+
+This task is external validation only. It is not wired into S0 and does not
+change MVCC visibility, purge horizon, buffer, checkpoint, Derby heap, DRDA, or
+optimizer behavior.

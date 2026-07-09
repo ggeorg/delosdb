@@ -8959,6 +8959,83 @@ tasks.register('delosJmhStorageBenchmarkAdapter') {
     }
 }
 
+
+tasks.register('delosJcstressMvccVisibilityProbes') {
+    group = 'verification'
+    description = 'Validates the opt-in jcstress MVCC visibility probes and optionally runs -Pdelosdb.jcstress.visibility.command.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccConcurrencyValidation'
+    doLast {
+        def probeRoot = file('benchmarks/jcstress/delosdb-storage-mvcc')
+        def probeSourceRoot = file('benchmarks/jcstress/delosdb-storage-mvcc/src/main/java')
+        def probeFiles = [
+                file('benchmarks/jcstress/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSnapshotIsolationJcstressProbe.java'),
+                file('benchmarks/jcstress/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccCommitVisibilityJcstressProbe.java'),
+                file('benchmarks/jcstress/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSnapshotLeaseHorizonJcstressProbe.java'),
+                file('benchmarks/jcstress/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/DelosMvccBufferPinDirtyJcstressProbe.java')
+        ]
+        def failures = []
+        if (!probeRoot.isDirectory()) {
+            failures << 'Missing jcstress probe root: ' + probeRoot
+        }
+        if (!probeSourceRoot.isDirectory()) {
+            failures << 'Missing jcstress probe source root: ' + probeSourceRoot
+        }
+        probeFiles.each { sourceFile ->
+            if (!sourceFile.exists()) {
+                failures << 'Missing jcstress probe source: ' + sourceFile
+                return
+            }
+            def text = sourceFile.getText('UTF-8')
+            ['org.openjdk.jcstress.annotations.JCStressTest', '@JCStressTest', '@Outcome', '@Actor', '@State'].each { marker ->
+                if (!text.contains(marker)) {
+                    failures << 'jcstress probe source ' + sourceFile + ' missing marker: ' + marker
+                }
+            }
+        }
+
+        def docsText = file('benchmarks/jcstress/delosdb-storage-mvcc/README.md').exists()
+                ? file('benchmarks/jcstress/delosdb-storage-mvcc/README.md').getText('UTF-8')
+                : ''
+        ['delosJcstressMvccVisibilityProbes', 'delosdb.jcstress.visibility.command',
+         'DelosMvccSnapshotIsolationJcstressProbe', 'DelosMvccCommitVisibilityJcstressProbe',
+         'DelosMvccSnapshotLeaseHorizonJcstressProbe', 'DelosMvccBufferPinDirtyJcstressProbe'].each { marker ->
+            if (!docsText.contains(marker)) {
+                failures << 'jcstress MVCC visibility README missing marker: ' + marker
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/jcstress-mvcc-visibility-probes.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB jcstress MVCC visibility probes')
+            writer.println('======================================')
+            writer.println()
+            writer.println('Probe root: ' + probeRoot)
+            writer.println('Probe sources:')
+            probeFiles.each { writer.println('  - ' + it) }
+            writer.println()
+            writer.println('Built-in baseline task: :delosdb-storage-mvcc:runDelosMvccConcurrencyValidation')
+            writer.println('External command property: delosdb.jcstress.visibility.command')
+            writer.println('External command configured: ' + (providers.gradleProperty('delosdb.jcstress.visibility.command').orNull != null))
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB jcstress MVCC visibility probe validation failed. Report: ' + reportFile)
+        }
+        if (providers.gradleProperty('delosdb.jcstress.visibility.command').orNull != null) {
+            delosRunExternalValidationCommand('delosdb.jcstress.visibility.command', 'delosJcstressMvccVisibilityProbes')
+        }
+        println 'DelosDB jcstress MVCC visibility probes passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'

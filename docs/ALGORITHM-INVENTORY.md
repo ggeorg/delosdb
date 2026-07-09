@@ -655,3 +655,18 @@ Rules:
 * The built-in deterministic MVCC microbenchmark validation remains the baseline.
 * External JMH execution is opt-in through `-Pdelosdb.jmh.storage.command`.
 * Benchmark results do not authorize behavior changes without a separate proof and compatibility gate.
+
+## External validation algorithm lane: jcstress MVCC visibility probes
+
+The `delosJcstressMvccVisibilityProbes` adapter adds external jcstress probe
+sources for MVCC commit visibility, snapshot isolation, retained snapshot
+horizon publication, and buffer pin/dirty publication. The probes live outside
+normal source sets under `benchmarks/jcstress/delosdb-storage-mvcc` and are
+validated by an opt-in Gradle task. They are classified as
+`VALIDATION_ALGORITHM` and `REFERENCE_MODEL_ONLY` until a CI/release job supplies
+a concrete jcstress command.
+
+The built-in deterministic baseline remains
+`:delosdb-storage-mvcc:runDelosMvccConcurrencyValidation`. The jcstress lane is
+not an S0 dependency and must not be used to change production semantics without
+a separate proof and compatibility gate.
