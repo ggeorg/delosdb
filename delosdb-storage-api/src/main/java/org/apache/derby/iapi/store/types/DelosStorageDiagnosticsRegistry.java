@@ -116,6 +116,39 @@ public final class DelosStorageDiagnosticsRegistry {
         return diagnostics.heapStorageStatisticsForTesting(segment, containerId, indexContainerIds);
     }
 
+    public static DelosHeapDiagnosticsPerformanceReport inspectHeapStoragePerformance(
+            Path databaseDirectory,
+            int segment,
+            long containerId,
+            int iterations,
+            long... indexContainerIds) {
+        if (iterations <= 0) {
+            throw new IllegalArgumentException("iterations must be positive");
+        }
+        DelosHeapStorageDiagnostics first = null;
+        DelosHeapStorageDiagnostics last = null;
+        long totalNanos = 0L;
+        long minNanos = Long.MAX_VALUE;
+        long maxNanos = 0L;
+
+        for (int i = 0; i < iterations; i++) {
+            long start = System.nanoTime();
+            DelosHeapStorageDiagnostics snapshot = inspectHeapStorage(
+                    databaseDirectory, segment, containerId, indexContainerIds);
+            long elapsed = Math.max(0L, System.nanoTime() - start);
+            if (first == null) {
+                first = snapshot;
+            }
+            last = snapshot;
+            totalNanos += elapsed;
+            minNanos = Math.min(minNanos, elapsed);
+            maxNanos = Math.max(maxNanos, elapsed);
+        }
+
+        return new DelosHeapDiagnosticsPerformanceReport(
+                first, last, iterations, totalNanos, minNanos, maxNanos);
+    }
+
     public static DelosStorageInspection inspect(String providerId, int segment, long containerId) {
         return inspectorForProvider(providerId).inspect(segment, containerId);
     }

@@ -715,6 +715,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/StorageLifecycleConsistencyReportTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosHeapDiagnosticsPerformanceAuditTest',
+        'Runs the heap diagnostics performance/read-only audit proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsPerformanceAuditTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccSqlIntegrationTest',
         'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.',
         [
@@ -738,6 +743,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsExpansionTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsPerformanceAuditTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapInternalCleanupPhase1Test.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapRawStoreDiagnosticFormattingTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapRawStoreDebugAssertionConsolidationTest.class',
@@ -818,6 +824,7 @@ registerDelosFocusedTest(
         'runDelosMvccStoragePathDiagnosticsRuntimeTest',
         'runDelosMvccOrderedIndexCompositeRangeProofTest',
         'runDelosStorageLifecycleConsistencyReportTest',
+        'runDelosHeapDiagnosticsPerformanceAuditTest',
         'runDelosMvccSqlIntegrationTest',
         'runDelosMvccDrdaNetworkClientTest',
         'runDelosMvccDrdaConcurrentNetworkClientTest'

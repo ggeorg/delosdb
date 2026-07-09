@@ -619,3 +619,18 @@ The MVCC buffer replacement policy now has a package-local testability seam:
 `MvccBufferReplacementPolicy` / `ACCESS_ORDER_LRU`, and the new injection path is
 for package-local proofs and future JMH comparison lanes only. This does not
 authorize a policy replacement or shared heap/MVCC buffer extraction.
+
+
+## Heap diagnostics performance audit
+
+Classification: HEAP_COMPATIBILITY_BOUNDARY, DIAGNOSTIC_ONLY_ALGORITHM, VALIDATION_ALGORITHM.
+
+Current code: `DelosHeapStorageDiagnostics`, `DelosHeapDiagnosticsPerformanceReport`,
+`DelosStorageDiagnosticsRegistry.inspectHeapStoragePerformance(...)`, and
+`HeapDiagnosticsPerformanceAuditTest`.
+
+Reference models: PostgreSQL inspection tooling and InnoDB status diagnostics.
+
+Rule: performance observations are read-only diagnostic measurements. They must
+not authorize heap page-format changes, raw-log changes, hidden repair, or shared
+service extraction without a separate compatibility gate.
