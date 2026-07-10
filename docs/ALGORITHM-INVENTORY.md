@@ -716,3 +716,27 @@ and stresses mixed heap plus `delos_mvcc` traffic using concurrent committed
 writers, rollback-only clients, read-only probes, and MVCC compress/vacuum. It
 must remain protocol-compatible and must not justify replacing DRDA, changing
 JDBC wire behavior, or changing transaction semantics without a separate gate.
+
+## Heap/MVCC differential SQL harness
+
+Classification: VALIDATION_ALGORITHM, HEAP_COMPATIBILITY_BOUNDARY,
+MVCC_RUNTIME_PROOF.
+
+Current proof: `HeapMvccDifferentialSqlHarnessTest` and
+`runDelosHeapMvccDifferentialSqlHarnessTest`.
+
+The harness executes matched SQL operations against an inherited Derby heap table
+and a `delos_mvcc` table, then compares normalized result sets at named
+checkpoints. It covers supported SQL parity for inserts, rollback-only work,
+committed update/delete/insert work, indexed lookups, ordered predicates,
+aggregates, nullable values, date values, provider maintenance, and
+shutdown/reopen persistence.
+
+Rules:
+
+* Only provider-equivalent SQL belongs in the equality probes.
+* Intentional differences must stay explicit and outside this parity harness.
+* SQLancer findings must be minimized into deterministic cases before becoming
+  normal gates.
+* A passing differential harness does not authorize heap/MVCC shared-service
+  extraction or provider authority changes.

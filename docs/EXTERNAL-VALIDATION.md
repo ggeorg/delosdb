@@ -168,3 +168,17 @@ The skeleton is external validation only. It is not wired into S0, does not add
 SQLancer as a normal dependency, and does not change storage, optimizer, DRDA,
 heap, or MVCC behavior. Generated failures must be minimized and promoted into a
 normal deterministic DelosDB proof before they become release gates.
+
+## Deterministic heap/MVCC differential follow-up
+
+Randomized SQLancer findings are not promoted directly into release gates. A
+minimized case should first be added to the deterministic heap/MVCC differential
+SQL harness:
+
+```bash
+./gradlew :delosdb-tests:runDelosHeapMvccDifferentialSqlHarnessTest
+```
+
+The harness compares supported SQL behavior between inherited Derby heap tables
+and opt-in `delos_mvcc` tables. It is a normal deterministic proof, not an
+external dependency lane.
