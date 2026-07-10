@@ -141,3 +141,30 @@ Run a CI-provided jcstress command explicitly:
 This task is external validation only. It is not wired into S0 and does not
 change MVCC visibility, purge horizon, buffer, checkpoint, Derby heap, DRDA, or
 optimizer behavior.
+
+## SQLancer profile skeleton
+
+`delosSqlancerProfileSkeleton` validates the opt-in SQLancer profile contract
+under:
+
+```text
+benchmarks/sqlancer/delosdb-mvcc
+```
+
+Run the skeleton validation without requiring SQLancer:
+
+```bash
+./gradlew delosSqlancerProfileSkeleton
+```
+
+Run a CI-provided SQLancer command explicitly:
+
+```bash
+./gradlew delosSqlancerProfileSkeleton \
+  -Pdelosdb.sqlancer.profile.command="<compile-and-run SQLancer command>"
+```
+
+The skeleton is external validation only. It is not wired into S0, does not add
+SQLancer as a normal dependency, and does not change storage, optimizer, DRDA,
+heap, or MVCC behavior. Generated failures must be minimized and promoted into a
+normal deterministic DelosDB proof before they become release gates.

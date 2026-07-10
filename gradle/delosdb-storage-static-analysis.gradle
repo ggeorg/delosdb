@@ -9036,6 +9036,115 @@ tasks.register('delosJcstressMvccVisibilityProbes') {
     }
 }
 
+
+tasks.register('delosSqlancerProfileSkeleton') {
+    group = 'verification'
+    description = 'Validates the opt-in SQLancer profile skeleton and optionally runs -Pdelosdb.sqlancer.profile.command.'
+    doLast {
+        def profileRoot = file('benchmarks/sqlancer/delosdb-mvcc')
+        def profileFiles = [
+                file('benchmarks/sqlancer/delosdb-mvcc/README.md'),
+                file('benchmarks/sqlancer/delosdb-mvcc/delosdb-mvcc-profile.properties'),
+                file('benchmarks/sqlancer/delosdb-mvcc/delosdb-mvcc-smoke.sql'),
+                file('benchmarks/sqlancer/delosdb-mvcc/delosdb-mvcc-oracle-scope.md')
+        ]
+        def failures = []
+        if (!profileRoot.isDirectory()) {
+            failures << 'Missing SQLancer profile root: ' + profileRoot
+        }
+        profileFiles.each { sourceFile ->
+            if (!sourceFile.exists()) {
+                failures << 'Missing SQLancer profile skeleton file: ' + sourceFile
+            }
+        }
+
+        def readFile = { File sourceFile -> sourceFile.exists() ? sourceFile.getText('UTF-8') : '' }
+        def readmeText = readFile(file('benchmarks/sqlancer/delosdb-mvcc/README.md'))
+        ['delosSqlancerProfileSkeleton', 'delosdb.sqlancer.profile.command',
+         'delosdb-mvcc-profile.properties', 'delosdb-mvcc-smoke.sql',
+         'DELOSDB_SQLANCER_PROFILE_SKELETON'].each { marker ->
+            if (!readmeText.contains(marker)) {
+                failures << 'SQLancer profile README missing marker: ' + marker
+            }
+        }
+
+        def profileText = readFile(file('benchmarks/sqlancer/delosdb-mvcc/delosdb-mvcc-profile.properties'))
+        ['DELOSDB_SQLANCER_PROFILE_SKELETON', 'storage.provider=delos_mvcc',
+         'jdbc.protocol=derby', 'normal-build-dependency=false',
+         's0-dependency=false'].each { marker ->
+            if (!profileText.contains(marker)) {
+                failures << 'SQLancer profile properties missing marker: ' + marker
+            }
+        }
+
+        def smokeText = readFile(file('benchmarks/sqlancer/delosdb-mvcc/delosdb-mvcc-smoke.sql')).toLowerCase(Locale.ROOT)
+        ['using delos_mvcc', 'create table heap_baseline',
+         'create table mvcc_candidate', 'commit', 'rollback'].each { marker ->
+            if (!smokeText.contains(marker)) {
+                failures << 'SQLancer smoke SQL missing marker: ' + marker
+            }
+        }
+
+        def oracleText = readFile(file('benchmarks/sqlancer/delosdb-mvcc/delosdb-mvcc-oracle-scope.md'))
+        ['NoREC', 'TLP', 'PQS', 'heap/MVCC differential',
+         'unsupported by the current DelosDB SQL/MVCC surface'].each { marker ->
+            if (!oracleText.contains(marker)) {
+                failures << 'SQLancer oracle scope missing marker: ' + marker
+            }
+        }
+
+        def docsText = file('docs/EXTERNAL-VALIDATION.md').exists()
+                ? file('docs/EXTERNAL-VALIDATION.md').getText('UTF-8')
+                : ''
+        ['delosSqlancerProfileSkeleton', 'delosdb.sqlancer.profile.command',
+         'benchmarks/sqlancer/delosdb-mvcc'].each { marker ->
+            if (!docsText.contains(marker)) {
+                failures << 'External validation docs missing SQLancer profile marker: ' + marker
+            }
+        }
+
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index >= 0) {
+            def s0Text = staticText.substring(s0Index)
+            if (s0Text.contains('delosSqlancerProfileSkeleton')) {
+                failures << 'SQLancer profile skeleton task must not be wired into S0'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file('reports/delosdb/sqlancer-profile-skeleton.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB SQLancer profile skeleton')
+            writer.println('==================================')
+            writer.println()
+            writer.println('Profile root: ' + profileRoot)
+            writer.println('Profile files:')
+            profileFiles.each { writer.println('  - ' + it) }
+            writer.println()
+            writer.println('External command property: delosdb.sqlancer.profile.command')
+            writer.println('External command configured: ' + (providers.gradleProperty('delosdb.sqlancer.profile.command').orNull != null))
+            writer.println('S0 dependency: false')
+            writer.println('Normal dependency: false')
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB SQLancer profile skeleton validation failed. Report: ' + reportFile)
+        }
+        if (providers.gradleProperty('delosdb.sqlancer.profile.command').orNull != null) {
+            delosRunExternalValidationCommand('delosdb.sqlancer.profile.command', 'delosSqlancerProfileSkeleton')
+        }
+        println 'DelosDB SQLancer profile skeleton passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
