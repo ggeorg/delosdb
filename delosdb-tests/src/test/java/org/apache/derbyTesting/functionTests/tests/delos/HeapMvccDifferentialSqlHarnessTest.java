@@ -226,9 +226,15 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
         }
 
         void executeUpdate(String sqlTemplate) throws SQLException {
-            int heapCount = executeUpdate(connection, sql(sqlTemplate, heapTable));
-            int mvccCount = executeUpdate(connection, sql(sqlTemplate, mvccTable));
+            int heapCount = executeSingleUpdate(sql(sqlTemplate, heapTable));
+            int mvccCount = executeSingleUpdate(sql(sqlTemplate, mvccTable));
             assertEquals("heap/MVCC update count mismatch for " + sqlTemplate, heapCount, mvccCount);
+        }
+
+        private int executeSingleUpdate(String sql) throws SQLException {
+            try (Statement statement = connection.createStatement()) {
+                return statement.executeUpdate(sql);
+            }
         }
 
         void assertCheckpoint(String checkpointName) throws SQLException {
