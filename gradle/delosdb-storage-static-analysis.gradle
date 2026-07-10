@@ -9086,9 +9086,10 @@ tasks.register('delosSqlancerProfileSkeleton') {
         }
 
         def oracleText = readFile(file('benchmarks/sqlancer/delosdb-mvcc/delosdb-mvcc-oracle-scope.md'))
+        def normalizedOracleText = oracleText.replaceAll('\\s+', ' ')
         ['NoREC', 'TLP', 'PQS', 'heap/MVCC differential',
          'unsupported by the current DelosDB SQL/MVCC surface'].each { marker ->
-            if (!oracleText.contains(marker)) {
+            if (!normalizedOracleText.contains(marker)) {
                 failures << 'SQLancer oracle scope missing marker: ' + marker
             }
         }

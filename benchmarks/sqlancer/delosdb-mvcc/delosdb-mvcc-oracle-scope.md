@@ -18,8 +18,7 @@ and promoted into normal proof gates.
 
 ## Explicit exclusions
 
-The profile should reject generated operations that are unsupported by the
-current DelosDB SQL/MVCC surface, especially Java object columns, external
+The profile should reject generated operations that are unsupported by the current DelosDB SQL/MVCC surface, especially Java object columns, external
 routines, triggers, generated columns, recursive queries, window functions,
 LOB/overflow cases not covered by the target lane, and catalog-changing DDL that
 cannot be minimized reliably yet.
