@@ -68,7 +68,6 @@ public final class PageVolumeMvccStateStore<T> {
     private final MvccOrderedIndexPageStore orderedIndexPageStore;
     private OrderedIndexLookupFallbackReason orderedIndexOpenFallbackReason;
     private OrderedIndexLookupFallbackReason pendingOrderedIndexLookupFallbackReason;
-    private PageVolumeMvccCheckpointStore.Status checkpointStatus;
     private long nextTransactionId;
     private long nextCommitSequence;
 
@@ -83,8 +82,7 @@ public final class PageVolumeMvccStateStore<T> {
             MvccSubsystemRecoveryRecordStore recoveryRecordStore,
             PageBackedMvccTable table,
             MvccOrderedIndexPageStore orderedIndexPageStore,
-            OrderedIndexLookupFallbackReason orderedIndexOpenFallbackReason,
-            PageVolumeMvccCheckpointStore.Status checkpointStatus) {
+            OrderedIndexLookupFallbackReason orderedIndexOpenFallbackReason) {
         this.storageId = storageId;
         this.rowCodec = Objects.requireNonNull(rowCodec, "rowCodec");
         this.pageFile = pageFile;
@@ -97,7 +95,6 @@ public final class PageVolumeMvccStateStore<T> {
         this.orderedIndexPageStore = orderedIndexPageStore;
         this.orderedIndexOpenFallbackReason = orderedIndexOpenFallbackReason;
         this.pendingOrderedIndexLookupFallbackReason = orderedIndexOpenFallbackReason;
-        this.checkpointStatus = Objects.requireNonNull(checkpointStatus, "checkpointStatus");
         long nextSequence = 1L;
         if (table != null) {
             nextSequence = Math.max(nextSequence, table.physicalVersionCount() + 1L);
@@ -126,8 +123,7 @@ public final class PageVolumeMvccStateStore<T> {
                     openContext.recoveryRecordStore,
                     openContext.table,
                     openContext.orderedIndexPageStore,
-                    openContext.orderedIndexOpenFallbackReason,
-                    openContext.checkpointStatus);
+                    openContext.orderedIndexOpenFallbackReason);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not open MVCC page-volume state for " + storageId, e);
         }
@@ -145,8 +141,7 @@ public final class PageVolumeMvccStateStore<T> {
                 MvccSubsystemRecoveryRecordStore.disabled(),
                 null,
                 null,
-                OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR,
-                PageVolumeMvccCheckpointStore.Status.DISABLED);
+                OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR);
     }
 
     public boolean enabled() {
@@ -202,7 +197,7 @@ public final class PageVolumeMvccStateStore<T> {
     }
 
     public String checkpointStatus() {
-        return checkpointStatus.name();
+        return checkpointStore.status().name();
     }
 
     public boolean hasDurableState() {
@@ -970,12 +965,11 @@ public final class PageVolumeMvccStateStore<T> {
                 table.logicalRowCount(),
                 heads.keySet().stream().mapToLong(MvccRowId::value).max().orElse(0L) + 1L);
         recoveryRecordStore.appendCheckpoint(table.physicalVersionCount(), table.logicalRowCount());
-        checkpointStatus = PageVolumeMvccCheckpointStore.Status.WRITTEN;
         MvccStorageLifecycleJfr.recordCheckpoint(
                 storageId,
                 table.physicalVersionCount(),
                 table.logicalRowCount(),
-                checkpointStatus.name(),
+                checkpointStore.status().name(),
                 true,
                 "");
     }

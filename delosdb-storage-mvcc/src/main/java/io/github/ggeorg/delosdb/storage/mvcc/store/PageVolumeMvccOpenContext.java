@@ -49,7 +49,6 @@ final class PageVolumeMvccOpenContext {
     final PageBackedMvccTable table;
     final MvccOrderedIndexPageStore orderedIndexPageStore;
     final PageVolumeMvccStateStore.OrderedIndexLookupFallbackReason orderedIndexOpenFallbackReason;
-    final PageVolumeMvccCheckpointStore.Status checkpointStatus;
 
     private PageVolumeMvccOpenContext(
             String storageId,
@@ -61,8 +60,7 @@ final class PageVolumeMvccOpenContext {
             MvccSubsystemRecoveryRecordStore recoveryRecordStore,
             PageBackedMvccTable table,
             MvccOrderedIndexPageStore orderedIndexPageStore,
-            PageVolumeMvccStateStore.OrderedIndexLookupFallbackReason orderedIndexOpenFallbackReason,
-            PageVolumeMvccCheckpointStore.Status checkpointStatus) {
+            PageVolumeMvccStateStore.OrderedIndexLookupFallbackReason orderedIndexOpenFallbackReason) {
         this.storageId = Objects.requireNonNull(storageId, "storageId");
         this.pageFile = Objects.requireNonNull(pageFile, "pageFile");
         this.pageMutationLogFile = Objects.requireNonNull(pageMutationLogFile, "pageMutationLogFile");
@@ -73,7 +71,6 @@ final class PageVolumeMvccOpenContext {
         this.table = Objects.requireNonNull(table, "table");
         this.orderedIndexPageStore = orderedIndexPageStore;
         this.orderedIndexOpenFallbackReason = orderedIndexOpenFallbackReason;
-        this.checkpointStatus = Objects.requireNonNull(checkpointStatus, "checkpointStatus");
     }
 
     static PageVolumeMvccOpenContext open(Path databaseDirectory, String storageId) throws IOException {
@@ -97,7 +94,7 @@ final class PageVolumeMvccOpenContext {
                 orderedIndexPagesPath,
                 orderedIndexPagesExisted,
                 table.logicalRowCount());
-        PageVolumeMvccCheckpointStore.Status checkpointStatus = checkpointStore.validate(
+        checkpointStore.validate(
                 pageFile,
                 PageBackedMvccTable.rowDirectoryPath(pageFile),
                 pageMutationLog,
@@ -119,8 +116,7 @@ final class PageVolumeMvccOpenContext {
                 recoveryRecordStore,
                 table,
                 orderedIndexOpenResult.store(),
-                orderedIndexOpenResult.fallbackReason(),
-                checkpointStatus);
+                orderedIndexOpenResult.fallbackReason());
     }
 
     private static OrderedIndexOpenResult openOrderedIndexPagesSafely(

@@ -64,12 +64,14 @@ public final class PageVolumeMvccCheckpointStore {
     private final Path pendingPath;
     private final Path lifecyclePath;
     private final String storageId;
+    private volatile Status status;
 
     private PageVolumeMvccCheckpointStore(Path path, Path pendingPath, Path lifecyclePath, String storageId) {
         this.path = path;
         this.pendingPath = pendingPath;
         this.lifecyclePath = lifecyclePath;
         this.storageId = Objects.requireNonNull(storageId, "storageId");
+        this.status = path == null ? Status.DISABLED : Status.ABSENT;
     }
 
     public static PageVolumeMvccCheckpointStore open(Path databaseDirectory, String storageId) {
@@ -107,6 +109,10 @@ public final class PageVolumeMvccCheckpointStore {
         return path != null;
     }
 
+    public Status status() {
+        return status;
+    }
+
     public Status validate(
             Path pageFile,
             Path rowDirectoryFile,
@@ -117,13 +123,13 @@ public final class PageVolumeMvccCheckpointStore {
             long logicalRowCount,
             long nextRowId) {
         if (!enabled()) {
-            return Status.DISABLED;
+            return setStatus(Status.DISABLED);
         }
         if (hasInterruptedLifecycle()) {
-            return Status.INCOMPLETE;
+            return setStatus(Status.INCOMPLETE);
         }
         if (!Files.exists(path)) {
-            return Status.ABSENT;
+            return setStatus(Status.ABSENT);
         }
         try {
             Checkpoint checkpoint = readCheckpoint();
@@ -136,9 +142,9 @@ public final class PageVolumeMvccCheckpointStore {
                     physicalVersionCount,
                     logicalRowCount,
                     nextRowId);
-            return Status.VALID;
+            return setStatus(Status.VALID);
         } catch (IOException | RuntimeException failure) {
-            return Status.FALLBACK;
+            return setStatus(Status.FALLBACK);
         }
     }
 
@@ -176,6 +182,7 @@ public final class PageVolumeMvccCheckpointStore {
             writeUtf8Forced(lifecyclePath, lifecycleContent(generation, LifecycleState.COMPLETED));
             Files.deleteIfExists(pendingPath);
             MvccDurableFiles.forceParentDirectoryIfSupported(path);
+            setStatus(Status.WRITTEN);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not write inherited MVCC checkpoint: " + path, e);
         }
@@ -186,7 +193,13 @@ public final class PageVolumeMvccCheckpointStore {
             Files.deleteIfExists(path);
             Files.deleteIfExists(pendingPath);
             Files.deleteIfExists(lifecyclePath);
+            setStatus(Status.ABSENT);
         }
+    }
+
+    private Status setStatus(Status nextStatus) {
+        status = Objects.requireNonNull(nextStatus, "nextStatus");
+        return nextStatus;
     }
 
     private boolean hasInterruptedLifecycle() {

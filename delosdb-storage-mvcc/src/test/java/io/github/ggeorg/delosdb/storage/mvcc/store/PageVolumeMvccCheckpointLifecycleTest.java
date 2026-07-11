@@ -26,6 +26,7 @@ final class PageVolumeMvccCheckpointLifecycleTest {
         store.persistChangedRows(List.of(
                 PageVolumeMvccStateStore.PersistedChange.upsert(1L, List.of("alpha")),
                 PageVolumeMvccStateStore.PersistedChange.upsert(2L, List.of("bravo"))));
+        assertEquals("WRITTEN", store.checkpointStatus());
         store.close();
 
         Path checkpoint = PageVolumeMvccPaths.checkpointFile(tempDir, "conglomerate-11-13");
@@ -65,6 +66,7 @@ final class PageVolumeMvccCheckpointLifecycleTest {
         assertEquals("INCOMPLETE", reopened.checkpointStatus());
         reopened.persistChangedRows(List.of(
                 PageVolumeMvccStateStore.PersistedChange.upsert(2L, List.of("bravo"))));
+        assertEquals("WRITTEN", reopened.checkpointStatus());
         reopened.close();
 
         assertFalse(Files.exists(pending));
