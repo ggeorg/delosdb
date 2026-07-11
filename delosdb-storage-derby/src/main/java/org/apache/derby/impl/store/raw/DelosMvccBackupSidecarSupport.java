@@ -30,7 +30,13 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -50,7 +56,6 @@ final class DelosMvccBackupSidecarSupport {
     static final String STORAGE_DIRECTORY_NAME = "delos_mvcc";
     static final String BACKUP_MANIFEST = "delos_mvcc.BACKUP-MANIFEST";
 
-    private static final int MAX_COPY_ATTEMPTS = 3;
     private static final String DIGEST_ALGORITHM = "SHA-256";
 
     interface FileOperations {
@@ -92,33 +97,159 @@ final class DelosMvccBackupSidecarSupport {
 
         File sourceMvccDirectory = new File(mvccDirectory.getPath());
         File backupMvccDirectory = new File(backupcopy, STORAGE_DIRECTORY_NAME);
-        SidecarBackupManifest sourceManifest = SidecarBackupManifest.from(sourceMvccDirectory);
-
-        for (int attempt = 1; attempt <= MAX_COPY_ATTEMPTS; attempt++) {
-            if (files.exists(backupMvccDirectory)) {
-                files.removeDirectory(backupMvccDirectory);
-            }
-            if (!files.copyDirectory(mvccDirectory, backupMvccDirectory)) {
-                throw StandardException.newException(
-                        SQLState.RAWSTORE_ERROR_COPYING_FILE,
-                        mvccDirectory,
-                        backupMvccDirectory);
-            }
-
-            SidecarBackupManifest sourceAfterCopy = SidecarBackupManifest.from(sourceMvccDirectory);
-            SidecarBackupManifest backupManifest = SidecarBackupManifest.from(backupMvccDirectory);
-            if (sourceManifest.equals(sourceAfterCopy) && sourceAfterCopy.equals(backupManifest)) {
-                writeBackupManifest(backupcopy, backupManifest);
-                return;
-            }
-
-            sourceManifest = sourceAfterCopy;
+        if (files.exists(backupMvccDirectory)) {
+            files.removeDirectory(backupMvccDirectory);
         }
 
-        throw StandardException.newException(
-                SQLState.RAWSTORE_ERROR_COPYING_FILE,
-                mvccDirectory,
-                backupMvccDirectory);
+        copyRecoveryConsistentSnapshot(sourceMvccDirectory, backupMvccDirectory);
+        SidecarBackupManifest backupManifest = SidecarBackupManifest.from(backupMvccDirectory);
+        writeBackupManifest(backupcopy, backupManifest);
+    }
+
+
+    /**
+     * Copy a fuzzy MVCC snapshot with recovery journals captured after page and
+     * metadata files. Page flushes obey WAL-before-flush, so a journal prefix
+     * captured after the corresponding page files can replay the backup to a
+     * valid committed state. Append-only journals are copied only up to the
+     * length observed when each copy starts; concurrent appends therefore do
+     * not make the backup fail or produce a partial trailing record.
+     */
+    private static void copyRecoveryConsistentSnapshot(File sourceDirectory, File targetDirectory)
+            throws StandardException {
+        try {
+            Path sourceRoot = sourceDirectory.toPath();
+            Path targetRoot = targetDirectory.toPath();
+            Files.createDirectories(targetRoot);
+
+            List<Path> ordinaryFiles = new ArrayList<>();
+            List<Path> recoveryJournals = new ArrayList<>();
+            try (var paths = Files.walk(sourceRoot)) {
+                paths.filter(Files::isRegularFile)
+                        .filter(path -> !isTransientRewrite(path))
+                        .forEach(path -> {
+                            if (isRecoveryJournal(path)) {
+                                recoveryJournals.add(path);
+                            } else {
+                                ordinaryFiles.add(path);
+                            }
+                        });
+            }
+
+            Comparator<Path> relativeOrder = Comparator.comparing(
+                    path -> normalizeRelativePath(sourceRoot, path));
+            ordinaryFiles.sort(relativeOrder);
+            recoveryJournals.sort(Comparator
+                    .comparingInt(DelosMvccBackupSidecarSupport::recoveryJournalRank)
+                    .thenComparing(relativeOrder));
+
+            for (Path source : ordinaryFiles) {
+                copyStableFile(sourceRoot, source, targetRoot);
+            }
+            for (Path source : recoveryJournals) {
+                copyAppendOnlyPrefix(sourceRoot, source, targetRoot);
+            }
+        } catch (IOException | SecurityException e) {
+            throw StandardException.plainWrapException(e);
+        }
+    }
+
+    private static boolean isTransientRewrite(Path path) {
+        String name = path.getFileName().toString();
+        return name.endsWith(".rewrite") || name.endsWith(".backup-copying");
+    }
+
+    private static boolean isRecoveryJournal(Path path) {
+        String name = path.getFileName().toString();
+        return name.endsWith(".pagemut")
+                || name.endsWith(".txoutcome")
+                || name.endsWith(".recovery")
+                || name.endsWith(".wal");
+    }
+
+    private static int recoveryJournalRank(Path path) {
+        String name = path.getFileName().toString();
+        if (name.endsWith(".pagemut")) {
+            return 0;
+        }
+        if (name.endsWith(".txoutcome")) {
+            return 1;
+        }
+        if (name.endsWith(".recovery")) {
+            return 2;
+        }
+        return 3; // Main write-ahead log is the final recovery authority copied.
+    }
+
+    private static void copyStableFile(Path sourceRoot, Path source, Path targetRoot)
+            throws IOException {
+        Path target = targetRoot.resolve(sourceRoot.relativize(source));
+        Files.createDirectories(target.getParent());
+        Path temporary = target.resolveSibling(target.getFileName() + ".backup-copying");
+        try {
+            Files.copy(source, temporary, StandardCopyOption.REPLACE_EXISTING);
+            publishCopiedFile(temporary, target);
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    private static void copyAppendOnlyPrefix(Path sourceRoot, Path source, Path targetRoot)
+            throws IOException {
+        Path target = targetRoot.resolve(sourceRoot.relativize(source));
+        Files.createDirectories(target.getParent());
+        Path temporary = target.resolveSibling(target.getFileName() + ".backup-copying");
+        try (FileChannel input = FileChannel.open(source, StandardOpenOption.READ);
+             FileChannel output = FileChannel.open(temporary,
+                     StandardOpenOption.CREATE,
+                     StandardOpenOption.TRUNCATE_EXISTING,
+                     StandardOpenOption.WRITE)) {
+            long snapshotLength = input.size();
+            long position = 0L;
+            ByteBuffer buffer = ByteBuffer.allocate(8192);
+            while (position < snapshotLength) {
+                buffer.clear();
+                buffer.limit((int) Math.min(buffer.capacity(), snapshotLength - position));
+                int read = input.read(buffer, position);
+                if (read < 0) {
+                    throw new IOException("MVCC recovery journal shrank during backup: " + source);
+                }
+                if (read == 0) {
+                    Thread.onSpinWait();
+                    continue;
+                }
+                buffer.flip();
+                while (buffer.hasRemaining()) {
+                    output.write(buffer);
+                }
+                position += read;
+            }
+            output.force(true);
+        }
+        try {
+            publishCopiedFile(temporary, target);
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    private static void publishCopiedFile(Path temporary, Path target) throws IOException {
+        try {
+            Files.move(temporary, target,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException atomicMoveFailure) {
+            try {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException fallbackFailure) {
+                atomicMoveFailure.addSuppressed(fallbackFailure);
+                throw atomicMoveFailure;
+            }
+        }
+    }
+
+    private static String normalizeRelativePath(Path root, Path file) {
+        return root.relativize(file).toString().replace(File.separatorChar, '/');
     }
 
     /**
@@ -159,7 +290,8 @@ final class DelosMvccBackupSidecarSupport {
         File manifestFile = new File(backupcopy, BACKUP_MANIFEST);
         try (OutputStreamWriter writer = new OutputStreamWriter(
                 new FileOutputStream(manifestFile), StandardCharsets.UTF_8)) {
-            writer.write("version=2\n");
+            writer.write("version=3\n");
+            writer.write("copyMode=fuzzy-recovery-journals-last\n");
             writer.write("directory=" + STORAGE_DIRECTORY_NAME + "\n");
             writer.write("fileCount=" + manifest.fileCount() + "\n");
             writer.write("totalBytes=" + manifest.totalBytes() + "\n");
@@ -275,10 +407,6 @@ final class DelosMvccBackupSidecarSupport {
                 return false;
             }
             return digest == null || digest.equals(actual.digest);
-        }
-
-        private static String normalizeRelativePath(java.nio.file.Path root, java.nio.file.Path file) {
-            return root.relativize(file).toString().replace(File.separatorChar, '/');
         }
 
         private static void updateLong(MessageDigest digest, long value) {

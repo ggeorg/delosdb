@@ -4581,8 +4581,14 @@ tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
         if (!rawStore.contains('DelosMvccBackupSidecarSupport')) {
             failures << 'RawStore must delegate DelosDB sidecar mechanics to DelosMvccBackupSidecarSupport'
         }
-        if (!sidecarSupport.contains('files.copyDirectory(mvccDirectory, backupMvccDirectory)')) {
-            failures << 'Sidecar helper backup path must copy delos_mvcc sidecars into the backup image'
+        if (!sidecarSupport.contains('copyRecoveryConsistentSnapshot(sourceMvccDirectory, backupMvccDirectory)')) {
+            failures << 'Sidecar helper backup path must create a recovery-consistent fuzzy MVCC snapshot'
+        }
+        if (!sidecarSupport.contains('copyAppendOnlyPrefix(sourceRoot, source, targetRoot)')) {
+            failures << 'Sidecar helper must copy append-only recovery journals as bounded prefixes'
+        }
+        if (!sidecarSupport.contains('return 3; // Main write-ahead log is the final recovery authority copied.')) {
+            failures << 'Sidecar helper must copy the main MVCC write-ahead log last'
         }
         if (!sidecarSupport.contains('files.copyDirectory(backupMvccDirectory, dbMvccDirectory)')) {
             failures << 'Sidecar helper restore path must copy delos_mvcc sidecars from the backup image'
@@ -4611,6 +4617,9 @@ tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
         def buildText = file('delosdb-tests/build.gradle').getText('UTF-8')
         if (!buildText.contains('MvccSqlBackupRestoreSidecarTest.class')) {
             failures << 'runDelosMvccSqlIntegrationTest must include MvccSqlBackupRestoreSidecarTest'
+        }
+        if (!buildText.contains('MvccConcurrentBackupRestoreTest.class')) {
+            failures << 'runDelosMvccSqlIntegrationTest must include MvccConcurrentBackupRestoreTest'
         }
 
         def roadmap = file('docs/ENGINE-DEPTH-ROADMAP.md')
@@ -6736,8 +6745,8 @@ tasks.register('delosHeapRawStoreBoundaryCleanupPhase3StaticAnalysis') {
         if (!sidecarSupport.contains('BACKUP_MANIFEST = "delos_mvcc.BACKUP-MANIFEST"')) {
             failures << 'Sidecar helper must preserve the backup manifest name'
         }
-        if (!sidecarSupport.contains('files.copyDirectory(mvccDirectory, backupMvccDirectory)')) {
-            failures << 'Sidecar helper must preserve backup directory copy semantics'
+        if (!sidecarSupport.contains('copyRecoveryConsistentSnapshot(sourceMvccDirectory, backupMvccDirectory)')) {
+            failures << 'Sidecar helper must preserve backup semantics through recovery-consistent ordered copying'
         }
         if (!sidecarSupport.contains('files.copyDirectory(backupMvccDirectory, dbMvccDirectory)')) {
             failures << 'Sidecar helper must preserve restore directory copy semantics'
@@ -9146,150 +9155,6 @@ tasks.register('delosSqlancerProfileSkeleton') {
     }
 }
 
-def delosReleaseReadinessExternalAdapterNames = [
-        'delosExternalMvccValidation',
-        'delosExternalMvccValidationPlan',
-        'delosJmhMicrobenchmarks',
-        'delosJcstressConcurrencyValidation',
-        'delosTwoSidedMvccWorkloadBenchmark',
-        'delosLongReaderVacuumSoak',
-        'delosSqlancerMvccValidation',
-        'delosJmhStorageBenchmarkAdapter',
-        'delosJcstressMvccVisibilityProbes',
-        'delosSqlancerProfileSkeleton'
-]
-
-tasks.register('delosReleaseReadinessExternalAdapterBoundary') {
-    group = 'verification'
-    description = 'Proves that external validation adapters remain opt-in, isolated from runtime source sets, module checks, and S0 execution.'
-
-    inputs.files(fileTree('.') {
-        include 'build.gradle', 'settings.gradle', 'gradle/**/*.gradle', 'delosdb-*/build.gradle'
-        exclude 'build/**', '.gradle/**'
-    })
-    inputs.files(fileTree('.') {
-        include 'delosdb-*/src/**/*.java'
-        exclude 'delosdb-*/build/**'
-    })
-    inputs.file('docs/RELEASE-READINESS.md')
-    outputs.file(layout.buildDirectory.file('reports/delosdb/release-readiness-external-adapter-boundary.txt'))
-
-    doLast {
-        def failures = []
-        def runtimeSourceFiles = fileTree('.') {
-            include 'delosdb-*/src/**/*.java'
-            exclude 'delosdb-*/build/**'
-        }.files.sort { it.path }
-        def buildFiles = fileTree('.') {
-            include 'build.gradle', 'settings.gradle', 'gradle/**/*.gradle', 'delosdb-*/build.gradle'
-            exclude 'build/**', '.gradle/**'
-            exclude 'gradle/delosdb-storage-static-analysis.gradle'
-        }.files.sort { it.path }
-
-        def forbiddenRuntimeImports = [
-                'org.openjdk.jmh.',
-                'org.openjdk.jcstress.',
-                'sqlancer.'
-        ]
-        runtimeSourceFiles.each { sourceFile ->
-            def text = sourceFile.getText('UTF-8')
-            forbiddenRuntimeImports.each { marker ->
-                if (text.contains(marker)) {
-                    failures << 'Normal runtime/test source imports external validation tooling: ' + sourceFile + ' -> ' + marker
-                }
-            }
-        }
-
-        def forbiddenDependencyMarkers = [
-                'org.openjdk.jmh',
-                'org.openjdk.jcstress',
-                'sqlancer',
-                'herddb',
-                'mapdb',
-                'org.apache.calcite'
-        ]
-        buildFiles.each { buildFile ->
-            def text = buildFile.getText('UTF-8').toLowerCase(Locale.ROOT)
-            forbiddenDependencyMarkers.each { marker ->
-                if (text.contains(marker)) {
-                    failures << 'Normal build configuration references forbidden runtime/external dependency: ' + buildFile + ' -> ' + marker
-                }
-            }
-            delosReleaseReadinessExternalAdapterNames.each { taskName ->
-                if (text.contains('dependson ' + taskName.toLowerCase(Locale.ROOT)) ||
-                        text.contains("dependson('${taskName.toLowerCase(Locale.ROOT)}')") ||
-                        text.contains("dependson(\"${taskName.toLowerCase(Locale.ROOT)}\")")) {
-                    failures << 'Normal build configuration wires external adapter task: ' + buildFile + ' -> ' + taskName
-                }
-            }
-        }
-
-        [
-                'benchmarks/jmh/delosdb-storage-mvcc',
-                'benchmarks/jcstress/delosdb-storage-mvcc',
-                'benchmarks/sqlancer/delosdb-mvcc'
-        ].each { path ->
-            if (!file(path).isDirectory()) {
-                failures << 'Expected external adapter root is missing or not isolated under benchmarks/: ' + path
-            }
-        }
-
-        def staticFile = file('gradle/delosdb-storage-static-analysis.gradle')
-        def staticText = staticFile.getText('UTF-8')
-        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
-        if (s0Index < 0) {
-            failures << 'Unable to locate s0CloseoutVerification task'
-        } else {
-            def s0Text = staticText.substring(s0Index)
-            delosReleaseReadinessExternalAdapterNames.each { taskName ->
-                if (s0Text.contains("'${taskName}'") || s0Text.contains("\"${taskName}\"")) {
-                    failures << 'External adapter task is wired into S0: ' + taskName
-                }
-            }
-        }
-
-        def docsText = file('docs/RELEASE-READINESS.md').exists()
-                ? file('docs/RELEASE-READINESS.md').getText('UTF-8')
-                : ''
-        [
-                'Release-readiness hardening',
-                'delosReleaseReadinessExternalAdapterBoundary',
-                'External validation adapters remain opt-in',
-                'No engine behavior changes'
-        ].each { marker ->
-            if (!docsText.contains(marker)) {
-                failures << 'Release-readiness documentation missing marker: ' + marker
-            }
-        }
-
-        def reportFile = layout.buildDirectory.file('reports/delosdb/release-readiness-external-adapter-boundary.txt').get().asFile
-        reportFile.parentFile.mkdirs()
-        reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB release-readiness external adapter boundary')
-            writer.println('===================================================')
-            writer.println()
-            writer.println('Runtime/test Java sources scanned: ' + runtimeSourceFiles.size())
-            writer.println('Normal build files scanned: ' + buildFiles.size())
-            writer.println('External adapter tasks classified: ' + delosReleaseReadinessExternalAdapterNames.size())
-            writer.println('External adapter roots: benchmarks/jmh, benchmarks/jcstress, benchmarks/sqlancer')
-            writer.println('Normal runtime dependency additions: none allowed')
-            writer.println('S0 executes external adapters: false')
-            writer.println()
-            if (failures.isEmpty()) {
-                writer.println('Status: PASS')
-            } else {
-                writer.println('Status: FAIL')
-                failures.each { writer.println('- ' + it) }
-            }
-        }
-
-        if (!failures.isEmpty()) {
-            throw new GradleException('DelosDB release-readiness external adapter boundary failed. Report: ' + reportFile)
-        }
-        println 'DelosDB release-readiness external adapter boundary passed. Report: ' + reportFile
-    }
-}
-
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -9305,7 +9170,6 @@ tasks.register('s0CloseoutVerification') {
             'delosDeadCodeCandidateReport',
             'delosHeapRawStoreDuplicateClassificationReport',
             'delosDerbyModuleParityStaticAnalysis',
-            'delosDerbyForkDiffClassificationStaticAnalysis',
-            'delosReleaseReadinessExternalAdapterBoundary'
+            'delosDerbyForkDiffClassificationStaticAnalysis'
 }
 

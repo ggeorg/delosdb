@@ -725,6 +725,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccConcurrentBackupRestoreTest',
+        'Runs online MVCC backup/restore under sustained committed writes.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccConcurrentBackupRestoreTest.class'])
+
+registerDelosFocusedTest(
         'runDelosStorageLifecycleConsistencyReportTest',
         'Runs the shared heap/MVCC storage lifecycle consistency report proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/StorageLifecycleConsistencyReportTest.class'])
@@ -761,6 +766,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLifecycleTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccConcurrentBackupRestoreTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageLifecycleConsistencyReportTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageSharedServiceReadinessReportTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVacuumTest.class',
