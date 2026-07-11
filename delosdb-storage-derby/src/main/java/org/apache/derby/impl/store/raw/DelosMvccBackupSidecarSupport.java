@@ -55,6 +55,7 @@ import java.util.List;
 final class DelosMvccBackupSidecarSupport {
     static final String STORAGE_DIRECTORY_NAME = "delos_mvcc";
     static final String BACKUP_MANIFEST = "delos_mvcc.BACKUP-MANIFEST";
+    static final String BACKUP_IN_PROGRESS = "delos_mvcc.BACKUP-IN-PROGRESS";
 
     private static final String DIGEST_ALGORITHM = "SHA-256";
 
@@ -97,6 +98,8 @@ final class DelosMvccBackupSidecarSupport {
 
         File sourceMvccDirectory = new File(mvccDirectory.getPath());
         File backupMvccDirectory = new File(backupcopy, STORAGE_DIRECTORY_NAME);
+        File inProgressMarker = new File(backupcopy, BACKUP_IN_PROGRESS);
+        createBackupInProgressMarker(inProgressMarker);
         if (files.exists(backupMvccDirectory)) {
             files.removeDirectory(backupMvccDirectory);
         }
@@ -104,6 +107,7 @@ final class DelosMvccBackupSidecarSupport {
         copyRecoveryConsistentSnapshot(sourceMvccDirectory, backupMvccDirectory);
         SidecarBackupManifest backupManifest = SidecarBackupManifest.from(backupMvccDirectory);
         writeBackupManifest(backupcopy, backupManifest);
+        deleteBackupInProgressMarker(inProgressMarker);
     }
 
 
@@ -263,7 +267,19 @@ final class DelosMvccBackupSidecarSupport {
      */
     void restoreSidecarsFromBackup(String backupPath) throws StandardException {
         File backupMvccDirectory = new File(backupPath, STORAGE_DIRECTORY_NAME);
+        File inProgressMarker = new File(backupPath, BACKUP_IN_PROGRESS);
         StorageFile dbMvccDirectory = storageFactory.newStorageFile(STORAGE_DIRECTORY_NAME);
+
+        if (files.exists(inProgressMarker)) {
+            throw StandardException.newException(
+                    SQLState.UNABLE_TO_COPY_FILE_FROM_BACKUP,
+                    inProgressMarker,
+                    dbMvccDirectory);
+        }
+
+        if (files.exists(backupMvccDirectory)) {
+            verifyBackupManifest(backupPath, backupMvccDirectory);
+        }
 
         if (files.exists(dbMvccDirectory) && !files.deleteAll(dbMvccDirectory)) {
             throw StandardException.newException(
@@ -275,13 +291,29 @@ final class DelosMvccBackupSidecarSupport {
         if (!files.exists(backupMvccDirectory)) {
             return;
         }
-
-        verifyBackupManifest(backupPath, backupMvccDirectory);
         if (!files.copyDirectory(backupMvccDirectory, dbMvccDirectory)) {
             throw StandardException.newException(
                     SQLState.UNABLE_TO_COPY_FILE_FROM_BACKUP,
                     backupMvccDirectory,
                     dbMvccDirectory);
+        }
+    }
+
+
+    private static void createBackupInProgressMarker(File marker) throws StandardException {
+        try (FileOutputStream output = new FileOutputStream(marker)) {
+            output.write("delos-mvcc-backup-in-progress\n".getBytes(StandardCharsets.UTF_8));
+            output.getFD().sync();
+        } catch (IOException e) {
+            throw StandardException.plainWrapException(e);
+        }
+    }
+
+    private static void deleteBackupInProgressMarker(File marker) throws StandardException {
+        try {
+            Files.delete(marker.toPath());
+        } catch (IOException e) {
+            throw StandardException.plainWrapException(e);
         }
     }
 

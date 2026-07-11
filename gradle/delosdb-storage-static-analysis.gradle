@@ -4590,6 +4590,17 @@ tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
         if (!sidecarSupport.contains('return 3; // Main write-ahead log is the final recovery authority copied.')) {
             failures << 'Sidecar helper must copy the main MVCC write-ahead log last'
         }
+        if (!sidecarSupport.contains('BACKUP_IN_PROGRESS = "delos_mvcc.BACKUP-IN-PROGRESS"')) {
+            failures << 'Sidecar helper must distinguish interrupted new-format backups from legacy backups'
+        }
+        if (!sidecarSupport.contains('createBackupInProgressMarker(inProgressMarker);')
+                || !sidecarSupport.contains('deleteBackupInProgressMarker(inProgressMarker);')) {
+            failures << 'Sidecar helper must bracket sidecar backup publication with an in-progress marker'
+        }
+        if (sidecarSupport.indexOf('verifyBackupManifest(backupPath, backupMvccDirectory);')
+                > sidecarSupport.indexOf('files.deleteAll(dbMvccDirectory)')) {
+            failures << 'Restore must validate backup sidecars before deleting the existing target sidecars'
+        }
         if (!sidecarSupport.contains('files.copyDirectory(backupMvccDirectory, dbMvccDirectory)')) {
             failures << 'Sidecar helper restore path must copy delos_mvcc sidecars from the backup image'
         }
@@ -6744,6 +6755,9 @@ tasks.register('delosHeapRawStoreBoundaryCleanupPhase3StaticAnalysis') {
         }
         if (!sidecarSupport.contains('BACKUP_MANIFEST = "delos_mvcc.BACKUP-MANIFEST"')) {
             failures << 'Sidecar helper must preserve the backup manifest name'
+        }
+        if (!sidecarSupport.contains('BACKUP_IN_PROGRESS = "delos_mvcc.BACKUP-IN-PROGRESS"')) {
+            failures << 'Sidecar helper must preserve interrupted-backup rejection semantics'
         }
         if (!sidecarSupport.contains('copyRecoveryConsistentSnapshot(sourceMvccDirectory, backupMvccDirectory)')) {
             failures << 'Sidecar helper must preserve backup semantics through recovery-consistent ordered copying'

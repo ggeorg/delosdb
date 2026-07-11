@@ -122,6 +122,62 @@ public final class MvccConcurrentBackupRestoreTest extends MvccSqlTestSupport {
         shutdownDatabase(restoredDatabase);
     }
 
+
+    public void testInterruptedMvccBackupMarkerRejectsRestoreBeforeTargetMutation() throws Exception {
+        String sourceDatabase = databaseName("mvcc-interrupted-backup-source-db");
+        String targetDatabase = databaseName("mvcc-interrupted-backup-target-db");
+        Path backupRoot = Path.of(databaseName("mvcc-interrupted-backup-copy-root"));
+
+        deleteRecursively(Path.of(sourceDatabase));
+        deleteRecursively(Path.of(targetDatabase));
+        deleteRecursively(backupRoot);
+
+        try (Connection source = openDatabase(sourceDatabase, true)) {
+            executeUpdate(source,
+                    "create table mvcc_interrupted_backup_t "
+                            + "(id int primary key, name varchar(40)) using delos_mvcc");
+            executeUpdate(source,
+                    "insert into mvcc_interrupted_backup_t values (1, 'complete-backup')");
+            backupDatabase(source, backupRoot);
+        }
+        shutdownDatabase(sourceDatabase);
+
+        try (Connection target = openDatabase(targetDatabase, true)) {
+            executeUpdate(target,
+                    "create table target_guard_t (id int primary key, name varchar(40))");
+            executeUpdate(target, "insert into target_guard_t values (1, 'must-survive')");
+        }
+        shutdownDatabase(targetDatabase);
+
+        Path backupDatabase = backupRoot.resolve(Path.of(sourceDatabase).getFileName());
+        Path interruptedMarker = backupDatabase.resolve("delos_mvcc.BACKUP-IN-PROGRESS");
+        Files.writeString(interruptedMarker, "simulated interrupted backup\n");
+
+        try {
+            DriverManager.getConnection(
+                    "jdbc:derby:" + targetDatabase + ";restoreFrom=" + backupDatabase.toAbsolutePath());
+            fail("restore must reject an MVCC backup that still has an in-progress marker");
+        } catch (SQLException expected) {
+            assertTrue("expected interrupted backup rejection, got: " + expected,
+                    containsMessage(expected, "Unable to copy")
+                            || containsMessage(expected, "BACKUP-IN-PROGRESS"));
+        }
+
+        try (Connection target = openDatabase(targetDatabase, false)) {
+            assertRows(target, "select id, name from target_guard_t order by id", "1|must-survive");
+        }
+        shutdownDatabase(targetDatabase);
+
+        Files.delete(interruptedMarker);
+        try (Connection restored = DriverManager.getConnection(
+                "jdbc:derby:" + targetDatabase + ";restoreFrom=" + backupDatabase.toAbsolutePath())) {
+            assertRows(restored,
+                    "select id, name from mvcc_interrupted_backup_t order by id",
+                    "1|complete-backup");
+        }
+        shutdownDatabase(targetDatabase);
+    }
+
     private static void runWriter(
             String databaseName,
             AtomicBoolean keepWriting,
