@@ -24,6 +24,7 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -71,17 +72,14 @@ public final class MvccDurableFiles {
             MvccSidecarFlushPolicy flushPolicy) throws IOException {
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(bytes, "bytes");
-        MvccSidecarFlushPolicy.require(flushPolicy);
-        Path parent = path.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
+        MvccSidecarFlushPolicy policy = MvccSidecarFlushPolicy.require(flushPolicy);
+        ensureParentDirectory(path);
         try (FileChannel channel = FileChannel.open(path,
                 StandardOpenOption.CREATE,
                 StandardOpenOption.WRITE,
                 StandardOpenOption.APPEND)) {
             writeFully(channel, ByteBuffer.wrap(bytes));
-            flushPolicy.force(channel, path);
+            policy.force(channel, path);
         }
     }
 
@@ -123,13 +121,8 @@ public final class MvccDurableFiles {
         Objects.requireNonNull(target, "target");
         try {
             Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException atomicMoveFailure) {
-            try {
-                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
-            } catch (IOException fallbackFailure) {
-                atomicMoveFailure.addSuppressed(fallbackFailure);
-                throw atomicMoveFailure;
-            }
+        } catch (AtomicMoveNotSupportedException unsupported) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -154,10 +147,21 @@ public final class MvccDurableFiles {
     }
 
     public static void deleteWithTemporarySibling(Path path, String temporarySuffix) throws IOException {
+        deleteWithTemporarySibling(path, temporarySuffix, MvccSidecarFlushPolicy.immediate());
+    }
+
+    static void deleteWithTemporarySibling(
+            Path path,
+            String temporarySuffix,
+            MvccSidecarFlushPolicy flushPolicy) throws IOException {
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(temporarySuffix, "temporarySuffix");
-        Files.deleteIfExists(path);
-        Files.deleteIfExists(path.resolveSibling(path.getFileName() + temporarySuffix));
+        MvccSidecarFlushPolicy policy = MvccSidecarFlushPolicy.require(flushPolicy);
+        boolean deleted = Files.deleteIfExists(path);
+        deleted |= Files.deleteIfExists(path.resolveSibling(path.getFileName() + temporarySuffix));
+        if (deleted) {
+            forceParentDirectoryIfSupported(path, policy);
+        }
     }
 
     private static void writeFully(FileChannel channel, ByteBuffer buffer) throws IOException {

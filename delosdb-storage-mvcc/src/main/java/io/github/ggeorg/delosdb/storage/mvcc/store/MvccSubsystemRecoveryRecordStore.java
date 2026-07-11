@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-import io.github.ggeorg.delosdb.storage.mvcc.durable.AbstractSidecarStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccAppendOnlyTextLog;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 
@@ -47,7 +46,6 @@ public final class MvccSubsystemRecoveryRecordStore {
         if (file == null) {
             return disabled();
         }
-        AbstractSidecarStore.ensureParentDirectory(file, "MVCC subsystem recovery");
         return new MvccSubsystemRecoveryRecordStore(file, storageId, recoverLastSequence(file) + 1L, true);
     }
 

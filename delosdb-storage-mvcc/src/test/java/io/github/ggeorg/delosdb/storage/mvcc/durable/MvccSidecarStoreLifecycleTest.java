@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -53,6 +54,30 @@ final class MvccSidecarStoreLifecycleTest {
     }
 
 
+
+    @Test
+    void binaryRewriteAndDeleteUseConfiguredFlushPolicy() throws Exception {
+        AtomicInteger forceCount = new AtomicInteger();
+        Path path = tempDir.resolve("binary").resolve("state.bin");
+        BinaryTestSidecarStore store = new BinaryTestSidecarStore(
+                path,
+                (channel, flushedPath) -> forceCount.incrementAndGet());
+
+        store.writeInt(42);
+        int forcesAfterRewrite = forceCount.get();
+
+        assertTrue(forcesAfterRewrite >= 2,
+                "binary rewrite must force the temporary file and parent-directory publication");
+        assertTrue(Files.exists(path));
+
+        store.delete();
+
+        assertTrue(forceCount.get() > forcesAfterRewrite,
+                "binary delete must force parent-directory metadata");
+        assertTrue(Files.notExists(path));
+        assertTrue(Files.notExists(path.resolveSibling("state.bin.rewrite")));
+    }
+
     @Test
     void appendOnlyTextLogIgnoresTornFinalRecordAndRequiresFramedAppends() throws Exception {
         Path path = tempDir.resolve("journal").resolve("events.log");
@@ -65,6 +90,22 @@ final class MvccSidecarStoreLifecycleTest {
         assertEquals("1\tCOMMIT", log.completeRecords().get(0).line());
         assertThrows(IllegalArgumentException.class,
                 () -> log.append("3\tMISSING_NEWLINE", "test journal record"));
+    }
+
+    private static final class BinaryTestSidecarStore extends AbstractSidecarStore {
+        private BinaryTestSidecarStore(Path path, MvccSidecarFlushPolicy flushPolicy) {
+            super(path, flushPolicy);
+        }
+
+        private void writeInt(int value) throws Exception {
+            ByteBuffer payload = allocatePayload(Integer.BYTES);
+            payload.putInt(value);
+            rewritePayload(payload, Integer.BYTES);
+        }
+
+        private void delete() throws Exception {
+            deleteWithRewriteSibling();
+        }
     }
 
     private static final class TestSidecarStore extends AbstractSidecarStore {

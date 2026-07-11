@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Objects;
 
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
-import io.github.ggeorg.delosdb.storage.mvcc.durable.AbstractSidecarStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccAppendOnlyTextLog;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 
@@ -48,7 +47,6 @@ public final class PageVolumeMvccWriteAheadLog {
         if (logFile == null) {
             return disabled();
         }
-        AbstractSidecarStore.ensureParentDirectory(logFile, "MVCC page-volume WAL");
         return new PageVolumeMvccWriteAheadLog(logFile, storageId, recoverLastLsn(logFile).value() + 1L, true);
     }
 
@@ -219,7 +217,4 @@ public final class PageVolumeMvccWriteAheadLog {
         return MvccDurableLineRecords.corrupt(LOG_NAME, lineIndex, message);
     }
 
-    private static IllegalStateException corrupt(int lineIndex, String message, Throwable cause) {
-        return MvccDurableLineRecords.corrupt(LOG_NAME, lineIndex, message, cause);
-    }
 }

@@ -39,11 +39,16 @@ final class MvccSidecarFiles {
         return (int) checksum.getValue();
     }
 
-    static void rewriteAtomically(Path path, byte[] bytes) throws IOException {
-        MvccDurableFiles.rewriteAtomically(path, bytes, REWRITE_SUFFIX);
+    static void rewriteAtomically(
+            Path path,
+            byte[] bytes,
+            MvccSidecarFlushPolicy flushPolicy) throws IOException {
+        MvccDurableFiles.rewriteAtomically(path, bytes, REWRITE_SUFFIX, flushPolicy);
     }
 
-    static void deleteWithRewriteSibling(Path path) throws IOException {
-        MvccDurableFiles.deleteWithTemporarySibling(path, REWRITE_SUFFIX);
+    static void deleteWithRewriteSibling(
+            Path path,
+            MvccSidecarFlushPolicy flushPolicy) throws IOException {
+        MvccDurableFiles.deleteWithTemporarySibling(path, REWRITE_SUFFIX, flushPolicy);
     }
 }

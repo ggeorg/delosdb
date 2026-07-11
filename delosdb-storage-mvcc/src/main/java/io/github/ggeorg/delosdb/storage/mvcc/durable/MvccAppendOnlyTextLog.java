@@ -1,5 +1,8 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -24,7 +27,13 @@ public final class MvccAppendOnlyTextLog {
     }
 
     public static MvccAppendOnlyTextLog open(Path path, String logName, boolean trimRecords) {
-        AbstractSidecarStore.ensureParentDirectory(path, logName);
+        Objects.requireNonNull(path, "path");
+        Objects.requireNonNull(logName, "logName");
+        try {
+            MvccDurableFiles.ensureParentDirectory(path);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not create " + logName + " directory for: " + path, e);
+        }
         return new MvccAppendOnlyTextLog(path, logName, trimRecords);
     }
 
@@ -41,12 +50,26 @@ public final class MvccAppendOnlyTextLog {
         if (!record.endsWith("\n")) {
             throw new IllegalArgumentException("append-only MVCC journal records must end with a newline");
         }
-        AbstractSidecarStore.appendUtf8Forced(path, record, description);
+        try {
+            MvccDurableFiles.appendForced(
+                    path,
+                    record.getBytes(StandardCharsets.UTF_8),
+                    MvccSidecarFlushPolicy.immediate());
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not append " + description + " to: " + path, e);
+        }
     }
 
     public List<MvccDurableLineRecords.LineRecord> completeRecords() {
-        String content = AbstractSidecarStore.readUtf8IfExists(path, logName);
-        return MvccDurableLineRecords.completeRecords(content, trimRecords);
+        if (!Files.exists(path)) {
+            return List.of();
+        }
+        try {
+            String content = Files.readString(path, StandardCharsets.UTF_8);
+            return MvccDurableLineRecords.completeRecords(content, trimRecords);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read " + logName + ": " + path, e);
+        }
     }
 
 }

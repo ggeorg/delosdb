@@ -47,40 +47,6 @@ public abstract class AbstractSidecarStore {
         this.flushPolicy = MvccSidecarFlushPolicy.require(flushPolicy);
     }
 
-    public static void ensureParentDirectory(Path path, String description) {
-        Objects.requireNonNull(path, "path");
-        Path parent = path.getParent();
-        if (parent == null) {
-            return;
-        }
-        try {
-            Files.createDirectories(parent);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not create " + description + " directory: " + parent, e);
-        }
-    }
-
-    public static String readUtf8IfExists(Path path, String description) {
-        Objects.requireNonNull(path, "path");
-        if (!Files.exists(path)) {
-            return "";
-        }
-        try {
-            return Files.readString(path, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read " + description + ": " + path, e);
-        }
-    }
-
-    public static void appendUtf8Forced(Path path, String content, String description) {
-        Objects.requireNonNull(content, "content");
-        appendBytesForced(path, content.getBytes(StandardCharsets.UTF_8), description, MvccSidecarFlushPolicy.immediate());
-    }
-
-    public static void appendBytesForced(Path path, byte[] bytes, String description) {
-        appendBytesForced(path, bytes, description, MvccSidecarFlushPolicy.immediate());
-    }
-
     protected final Path sidecarPath() {
         return path;
     }
@@ -104,19 +70,30 @@ public abstract class AbstractSidecarStore {
     }
 
     protected final void rewritePayload(ByteBuffer payloadBuffer, int payloadLength) throws IOException {
-        MvccSidecarCodec.rewritePayload(path, payloadBuffer, payloadLength);
+        MvccSidecarCodec.rewritePayload(path, payloadBuffer, payloadLength, flushPolicy);
     }
 
     protected final void deleteWithRewriteSibling() throws IOException {
-        MvccSidecarFiles.deleteWithRewriteSibling(path);
+        MvccSidecarFiles.deleteWithRewriteSibling(path, flushPolicy);
     }
 
     protected final void ensureParentDirectory(String description) {
-        ensureParentDirectory(path, description);
+        try {
+            MvccDurableFiles.ensureParentDirectory(path);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not create " + description + " directory for: " + path, e);
+        }
     }
 
     protected final String readUtf8IfExists(String description) {
-        return readUtf8IfExists(path, description);
+        if (!Files.exists(path)) {
+            return "";
+        }
+        try {
+            return Files.readString(path, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read " + description + ": " + path, e);
+        }
     }
 
     protected final List<String> readUtf8LinesIfExists(String description) throws IOException {

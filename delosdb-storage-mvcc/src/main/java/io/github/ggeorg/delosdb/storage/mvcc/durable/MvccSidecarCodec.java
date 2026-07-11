@@ -73,8 +73,17 @@ final class MvccSidecarCodec {
     }
 
     static void rewritePayload(Path path, ByteBuffer payloadBuffer, int payloadLength) throws IOException {
+        rewritePayload(path, payloadBuffer, payloadLength, MvccSidecarFlushPolicy.immediate());
+    }
+
+    static void rewritePayload(
+            Path path,
+            ByteBuffer payloadBuffer,
+            int payloadLength,
+            MvccSidecarFlushPolicy flushPolicy) throws IOException {
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(payloadBuffer, "payloadBuffer");
+        MvccSidecarFlushPolicy.require(flushPolicy);
         if (payloadLength < 0) {
             throw new IllegalArgumentException("payloadLength must not be negative: " + payloadLength);
         }
@@ -95,6 +104,6 @@ final class MvccSidecarCodec {
         }
         byte[] bytes = payloadBuffer.array();
         payloadBuffer.putInt(MvccSidecarFiles.checksum(bytes, 0, payloadLength));
-        MvccSidecarFiles.rewriteAtomically(path, bytes);
+        MvccSidecarFiles.rewriteAtomically(path, bytes, flushPolicy);
     }
 }
