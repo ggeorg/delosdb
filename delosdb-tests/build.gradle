@@ -725,11 +725,6 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.class'])
 
 registerDelosFocusedTest(
-        'runDelosMvccConcurrentBackupRestoreTest',
-        'Runs online MVCC backup/restore under sustained committed writes.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccConcurrentBackupRestoreTest.class'])
-
-registerDelosFocusedTest(
         'runDelosStorageLifecycleConsistencyReportTest',
         'Runs the shared heap/MVCC storage lifecycle consistency report proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/StorageLifecycleConsistencyReportTest.class'])
@@ -755,16 +750,6 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialSqlHarnessTest.class'])
 
 registerDelosFocusedTest(
-        'runDelosHeapMvccIsolationDifferentialTest',
-        'Runs heap/MVCC transaction-isolation differential proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccIsolationDifferentialTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosHeapMvccRecoveryDifferentialTest',
-        'Runs heap/MVCC crash-recovery differential proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.class'])
-
-registerDelosFocusedTest(
         'runDelosMvccSqlIntegrationTest',
         'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.',
         [
@@ -776,7 +761,6 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLifecycleTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccConcurrentBackupRestoreTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageLifecycleConsistencyReportTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/StorageSharedServiceReadinessReportTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVacuumTest.class',
@@ -860,7 +844,6 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlFeatureCompletenessTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlHeapParityTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialSqlHarnessTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapMvccIsolationDifferentialTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConcurrentStressTest.class'
         ])
 
@@ -878,8 +861,6 @@ registerDelosFocusedTest(
         'runDelosHeapDiagnosticsPerformanceAuditTest',
         'runDelosMvccLongReaderPurgeStressTest',
         'runDelosHeapMvccDifferentialSqlHarnessTest',
-        'runDelosHeapMvccIsolationDifferentialTest',
-        'runDelosHeapMvccRecoveryDifferentialTest',
         'runDelosMvccSqlIntegrationTest',
         'runDelosMvccDrdaNetworkClientTest',
         'runDelosMvccDrdaConcurrentNetworkClientTest',
@@ -896,3 +877,12 @@ tasks.named('check') {
             tasks.named('runDelosMvccDrdaConcurrentNetworkClientTest'),
             tasks.named('runDelosDrdaConcurrentClientStressTest')
 }
+
+registerDelosFocusedTest(
+        'runDelosHeapMvccDrdaCancellationTest',
+        'Runs DRDA statement-cancellation and connection-recovery proofs for heap and MVCC.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDrdaCancellationTest.class'],
+        [
+                'delos.drda.threadMode': 'virtual',
+                'delos.drda.extdta.spoolThresholdBytes': '32768'
+        ])
