@@ -24,6 +24,7 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Savepoint;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -217,9 +218,19 @@ public final class HeapMvccIsolationDifferentialTest extends MvccSqlTestSupport 
                 }
             });
             MutationOutcome outcome = future.get(10, TimeUnit.SECONDS);
-            if (!outcome.committed && !(outcome.failure instanceof java.sql.SQLException)) {
-                throw new AssertionError("concurrent mutation failed outside SQL locking semantics",
-                        outcome.failure);
+            if (!outcome.committed) {
+                if (!(outcome.failure instanceof SQLException)) {
+                    throw new AssertionError("concurrent mutation failed outside SQL locking semantics",
+                            outcome.failure);
+                }
+                SQLException sqlFailure = (SQLException) outcome.failure;
+                String sqlState = sqlFailure.getSQLState();
+                if (!("40XL1".equals(sqlState)
+                        || "40XL2".equals(sqlState)
+                        || "40001".equals(sqlState))) {
+                    throw new AssertionError("concurrent mutation failed with unexpected SQLState "
+                            + sqlState, sqlFailure);
+                }
             }
             return outcome;
         } finally {

@@ -78,6 +78,8 @@ public final class MvccScanController implements ScanManager {
     private MvccStoreAccessTransactionRegistry.Writer registeredWriter;
     private boolean writerBorrowedFromRegistry;
     private long estimatedRowCount;
+    private long rowsVisited;
+    private long rowsQualified;
 
     MvccScanController(
             MvccConglomerate conglomerate,
@@ -187,7 +189,7 @@ public final class MvccScanController implements ScanManager {
     @Override
     public ScanInfo getScanInfo() {
         ensureOpen();
-        return null;
+        return new MvccScanInfo(rowsVisited, rowsQualified, scanColumnList);
     }
 
     @Override
@@ -423,7 +425,9 @@ public final class MvccScanController implements ScanManager {
         }
         while (scan.next()) {
             DelosStorageRow candidate = scan.row();
+            rowsVisited++;
             if (rowQualifies(candidate.values())) {
+                rowsQualified++;
                 current = candidate;
                 return true;
             }
@@ -436,6 +440,7 @@ public final class MvccScanController implements ScanManager {
     private boolean advanceToNextIndexedRow() throws StandardException {
         while (orderedIndexRowIds != null && orderedIndexRowIds.hasNext()) {
             long rowId = orderedIndexRowIds.next();
+            rowsVisited++;
             Optional<StoreDataValue[]> visible = readCurrentCommittedOrSnapshot(rowId);
             if (visible.isEmpty()) {
                 MvccBridgeDiagnosticsSupport.incrementCandidateIndexVisibilityRejectCount();
@@ -443,6 +448,7 @@ public final class MvccScanController implements ScanManager {
             }
             StoreDataValue[] row = visible.get();
             if (rowQualifies(row)) {
+                rowsQualified++;
                 current = new DelosStorageRow(rowId, row);
                 return true;
             }

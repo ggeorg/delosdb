@@ -65,6 +65,7 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
             assertMvccConsistent(diagnostics, mvccContainerId);
 
             harness.assertCheckpoint("initial committed fixture");
+            assertMvccRuntimeStatisticsAvailable(connection);
 
             Savepoint rollbackPoint = connection.setSavepoint("DIFF_SQL_ROLLBACK_POINT");
             harness.executeUpdate("update ${table} set quantity = quantity + 900, "
@@ -114,6 +115,28 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
             assertIndexedLookupMatches(reopened, HEAP_TABLE, "beta-u", 2);
             assertIndexedLookupMatches(reopened, MVCC_TABLE, "beta-u", 2);
             assertMvccConsistent(diagnostics, mvccContainerId(reopened, "MVCC_DIFF_SQL_T"));
+        }
+    }
+
+    private static void assertMvccRuntimeStatisticsAvailable(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("call syscs_util.syscs_set_runtimestatistics(1)");
+            try (ResultSet resultSet = statement.executeQuery(
+                    "select id, code from " + MVCC_TABLE + " where quantity >= 20 order by id")) {
+                while (resultSet.next()) {
+                    // Drain the scan so Derby requests final scan statistics.
+                }
+            }
+            try (ResultSet resultSet = statement.executeQuery(
+                    "values syscs_util.syscs_get_runtimestatistics()")) {
+                assertTrue("expected one runtime-statistics row", resultSet.next());
+                String runtimeStatistics = resultSet.getString(1);
+                assertNotNull("MVCC runtime statistics must not be null", runtimeStatistics);
+                assertTrue("MVCC runtime statistics must describe the executed scan",
+                        runtimeStatistics.length() > 0);
+                assertFalse("expected one runtime-statistics row", resultSet.next());
+            }
+            statement.execute("call syscs_util.syscs_set_runtimestatistics(0)");
         }
     }
 
