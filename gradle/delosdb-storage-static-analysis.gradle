@@ -4563,7 +4563,10 @@ tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
                 'SQL_BACKUP_RESTORE_TEST',
                 'SQL_HEAP_COMPATIBILITY_TEST',
                 'SQL_RESTORE_GATE',
-                'TEST_SUITE_WIRING'
+                'TEST_SUITE_WIRING',
+                'BACKUP_COORDINATION',
+                'DURABLE_MUTATION_BOUNDARY',
+                'CONCURRENT_BACKUP_PROOF'
         ].each { required ->
             if (!categories.contains(required)) {
                 failures << 'Backup/restore sidecar verification is missing category: ' + required
@@ -4581,14 +4584,14 @@ tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
         if (!rawStore.contains('DelosMvccBackupSidecarSupport')) {
             failures << 'RawStore must delegate DelosDB sidecar mechanics to DelosMvccBackupSidecarSupport'
         }
-        if (!sidecarSupport.contains('copyRecoveryConsistentSnapshot(sourceMvccDirectory, backupMvccDirectory)')) {
-            failures << 'Sidecar helper backup path must create a recovery-consistent fuzzy MVCC snapshot'
+        if (!sidecarSupport.contains('copyCoordinatedSnapshot(sourceMvccDirectory, backupMvccDirectory)')) {
+            failures << 'Sidecar helper backup path must create a coordinated cross-subsystem MVCC snapshot'
         }
-        if (!sidecarSupport.contains('copyAppendOnlyPrefix(sourceRoot, source, targetRoot)')) {
-            failures << 'Sidecar helper must copy append-only recovery journals as bounded prefixes'
+        if (!sidecarSupport.contains('DelosStorageBackupCoordinator.enterBackupSnapshot()')) {
+            failures << 'Sidecar helper must exclude durable MVCC mutations while copying sidecars'
         }
-        if (!sidecarSupport.contains('return 3; // Main write-ahead log is the final recovery authority copied.')) {
-            failures << 'Sidecar helper must copy the main MVCC write-ahead log last'
+        if (sidecarSupport.contains('copyAppendOnlyPrefix(') || sidecarSupport.contains('recoveryJournalRank(')) {
+            failures << 'Sidecar helper must not independently sample mutually dependent recovery journals'
         }
         if (!sidecarSupport.contains('BACKUP_IN_PROGRESS = "delos_mvcc.BACKUP-IN-PROGRESS"')) {
             failures << 'Sidecar helper must distinguish interrupted new-format backups from legacy backups'
@@ -4596,6 +4599,18 @@ tasks.register('delosBackupRestoreSidecarVerificationStaticAnalysis') {
         if (!sidecarSupport.contains('createBackupInProgressMarker(inProgressMarker);')
                 || !sidecarSupport.contains('deleteBackupInProgressMarker(inProgressMarker);')) {
             failures << 'Sidecar helper must bracket sidecar backup publication with an in-progress marker'
+        }
+        if (!sidecarSupport.contains('writeDurableFile(new File(backupcopy, BACKUP_MANIFEST).toPath(), contents);')
+                || !sidecarSupport.contains('forceDirectoryIfSupported(target.getParent());')) {
+            failures << 'Backup manifest and marker publication must force file and directory durability'
+        }
+        if (!sidecarSupport.contains('"2".equals(version) || "3".equals(version)')
+                || !sidecarSupport.contains('digest == null')
+                || !sidecarSupport.contains('digest.isBlank()')) {
+            failures << 'Backup manifest parsing must reject unsupported versions and missing digests'
+        }
+        if (sidecarSupport.contains('boolean copyDirectory(StorageFile from, File to)')) {
+            failures << 'Sidecar helper must not retain the dead source-to-backup copyDirectory seam'
         }
         if (sidecarSupport.indexOf('verifyBackupManifest(backupPath, backupMvccDirectory);')
                 > sidecarSupport.indexOf('files.deleteAll(dbMvccDirectory)')) {
@@ -6759,8 +6774,15 @@ tasks.register('delosHeapRawStoreBoundaryCleanupPhase3StaticAnalysis') {
         if (!sidecarSupport.contains('BACKUP_IN_PROGRESS = "delos_mvcc.BACKUP-IN-PROGRESS"')) {
             failures << 'Sidecar helper must preserve interrupted-backup rejection semantics'
         }
-        if (!sidecarSupport.contains('copyRecoveryConsistentSnapshot(sourceMvccDirectory, backupMvccDirectory)')) {
-            failures << 'Sidecar helper must preserve backup semantics through recovery-consistent ordered copying'
+        if (!sidecarSupport.contains('copyCoordinatedSnapshot(sourceMvccDirectory, backupMvccDirectory)')) {
+            failures << 'Sidecar helper must preserve backup semantics through coordinated cross-subsystem copying'
+        }
+        if (!sidecarSupport.contains('writeDurableFile(new File(backupcopy, BACKUP_MANIFEST).toPath(), contents);')
+                || !sidecarSupport.contains('forceDirectoryIfSupported(markerPath.getParent());')) {
+            failures << 'Sidecar helper must durably publish the manifest and marker deletion'
+        }
+        if (sidecarSupport.contains('boolean copyDirectory(StorageFile from, File to)')) {
+            failures << 'Sidecar helper must not retain an unused backup-copy abstraction'
         }
         if (!sidecarSupport.contains('files.copyDirectory(backupMvccDirectory, dbMvccDirectory)')) {
             failures << 'Sidecar helper must preserve restore directory copy semantics'

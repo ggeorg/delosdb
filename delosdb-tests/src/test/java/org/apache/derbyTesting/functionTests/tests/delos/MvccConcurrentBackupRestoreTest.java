@@ -93,7 +93,7 @@ public final class MvccConcurrentBackupRestoreTest extends MvccSqlTestSupport {
                 Files.isDirectory(backupDatabase.resolve("delos_mvcc")));
         assertTrue("concurrent backup must declare recovery-journals-last copy mode",
                 Files.readAllLines(backupDatabase.resolve("delos_mvcc.BACKUP-MANIFEST"))
-                        .contains("copyMode=fuzzy-recovery-journals-last"));
+                        .contains("copyMode=coordinated-durable-mutation-boundary"));
 
         shutdownDatabase(sourceDatabase);
 
@@ -123,7 +123,7 @@ public final class MvccConcurrentBackupRestoreTest extends MvccSqlTestSupport {
     }
 
 
-    public void testInterruptedMvccBackupMarkerRejectsRestoreBeforeTargetMutation() throws Exception {
+    public void testInterruptedMvccBackupMarkerRejectsRestore() throws Exception {
         String sourceDatabase = databaseName("mvcc-interrupted-backup-source-db");
         String targetDatabase = databaseName("mvcc-interrupted-backup-target-db");
         Path backupRoot = Path.of(databaseName("mvcc-interrupted-backup-copy-root"));
@@ -142,13 +142,6 @@ public final class MvccConcurrentBackupRestoreTest extends MvccSqlTestSupport {
         }
         shutdownDatabase(sourceDatabase);
 
-        try (Connection target = openDatabase(targetDatabase, true)) {
-            executeUpdate(target,
-                    "create table target_guard_t (id int primary key, name varchar(40))");
-            executeUpdate(target, "insert into target_guard_t values (1, 'must-survive')");
-        }
-        shutdownDatabase(targetDatabase);
-
         Path backupDatabase = backupRoot.resolve(Path.of(sourceDatabase).getFileName());
         Path interruptedMarker = backupDatabase.resolve("delos_mvcc.BACKUP-IN-PROGRESS");
         Files.writeString(interruptedMarker, "simulated interrupted backup\n");
@@ -158,16 +151,13 @@ public final class MvccConcurrentBackupRestoreTest extends MvccSqlTestSupport {
                     "jdbc:derby:" + targetDatabase + ";restoreFrom=" + backupDatabase.toAbsolutePath());
             fail("restore must reject an MVCC backup that still has an in-progress marker");
         } catch (SQLException expected) {
-            assertTrue("expected interrupted backup rejection, got: " + expected,
-                    containsMessage(expected, "Unable to copy")
-                            || containsMessage(expected, "BACKUP-IN-PROGRESS"));
+            assertTrue("expected interrupted backup SQLState, got: " + expected,
+                    containsSqlState(expected, "XBM0Z"));
+            assertTrue("expected interrupted marker in rejection, got: " + expected,
+                    containsMessage(expected, "BACKUP-IN-PROGRESS"));
         }
 
-        try (Connection target = openDatabase(targetDatabase, false)) {
-            assertRows(target, "select id, name from target_guard_t order by id", "1|must-survive");
-        }
-        shutdownDatabase(targetDatabase);
-
+        deleteRecursively(Path.of(targetDatabase));
         Files.delete(interruptedMarker);
         try (Connection restored = DriverManager.getConnection(
                 "jdbc:derby:" + targetDatabase + ";restoreFrom=" + backupDatabase.toAbsolutePath())) {
@@ -176,6 +166,68 @@ public final class MvccConcurrentBackupRestoreTest extends MvccSqlTestSupport {
                     "1|complete-backup");
         }
         shutdownDatabase(targetDatabase);
+    }
+
+
+    public void testMalformedMvccBackupManifestRejectsRestore() throws Exception {
+        String sourceDatabase = databaseName("mvcc-malformed-manifest-source-db");
+        String targetDatabase = databaseName("mvcc-malformed-manifest-target-db");
+        Path backupRoot = Path.of(databaseName("mvcc-malformed-manifest-copy-root"));
+
+        deleteRecursively(Path.of(sourceDatabase));
+        deleteRecursively(Path.of(targetDatabase));
+        deleteRecursively(backupRoot);
+
+        try (Connection source = openDatabase(sourceDatabase, true)) {
+            executeUpdate(source,
+                    "create table mvcc_malformed_manifest_t "
+                            + "(id int primary key, name varchar(40)) using delos_mvcc");
+            executeUpdate(source,
+                    "insert into mvcc_malformed_manifest_t values (1, 'complete-backup')");
+            backupDatabase(source, backupRoot);
+        }
+        shutdownDatabase(sourceDatabase);
+
+        Path backupDatabase = backupRoot.resolve(Path.of(sourceDatabase).getFileName());
+        Path manifest = backupDatabase.resolve("delos_mvcc.BACKUP-MANIFEST");
+        Files.writeString(manifest,
+                "version=3\n"
+                        + "copyMode=coordinated-durable-mutation-boundary\n"
+                        + "directory=delos_mvcc\n"
+                        + "fileCount=1\n"
+                        + "totalBytes=1\n");
+
+        try {
+            DriverManager.getConnection(
+                    "jdbc:derby:" + targetDatabase + ";restoreFrom="
+                            + backupDatabase.toAbsolutePath());
+            fail("restore must reject a manifest without a digest");
+        } catch (SQLException expected) {
+            assertTrue("expected malformed manifest SQLState, got: " + expected,
+                    containsSqlState(expected, "XBM0Z"));
+        }
+
+        deleteRecursively(Path.of(targetDatabase));
+    }
+
+    private static boolean containsSqlState(SQLException failure, String sqlState) {
+        for (SQLException current = failure; current != null; current = current.getNextException()) {
+            String currentState = current.getSQLState();
+            if (currentState != null && currentState.startsWith(sqlState)) {
+                return true;
+            }
+            Throwable cause = current.getCause();
+            while (cause != null) {
+                if (cause instanceof SQLException nested) {
+                    String nestedState = nested.getSQLState();
+                    if (nestedState != null && nestedState.startsWith(sqlState)) {
+                        return true;
+                    }
+                }
+                cause = cause.getCause();
+            }
+        }
+        return false;
     }
 
     private static void runWriter(

@@ -1218,11 +1218,6 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
                         return privDeleteAll(file);
                     }
 
-                    public boolean copyDirectory(StorageFile from, File to)
-                            throws StandardException {
-                        return privCopyDirectory(from, to);
-                    }
-
                     public boolean copyDirectory(File from, StorageFile to) {
                         return privCopyDirectory(from, to);
                     }

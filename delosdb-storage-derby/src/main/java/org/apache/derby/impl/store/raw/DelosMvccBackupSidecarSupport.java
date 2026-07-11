@@ -22,14 +22,13 @@
 package org.apache.derby.impl.store.raw;
 
 import org.apache.derby.io.StorageFactory;
+import org.apache.derby.iapi.store.types.DelosStorageBackupCoordinator;
 import org.apache.derby.io.StorageFile;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStreamWriter;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -68,8 +67,6 @@ final class DelosMvccBackupSidecarSupport {
 
         boolean deleteAll(StorageFile file);
 
-        boolean copyDirectory(StorageFile from, File to) throws StandardException;
-
         boolean copyDirectory(File from, StorageFile to);
     }
 
@@ -104,54 +101,38 @@ final class DelosMvccBackupSidecarSupport {
             files.removeDirectory(backupMvccDirectory);
         }
 
-        copyRecoveryConsistentSnapshot(sourceMvccDirectory, backupMvccDirectory);
-        SidecarBackupManifest backupManifest = SidecarBackupManifest.from(backupMvccDirectory);
-        writeBackupManifest(backupcopy, backupManifest);
-        deleteBackupInProgressMarker(inProgressMarker);
+        try (DelosStorageBackupCoordinator.Guard ignored =
+                     DelosStorageBackupCoordinator.enterBackupSnapshot()) {
+            copyCoordinatedSnapshot(sourceMvccDirectory, backupMvccDirectory);
+            SidecarBackupManifest backupManifest = SidecarBackupManifest.from(backupMvccDirectory);
+            writeBackupManifest(backupcopy, backupManifest);
+            deleteBackupInProgressMarker(inProgressMarker);
+        }
     }
 
 
     /**
-     * Copy a fuzzy MVCC snapshot with recovery journals captured after page and
-     * metadata files. Page flushes obey WAL-before-flush, so a journal prefix
-     * captured after the corresponding page files can replay the backup to a
-     * valid committed state. Append-only journals are copied only up to the
-     * length observed when each copy starts; concurrent appends therefore do
-     * not make the backup fail or produce a partial trailing record.
+     * Copy one coordinated MVCC snapshot while durable mutations are excluded
+     * by {@link DelosStorageBackupCoordinator}. Cross-subsystem page, outcome,
+     * recovery, checkpoint, and WAL files therefore belong to one boundary.
      */
-    private static void copyRecoveryConsistentSnapshot(File sourceDirectory, File targetDirectory)
+    private static void copyCoordinatedSnapshot(File sourceDirectory, File targetDirectory)
             throws StandardException {
         try {
             Path sourceRoot = sourceDirectory.toPath();
             Path targetRoot = targetDirectory.toPath();
             Files.createDirectories(targetRoot);
 
-            List<Path> ordinaryFiles = new ArrayList<>();
-            List<Path> recoveryJournals = new ArrayList<>();
+            List<Path> durableFiles = new ArrayList<>();
             try (var paths = Files.walk(sourceRoot)) {
                 paths.filter(Files::isRegularFile)
                         .filter(path -> !isTransientRewrite(path))
-                        .forEach(path -> {
-                            if (isRecoveryJournal(path)) {
-                                recoveryJournals.add(path);
-                            } else {
-                                ordinaryFiles.add(path);
-                            }
-                        });
+                        .forEach(durableFiles::add);
             }
-
-            Comparator<Path> relativeOrder = Comparator.comparing(
-                    path -> normalizeRelativePath(sourceRoot, path));
-            ordinaryFiles.sort(relativeOrder);
-            recoveryJournals.sort(Comparator
-                    .comparingInt(DelosMvccBackupSidecarSupport::recoveryJournalRank)
-                    .thenComparing(relativeOrder));
-
-            for (Path source : ordinaryFiles) {
+            durableFiles.sort(Comparator.comparing(
+                    path -> normalizeRelativePath(sourceRoot, path)));
+            for (Path source : durableFiles) {
                 copyStableFile(sourceRoot, source, targetRoot);
-            }
-            for (Path source : recoveryJournals) {
-                copyAppendOnlyPrefix(sourceRoot, source, targetRoot);
             }
         } catch (IOException | SecurityException e) {
             throw StandardException.plainWrapException(e);
@@ -163,28 +144,6 @@ final class DelosMvccBackupSidecarSupport {
         return name.endsWith(".rewrite") || name.endsWith(".backup-copying");
     }
 
-    private static boolean isRecoveryJournal(Path path) {
-        String name = path.getFileName().toString();
-        return name.endsWith(".pagemut")
-                || name.endsWith(".txoutcome")
-                || name.endsWith(".recovery")
-                || name.endsWith(".wal");
-    }
-
-    private static int recoveryJournalRank(Path path) {
-        String name = path.getFileName().toString();
-        if (name.endsWith(".pagemut")) {
-            return 0;
-        }
-        if (name.endsWith(".txoutcome")) {
-            return 1;
-        }
-        if (name.endsWith(".recovery")) {
-            return 2;
-        }
-        return 3; // Main write-ahead log is the final recovery authority copied.
-    }
-
     private static void copyStableFile(Path sourceRoot, Path source, Path targetRoot)
             throws IOException {
         Path target = targetRoot.resolve(sourceRoot.relativize(source));
@@ -192,45 +151,6 @@ final class DelosMvccBackupSidecarSupport {
         Path temporary = target.resolveSibling(target.getFileName() + ".backup-copying");
         try {
             Files.copy(source, temporary, StandardCopyOption.REPLACE_EXISTING);
-            publishCopiedFile(temporary, target);
-        } finally {
-            Files.deleteIfExists(temporary);
-        }
-    }
-
-    private static void copyAppendOnlyPrefix(Path sourceRoot, Path source, Path targetRoot)
-            throws IOException {
-        Path target = targetRoot.resolve(sourceRoot.relativize(source));
-        Files.createDirectories(target.getParent());
-        Path temporary = target.resolveSibling(target.getFileName() + ".backup-copying");
-        try (FileChannel input = FileChannel.open(source, StandardOpenOption.READ);
-             FileChannel output = FileChannel.open(temporary,
-                     StandardOpenOption.CREATE,
-                     StandardOpenOption.TRUNCATE_EXISTING,
-                     StandardOpenOption.WRITE)) {
-            long snapshotLength = input.size();
-            long position = 0L;
-            ByteBuffer buffer = ByteBuffer.allocate(8192);
-            while (position < snapshotLength) {
-                buffer.clear();
-                buffer.limit((int) Math.min(buffer.capacity(), snapshotLength - position));
-                int read = input.read(buffer, position);
-                if (read < 0) {
-                    throw new IOException("MVCC recovery journal shrank during backup: " + source);
-                }
-                if (read == 0) {
-                    Thread.onSpinWait();
-                    continue;
-                }
-                buffer.flip();
-                while (buffer.hasRemaining()) {
-                    output.write(buffer);
-                }
-                position += read;
-            }
-            output.force(true);
-        }
-        try {
             publishCopiedFile(temporary, target);
         } finally {
             Files.deleteIfExists(temporary);
@@ -301,17 +221,14 @@ final class DelosMvccBackupSidecarSupport {
 
 
     private static void createBackupInProgressMarker(File marker) throws StandardException {
-        try (FileOutputStream output = new FileOutputStream(marker)) {
-            output.write("delos-mvcc-backup-in-progress\n".getBytes(StandardCharsets.UTF_8));
-            output.getFD().sync();
-        } catch (IOException e) {
-            throw StandardException.plainWrapException(e);
-        }
+        writeDurableFile(marker.toPath(), "delos-mvcc-backup-in-progress\n");
     }
 
     private static void deleteBackupInProgressMarker(File marker) throws StandardException {
         try {
-            Files.delete(marker.toPath());
+            Path markerPath = marker.toPath();
+            Files.delete(markerPath);
+            forceDirectoryIfSupported(markerPath.getParent());
         } catch (IOException e) {
             throw StandardException.plainWrapException(e);
         }
@@ -319,17 +236,50 @@ final class DelosMvccBackupSidecarSupport {
 
     private void writeBackupManifest(File backupcopy, SidecarBackupManifest manifest)
             throws StandardException {
-        File manifestFile = new File(backupcopy, BACKUP_MANIFEST);
-        try (OutputStreamWriter writer = new OutputStreamWriter(
-                new FileOutputStream(manifestFile), StandardCharsets.UTF_8)) {
-            writer.write("version=3\n");
-            writer.write("copyMode=fuzzy-recovery-journals-last\n");
-            writer.write("directory=" + STORAGE_DIRECTORY_NAME + "\n");
-            writer.write("fileCount=" + manifest.fileCount() + "\n");
-            writer.write("totalBytes=" + manifest.totalBytes() + "\n");
-            writer.write("digest=" + manifest.digest() + "\n");
+        String contents = "version=3\n"
+                + "copyMode=coordinated-durable-mutation-boundary\n"
+                + "directory=" + STORAGE_DIRECTORY_NAME + "\n"
+                + "fileCount=" + manifest.fileCount() + "\n"
+                + "totalBytes=" + manifest.totalBytes() + "\n"
+                + "digest=" + manifest.digest() + "\n";
+        writeDurableFile(new File(backupcopy, BACKUP_MANIFEST).toPath(), contents);
+    }
+
+    private static void writeDurableFile(Path target, String contents) throws StandardException {
+        Path temporary = target.resolveSibling(target.getFileName() + ".rewrite");
+        try {
+            Files.createDirectories(target.getParent());
+            try (FileChannel channel = FileChannel.open(temporary,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE)) {
+                ByteBuffer bytes = StandardCharsets.UTF_8.encode(contents);
+                while (bytes.hasRemaining()) {
+                    channel.write(bytes);
+                }
+                channel.force(true);
+            }
+            publishCopiedFile(temporary, target);
+            forceDirectoryIfSupported(target.getParent());
         } catch (IOException e) {
             throw StandardException.plainWrapException(e);
+        } finally {
+            try {
+                Files.deleteIfExists(temporary);
+            } catch (IOException ignored) {
+                // The published target is authoritative; stale rewrite files are ignored by backup.
+            }
+        }
+    }
+
+    private static void forceDirectoryIfSupported(Path directory) throws IOException {
+        if (directory == null) {
+            return;
+        }
+        try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
+            channel.force(true);
+        } catch (UnsupportedOperationException e) {
+            // Some file systems do not expose directory fsync through FileChannel.
         }
     }
 
@@ -396,13 +346,22 @@ final class DelosMvccBackupSidecarSupport {
         }
 
         private static SidecarBackupManifest read(File manifestFile) throws StandardException {
+            String version = null;
+            String copyMode = null;
+            String directory = null;
             long files = -1L;
             long bytes = -1L;
             String digest = null;
             try {
-                for (String line : java.nio.file.Files.readAllLines(
+                for (String line : Files.readAllLines(
                         manifestFile.toPath(), StandardCharsets.UTF_8)) {
-                    if (line.startsWith("fileCount=")) {
+                    if (line.startsWith("version=")) {
+                        version = line.substring("version=".length());
+                    } else if (line.startsWith("copyMode=")) {
+                        copyMode = line.substring("copyMode=".length());
+                    } else if (line.startsWith("directory=")) {
+                        directory = line.substring("directory=".length());
+                    } else if (line.startsWith("fileCount=")) {
                         files = Long.parseLong(line.substring("fileCount=".length()));
                     } else if (line.startsWith("totalBytes=")) {
                         bytes = Long.parseLong(line.substring("totalBytes=".length()));
@@ -413,7 +372,17 @@ final class DelosMvccBackupSidecarSupport {
             } catch (IOException | NumberFormatException e) {
                 throw StandardException.plainWrapException(e);
             }
-            if (files < 0L || bytes < 0L) {
+
+            boolean supportedVersion = "2".equals(version) || "3".equals(version);
+            boolean validCopyMode = !"3".equals(version)
+                    || "coordinated-durable-mutation-boundary".equals(copyMode);
+            if (!supportedVersion
+                    || !validCopyMode
+                    || !STORAGE_DIRECTORY_NAME.equals(directory)
+                    || files < 0L
+                    || bytes < 0L
+                    || digest == null
+                    || digest.isBlank()) {
                 throw StandardException.newException(
                         SQLState.UNABLE_TO_COPY_FILE_FROM_BACKUP,
                         manifestFile,
@@ -438,7 +407,7 @@ final class DelosMvccBackupSidecarSupport {
             if (fileCount != actual.fileCount || totalBytes != actual.totalBytes) {
                 return false;
             }
-            return digest == null || digest.equals(actual.digest);
+            return digest.equals(actual.digest);
         }
 
         private static void updateLong(MessageDigest digest, long value) {

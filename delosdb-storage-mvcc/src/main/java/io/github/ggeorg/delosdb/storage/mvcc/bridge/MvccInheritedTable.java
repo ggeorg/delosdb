@@ -36,6 +36,7 @@ import org.apache.derby.iapi.store.types.DelosStorageScan;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageTable;
 import org.apache.derby.iapi.store.types.DelosStorageTableDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageBackupCoordinator;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
 import org.apache.derby.iapi.store.types.DelosVacuumOutcome;
 import org.apache.derby.iapi.store.types.StoreDataValue;
@@ -248,7 +249,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public void commit(DelosStorageTransaction transaction) {
-        writeLocked(() -> {
+        durableMutationLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
             int committedChangedRows = 0;
             boolean committed = false;
@@ -300,7 +301,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 return;
             }
             purgeDaemon.recordAsyncScheduled(changedRows, debt);
-            purgeDaemonExecutor.execute(() -> writeLocked(() -> {
+            purgeDaemonExecutor.execute(() -> durableMutationLocked(() -> {
                 if (hasRetainedInheritedSnapshot()) {
                     purgeDaemon.recordAsyncSkip("retained inherited MVCC transaction or scan");
                     return;
@@ -400,7 +401,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public void dropDurableState() {
-        writeLocked(() -> {
+        durableMutationLocked(() -> {
             indexMaintenance.clear();
             try {
                 pageVolumeStateStore.drop();
@@ -1122,7 +1123,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public DelosVacuumOutcome vacuumSafely() {
-        return writeLocked(() -> {
+        return durableMutationLocked(() -> {
             lastVacuumOutcome = vacuumOutcome(pageVolumeStateStore.vacuumSafely(hasRetainedInheritedSnapshot()));
             return lastVacuumOutcome;
         });
@@ -1140,7 +1141,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public void close() {
-        writeLocked(() -> {
+        durableMutationLocked(() -> {
             purgeDaemonExecutor.shutdownNow();
             pageVolumeStateStore.close();
         });
@@ -1285,6 +1286,20 @@ final class MvccInheritedTable implements DelosStorageTable,
             operation.run();
         } finally {
             writeLock.unlock();
+        }
+    }
+
+    private <T> T durableMutationLocked(Supplier<T> operation) {
+        try (DelosStorageBackupCoordinator.Guard ignored =
+                     DelosStorageBackupCoordinator.enterDurableMutation()) {
+            return writeLocked(operation);
+        }
+    }
+
+    private void durableMutationLocked(Runnable operation) {
+        try (DelosStorageBackupCoordinator.Guard ignored =
+                     DelosStorageBackupCoordinator.enterDurableMutation()) {
+            writeLocked(operation);
         }
     }
 
