@@ -10,6 +10,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import io.github.ggeorg.delosdb.storage.mvcc.durable.AbstractSidecarStore;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccAppendOnlyTextLog;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 
 /**
@@ -27,6 +28,7 @@ public final class MvccSubsystemRecoveryRecordStore {
     private final Path path;
     private final String storageId;
     private final boolean enabled;
+    private final MvccAppendOnlyTextLog journal;
     private long nextSequence;
 
     private MvccSubsystemRecoveryRecordStore(Path path, String storageId, long nextSequence, boolean enabled) {
@@ -34,6 +36,7 @@ public final class MvccSubsystemRecoveryRecordStore {
         this.storageId = Objects.requireNonNull(storageId, "storageId");
         this.nextSequence = nextSequence;
         this.enabled = enabled;
+        this.journal = enabled ? MvccAppendOnlyTextLog.open(path, LOG_NAME, false) : null;
     }
 
     public static MvccSubsystemRecoveryRecordStore open(Path databaseDirectory, String storageId) {
@@ -88,14 +91,14 @@ public final class MvccSubsystemRecoveryRecordStore {
         if (!enabled() || !Files.exists(path)) {
             return Diagnostics.empty(path);
         }
-        return diagnostics(AbstractSidecarStore.readUtf8IfExists(path, LOG_NAME), path);
+        return diagnostics(journal.completeRecords(), path);
     }
 
     public ReplayPlan replayPlan() {
         if (!enabled() || !Files.exists(path)) {
             return ReplayPlan.empty(path);
         }
-        return replayPlan(AbstractSidecarStore.readUtf8IfExists(path, LOG_NAME), path);
+        return replayPlan(journal.completeRecords(), path);
     }
 
     private synchronized void append(
@@ -110,7 +113,7 @@ public final class MvccSubsystemRecoveryRecordStore {
         }
         RecoveryRecord record = new RecoveryRecord(
                 nextSequence++, storageId, subsystem, action, transactionId, commitSequence, primaryValue, secondaryValue);
-        AbstractSidecarStore.appendUtf8Forced(path, encode(record), "MVCC subsystem recovery record");
+        journal.append(encode(record), "MVCC subsystem recovery record");
     }
 
     private String encode(RecoveryRecord record) {
@@ -126,8 +129,8 @@ public final class MvccSubsystemRecoveryRecordStore {
                 + '\n';
     }
 
-    private static Diagnostics diagnostics(String content, Path path) {
-        List<RecoveryRecord> records = parseRecords(content);
+    private static Diagnostics diagnostics(List<MvccDurableLineRecords.LineRecord> lineRecords, Path path) {
+        List<RecoveryRecord> records = parseRecords(lineRecords);
         long lastSequence = records.isEmpty() ? 0L : records.get(records.size() - 1).sequence();
         Map<Subsystem, Long> counts = new EnumMap<>(Subsystem.class);
         List<String> summaries = new ArrayList<>();
@@ -142,15 +145,14 @@ public final class MvccSubsystemRecoveryRecordStore {
         return new Diagnostics(path, records.size(), lastSequence, counts, List.copyOf(summaries));
     }
 
-    private static ReplayPlan replayPlan(String content, Path path) {
-        return new ReplayPlan(path, parseRecords(content));
+    private static ReplayPlan replayPlan(List<MvccDurableLineRecords.LineRecord> lineRecords, Path path) {
+        return new ReplayPlan(path, parseRecords(lineRecords));
     }
 
-    private static List<RecoveryRecord> parseRecords(String content) {
+    private static List<RecoveryRecord> parseRecords(List<MvccDurableLineRecords.LineRecord> lineRecords) {
         long lastSequence = 0L;
         List<RecoveryRecord> records = new ArrayList<>();
-        for (MvccDurableLineRecords.LineRecord lineRecord
-                : MvccDurableLineRecords.completeRecords(content, false)) {
+        for (MvccDurableLineRecords.LineRecord lineRecord : lineRecords) {
             RecoveryRecord record = parseRecord(lineRecord.line(), lineRecord.lineIndex());
             if (record.sequence() <= lastSequence) {
                 throw corrupt(lineRecord.lineIndex(), "sequence must increase monotonically: previous="
@@ -192,7 +194,7 @@ public final class MvccSubsystemRecoveryRecordStore {
         if (path == null || !Files.exists(path)) {
             return 0L;
         }
-        return diagnostics(AbstractSidecarStore.readUtf8IfExists(path, LOG_NAME), path).lastSequence();
+        return diagnostics(MvccAppendOnlyTextLog.open(path, LOG_NAME, false).completeRecords(), path).lastSequence();
     }
 
     private static long parseLong(String value, int lineIndex, String fieldName) {

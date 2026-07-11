@@ -64,6 +64,27 @@ public final class MvccDurableFiles {
         }
     }
 
+
+    public static void appendForced(
+            Path path,
+            byte[] bytes,
+            MvccSidecarFlushPolicy flushPolicy) throws IOException {
+        Objects.requireNonNull(path, "path");
+        Objects.requireNonNull(bytes, "bytes");
+        MvccSidecarFlushPolicy.require(flushPolicy);
+        Path parent = path.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        try (FileChannel channel = FileChannel.open(path,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.WRITE,
+                StandardOpenOption.APPEND)) {
+            writeFully(channel, ByteBuffer.wrap(bytes));
+            flushPolicy.force(channel, path);
+        }
+    }
+
     public static void rewriteAtomically(Path path, byte[] bytes, String temporarySuffix) throws IOException {
         rewriteAtomically(path, bytes, temporarySuffix, MvccSidecarFlushPolicy.immediate());
     }

@@ -1,6 +1,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -49,6 +50,21 @@ final class MvccSidecarStoreLifecycleTest {
 
         assertEquals("second replacement\n", store.read());
         assertTrue(Files.notExists(path.resolveSibling("rewrite.log.tmp")));
+    }
+
+
+    @Test
+    void appendOnlyTextLogIgnoresTornFinalRecordAndRequiresFramedAppends() throws Exception {
+        Path path = tempDir.resolve("journal").resolve("events.log");
+        MvccAppendOnlyTextLog log = MvccAppendOnlyTextLog.open(path, "test journal", false);
+
+        log.append("1\tCOMMIT\n", "test journal record");
+        Files.writeString(path, "2\tTORN", java.nio.file.StandardOpenOption.APPEND);
+
+        assertEquals(1, log.completeRecords().size());
+        assertEquals("1\tCOMMIT", log.completeRecords().get(0).line());
+        assertThrows(IllegalArgumentException.class,
+                () -> log.append("3\tMISSING_NEWLINE", "test journal record"));
     }
 
     private static final class TestSidecarStore extends AbstractSidecarStore {

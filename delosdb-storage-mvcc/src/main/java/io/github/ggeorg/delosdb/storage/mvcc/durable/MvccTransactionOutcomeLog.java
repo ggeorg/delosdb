@@ -32,9 +32,11 @@ public final class MvccTransactionOutcomeLog extends AbstractSidecarStore {
     private static final String RECORD_ABORT = "ABORT";
     private static final String RECORD_FSYNC = "FSYNC";
 
+    private final MvccAppendOnlyTextLog journal;
 
     private MvccTransactionOutcomeLog(Path path) {
         super(path);
+        journal = MvccAppendOnlyTextLog.open(path, LOG_NAME);
     }
 
     public static MvccTransactionOutcomeLog open(Path path) {
@@ -115,16 +117,12 @@ public final class MvccTransactionOutcomeLog extends AbstractSidecarStore {
     }
 
     public synchronized Map<MvccTransactionId, Outcome> recoverOutcomes() {
-        if (!sidecarExists()) {
-            return Map.of();
-        }
-        String content = readUtf8IfExists(LOG_NAME);
-        if (content.isEmpty()) {
+        if (!journal.exists()) {
             return Map.of();
         }
 
         Map<MvccTransactionId, Outcome> outcomes = new LinkedHashMap<>();
-        for (MvccDurableLineRecords.LineRecord record : MvccDurableLineRecords.completeRecords(content)) {
+        for (MvccDurableLineRecords.LineRecord record : journal.completeRecords()) {
             parseLine(record.line(), record.lineIndex(), outcomes);
         }
         return Map.copyOf(outcomes);
@@ -202,7 +200,7 @@ public final class MvccTransactionOutcomeLog extends AbstractSidecarStore {
     private synchronized void appendLine(String type, String... fields) {
         StringBuilder line = new StringBuilder();
         appendLine(line, type, fields);
-        appendUtf8Forced(line.toString(), "MVCC transaction outcome record");
+        journal.append(line.toString(), "MVCC transaction outcome record");
     }
 
     private static void appendLine(StringBuilder content, String type, String... fields) {

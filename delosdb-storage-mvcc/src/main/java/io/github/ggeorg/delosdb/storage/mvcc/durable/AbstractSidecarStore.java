@@ -24,11 +24,9 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -145,13 +143,8 @@ public abstract class AbstractSidecarStore {
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(bytes, "bytes");
         MvccSidecarFlushPolicy.require(flushPolicy);
-        ensureParentDirectory(path, description);
-        try (FileChannel channel = FileChannel.open(path,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.APPEND)) {
-            writeFully(channel, ByteBuffer.wrap(bytes));
-            flushPolicy.force(channel, path);
+        try {
+            MvccDurableFiles.appendForced(path, bytes, flushPolicy);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not append " + description + " to: " + path, e);
         }
@@ -173,11 +166,5 @@ public abstract class AbstractSidecarStore {
 
     protected final void forceParentDirectoryIfSupported() throws IOException {
         MvccDurableFiles.forceParentDirectoryIfSupported(path, flushPolicy);
-    }
-
-    private static void writeFully(FileChannel channel, ByteBuffer buffer) throws IOException {
-        while (buffer.hasRemaining()) {
-            channel.write(buffer);
-        }
     }
 }

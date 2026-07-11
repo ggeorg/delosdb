@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import io.github.ggeorg.delosdb.storage.mvcc.durable.AbstractSidecarStore;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccAppendOnlyTextLog;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 
 /**
@@ -24,6 +25,8 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
     private static final String RECORD_ACTIVE = "ACTIVE";
     private static final String RECORD_COMMIT = "COMMITTED";
     private static final String RECORD_ABORT = "ABORTED";
+
+    private final MvccAppendOnlyTextLog journal;
 
     private static final MvccTransactionStatusStore DISABLED = new MvccTransactionStatusStore(Path.of("disabled")) {
         @Override
@@ -60,6 +63,7 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
 
     private MvccTransactionStatusStore(Path path) {
         super(path);
+        journal = MvccAppendOnlyTextLog.open(path, LOG_NAME);
     }
 
     public static MvccTransactionStatusStore disabled() {
@@ -96,16 +100,12 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
     }
 
     public synchronized Map<MvccTransactionId, MvccTransactionStatusRecord> recoverStatuses() {
-        if (!sidecarExists()) {
-            return Map.of();
-        }
-        String content = readUtf8IfExists(LOG_NAME);
-        if (content.isEmpty()) {
+        if (!journal.exists()) {
             return Map.of();
         }
 
         Map<MvccTransactionId, MvccTransactionStatusRecord> statuses = new LinkedHashMap<>();
-        for (MvccDurableLineRecords.LineRecord record : MvccDurableLineRecords.completeRecords(content)) {
+        for (MvccDurableLineRecords.LineRecord record : journal.completeRecords()) {
             parseLine(record.line(), record.lineIndex(), statuses);
         }
 
@@ -181,7 +181,7 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
             line.append('	').append(field);
         }
         line.append('\n');
-        appendUtf8Forced(line.toString(), "MVCC transaction status record");
+        journal.append(line.toString(), "MVCC transaction status record");
     }
 
     private static void validateCommitted(MvccTransactionId transactionId, MvccCommitSequence commitSequence) {

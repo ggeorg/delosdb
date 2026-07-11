@@ -34,8 +34,11 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
     private static final String RECORD_FSYNC = "FSYNC";
 
 
+    private final MvccAppendOnlyTextLog journal;
+
     private MvccPageMutationLog(Path path) {
         super(path);
+        journal = MvccAppendOnlyTextLog.open(path, LOG_NAME);
     }
 
     public static MvccPageMutationLog open(Path path) {
@@ -118,11 +121,7 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
     }
 
     public synchronized List<MvccVersionRecord> recoverCommittedRecords() {
-        if (!sidecarExists()) {
-            return List.of();
-        }
-        String content = readUtf8IfExists(LOG_NAME);
-        if (content.isEmpty()) {
+        if (!journal.exists()) {
             return List.of();
         }
 
@@ -130,7 +129,7 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
         Map<Long, TerminalState> terminalStates = new LinkedHashMap<>();
         List<Long> terminalOrder = new ArrayList<>();
 
-        for (MvccDurableLineRecords.LineRecord record : MvccDurableLineRecords.completeRecords(content)) {
+        for (MvccDurableLineRecords.LineRecord record : journal.completeRecords()) {
             parseLine(record.line(), record.lineIndex(), versionsByTransaction, terminalStates, terminalOrder);
         }
 
@@ -159,16 +158,12 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
     public synchronized List<MvccVersionRecord> recoverRecordsThroughOutcomeLog(
             MvccTransactionOutcomeLog outcomeLog) {
         Objects.requireNonNull(outcomeLog, "outcomeLog");
-        if (!sidecarExists()) {
-            return List.of();
-        }
-        String content = readUtf8IfExists(LOG_NAME);
-        if (content.isEmpty()) {
+        if (!journal.exists()) {
             return List.of();
         }
 
         List<MvccVersionRecord> recovered = new ArrayList<>();
-        for (MvccDurableLineRecords.LineRecord lineRecord : MvccDurableLineRecords.completeRecords(content)) {
+        for (MvccDurableLineRecords.LineRecord lineRecord : journal.completeRecords()) {
             int index = lineRecord.lineIndex();
             String[] parts = MvccDurableLineRecords.tabFields(lineRecord.line());
             require(parts.length >= 2, index, "record has too few fields");
@@ -248,7 +243,7 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
             line.append('	').append(field);
         }
         line.append('\n');
-        appendUtf8Forced(line.toString(), "MVCC page mutation log record");
+        journal.append(line.toString(), "MVCC page mutation log record");
     }
 
     private static void appendLine(StringBuilder content, String type, String... fields) {

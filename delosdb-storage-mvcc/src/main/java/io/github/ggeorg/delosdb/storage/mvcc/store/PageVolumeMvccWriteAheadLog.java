@@ -8,6 +8,7 @@ import java.util.Objects;
 
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.AbstractSidecarStore;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccAppendOnlyTextLog;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 
 /**
@@ -28,6 +29,7 @@ public final class PageVolumeMvccWriteAheadLog {
     private final Path path;
     private final String storageId;
     private final boolean enabled;
+    private final MvccAppendOnlyTextLog journal;
     private long nextLsnValue;
 
     private PageVolumeMvccWriteAheadLog(Path path, String storageId, long nextLsnValue, boolean enabled) {
@@ -35,6 +37,7 @@ public final class PageVolumeMvccWriteAheadLog {
         this.storageId = Objects.requireNonNull(storageId, "storageId");
         this.nextLsnValue = nextLsnValue;
         this.enabled = enabled;
+        this.journal = enabled ? MvccAppendOnlyTextLog.open(path, LOG_NAME, false) : null;
     }
 
     public static PageVolumeMvccWriteAheadLog open(Path databaseDirectory, String storageId) {
@@ -120,10 +123,7 @@ public final class PageVolumeMvccWriteAheadLog {
             }
             DelosLogSequenceNumber commitLsn = new DelosLogSequenceNumber(nextLsnValue++);
             batch.append(encodeLine(commitLsn, "COMMIT", transactionId, commitSequence, 0L));
-            AbstractSidecarStore.appendUtf8Forced(
-                    path,
-                    batch.toString(),
-                    "MVCC page-volume WAL transaction batch");
+            journal.append(batch.toString(), "MVCC page-volume WAL transaction batch");
             return List.copyOf(pageLsns);
         }
     }
@@ -140,9 +140,7 @@ public final class PageVolumeMvccWriteAheadLog {
 
     private synchronized DelosLogSequenceNumber append(String type, long transactionId, long commitSequence, long rowId) {
         DelosLogSequenceNumber lsn = new DelosLogSequenceNumber(nextLsnValue++);
-        AbstractSidecarStore.appendUtf8Forced(
-                path,
-                encodeLine(lsn, type, transactionId, commitSequence, rowId),
+        journal.append(encodeLine(lsn, type, transactionId, commitSequence, rowId),
                 "MVCC page-volume WAL record");
         return lsn;
     }
@@ -193,14 +191,9 @@ public final class PageVolumeMvccWriteAheadLog {
         if (path == null || !Files.exists(path)) {
             return DelosLogSequenceNumber.NONE;
         }
-        String content = AbstractSidecarStore.readUtf8IfExists(path, LOG_NAME);
-        if (content.isEmpty()) {
-            return DelosLogSequenceNumber.NONE;
-        }
-
         long lastLsn = DelosLogSequenceNumber.NONE.value();
         for (MvccDurableLineRecords.LineRecord lineRecord
-                : MvccDurableLineRecords.completeRecords(content, false)) {
+                : MvccAppendOnlyTextLog.open(path, LOG_NAME, false).completeRecords()) {
             int index = lineRecord.lineIndex();
             String[] parts = MvccDurableLineRecords.tabFields(lineRecord.line());
             if (parts.length < 2) {
