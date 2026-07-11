@@ -39,8 +39,10 @@ import org.apache.derbyTesting.junit.CleanDatabaseTestSetup;
 import org.apache.derbyTesting.junit.TestConfiguration;
 
 /**
- * DRDA statement-cancellation and post-cancellation connection-health proof
- * for matched heap and delos_mvcc workloads.
+ * DRDA cancellation-contract and post-timeout connection-health proof for
+ * matched heap and delos_mvcc workloads. Derby network-client explicit
+ * Statement.cancel() remains unsupported; server-side query timeout is the
+ * supported statement-cancellation mechanism.
  */
 public final class HeapMvccDrdaCancellationTest extends BaseJDBCTestCase {
     private static final String HEAP_TABLE = "drda_cancel_heap";
@@ -56,7 +58,7 @@ public final class HeapMvccDrdaCancellationTest extends BaseJDBCTestCase {
         return TestConfiguration.clientServerDecorator(new CleanDatabaseTestSetup(suite));
     }
 
-    public void testCancelLongRunningHeapAndMvccStatements() throws Exception {
+    public void testDrdaTimeoutCancellationAndExplicitCancelContract() throws Exception {
         assertTrue("test must run through Derby network client",
                 getTestConfiguration().getJDBCClient().isDerbyNetClient());
         assertTrue("configured JDBC URL should be network-client URL: "
@@ -70,16 +72,31 @@ public final class HeapMvccDrdaCancellationTest extends BaseJDBCTestCase {
             connection.commit();
         }
 
-        assertCancellationAndConnectionRecovery(HEAP_TABLE);
-        assertCancellationAndConnectionRecovery(MVCC_TABLE);
+        assertExplicitCancelUnsupported();
+        assertTimeoutCancellationAndConnectionRecovery(HEAP_TABLE);
+        assertTimeoutCancellationAndConnectionRecovery(MVCC_TABLE);
     }
 
-    private void assertCancellationAndConnectionRecovery(String table)
+    private void assertExplicitCancelUnsupported() throws Exception {
+        try (Connection connection = openDefaultConnection();
+             Statement statement = connection.createStatement()) {
+            try {
+                statement.cancel();
+                fail("Derby network client must report explicit Statement.cancel() as unsupported");
+            } catch (SQLException expected) {
+                assertEquals("unexpected SQLState for unsupported network-client cancel",
+                        "0A000", expected.getSQLState());
+            }
+        }
+    }
+
+    private void assertTimeoutCancellationAndConnectionRecovery(String table)
             throws Exception {
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try (Connection connection = openDefaultConnection();
              Statement statement = connection.createStatement()) {
             connection.setAutoCommit(false);
+            statement.setQueryTimeout(1);
             CountDownLatch executeStarted = new CountDownLatch(1);
 
             Future<String> execution = executor.submit(() -> {
@@ -97,18 +114,17 @@ public final class HeapMvccDrdaCancellationTest extends BaseJDBCTestCase {
 
             assertTrue("long-running DRDA statement did not start for " + table,
                     executeStarted.await(10, TimeUnit.SECONDS));
-            Thread.sleep(200L);
-            statement.cancel();
 
             String outcome = execution.get(20, TimeUnit.SECONDS);
-            assertEquals("cancelled statement should report Derby cancellation SQLState for "
+            assertEquals("timed-out statement should report Derby cancellation SQLState for "
                     + table, "XCL52", outcome);
 
             connection.rollback();
+            statement.setQueryTimeout(0);
             assertConnectionStillUsable(connection, table);
         } finally {
             executor.shutdownNow();
-            assertTrue("cancellation executor did not stop",
+            assertTrue("timeout-cancellation executor did not stop",
                     executor.awaitTermination(10, TimeUnit.SECONDS));
         }
     }
