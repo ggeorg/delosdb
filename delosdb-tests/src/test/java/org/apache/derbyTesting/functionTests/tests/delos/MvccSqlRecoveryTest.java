@@ -95,6 +95,57 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
     }
 
 
+    public void testHeapAndMvccCommittedWorkloadRemainEquivalentAfterProcessHalt() throws Exception {
+        String databaseName = databaseName("heap-mvcc-recovery-differential-db");
+
+        runCrashBoundaryWorker("heap-mvcc-differential-workload", databaseName);
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRecoveryDifferentialState(reopened, "heap_recovery_diff_t");
+            assertRecoveryDifferentialState(reopened, "mvcc_recovery_diff_t");
+
+            executeUpdate(reopened, "insert into heap_recovery_diff_t values "
+                    + "(8, 'after-recovery', 'ready', 80, 'heap-after-recovery')");
+            executeUpdate(reopened, "insert into mvcc_recovery_diff_t values "
+                    + "(8, 'after-recovery', 'ready', 80, 'mvcc-after-recovery')");
+        }
+
+        shutdownDatabase(databaseName);
+
+        try (Connection reopenedAgain = openDatabase(databaseName, false)) {
+            assertRows(reopenedAgain,
+                    "select id, code, status, quantity from heap_recovery_diff_t where id = 8",
+                    "8|after-recovery|ready|80");
+            assertRows(reopenedAgain,
+                    "select id, code, status, quantity from mvcc_recovery_diff_t where id = 8",
+                    "8|after-recovery|ready|80");
+            long containerId = mvccContainerId(reopenedAgain, "MVCC_RECOVERY_DIFF_T");
+            assertMvccConsistent(mvccDiagnostics(), containerId);
+        }
+    }
+
+    private static void assertRecoveryDifferentialState(Connection connection, String table) throws Exception {
+        assertRows(connection,
+                "select id, code, status, quantity, length(payload) from " + table + " order by id",
+                "1|alpha|ready|10|13",
+                "2|beta-u|ready|25|1000",
+                "4|delta|done|40|13",
+                "5|epsilon|pending|50|15");
+        assertRows(connection,
+                "select id, quantity from " + table + " where code = 'beta-u'",
+                "2|25");
+        assertRows(connection,
+                "select status, count(*), sum(quantity) from " + table
+                        + " group by status order by status",
+                "done|1|40",
+                "pending|1|50",
+                "ready|2|35");
+        assertRows(connection,
+                "select id from " + table + " where quantity between 20 and 60 order by quantity, id",
+                "2", "4", "5");
+        assertRows(connection,
+                "select id from " + table + " where code in ('transient', 'uncommitted', 'rolled-back') order by id");
+    }
 
 
     public void testVacuumedMvccTableRecoversWhenProcessHaltsWithStaleCheckpointMetadata() throws Exception {
@@ -322,6 +373,9 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
             case "vacuum-stale-checkpoint":
                 vacuumWithStaleCheckpoint(databaseName);
                 break;
+            case "heap-mvcc-differential-workload":
+                heapMvccDifferentialWorkload(databaseName);
+                break;
             default:
                 throw new IllegalArgumentException("unknown crash-boundary scenario: " + scenario);
             }
@@ -358,6 +412,68 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
             Runtime.getRuntime().halt(0);
         }
 
+
+        private static void heapMvccDifferentialWorkload(String databaseName) throws Exception {
+            Connection connection = openDatabase(databaseName, true);
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table heap_recovery_diff_t "
+                    + "(id int primary key, code varchar(32), status varchar(16), quantity int, "
+                    + "payload varchar(1200))");
+            executeUpdate(connection, "create table mvcc_recovery_diff_t "
+                    + "(id int primary key, code varchar(32), status varchar(16), quantity int, "
+                    + "payload varchar(1200)) using delos_mvcc");
+            executeUpdate(connection, "create index heap_recovery_diff_code_idx on heap_recovery_diff_t(code)");
+            executeUpdate(connection, "create index mvcc_recovery_diff_code_idx on mvcc_recovery_diff_t(code)");
+            executeUpdate(connection, "create index heap_recovery_diff_status_qty_idx "
+                    + "on heap_recovery_diff_t(status, quantity)");
+            executeUpdate(connection, "create index mvcc_recovery_diff_status_qty_idx "
+                    + "on mvcc_recovery_diff_t(status, quantity)");
+
+            seedRecoveryDifferentialTable(connection, "heap_recovery_diff_t");
+            seedRecoveryDifferentialTable(connection, "mvcc_recovery_diff_t");
+            connection.commit();
+
+            applyCommittedRecoveryMutations(connection, "heap_recovery_diff_t");
+            applyCommittedRecoveryMutations(connection, "mvcc_recovery_diff_t");
+            connection.commit();
+
+            java.sql.Savepoint savepoint = connection.setSavepoint("RECOVERY_DIFF_ROLLBACK");
+            executeUpdate(connection, "update heap_recovery_diff_t set code = 'transient' where id = 1");
+            executeUpdate(connection, "update mvcc_recovery_diff_t set code = 'transient' where id = 1");
+            executeUpdate(connection, "insert into heap_recovery_diff_t values "
+                    + "(6, 'rolled-back', 'ready', 60, 'rolled-back')");
+            executeUpdate(connection, "insert into mvcc_recovery_diff_t values "
+                    + "(6, 'rolled-back', 'ready', 60, 'rolled-back')");
+            connection.rollback(savepoint);
+            connection.commit();
+
+            executeUpdate(connection, "update heap_recovery_diff_t set code = 'uncommitted' where id = 4");
+            executeUpdate(connection, "update mvcc_recovery_diff_t set code = 'uncommitted' where id = 4");
+            executeUpdate(connection, "delete from heap_recovery_diff_t where id = 1");
+            executeUpdate(connection, "delete from mvcc_recovery_diff_t where id = 1");
+            executeUpdate(connection, "insert into heap_recovery_diff_t values "
+                    + "(7, 'uncommitted', 'pending', 70, 'uncommitted')");
+            executeUpdate(connection, "insert into mvcc_recovery_diff_t values "
+                    + "(7, 'uncommitted', 'pending', 70, 'uncommitted')");
+            Runtime.getRuntime().halt(0);
+        }
+
+        private static void seedRecoveryDifferentialTable(Connection connection, String table) throws Exception {
+            executeUpdate(connection, "insert into " + table + " values "
+                    + "(1, 'alpha', 'ready', 10, 'alpha-payload'), "
+                    + "(2, 'beta', 'pending', 20, 'beta-payload'), "
+                    + "(3, 'gamma', 'ready', 30, 'gamma-payload'), "
+                    + "(4, 'delta', 'done', 40, 'delta-payload')");
+        }
+
+        private static void applyCommittedRecoveryMutations(Connection connection, String table) throws Exception {
+            String largePayload = "x".repeat(1000);
+            executeUpdate(connection, "update " + table + " set code = 'beta-u', status = 'ready', "
+                    + "quantity = 25, payload = '" + largePayload + "' where id = 2");
+            executeUpdate(connection, "delete from " + table + " where id = 3");
+            executeUpdate(connection, "insert into " + table + " values "
+                    + "(5, 'epsilon', 'pending', 50, 'epsilon-payload')");
+        }
 
 
         private static void vacuumWithStaleCheckpoint(String databaseName) throws Exception {

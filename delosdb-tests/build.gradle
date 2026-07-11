@@ -760,6 +760,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccIsolationDifferentialTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosHeapMvccRecoveryDifferentialTest',
+        'Runs heap/MVCC crash-recovery differential proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccSqlIntegrationTest',
         'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.',
         [
@@ -874,6 +879,7 @@ registerDelosFocusedTest(
         'runDelosMvccLongReaderPurgeStressTest',
         'runDelosHeapMvccDifferentialSqlHarnessTest',
         'runDelosHeapMvccIsolationDifferentialTest',
+        'runDelosHeapMvccRecoveryDifferentialTest',
         'runDelosMvccSqlIntegrationTest',
         'runDelosMvccDrdaNetworkClientTest',
         'runDelosMvccDrdaConcurrentNetworkClientTest',
