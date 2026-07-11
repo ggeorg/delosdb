@@ -23,13 +23,9 @@ package io.github.ggeorg.delosdb.storage.mvcc.store;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -40,6 +36,7 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.stream.Collectors;
 
+import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccDurableFiles;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowDirectoryStore;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 
@@ -159,10 +156,6 @@ public final class PageVolumeMvccCheckpointStore {
         }
         Objects.requireNonNull(heads, "heads");
         try {
-            Path parent = path.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
             long generation = nextGeneration();
             String checkpointContent = checkpointContent(
                     generation,
@@ -176,12 +169,13 @@ public final class PageVolumeMvccCheckpointStore {
                     nextRowId);
             writeUtf8Forced(pendingPath, lifecycleContent(generation, LifecycleState.PREPARED));
             writeUtf8Forced(lifecyclePath, lifecycleContent(generation, LifecycleState.PREPARED));
-            Path rewrite = path.resolveSibling(path.getFileName() + ".rewrite");
-            writeUtf8Forced(rewrite, checkpointContent);
-            moveIntoPlace(rewrite, path);
+            MvccDurableFiles.rewriteAtomically(
+                    path,
+                    checkpointContent.getBytes(StandardCharsets.UTF_8),
+                    ".rewrite");
             writeUtf8Forced(lifecyclePath, lifecycleContent(generation, LifecycleState.COMPLETED));
             Files.deleteIfExists(pendingPath);
-            forceParentDirectoryIfSupported(path);
+            MvccDurableFiles.forceParentDirectoryIfSupported(path);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not write inherited MVCC checkpoint: " + path, e);
         }
@@ -325,47 +319,7 @@ public final class PageVolumeMvccCheckpointStore {
     private static void writeUtf8Forced(Path file, String content) throws IOException {
         Objects.requireNonNull(file, "file");
         Objects.requireNonNull(content, "content");
-        Path parent = file.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
-        try (FileChannel channel = FileChannel.open(file,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.TRUNCATE_EXISTING,
-                StandardOpenOption.WRITE)) {
-            ByteBuffer buffer = ByteBuffer.wrap(bytes);
-            while (buffer.hasRemaining()) {
-                channel.write(buffer);
-            }
-            channel.force(true);
-        }
-    }
-
-    private static void moveIntoPlace(Path source, Path target) throws IOException {
-        try {
-            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException atomicMoveFailure) {
-            try {
-                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
-            } catch (IOException fallbackFailure) {
-                atomicMoveFailure.addSuppressed(fallbackFailure);
-                throw atomicMoveFailure;
-            }
-        }
-        forceParentDirectoryIfSupported(target);
-    }
-
-    private static void forceParentDirectoryIfSupported(Path file) throws IOException {
-        Path parent = file.getParent();
-        if (parent == null) {
-            return;
-        }
-        try (FileChannel channel = FileChannel.open(parent, StandardOpenOption.READ)) {
-            channel.force(true);
-        } catch (IOException ignored) {
-            // Some platforms do not support forcing directories. File data has already been forced.
-        }
+        MvccDurableFiles.writeForced(file, content.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String storageSegment(String storageId) {

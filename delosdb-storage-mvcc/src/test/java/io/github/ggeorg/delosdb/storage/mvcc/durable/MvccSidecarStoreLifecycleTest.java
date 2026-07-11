@@ -43,6 +43,12 @@ final class MvccSidecarStoreLifecycleTest {
         assertTrue(forceCount.get() >= 1);
         assertEquals("replacement\n", store.read());
         assertTrue(Files.exists(path));
+        assertTrue(Files.notExists(path.resolveSibling("rewrite.log.tmp")));
+
+        store.rewrite("second replacement\n");
+
+        assertEquals("second replacement\n", store.read());
+        assertTrue(Files.notExists(path.resolveSibling("rewrite.log.tmp")));
     }
 
     private static final class TestSidecarStore extends AbstractSidecarStore {

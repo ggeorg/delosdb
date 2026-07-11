@@ -28,7 +28,6 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Objects;
@@ -165,52 +164,15 @@ public abstract class AbstractSidecarStore {
 
     protected final void rewriteBytesAtomicallyForced(byte[] bytes, String description) {
         Objects.requireNonNull(bytes, "bytes");
-        ensureParentDirectory(description);
-        Path temp = path.resolveSibling(path.getFileName() + TEMP_SUFFIX);
         try {
-            Files.write(temp, bytes,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE);
-            forceFile(temp);
-            moveIntoPlace(temp);
-            forceParentDirectoryIfSupported();
+            MvccDurableFiles.rewriteAtomically(path, bytes, TEMP_SUFFIX, flushPolicy);
         } catch (IOException failure) {
-            try {
-                Files.deleteIfExists(temp);
-            } catch (IOException cleanupFailure) {
-                failure.addSuppressed(cleanupFailure);
-            }
             throw new UncheckedIOException("Could not rewrite " + description + ": " + path, failure);
         }
     }
 
     protected final void forceParentDirectoryIfSupported() throws IOException {
-        Path parent = path.getParent() == null ? Path.of(".") : path.getParent();
-        try (FileChannel channel = FileChannel.open(parent, StandardOpenOption.READ)) {
-            flushPolicy.force(channel, parent);
-        } catch (IOException ignored) {
-            // Some platforms do not support forcing directories. File data has already been forced.
-        }
-    }
-
-    private void forceFile(Path file) throws IOException {
-        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.WRITE)) {
-            flushPolicy.force(channel, file);
-        }
-    }
-
-    private void moveIntoPlace(Path source) throws IOException {
-        try {
-            Files.move(source, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException atomicMoveFailure) {
-            try {
-                Files.move(source, path, StandardCopyOption.REPLACE_EXISTING);
-            } catch (IOException fallbackFailure) {
-                atomicMoveFailure.addSuppressed(fallbackFailure);
-                throw atomicMoveFailure;
-            }
-        }
+        MvccDurableFiles.forceParentDirectoryIfSupported(path, flushPolicy);
     }
 
     private static void writeFully(FileChannel channel, ByteBuffer buffer) throws IOException {

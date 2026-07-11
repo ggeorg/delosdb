@@ -22,12 +22,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 import java.util.zip.CRC32;
 
@@ -45,69 +40,10 @@ final class MvccSidecarFiles {
     }
 
     static void rewriteAtomically(Path path, byte[] bytes) throws IOException {
-        Objects.requireNonNull(path, "path");
-        Objects.requireNonNull(bytes, "bytes");
-
-        Path parent = path.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-
-        Path rewritePath = rewritePath(path);
-        Files.deleteIfExists(rewritePath);
-        try {
-            writeFileForced(rewritePath, bytes);
-            try {
-                Files.move(rewritePath, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicMoveFailure) {
-                Files.move(rewritePath, path, StandardCopyOption.REPLACE_EXISTING);
-            }
-            forceParentDirectoryIfSupported(path);
-        } catch (IOException failure) {
-            try {
-                Files.deleteIfExists(rewritePath);
-            } catch (IOException cleanupFailure) {
-                failure.addSuppressed(cleanupFailure);
-            }
-            throw failure;
-        }
+        MvccDurableFiles.rewriteAtomically(path, bytes, REWRITE_SUFFIX);
     }
 
     static void deleteWithRewriteSibling(Path path) throws IOException {
-        Objects.requireNonNull(path, "path");
-        Files.deleteIfExists(path);
-        Files.deleteIfExists(rewritePath(path));
-    }
-
-    private static Path rewritePath(Path path) {
-        return path.resolveSibling(path.getFileName() + REWRITE_SUFFIX);
-    }
-
-    private static void writeFileForced(Path path, byte[] bytes) throws IOException {
-        try (FileChannel channel = FileChannel.open(path,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.TRUNCATE_EXISTING,
-                StandardOpenOption.WRITE)) {
-            writeFully(channel, ByteBuffer.wrap(bytes));
-            channel.force(true);
-        }
-    }
-
-    private static void forceParentDirectoryIfSupported(Path path) throws IOException {
-        Path parent = path.getParent();
-        if (parent == null) {
-            return;
-        }
-        try (FileChannel channel = FileChannel.open(parent, StandardOpenOption.READ)) {
-            channel.force(true);
-        } catch (IOException ignored) {
-            // Some platforms do not support forcing directories. The sidecar file itself has already been forced.
-        }
-    }
-
-    private static void writeFully(FileChannel channel, ByteBuffer buffer) throws IOException {
-        while (buffer.hasRemaining()) {
-            channel.write(buffer);
-        }
+        MvccDurableFiles.deleteWithTemporarySibling(path, REWRITE_SUFFIX);
     }
 }
