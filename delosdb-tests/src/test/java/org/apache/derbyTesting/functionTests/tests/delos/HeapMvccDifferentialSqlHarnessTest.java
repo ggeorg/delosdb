@@ -44,6 +44,8 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport {
     private static final String HEAP_TABLE = "heap_diff_sql_t";
     private static final String MVCC_TABLE = "mvcc_diff_sql_t";
+    private static final String HEAP_REFERENCE_TABLE = "heap_diff_sql_ref";
+    private static final String MVCC_REFERENCE_TABLE = "mvcc_diff_sql_ref";
 
     public void testHeapAndMvccProduceIdenticalResultsForSupportedSqlSurface() throws Exception {
         String databaseName = databaseName("heap-mvcc-differential-sql-harness-db");
@@ -53,9 +55,11 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
             createTables(connection);
-            DifferentialHarness harness = new DifferentialHarness(connection, HEAP_TABLE, MVCC_TABLE);
+            DifferentialHarness harness = new DifferentialHarness(
+                    connection, HEAP_TABLE, MVCC_TABLE, HEAP_REFERENCE_TABLE, MVCC_REFERENCE_TABLE);
 
             insertFixtureRows(connection, harness);
+            insertReferenceRows(connection, harness);
             connection.commit();
             mvccContainerId = mvccContainerId(connection, "MVCC_DIFF_SQL_T");
             assertMvccConsistent(diagnostics, mvccContainerId);
@@ -66,6 +70,7 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
             harness.executeUpdate("update ${table} set quantity = quantity + 900, "
                     + "status = 'ROLLBACK', note = 'rolled-back' where id in (1, 2)");
             harness.executeUpdate("delete from ${table} where id = 4");
+            harness.executeReferenceUpdate("update ${ref} set label = 'rolled-back' where status = 'READY'");
             harness.insertRow(7, "eta", 70, "ROLLBACK", "7.07", "rolled-back", "2026-01-07");
             harness.assertCheckpoint("inside rollback-only mutation");
             connection.rollback(rollbackPoint);
@@ -77,10 +82,17 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
                     + "amount = amount + 10, note = 'alpha committed' where id = 1");
             harness.executeUpdate("update ${table} set code = 'beta-u', status = 'READY' where id = 2");
             harness.executeUpdate("delete from ${table} where id = 3");
-            harness.insertRow(8, "theta", 80, "READY", "8.80", repeatedNote("theta", 256), "2026-02-08");
+            harness.executeUpdate("delete from ${table} where id = 4");
+            harness.insertRow(4, "delta-r", 44, "READY", null, repeatedNote("delta-reinsert", 1000), null);
+            harness.insertRow(8, "theta", 80, "READY", "8.80", repeatedNote("theta", 768), "2026-02-08");
+            harness.insertRow(9, "iota", 80, "READY", "9.90", null, "2026-02-09");
+            harness.executeUpdate("update ${table} set status = 'DONE', quantity = 25, "
+                    + "created_on = null where id = 6");
+            harness.executeUpdate("update ${table} set note = null where id = 5");
+            harness.executeReferenceUpdate("update ${ref} set label = 'ready-current' where status = 'READY'");
             connection.commit();
 
-            harness.assertCheckpoint("after committed update/delete/insert");
+            harness.assertCheckpoint("after committed indexed updates, delete/reinsert, and overflow rows");
             assertIndexedLookupMatches(connection, HEAP_TABLE, "beta-u", 2);
             assertIndexedLookupMatches(connection, MVCC_TABLE, "beta-u", 2);
             assertMvccConsistent(diagnostics, mvccContainerId);
@@ -96,7 +108,8 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
         shutdownDatabase(databaseName);
 
         try (Connection reopened = openDatabase(databaseName, false)) {
-            DifferentialHarness reopenedHarness = new DifferentialHarness(reopened, HEAP_TABLE, MVCC_TABLE);
+            DifferentialHarness reopenedHarness = new DifferentialHarness(
+                    reopened, HEAP_TABLE, MVCC_TABLE, HEAP_REFERENCE_TABLE, MVCC_REFERENCE_TABLE);
             reopenedHarness.assertCheckpoint("after shutdown and reopen");
             assertIndexedLookupMatches(reopened, HEAP_TABLE, "beta-u", 2);
             assertIndexedLookupMatches(reopened, MVCC_TABLE, "beta-u", 2);
@@ -130,6 +143,15 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
                 + MVCC_TABLE + "(status, quantity)");
         executeUpdate(connection, "create index mvcc_diff_created_idx on "
                 + MVCC_TABLE + "(created_on)");
+
+        executeUpdate(connection, "create table " + HEAP_REFERENCE_TABLE + " ("
+                + "status varchar(16) not null primary key, "
+                + "label varchar(64) not null, "
+                + "rank_value int not null)");
+        executeUpdate(connection, "create table " + MVCC_REFERENCE_TABLE + " ("
+                + "status varchar(16) not null primary key, "
+                + "label varchar(64) not null, "
+                + "rank_value int not null) using delos_mvcc");
     }
 
     private static void insertFixtureRows(Connection connection, DifferentialHarness harness) throws SQLException {
@@ -143,6 +165,17 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
                 6L, countRows(connection, HEAP_TABLE));
         assertEquals("fixture row count should match for MVCC",
                 6L, countRows(connection, MVCC_TABLE));
+    }
+
+    private static void insertReferenceRows(Connection connection, DifferentialHarness harness) throws SQLException {
+        harness.insertReferenceRow("READY", "ready", 1);
+        harness.insertReferenceRow("PENDING", "pending", 2);
+        harness.insertReferenceRow("DONE", "done", 3);
+        harness.insertReferenceRow("ROLLBACK", "rollback", 4);
+        assertEquals("reference row count should match for heap",
+                4L, countRows(connection, HEAP_REFERENCE_TABLE));
+        assertEquals("reference row count should match for MVCC",
+                4L, countRows(connection, MVCC_REFERENCE_TABLE));
     }
 
     private static long countRows(Connection connection, String tableName) throws SQLException {
@@ -184,12 +217,21 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
         private final Connection connection;
         private final String heapTable;
         private final String mvccTable;
+        private final String heapReferenceTable;
+        private final String mvccReferenceTable;
         private final List<QueryProbe> probes;
 
-        DifferentialHarness(Connection connection, String heapTable, String mvccTable) {
+        DifferentialHarness(
+                Connection connection,
+                String heapTable,
+                String mvccTable,
+                String heapReferenceTable,
+                String mvccReferenceTable) {
             this.connection = connection;
             this.heapTable = heapTable;
             this.mvccTable = mvccTable;
+            this.heapReferenceTable = heapReferenceTable;
+            this.mvccReferenceTable = mvccReferenceTable;
             this.probes = List.of(
                     new QueryProbe("full ordered projection",
                             "select id, code, quantity, status, amount, note, created_on "
@@ -210,7 +252,34 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
                             "select count(*), sum(quantity), min(quantity), max(quantity) from ${table}"),
                     new QueryProbe("unique lookup",
                             "select id, code, status from ${table} "
-                                    + "where code = 'beta-u' or code = 'beta' order by id"));
+                                    + "where code = 'beta-u' or code = 'beta' order by id"),
+                    new QueryProbe("composite equality and bounded range",
+                            "select id, code, status, quantity from ${table} "
+                                    + "where status = 'READY' and quantity between 40 and 80 "
+                                    + "order by quantity, id"),
+                    new QueryProbe("explicit null ordering",
+                            "select id, code, amount, created_on from ${table} "
+                                    + "order by case when created_on is null then 1 else 0 end, created_on, id"),
+                    new QueryProbe("distinct indexed values",
+                            "select distinct status, quantity from ${table} order by status, quantity"),
+                    new QueryProbe("top n ordered rows",
+                            "select id, code, quantity from ${table} "
+                                    + "order by quantity desc, id fetch first 4 rows only"),
+                    new QueryProbe("join with provider-matched reference table",
+                            "select t.id, t.code, r.label, r.rank_value from ${table} t "
+                                    + "join ${ref} r on r.status = t.status "
+                                    + "where t.quantity >= 20 order by r.rank_value, t.id"),
+                    new QueryProbe("aggregate having",
+                            "select status, count(*), sum(quantity) from ${table} "
+                                    + "group by status having count(*) >= 2 order by status"),
+                    new QueryProbe("correlated existence",
+                            "select t.id, t.code from ${table} t where exists "
+                                    + "(select 1 from ${ref} r where r.status = t.status and r.rank_value <= 2) "
+                                    + "order by t.id"),
+                    new QueryProbe("nullable expression and large-value length",
+                            "select id, coalesce(note, '<NULL>'), length(note), "
+                                    + "case when amount is null then 0 else 1 end "
+                                    + "from ${table} order by id"));
         }
 
         void insertRow(
@@ -225,9 +294,20 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
             insertInto(mvccTable, id, code, quantity, status, amount, note, createdOn);
         }
 
+        void insertReferenceRow(String status, String label, int rankValue) throws SQLException {
+            insertReferenceInto(heapReferenceTable, status, label, rankValue);
+            insertReferenceInto(mvccReferenceTable, status, label, rankValue);
+        }
+
+        void executeReferenceUpdate(String sqlTemplate) throws SQLException {
+            int heapCount = executeSingleUpdate(sql(sqlTemplate, heapTable, heapReferenceTable));
+            int mvccCount = executeSingleUpdate(sql(sqlTemplate, mvccTable, mvccReferenceTable));
+            assertEquals("heap/MVCC reference update count mismatch for " + sqlTemplate, heapCount, mvccCount);
+        }
+
         void executeUpdate(String sqlTemplate) throws SQLException {
-            int heapCount = executeSingleUpdate(sql(sqlTemplate, heapTable));
-            int mvccCount = executeSingleUpdate(sql(sqlTemplate, mvccTable));
+            int heapCount = executeSingleUpdate(sql(sqlTemplate, heapTable, heapReferenceTable));
+            int mvccCount = executeSingleUpdate(sql(sqlTemplate, mvccTable, mvccReferenceTable));
             assertEquals("heap/MVCC update count mismatch for " + sqlTemplate, heapCount, mvccCount);
         }
 
@@ -239,8 +319,8 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
 
         void assertCheckpoint(String checkpointName) throws SQLException {
             for (QueryProbe probe : probes) {
-                List<String> heapRows = rows(sql(probe.sqlTemplate, heapTable));
-                List<String> mvccRows = rows(sql(probe.sqlTemplate, mvccTable));
+                List<String> heapRows = rows(sql(probe.sqlTemplate, heapTable, heapReferenceTable));
+                List<String> mvccRows = rows(sql(probe.sqlTemplate, mvccTable, mvccReferenceTable));
                 assertEquals("heap/MVCC differential mismatch at checkpoint '"
                         + checkpointName + "' for probe '" + probe.name + "' using SQL "
                         + probe.sqlTemplate, heapRows, mvccRows);
@@ -281,6 +361,18 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
             }
         }
 
+        private void insertReferenceInto(
+                String tableName, String status, String label, int rankValue) throws SQLException {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "insert into " + tableName + " values (?, ?, ?)")) {
+                statement.setString(1, status);
+                statement.setString(2, label);
+                statement.setInt(3, rankValue);
+                assertEquals("expected one inserted reference row for " + tableName,
+                        1, statement.executeUpdate());
+            }
+        }
+
         private List<String> rows(String sql) throws SQLException {
             List<String> rows = new ArrayList<>();
             try (Statement statement = connection.createStatement(); ResultSet rs = statement.executeQuery(sql)) {
@@ -318,8 +410,8 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
             return text.length() + ":" + text.substring(0, 32) + ":" + text.substring(text.length() - 32);
         }
 
-        private static String sql(String template, String tableName) {
-            return template.replace("${table}", tableName);
+        private static String sql(String template, String tableName, String referenceTableName) {
+            return template.replace("${table}", tableName).replace("${ref}", referenceTableName);
         }
     }
 

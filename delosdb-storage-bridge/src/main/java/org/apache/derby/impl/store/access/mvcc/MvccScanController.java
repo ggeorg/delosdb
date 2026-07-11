@@ -165,8 +165,23 @@ public final class MvccScanController implements ScanManager {
     }
 
     @Override
-    public void fetchSet(long maxRowCount, int[] keyColumnNumbers, BackingStoreHashtable hashTable) {
+    public void fetchSet(long maxRowCount, int[] keyColumnNumbers, BackingStoreHashtable hashTable)
+            throws StandardException {
         ensureOpen();
+        if (hashTable == null) {
+            throw new IllegalArgumentException("hashTable must not be null");
+        }
+        long fetchedRowCount = 0L;
+        while ((maxRowCount < 0L || fetchedRowCount < maxRowCount) && advanceToNextQualifiedRow()) {
+            StoreDataValue[] row = current.values();
+            StoreRowLocation rowLocation = new MvccRowLocation();
+            MvccRowLocation.from(rowLocation).copyFrom(state.rowLocationFor(current.rowId()));
+            hashTable.putRow(true, row, rowLocation);
+            fetchedRowCount++;
+        }
+        while (advanceToNextQualifiedRow()) {
+            // fetchSet must leave the scan exhausted even when maxRowCount is reached.
+        }
     }
 
     @Override
