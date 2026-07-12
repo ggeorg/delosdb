@@ -85,6 +85,7 @@ public final class DelosJdbcBenchmarkBaseline {
         deleteRecursively(database);
         List<DelosBenchmarkMeasurement> result = new ArrayList<>();
         try (Connection connection = DriverManager.getConnection("jdbc:derby:" + database + ";create=true")) {
+            Exception providerFailure = null;
             try {
                 DelosJdbcBenchmarkScenario scenario = new DelosJdbcBenchmarkScenario(connection, provider, config);
                 scenario.prepare();
@@ -102,15 +103,31 @@ public final class DelosJdbcBenchmarkBaseline {
                                 statementMode));
                     }
                 }
+            } catch (Exception failure) {
+                providerFailure = failure;
+                throw failure;
             } finally {
-                if (!connection.getAutoCommit()) {
-                    connection.rollback();
-                }
+                rollbackOpenConnection(connection, providerFailure);
             }
         } finally {
             deleteRecursively(database);
         }
         return result;
+    }
+
+    private static void rollbackOpenConnection(Connection connection, Throwable providerFailure)
+            throws SQLException {
+        try {
+            if (!connection.isClosed() && !connection.getAutoCommit()) {
+                connection.rollback();
+            }
+        } catch (SQLException cleanupFailure) {
+            if (providerFailure != null) {
+                providerFailure.addSuppressed(cleanupFailure);
+                return;
+            }
+            throw cleanupFailure;
+        }
     }
 
     private static List<DelosBenchmarkStatementMode> statementModesForRun(int run) {
