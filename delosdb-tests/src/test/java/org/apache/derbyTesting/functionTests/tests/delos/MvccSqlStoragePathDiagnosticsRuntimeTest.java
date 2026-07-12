@@ -51,7 +51,8 @@ public final class MvccSqlStoragePathDiagnosticsRuntimeTest extends MvccSqlTestS
                     "2|payload-2");
 
             List<String> lines = diagnostics.storagePathDiagnosticLinesForTesting();
-            assertContainsStoragePath(lines, "storagePath=MVCC_FULL_SCAN state=CHOSEN", containerId);
+            assertFalse("ordered equality must not open an unused committed full scan: " + lines,
+                    containsStoragePath(lines, "storagePath=MVCC_FULL_SCAN state=CHOSEN"));
             assertContainsStoragePath(lines, "storagePath=MVCC_ORDERED_EQUALITY_LOOKUP state=CHOSEN", containerId);
             assertContainsStoragePath(lines, "storagePath=MVCC_ROW_ID_LOOKUP state=CHOSEN", containerId);
             assertFalse("candidate-index diagnostics must not be recorded as normal SQL authority: " + lines,

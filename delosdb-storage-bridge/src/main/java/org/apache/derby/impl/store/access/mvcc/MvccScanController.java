@@ -126,11 +126,10 @@ public final class MvccScanController implements ScanManager {
             }
         }
         try {
-            openStorageScan();
+            openPreferredStorageAccess(qualifiers);
         } catch (StandardException e) {
             throw new IllegalStateException("Could not open MVCC storage-api scan", e);
         }
-        resetOrderedIndexScan(qualifiers);
     }
 
 
@@ -141,7 +140,7 @@ public final class MvccScanController implements ScanManager {
     @Override
     public void close() {
         if (!closed) {
-            scan.close();
+            closeStorageScan();
             closeReaderIfStatementScoped();
             if (!completeWithDerbyTransaction) {
                 abortWriterIfActive();
@@ -155,7 +154,7 @@ public final class MvccScanController implements ScanManager {
     public boolean closeForEndTransaction(boolean closeHeldScan) {
         if (!hold || closeHeldScan) {
             if (!closed) {
-                scan.close();
+                closeStorageScan();
                 closeReaderIfStatementScoped();
                 commitWriterIfActive();
                 closed = true;
@@ -216,30 +215,49 @@ public final class MvccScanController implements ScanManager {
             StoreDataValue[] stopKeyValue,
             int stopSearchOperator) {
         ensureOpen();
-        scan.close();
+        closeStorageScan();
         current = null;
+        this.qualifiers = qualifier;
         try {
-            openStorageScan();
+            openPreferredStorageAccess(qualifier);
         } catch (StandardException e) {
             throw new IllegalStateException("Could not reopen MVCC storage-api scan", e);
         }
-        this.qualifiers = qualifier;
-        resetOrderedIndexScan(qualifier);
     }
 
     @Override
     public void reopenScanByRowLocation(StoreRowLocation startRowLocation, Qualifier[][] qualifier) {
         ensureOpen();
         MvccRowLocation.from(startRowLocation);
-        scan.close();
+        closeStorageScan();
         current = null;
+        this.qualifiers = qualifier;
         try {
-            openStorageScan();
+            openPreferredStorageAccess(qualifier);
         } catch (StandardException e) {
             throw new IllegalStateException("Could not reopen MVCC storage-api scan", e);
         }
-        this.qualifiers = qualifier;
-        resetOrderedIndexScan(qualifier);
+    }
+
+    /**
+     * Select the narrowest safe current-committed read path before opening a
+     * full committed-image scan.
+     *
+     * <p>Previously every scan eagerly decoded the complete committed image
+     * before the ordered index was consulted. Equality and bounded-range
+     * lookups then discarded that materialized scan and fetched only the
+     * indexed row ids. Selecting the ordered path first preserves the same
+     * current-committed authority rules while avoiding unused full-image
+     * construction.</p>
+     */
+    private void openPreferredStorageAccess(Qualifier[][] indexQualifiers) throws StandardException {
+        pageBackedCommittedRead = false;
+        orderedIndexRowIdScan = false;
+        orderedIndexRowIds = null;
+        if (resetOrderedIndexScan(indexQualifiers)) {
+            return;
+        }
+        openStorageScan();
     }
 
     private void openStorageScan() throws StandardException {
@@ -483,7 +501,7 @@ public final class MvccScanController implements ScanManager {
         return state.read(rowId, snapshot);
     }
 
-    private void resetOrderedIndexScan(Qualifier[][] indexQualifiers) {
+    private boolean resetOrderedIndexScan(Qualifier[][] indexQualifiers) {
         if (!canUseCommittedOrderedIndex()) {
             if (shouldRecordOrderedIndexNonShortcut(indexQualifiers)) {
                 state.recordOrderedIndexFallbackForDiagnostics(nonShortcutFallbackReason());
@@ -493,8 +511,9 @@ public final class MvccScanController implements ScanManager {
             }
             orderedIndexRowIdScan = false;
             orderedIndexRowIds = null;
-            return;
+            return false;
         }
+        pageBackedCommittedRead = true;
         Optional<List<Long>> indexedRowIds = state.orderedIndexRowIdsFor(indexQualifiers);
         if (indexedRowIds.isEmpty()) {
             if (MvccConglomerateState.hasIndexQualifiers(indexQualifiers)) {
@@ -510,7 +529,7 @@ public final class MvccScanController implements ScanManager {
             }
             orderedIndexRowIdScan = false;
             orderedIndexRowIds = null;
-            return;
+            return false;
         }
         List<Long> rowIds = indexedRowIds.get();
         orderedIndexRowIdScan = true;
@@ -531,6 +550,7 @@ public final class MvccScanController implements ScanManager {
                 Math.toIntExact(state.key().getSegmentId()),
                 state.key().getContainerId(),
                 rowIds.size());
+        return true;
     }
 
     private DelosStorageAccessDecisionKind orderedIndexDecisionKind(Qualifier[][] indexQualifiers) {
@@ -635,7 +655,7 @@ public final class MvccScanController implements ScanManager {
      * the full MVCC scan and let row-version visibility decide.
      */
     private boolean canUseCommittedOrderedIndex() {
-        return pageBackedCommittedRead;
+        return canUseCurrentCommittedOptimization() && state.canReadCommittedImage(snapshot);
     }
 
     private boolean shouldRecordOrderedIndexNonShortcut(Qualifier[][] indexQualifiers) {
@@ -698,6 +718,13 @@ public final class MvccScanController implements ScanManager {
         MvccBridgeDiagnosticsSupport.incrementUpdateCount();
         current = new DelosStorageRow(current.rowId(), replacement);
         return true;
+    }
+
+    private void closeStorageScan() {
+        if (scan != null) {
+            scan.close();
+            scan = null;
+        }
     }
 
     private void closeReaderIfStatementScoped() {

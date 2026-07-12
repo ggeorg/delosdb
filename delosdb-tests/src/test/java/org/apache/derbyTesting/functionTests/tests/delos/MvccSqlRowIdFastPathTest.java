@@ -54,6 +54,8 @@ public final class MvccSqlRowIdFastPathTest extends MvccSqlTestSupport {
                     "2|beta|payload-2");
             assertTrue("primary-key equality should use a row-id point-read fast path",
                     diagnostics.rowIdFastPathReadCountForTesting() > 0);
+            assertEquals("primary-key equality must not materialize an unused committed full scan",
+                    0, diagnostics.pageBackedCommittedScanCountForTesting());
             assertTrue("primary-key equality fast path should find the page-backed row",
                     diagnostics.rowIdFastPathHitCountForTesting() > 0);
             assertEquals("primary-key equality should not reject rows by full-scan qualifier filtering",
@@ -72,6 +74,8 @@ public final class MvccSqlRowIdFastPathTest extends MvccSqlTestSupport {
                     "3|payload-3");
             assertTrue("secondary equality should reuse the same row-id point-read fast path",
                     diagnostics.rowIdFastPathReadCountForTesting() > 0);
+            assertEquals("secondary equality must not materialize an unused committed full scan",
+                    0, diagnostics.pageBackedCommittedScanCountForTesting());
             assertTrue("secondary equality fast path should find the page-backed row",
                     diagnostics.rowIdFastPathHitCountForTesting() > 0);
             assertEquals("secondary equality should not reject rows by full-scan qualifier filtering",
@@ -89,6 +93,8 @@ public final class MvccSqlRowIdFastPathTest extends MvccSqlTestSupport {
                     "2|beta|payload-2");
             assertTrue("reopened primary-key equality should still use the row-id fast path",
                     diagnostics.rowIdFastPathReadCountForTesting() > 0);
+            assertEquals("reopened primary-key equality must not materialize an unused full scan",
+                    0, diagnostics.pageBackedCommittedScanCountForTesting());
             assertTrue("reopened row-id fast path should find the page-backed row",
                     diagnostics.rowIdFastPathHitCountForTesting() > 0);
         }

@@ -69,6 +69,8 @@ public final class MvccSqlOrderedIndexRangeScanTest extends MvccSqlTestSupport {
                     diagnostics.orderedIndexRowIdCountForTesting(0, containerId) > rowIdsBefore);
             assertTrue("ordered range scan still feeds the row-id fast path",
                     diagnostics.rowIdFastPathReadCountForTesting() > 0);
+            assertEquals("ordered range scan must not materialize an unused committed full scan",
+                    0, diagnostics.pageBackedCommittedScanCountForTesting());
             assertEquals("ordered range scan should avoid full-scan qualifier rejection",
                     0, diagnostics.qualifierRejectCountForTesting());
             diagnostics.assertConsistentForTesting(0, containerId);
@@ -87,6 +89,8 @@ public final class MvccSqlOrderedIndexRangeScanTest extends MvccSqlTestSupport {
                     fallbackBefore, diagnostics.orderedIndexFallbackCountForTesting(0, containerId));
             assertEquals("negative ordered range should not read rows through the row-id fast path",
                     0, diagnostics.rowIdFastPathReadCountForTesting());
+            assertEquals("negative ordered range must not fall through to a committed full scan",
+                    0, diagnostics.pageBackedCommittedScanCountForTesting());
 
             executeUpdate(connection, "update ordered_index_range_t set code = 'delta' where id = 30");
             executeUpdate(connection, "delete from ordered_index_range_t where id = 10");
@@ -125,6 +129,8 @@ public final class MvccSqlOrderedIndexRangeScanTest extends MvccSqlTestSupport {
                     diagnostics.orderedIndexHitCountForTesting(0, containerId) > hitBefore);
             assertTrue("reopened ordered range scan should still feed row-id point reads",
                     diagnostics.rowIdFastPathReadCountForTesting() > 0);
+            assertEquals("reopened ordered range scan must not materialize an unused full scan",
+                    0, diagnostics.pageBackedCommittedScanCountForTesting());
             diagnostics.assertConsistentForTesting(0, containerId);
         }
     }
