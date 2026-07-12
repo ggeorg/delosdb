@@ -6,10 +6,11 @@
  */
 package io.github.ggeorg.delosdb.benchmark.jdbc;
 
-/** One reproducible JDBC benchmark measurement. */
+/** One reproducible, phase-isolated JDBC benchmark measurement. */
 public record DelosBenchmarkMeasurement(
         DelosBenchmarkProvider provider,
         DelosBenchmarkOperation operation,
+        DelosBenchmarkPhase phase,
         int rowCount,
         int payloadSize,
         int commitBatchSize,

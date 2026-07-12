@@ -12,6 +12,9 @@ import java.util.Arrays;
 import java.util.List;
 
 import io.github.ggeorg.delosdb.benchmark.jdbc.DelosBenchmarkMeasurement;
+import io.github.ggeorg.delosdb.benchmark.jdbc.DelosBenchmarkOperation;
+import io.github.ggeorg.delosdb.benchmark.jdbc.DelosBenchmarkPhase;
+import io.github.ggeorg.delosdb.benchmark.jdbc.DelosBenchmarkProvider;
 import io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcBenchmarkBaseline;
 
 public final class JdbcBenchmarkBaselineTest extends MvccSqlTestSupport {
@@ -36,10 +39,25 @@ public final class JdbcBenchmarkBaselineTest extends MvccSqlTestSupport {
                 integerProperty(PREFIX + "iterations", 5),
                 integerProperty(PREFIX + "runs", 2));
 
-        assertFalse("baseline should produce measurements", measurements.isEmpty());
+        int expectedMeasurements = rows.size()
+                * DelosBenchmarkProvider.values().length
+                * DelosBenchmarkOperation.values().length
+                * DelosBenchmarkPhase.values().length
+                * integerProperty(PREFIX + "runs", 2);
+        assertEquals("every operation should report every isolated phase",
+                expectedMeasurements, measurements.size());
+        for (DelosBenchmarkMeasurement measurement : measurements) {
+            assertTrue("phase elapsed time should be positive", measurement.elapsedNanos() > 0L);
+            assertTrue("phase throughput should be positive", measurement.operationsPerSecond() > 0.0);
+            assertTrue("phase average latency should be positive", measurement.averageLatencyNanos() > 0.0);
+        }
         assertTrue(Files.size(reportDirectory.resolve("benchmark-results.json")) > 0L);
         assertTrue(Files.size(reportDirectory.resolve("benchmark-results.csv")) > 0L);
         assertTrue(Files.size(reportDirectory.resolve("benchmark-summary.txt")) > 0L);
+        assertTrue(Files.readString(reportDirectory.resolve("benchmark-results.csv"))
+                .startsWith("provider,operation,phase,"));
+        assertTrue(Files.readString(reportDirectory.resolve("benchmark-results.json"))
+                .contains("\"phase\":"));
     }
 
     private static String requiredProperty(String key) {
