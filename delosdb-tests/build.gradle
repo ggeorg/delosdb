@@ -787,6 +787,23 @@ registerDelosFocusedTest(
         ])
 
 registerDelosFocusedTest(
+        'runDelosJdbcBenchmarkBatchScaling',
+        'Runs provider-neutral JDBC read execution batches inside one timing interval.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkBatchScalingTest.class'],
+        [
+                'delosdb.benchmark.batchScaling.databaseRoot': rootProject.layout.buildDirectory.dir('tmp/delos-jdbc-batch-scaling').get().asFile.absolutePath,
+                'delosdb.benchmark.batchScaling.reportDirectory': rootProject.layout.buildDirectory.dir('reports/delosdb/benchmarks/batch-scaling').get().asFile.absolutePath,
+                'delosdb.benchmark.batchScaling.rows': providers.gradleProperty('delosdb.benchmark.batchScaling.rows').getOrElse('1000'),
+                'delosdb.benchmark.batchScaling.sizes': providers.gradleProperty('delosdb.benchmark.batchScaling.sizes').getOrElse('100,1000,10000'),
+                'delosdb.benchmark.batchScaling.operations': providers.gradleProperty('delosdb.benchmark.batchScaling.operations').getOrElse('PRIMARY_KEY_LOOKUP,SECONDARY_EQUALITY_LOOKUP,COMPOSITE_RANGE_SCAN,FULL_SCAN,AGGREGATE'),
+                'delosdb.benchmark.batchScaling.payload': providers.gradleProperty('delosdb.benchmark.batchScaling.payload').getOrElse('128'),
+                'delosdb.benchmark.batchScaling.fixtureBatch': providers.gradleProperty('delosdb.benchmark.batchScaling.fixtureBatch').getOrElse('100'),
+                'delosdb.benchmark.batchScaling.warmups': providers.gradleProperty('delosdb.benchmark.batchScaling.warmups').getOrElse('1'),
+                'delosdb.benchmark.batchScaling.iterations': providers.gradleProperty('delosdb.benchmark.batchScaling.iterations').getOrElse('1'),
+                'delosdb.benchmark.batchScaling.runs': providers.gradleProperty('delosdb.benchmark.batchScaling.runs').getOrElse('2')
+        ])
+
+registerDelosFocusedTest(
         'runDelosMvccSqlIntegrationTest',
         'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.',
         [
