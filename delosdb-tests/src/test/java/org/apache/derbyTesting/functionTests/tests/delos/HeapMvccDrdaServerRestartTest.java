@@ -21,8 +21,6 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
@@ -54,13 +52,15 @@ public final class HeapMvccDrdaServerRestartTest extends BaseJDBCTestCase {
 
     public void testServerRestartRollsBackActiveHeapAndMvccTransactions()
             throws Exception {
-        assertTrue("test must run through Derby network client",
-                getTestConfiguration().getJDBCClient().isDerbyNetClient());
+        HeapMvccDrdaFailureTestSupport.assertNetworkClient(
+                getTestConfiguration());
 
         try (Connection setup = openDefaultConnection()) {
             setup.setAutoCommit(false);
-            createTable(setup, HEAP_TABLE, false);
-            createTable(setup, MVCC_TABLE, true);
+            HeapMvccDrdaFailureTestSupport.createMarkerTable(
+                    setup, HEAP_TABLE, false, 1);
+            HeapMvccDrdaFailureTestSupport.createMarkerTable(
+                    setup, MVCC_TABLE, true, 1);
             setup.commit();
         }
 
@@ -88,21 +88,21 @@ public final class HeapMvccDrdaServerRestartTest extends BaseJDBCTestCase {
 
             try (Connection survivor = openDefaultConnection()) {
                 survivor.setAutoCommit(false);
-                assertRow(survivor, HEAP_TABLE, 1, 1);
-                assertNoRow(survivor, HEAP_TABLE, 2);
-                assertRow(survivor, MVCC_TABLE, 1, 1);
-                assertNoRow(survivor, MVCC_TABLE, 2);
+                HeapMvccDrdaFailureTestSupport.assertMarkerRow(survivor, HEAP_TABLE, 1, 1);
+                HeapMvccDrdaFailureTestSupport.assertNoRow(survivor, HEAP_TABLE, 2);
+                HeapMvccDrdaFailureTestSupport.assertMarkerRow(survivor, MVCC_TABLE, 1, 1);
+                HeapMvccDrdaFailureTestSupport.assertNoRow(survivor, MVCC_TABLE, 2);
 
-                assertEquals(1, executeUpdate(survivor,
+                assertEquals(1, HeapMvccDrdaFailureTestSupport.executeUpdate(survivor,
                         "update " + HEAP_TABLE
                                 + " set marker = marker + 1 where id = 1"));
-                assertEquals(1, executeUpdate(survivor,
+                assertEquals(1, HeapMvccDrdaFailureTestSupport.executeUpdate(survivor,
                         "update " + MVCC_TABLE
                                 + " set marker = marker + 1 where id = 1"));
                 survivor.commit();
 
-                assertRow(survivor, HEAP_TABLE, 1, 2);
-                assertRow(survivor, MVCC_TABLE, 1, 2);
+                HeapMvccDrdaFailureTestSupport.assertMarkerRow(survivor, HEAP_TABLE, 1, 2);
+                HeapMvccDrdaFailureTestSupport.assertMarkerRow(survivor, MVCC_TABLE, 1, 2);
                 survivor.rollback();
             }
 
@@ -116,8 +116,8 @@ public final class HeapMvccDrdaServerRestartTest extends BaseJDBCTestCase {
                 check.rollback();
             }
         } finally {
-            closeAfterServerTermination(heapVictim);
-            closeAfterServerTermination(mvccVictim);
+            HeapMvccDrdaFailureTestSupport.closeBrokenConnection(heapVictim);
+            HeapMvccDrdaFailureTestSupport.closeBrokenConnection(mvccVictim);
             if (serverStopped) {
                 getTestConfiguration().startNetworkServer();
             }
@@ -129,12 +129,12 @@ public final class HeapMvccDrdaServerRestartTest extends BaseJDBCTestCase {
                                                   int marker)
             throws SQLException {
         connection.setAutoCommit(false);
-        assertEquals(1, executeUpdate(connection,
+        assertEquals(1, HeapMvccDrdaFailureTestSupport.executeUpdate(connection,
                 "update " + table + " set marker = " + marker + " where id = 1"));
-        assertEquals(1, executeUpdate(connection,
+        assertEquals(1, HeapMvccDrdaFailureTestSupport.executeUpdate(connection,
                 "insert into " + table + " values (2, " + marker + ")"));
-        assertRow(connection, table, 1, marker);
-        assertRow(connection, table, 2, marker);
+        HeapMvccDrdaFailureTestSupport.assertMarkerRow(connection, table, 1, marker);
+        HeapMvccDrdaFailureTestSupport.assertMarkerRow(connection, table, 2, marker);
     }
 
     private static void assertConnectionTerminated(Connection connection,
@@ -149,67 +149,8 @@ public final class HeapMvccDrdaServerRestartTest extends BaseJDBCTestCase {
                     sqlState);
             assertTrue("unexpected SQLState after server shutdown for " + table
                             + ": " + sqlState,
-                    sqlState.startsWith("08") || "XJ012".equals(sqlState));
+                    HeapMvccDrdaFailureTestSupport.isTransportFailure(expected));
         }
     }
 
-    private static void closeAfterServerTermination(Connection connection) {
-        if (connection == null) {
-            return;
-        }
-        try {
-            connection.close();
-        } catch (SQLException ignored) {
-            // The server has already terminated this network connection.
-        }
-    }
-
-    private static void createTable(Connection connection,
-                                    String table,
-                                    boolean mvcc) throws SQLException {
-        try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate("create table " + table
-                    + " (id int primary key, marker int not null)"
-                    + (mvcc ? " using delos_mvcc" : ""));
-            statement.executeUpdate("insert into " + table + " values (1, 1)");
-        }
-    }
-
-    private static int executeUpdate(Connection connection, String sql)
-            throws SQLException {
-        try (Statement statement = connection.createStatement()) {
-            return statement.executeUpdate(sql);
-        }
-    }
-
-    private static void assertRow(Connection connection,
-                                  String table,
-                                  int id,
-                                  int expectedMarker) throws SQLException {
-        try (PreparedStatement query = connection.prepareStatement(
-                "select marker from " + table + " where id = ?")) {
-            query.setInt(1, id);
-            try (ResultSet resultSet = query.executeQuery()) {
-                assertTrue("row " + id + " missing from " + table,
-                        resultSet.next());
-                assertEquals("unexpected marker for row " + id + " in " + table,
-                        expectedMarker, resultSet.getInt(1));
-                assertFalse("duplicate row " + id + " in " + table,
-                        resultSet.next());
-            }
-        }
-    }
-
-    private static void assertNoRow(Connection connection,
-                                    String table,
-                                    int id) throws SQLException {
-        try (PreparedStatement query = connection.prepareStatement(
-                "select id from " + table + " where id = ?")) {
-            query.setInt(1, id);
-            try (ResultSet resultSet = query.executeQuery()) {
-                assertFalse("unexpected row " + id + " in " + table,
-                        resultSet.next());
-            }
-        }
-    }
 }

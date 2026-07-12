@@ -21,7 +21,6 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -59,16 +58,15 @@ public final class HeapMvccDrdaCancellationTest extends BaseJDBCTestCase {
     }
 
     public void testDrdaTimeoutCancellationAndExplicitCancelContract() throws Exception {
-        assertTrue("test must run through Derby network client",
-                getTestConfiguration().getJDBCClient().isDerbyNetClient());
-        assertTrue("configured JDBC URL should be network-client URL: "
-                        + getTestConfiguration().getJDBCUrl(),
-                getTestConfiguration().getJDBCUrl().startsWith("jdbc:derby://"));
+        HeapMvccDrdaFailureTestSupport.assertNetworkClient(
+                getTestConfiguration());
 
         try (Connection connection = openDefaultConnection()) {
             connection.setAutoCommit(false);
-            createAndPopulate(connection, HEAP_TABLE, false);
-            createAndPopulate(connection, MVCC_TABLE, true);
+            HeapMvccDrdaFailureTestSupport.createMarkerTable(
+                    connection, HEAP_TABLE, false, ROW_COUNT);
+            HeapMvccDrdaFailureTestSupport.createMarkerTable(
+                    connection, MVCC_TABLE, true, ROW_COUNT);
             connection.commit();
         }
 
@@ -132,47 +130,14 @@ public final class HeapMvccDrdaCancellationTest extends BaseJDBCTestCase {
     private static void assertConnectionStillUsable(Connection connection,
                                                       String table)
             throws SQLException {
-        try (PreparedStatement update = connection.prepareStatement(
-                "update " + table + " set marker = marker + 1 where id = ?")) {
-            update.setInt(1, 1);
-            assertEquals("post-cancellation update count for " + table,
-                    1, update.executeUpdate());
-        }
+        assertEquals("post-cancellation update count for " + table, 1,
+                HeapMvccDrdaFailureTestSupport.executeUpdate(connection,
+                        "update " + table
+                                + " set marker = marker + 1 where id = 1"));
         connection.commit();
-
-        try (PreparedStatement query = connection.prepareStatement(
-                "select marker from " + table + " where id = ?")) {
-            query.setInt(1, 1);
-            try (ResultSet resultSet = query.executeQuery()) {
-                assertTrue("post-cancellation row missing for " + table,
-                        resultSet.next());
-                assertEquals("post-cancellation update not committed for " + table,
-                        2, resultSet.getInt(1));
-                assertFalse("unexpected duplicate row for " + table,
-                        resultSet.next());
-            }
-        }
+        HeapMvccDrdaFailureTestSupport.assertMarkerRow(
+                connection, table, 1, 2);
         connection.rollback();
     }
 
-    private static void createAndPopulate(Connection connection,
-                                          String table,
-                                          boolean mvcc) throws SQLException {
-        try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate("create table " + table
-                    + " (id int primary key, marker int not null)"
-                    + (mvcc ? " using delos_mvcc" : ""));
-        }
-        try (PreparedStatement insert = connection.prepareStatement(
-                "insert into " + table + " values (?, ?)")) {
-            for (int id = 1; id <= ROW_COUNT; id++) {
-                insert.setInt(1, id);
-                insert.setInt(2, 1);
-                insert.addBatch();
-            }
-            int[] counts = insert.executeBatch();
-            assertEquals("unexpected inserted row count for " + table,
-                    ROW_COUNT, counts.length);
-        }
-    }
 }
