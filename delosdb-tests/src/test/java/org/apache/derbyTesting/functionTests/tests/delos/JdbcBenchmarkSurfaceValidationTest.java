@@ -20,7 +20,11 @@
  */
 package org.apache.derbyTesting.functionTests.tests.delos;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
+
+import org.apache.derbyTesting.functionTests.util.PrivilegedFileOpsForTests;
 
 import io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcBenchmarkSurfaceValidation;
 
@@ -30,12 +34,22 @@ public final class JdbcBenchmarkSurfaceValidationTest extends MvccSqlTestSupport
 
     @Override
     protected void tearDown() throws Exception {
-        deleteDatabase(DATABASE_ROOT + "-heap");
-        deleteDatabase(DATABASE_ROOT + "-mvcc");
+        deleteDatabaseDirectory(DATABASE_ROOT + "-heap");
+        deleteDatabaseDirectory(DATABASE_ROOT + "-mvcc");
         super.tearDown();
     }
 
     public void testHeapAndMvccBenchmarkSurfacesRemainSemanticallyEquivalent() throws Exception {
         DelosJdbcBenchmarkSurfaceValidation.main(new String[] {Path.of(DATABASE_ROOT).toString()});
     }
+
+    private static void deleteDatabaseDirectory(String databaseName) throws Exception {
+        Path databasePath = Path.of(databaseName);
+        if (!Files.exists(databasePath)) {
+            return;
+        }
+        File[] notDeleted = PrivilegedFileOpsForTests.persistentRecursiveDelete(databasePath.toFile());
+        assertEquals("database cleanup should delete every file under " + databaseName, 0, notDeleted.length);
+    }
 }
+
