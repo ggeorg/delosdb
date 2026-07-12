@@ -19,6 +19,7 @@ import io.github.ggeorg.delosdb.benchmark.jdbc.DelosBenchmarkOperation;
 import io.github.ggeorg.delosdb.benchmark.jdbc.DelosBenchmarkPhase;
 import io.github.ggeorg.delosdb.benchmark.jdbc.DelosBenchmarkProvider;
 import io.github.ggeorg.delosdb.benchmark.jdbc.DelosBenchmarkSampleScope;
+import io.github.ggeorg.delosdb.benchmark.jdbc.DelosBenchmarkStatementMode;
 import io.github.ggeorg.delosdb.benchmark.jdbc.DelosBenchmarkTransactionKind;
 import io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcBenchmarkBaseline;
 
@@ -48,34 +49,46 @@ public final class JdbcBenchmarkBaselineTest extends MvccSqlTestSupport {
                 iterations,
                 runs);
 
-        int readOperationCount = 0;
-        int writeOperationCount = 0;
+        int measurementsPerProviderAndRowAndRun = 0;
         for (DelosBenchmarkOperation operation : DelosBenchmarkOperation.values()) {
-            if (operation.transactionKind() == DelosBenchmarkTransactionKind.READ) {
-                readOperationCount++;
-            } else {
-                writeOperationCount++;
+            for (DelosBenchmarkStatementMode statementMode : DelosBenchmarkStatementMode.values()) {
+                measurementsPerProviderAndRowAndRun += 3; // first execute, commit, rollback
+                if (operation.transactionKind() == DelosBenchmarkTransactionKind.READ) {
+                    measurementsPerProviderAndRowAndRun++; // repeated execute
+                }
+                if (statementMode.measuresPreparePerOperation()) {
+                    measurementsPerProviderAndRowAndRun++; // first prepare
+                    if (operation.transactionKind() == DelosBenchmarkTransactionKind.READ) {
+                        measurementsPerProviderAndRowAndRun++; // repeated prepare
+                    }
+                }
             }
         }
-        int measurementsPerProviderAndRowAndRun = readOperationCount * 6 + writeOperationCount * 4;
         int expectedMeasurements = rows.size()
                 * DelosBenchmarkProvider.values().length
                 * measurementsPerProviderAndRowAndRun
                 * runs;
-        assertEquals("read operations should expose first/repeated/transaction-end measurements",
+        assertEquals("fresh and reused statements should expose their expected phase measurements",
                 expectedMeasurements, measurements.size());
 
         Set<MeasurementKey> keys = new HashSet<>();
+        Set<DelosBenchmarkStatementMode> observedStatementModes = new HashSet<>();
         for (DelosBenchmarkMeasurement measurement : measurements) {
             assertTrue("measurement keys should be unique", keys.add(new MeasurementKey(
                     measurement.rowCount(),
                     measurement.provider(),
                     measurement.operation(),
+                    measurement.statementMode(),
                     measurement.phase(),
                     measurement.sampleScope(),
                     measurement.run())));
+            observedStatementModes.add(measurement.statementMode());
             assertEquals("operation and measurement transaction kinds should agree",
                     measurement.operation().transactionKind(), measurement.transactionKind());
+            if (measurement.statementMode().reusesStatement()) {
+                assertTrue("reused-statement measurements should exclude per-operation prepare timing",
+                        measurement.phase() != DelosBenchmarkPhase.PREPARE);
+            }
             assertTrue("phase elapsed time should be positive", measurement.elapsedNanos() > 0L);
             assertTrue("measured unit count should be positive", measurement.measuredUnits() > 0L);
             assertTrue("phase throughput should be positive", measurement.throughputPerSecond() > 0.0);
@@ -96,6 +109,11 @@ public final class JdbcBenchmarkBaselineTest extends MvccSqlTestSupport {
                     assertTrue("first samples should measure prepare or execute",
                             measurement.phase() == DelosBenchmarkPhase.PREPARE
                                     || measurement.phase() == DelosBenchmarkPhase.EXECUTE);
+                    if (measurement.phase() == DelosBenchmarkPhase.PREPARE) {
+                        assertEquals("only fresh statements expose per-operation prepare timing",
+                                DelosBenchmarkStatementMode.FRESH_PER_OPERATION,
+                                measurement.statementMode());
+                    }
                     assertEquals("one first operation per measured transaction",
                             iterations, measurement.measuredUnits());
                 }
@@ -107,6 +125,11 @@ public final class JdbcBenchmarkBaselineTest extends MvccSqlTestSupport {
                     assertTrue("repeated samples should measure prepare or execute",
                             measurement.phase() == DelosBenchmarkPhase.PREPARE
                                     || measurement.phase() == DelosBenchmarkPhase.EXECUTE);
+                    if (measurement.phase() == DelosBenchmarkPhase.PREPARE) {
+                        assertEquals("only fresh statements expose repeated prepare timing",
+                                DelosBenchmarkStatementMode.FRESH_PER_OPERATION,
+                                measurement.statementMode());
+                    }
                     assertEquals("repeated operation sample count",
                             (long) iterations * (readOperationsPerTransaction - 1), measurement.measuredUnits());
                 }
@@ -123,12 +146,16 @@ public final class JdbcBenchmarkBaselineTest extends MvccSqlTestSupport {
             }
         }
 
+        assertEquals("both statement lifecycle modes should be measured",
+                DelosBenchmarkStatementMode.values().length, observedStatementModes.size());
+
         assertTrue(Files.size(reportDirectory.resolve("benchmark-results.json")) > 0L);
         assertTrue(Files.size(reportDirectory.resolve("benchmark-results.csv")) > 0L);
         assertTrue(Files.size(reportDirectory.resolve("benchmark-summary.txt")) > 0L);
         assertTrue(Files.readString(reportDirectory.resolve("benchmark-results.csv"))
-                .startsWith("provider,operation,transactionKind,phase,sampleScope,measurementUnit,"));
+                .startsWith("provider,operation,statementMode,transactionKind,phase,sampleScope,measurementUnit,"));
         String json = Files.readString(reportDirectory.resolve("benchmark-results.json"));
+        assertTrue(json.contains("\"statementMode\":"));
         assertTrue(json.contains("\"transactionKind\":"));
         assertTrue(json.contains("\"sampleScope\":"));
         assertTrue(json.contains("\"operationsPerTransaction\":"));
@@ -155,6 +182,7 @@ public final class JdbcBenchmarkBaselineTest extends MvccSqlTestSupport {
             int rowCount,
             DelosBenchmarkProvider provider,
             DelosBenchmarkOperation operation,
+            DelosBenchmarkStatementMode statementMode,
             DelosBenchmarkPhase phase,
             DelosBenchmarkSampleScope sampleScope,
             int run) {

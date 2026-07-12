@@ -6,10 +6,11 @@
  */
 package io.github.ggeorg.delosdb.benchmark.jdbc;
 
-/** One reproducible, phase- and transaction-position-isolated JDBC benchmark measurement. */
+/** One reproducible JDBC benchmark measurement with explicit statement and transaction lifecycles. */
 public record DelosBenchmarkMeasurement(
         DelosBenchmarkProvider provider,
         DelosBenchmarkOperation operation,
+        DelosBenchmarkStatementMode statementMode,
         DelosBenchmarkTransactionKind transactionKind,
         DelosBenchmarkPhase phase,
         DelosBenchmarkSampleScope sampleScope,

@@ -67,6 +67,7 @@ public final class DelosJdbcBenchmarkBaseline {
                 .comparingInt(DelosBenchmarkMeasurement::rowCount)
                 .thenComparing(DelosBenchmarkMeasurement::provider)
                 .thenComparing(DelosBenchmarkMeasurement::operation)
+                .thenComparing(DelosBenchmarkMeasurement::statementMode)
                 .thenComparing(DelosBenchmarkMeasurement::phase)
                 .thenComparing(DelosBenchmarkMeasurement::sampleScope)
                 .thenComparingInt(DelosBenchmarkMeasurement::run));
@@ -88,8 +89,18 @@ public final class DelosJdbcBenchmarkBaseline {
                 DelosJdbcBenchmarkScenario scenario = new DelosJdbcBenchmarkScenario(connection, provider, config);
                 scenario.prepare();
                 for (DelosBenchmarkOperation operation : DelosBenchmarkOperation.values()) {
-                    result.addAll(measureOperation(
-                            options, config, provider, run, firstRun, connection, scenario, operation));
+                    for (DelosBenchmarkStatementMode statementMode : statementModesForRun(run)) {
+                        result.addAll(measureOperation(
+                                options,
+                                config,
+                                provider,
+                                run,
+                                firstRun,
+                                connection,
+                                scenario,
+                                operation,
+                                statementMode));
+                    }
                 }
             } finally {
                 if (!connection.getAutoCommit()) {
@@ -102,6 +113,17 @@ public final class DelosJdbcBenchmarkBaseline {
         return result;
     }
 
+    private static List<DelosBenchmarkStatementMode> statementModesForRun(int run) {
+        if ((run & 1) == 0) {
+            return List.of(
+                    DelosBenchmarkStatementMode.REUSED_ACROSS_TRANSACTIONS,
+                    DelosBenchmarkStatementMode.FRESH_PER_OPERATION);
+        }
+        return List.of(
+                DelosBenchmarkStatementMode.FRESH_PER_OPERATION,
+                DelosBenchmarkStatementMode.REUSED_ACROSS_TRANSACTIONS);
+    }
+
     private static List<DelosBenchmarkMeasurement> measureOperation(
             Options options,
             DelosBenchmarkConfig config,
@@ -110,16 +132,60 @@ public final class DelosJdbcBenchmarkBaseline {
             Map<SemanticKey, DelosBenchmarkResult> firstRun,
             Connection connection,
             DelosJdbcBenchmarkScenario scenario,
-            DelosBenchmarkOperation operation) throws SQLException {
+            DelosBenchmarkOperation operation,
+            DelosBenchmarkStatementMode statementMode) throws SQLException {
         int operationsPerTransaction = operation.transactionKind() == DelosBenchmarkTransactionKind.READ
                 ? options.readOperationsPerTransaction()
                 : 1;
+        if (statementMode.reusesStatement()) {
+            try (DelosJdbcBenchmarkScenario.PreparedOperation reusable = scenario.prepareOperation(operation)) {
+                return measureOperationCycles(
+                        options,
+                        config,
+                        provider,
+                        run,
+                        firstRun,
+                        connection,
+                        scenario,
+                        operation,
+                        statementMode,
+                        operationsPerTransaction,
+                        reusable);
+            }
+        }
+        return measureOperationCycles(
+                options,
+                config,
+                provider,
+                run,
+                firstRun,
+                connection,
+                scenario,
+                operation,
+                statementMode,
+                operationsPerTransaction,
+                null);
+    }
 
+    private static List<DelosBenchmarkMeasurement> measureOperationCycles(
+            Options options,
+            DelosBenchmarkConfig config,
+            DelosBenchmarkProvider provider,
+            int run,
+            Map<SemanticKey, DelosBenchmarkResult> firstRun,
+            Connection connection,
+            DelosJdbcBenchmarkScenario scenario,
+            DelosBenchmarkOperation operation,
+            DelosBenchmarkStatementMode statementMode,
+            int operationsPerTransaction,
+            DelosJdbcBenchmarkScenario.PreparedOperation reusable) throws SQLException {
         for (int warmup = 0; warmup < options.warmups(); warmup++) {
-            runRollbackCycle(connection, scenario, operation, operationsPerTransaction);
+            runRollbackCycle(
+                    connection, scenario, operation, statementMode, operationsPerTransaction, reusable);
         }
         for (int warmup = 0; warmup < options.warmups(); warmup++) {
-            runCommitCycle(connection, scenario, operation, operationsPerTransaction);
+            runCommitCycle(
+                    connection, scenario, operation, statementMode, operationsPerTransaction, reusable);
         }
 
         long firstPrepareNanos = 0;
@@ -130,52 +196,68 @@ public final class DelosJdbcBenchmarkBaseline {
         DelosBenchmarkResult semantic = null;
         for (int iteration = 0; iteration < options.iterations(); iteration++) {
             RollbackCycle cycle = runRollbackCycle(
-                    connection, scenario, operation, operationsPerTransaction);
+                    connection, scenario, operation, statementMode, operationsPerTransaction, reusable);
             firstPrepareNanos += cycle.batch().firstPrepareNanos();
             firstExecuteNanos += cycle.batch().firstExecuteNanos();
             repeatedPrepareNanos += cycle.batch().repeatedPrepareNanos();
             repeatedExecuteNanos += cycle.batch().repeatedExecuteNanos();
             rollbackNanos += cycle.rollbackNanos();
             semantic = requireSameSemantic(
-                    semantic, cycle.batch().semantic(), provider, operation, run, "rollback transaction");
+                    semantic,
+                    cycle.batch().semantic(),
+                    provider,
+                    operation,
+                    statementMode,
+                    run,
+                    "rollback transaction");
         }
 
         long commitNanos = 0;
         for (int iteration = 0; iteration < options.iterations(); iteration++) {
             CommitCycle cycle = runCommitCycle(
-                    connection, scenario, operation, operationsPerTransaction);
+                    connection, scenario, operation, statementMode, operationsPerTransaction, reusable);
             commitNanos += cycle.commitNanos();
             semantic = requireSameSemantic(
-                    semantic, cycle.semantic(), provider, operation, run, "commit transaction");
+                    semantic,
+                    cycle.semantic(),
+                    provider,
+                    operation,
+                    statementMode,
+                    run,
+                    "commit transaction");
         }
 
         SemanticKey key = new SemanticKey(provider, operation, config.rowCount());
         DelosBenchmarkResult prior = firstRun.putIfAbsent(key, semantic);
         if (prior != null && !prior.equals(semantic)) {
             throw new IllegalStateException("Non-reproducible benchmark semantics for " + key
-                    + ": first=" + prior + ", run" + run + '=' + semantic);
+                    + " in " + statementMode + ": first=" + prior + ", run" + run + '=' + semantic);
         }
 
         List<DelosBenchmarkMeasurement> result = new ArrayList<>();
         long transactionSamples = options.iterations();
+        if (statementMode.measuresPreparePerOperation()) {
+            result.add(measurement(
+                    options,
+                    config,
+                    provider,
+                    operation,
+                    statementMode,
+                    DelosBenchmarkPhase.PREPARE,
+                    DelosBenchmarkSampleScope.FIRST_OPERATION,
+                    DelosBenchmarkMeasurementUnit.OPERATION,
+                    operationsPerTransaction,
+                    transactionSamples,
+                    firstPrepareNanos,
+                    semantic,
+                    run));
+        }
         result.add(measurement(
                 options,
                 config,
                 provider,
                 operation,
-                DelosBenchmarkPhase.PREPARE,
-                DelosBenchmarkSampleScope.FIRST_OPERATION,
-                DelosBenchmarkMeasurementUnit.OPERATION,
-                operationsPerTransaction,
-                transactionSamples,
-                firstPrepareNanos,
-                semantic,
-                run));
-        result.add(measurement(
-                options,
-                config,
-                provider,
-                operation,
+                statementMode,
                 DelosBenchmarkPhase.EXECUTE,
                 DelosBenchmarkSampleScope.FIRST_OPERATION,
                 DelosBenchmarkMeasurementUnit.OPERATION,
@@ -187,24 +269,28 @@ public final class DelosJdbcBenchmarkBaseline {
         if (operationsPerTransaction > 1) {
             long repeatedSamples = Math.multiplyExact(
                     transactionSamples, operationsPerTransaction - 1L);
+            if (statementMode.measuresPreparePerOperation()) {
+                result.add(measurement(
+                        options,
+                        config,
+                        provider,
+                        operation,
+                        statementMode,
+                        DelosBenchmarkPhase.PREPARE,
+                        DelosBenchmarkSampleScope.REPEATED_OPERATIONS,
+                        DelosBenchmarkMeasurementUnit.OPERATION,
+                        operationsPerTransaction,
+                        repeatedSamples,
+                        repeatedPrepareNanos,
+                        semantic,
+                        run));
+            }
             result.add(measurement(
                     options,
                     config,
                     provider,
                     operation,
-                    DelosBenchmarkPhase.PREPARE,
-                    DelosBenchmarkSampleScope.REPEATED_OPERATIONS,
-                    DelosBenchmarkMeasurementUnit.OPERATION,
-                    operationsPerTransaction,
-                    repeatedSamples,
-                    repeatedPrepareNanos,
-                    semantic,
-                    run));
-            result.add(measurement(
-                    options,
-                    config,
-                    provider,
-                    operation,
+                    statementMode,
                     DelosBenchmarkPhase.EXECUTE,
                     DelosBenchmarkSampleScope.REPEATED_OPERATIONS,
                     DelosBenchmarkMeasurementUnit.OPERATION,
@@ -219,6 +305,7 @@ public final class DelosJdbcBenchmarkBaseline {
                 config,
                 provider,
                 operation,
+                statementMode,
                 DelosBenchmarkPhase.COMMIT,
                 DelosBenchmarkSampleScope.TRANSACTION_END,
                 DelosBenchmarkMeasurementUnit.TRANSACTION,
@@ -232,6 +319,7 @@ public final class DelosJdbcBenchmarkBaseline {
                 config,
                 provider,
                 operation,
+                statementMode,
                 DelosBenchmarkPhase.ROLLBACK,
                 DelosBenchmarkSampleScope.TRANSACTION_END,
                 DelosBenchmarkMeasurementUnit.TRANSACTION,
@@ -247,9 +335,12 @@ public final class DelosJdbcBenchmarkBaseline {
             Connection connection,
             DelosJdbcBenchmarkScenario scenario,
             DelosBenchmarkOperation operation,
-            int operationsPerTransaction) throws SQLException {
+            DelosBenchmarkStatementMode statementMode,
+            int operationsPerTransaction,
+            DelosJdbcBenchmarkScenario.PreparedOperation reusable) throws SQLException {
         try {
-            OperationBatch batch = runOperationBatch(scenario, operation, operationsPerTransaction);
+            OperationBatch batch = runOperationBatch(
+                    scenario, operation, statementMode, operationsPerTransaction, reusable);
             long started = System.nanoTime();
             connection.rollback();
             return new RollbackCycle(batch, System.nanoTime() - started);
@@ -263,9 +354,12 @@ public final class DelosJdbcBenchmarkBaseline {
             Connection connection,
             DelosJdbcBenchmarkScenario scenario,
             DelosBenchmarkOperation operation,
-            int operationsPerTransaction) throws SQLException {
+            DelosBenchmarkStatementMode statementMode,
+            int operationsPerTransaction,
+            DelosJdbcBenchmarkScenario.PreparedOperation reusable) throws SQLException {
         try {
-            OperationBatch batch = runOperationBatch(scenario, operation, operationsPerTransaction);
+            OperationBatch batch = runOperationBatch(
+                    scenario, operation, statementMode, operationsPerTransaction, reusable);
             long started = System.nanoTime();
             connection.commit();
             long commitNanos = System.nanoTime() - started;
@@ -280,25 +374,35 @@ public final class DelosJdbcBenchmarkBaseline {
     private static OperationBatch runOperationBatch(
             DelosJdbcBenchmarkScenario scenario,
             DelosBenchmarkOperation operation,
-            int operationsPerTransaction) throws SQLException {
+            DelosBenchmarkStatementMode statementMode,
+            int operationsPerTransaction,
+            DelosJdbcBenchmarkScenario.PreparedOperation reusable) throws SQLException {
+        if (statementMode.reusesStatement() != (reusable != null)) {
+            throw new IllegalArgumentException("Statement mode and reusable operation disagree");
+        }
         long firstPrepareNanos = 0;
         long firstExecuteNanos = 0;
         long repeatedPrepareNanos = 0;
         long repeatedExecuteNanos = 0;
         DelosBenchmarkResult semantic = null;
-        DelosJdbcBenchmarkScenario.PreparedOperation prepared = null;
+        DelosJdbcBenchmarkScenario.PreparedOperation prepared = reusable;
         try {
             for (int operationIndex = 0; operationIndex < operationsPerTransaction; operationIndex++) {
-                long started = System.nanoTime();
-                prepared = scenario.prepareOperation(operation);
-                long prepareNanos = System.nanoTime() - started;
+                long prepareNanos = 0;
+                if (statementMode.measuresPreparePerOperation()) {
+                    long started = System.nanoTime();
+                    prepared = scenario.prepareOperation(operation);
+                    prepareNanos = System.nanoTime() - started;
+                }
 
-                started = System.nanoTime();
+                long started = System.nanoTime();
                 DelosBenchmarkResult actual = prepared.execute();
                 long executeNanos = System.nanoTime() - started;
 
-                prepared.close();
-                prepared = null;
+                if (statementMode.measuresPreparePerOperation()) {
+                    prepared.close();
+                    prepared = null;
+                }
 
                 semantic = requireSameBatchSemantic(semantic, actual, operation, operationIndex);
                 if (operationIndex == 0) {
@@ -316,7 +420,9 @@ public final class DelosJdbcBenchmarkBaseline {
                     repeatedExecuteNanos,
                     semantic);
         } catch (SQLException | RuntimeException failure) {
-            closeAfterFailure(prepared, failure);
+            if (statementMode.measuresPreparePerOperation()) {
+                closeAfterFailure(prepared, failure);
+            }
             throw failure;
         }
     }
@@ -342,6 +448,7 @@ public final class DelosJdbcBenchmarkBaseline {
             DelosBenchmarkResult actual,
             DelosBenchmarkProvider provider,
             DelosBenchmarkOperation operation,
+            DelosBenchmarkStatementMode statementMode,
             int run,
             String transactionEnd) {
         if (expected == null) {
@@ -349,7 +456,8 @@ public final class DelosJdbcBenchmarkBaseline {
         }
         if (!expected.equals(actual)) {
             throw new IllegalStateException("Benchmark semantic drift for " + provider + ' ' + operation
-                    + " during run " + run + ' ' + transactionEnd + ": expected=" + expected + ", actual=" + actual);
+                    + ' ' + statementMode + " during run " + run + ' ' + transactionEnd
+                    + ": expected=" + expected + ", actual=" + actual);
         }
         return expected;
     }
@@ -359,6 +467,7 @@ public final class DelosJdbcBenchmarkBaseline {
             DelosBenchmarkConfig config,
             DelosBenchmarkProvider provider,
             DelosBenchmarkOperation operation,
+            DelosBenchmarkStatementMode statementMode,
             DelosBenchmarkPhase phase,
             DelosBenchmarkSampleScope sampleScope,
             DelosBenchmarkMeasurementUnit measurementUnit,
@@ -370,6 +479,7 @@ public final class DelosJdbcBenchmarkBaseline {
         return new DelosBenchmarkMeasurement(
                 provider,
                 operation,
+                statementMode,
                 operation.transactionKind(),
                 phase,
                 sampleScope,
@@ -422,12 +532,14 @@ public final class DelosJdbcBenchmarkBaseline {
 
     private static String csv(List<DelosBenchmarkMeasurement> values) {
         StringBuilder out = new StringBuilder(
-                "provider,operation,transactionKind,phase,sampleScope,measurementUnit,operationsPerTransaction,"
+                "provider,operation,statementMode,transactionKind,phase,sampleScope,measurementUnit,"
+                        + "operationsPerTransaction,"
                         + "rowCount,payloadSize,commitBatchSize,warmups,iterations,measuredUnits,elapsedNanos,"
                         + "throughputPerSecond,averageLatencyNanos,semanticRowCount,checksum,run\n");
         for (DelosBenchmarkMeasurement value : values) {
             out.append(value.provider().id()).append(',').append(value.operation()).append(',')
-                    .append(value.transactionKind()).append(',').append(value.phase()).append(',')
+                    .append(value.statementMode()).append(',').append(value.transactionKind()).append(',')
+                    .append(value.phase()).append(',')
                     .append(value.sampleScope()).append(',').append(value.measurementUnit()).append(',')
                     .append(value.operationsPerTransaction()).append(',').append(value.rowCount()).append(',')
                     .append(value.payloadSize()).append(',').append(value.commitBatchSize()).append(',')
@@ -447,6 +559,7 @@ public final class DelosJdbcBenchmarkBaseline {
             DelosBenchmarkMeasurement value = values.get(i);
             out.append("  {\"provider\":\"").append(value.provider().id())
                     .append("\",\"operation\":\"").append(value.operation())
+                    .append("\",\"statementMode\":\"").append(value.statementMode())
                     .append("\",\"transactionKind\":\"").append(value.transactionKind())
                     .append("\",\"phase\":\"").append(value.phase())
                     .append("\",\"sampleScope\":\"").append(value.sampleScope())
@@ -476,7 +589,7 @@ public final class DelosJdbcBenchmarkBaseline {
 
     private static String summary(Options options, List<DelosBenchmarkMeasurement> values) {
         StringBuilder out = new StringBuilder();
-        out.append("DelosDB JDBC transaction-position performance baseline\n")
+        out.append("DelosDB JDBC prepared-statement lifecycle baseline\n")
                 .append("Generated: ").append(Instant.now()).append('\n')
                 .append("JDK: ").append(System.getProperty("java.version")).append('\n')
                 .append("OS: ").append(System.getProperty("os.name")).append(' ')
@@ -486,17 +599,21 @@ public final class DelosJdbcBenchmarkBaseline {
                 .append("Fixture commit batch: ").append(options.commitBatchSize()).append('\n')
                 .append("Read operations per transaction: ")
                 .append(options.readOperationsPerTransaction()).append('\n')
+                .append("Statement modes: ")
+                .append(List.of(DelosBenchmarkStatementMode.values())).append('\n')
+                .append("Statement mode order alternates by run: true\n")
                 .append("Warmups: ").append(options.warmups()).append('\n')
                 .append("Iterations: ").append(options.iterations()).append('\n')
                 .append("Runs: ").append(options.runs()).append("\n\n");
         for (DelosBenchmarkMeasurement value : values) {
             out.append(String.format(Locale.ROOT,
-                    "%7d %-4s %-5s %-28s %-8s %-19s ops/tx=%-4d unit=%-11s samples=%-6d "
+                    "%7d %-4s %-5s %-28s %-28s %-8s %-19s ops/tx=%-4d unit=%-11s samples=%-6d "
                             + "run=%d rate=%12.3f avg-ns=%12.3f rows=%d checksum=%d%n",
                     value.rowCount(),
                     value.provider().id(),
                     value.transactionKind(),
                     value.operation(),
+                    value.statementMode(),
                     value.phase(),
                     value.sampleScope(),
                     value.operationsPerTransaction(),
