@@ -912,3 +912,16 @@ registerDelosFocusedTest(
 tasks.named('check') {
     dependsOn tasks.named('runDelosHeapMvccDrdaServerRestartTest')
 }
+
+registerDelosFocusedTest(
+        'runDelosHeapMvccDrdaStreamingDisconnectTest',
+        'Runs raw-socket loss during result streaming and server cleanup proofs for heap and MVCC.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDrdaStreamingDisconnectTest.class'],
+        [
+                'delos.drda.threadMode': 'virtual',
+                'delos.drda.extdta.spoolThresholdBytes': '32768'
+        ])
+
+tasks.named('check') {
+    dependsOn tasks.named('runDelosHeapMvccDrdaStreamingDisconnectTest')
+}
