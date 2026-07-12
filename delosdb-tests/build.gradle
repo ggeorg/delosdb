@@ -804,6 +804,24 @@ registerDelosFocusedTest(
         ])
 
 registerDelosFocusedTest(
+        'runDelosJdbcBenchmarkTransactions',
+        'Runs provider-neutral complete JDBC transaction-cycle throughput measurements.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkTransactionsTest.class'],
+        [
+                'delosdb.benchmark.transactions.databaseRoot': rootProject.layout.buildDirectory.dir('tmp/delos-jdbc-transactions').get().asFile.absolutePath,
+                'delosdb.benchmark.transactions.reportDirectory': rootProject.layout.buildDirectory.dir('reports/delosdb/benchmarks/transactions').get().asFile.absolutePath,
+                'delosdb.benchmark.transactions.rows': providers.gradleProperty('delosdb.benchmark.transactions.rows').getOrElse('1000'),
+                'delosdb.benchmark.transactions.readWidths': providers.gradleProperty('delosdb.benchmark.transactions.readWidths').getOrElse('1,10'),
+                'delosdb.benchmark.transactions.writeWidths': providers.gradleProperty('delosdb.benchmark.transactions.writeWidths').getOrElse('1,10'),
+                'delosdb.benchmark.transactions.cycles': providers.gradleProperty('delosdb.benchmark.transactions.cycles').getOrElse('10'),
+                'delosdb.benchmark.transactions.payload': providers.gradleProperty('delosdb.benchmark.transactions.payload').getOrElse('128'),
+                'delosdb.benchmark.transactions.fixtureBatch': providers.gradleProperty('delosdb.benchmark.transactions.fixtureBatch').getOrElse('100'),
+                'delosdb.benchmark.transactions.warmups': providers.gradleProperty('delosdb.benchmark.transactions.warmups').getOrElse('1'),
+                'delosdb.benchmark.transactions.iterations': providers.gradleProperty('delosdb.benchmark.transactions.iterations').getOrElse('1'),
+                'delosdb.benchmark.transactions.runs': providers.gradleProperty('delosdb.benchmark.transactions.runs').getOrElse('2')
+        ])
+
+registerDelosFocusedTest(
         'runDelosMvccSqlIntegrationTest',
         'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.',
         [

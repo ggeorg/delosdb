@@ -125,6 +125,10 @@ public final class DelosJdbcBenchmarkScenario {
         };
     }
 
+    String tableName() {
+        return table;
+    }
+
     void restoreAfterCommittedOperation(DelosBenchmarkOperation operation) throws SQLException {
         if (operation != DelosBenchmarkOperation.INDEXED_UPDATE) {
             return;
