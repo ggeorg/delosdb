@@ -11,8 +11,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import io.github.ggeorg.delosdb.storage.io.page.DelosPage;
 import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
@@ -39,6 +41,9 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
     private final Path path;
     private final DelosPageVolumeFactory volumeFactory;
     private DelosPageVolume pageVolume;
+    private Snapshot snapshot = new Snapshot(0L, List.of());
+    private Set<Integer> columnsWithLegacyKeys = Set.of();
+    private long snapshotLoadCount;
     private long rebuildCount;
 
     private MvccOrderedIndexPageStore(Path path, DelosPageVolumeFactory volumeFactory, DelosPageVolume pageVolume) {
@@ -72,10 +77,121 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
             appendEncoded(encode(entry));
         }
         pageVolume.force();
+        installSnapshot(new Snapshot(pageVolume.pageCount(), sorted));
         rebuildCount++;
     }
 
+    /**
+     * Revalidates the durable sidecar and refreshes the immutable lookup
+     * snapshot. Normal equality/range lookups use the installed snapshot and
+     * do not reread or decode every page.
+     */
     public synchronized Snapshot read() throws IOException {
+        Snapshot loaded = readFromVolume();
+        installSnapshot(loaded);
+        snapshotLoadCount++;
+        return loaded;
+    }
+
+    public synchronized long pageCount() throws IOException {
+        return snapshot.pageCount();
+    }
+
+    public synchronized long entryCount() throws IOException {
+        return snapshot.entries().size();
+    }
+
+    public synchronized int distinctKeyCount() throws IOException {
+        int count = 0;
+        Entry previous = null;
+        for (Entry entry : snapshot.entries()) {
+            if (previous == null
+                    || previous.column() != entry.column()
+                    || !previous.key().equals(entry.key())) {
+                count++;
+            }
+            previous = entry;
+        }
+        return count;
+    }
+
+    public synchronized List<Long> rowIdsFor(int column, String key) throws IOException {
+        requireValidColumn(column);
+        String normalizedKey = Entry.normalizeKeyForLookup(Objects.requireNonNull(key, "key"));
+        requireTypedLookupCompatible(column, OrderedIndexKeyCodec.isEncoded(normalizedKey));
+
+        List<Entry> entries = snapshot.entries();
+        int index = lowerBound(entries, column, normalizedKey);
+        List<Long> rowIds = new ArrayList<>();
+        while (index < entries.size()) {
+            Entry entry = entries.get(index);
+            if (entry.column() != column || compareKeys(entry.key(), normalizedKey) != 0) {
+                break;
+            }
+            if (entry.key().equals(normalizedKey)) {
+                rowIds.add(entry.rowId());
+            }
+            index++;
+        }
+        return List.copyOf(rowIds);
+    }
+
+    public synchronized List<Long> rowIdsInRangeFor(
+            int column,
+            String lowerKey,
+            boolean lowerInclusive,
+            String upperKey,
+            boolean upperInclusive) throws IOException {
+        requireValidColumn(column);
+        String normalizedLowerKey = lowerKey == null ? null : Entry.normalizeKeyForLookup(lowerKey);
+        String normalizedUpperKey = upperKey == null ? null : Entry.normalizeKeyForLookup(upperKey);
+        if (normalizedLowerKey != null && normalizedUpperKey != null
+                && compareKeys(normalizedLowerKey, normalizedUpperKey) > 0) {
+            return List.of();
+        }
+        requireTypedLookupCompatible(
+                column,
+                OrderedIndexKeyCodec.isEncoded(normalizedLowerKey)
+                        || OrderedIndexKeyCodec.isEncoded(normalizedUpperKey));
+
+        List<Entry> entries = snapshot.entries();
+        int index = normalizedLowerKey == null
+                ? firstEntryForColumn(entries, column)
+                : lowerBound(entries, column, normalizedLowerKey);
+        List<Long> rowIds = new ArrayList<>();
+        while (index < entries.size()) {
+            Entry entry = entries.get(index);
+            if (entry.column() != column) {
+                break;
+            }
+            if (!withinLowerBound(entry.key(), normalizedLowerKey, lowerInclusive)) {
+                index++;
+                continue;
+            }
+            if (!withinUpperBound(entry.key(), normalizedUpperKey, upperInclusive)) {
+                break;
+            }
+            rowIds.add(entry.rowId());
+            index++;
+        }
+        return List.copyOf(rowIds);
+    }
+
+    public synchronized long rebuildCount() {
+        return rebuildCount;
+    }
+
+    public synchronized List<String> entrySummaries() throws IOException {
+        return snapshot.entries().stream()
+                .map(entry -> "col:" + entry.column() + "|key:" + OrderedIndexKeyCodec.display(entry.key()) + "|row:" + entry.rowId())
+                .toList();
+    }
+
+    synchronized long snapshotLoadCountForTesting() {
+        return snapshotLoadCount;
+    }
+
+    private Snapshot readFromVolume() throws IOException {
         List<Entry> entries = new ArrayList<>();
         long count = pageVolume.pageCount();
         for (long pageNumber = 0L; pageNumber < count; pageNumber++) {
@@ -95,92 +211,61 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
         return new Snapshot(count, sorted);
     }
 
-    public synchronized long pageCount() throws IOException {
-        return pageVolume.pageCount();
-    }
-
-    public synchronized long entryCount() throws IOException {
-        return read().entries().size();
-    }
-
-    public synchronized int distinctKeyCount() throws IOException {
-        List<String> distinct = new ArrayList<>();
-        for (Entry entry : read().entries()) {
-            String key = entry.column() + "|" + entry.key();
-            if (!distinct.contains(key)) {
-                distinct.add(key);
+    private void installSnapshot(Snapshot installed) {
+        snapshot = Objects.requireNonNull(installed, "installed");
+        Set<Integer> legacyColumns = new HashSet<>();
+        for (Entry entry : installed.entries()) {
+            if (!OrderedIndexKeyCodec.isEncoded(entry.key())) {
+                legacyColumns.add(entry.column());
             }
         }
-        return distinct.size();
+        columnsWithLegacyKeys = Set.copyOf(legacyColumns);
     }
 
-    public synchronized List<Long> rowIdsFor(int column, String key) throws IOException {
+    private void requireTypedLookupCompatible(int column, boolean typedLookup) {
+        if (typedLookup && columnsWithLegacyKeys.contains(column)) {
+            throw new IllegalStateException("ordered index contains legacy untyped keys for column "
+                    + column + "; full committed scan fallback is required");
+        }
+    }
+
+    private static void requireValidColumn(int column) {
         if (column < 0) {
             throw new IllegalArgumentException("ordered index column must be non-negative: " + column);
         }
-        String normalizedKey = Entry.normalizeKeyForLookup(Objects.requireNonNull(key, "key"));
-        boolean typedLookup = OrderedIndexKeyCodec.isEncoded(normalizedKey);
-        List<Long> rowIds = new ArrayList<>();
-        for (Entry entry : read().entries()) {
-            if (entry.column() != column) {
-                continue;
-            }
-            if (typedLookup && !OrderedIndexKeyCodec.isEncoded(entry.key())) {
-                throw new IllegalStateException("ordered index contains legacy untyped keys for column "
-                        + column + "; full committed scan fallback is required");
-            }
-            if (entry.key().equals(normalizedKey)) {
-                rowIds.add(entry.rowId());
-            }
-        }
-        return List.copyOf(rowIds);
     }
 
-    public synchronized List<Long> rowIdsInRangeFor(
-            int column,
-            String lowerKey,
-            boolean lowerInclusive,
-            String upperKey,
-            boolean upperInclusive) throws IOException {
-        if (column < 0) {
-            throw new IllegalArgumentException("ordered index column must be non-negative: " + column);
+    private static int firstEntryForColumn(List<Entry> entries, int column) {
+        int low = 0;
+        int high = entries.size();
+        while (low < high) {
+            int middle = (low + high) >>> 1;
+            if (entries.get(middle).column() < column) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
         }
-        String normalizedLowerKey = lowerKey == null ? null : Entry.normalizeKeyForLookup(lowerKey);
-        String normalizedUpperKey = upperKey == null ? null : Entry.normalizeKeyForLookup(upperKey);
-        if (normalizedLowerKey != null && normalizedUpperKey != null
-                && compareKeys(normalizedLowerKey, normalizedUpperKey) > 0) {
-            return List.of();
-        }
-        boolean typedLookup = OrderedIndexKeyCodec.isEncoded(normalizedLowerKey)
-                || OrderedIndexKeyCodec.isEncoded(normalizedUpperKey);
-        List<Long> rowIds = new ArrayList<>();
-        for (Entry entry : read().entries()) {
-            if (entry.column() != column) {
-                continue;
-            }
-            if (typedLookup && !OrderedIndexKeyCodec.isEncoded(entry.key())) {
-                throw new IllegalStateException("ordered index contains legacy untyped keys for column "
-                        + column + "; full committed scan fallback is required");
-            }
-            if (!withinLowerBound(entry.key(), normalizedLowerKey, lowerInclusive)) {
-                continue;
-            }
-            if (!withinUpperBound(entry.key(), normalizedUpperKey, upperInclusive)) {
-                continue;
-            }
-            rowIds.add(entry.rowId());
-        }
-        return List.copyOf(rowIds);
+        return low;
     }
 
-    public synchronized long rebuildCount() {
-        return rebuildCount;
-    }
-
-    public synchronized List<String> entrySummaries() throws IOException {
-        return read().entries().stream()
-                .map(entry -> "col:" + entry.column() + "|key:" + OrderedIndexKeyCodec.display(entry.key()) + "|row:" + entry.rowId())
-                .toList();
+    private static int lowerBound(List<Entry> entries, int column, String key) {
+        int low = 0;
+        int high = entries.size();
+        while (low < high) {
+            int middle = (low + high) >>> 1;
+            Entry entry = entries.get(middle);
+            int comparison = Integer.compare(entry.column(), column);
+            if (comparison == 0) {
+                comparison = compareKeys(entry.key(), key);
+            }
+            if (comparison < 0) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        return low;
     }
 
     @Override
