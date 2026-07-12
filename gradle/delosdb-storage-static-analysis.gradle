@@ -8973,7 +8973,7 @@ tasks.register('delosJmhStorageBenchmarkAdapter') {
             }
         }
         def benchmarkSettingsText = benchmarkBuildFiles[0].exists() ? benchmarkBuildFiles[0].getText('UTF-8') : ''
-        ['includeBuild('../../..')', 'delosdb-storage-mvcc'].each { marker ->
+        ["includeBuild('../../..')", 'delosdb-storage-mvcc'].each { marker ->
             if (!benchmarkSettingsText.contains(marker)) {
                 failures << 'Standalone JMH settings missing marker: ' + marker
             }
