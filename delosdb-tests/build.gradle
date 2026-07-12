@@ -18,6 +18,7 @@ group = rootProject.group
  */
 
 def testSourceRoot = file('src/test/java')
+def jdbcBenchmarkSourceRoot = rootProject.file('benchmarks/jdbc/src/main/java')
 
 def legacyHarnessQuarantineExcludes = [
         'org/apache/derbyTesting/functionTests/harness/RunSuite.java',
@@ -224,7 +225,7 @@ sourceSets {
     }
     test {
         java {
-            setSrcDirs([testSourceRoot, toursDbSourceRoot])
+            setSrcDirs([testSourceRoot, toursDbSourceRoot, jdbcBenchmarkSourceRoot])
             include '**/*.java'
             exclude legacyHarnessQuarantineExcludes
             destinationDirectory.set(derbyTestsClassDir)
@@ -748,6 +749,11 @@ registerDelosFocusedTest(
         'runDelosHeapMvccDifferentialSqlHarnessTest',
         'Runs the heap/MVCC differential SQL harness proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialSqlHarnessTest.class'])
+
+registerDelosFocusedTest(
+        'runDelosJdbcBenchmarkSurfaceValidation',
+        'Runs the provider-neutral deterministic JDBC benchmark surface validation.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkSurfaceValidationTest.class'])
 
 registerDelosFocusedTest(
         'runDelosMvccSqlIntegrationTest',
