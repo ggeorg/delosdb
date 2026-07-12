@@ -18,7 +18,6 @@ group = rootProject.group
  */
 
 def testSourceRoot = file('src/test/java')
-def jdbcBenchmarkSourceRoot = rootProject.file('benchmarks/jdbc/src/main/java')
 
 def legacyHarnessQuarantineExcludes = [
         'org/apache/derbyTesting/functionTests/harness/RunSuite.java',
@@ -225,7 +224,7 @@ sourceSets {
     }
     test {
         java {
-            setSrcDirs([testSourceRoot, toursDbSourceRoot, jdbcBenchmarkSourceRoot])
+            setSrcDirs([testSourceRoot, toursDbSourceRoot])
             include '**/*.java'
             exclude legacyHarnessQuarantineExcludes
             destinationDirectory.set(derbyTestsClassDir)
