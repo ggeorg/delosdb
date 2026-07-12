@@ -822,6 +822,24 @@ registerDelosFocusedTest(
         ])
 
 registerDelosFocusedTest(
+        'runDelosJdbcBenchmarkRowScaling',
+        'Runs provider-neutral adaptive JDBC row-count scaling measurements.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkRowScalingTest.class'],
+        [
+                'delosdb.benchmark.rowScaling.databaseRoot': rootProject.layout.buildDirectory.dir('tmp/delos-jdbc-row-scaling').get().asFile.absolutePath,
+                'delosdb.benchmark.rowScaling.reportDirectory': rootProject.layout.buildDirectory.dir('reports/delosdb/benchmarks/row-scaling').get().asFile.absolutePath,
+                'delosdb.benchmark.rowScaling.rows': providers.gradleProperty('delosdb.benchmark.rowScaling.rows').getOrElse('100,1000,10000,100000'),
+                'delosdb.benchmark.rowScaling.operations': providers.gradleProperty('delosdb.benchmark.rowScaling.operations').getOrElse('PRIMARY_KEY_LOOKUP,SECONDARY_EQUALITY_LOOKUP,COMPOSITE_RANGE_SCAN,FULL_SCAN,AGGREGATE'),
+                'delosdb.benchmark.rowScaling.rowBudget': providers.gradleProperty('delosdb.benchmark.rowScaling.rowBudget').getOrElse('100000'),
+                'delosdb.benchmark.rowScaling.maxOperations': providers.gradleProperty('delosdb.benchmark.rowScaling.maxOperations').getOrElse('100'),
+                'delosdb.benchmark.rowScaling.payload': providers.gradleProperty('delosdb.benchmark.rowScaling.payload').getOrElse('128'),
+                'delosdb.benchmark.rowScaling.fixtureBatch': providers.gradleProperty('delosdb.benchmark.rowScaling.fixtureBatch').getOrElse('10000'),
+                'delosdb.benchmark.rowScaling.warmups': providers.gradleProperty('delosdb.benchmark.rowScaling.warmups').getOrElse('1'),
+                'delosdb.benchmark.rowScaling.iterations': providers.gradleProperty('delosdb.benchmark.rowScaling.iterations').getOrElse('1'),
+                'delosdb.benchmark.rowScaling.runs': providers.gradleProperty('delosdb.benchmark.rowScaling.runs').getOrElse('2')
+        ])
+
+registerDelosFocusedTest(
         'runDelosMvccSqlIntegrationTest',
         'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.',
         [
