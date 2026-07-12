@@ -49,9 +49,9 @@ import org.apache.derby.shared.common.reference.SQLState;
 
 /**
 
-The BTreePostCommit class implements the Serviceable protocol.  
+The BTreePostCommit class implements the Serviceable protocol.
 
-In it's role as a Serviceable object, it stores the state necessary to 
+In it's role as a Serviceable object, it stores the state necessary to
 find a page in a btree that may have committed delete's to reclaim.
 
 In it's role as a PostCommitProcessor it looks up the page described, and
@@ -74,9 +74,9 @@ class BTreePostCommit implements Serviceable
     BTree           btree,
     long            input_page_number)
     {
-        this.access_factory = access_factory; 
-        this.btree          = btree; 
-        this.page_number    = input_page_number; 
+        this.access_factory = access_factory;
+        this.btree          = btree;
+        this.page_number    = input_page_number;
     }
 
     /* Private/Protected methods of This class: */
@@ -88,7 +88,7 @@ class BTreePostCommit implements Serviceable
     /**
      * The urgency of this post commit work.
      * <p>
-     * This determines where this Serviceable is put in the post commit 
+     * This determines where this Serviceable is put in the post commit
      * queue.  Post commit work in the btree can be safely delayed until there
      * is not user work to do.
      *
@@ -104,10 +104,10 @@ class BTreePostCommit implements Serviceable
 	public boolean serviceImmediately()
 	{
 		return false;
-	}	
+	}
 
     private final void doShrink(
-    OpenBTree               open_btree, 
+    OpenBTree               open_btree,
     StoreDataValue[]	shrink_row)
         throws StandardException
     {
@@ -115,7 +115,7 @@ class BTreePostCommit implements Serviceable
 
         /*
         System.out.println(
-            "Calling shrink on tree with levels = " + 
+            "Calling shrink on tree with levels = " +
             open_btree.getHeight() + "\n");
         */
 
@@ -152,18 +152,27 @@ class BTreePostCommit implements Serviceable
     {
         OpenBTree open_btree = new OpenBTree();
 
-        ConglomerateController base_cc = 
+        ConglomerateController base_cc =
             btree.lockTable(
-                internal_xact, 
+                internal_xact,
                 (ContainerHandle.MODE_FORUPDATE |
-                 ContainerHandle.MODE_LOCK_NOWAIT), 
+                 ContainerHandle.MODE_LOCK_NOWAIT),
                 lock_level,
                 TransactionController.ISOLATION_REPEATABLE_READ);
 
+        if (!base_cc.supportsLockBasedCommittedDeleteReclamation())
+        {
+            // Lock acquisition is not an authoritative visibility probe for
+            // this base conglomerate.  Skip asynchronous index purging rather
+            // than risk removing an uncommitted delete needed by rollback.
+            base_cc.close();
+            return null;
+        }
+
         open_btree.init(
-            (TransactionManager) null, 
-            internal_xact, 
-            (ContainerHandle) null,           // open the container 
+            (TransactionManager) null,
+            internal_xact,
+            (ContainerHandle) null,           // open the container
             internal_xact.getRawStoreXact(),
             false,
             (ContainerHandle.MODE_FORUPDATE | ContainerHandle.MODE_LOCK_NOWAIT),
@@ -172,10 +181,10 @@ class BTreePostCommit implements Serviceable
                 internal_xact.getRawStoreXact(),
                 lock_level,
                 lock_mode,
-                TransactionController.ISOLATION_REPEATABLE_READ, 
+                TransactionController.ISOLATION_REPEATABLE_READ,
                 base_cc,
                 open_btree),
-            btree, 
+            btree,
             (LogicalUndo) null,              // No logical undo necessry.
             (DynamicCompiledOpenConglomInfo) null);
 
@@ -221,12 +230,12 @@ class BTreePostCommit implements Serviceable
         try
         {
             // Get lock on base table.
-            
+
             // First attempt to get a table lock on the btree.  This lock is
             // requested NOWAIT to not impede normal operation on the table.
-            // If the lock were to wait then the current lock manager livelock 
-            // algorithm would block all subsequent lock requests on this 
-            // btree even if they are compatible with the current holder of 
+            // If the lock were to wait then the current lock manager livelock
+            // algorithm would block all subsequent lock requests on this
+            // btree even if they are compatible with the current holder of
             // the lock.
             //
             // If this lock is granted then:
@@ -236,50 +245,54 @@ class BTreePostCommit implements Serviceable
             // 2) if all rows from page are reclaimed then a structure shrink
             //    which requires table level lock can be executed.
             //
-            open_btree = 
+            open_btree =
                 openIndex(
-                    internal_xact, 
-                    TransactionController.MODE_TABLE, 
+                    internal_xact,
+                    TransactionController.MODE_TABLE,
                     LockingPolicy.MODE_CONTAINER);
 
-            StoreDataValue[] shrink_key = 
-                purgeCommittedDeletes(open_btree, this.page_number);
+            if (open_btree != null)
+            {
+                StoreDataValue[] shrink_key =
+                    purgeCommittedDeletes(open_btree, this.page_number);
 
-            if (shrink_key != null)
-                doShrink(open_btree, shrink_key);
+                if (shrink_key != null)
+                    doShrink(open_btree, shrink_key);
+            }
         }
         catch (StandardException se)
         {
-            // 2 kinds of errors here expected here.  Either container not 
+            // 2 kinds of errors here expected here.  Either container not
             // found or could not obtain lock (LOCK_TIMEOUT or DEADLOCK).
             //
-            // It is possible by the time this post commit work gets scheduled 
-            // that the container has been dropped and that the open container 
-            // call will return null - in this case just return assuming no 
+            // It is possible by the time this post commit work gets scheduled
+            // that the container has been dropped and that the open container
+            // call will return null - in this case just return assuming no
             // work to be done.
 
             if (se.isLockTimeoutOrDeadlock())
 			{
                 // Could not get exclusive table lock, so try row level
-                // reclaim of just the rows on this page.  No merge is 
+                // reclaim of just the rows on this page.  No merge is
                 // attempted.
 
                 try
                 {
-                    open_btree = 
+                    open_btree =
                         openIndex(
-                            internal_xact, 
-                            TransactionController.MODE_RECORD, 
+                            internal_xact,
+                            TransactionController.MODE_RECORD,
                             LockingPolicy.MODE_RECORD);
 
-                    purgeRowLevelCommittedDeletes(open_btree);
+                    if (open_btree != null)
+                        purgeRowLevelCommittedDeletes(open_btree);
 
                 }
                 catch (StandardException se2)
                 {
                     if (se2.isLockTimeoutOrDeadlock())
                     {
-                        // Could not get intended exclusive table lock, so 
+                        // Could not get intended exclusive table lock, so
                         // requeue and hope other user gives up table level
                         // lock soon.  This should not be normal case.
                         requeue_work = true;
@@ -306,18 +319,18 @@ class BTreePostCommit implements Serviceable
     }
 
     private final StoreDataValue[] getShrinkKey(
-    OpenBTree   open_btree, 
+    OpenBTree   open_btree,
     ControlRow  control_row,
     int         slot_no)
         throws StandardException
     {
-        StoreDataValue[] shrink_key = 
+        StoreDataValue[] shrink_key =
             open_btree.getConglomerate().createTemplate(
                     open_btree.getRawTran());
 
         control_row.page.fetchFromSlot(
             (RecordHandle) null,
-            slot_no, shrink_key, 
+            slot_no, shrink_key,
             (FetchDescriptor) null,
 			true);
 
@@ -328,7 +341,7 @@ class BTreePostCommit implements Serviceable
      * Reclaim space taken up by committed deleted rows.
      * <p>
      * This routine assumes it has been called by an internal transaction which
-     * has performed no work so far, and that it has an exclusive table lock.  
+     * has performed no work so far, and that it has an exclusive table lock.
      * These assumptions mean that any deleted rows encountered must be from
      * committed transactions (otherwise we could not have gotten the exclusive
      * table lock).
@@ -348,7 +361,7 @@ class BTreePostCommit implements Serviceable
         throws StandardException
     {
         ControlRow              control_row = null;
-        StoreDataValue[]	shrink_key  = null; 
+        StoreDataValue[]	shrink_key  = null;
 
         try
         {
@@ -363,25 +376,25 @@ class BTreePostCommit implements Serviceable
 
                 // The number records that can be reclaimed is:
                 // total recs - control row - recs_not_deleted
-                int num_possible_commit_delete = 
+                int num_possible_commit_delete =
                     page.recordCount() - 1 - page.nonDeletedRecordCount();
 
                 if (num_possible_commit_delete > 0)
                 {
-                    // loop backward so that purges which affect the slot table 
-                    // don't affect the loop (ie. they only move records we 
+                    // loop backward so that purges which affect the slot table
+                    // don't affect the loop (ie. they only move records we
                     // have already looked at).
-                    for (int slot_no = page.recordCount() - 1; 
-                         slot_no > 0; 
-                         slot_no--) 
+                    for (int slot_no = page.recordCount() - 1;
+                         slot_no > 0;
+                         slot_no--)
                     {
                         if (page.isDeletedAtSlot(slot_no))
                         {
 
                             if (page.recordCount() == 2)
                             {
-                                // About to purge last row from page so 
-                                // remember the key so we can shrink the 
+                                // About to purge last row from page so
+                                // remember the key so we can shrink the
                                 // tree.
                                 shrink_key = this.getShrinkKey(
                                     open_btree, control_row, slot_no);
@@ -399,7 +412,7 @@ class BTreePostCommit implements Serviceable
                                         "verbose_btree_post_commit"))
                                 {
                                     System.out.println(
-                                        "Purging row[" + slot_no + "]" + 
+                                        "Purging row[" + slot_no + "]" +
                                         "on page:" + pageno + ".\n");
                                 }
                             }
@@ -444,12 +457,12 @@ class BTreePostCommit implements Serviceable
      * Attempt to reclaim committed deleted rows from the page with row locking.
      * <p>
      * Get exclusive latch on page, and then loop backward through
-     * page searching for deleted rows which are committed.  
+     * page searching for deleted rows which are committed.
      * This routine is called only from post commit processing so it will never
      * see rows deleted by the current transaction.
      * For each deleted row on the page
      * it attempts to get an exclusive lock on the deleted row, NOWAIT.
-     * If it succeeds, and since this transaction did not delete the row then 
+     * If it succeeds, and since this transaction did not delete the row then
      * the row must have been deleted by a transaction which has committed, so
      * it is safe to purge the row.  It then purges the row from the page.
      * <p>
@@ -471,24 +484,24 @@ class BTreePostCommit implements Serviceable
         LeafControlRow leaf = null;
 
         // The following can fail, returning null, either if it can't get
-        // the latch or somehow the page requested no longer exists.  In 
+        // the latch or somehow the page requested no longer exists.  In
         // either case the post commit work will just skip it.
-        leaf = (LeafControlRow) 
+        leaf = (LeafControlRow)
             ControlRow.getNoWait(open_btree, page_number);
         if (leaf == null)
             return;
 
-        BTreeLockingPolicy  btree_locking_policy = 
+        BTreeLockingPolicy  btree_locking_policy =
             open_btree.getLockingPolicy();
 
         // The number records that can be reclaimed is:
         // total recs - control row - recs_not_deleted
-        int num_possible_commit_delete = 
+        int num_possible_commit_delete =
             leaf.page.recordCount() - 1 - leaf.page.nonDeletedRecordCount();
 
         if (num_possible_commit_delete > 0)
         {
-            StoreDataValue[] scratch_template = 
+            StoreDataValue[] scratch_template =
                 open_btree.getRuntimeMem().get_template(
                     open_btree.getRawTran());
 
@@ -496,24 +509,24 @@ class BTreePostCommit implements Serviceable
 
 
             // RowLocation column is in last column of template.
-            FetchDescriptor lock_fetch_desc = 
+            FetchDescriptor lock_fetch_desc =
                 RowUtil.getFetchDescriptorConstant(
                     scratch_template.length - 1);
 
-            // loop backward so that purges which affect the slot table 
-            // don't affect the loop (ie. they only move records we 
+            // loop backward so that purges which affect the slot table
+            // don't affect the loop (ie. they only move records we
             // have already looked at).
-            for (int slot_no = page.recordCount() - 1; 
-                 slot_no > 0; 
-                 slot_no--) 
+            for (int slot_no = page.recordCount() - 1;
+                 slot_no > 0;
+                 slot_no--)
             {
                 if (page.isDeletedAtSlot(slot_no))
                 {
-                    // try to get an exclusive lock on the row, if we can 
-                    // then the row is a committed deleted row and it is 
+                    // try to get an exclusive lock on the row, if we can
+                    // then the row is a committed deleted row and it is
                     // safe to purge it.
                     if (btree_locking_policy.lockScanCommittedDeletedRow(
-                            open_btree, leaf, scratch_template, 
+                            open_btree, leaf, scratch_template,
                             lock_fetch_desc, slot_no))
                     {
                         // the row is a committed deleted row, purge it.
@@ -529,7 +542,7 @@ class BTreePostCommit implements Serviceable
         }
 
         // need to maintain latch on leaf until xact is committed.  The
-        // commit will clear the latch as part of releasing all 
+        // commit will clear the latch as part of releasing all
         // locks/latches associated with a transaction.
 
         return;

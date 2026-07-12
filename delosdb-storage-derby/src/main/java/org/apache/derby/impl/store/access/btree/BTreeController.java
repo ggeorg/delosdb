@@ -75,7 +75,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      * has already been gotten when the row was inserted into the base table.
      **/
     boolean get_insert_row_lock;
-    
+
     //constants for the status of dupicate checking
     private static final int NO_MATCH = 0;
     private static final int MATCH_FOUND = 1;
@@ -96,7 +96,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      * <p>
      * Get exclusive latch on page, and then loop backward through
      * page searching for deleted rows which are committed.  The routine
-     * assumes that it is called from a transaction which cannot have 
+     * assumes that it is called from a transaction which cannot have
      * deleted any rows on the page.  For each deleted row on the page
      * it attempts to get an exclusive lock on the deleted row, NOWAIT.
      * If it succeeds, and since this row did not delete the row then the
@@ -126,7 +126,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 		throws StandardException
     {
         boolean     purged_at_least_one_row = false;
-        ControlRow  controlRow              = null; 
+        ControlRow  controlRow              = null;
 
         try
         {
@@ -136,13 +136,13 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
             LeafControlRow leaf       = (LeafControlRow) controlRow;
 
-            BTreeLockingPolicy  btree_locking_policy = 
+            BTreeLockingPolicy  btree_locking_policy =
                 open_btree.getLockingPolicy();
 
 
             // The number records that can be reclaimed is:
             // total recs - control row - recs_not_deleted
-            int num_possible_commit_delete = 
+            int num_possible_commit_delete =
                 leaf.page.recordCount() - 1 - leaf.page.nonDeletedRecordCount();
 
             if (num_possible_commit_delete > 0)
@@ -152,24 +152,24 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
 
                 // RowLocation column is in last column of template.
-                FetchDescriptor lock_fetch_desc = 
+                FetchDescriptor lock_fetch_desc =
                     RowUtil.getFetchDescriptorConstant(
                         scratch_template.length - 1);
 
-                // loop backward so that purges which affect the slot table 
-                // don't affect the loop (ie. they only move records we 
+                // loop backward so that purges which affect the slot table
+                // don't affect the loop (ie. they only move records we
                 // have already looked at).
-                for (int slot_no = page.recordCount() - 1; 
-                     slot_no > 0; 
-                     slot_no--) 
+                for (int slot_no = page.recordCount() - 1;
+                     slot_no > 0;
+                     slot_no--)
                 {
                     if (page.isDeletedAtSlot(slot_no))
                     {
-                        // try to get an exclusive lock on the row, if we can 
-                        // then the row is a committed deleted row and it is 
+                        // try to get an exclusive lock on the row, if we can
+                        // then the row is a committed deleted row and it is
                         // safe to purge it.
                         if (btree_locking_policy.lockScanCommittedDeletedRow(
-                                open_btree, leaf, scratch_template, 
+                                open_btree, leaf, scratch_template,
                                 lock_fetch_desc, slot_no))
                         {
                             // the row is a committed deleted row, purge it.
@@ -191,14 +191,14 @@ public class BTreeController extends OpenBTree implements ConglomerateController
         }
         finally
         {
-            if (controlRow != null) 
+            if (controlRow != null)
             {
-                if (purged_at_least_one_row) 
+                if (purged_at_least_one_row)
                 {
                     // Set a hint in the page that scans positioned on it
                     // need to reposition because rows have disappeared from
                     // the page.  If at least one row has been purged, then
-                    // do not release the latch.  Purge requires latch to 
+                    // do not release the latch.  Purge requires latch to
                     // be held until commit, where it will be released after
                     // the commit log record has been logged.
                     controlRow.page.setRepositionNeeded();
@@ -221,11 +221,11 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      * may come during the transaction.  This transation must not obtain any
      * locks as they are likely to conflict with the current user transaction.
      * <p>
-     * If attempt_to_reclaim_deleted_rows is true this routine will 
-     * attempt to reclaim space on the leaf page input, by purging 
+     * If attempt_to_reclaim_deleted_rows is true this routine will
+     * attempt to reclaim space on the leaf page input, by purging
      * committed deleted rows from the leaf.  If it succeeds in purging at
      * least one row, then it will commit the internal transaction and return
-     * without actually performing a split.  
+     * without actually performing a split.
      *
      * @param scratch_template  A scratch template used to search a page.
      * @param rowToInsert       The row to insert, make sure during split to
@@ -233,11 +233,11 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      *
 	 * @exception  StandardException  Standard exception policy.
      **/
-    private long 
+    private long
     start_xact_and_dosplit(
     boolean                 attempt_to_reclaim_deleted_rows,
     long                    leaf_pageno,
-    StoreDataValue[]   scratch_template, 
+    StoreDataValue[]   scratch_template,
     StoreDataValue[]   rowToInsert,
     int                     flag)
         throws StandardException
@@ -272,11 +272,11 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
             try
             {
-                base_cc = 
+                base_cc =
                     this.getConglomerate().lockTable(
-                        split_xact, 
+                        split_xact,
                         (ContainerHandle.MODE_FORUPDATE |
-                         ContainerHandle.MODE_LOCK_NOWAIT), 
+                         ContainerHandle.MODE_LOCK_NOWAIT),
                         TransactionController.MODE_RECORD,
                         TransactionController.ISOLATION_REPEATABLE_READ);
             }
@@ -289,49 +289,60 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
             if (base_cc != null)
             {
-                // we got IX lock on the base table, so can try reclaim space.
+                if (!base_cc.supportsLockBasedCommittedDeleteReclamation())
+                {
+                    // This conglomerate does not use Derby row locks as its
+                    // visibility authority.  A successful NOWAIT lock probe
+                    // cannot prove that a deleted index row is committed, so
+                    // skip reclamation and split instead.
+                    base_cc.close();
+                }
+                else
+                {
+                    // we got IX lock on the base table, so can try reclaim space.
 
 
-                // We can only reclaim space by opening the btree in row lock 
-                // mode.  Table level lock row recovery is hard as we can't 
-                // determine if the deleted rows we encounter have been 
-                // deleted by our parent caller and have been committed or 
-                // not.  We will have to get those rows offline.
-                split_open_btree = new OpenBTree();
-                split_open_btree.init(
-                    this.init_open_user_scans, 
-                    split_xact, 
-                    null,                           // open the container.
-                    split_xact.getRawStoreXact(), 
-                    false,
-                    (ContainerHandle.MODE_FORUPDATE | 
-                     ContainerHandle.MODE_LOCK_NOWAIT),
-                    TransactionManager.MODE_RECORD,
-                    this.getConglomerate().getBtreeLockingPolicy(
-                        split_xact.getRawStoreXact(), 
-                        TransactionController.MODE_RECORD,
-                        LockingPolicy.MODE_RECORD,
-                        TransactionController.ISOLATION_REPEATABLE_READ, 
-                        (ConglomerateController) base_cc, 
-                        split_open_btree),
-                    this.getConglomerate(), 
-                    (LogicalUndo) null,
-                    (DynamicCompiledOpenConglomInfo) null);
+                    // We can only reclaim space by opening the btree in row lock
+                    // mode.  Table level lock row recovery is hard as we can't
+                    // determine if the deleted rows we encounter have been
+                    // deleted by our parent caller and have been committed or
+                    // not.  We will have to get those rows offline.
+                    split_open_btree = new OpenBTree();
+                    split_open_btree.init(
+                        this.init_open_user_scans,
+                        split_xact,
+                        null,                           // open the container.
+                        split_xact.getRawStoreXact(),
+                        false,
+                        (ContainerHandle.MODE_FORUPDATE |
+                         ContainerHandle.MODE_LOCK_NOWAIT),
+                        TransactionManager.MODE_RECORD,
+                        this.getConglomerate().getBtreeLockingPolicy(
+                            split_xact.getRawStoreXact(),
+                            TransactionController.MODE_RECORD,
+                            LockingPolicy.MODE_RECORD,
+                            TransactionController.ISOLATION_REPEATABLE_READ,
+                            (ConglomerateController) base_cc,
+                            split_open_btree),
+                        this.getConglomerate(),
+                        (LogicalUndo) null,
+                        (DynamicCompiledOpenConglomInfo) null);
 
-                // don't split if we reclaim any rows.
-                do_split = !reclaim_deleted_rows(split_open_btree, leaf_pageno);
+                    // don't split if we reclaim any rows.
+                    do_split = !reclaim_deleted_rows(split_open_btree, leaf_pageno);
 
-                // on return if !do_split then the latch on leaf_pageno is held
-                // and will be released by the committing or aborting the 
-                // transaction.  If a purge has been done, no other action on
-                // the page should be attempted (ie. a split) before committing
-                // the purges.
+                    // on return if !do_split then the latch on leaf_pageno is held
+                    // and will be released by the committing or aborting the
+                    // transaction.  If a purge has been done, no other action on
+                    // the page should be attempted (ie. a split) before committing
+                    // the purges.
 
-                split_open_btree.close();
+                    split_open_btree.close();
+                }
             }
         }
 
-        long new_leaf_pageno = leaf_pageno; 
+        long new_leaf_pageno = leaf_pageno;
         if (do_split)
         {
             // no space was reclaimed from deleted rows, so do split to allow
@@ -339,22 +350,22 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
             split_open_btree = new OpenBTree();
             split_open_btree.init(
-                this.init_open_user_scans, 
-                split_xact, 
+                this.init_open_user_scans,
+                split_xact,
                 null,                           // open the container.
-                split_xact.getRawStoreXact(), 
+                split_xact.getRawStoreXact(),
                 false,
                 getOpenMode(),                  // use same mode this controller
                                                 // was opened with
                 TransactionManager.MODE_NONE,
                 this.getConglomerate().getBtreeLockingPolicy(
-                    split_xact.getRawStoreXact(), 
+                    split_xact.getRawStoreXact(),
                     this.init_lock_level,
                     LockingPolicy.MODE_RECORD,
-                    TransactionController.ISOLATION_REPEATABLE_READ, 
+                    TransactionController.ISOLATION_REPEATABLE_READ,
                     (ConglomerateController) null, // no base row locks during split
                     split_open_btree),
-                this.getConglomerate(), 
+                this.getConglomerate(),
                 (LogicalUndo) null,
                 (DynamicCompiledOpenConglomInfo) null);
 
@@ -366,9 +377,9 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             if (SanityManager.DEBUG)
                 SanityManager.ASSERT(root.page.isLatched());
 
-            new_leaf_pageno = 
+            new_leaf_pageno =
                 root.splitFor(
-                    split_open_btree, scratch_template, 
+                    split_open_btree, scratch_template,
                     null, rowToInsert, flag);
 
             split_open_btree.close();
@@ -380,23 +391,23 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
         return(new_leaf_pageno);
     }
-    
+
     /**
-     * Compares the oldrow with the one at 'slot' or the one left to it. 
-     * If the slot is first slot it will move to the left sibiling of 
+     * Compares the oldrow with the one at 'slot' or the one left to it.
+     * If the slot is first slot it will move to the left sibiling of
      * the 'leaf' and will compare with the record from the last slot.
      * @param slot slot number to start with
      * @param leaf LeafControlRow of the current page
      * @param rows DataValueDescriptot array to fill it with fetched values
      * @return  0 if no duplicate
-     *          1 if duplicate 
+     *          1 if duplicate
      *          2 if rescan required
      * @throws StandardException
      */
-    private int comparePreviousRecord (int slot, 
-                                    LeafControlRow  leaf, 
+    private int comparePreviousRecord (int slot,
+                                    LeafControlRow  leaf,
                                     StoreDataValue[] rows,
-                                    StoreDataValue[] oldRows) 
+                                    StoreDataValue[] oldRows)
                                         throws StandardException {
         RecordHandle rh = null;
         boolean newLeaf = false;
@@ -470,24 +481,24 @@ public class BTreeController extends OpenBTree implements ConglomerateController
         }
         return NO_MATCH;
     }
-    
+
     /**
-     * Compares the new record with the one at slot or the one 
-     * right to it. If the slot is last slot in the page it will move to 
-     * the right to sibling of the leaf and will compare with the record 
-     * from the last slot. 
+     * Compares the new record with the one at slot or the one
+     * right to it. If the slot is last slot in the page it will move to
+     * the right to sibling of the leaf and will compare with the record
+     * from the last slot.
      * @param slot slot number to start with
      * @param leaf LeafControlRow of the current page
      * @param rows DataValueDescriptot array to fill it with fetched values
      * @return  0 if no duplicate
-     *          1 if duplicate 
+     *          1 if duplicate
      *          2 if rescan required
      * @throws StandardException
      */
-    private int compareNextRecord (int slot, 
-                                    LeafControlRow  leaf, 
+    private int compareNextRecord (int slot,
+                                    LeafControlRow  leaf,
                                     StoreDataValue[] rows,
-                                    StoreDataValue[] oldRows) 
+                                    StoreDataValue[] oldRows)
                                         throws StandardException {
         RecordHandle rh = null;
         boolean newLeaf = false;
@@ -551,7 +562,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
         }
         return NO_MATCH;
     }
-    
+
     /**
      * Compares two rows for insert. If the two rows are not equal,
      * {@link #NO_MATCH} is returned. Otherwise, it tries to get a lock on
@@ -581,7 +592,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      */
     private int compareRowsForInsert (StoreDataValue[] originalRow,
                                       StoreDataValue[] newRow,
-                                      LeafControlRow leaf, int slot) 
+                                      LeafControlRow leaf, int slot)
                                             throws StandardException {
         for (int i = 0; i < originalRow.length - 1; i++) {
             if (!originalRow [i].equals(newRow [i]))
@@ -591,7 +602,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
         StoreDataValue[] template = runtime_mem.get_template(getRawTran());
         FetchDescriptor lock_fetch_desc = RowUtil.getFetchDescriptorConstant(
                                                     template.length - 1);
-        StoreRowLocation lock_row_loc = 
+        StoreRowLocation lock_row_loc =
             (StoreRowLocation) scratch_template[scratch_template.length - 1];
         boolean latch_released = !getLockingPolicy().lockNonScanRowOnPage(
                 leaf, slot, lock_fetch_desc, template,
@@ -603,23 +614,23 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
         return MATCH_FOUND;
     }
-    
+
     /**
      * Compares immidiate left and right records to check for duplicates.
-     * This methods compares new record (being inserted) with the record 
+     * This methods compares new record (being inserted) with the record
      * in immidate left and right postion to see if its duplicate (only for
      * almost unique index and for non null keys)
      * @param rowToInsert row being inserted
      * @param insert_slot slot where rowToInsert is being inserted
      * @param targetleaf page where rowToInsert
      * @return  0 if no duplicate
-     *          1 if duplicate 
+     *          1 if duplicate
      *          2 if rescan required
      * @throws StandardException
      */
     private int compareLeftAndRightSiblings (
-                            StoreDataValue[] rowToInsert, 
-                            int insert_slot, 
+                            StoreDataValue[] rowToInsert,
+                            int insert_slot,
                             LeafControlRow  targetleaf) throws StandardException {
         //proceed only if almost unique index
         if (this.getConglomerate().isUniqueWithDuplicateNulls()) {
@@ -634,10 +645,10 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             }
             if (!hasnull) {
                 StoreDataValue[] index = runtime_mem.get_template(getRawTran());
-                int ret = comparePreviousRecord(insert_slot - 1, 
+                int ret = comparePreviousRecord(insert_slot - 1,
                         targetleaf, index, rowToInsert);
                 if (ret > 0) {
-                    return ret;                        
+                    return ret;
                 }
                 return compareNextRecord(insert_slot, targetleaf, index, rowToInsert);
             }
@@ -652,7 +663,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	representations of the row's columns are copied into a new row
 	somewhere in the conglomerate.
 
-	@return Returns 0 if insert succeeded.  Returns 
+	@return Returns 0 if insert succeeded.  Returns
     ConglomerateController.ROWISDUPLICATE if conglomerate supports uniqueness
     checks and has been created to disallow duplicates, and the row inserted
     had key columns which were duplicate of a row already in the table.  Other
@@ -680,17 +691,17 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
         // Create the objects needed for the insert.
         // RESOLVE (mikem) - should we cache this in the controller?
-        SearchParameters sp = 
+        SearchParameters sp =
             new SearchParameters(
                 rowToInsert,
                 SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
                 scratch_template, this, false);
 
         // RowLocation column is in last column of template.
-        FetchDescriptor lock_fetch_desc = 
+        FetchDescriptor lock_fetch_desc =
             RowUtil.getFetchDescriptorConstant(
                 scratch_template.length - 1);
-        StoreRowLocation lock_row_loc = 
+        StoreRowLocation lock_row_loc =
             (StoreRowLocation) scratch_template[scratch_template.length - 1];
 
         // Row locking - lock the row being inserted.
@@ -702,13 +713,13 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             // lock can only wait if the base table row was inserted in a
             // separate transaction which never happens in sql tables, but
             // does happen in the sparse indexes that synchronization builds.
-        
+
             this.getLockingPolicy().lockNonScanRow(
                 this.getConglomerate(),
                 (LeafControlRow) null,
                 (LeafControlRow) null,
-                rowToInsert, 
-                (ConglomerateController.LOCK_INS | 
+                rowToInsert,
+                (ConglomerateController.LOCK_INS |
                  ConglomerateController.LOCK_UPD));
         }
 
@@ -726,23 +737,23 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             //     o if (sp.resultExact) then the row must be deleted and
             //           we will be replacing it with the new row, lock
             //           the row before the slot as the previous key.
-            //     o else 
+            //     o else
             //           we will be inserting after the current slot so
             //           lock the current slot as the previous key.
             //
-            int slot_after_previous = 
+            int slot_after_previous =
                 (sp.resultExact ? sp.resultSlot : sp.resultSlot + 1);
 
             boolean latch_released = false;
 
-            latch_released = 
+            latch_released =
                 !this.getLockingPolicy().lockNonScanPreviousRow(
-                    targetleaf, 
-                    slot_after_previous, 
+                    targetleaf,
+                    slot_after_previous,
                     lock_fetch_desc,
                     scratch_template,
                     lock_row_loc,
-                    this, 
+                    this,
                     (ConglomerateController.LOCK_INS_PREVKEY |
                      ConglomerateController.LOCK_UPD),
                     TransactionManager.LOCK_INSTANT_DURATION);
@@ -750,17 +761,17 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             // special test to see if latch release code works
             if (SanityManager.DEBUG)
             {
-                latch_released = 
+                latch_released =
                     test_errors(
                         this,
                         "BTreeController_doIns", null,
-                        this.getLockingPolicy(), 
+                        this.getLockingPolicy(),
                         targetleaf, latch_released);
             }
 
             if (latch_released)
             {
-                // Had to release latch in order to get the lock, probably 
+                // Had to release latch in order to get the lock, probably
                 // because of a forward scanner, research tree, and try again.
                 targetleaf = null;
                 continue;
@@ -775,13 +786,13 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             // it earlier, or it's simply a row that the space
             // reclaimer hasn't reclaimed yet.
             // Since inserts are done directly (i.e., not to a
-            // location provided by a scan, we will see the 
+            // location provided by a scan, we will see the
             // deleted row).
             if (sp.resultExact)
             {
                 result_slot = insert_slot = sp.resultSlot;
 
-                if (this.getConglomerate().nKeyFields != 
+                if (this.getConglomerate().nKeyFields !=
                         this.getConglomerate().nUniqueColumns)
                 {
                     // The key fields match, but not the row location.  We
@@ -789,7 +800,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                     // preceding, so as to serialize behind any work being done
                     // to the row as part of another transaction.
 
-                    latch_released = 
+                    latch_released =
                         !this.getLockingPolicy().lockNonScanRowOnPage(
                             targetleaf, insert_slot,
                             lock_fetch_desc, scratch_template, lock_row_loc,
@@ -797,8 +808,8 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
                     if (latch_released)
                     {
-                        // Had to release latch in order to get the lock, 
-                        // probably to wait for deleting xact to commit or 
+                        // Had to release latch in order to get the lock,
+                        // probably to wait for deleting xact to commit or
                         // abort.  Research tree, and try again.
                         targetleaf = null;
                         continue;
@@ -815,7 +826,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 }
                 else
                 {
-                    if (this.getConglomerate().nKeyFields == 
+                    if (this.getConglomerate().nKeyFields ==
                         this.getConglomerate().nUniqueColumns)
                     {
                         // The row that we found deleted is exactly the new row.
@@ -824,31 +835,31 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
                         break;
                     }
-                    else if (this.getConglomerate().nUniqueColumns == 
+                    else if (this.getConglomerate().nUniqueColumns ==
                              (this.getConglomerate().nKeyFields - 1))
                     {
                         // The row that we found deleted has matching keys
                         // which form the unique key fields,
                         // but the nonkey fields may differ (for now the
-                        // heap rowlocation is the only nonkey field 
+                        // heap rowlocation is the only nonkey field
                         // allowed).
-                        
+
                         // RESOLVE BT39 (mikem) - when/if heap row location
                         // is not fixed we must handle update failing for
                         // out of space and split if it does.  For now
                         // if the update fails because of lack of space
-                        // an exception is thrown and the statement is 
+                        // an exception is thrown and the statement is
                         // backed out.  Should not happen very often.
                         targetleaf.page.deleteAtSlot(
                             insert_slot, false, this.btree_undo);
 
                         boolean update_succeeded = true;
-                        try 
+                        try
                         {
                             if (runtime_mem.hasCollatedTypes())
                             {
                                 // See DERBY-5367.
-                                // There are types in the BTree with a 
+                                // There are types in the BTree with a
                                 // collation different than UCS BASIC, we
                                 // update all fields to make sure they hold
                                 // the correct values.
@@ -858,9 +869,9 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                                 int rowsToUpdate = getConglomerate().nKeyFields;
                                 for (int i=0; i < rowsToUpdate; i++) {
                                 targetleaf.page.updateFieldAtSlot(
-                                    insert_slot, i, 
+                                    insert_slot, i,
                                     RowUtil.getColumn(
-                                        rowToInsert, 
+                                        rowToInsert,
                                         (FormatableBitSet) null, i),
                                     this.btree_undo);
                                 }
@@ -875,9 +886,9 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                                 int rowloc_index =
                                         this.getConglomerate().nKeyFields - 1;
                                 targetleaf.page.updateFieldAtSlot(
-                                    insert_slot, rowloc_index, 
+                                    insert_slot, rowloc_index,
                                     RowUtil.getColumn(
-                                        rowToInsert, 
+                                        rowToInsert,
                                         (FormatableBitSet) null, rowloc_index),
                                     this.btree_undo);
                             }
@@ -919,11 +930,11 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 // on the page returned by the search.
                 insert_slot = sp.resultSlot + 1;
                 result_slot = insert_slot + 1;
-                if (getConglomerate().isUniqueWithDuplicateNulls()) 
+                if (getConglomerate().isUniqueWithDuplicateNulls())
                 {
-                    int ret = compareLeftAndRightSiblings(rowToInsert, 
+                    int ret = compareLeftAndRightSiblings(rowToInsert,
                             insert_slot, targetleaf);
-                    if (ret == MATCH_FOUND) 
+                    if (ret == MATCH_FOUND)
                     {
                         ret_val = ConglomerateController.ROWISDUPLICATE;
                         break;
@@ -936,7 +947,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 // less data.
 
                 if (targetleaf.page.insertAtSlot(
-                        insert_slot, 
+                        insert_slot,
                         rowToInsert, (FormatableBitSet) null,
                         this.btree_undo,
                         Page.INSERT_DEFAULT,
@@ -948,7 +959,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 }
 
                 // RESOLVE (mikem) - another long row issue.
-                // For now if a row does not fit on a page and there 
+                // For now if a row does not fit on a page and there
                 // is only the control row on the page and at most one
                 // other row on the page, throw an exception
 
@@ -960,11 +971,11 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
                 // start splitting ...
             }
-            if (getConglomerate().isUniqueWithDuplicateNulls()) 
+            if (getConglomerate().isUniqueWithDuplicateNulls())
             {
-                int ret = compareLeftAndRightSiblings(rowToInsert, 
+                int ret = compareLeftAndRightSiblings(rowToInsert,
                         insert_slot, targetleaf);
-                if (ret == MATCH_FOUND) 
+                if (ret == MATCH_FOUND)
                 {
                     ret_val = ConglomerateController.ROWISDUPLICATE;
                     break;
@@ -972,7 +983,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 if (ret == RESCAN_REQUIRED)
                     continue;
             }
-            
+
             // Create some space by splitting pages.
 
             // determine where in page/table row causing split would go
@@ -992,26 +1003,26 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
             long targetleaf_pageno = targetleaf.page.getPageNumber();
 
-            if ((targetleaf.page.recordCount() - 
+            if ((targetleaf.page.recordCount() -
                  targetleaf.page.nonDeletedRecordCount()) <= 0)
             {
                 // Don't do reclaim work if there are no deleted records.
                 reclaim_deleted_rows_attempted = true;
             }
 
-            BranchRow branchrow = 
+            BranchRow branchrow =
                 BranchRow.createBranchRowFromOldLeafRow(
                     rowToInsert, targetleaf_pageno);
 
-            // Release the target page because (a) it may change as a 
-            // result of the split, (b) the latch ordering requires us 
-            // to acquire latches from top to bottom, and (c) this 
+            // Release the target page because (a) it may change as a
+            // result of the split, (b) the latch ordering requires us
+            // to acquire latches from top to bottom, and (c) this
             // loop should be done in a system transaction.
             targetleaf.release();
             targetleaf = null;
 
             start_xact_and_dosplit(
-                !reclaim_deleted_rows_attempted, targetleaf_pageno, 
+                !reclaim_deleted_rows_attempted, targetleaf_pageno,
                 scratch_template, branchrow.getRow(), flag);
 
             // only attempt to reclaim deleted rows once, otherwise the
@@ -1020,7 +1031,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             reclaim_deleted_rows_attempted = true;
 
             // RESOLVE (mikem) possible optimization could be to save
-            // split location and look there first, if this has 
+            // split location and look there first, if this has
             // already caused a split.  Or even return a latched page
             // from splitFor().  For now just execute the loop again
             // searching the tree for somewhere to put the row.
@@ -1066,7 +1077,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
         {
             SanityManager.ASSERT(insert_slot == leaf.page.recordCount());
             SanityManager.ASSERT(
-                leaf.getrightSiblingPageNumber() == 
+                leaf.getrightSiblingPageNumber() ==
                     ContainerHandle.INVALID_PAGE_NUMBER);
             this.isIndexableRowConsistent(rowToInsert);
         }
@@ -1093,11 +1104,11 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                             this.getConglomerate().nUniqueColumns,
                             0,
 							this.getConglomerate().ascDescInfo);
-                    
+
                     if (compare_result >= 0)
                     {
                         // Rows must be presented in order, so the row we are
-                        // inserting must always be greater than the previous 
+                        // inserting must always be greater than the previous
                         // row on the page.
                         SanityManager.THROWASSERT("result = " + compare_result);
                     }
@@ -1106,9 +1117,9 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
 
             if (leaf.page.insertAtSlot(
-                    insert_slot, 
-                    rowToInsert, 
-                    (FormatableBitSet) null, 
+                    insert_slot,
+                    rowToInsert,
+                    (FormatableBitSet) null,
                     this.btree_undo,
                     Page.INSERT_DEFAULT,
 					AccessFactoryGlobals.BTREE_OVERFLOW_THRESHOLD) != null)
@@ -1119,7 +1130,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             else
             {
                 // RESOLVE (mikem) - another long row issue.
-                // For now if a row does not fit on a page and there 
+                // For now if a row does not fit on a page and there
                 // is only the control row on the page and at most one
                 // other row on the page, throw an exception
 
@@ -1158,26 +1169,26 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	{
 		LeafControlRow new_leaf = null;
 
-        BranchRow branchrow = 
+        BranchRow branchrow =
             BranchRow.createBranchRowFromOldLeafRow(
                 rowToInsert, leaf.page.getPageNumber());
 
-        // Release the target page because (a) it may change as a 
-        // result of the split, (b) the latch ordering requires us 
-        // to acquire latches from top to bottom, and (c) this 
+        // Release the target page because (a) it may change as a
+        // result of the split, (b) the latch ordering requires us
+        // to acquire latches from top to bottom, and (c) this
         // loop should be done in a system transaction.
         long old_leafpage = leaf.page.getPageNumber();
 
         leaf.release();
         leaf = null;
-        
-        long new_leaf_pageno = 
+
+        long new_leaf_pageno =
             start_xact_and_dosplit(
                 false /* don't try to reclaim deleted rows */,
                 old_leafpage,
-                scratch_template, 
-                branchrow.getRow(), 
-                (ControlRow.SPLIT_FLAG_LAST_ON_PAGE | 
+                scratch_template,
+                branchrow.getRow(),
+                (ControlRow.SPLIT_FLAG_LAST_ON_PAGE |
                     ControlRow.SPLIT_FLAG_LAST_IN_TABLE));
 
         new_leaf = (LeafControlRow) ControlRow.get(this, new_leaf_pageno);
@@ -1187,21 +1198,21 @@ public class BTreeController extends OpenBTree implements ConglomerateController
         // rows which will probably have to be split soon, after that it will
         // be a leaf with only one row.  The current algorithm requires that
         // there be at least one row for duplicate checking (the duplicate
-        // checking code does not handle going left to the previous leaf) - 
+        // checking code does not handle going left to the previous leaf) -
         // this is the way the split at rightmost leaf row works currently.
         if (SanityManager.DEBUG)
         {
-            if (new_leaf.getrightSiblingPageNumber() != 
+            if (new_leaf.getrightSiblingPageNumber() !=
                     ContainerHandle.INVALID_PAGE_NUMBER)
             {
                 SanityManager.THROWASSERT(
-                    "new_leaf.getrightSiblingPageNumber() = " + 
+                    "new_leaf.getrightSiblingPageNumber() = " +
                         new_leaf.getrightSiblingPageNumber());
             }
             if (new_leaf.page.recordCount() <= 1)
             {
                 SanityManager.THROWASSERT(
-                    "new_leaf.page.recordCount() = " + 
+                    "new_leaf.page.recordCount() = " +
                     new_leaf.page.recordCount());
             }
         }
@@ -1218,13 +1229,13 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	/**
 	Initialize the controller for use.
 	<p>
-	Any changes to this method will probably have to be reflected in close as 
+	Any changes to this method will probably have to be reflected in close as
     well.
 	<p>
-	Currently delegates to OpenBTree.  If the btree controller ends up not 
-    having any state of its own, we can remove this method (the VM will 
-    dispatch to OpenBTree), gaining some small efficiency.  For now, this 
-    method remains for clarity.  
+	Currently delegates to OpenBTree.  If the btree controller ends up not
+    having any state of its own, we can remove this method (the VM will
+    dispatch to OpenBTree), gaining some small efficiency.  For now, this
+    method remains for clarity.
 
     @exception StandardException Standard exception policy.
 	**/
@@ -1232,7 +1243,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     TransactionManager              xact_manager,
     boolean                         hold,
     ContainerHandle                 container,
-    Transaction                     rawtran, 
+    Transaction                     rawtran,
 	int					            open_mode,
     int                             lock_level,
     BTreeLockingPolicy              btree_locking_policy,
@@ -1242,12 +1253,12 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     DynamicCompiledOpenConglomInfo  dynamic_info)
 		throws StandardException
 	{
-        get_insert_row_lock = 
-            ((open_mode & 
+        get_insert_row_lock =
+            ((open_mode &
               TransactionController.OPENMODE_BASEROW_INSERT_LOCKED) == 0);
 
 		super.init(
-            xact_manager, xact_manager, 
+            xact_manager, xact_manager,
             container, rawtran, hold, open_mode,
             lock_level, btree_locking_policy,
             conglomerate, undo, dynamic_info);
@@ -1260,13 +1271,13 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     /**
     Close the conglomerate controller.
 	<p>
-	Any changes to this method will probably have to be reflected in close as 
+	Any changes to this method will probably have to be reflected in close as
     well.
 	<p>
-	Currently delegates to OpenBTree.  If the btree controller ends up not 
-    having any state of its own, we can remove this method (the VM will 
-    dispatch to OpenBTree), gaining some small efficiency.  For now, this 
-    method remains for clarity.  
+	Currently delegates to OpenBTree.  If the btree controller ends up not
+    having any state of its own, we can remove this method (the VM will
+    dispatch to OpenBTree), gaining some small efficiency.  For now, this
+    method remains for clarity.
 
 	@see ConglomerateController#close
     **/
@@ -1276,7 +1287,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 		super.close();
 
 		// If we are closed due to catching an error in the middle of init,
-		// xact_manager may not be set yet. 
+		// xact_manager may not be set yet.
 		if (getXactMgr() != null)
 			getXactMgr().closeMe(this);
 	}
@@ -1285,10 +1296,10 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      * Close conglomerate controller as part of terminating a transaction.
      * <p>
      * Use this call to close the conglomerate controller resources as part of
-     * committing or aborting a transaction.  The normal close() routine may 
-     * do some cleanup that is either unnecessary, or not correct due to the 
+     * committing or aborting a transaction.  The normal close() routine may
+     * do some cleanup that is either unnecessary, or not correct due to the
      * unknown condition of the controller following a transaction ending error.
-     * Use this call when closing all controllers as part of an abort of a 
+     * Use this call when closing all controllers as part of an abort of a
      * transaction.
      * <p>
      * This call is meant to only be used internally by the Storage system,
@@ -1298,14 +1309,14 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      * obvious that non-access clients should not call this.
      *
      * @param closeHeldScan     If true, means to close controller even if
-     *                          it has been opened to be kept opened 
+     *                          it has been opened to be kept opened
      *                          across commit.  This is
      *                          used to close these controllers on abort.
      *
 	 * @return boolean indicating that the close has resulted in a real close
-     *                 of the controller.  A held scan will return false if 
-     *                 called by closeForEndTransaction(false), otherwise it 
-     *                 will return true.  A non-held scan will always return 
+     *                 of the controller.  A held scan will return false if
+     *                 called by closeForEndTransaction(false), otherwise it
+     *                 will return true.  A non-held scan will always return
      *                 true.
      *
 	 * @exception  StandardException  Standard exception policy.
@@ -1315,10 +1326,10 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     {
         super.close();
 
-        if ((!getHold()) || closeHeldScan) 
+        if ((!getHold()) || closeHeldScan)
         {
             // If we are closed due to catching an error in the middle of init,
-            // xact_manager may not be set yet. 
+            // xact_manager may not be set yet.
             if (getXactMgr() != null)
                 getXactMgr().closeMe(this);
 
@@ -1338,7 +1349,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	representations of the row's columns are copied into a new row
 	somewhere in the conglomerate.
 
-	@return Returns 0 if insert succeeded.  Returns 
+	@return Returns 0 if insert succeeded.  Returns
     ConglomerateController.ROWISDUPLICATE if conglomerate supports uniqueness
     checks and has been created to disallow duplicates, and the row inserted
     had key columns which were duplicate of a row already in the table.  Other
@@ -1346,7 +1357,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
 	@exception StandardException Standard exception policy.
     **/
-	public int insert(StoreDataValue[] row) 
+	public int insert(StoreDataValue[] row)
          throws StandardException
     {
 
@@ -1361,7 +1372,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 throw StandardException.newException(
                             SQLState.BTREE_IS_CLOSED,
                             err_containerid);
-            } 
+            }
         }
 
         if (SanityManager.DEBUG)
@@ -1384,17 +1395,17 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	}
 
     /**
-     * Request the system properties associated with a table. 
+     * Request the system properties associated with a table.
      * <p>
      * Request the value of properties that are associated with a table.  The
      * following properties can be requested:
-     *     derby.storage.pageSize 
+     *     derby.storage.pageSize
      *     derby.storage.pageReservedSpace
      *     derby.storage.minimumRecordSize
      *     derby.storage.initialPages
      * <p>
      * To get the value of a particular property add it to the property list,
-     * and on return the value of the property will be set to it's current 
+     * and on return the value of the property will be set to it's current
      * value.  For example:
      *
      * get_prop(ConglomerateController cc)
@@ -1404,7 +1415,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      *     cc.getTableProperties(prop);
      *
      *     System.out.println(
-     *         "table's page size = " + 
+     *         "table's page size = " +
      *         prop.getProperty("derby.storage.pageSize");
      * }
      *
@@ -1428,7 +1439,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     }
 
     /**
-     * Request set of properties associated with a table. 
+     * Request set of properties associated with a table.
      * <p>
      * Returns a property object containing all properties that the store
      * knows about, which are stored persistently by the store.  This set
@@ -1440,7 +1451,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      * create a new conglomerate which exactly matches the properties that
      * the original container was created with.  This call should not be used
      * by the user interface to present properties to users as it may contain
-     * properties that are meant to be internal to jbms.  Some properties are 
+     * properties that are meant to be internal to jbms.  Some properties are
      * meant only to be specified by jbms code and not by users on the command
      * line.
      * <p>
@@ -1455,7 +1466,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     public Properties getInternalTablePropertySet(Properties prop)
 		throws StandardException
     {
-        Properties  ret_properties = 
+        Properties  ret_properties =
             ConglomerateUtil.createRawStorePropertySet(prop);
 
         getTableProperties(ret_properties);
@@ -1467,23 +1478,23 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      * Load rows from rowSource into the opened btree.
      * <p>
      * Efficiently load rows into the already opened btree.  The btree must
-     * be table locked, as no row locks will be requested by this routine.  
+     * be table locked, as no row locks will be requested by this routine.
      * On exit from this routine the conglomerate will be closed (on both
      * error or success).
      * <p>
      * This routine does an almost bottom up build of a btree.  It assumes
      * all rows arrive in sorted order, and inserts them directly into the
      * next (to the right) spot in the current leaf until there is no space.
-     * Then it calls the generic split code to add the next leaf (RESOLVE - 
+     * Then it calls the generic split code to add the next leaf (RESOLVE -
      * in the future we could optimize this to split bottom up rather than
      * top down for create index).
      *
      * @exception StandardException Standard exception policy.  If conglomerate
-	 *                              supports uniqueness checks and has been 
-     *                              created to disallow duplicates, and one of 
+	 *                              supports uniqueness checks and has been
+     *                              created to disallow duplicates, and one of
      *                              the rows being loaded had key columns which
-     *                              were duplicate of a row already in the 
-     *                              conglomerate, then raise 
+     *                              were duplicate of a row already in the
+     *                              conglomerate, then raise
      *                              SQLState.STORE_CONGLOMERATE_DUPLICATE_KEY_EXCEPTION.
      *
 	 * @see org.apache.derby.iapi.store.access.conglomerate.Conglomerate#load
@@ -1509,11 +1520,11 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
         LeafControlRow current_leaf = null;
 
-        try 
+        try
         {
             // Btree must just have been created and empty, so there must
             // be one root leaf page which is empty except for the control row.
-            current_leaf = 
+            current_leaf =
                 (LeafControlRow) ControlRow.get(this, BTree.ROOTPAGEID);
             int current_insert_slot = 1;
 
@@ -1522,10 +1533,10 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 // root must be empty except for the control row.
                 SanityManager.ASSERT(current_leaf.page.recordCount() == 1);
             }
-           
+
             // now loop thru the row source and insert into the btree
             FormatableBitSet  validColumns = rowSource.getValidColumns();
-            
+
 			// get the next row and its valid columns from the rowSource
 			StoreDataValue[] row;
             while ((row = (StoreDataValue[]) rowSource.getNextRowFromRowSource()) != null)
@@ -1580,7 +1591,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	*/
 
     /**
-    Delete a row from the conglomerate.  
+    Delete a row from the conglomerate.
 	@see ConglomerateController#delete
 
     @exception StandardException Standard exception policy.
@@ -1599,9 +1610,9 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     @exception StandardException Standard exception policy.
     **/
     public boolean fetch(
-    StoreRowLocation loc, 
-    StoreDataValue[]     row, 
-    FormatableBitSet                 validColumns) 
+    StoreRowLocation loc,
+    StoreDataValue[]     row,
+    FormatableBitSet                 validColumns)
 		throws StandardException
 	{
         throw(StandardException.newException(
@@ -1615,10 +1626,10 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     @exception StandardException Standard exception policy.
     **/
     public boolean fetch(
-    StoreRowLocation        loc, 
-    StoreDataValue[]     row, 
+    StoreRowLocation        loc,
+    StoreDataValue[]     row,
     FormatableBitSet                 validColumns,
-    boolean                 waitForLock) 
+    boolean                 waitForLock)
 		throws StandardException
 	{
         throw(StandardException.newException(
@@ -1711,14 +1722,14 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     }
 
 	/**
-    Replace the entire row at the given location.  
+    Replace the entire row at the given location.
 	@see ConglomerateController#replace
 
     @exception StandardException Standard exception policy.
     **/
     public boolean replace(
-    StoreRowLocation        loc, 
-    StoreDataValue[]     row, 
+    StoreRowLocation        loc,
+    StoreDataValue[]     row,
     FormatableBitSet                 validColumns)
 		throws StandardException
 	{

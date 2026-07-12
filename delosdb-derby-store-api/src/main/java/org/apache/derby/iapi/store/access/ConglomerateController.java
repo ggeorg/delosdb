@@ -398,6 +398,24 @@ public interface ConglomerateController extends ConglomPropertyQueryable
         throws StandardException;
 
     /**
+     * Return whether row-lock probes on this controller can safely establish
+     * that a deleted secondary-index entry belongs to a committed transaction.
+     *
+     * <p>Derby's B-tree space reclamation uses a successful NOWAIT base-row
+     * lock as proof that a deleted index entry is committed and may be
+     * physically purged. Conglomerates whose concurrency control does not use
+     * those Derby row locks must return {@code false}; otherwise an uncommitted
+     * index delete could be reclaimed before rollback.</p>
+     *
+     * @return {@code true} when Derby row locks are authoritative for
+     *         committed-delete reclamation
+     */
+    default boolean supportsLockBasedCommittedDeleteReclamation()
+    {
+        return true;
+    }
+
+    /**
      * UnLock the given row location.
      * <p>
      * Should only be called by access.

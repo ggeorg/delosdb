@@ -221,6 +221,15 @@ public final class MvccConglomerateController implements ConglomerateController 
         return true;
     }
 
+    /**
+     * MVCC visibility does not use Derby base-row locks, so a successful lock
+     * probe cannot prove that a secondary-index delete has committed.
+     */
+    @Override
+    public boolean supportsLockBasedCommittedDeleteReclamation() {
+        return false;
+    }
+
     @Override
     public void unlockRowAfterRead(StoreRowLocation loc, boolean forUpdate, boolean rowQualified) {
         ensureOpen();
