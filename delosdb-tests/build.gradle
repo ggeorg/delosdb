@@ -760,6 +760,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosJdbcPreparedStatementTransactionReuseTest',
+        'Runs prepared DELETE/reinsert reuse across rollback and commit boundaries for heap and MVCC.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/JdbcPreparedStatementTransactionReuseTest.class'])
+
+registerDelosFocusedTest(
         'runDelosJdbcBenchmarkSurfaceValidation',
         'Runs the provider-neutral deterministic JDBC benchmark surface validation.',
         ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkSurfaceValidationTest.class'])
@@ -790,6 +795,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVisibilityTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlIsolationLevelCheckpointTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlIndexTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/JdbcPreparedStatementTransactionReuseTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLifecycleTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.class',

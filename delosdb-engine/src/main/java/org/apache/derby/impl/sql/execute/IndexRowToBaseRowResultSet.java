@@ -243,6 +243,7 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 
 		beginTime = getCurrentTimeMillis();
 
+        resetSourceCopyState();
 		source.openCore();
 
 		/* Get a ConglomerateController for the base conglomerate 
@@ -323,6 +324,7 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 
 		beginTime = getCurrentTimeMillis();
 
+        resetSourceCopyState();
 		source.reopenCore();
 
 		numOpens++;
@@ -462,6 +464,20 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 		nextTime += getElapsedMillis(beginTime);
     	return retval;
 	}
+
+    /**
+     * Refresh references copied from the index source for a new scan open.
+     *
+     * <p>The source result set may replace its row-location wrapper after a
+     * transaction boundary. Keeping {@code copiedFromSource} set across JDBC
+     * prepared-statement executions can therefore leave the compact row
+     * pointing at the previous physical row location.</p>
+     */
+    private void resetSourceCopyState()
+    {
+        copiedFromSource = false;
+        baseRowLocation = null;
+    }
 
 	/**
 	 * If the result set has been opened,
