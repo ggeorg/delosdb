@@ -100,7 +100,8 @@ public final class HeapMvccDrdaCancellationTest extends BaseJDBCTestCase {
             Future<String> execution = executor.submit(() -> {
                 executeStarted.countDown();
                 try (ResultSet resultSet = statement.executeQuery(
-                        "select sum(a.id + b.id + c.id) from " + table
+                        "select sum(cast(a.id as bigint) + cast(b.id as bigint) "
+                                + "+ cast(c.id as bigint)) from " + table
                                 + " a, " + table + " b, " + table + " c "
                                 + "where mod(a.id + b.id + c.id, 7) >= 0")) {
                     resultSet.next();
