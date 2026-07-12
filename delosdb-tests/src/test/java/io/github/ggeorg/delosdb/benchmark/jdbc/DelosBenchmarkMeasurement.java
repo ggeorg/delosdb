@@ -6,18 +6,23 @@
  */
 package io.github.ggeorg.delosdb.benchmark.jdbc;
 
-/** One reproducible, phase-isolated JDBC benchmark measurement. */
+/** One reproducible, phase- and transaction-position-isolated JDBC benchmark measurement. */
 public record DelosBenchmarkMeasurement(
         DelosBenchmarkProvider provider,
         DelosBenchmarkOperation operation,
+        DelosBenchmarkTransactionKind transactionKind,
         DelosBenchmarkPhase phase,
+        DelosBenchmarkSampleScope sampleScope,
+        DelosBenchmarkMeasurementUnit measurementUnit,
+        int operationsPerTransaction,
         int rowCount,
         int payloadSize,
         int commitBatchSize,
         int warmups,
         int iterations,
+        long measuredUnits,
         long elapsedNanos,
-        double operationsPerSecond,
+        double throughputPerSecond,
         double averageLatencyNanos,
         long semanticRowCount,
         long checksum,
