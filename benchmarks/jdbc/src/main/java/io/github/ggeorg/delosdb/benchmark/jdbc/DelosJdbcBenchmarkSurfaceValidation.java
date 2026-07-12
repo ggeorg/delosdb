@@ -23,7 +23,10 @@ public final class DelosJdbcBenchmarkSurfaceValidation {
                 ? Path.of("build", "delos-benchmark-surface")
                 : Path.of(args[0]);
         deleteRecursively(databaseRoot);
-        Files.createDirectories(databaseRoot.getParent());
+        Path parent = databaseRoot.toAbsolutePath().normalize().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
 
         DelosBenchmarkConfig config = DelosBenchmarkConfig.smoke();
         Map<DelosBenchmarkOperation, DelosBenchmarkResult> heap = run(databaseRoot, DelosBenchmarkProvider.HEAP, config);
