@@ -1,29 +1,51 @@
 # DelosDB MVCC JMH storage benchmarks
 
-This directory contains opt-in JMH benchmark source for DelosDB-owned MVCC
-storage algorithms. It is intentionally outside normal Gradle source sets so S0,
-module checks, and SQL integration tests do not require JMH dependencies.
+This is a standalone, opt-in Gradle build for DelosDB-owned MVCC storage
+algorithms. It is outside the normal DelosDB build, so normal module checks,
+S0, SQL integration, and runtime artifacts do not resolve or package JMH.
+
+The build uses:
+
+* JDK 25 toolchain and `--release 25`;
+* JMH 1.37;
+* `me.champeau.jmh` 0.7.3;
+* composite-build substitution to the local `delosdb-storage-mvcc` project;
+* three warmup iterations, five measurement iterations, and two forks;
+* machine-readable JSON output.
 
 Benchmarks currently cover:
 
 * `DelosMvccPageCodecBenchmark` — MVCC page-record and overflow-chunk codecs.
 * `DelosMvccOrderedIndexBenchmark` — ordered-index equality and range lookup.
-* `DelosMvccBufferCacheBenchmark` — MVCC page-cache read, pin/unpin, dirty-write, and replacement-pressure paths.
+* `DelosMvccBufferCacheBenchmark` — MVCC page-cache read, pin/unpin,
+  dirty-write, and replacement-pressure paths.
 
-Run the built-in deterministic baseline and write the adapter report:
+From the DelosDB repository root, compile and run the full benchmark matrix:
+
+```bash
+./gradlew -p benchmarks/jmh/delosdb-storage-mvcc clean jmh
+```
+
+Run only selected benchmark classes or methods:
+
+```bash
+./gradlew -p benchmarks/jmh/delosdb-storage-mvcc clean jmh \
+  -Pdelosdb.jmh.includes='.*DelosMvccOrderedIndexBenchmark.*'
+```
+
+Results are written to:
+
+```text
+benchmarks/jmh/delosdb-storage-mvcc/build/results/jmh/delosdb-storage-mvcc.json
+```
+
+Validate the repository boundary and deterministic built-in baseline without
+resolving JMH:
 
 ```bash
 ./gradlew delosJmhStorageBenchmarkAdapter
 ```
 
-Run the same adapter with an approved external JMH command supplied by CI or a
-release-validation job:
-
-```bash
-./gradlew delosJmhStorageBenchmarkAdapter \
-  -Pdelosdb.jmh.storage.command="<compile-and-run JMH command>"
-```
-
-The external command is intentionally not embedded in the repository because
-JMH dependency versions, classpath construction, result format, and runtime JVM
-flags belong to the explicit validation lane that opts into benchmarking.
+The benchmark build is intentionally not included by the root `settings.gradle`.
+JMH remains an explicit performance-validation dependency and never enters
+DelosDB runtime, module checks, or S0 paths.

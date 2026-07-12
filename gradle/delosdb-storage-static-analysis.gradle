@@ -8942,6 +8942,11 @@ tasks.register('delosJmhStorageBenchmarkAdapter') {
                 file('benchmarks/jmh/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/DelosMvccOrderedIndexBenchmark.java'),
                 file('benchmarks/jmh/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/DelosMvccBufferCacheBenchmark.java')
         ]
+        def benchmarkBuildFiles = [
+                file('benchmarks/jmh/delosdb-storage-mvcc/settings.gradle'),
+                file('benchmarks/jmh/delosdb-storage-mvcc/build.gradle'),
+                file('benchmarks/jmh/delosdb-storage-mvcc/gradle.properties')
+        ]
         def failures = []
         if (!benchmarkRoot.isDirectory()) {
             failures << 'Missing JMH benchmark root: ' + benchmarkRoot
@@ -8962,10 +8967,33 @@ tasks.register('delosJmhStorageBenchmarkAdapter') {
             }
         }
 
+        benchmarkBuildFiles.each { buildFile ->
+            if (!buildFile.exists()) {
+                failures << 'Missing standalone JMH build file: ' + buildFile
+            }
+        }
+        def benchmarkSettingsText = benchmarkBuildFiles[0].exists() ? benchmarkBuildFiles[0].getText('UTF-8') : ''
+        ['includeBuild('../../..')', 'delosdb-storage-mvcc'].each { marker ->
+            if (!benchmarkSettingsText.contains(marker)) {
+                failures << 'Standalone JMH settings missing marker: ' + marker
+            }
+        }
+        def benchmarkBuildText = benchmarkBuildFiles[1].exists() ? benchmarkBuildFiles[1].getText('UTF-8') : ''
+        ["id 'me.champeau.jmh' version '0.7.3'", "jmhVersion = '1.37'",
+         'languageVersion = JavaLanguageVersion.of(25)', "resultFormat = 'JSON'",
+         "java.setSrcDirs(['src/main/java'])",
+         "jmh 'io.github.ggeorg.delosdb:delosdb-storage-mvcc:0.1.0-dev'",
+         'delosdb.jmh.includes'].each { marker ->
+            if (!benchmarkBuildText.contains(marker)) {
+                failures << 'Standalone JMH build missing marker: ' + marker
+            }
+        }
+
         def docsText = file('benchmarks/jmh/delosdb-storage-mvcc/README.md').exists()
                 ? file('benchmarks/jmh/delosdb-storage-mvcc/README.md').getText('UTF-8')
                 : ''
-        ['delosJmhStorageBenchmarkAdapter', 'delosdb.jmh.storage.command', 'DelosMvccPageCodecBenchmark',
+        ['delosJmhStorageBenchmarkAdapter', './gradlew -p benchmarks/jmh/delosdb-storage-mvcc clean jmh',
+         'delosdb-storage-mvcc.json', 'DelosMvccPageCodecBenchmark',
          'DelosMvccOrderedIndexBenchmark', 'DelosMvccBufferCacheBenchmark'].each { marker ->
             if (!docsText.contains(marker)) {
                 failures << 'JMH storage benchmark README missing marker: ' + marker
@@ -8981,8 +9009,12 @@ tasks.register('delosJmhStorageBenchmarkAdapter') {
             writer.println('Benchmark root: ' + benchmarkRoot)
             writer.println('Benchmark sources:')
             benchmarkFiles.each { writer.println('  - ' + it) }
+            writer.println('Standalone build files:')
+            benchmarkBuildFiles.each { writer.println('  - ' + it) }
             writer.println()
             writer.println('Built-in baseline task: :delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation')
+            writer.println('Standalone benchmark command: ./gradlew -p benchmarks/jmh/delosdb-storage-mvcc clean jmh')
+            writer.println('JSON result: benchmarks/jmh/delosdb-storage-mvcc/build/results/jmh/delosdb-storage-mvcc.json')
             writer.println('External command property: delosdb.jmh.storage.command')
             writer.println('External command configured: ' + (providers.gradleProperty('delosdb.jmh.storage.command').orNull != null))
             writer.println()

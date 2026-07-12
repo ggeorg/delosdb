@@ -1,0 +1,70 @@
+plugins {
+    id 'java'
+    id 'me.champeau.jmh' version '0.7.3'
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+version = '0.1.0-dev'
+group = 'io.github.ggeorg.delosdb.benchmarks'
+
+def jmhResultFile = layout.buildDirectory.file('results/jmh/delosdb-storage-mvcc.json')
+
+def configuredIncludes = providers.gradleProperty('delosdb.jmh.includes')
+        .map { value -> value.split(',').collect { it.trim() }.findAll { !it.isEmpty() } }
+        .orElse([])
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+sourceSets {
+    jmh {
+        java.setSrcDirs(['src/main/java'])
+        resources.setSrcDirs(['src/main/resources'])
+    }
+}
+
+dependencies {
+    jmh 'io.github.ggeorg.delosdb:delosdb-storage-mvcc:0.1.0-dev'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    options.compilerArgs.add('-Xlint:deprecation')
+}
+
+jmh {
+    jmhVersion = '1.37'
+    warmupIterations = 3
+    iterations = 5
+    fork = 2
+    failOnError = true
+    forceGC = true
+    resultFormat = 'JSON'
+    resultsFile = jmhResultFile.get().asFile
+    timeOnIteration = '500ms'
+    warmup = '500ms'
+    verbosity = 'NORMAL'
+    if (!configuredIncludes.get().isEmpty()) {
+        includes = configuredIncludes.get()
+    }
+}
+
+tasks.named('jmh') {
+    doFirst {
+        jmhResultFile.get().asFile.parentFile.mkdirs()
+    }
+    doLast {
+        def result = jmhResultFile.get().asFile
+        if (!result.isFile() || result.length() == 0L) {
+            throw new GradleException("JMH did not produce a non-empty JSON result: ${result}")
+        }
+        println "DelosDB JMH JSON results: ${result}"
+    }
+}
