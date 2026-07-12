@@ -83,20 +83,28 @@ public final class DelosJdbcBenchmarkScenario {
     }
 
     public DelosBenchmarkResult execute(DelosBenchmarkOperation operation) throws SQLException {
-        return switch (Objects.requireNonNull(operation, "operation")) {
-            case PRIMARY_KEY_LOOKUP -> query(
-                    "select id, quantity from " + table + " where id = ?", config.rowCount() / 2);
-            case SECONDARY_EQUALITY_LOOKUP -> query(
-                    "select id, quantity from " + table + " where category = ? order by id", 7);
-            case COMPOSITE_RANGE_SCAN -> query(
-                    "select id, quantity from " + table
-                            + " where bucket = ? and quantity between 2000 and 8000 order by quantity, id", 5);
-            case FULL_SCAN -> query("select id, quantity from " + table + " order by id");
-            case AGGREGATE -> query("select category, count(*), sum(quantity) from " + table
-                    + " group by category order by category");
-            case INDEXED_UPDATE -> indexedUpdate();
-            case DELETE_REINSERT -> deleteReinsert();
-        };
+        Objects.requireNonNull(operation, "operation");
+        try {
+            DelosBenchmarkResult result = switch (operation) {
+                case PRIMARY_KEY_LOOKUP -> query(
+                        "select id, quantity from " + table + " where id = ?", config.rowCount() / 2);
+                case SECONDARY_EQUALITY_LOOKUP -> query(
+                        "select id, quantity from " + table + " where category = ? order by id", 7);
+                case COMPOSITE_RANGE_SCAN -> query(
+                        "select id, quantity from " + table
+                                + " where bucket = ? and quantity between 2000 and 8000 order by quantity, id", 5);
+                case FULL_SCAN -> query("select id, quantity from " + table + " order by id");
+                case AGGREGATE -> query("select category, count(*), sum(quantity) from " + table
+                        + " group by category order by category");
+                case INDEXED_UPDATE -> indexedUpdate();
+                case DELETE_REINSERT -> deleteReinsert();
+            };
+            connection.rollback();
+            return result;
+        } catch (SQLException | RuntimeException failure) {
+            rollbackAfterFailure(failure);
+            throw failure;
+        }
     }
 
     private DelosBenchmarkResult indexedUpdate() throws SQLException {
@@ -109,20 +117,57 @@ public final class DelosJdbcBenchmarkScenario {
                 throw new SQLException("Indexed update did not affect exactly one row");
             }
         }
-        connection.rollback();
         return query("select id, quantity from " + table + " where id = ?", id);
     }
 
     private DelosBenchmarkResult deleteReinsert() throws SQLException {
         int id = config.rowCount() - 1;
+        int category;
+        int bucket;
+        int quantity;
+        String rowPayload;
+        try (PreparedStatement select = connection.prepareStatement(
+                "select category, bucket, quantity, payload from " + table + " where id = ?")) {
+            select.setInt(1, id);
+            try (ResultSet resultSet = select.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new SQLException("Delete/reinsert source row is missing");
+                }
+                category = resultSet.getInt(1);
+                bucket = resultSet.getInt(2);
+                quantity = resultSet.getInt(3);
+                rowPayload = resultSet.getString(4);
+                if (resultSet.next()) {
+                    throw new SQLException("Delete/reinsert source query returned duplicate primary keys");
+                }
+            }
+        }
         try (PreparedStatement delete = connection.prepareStatement("delete from " + table + " where id = ?")) {
             delete.setInt(1, id);
             if (delete.executeUpdate() != 1) {
                 throw new SQLException("Delete did not affect exactly one row");
             }
         }
-        connection.rollback();
+        try (PreparedStatement insert = connection.prepareStatement(
+                "insert into " + table + " (id, category, bucket, quantity, payload) values (?, ?, ?, ?, ?)")) {
+            insert.setInt(1, id);
+            insert.setInt(2, category);
+            insert.setInt(3, bucket);
+            insert.setInt(4, quantity);
+            insert.setString(5, rowPayload);
+            if (insert.executeUpdate() != 1) {
+                throw new SQLException("Reinsert did not affect exactly one row");
+            }
+        }
         return query("select id, quantity from " + table + " where id = ?", id);
+    }
+
+    private void rollbackAfterFailure(Throwable failure) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackFailure) {
+            failure.addSuppressed(rollbackFailure);
+        }
     }
 
     private DelosBenchmarkResult query(String sql, int... parameters) throws SQLException {

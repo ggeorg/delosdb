@@ -48,9 +48,15 @@ public final class DelosJdbcBenchmarkSurfaceValidation {
             throw new SQLException("Unable to reset benchmark database " + databaseName, e);
         }
         try (Connection connection = DriverManager.getConnection("jdbc:derby:" + databaseName + ";create=true")) {
-            DelosJdbcBenchmarkScenario scenario = new DelosJdbcBenchmarkScenario(connection, provider, config);
-            scenario.prepare();
-            return scenario.executeSemanticMatrix();
+            try {
+                DelosJdbcBenchmarkScenario scenario = new DelosJdbcBenchmarkScenario(connection, provider, config);
+                scenario.prepare();
+                return scenario.executeSemanticMatrix();
+            } finally {
+                if (!connection.getAutoCommit()) {
+                    connection.rollback();
+                }
+            }
         }
     }
 
