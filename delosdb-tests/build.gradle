@@ -765,22 +765,20 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkSurfaceValidationTest.class'])
 
 
-tasks.register('runDelosJdbcBenchmarkBaseline', JavaExec) {
-    group = 'verification'
-    description = 'Runs the provider-neutral heap/MVCC JDBC performance baseline and writes JSON, CSV, and text reports.'
-    dependsOn tasks.named('testClasses')
-    classpath = sourceSets.test.runtimeClasspath
-    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcBenchmarkBaseline'
-    workingDir = rootProject.projectDir
-    args '--databaseRoot=' + rootProject.layout.buildDirectory.dir('tmp/delos-jdbc-baseline').get().asFile,
-            '--reportDirectory=' + rootProject.layout.buildDirectory.dir('reports/delosdb/benchmarks').get().asFile,
-            '--rows=' + providers.gradleProperty('delosdb.benchmark.rows').getOrElse('100,1000,10000,100000'),
-            '--payload=' + providers.gradleProperty('delosdb.benchmark.payload').getOrElse('128'),
-            '--batch=' + providers.gradleProperty('delosdb.benchmark.batch').getOrElse('100'),
-            '--warmups=' + providers.gradleProperty('delosdb.benchmark.warmups').getOrElse('2'),
-            '--iterations=' + providers.gradleProperty('delosdb.benchmark.iterations').getOrElse('5'),
-            '--runs=' + providers.gradleProperty('delosdb.benchmark.runs').getOrElse('2')
-}
+registerDelosFocusedTest(
+        'runDelosJdbcBenchmarkBaseline',
+        'Runs the provider-neutral heap/MVCC JDBC performance baseline under the established JUnit runtime.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkBaselineTest.class'],
+        [
+                'delosdb.benchmark.databaseRoot': rootProject.layout.buildDirectory.dir('tmp/delos-jdbc-baseline').get().asFile.absolutePath,
+                'delosdb.benchmark.reportDirectory': rootProject.layout.buildDirectory.dir('reports/delosdb/benchmarks').get().asFile.absolutePath,
+                'delosdb.benchmark.rows': providers.gradleProperty('delosdb.benchmark.rows').getOrElse('100,1000,10000,100000'),
+                'delosdb.benchmark.payload': providers.gradleProperty('delosdb.benchmark.payload').getOrElse('128'),
+                'delosdb.benchmark.batch': providers.gradleProperty('delosdb.benchmark.batch').getOrElse('100'),
+                'delosdb.benchmark.warmups': providers.gradleProperty('delosdb.benchmark.warmups').getOrElse('2'),
+                'delosdb.benchmark.iterations': providers.gradleProperty('delosdb.benchmark.iterations').getOrElse('5'),
+                'delosdb.benchmark.runs': providers.gradleProperty('delosdb.benchmark.runs').getOrElse('2')
+        ])
 
 registerDelosFocusedTest(
         'runDelosMvccSqlIntegrationTest',

@@ -12,24 +12,39 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/** Executable provider-neutral JDBC baseline runner. */
+/** Provider-neutral JDBC baseline measurement engine used by the JUnit benchmark task. */
 public final class DelosJdbcBenchmarkBaseline {
     private static final long SEED = 0x5DE10DBL;
 
     private DelosJdbcBenchmarkBaseline() {
     }
 
-    public static void main(String[] args) throws Exception {
-        Options options = Options.parse(args);
+    public static List<DelosBenchmarkMeasurement> run(
+            Path databaseRoot,
+            Path reportDirectory,
+            List<Integer> rowCounts,
+            int payloadSize,
+            int commitBatchSize,
+            int warmups,
+            int iterations,
+            int runs) throws Exception {
+        Options options = new Options(
+                databaseRoot,
+                reportDirectory,
+                List.copyOf(rowCounts),
+                payloadSize,
+                commitBatchSize,
+                warmups,
+                iterations,
+                runs);
+        options.validate();
         Files.createDirectories(options.reportDirectory());
         deleteRecursively(options.databaseRoot());
 
@@ -51,8 +66,7 @@ public final class DelosJdbcBenchmarkBaseline {
                 .thenComparing(DelosBenchmarkMeasurement::operation)
                 .thenComparingInt(DelosBenchmarkMeasurement::run));
         writeReports(options, measurements);
-        System.out.println("DelosDB JDBC baseline complete: " + measurements.size()
-                + " measurements in " + options.reportDirectory());
+        return List.copyOf(measurements);
     }
 
     private static List<DelosBenchmarkMeasurement> runProvider(
@@ -198,28 +212,16 @@ public final class DelosJdbcBenchmarkBaseline {
             int warmups,
             int iterations,
             int runs) {
-        static Options parse(String[] args) {
-            Map<String, String> values = new java.util.HashMap<>();
-            for (String arg : args) {
-                int separator = arg.indexOf('=');
-                if (!arg.startsWith("--") || separator < 3) {
-                    throw new IllegalArgumentException("Expected --name=value but got " + arg);
-                }
-                values.put(arg.substring(2, separator), arg.substring(separator + 1));
+        void validate() {
+            if (databaseRoot == null || reportDirectory == null) {
+                throw new IllegalArgumentException("Database and report roots are required");
             }
-            String rowsValue = values.getOrDefault("rows", "100,1000,10000,100000");
-            List<Integer> rows = java.util.Arrays.stream(rowsValue.split(","))
-                    .map(String::trim).filter(value -> !value.isEmpty()).map(Integer::parseInt).toList();
-            if (rows.isEmpty()) throw new IllegalArgumentException("At least one row count is required");
-            return new Options(
-                    Path.of(values.getOrDefault("databaseRoot", "build/tmp/delos-jdbc-baseline")),
-                    Path.of(values.getOrDefault("reportDirectory", "build/reports/delosdb/benchmarks")),
-                    rows,
-                    Integer.parseInt(values.getOrDefault("payload", "128")),
-                    Integer.parseInt(values.getOrDefault("batch", "100")),
-                    Integer.parseInt(values.getOrDefault("warmups", "2")),
-                    Integer.parseInt(values.getOrDefault("iterations", "5")),
-                    Integer.parseInt(values.getOrDefault("runs", "2")));
+            if (rowCounts == null || rowCounts.isEmpty() || rowCounts.stream().anyMatch(value -> value == null || value <= 0)) {
+                throw new IllegalArgumentException("Positive row counts are required");
+            }
+            if (payloadSize <= 0 || commitBatchSize <= 0 || warmups < 0 || iterations <= 0 || runs <= 0) {
+                throw new IllegalArgumentException("Benchmark dimensions must be positive and warmups must not be negative");
+            }
         }
     }
 }
