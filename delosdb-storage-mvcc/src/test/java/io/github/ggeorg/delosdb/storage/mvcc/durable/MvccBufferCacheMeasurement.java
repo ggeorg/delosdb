@@ -1,0 +1,56 @@
+package io.github.ggeorg.delosdb.storage.mvcc.durable;
+
+/** One low-level MVCC buffer/cache benchmark measurement. */
+record MvccBufferCacheMeasurement(
+        Workload workload,
+        String replacementPolicy,
+        int cacheCapacity,
+        int pageCount,
+        int measuredOperations,
+        int warmups,
+        int iterations,
+        long elapsedNanos,
+        double throughputPerSecond,
+        double averageLatencyNanos,
+        long checksum,
+        long hits,
+        long misses,
+        double hitRate,
+        long cacheWrites,
+        long evictions,
+        long invalidations,
+        long pins,
+        long unpins,
+        long pinnedPages,
+        long dirtyPages,
+        long flushes,
+        long groupedForceBatches,
+        long groupedForcedPages,
+        long walBeforeFlushChecks,
+        long walBeforeFlushFailures,
+        long pinnedEvictionSkips,
+        long replacementScans,
+        long dirtyProtectionSkips,
+        long noVictimCount,
+        long readAdmissionBypasses,
+        long secondTouchAdmissions,
+        long ghostHistoryPages,
+        long finalCacheSize,
+        long maxObservedCacheSize,
+        long volumeReads,
+        long volumeWrites,
+        long volumeForces,
+        int run) {
+
+    enum Workload {
+        COLD_MISS,
+        WARM_HIT,
+        SEQUENTIAL_WITHIN_CAPACITY,
+        SEQUENTIAL_OVER_CAPACITY,
+        RANDOM_HOT_SET,
+        HOT_SET_AFTER_SCAN,
+        PIN_UNPIN,
+        DIRTY_PRESSURE,
+        WAL_GROUPED_FLUSH
+    }
+}

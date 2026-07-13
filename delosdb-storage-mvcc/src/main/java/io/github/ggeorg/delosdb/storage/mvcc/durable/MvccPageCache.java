@@ -20,12 +20,22 @@ import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolume;
  * consistency checking, and append paths. The cache stores immutable page images
  * and returns a fresh decoded page for every read, which keeps the current
  * mutable {@link DelosPage} API from leaking dirty in-memory page instances.</p>
+ *
+ * <p>Ordinary unpinned reads use second-touch admission once the cache is full.
+ * The first cold miss is served directly and remembered in a bounded ghost
+ * history; a repeated miss is admitted. This prevents one-pass sequential
+ * scans from displacing the resident working set while still allowing a newly
+ * hot page to enter on its second access. Explicit pins and page mutations are
+ * always admitted because their lifecycle must remain cache-owned.</p>
  */
 final class MvccPageCache {
     private static final int DEFAULT_MAX_PAGES = 128;
+    private static final int GHOST_HISTORY_MULTIPLIER = 4;
 
     private final int maxPages;
     private final LinkedHashMap<Long, CachedPage> pages;
+    private final LinkedHashMap<Long, Boolean> bypassedReadPages;
+    private final int ghostHistoryLimit;
     private final MvccBufferReplacementStrategy replacementPolicy;
     private long hits;
     private long misses;
@@ -43,8 +53,11 @@ final class MvccPageCache {
     private long replacementScans;
     private long replacementDirtyProtectionSkips;
     private long replacementNoVictimCount;
+    private long readAdmissionBypasses;
+    private long secondTouchAdmissions;
     private long nextGeneration = 1L;
     private long lastPageGeneration;
+    private boolean noVictimKnown;
 
     MvccPageCache() {
         this(DEFAULT_MAX_PAGES);
@@ -60,30 +73,46 @@ final class MvccPageCache {
         }
         this.maxPages = maxPages;
         this.pages = new LinkedHashMap<>(16, 0.75f, true);
+        this.bypassedReadPages = new LinkedHashMap<>();
+        this.ghostHistoryLimit = Math.multiplyExact(maxPages, GHOST_HISTORY_MULTIPLIER);
         this.replacementPolicy = Objects.requireNonNull(replacementPolicy, "replacementPolicy");
     }
 
     DelosPage read(DelosPageVolume volume, DelosPageId pageId) throws IOException {
-        try (PinnedPage pinned = readPinned(volume, pageId)) {
+        try (PinnedPage pinned = readPinned(volume, pageId, true)) {
             return pinned.page();
         }
     }
 
     synchronized PinnedPage readPinned(DelosPageVolume volume, DelosPageId pageId) throws IOException {
+        return readPinned(volume, pageId, false);
+    }
+
+    private synchronized PinnedPage readPinned(
+            DelosPageVolume volume,
+            DelosPageId pageId,
+            boolean allowAdmissionBypass) throws IOException {
         Objects.requireNonNull(volume, "volume");
         Objects.requireNonNull(pageId, "pageId");
-        CachedPage cached = pages.get(pageId.value());
+        long pageNumber = pageId.value();
+        CachedPage cached = pages.get(pageNumber);
         if (cached != null) {
+            bypassedReadPages.remove(pageNumber);
             hits++;
             cached.pinCount++;
             pins++;
-            return new PinnedPage(pageId.value(), DelosPageIo.decode(cached.bytes, pageId));
+            return new PinnedPage(pageNumber, DelosPageIo.decode(cached.bytes, pageId), true);
         }
         misses++;
         DelosPage page = volume.readPage(pageId);
+        if (allowAdmissionBypass && shouldBypassReadAdmissionUnlocked(pageNumber)) {
+            pins++;
+            return new PinnedPage(pageNumber, page, false);
+        }
+        bypassedReadPages.remove(pageNumber);
         cached = putUnlocked(page, false, true);
         pins++;
-        return new PinnedPage(pageId.value(), page);
+        return new PinnedPage(pageNumber, page, true);
     }
 
     synchronized void put(DelosPage page) {
@@ -108,6 +137,7 @@ final class MvccPageCache {
         volume.writePage(DelosPageIo.decode(cached.bytes, pageId));
         cached.dirty = false;
         flushes++;
+        noVictimKnown = false;
         trimToMaxPagesUnlocked();
     }
 
@@ -134,6 +164,7 @@ final class MvccPageCache {
             }
             volume.writePage(page);
             cached.dirty = false;
+            noVictimKnown = false;
             flushes++;
             flushedPages++;
         }
@@ -159,14 +190,18 @@ final class MvccPageCache {
 
     synchronized void invalidate(DelosPageId pageId) {
         Objects.requireNonNull(pageId, "pageId");
+        bypassedReadPages.remove(pageId.value());
         if (pages.remove(pageId.value()) != null) {
             invalidations++;
+            noVictimKnown = false;
         }
     }
 
     synchronized void clear() {
         invalidations += pages.size();
         pages.clear();
+        bypassedReadPages.clear();
+        noVictimKnown = false;
     }
 
     synchronized Snapshot snapshot() {
@@ -202,12 +237,16 @@ final class MvccPageCache {
                 replacementScans,
                 replacementDirtyProtectionSkips,
                 replacementNoVictimCount,
+                readAdmissionBypasses,
+                secondTouchAdmissions,
+                bypassedReadPages.size(),
                 lastPageGeneration,
                 replacementPolicy.name());
     }
 
     private CachedPage putUnlocked(DelosPage page, boolean dirty, boolean pinned) {
         long pageNumber = page.pageId().value();
+        bypassedReadPages.remove(pageNumber);
         CachedPage cached = pages.get(pageNumber);
         if (cached == null) {
             cached = new CachedPage(page.toBytes(), dirty, nextGeneration++);
@@ -220,29 +259,68 @@ final class MvccPageCache {
         if (pinned) {
             cached.pinCount++;
         }
+        if (!cached.dirty && cached.pinCount == 0) {
+            noVictimKnown = false;
+        }
         lastPageGeneration = cached.generation;
         writes++;
         trimToMaxPagesUnlocked();
         return cached;
     }
 
+    private boolean shouldBypassReadAdmissionUnlocked(long pageNumber) {
+        if (pages.size() < maxPages) {
+            return false;
+        }
+        if (pages.size() == maxPages && bypassedReadPages.remove(pageNumber) != null) {
+            secondTouchAdmissions++;
+            return false;
+        }
+        recordBypassedReadUnlocked(pageNumber);
+        readAdmissionBypasses++;
+        return true;
+    }
+
+    private void recordBypassedReadUnlocked(long pageNumber) {
+        bypassedReadPages.remove(pageNumber);
+        bypassedReadPages.put(pageNumber, Boolean.TRUE);
+        while (bypassedReadPages.size() > ghostHistoryLimit) {
+            Long eldest = bypassedReadPages.keySet().iterator().next();
+            bypassedReadPages.remove(eldest);
+        }
+    }
+
     private void trimToMaxPagesUnlocked() {
         while (pages.size() > maxPages) {
+            // Dirty and pinned pages cannot become evictable until an external
+            // lifecycle event (flush, unpin, invalidate, or clear) occurs. Once
+            // a full policy scan proves that every page is protected, avoid
+            // repeating the same O(n) scan for each additional dirty page.
+            if (noVictimKnown) {
+                replacementNoVictimCount++;
+                return;
+            }
             MvccBufferReplacementPolicy.Decision decision = replacementPolicy.chooseVictim(pages);
             replacementScans += decision.scannedPages();
             pinnedEvictionSkips += decision.pinnedProtectedPages();
             replacementDirtyProtectionSkips += decision.dirtyProtectedPages();
             if (!decision.hasVictim()) {
                 replacementNoVictimCount++;
+                noVictimKnown = true;
                 return;
             }
             if (pages.remove(decision.victimPageNumber()) != null) {
                 evictions++;
+                noVictimKnown = false;
             }
         }
     }
 
-    private synchronized void unpin(long pageNumber) {
+    private synchronized void unpin(long pageNumber, boolean cachedAtAcquire) {
+        unpins++;
+        if (!cachedAtAcquire) {
+            return;
+        }
         CachedPage cached = pages.get(pageNumber);
         if (cached == null) {
             return;
@@ -251,18 +329,22 @@ final class MvccPageCache {
             throw new IllegalStateException("MVCC page cache unpin without matching pin: page " + pageNumber);
         }
         cached.pinCount--;
-        unpins++;
+        if (cached.pinCount == 0) {
+            noVictimKnown = false;
+        }
         trimToMaxPagesUnlocked();
     }
 
     final class PinnedPage implements AutoCloseable {
         private final long pageNumber;
         private final DelosPage page;
+        private final boolean cachedAtAcquire;
         private boolean closed;
 
-        private PinnedPage(long pageNumber, DelosPage page) {
+        private PinnedPage(long pageNumber, DelosPage page, boolean cachedAtAcquire) {
             this.pageNumber = pageNumber;
             this.page = Objects.requireNonNull(page, "page");
+            this.cachedAtAcquire = cachedAtAcquire;
         }
 
         DelosPage page() {
@@ -276,7 +358,7 @@ final class MvccPageCache {
         public void close() {
             if (!closed) {
                 closed = true;
-                MvccPageCache.this.unpin(pageNumber);
+                MvccPageCache.this.unpin(pageNumber, cachedAtAcquire);
             }
         }
     }
@@ -326,6 +408,9 @@ final class MvccPageCache {
             long replacementScans,
             long replacementDirtyProtectionSkips,
             long replacementNoVictimCount,
+            long readAdmissionBypasses,
+            long secondTouchAdmissions,
+            long ghostHistoryPages,
             long lastPageGeneration,
             String replacementPolicyName) {
     }

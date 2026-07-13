@@ -10,12 +10,14 @@ import java.util.Objects;
  * clean and unpinned page in the map is the least-recently-used evictable
  * page. Dirty and pinned pages are protected here; flushing and unpinning are
  * separate lifecycle operations and must happen before replacement can reclaim
- * those entries.</p>
+ * those entries. Read admission is handled by {@link MvccPageCache}: once full,
+ * a first cold miss is bypassed and a second touch is admitted before this LRU
+ * policy chooses a resident victim.</p>
  */
 final class MvccBufferReplacementPolicy implements MvccBufferReplacementStrategy {
     @Override
     public String name() {
-        return "ACCESS_ORDER_LRU";
+        return "ACCESS_ORDER_LRU_SECOND_TOUCH_ADMISSION";
     }
 
     @Override

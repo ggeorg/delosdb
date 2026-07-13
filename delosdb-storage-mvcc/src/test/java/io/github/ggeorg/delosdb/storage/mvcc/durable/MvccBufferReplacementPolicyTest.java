@@ -93,7 +93,88 @@ final class MvccBufferReplacementPolicyTest {
 
         cache.putClean(page);
 
-        assertEquals("ACCESS_ORDER_LRU", cache.snapshot().replacementPolicyName());
+        assertEquals(
+                "ACCESS_ORDER_LRU_SECOND_TOUCH_ADMISSION",
+                cache.snapshot().replacementPolicyName());
+    }
+
+    @Test
+    void firstColdReadAtCapacityIsBypassedAndSecondTouchIsAdmitted() throws Exception {
+        CountingPageVolume volume = new CountingPageVolume();
+        DelosPage page0 = volume.allocatePage(DelosPage.DATA_PAGE_TYPE);
+        DelosPage page1 = volume.allocatePage(DelosPage.DATA_PAGE_TYPE);
+        DelosPage page2 = volume.allocatePage(DelosPage.DATA_PAGE_TYPE);
+        MvccPageCache cache = new MvccPageCache(2);
+
+        cache.read(volume, page0.pageId());
+        cache.read(volume, page1.pageId());
+        cache.read(volume, page2.pageId());
+
+        MvccPageCache.Snapshot afterBypass = cache.snapshot();
+        assertEquals(2L, afterBypass.size());
+        assertEquals(1L, afterBypass.readAdmissionBypasses());
+        assertEquals(0L, afterBypass.secondTouchAdmissions());
+        assertEquals(1L, afterBypass.ghostHistoryPages());
+
+        cache.read(volume, page0.pageId());
+        cache.read(volume, page1.pageId());
+        assertEquals(2L, cache.snapshot().hits());
+
+        cache.read(volume, page2.pageId());
+        MvccPageCache.Snapshot afterAdmission = cache.snapshot();
+        assertEquals(2L, afterAdmission.size());
+        assertEquals(1L, afterAdmission.secondTouchAdmissions());
+        assertEquals(1L, afterAdmission.evictions());
+
+        cache.read(volume, page2.pageId());
+        assertEquals(3L, cache.snapshot().hits());
+    }
+
+    @Test
+    void coldSequentialScanDoesNotEvictResidentPages() throws Exception {
+        CountingPageVolume volume = new CountingPageVolume();
+        for (int page = 0; page < 40; page++) {
+            volume.allocatePage(DelosPage.DATA_PAGE_TYPE);
+        }
+        MvccPageCache cache = new MvccPageCache(8);
+        for (int page = 0; page < 2; page++) {
+            cache.read(volume, new DelosPageId(page));
+        }
+        for (int page = 2; page < 40; page++) {
+            cache.read(volume, new DelosPageId(page));
+        }
+        long hitsBefore = cache.snapshot().hits();
+        long missesBefore = cache.snapshot().misses();
+
+        cache.read(volume, new DelosPageId(0L));
+        cache.read(volume, new DelosPageId(1L));
+
+        MvccPageCache.Snapshot after = cache.snapshot();
+        assertEquals(hitsBefore + 2L, after.hits());
+        assertEquals(missesBefore, after.misses());
+        assertTrue(after.readAdmissionBypasses() > 0L);
+    }
+
+    @Test
+    void knownAllDirtyStateAvoidsRepeatedFullReplacementScans() throws Exception {
+        CountingPageVolume volume = new CountingPageVolume();
+        MvccPageCache cache = new MvccPageCache(8);
+        for (int page = 0; page < 16; page++) {
+            DelosPage dirty = DelosPage.empty(new DelosPageId(page), DelosPage.DATA_PAGE_TYPE);
+            dirty.appendRecord(new byte[] {(byte) page});
+            cache.putDirty(dirty);
+        }
+
+        MvccPageCache.Snapshot pressured = cache.snapshot();
+        assertEquals(16L, pressured.size());
+        assertEquals(16L, pressured.dirtyPages());
+        assertEquals(8L, pressured.replacementNoVictimCount());
+        assertEquals(9L, pressured.replacementScans());
+
+        cache.flushAll(volume);
+        MvccPageCache.Snapshot flushed = cache.snapshot();
+        assertEquals(8L, flushed.size());
+        assertEquals(0L, flushed.dirtyPages());
     }
 
     @Test

@@ -1289,3 +1289,46 @@ tasks.named('assemble') {
 tasks.named('check') {
     dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccRecoveryReplayEngineTest', 'runPageVolumeMvccWriteAheadLogBatchTest', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke', 'runMvccStaticAnalysisHardeningTest', 'runDelosMvccLifecycleProofs'
 }
+
+tasks.register('runDelosMvccBufferCacheBenchmark', Test) {
+    group = 'benchmark'
+    description = 'Runs the low-level MVCC buffer/cache Phase 5.5 baseline.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/MvccBufferCacheBenchmarkTest.class'
+
+    systemProperty 'delosdb.benchmark.bufferCache.reportDirectory',
+            rootProject.layout.buildDirectory.dir('reports/delosdb/benchmarks/buffer-cache').get().asFile.absolutePath
+    systemProperty 'delosdb.benchmark.bufferCache.capacity',
+            providers.gradleProperty('delosdb.benchmark.bufferCache.capacity').getOrElse('128')
+    systemProperty 'delosdb.benchmark.bufferCache.pages',
+            providers.gradleProperty('delosdb.benchmark.bufferCache.pages').getOrElse('768')
+    systemProperty 'delosdb.benchmark.bufferCache.operations',
+            providers.gradleProperty('delosdb.benchmark.bufferCache.operations').getOrElse('20000')
+    systemProperty 'delosdb.benchmark.bufferCache.workloads',
+            providers.gradleProperty('delosdb.benchmark.bufferCache.workloads').getOrElse('')
+    systemProperty 'delosdb.benchmark.bufferCache.warmups',
+            providers.gradleProperty('delosdb.benchmark.bufferCache.warmups').getOrElse('1')
+    systemProperty 'delosdb.benchmark.bufferCache.iterations',
+            providers.gradleProperty('delosdb.benchmark.bufferCache.iterations').getOrElse('1')
+    systemProperty 'delosdb.benchmark.bufferCache.runs',
+            providers.gradleProperty('delosdb.benchmark.bufferCache.runs').getOrElse('2')
+
+    outputs.upToDateWhen { false }
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccBufferCacheBenchmark'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccBufferCacheBenchmark'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccBufferCacheBenchmark'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
