@@ -64,11 +64,7 @@ tasks.named('test', Test) {
     enabled = false
 }
 
-// Compatibility aliases used by existing verification tasks.
-tasks.register('compileDelosDbStorageMvcc') {
-    dependsOn tasks.named('compileJava')
-}
-
+// Shared test-compilation lifecycle used by the named MVCC proof tasks.
 tasks.register('compileDelosDbStorageMvccTests') {
     dependsOn tasks.named('testClasses')
 }

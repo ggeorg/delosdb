@@ -60,8 +60,12 @@ def generatedCommonsInfoResourceDir = layout.buildDirectory.dir('generated/resou
 def generatedCommonsInfoResource = generatedCommonsInfoResourceDir.map {
     it.file('org/apache/derby/info/shared/info.properties')
 }
+def buildNumberProvider = rootProject.ext.buildNumberProvider
+def delosDbVersion = rootProject.ext.delosDbVersion.toString()
 
 tasks.register('generateCommonsInfoProperties') {
+    inputs.property('buildNumber', buildNumberProvider)
+    inputs.property('delosDbVersion', delosDbVersion)
     outputs.file(generatedCommonsInfoResource)
     doLast {
         def target = generatedCommonsInfoResource.get().asFile
@@ -71,11 +75,11 @@ derby.version.major=10
 derby.version.minor=17
 derby.version.maint=1000000
 derby.version.drdamaint=0
-derby.build.number=${rootProject.ext.buildNumberProvider.get()}
+derby.build.number=${buildNumberProvider.get()}
 derby.product.technology.name=DelosDB Shared Utilities
 derby.product.external.name=DelosDB
-derby.product.external.version=${rootProject.ext.delosDbVersion}
-delosdb.version=${rootProject.ext.delosDbVersion}
+derby.product.external.version=${delosDbVersion}
+delosdb.version=${delosDbVersion}
 derby.version.beta=false
 derby.product.vendor=DelosDB Project
 derby.product.file=derbyshared.jar

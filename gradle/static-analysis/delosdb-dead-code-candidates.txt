@@ -1,8 +1,14 @@
 # DelosDB curated dead-code / stale-code candidates.
 # Format: relative/path.java|SymbolName|Reason
-# This list is intentionally reviewed and small. The Gradle task reports textual references only;
-# it does not prove safe deletion by itself because ServiceLoader, reflection, public API, and JPMS
-# exports can keep code alive without simple source references.
-
-delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccDurableIndexStore.java|MvccDurableIndexStore|Audit candidate: durable secondary-index store may be superseded by Derby index maintenance path; confirm before deletion.
-delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccVacuum.java|MvccVacuum|Audit candidate: vacuum behavior moved into page-backed table/store paths; confirm no test/helper entry point depends on this class.
+#
+# Keep this list intentionally small. A row is added only after a concrete
+# deletion hypothesis exists; the Gradle report is evidence, not automatic
+# deletion authority. ServiceLoader, reflection, public API, JPMS exports,
+# durable formats, and test-only compatibility can keep code alive without
+# ordinary production-source references.
+#
+# Phase 6 closeout resolved the previous candidates:
+#   * MvccDurableIndexStore is a compatibility facade used by the durable-index
+#     proof tests.
+#   * MvccVacuum is the coordinator used by durable and concurrent vacuum tests.
+# Neither is dead code, so no active candidate rows remain.

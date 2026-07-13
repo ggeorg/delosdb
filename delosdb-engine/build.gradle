@@ -3,6 +3,19 @@ plugins {
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.file.ArchiveOperations
+import org.gradle.api.file.FileSystemOperations
+import javax.inject.Inject
+import java.nio.file.Files
+
+
+abstract class DelosDbEngineBuildServices {
+    @Inject
+    abstract FileSystemOperations getFileSystemOperations()
+
+    @Inject
+    abstract ArchiveOperations getArchiveOperations()
+}
 
 version = rootProject.version
 group = rootProject.group
@@ -13,10 +26,7 @@ def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def generatedProductInfoResourceDir = layout.buildDirectory.dir('generated/resources/product-info')
 def generatedServiceResourceDir = layout.buildDirectory.dir('generated/resources/services')
 def javaccClasspath = rootProject.files('tools/java/javacc.jar')
-
-def replaceInFile = { File file, Closure<String> transform ->
-    file.text = transform(file.text)
-}
+def engineBuildServices = objects.newInstance(DelosDbEngineBuildServices)
 
 java {
     sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
@@ -58,6 +68,9 @@ dependencies {
     derbyRuntimePatchArtifacts project(path: ':delosdb-storage-bridge', configuration: 'derbyRuntimePatchElements')
 }
 
+def enginePatchFiles = objects.fileCollection().from(configurations.enginePatch)
+def derbyRuntimePatchArtifactFiles = objects.fileCollection().from(configurations.derbyRuntimePatchArtifacts)
+
 sourceSets {
     main {
         java {
@@ -82,22 +95,24 @@ tasks.register('generateSqlParser', JavaExec) {
     workingDir = rootProject.file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile')
     args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'sqlgrammar.jj'
     doFirst {
-        delete outputDir
+        engineBuildServices.fileSystemOperations.delete {
+            delete outputDir
+        }
         outputDir.get().asFile.mkdirs()
     }
     doLast {
         ['CharStream.java', 'ParseException.java', 'Token.java'].each {
-            delete new File(outputDir.get().asFile, it)
+            Files.deleteIfExists(new File(outputDir.get().asFile, it).toPath())
         }
         ['SQLParser.java', 'SQLParserConstants.java', 'SQLParserTokenManager.java', 'TokenMgrError.java'].each {
             def generated = new File(outputDir.get().asFile, it)
             if (generated.exists()) {
-                replaceInFile(generated) { text -> text.replaceAll('(?m)^public (class|interface)', '$1') }
+                generated.text = generated.text.replaceAll('(?m)^public (class|interface)', '$1')
             }
         }
         def parser = new File(outputDir.get().asFile, 'SQLParser.java')
         if (parser.exists()) {
-            replaceInFile(parser) { text -> text.replace('tokenImage', 'SQLParserConstants.tokenImage') }
+            parser.text = parser.text.replace('tokenImage', 'SQLParserConstants.tokenImage')
         }
     }
 }
@@ -105,9 +120,16 @@ tasks.register('generateSqlParser', JavaExec) {
 // Engine owns the embedded-engine runtime resources. Root-level Derby resource
 // tasks still generate messages and JDBC metadata, but they no longer copy the
 // engine's ordinary resources or product-info file into this module's classes.
+def buildNumberProvider = rootProject.ext.buildNumberProvider
+def delosDbVersion = rootProject.ext.delosDbVersion.toString()
+
 def registerProductInfoTask = { String taskName, String resourcePath, String technologyName, String productFile ->
     def outputFile = generatedProductInfoResourceDir.map { it.file(resourcePath) }
     tasks.register(taskName) {
+        inputs.property('buildNumber', buildNumberProvider)
+        inputs.property('delosDbVersion', delosDbVersion)
+        inputs.property('technologyName', technologyName)
+        inputs.property('productFile', productFile)
         outputs.file(outputFile)
         doLast {
             def target = outputFile.get().asFile
@@ -117,11 +139,11 @@ derby.version.major=10
 derby.version.minor=17
 derby.version.maint=1000000
 derby.version.drdamaint=0
-derby.build.number=${rootProject.ext.buildNumberProvider.get()}
+derby.build.number=${buildNumberProvider.get()}
 derby.product.technology.name=${technologyName}
 derby.product.external.name=DelosDB
-derby.product.external.version=${rootProject.ext.delosDbVersion}
-delosdb.version=${rootProject.ext.delosDbVersion}
+derby.product.external.version=${delosDbVersion}
+delosdb.version=${delosDbVersion}
 derby.version.beta=false
 derby.product.vendor=DelosDB Project
 derby.product.file=${productFile}
@@ -148,7 +170,7 @@ tasks.register('generateEngineServiceDescriptor') {
 
 tasks.named('compileJava', JavaCompile) {
     dependsOn tasks.named('generateSqlParser')
-    inputs.files(configurations.enginePatch).withPropertyName('enginePatch')
+    inputs.files(enginePatchFiles).withPropertyName('enginePatch')
     destinationDirectory.set(moduleClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
@@ -156,7 +178,7 @@ tasks.named('compileJava', JavaCompile) {
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
     doFirst {
-        options.compilerArgs.addAll(['--patch-module', "${moduleName}=${configurations.enginePatch.asPath}"])
+        options.compilerArgs.addAll(['--patch-module', "${moduleName}=${enginePatchFiles.asPath}"])
     }
 }
 
@@ -228,18 +250,26 @@ tasks.register('derbyJar', Jar) {
             ':delosdb-storage-derby:processResources',
             ':delosdb-storage-bridge:compileStorageBridge',
             ':delosdb-storage-bridge:processResources'
-    dependsOn configurations.derbyRuntimePatchArtifacts
+    dependsOn derbyRuntimePatchArtifactFiles
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from moduleClassDir
-    from({ configurations.enginePatch.collect { it.isDirectory() ? it : zipTree(it) } }) {
+    from({
+        enginePatchFiles.collect {
+            it.isDirectory() ? it : engineBuildServices.archiveOperations.zipTree(it)
+        }
+    }) {
         include 'org/apache/derby/iapi/store/types/**'
         include 'org/apache/derby/iapi/store/**'
         exclude 'META-INF/MANIFEST.MF'
         exclude 'module-info.class'
     }
-    from({ configurations.derbyRuntimePatchArtifacts.collect { zipTree(it) } }) {
+    from({
+        derbyRuntimePatchArtifactFiles.collect {
+            engineBuildServices.archiveOperations.zipTree(it)
+        }
+    }) {
         include 'org/apache/derby/impl/store/**'
         include 'META-INF/services/org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider'
         include 'META-INF/services/org.apache.derby.iapi.store.types.StoreRowLocationFactory'

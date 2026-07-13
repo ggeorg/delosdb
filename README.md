@@ -204,7 +204,6 @@ Broader Derby compatibility checks remain useful before a release-style push:
 ./gradlew build
 ./gradlew fullVerification
 ./gradlew derbyRuntimeSmoke
-./gradlew networkServerSmoke
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
 ./gradlew :delosdb-tests:runDelosServerSchedulerTest
 ./gradlew verifyDelosRuntimeStorageProviders
@@ -215,7 +214,6 @@ Broader Derby compatibility checks remain useful before a release-style push:
 ./gradlew delosServerStaticAnalysis
 ./gradlew s0CloseoutVerification
 ./gradlew dist
-./gradlew verifyReleaseDistribution
 ```
 
 ## Gradle subprojects

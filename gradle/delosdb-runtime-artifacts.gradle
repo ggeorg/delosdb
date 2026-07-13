@@ -46,10 +46,6 @@ ext.delosdbRuntimeJars = {
     project.files(project.ext.delosdbRuntimeJarFiles.call(), project.configurations.delosdbAsm)
 }
 
-ext.delosdbExtensionRuntimeJars = {
-    project.ext.delosdbRuntimeJars.call()
-}
-
 ext.delosdbRuntimeBuildTasks = [
         ':delosdb-storage-io:compileDelosDbStorageIo',
         ':delosdb-runtime-api:compileDelosDbRuntimeApi',

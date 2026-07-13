@@ -39,11 +39,6 @@ tasks.named('compileJava', JavaCompile) {
     options.compilerArgs.add('-Xlint:deprecation')
 }
 
-// Compatibility alias used by the existing root build and extracted modules.
-tasks.register('compileDelosDbSpi') {
-    dependsOn tasks.named('compileJava')
-}
-
 tasks.named('jar', Jar) {
     archiveFileName = 'delosdb-spi.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')

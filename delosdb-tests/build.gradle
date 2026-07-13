@@ -262,13 +262,6 @@ tasks.named('test', Test) {
     enabled = false
 }
 
-// Compatibility alias used by pptesting and root verification wiring.
-tasks.register('compileDerbyTestsModule') {
-    group = 'verification'
-    description = 'Compatibility alias for compileTestJava.'
-    dependsOn tasks.named('compileTestJava')
-}
-
 tasks.register('generateNativeAuthenticationTestDatabase', JavaExec) {
     group = 'verification'
     description = 'Generates the native-authentication jar database used by inherited Derby lang tests.'

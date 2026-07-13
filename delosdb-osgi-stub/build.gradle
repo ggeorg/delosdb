@@ -35,11 +35,6 @@ tasks.named('compileJava', JavaCompile) {
     options.compilerArgs.add('-Xlint:deprecation')
 }
 
-// Compatibility alias used by the existing root build.
-tasks.register('compileOsgiStubs') {
-    dependsOn tasks.named('compileJava')
-}
-
 def osgiArchiveName = 'osgi-framework-stub.jar'
 
 tasks.named('jar', Jar) {

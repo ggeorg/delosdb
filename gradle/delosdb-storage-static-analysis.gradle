@@ -1500,6 +1500,7 @@ tasks.register('delosCrossEngineConsistencyFrameworkStaticAnalysis') {
 
 def delosOverlayCleanupScriptPatterns = [
         ~/cleanup-overlay-.*\.sh/,
+        ~/cleanup-.*-overlay\.sh/,
         ~/cleanup-stale-gradle-scripts\.sh/
 ]
 

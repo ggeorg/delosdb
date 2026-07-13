@@ -60,7 +60,6 @@ Static closeout gate:
 
 ```sh
 ./gradlew dist
-./gradlew verifyReleaseDistribution
 ```
 
 Runtime jars are emitted under `build/libs/`. Binary distributions are emitted under `build/distributions/`.

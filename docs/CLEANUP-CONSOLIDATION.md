@@ -1,8 +1,10 @@
 # Cleanup and Consolidation Phase
 
-DelosDB has completed the current storage closeout plan. The next phase is cleanup and consolidation: reduce duplication, make module boundaries clearer, and keep verification gates strong while avoiding broad rewrites.
+> **Status:** The Phase 6 build/module closeout is implemented and awaits the final JDK 25 gates. The canonical closeout record is [`PHASE-6-CLOSEOUT.md`](PHASE-6-CLOSEOUT.md). This document remains the historical cleanup policy and execution record.
 
-This phase is intentionally conservative. The goal is to make the existing architecture easier to maintain, not to collapse working boundaries prematurely.
+DelosDB entered this phase after the storage closeout plan to reduce duplication, make module boundaries clearer, and keep verification gates strong while avoiding broad rewrites.
+
+The phase was intentionally conservative. Its goal was to make the existing architecture easier to maintain, not to collapse working boundaries prematurely.
 
 ## Entry criteria
 
