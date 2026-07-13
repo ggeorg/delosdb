@@ -26,8 +26,8 @@ public final class MvccVersionRecordCodec {
     static void encodeInto(MvccVersionRecord record, ByteBuffer buffer) {
         Objects.requireNonNull(record, "record");
         Objects.requireNonNull(buffer, "buffer");
-        byte[] payload = record.payloadBytes();
-        int required = Math.addExact(HEADER_SIZE, payload.length);
+        int payloadLength = record.payloadLength();
+        int required = Math.addExact(HEADER_SIZE, payloadLength);
         if (buffer.remaining() < required) {
             throw new IllegalArgumentException("insufficient target space for MVCC version-record: required "
                     + required + " bytes, found " + buffer.remaining());
@@ -38,14 +38,14 @@ public final class MvccVersionRecordCodec {
         buffer.putShort(FORMAT_VERSION);
         buffer.putShort((short) HEADER_SIZE);
         buffer.putInt(header.flags());
-        buffer.putInt(payload.length);
+        buffer.putInt(payloadLength);
         buffer.putLong(header.rowId().value());
         buffer.putLong(header.versionId().value());
         buffer.putLong(header.previousVersionId().value());
         buffer.putLong(header.createdByTx().value());
         buffer.putLong(header.deletedByTx().value());
         buffer.putLong(header.commitSequence().value());
-        buffer.put(payload);
+        record.writePayloadTo(buffer);
     }
 
     public static MvccVersionRecord decode(byte[] bytes) {

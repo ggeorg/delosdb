@@ -1,5 +1,6 @@
 package io.github.ggeorg.delosdb.storage.mvcc.format;
 
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Objects;
 
@@ -43,13 +44,17 @@ public final class MvccVersionRecord {
         return payload.clone();
     }
 
-    /** Codec-only access to the immutable payload owned by this record. */
-    byte[] payloadBytes() {
-        return payload;
+    /** Writes the immutable record-owned payload without exposing its array. */
+    void writePayloadTo(ByteBuffer target) {
+        Objects.requireNonNull(target, "target").put(payload);
+    }
+
+    int payloadLength() {
+        return payload.length;
     }
 
     public int encodedLength() {
-        return MvccVersionRecordCodec.HEADER_SIZE + payload.length;
+        return Math.addExact(MvccVersionRecordCodec.HEADER_SIZE, payload.length);
     }
 
     @Override

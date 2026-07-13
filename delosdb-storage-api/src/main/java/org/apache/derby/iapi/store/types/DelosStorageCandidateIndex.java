@@ -39,28 +39,28 @@ public interface DelosStorageCandidateIndex {
     Optional<List<Long>> candidateRowIdsFor(int column, String value);
 
     /**
-     * Ordered page-backed lookup for current-committed equality scans.
+     * Atomically verifies that {@code snapshot} still names the current committed
+     * image and derives equality candidates from that same image. Providers must
+     * perform both actions under the same commit-exclusion boundary.
      *
-     * <p>An empty optional means the ordered page store cannot currently answer
-     * this lookup and callers should fall back to the full committed-image scan.
-     * A present empty list means the ordered index answered the lookup and found
-     * no matching row ids.</p>
+     * <p>An empty optional means the provider cannot safely answer the lookup
+     * and callers must use the authoritative MVCC scan. A present empty list
+     * means the current committed index answered and found no matching rows.</p>
      */
-    default Optional<List<Long>> orderedIndexRowIdsFor(int column, String value) {
+    default Optional<List<Long>> orderedIndexRowIdsFor(
+            DelosStorageSnapshot snapshot,
+            int column,
+            String value) {
         return Optional.empty();
     }
 
     /**
-     * Ordered page-backed lookup for current-committed range scans.
-     *
-     * <p>Bounds are typed ordered-index keys using the same key shape as equality lookups.
-     * A {@code null} lower or upper value means the range is unbounded on that
-     * side. An empty optional means the ordered page store cannot currently
-     * answer this range and callers should fall back to the full committed-image scan.
-     * A present empty list means the ordered index answered the range and
-     * found no matching row ids.</p>
+     * Atomically verifies that {@code snapshot} still names the current committed
+     * image and derives range candidates from that same image. Bounds use the
+     * same typed ordered-key envelope as equality lookup; a null bound is open.
      */
     default Optional<List<Long>> orderedIndexRowIdsInRangeFor(
+            DelosStorageSnapshot snapshot,
             int column,
             String lowerValue,
             boolean lowerInclusive,

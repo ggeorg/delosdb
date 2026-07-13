@@ -72,7 +72,7 @@ final class MvccPageCachePinDirtyTest {
             assertEquals(0L, dirty.flushes());
             assertTrue(dirty.lastPageGeneration() > 0L);
 
-            cache.flush(volume, page.pageId());
+            cache.flushAll(volume, new MvccBufferFlushCoordinator());
             MvccPageCache.Snapshot flushed = cache.snapshot();
             assertEquals(0L, flushed.dirtyPages());
             assertEquals(0L, flushed.flushListPages());

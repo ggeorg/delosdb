@@ -58,7 +58,7 @@ final class MvccBufferReplacementPolicyTest {
         assertEquals(1L, protectedDirty.evictions());
         assertTrue(protectedDirty.replacementDirtyProtectionSkips() > 0L);
 
-        cache.flushAll(volume);
+        cache.flushAll(volume, new MvccBufferFlushCoordinator());
         cache.putClean(clean);
         MvccPageCache.Snapshot afterFlush = cache.snapshot();
         assertEquals(1L, afterFlush.size());
@@ -171,7 +171,7 @@ final class MvccBufferReplacementPolicyTest {
         assertEquals(8L, pressured.replacementNoVictimCount());
         assertEquals(9L, pressured.replacementScans());
 
-        cache.flushAll(volume);
+        cache.flushAll(volume, new MvccBufferFlushCoordinator());
         MvccPageCache.Snapshot flushed = cache.snapshot();
         assertEquals(8L, flushed.size());
         assertEquals(0L, flushed.dirtyPages());

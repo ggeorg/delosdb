@@ -47,11 +47,23 @@ public final class DelosStorageTransactionRegistry {
             Object ownerTransaction,
             DelosStorageTable table,
             DelosStorageTransaction transaction) {
-        Writer writer = new Writer(ownerTransaction, table, transaction);
-        for (SavepointMarker marker : savepointsFor(ownerTransaction)) {
-            writer.setSavepoint(marker.name());
+        Object requiredOwner = Objects.requireNonNull(ownerTransaction, "ownerTransaction");
+        DelosStorageTable requiredTable = Objects.requireNonNull(table, "table");
+        DelosStorageTransaction requiredTransaction = Objects.requireNonNull(transaction, "transaction");
+        Writer writer = new Writer(requiredOwner, requiredTable, requiredTransaction);
+        try {
+            for (SavepointMarker marker : savepointsFor(requiredOwner)) {
+                writer.setSavepoint(marker.name());
+            }
+        } catch (RuntimeException | Error registrationFailure) {
+            try {
+                requiredTable.abort(requiredTransaction);
+            } catch (RuntimeException | Error abortFailure) {
+                registrationFailure.addSuppressed(abortFailure);
+            }
+            throw registrationFailure;
         }
-        WRITERS.computeIfAbsent(ownerTransaction, ignored -> new ArrayList<>()).add(writer);
+        WRITERS.computeIfAbsent(requiredOwner, ignored -> new ArrayList<>()).add(writer);
         return writer;
     }
 
@@ -70,14 +82,33 @@ public final class DelosStorageTransactionRegistry {
     }
 
     public static synchronized Reader reader(Object ownerTransaction, DelosStorageTable table) {
+        Object requiredOwner = Objects.requireNonNull(ownerTransaction, "ownerTransaction");
+        DelosStorageTable requiredTable = Objects.requireNonNull(table, "table");
         Map<DelosStorageTable, Reader> readers = READERS.computeIfAbsent(
-                ownerTransaction,
+                requiredOwner,
                 ignored -> new IdentityHashMap<>());
-        return readers.computeIfAbsent(table, ignored -> {
-            DelosStorageTransaction transaction = table.beginReadOnlyTransaction();
-            DelosStorageSnapshot snapshot = table.snapshot(transaction);
-            return new Reader(ownerTransaction, table, transaction, snapshot);
-        });
+        Reader existing = readers.get(requiredTable);
+        if (existing != null) {
+            return existing;
+        }
+
+        DelosStorageTransaction transaction = requiredTable.beginReadOnlyTransaction();
+        try {
+            DelosStorageSnapshot snapshot = requiredTable.snapshot(transaction);
+            Reader created = new Reader(requiredTable, transaction, snapshot);
+            readers.put(requiredTable, created);
+            return created;
+        } catch (RuntimeException | Error creationFailure) {
+            try {
+                requiredTable.abort(transaction);
+            } catch (RuntimeException | Error abortFailure) {
+                creationFailure.addSuppressed(abortFailure);
+            }
+            if (readers.isEmpty()) {
+                READERS.remove(requiredOwner);
+            }
+            throw creationFailure;
+        }
     }
 
     public static synchronized DelosStorageTransaction activeWriterTransaction(
@@ -97,21 +128,57 @@ public final class DelosStorageTransactionRegistry {
 
     public static void commit(Object ownerTransaction) {
         clearSavepoints(ownerTransaction);
-        for (Writer writer : drainWriters(ownerTransaction)) {
-            writer.commit();
+        Throwable failure = null;
+        for (Writer writer : writersFor(ownerTransaction)) {
+            failure = completeParticipant(failure, writer::commit, () -> complete(writer));
         }
-        for (Reader reader : drainReaders(ownerTransaction)) {
-            reader.close();
+        for (Reader reader : readersFor(ownerTransaction)) {
+            failure = completeParticipant(
+                    failure,
+                    reader::close,
+                    () -> completeReader(ownerTransaction, reader));
         }
+        rethrowFailure(failure);
     }
 
     public static void abort(Object ownerTransaction) {
         clearSavepoints(ownerTransaction);
-        for (Writer writer : drainWriters(ownerTransaction)) {
-            writer.abort();
+        Throwable failure = null;
+        for (Writer writer : writersFor(ownerTransaction)) {
+            failure = completeParticipant(failure, writer::abort, () -> complete(writer));
         }
-        for (Reader reader : drainReaders(ownerTransaction)) {
-            reader.close();
+        for (Reader reader : readersFor(ownerTransaction)) {
+            failure = completeParticipant(
+                    failure,
+                    reader::close,
+                    () -> completeReader(ownerTransaction, reader));
+        }
+        rethrowFailure(failure);
+    }
+
+    private static Throwable completeParticipant(
+            Throwable failure,
+            Runnable operation,
+            Runnable removeCompletedParticipant) {
+        try {
+            operation.run();
+            removeCompletedParticipant.run();
+            return failure;
+        } catch (RuntimeException | Error participantFailure) {
+            if (failure == null) {
+                return participantFailure;
+            }
+            failure.addSuppressed(participantFailure);
+            return failure;
+        }
+    }
+
+    private static void rethrowFailure(Throwable failure) {
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+        if (failure instanceof Error errorFailure) {
+            throw errorFailure;
         }
     }
 
@@ -177,14 +244,6 @@ public final class DelosStorageTransactionRegistry {
         SAVEPOINTS.clear();
     }
 
-    private static synchronized List<Writer> drainWriters(Object ownerTransaction) {
-        List<Writer> writers = WRITERS.remove(ownerTransaction);
-        if (writers == null || writers.isEmpty()) {
-            return List.of();
-        }
-        return List.copyOf(writers);
-    }
-
     private static synchronized List<Writer> writersFor(Object ownerTransaction) {
         List<Writer> writers = WRITERS.get(ownerTransaction);
         if (writers == null || writers.isEmpty()) {
@@ -205,12 +264,23 @@ public final class DelosStorageTransactionRegistry {
         SAVEPOINTS.remove(ownerTransaction);
     }
 
-    private static synchronized List<Reader> drainReaders(Object ownerTransaction) {
-        Map<DelosStorageTable, Reader> readers = READERS.remove(ownerTransaction);
+    private static synchronized List<Reader> readersFor(Object ownerTransaction) {
+        Map<DelosStorageTable, Reader> readers = READERS.get(ownerTransaction);
         if (readers == null || readers.isEmpty()) {
             return List.of();
         }
         return List.copyOf(readers.values());
+    }
+
+    private static synchronized void completeReader(Object ownerTransaction, Reader reader) {
+        Map<DelosStorageTable, Reader> readers = READERS.get(ownerTransaction);
+        if (readers == null) {
+            return;
+        }
+        readers.values().removeIf(candidate -> candidate == reader);
+        if (readers.isEmpty()) {
+            READERS.remove(ownerTransaction);
+        }
     }
 
     private static String requireSavepointName(String savepointName) {
@@ -250,20 +320,16 @@ public final class DelosStorageTransactionRegistry {
         return -1;
     }
 
-
     public static final class Reader {
-        private final Object ownerTransaction;
         private final DelosStorageTable table;
         private final DelosStorageTransaction transaction;
         private final DelosStorageSnapshot snapshot;
         private boolean completed;
 
         private Reader(
-                Object ownerTransaction,
                 DelosStorageTable table,
                 DelosStorageTransaction transaction,
                 DelosStorageSnapshot snapshot) {
-            this.ownerTransaction = ownerTransaction;
             this.table = table;
             this.transaction = transaction;
             this.snapshot = snapshot;

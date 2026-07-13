@@ -8,7 +8,6 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -26,16 +25,16 @@ public final class JdbcBenchmarkRowScalingTest extends MvccSqlTestSupport {
     private static final String PREFIX = "delosdb.benchmark.rowScaling.";
 
     public void testProviderNeutralJdbcRowCountScaling() throws Exception {
-        Path databaseRoot = Path.of(requiredProperty(PREFIX + "databaseRoot"));
-        Path reportDirectory = Path.of(requiredProperty(PREFIX + "reportDirectory"));
-        List<Integer> rows = integerListProperty(PREFIX + "rows", "100,1000,10000,100000");
-        List<DelosBenchmarkOperation> operations = operationListProperty(
+        Path databaseRoot = Path.of(JdbcBenchmarkTestProperties.required(PREFIX + "databaseRoot"));
+        Path reportDirectory = Path.of(JdbcBenchmarkTestProperties.required(PREFIX + "reportDirectory"));
+        List<Integer> rows = JdbcBenchmarkTestProperties.integerList(PREFIX + "rows", "100,1000");
+        List<DelosBenchmarkOperation> operations = JdbcBenchmarkTestProperties.operationList(
                 PREFIX + "operations",
                 "PRIMARY_KEY_LOOKUP,SECONDARY_EQUALITY_LOOKUP,COMPOSITE_RANGE_SCAN,FULL_SCAN,AGGREGATE");
-        long targetRowsPerInterval = longProperty(PREFIX + "rowBudget", 100_000L);
-        int maxOperationsPerInterval = integerProperty(PREFIX + "maxOperations", 100);
-        int iterations = integerProperty(PREFIX + "iterations", 1);
-        int runs = integerProperty(PREFIX + "runs", 2);
+        long targetRowsPerInterval = JdbcBenchmarkTestProperties.longValue(PREFIX + "rowBudget", 100_000L);
+        int maxOperationsPerInterval = JdbcBenchmarkTestProperties.integer(PREFIX + "maxOperations", 100);
+        int iterations = JdbcBenchmarkTestProperties.integer(PREFIX + "iterations", 1);
+        int runs = JdbcBenchmarkTestProperties.integer(PREFIX + "runs", 2);
 
         List<DelosBenchmarkRowScalingMeasurement> measurements =
                 DelosJdbcBenchmarkRowScaling.run(
@@ -43,11 +42,11 @@ public final class JdbcBenchmarkRowScalingTest extends MvccSqlTestSupport {
                         reportDirectory,
                         rows,
                         operations,
-                        integerProperty(PREFIX + "payload", 128),
-                        integerProperty(PREFIX + "fixtureBatch", 10_000),
+                        JdbcBenchmarkTestProperties.integer(PREFIX + "payload", 128),
+                        JdbcBenchmarkTestProperties.integer(PREFIX + "fixtureBatch", 10_000),
                         targetRowsPerInterval,
                         maxOperationsPerInterval,
-                        integerProperty(PREFIX + "warmups", 1),
+                        JdbcBenchmarkTestProperties.integer(PREFIX + "warmups", 1),
                         iterations,
                         runs);
 
@@ -138,44 +137,6 @@ public final class JdbcBenchmarkRowScalingTest extends MvccSqlTestSupport {
             int rowCount) {
         long byBudget = targetRowsPerInterval / rowCount;
         return Math.toIntExact(Math.max(1L, Math.min(maxOperationsPerInterval, byBudget)));
-    }
-
-    private static List<Integer> integerListProperty(String key, String fallback) {
-        return Arrays.stream(property(key, fallback).split(","))
-                .map(String::trim)
-                .filter(value -> !value.isEmpty())
-                .map(Integer::parseInt)
-                .distinct()
-                .toList();
-    }
-
-    private static List<DelosBenchmarkOperation> operationListProperty(String key, String fallback) {
-        return Arrays.stream(property(key, fallback).split(","))
-                .map(String::trim)
-                .filter(value -> !value.isEmpty())
-                .map(DelosBenchmarkOperation::valueOf)
-                .distinct()
-                .toList();
-    }
-
-    private static String requiredProperty(String key) {
-        String value = System.getProperty(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Missing required system property " + key);
-        }
-        return value;
-    }
-
-    private static String property(String key, String fallback) {
-        return System.getProperty(key, fallback);
-    }
-
-    private static int integerProperty(String key, int fallback) {
-        return Integer.parseInt(property(key, Integer.toString(fallback)));
-    }
-
-    private static long longProperty(String key, long fallback) {
-        return Long.parseLong(property(key, Long.toString(fallback)));
     }
 
     private record MeasurementKey(

@@ -710,12 +710,14 @@ final class MvccConglomerateState {
         return new MvccRowLocation(rowId);
     }
 
-    synchronized Optional<List<Long>> orderedIndexRowIdsFor(Qualifier[][] qualifiers) {
+    synchronized Optional<List<Long>> orderedIndexRowIdsFor(
+            Qualifier[][] qualifiers,
+            DelosStorageSnapshot snapshot) {
         Optional<ColumnValueKey> key = equalityOrderedIndexKey(qualifiers);
         if (key.isPresent()) {
             ColumnValueKey columnValueKey = key.get();
             return candidateIndex.orderedIndexRowIdsFor(
-                    columnValueKey.column(), columnValueKey.value());
+                    snapshot, columnValueKey.column(), columnValueKey.value());
         }
 
         Optional<ColumnRangeKey> range = rangeOrderedIndexKey(qualifiers);
@@ -728,6 +730,7 @@ final class MvccConglomerateState {
         }
         ColumnRangeKey columnRangeKey = range.get();
         return candidateIndex.orderedIndexRowIdsInRangeFor(
+                snapshot,
                 columnRangeKey.column(),
                 columnRangeKey.lowerValue(),
                 columnRangeKey.lowerInclusive(),

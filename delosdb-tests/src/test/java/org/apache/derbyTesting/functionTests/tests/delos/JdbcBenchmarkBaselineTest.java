@@ -8,7 +8,6 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -27,25 +26,22 @@ public final class JdbcBenchmarkBaselineTest extends MvccSqlTestSupport {
     private static final String PREFIX = "delosdb.benchmark.";
 
     public void testProviderNeutralJdbcPerformanceBaseline() throws Exception {
-        Path databaseRoot = Path.of(requiredProperty(PREFIX + "databaseRoot"));
-        Path reportDirectory = Path.of(requiredProperty(PREFIX + "reportDirectory"));
-        List<Integer> rows = Arrays.stream(property(PREFIX + "rows", "100,1000,10000,100000").split(","))
-                .map(String::trim)
-                .filter(value -> !value.isEmpty())
-                .map(Integer::parseInt)
-                .toList();
-        int readOperationsPerTransaction = integerProperty(PREFIX + "readOperationsPerTransaction", 10);
-        int iterations = integerProperty(PREFIX + "iterations", 5);
-        int runs = integerProperty(PREFIX + "runs", 2);
+        Path databaseRoot = Path.of(JdbcBenchmarkTestProperties.required(PREFIX + "databaseRoot"));
+        Path reportDirectory = Path.of(JdbcBenchmarkTestProperties.required(PREFIX + "reportDirectory"));
+        List<Integer> rows = JdbcBenchmarkTestProperties.integerList(PREFIX + "rows", "100,1000");
+        int readOperationsPerTransaction = JdbcBenchmarkTestProperties.integer(
+                PREFIX + "readOperationsPerTransaction", 10);
+        int iterations = JdbcBenchmarkTestProperties.integer(PREFIX + "iterations", 5);
+        int runs = JdbcBenchmarkTestProperties.integer(PREFIX + "runs", 2);
 
         List<DelosBenchmarkMeasurement> measurements = DelosJdbcBenchmarkBaseline.run(
                 databaseRoot,
                 reportDirectory,
                 rows,
-                integerProperty(PREFIX + "payload", 128),
-                integerProperty(PREFIX + "batch", 100),
+                JdbcBenchmarkTestProperties.integer(PREFIX + "payload", 128),
+                JdbcBenchmarkTestProperties.integer(PREFIX + "batch", 100),
                 readOperationsPerTransaction,
-                integerProperty(PREFIX + "warmups", 2),
+                JdbcBenchmarkTestProperties.integer(PREFIX + "warmups", 2),
                 iterations,
                 runs);
 
@@ -160,22 +156,6 @@ public final class JdbcBenchmarkBaselineTest extends MvccSqlTestSupport {
         assertTrue(json.contains("\"sampleScope\":"));
         assertTrue(json.contains("\"operationsPerTransaction\":"));
         assertTrue(json.contains("\"measuredUnits\":"));
-    }
-
-    private static String requiredProperty(String key) {
-        String value = System.getProperty(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Missing required system property " + key);
-        }
-        return value;
-    }
-
-    private static String property(String key, String fallback) {
-        return System.getProperty(key, fallback);
-    }
-
-    private static int integerProperty(String key, int fallback) {
-        return Integer.parseInt(property(key, Integer.toString(fallback)));
     }
 
     private record MeasurementKey(

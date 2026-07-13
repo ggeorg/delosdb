@@ -455,19 +455,33 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
-    public Optional<List<Long>> orderedIndexRowIdsFor(int column, String value) {
-        return writeLocked(() -> indexMaintenance.orderedIndexRowIdsFor(column, value));
+    public Optional<List<Long>> orderedIndexRowIdsFor(
+            DelosStorageSnapshot snapshot,
+            int column,
+            String value) {
+        return writeLocked(() -> {
+            if (!canReadCommittedImageUnlocked(snapshot)) {
+                return Optional.empty();
+            }
+            return indexMaintenance.orderedIndexRowIdsFor(column, value);
+        });
     }
 
     @Override
     public Optional<List<Long>> orderedIndexRowIdsInRangeFor(
+            DelosStorageSnapshot snapshot,
             int column,
             String lowerValue,
             boolean lowerInclusive,
             String upperValue,
             boolean upperInclusive) {
-        return writeLocked(() -> indexMaintenance.orderedIndexRowIdsInRangeFor(
-                column, lowerValue, lowerInclusive, upperValue, upperInclusive));
+        return writeLocked(() -> {
+            if (!canReadCommittedImageUnlocked(snapshot)) {
+                return Optional.empty();
+            }
+            return indexMaintenance.orderedIndexRowIdsInRangeFor(
+                    column, lowerValue, lowerInclusive, upperValue, upperInclusive);
+        });
     }
 
     @Override

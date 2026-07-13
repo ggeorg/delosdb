@@ -5,10 +5,10 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -43,6 +43,7 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
     private DelosPageVolume pageVolume;
     private Snapshot snapshot = new Snapshot(0L, List.of());
     private Set<Integer> columnsWithLegacyKeys = Set.of();
+    private Set<Integer> columnsWithOversizedKeys = Set.of();
     private long snapshotLoadCount;
     private long rebuildCount;
 
@@ -53,11 +54,25 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
     }
 
     public static MvccOrderedIndexPageStore open(Path path) throws IOException {
+        return open(path, FILE_VOLUME_FACTORY);
+    }
+
+    static MvccOrderedIndexPageStore open(Path path, DelosPageVolumeFactory volumeFactory) throws IOException {
         Objects.requireNonNull(path, "path");
+        Objects.requireNonNull(volumeFactory, "volumeFactory");
         MvccOrderedIndexPageStore store = new MvccOrderedIndexPageStore(
-                path, FILE_VOLUME_FACTORY, FILE_VOLUME_FACTORY.open(path));
-        store.read();
-        return store;
+                path, volumeFactory, volumeFactory.open(path));
+        try {
+            store.read();
+            return store;
+        } catch (IOException | RuntimeException | Error failure) {
+            try {
+                store.close();
+            } catch (IOException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+            throw failure;
+        }
     }
 
     public synchronized Path path() {
@@ -70,14 +85,63 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
 
     public synchronized void rewrite(List<Entry> entries) throws IOException {
         List<Entry> sorted = sorted(entries);
-        pageVolume.close();
-        Files.deleteIfExists(path);
-        pageVolume = volumeFactory.open(path);
-        for (Entry entry : sorted) {
-            appendEncoded(encode(entry));
+        Path replacementPath = createReplacementPath();
+        DelosPageVolume replacement = null;
+        boolean replacementClosed = false;
+        long replacementPageCount = 0L;
+        boolean replacementInstalled = false;
+        try {
+            replacement = volumeFactory.open(replacementPath);
+            for (Entry entry : sorted) {
+                appendEncoded(replacement, encode(entry));
+            }
+            replacementPageCount = replacement.pageCount();
+            replacement.force();
+            replacement.close();
+            replacementClosed = true;
+
+            closeCurrentVolume();
+            try {
+                MvccDurableFiles.moveIntoPlace(replacementPath, path);
+                replacementInstalled = true;
+                MvccDurableFiles.forceParentDirectoryIfSupported(path);
+            } catch (IOException moveFailure) {
+                try {
+                    ensureVolumeOpen();
+                } catch (IOException reopenFailure) {
+                    moveFailure.addSuppressed(reopenFailure);
+                }
+                throw moveFailure;
+            }
+
+            // Publishing the forced replacement and its parent-directory
+            // entry is the durable success boundary. Reopening the file handle
+            // is intentionally lazy: a transient descriptor/open
+            // failure after rename must not report the rewrite as failed even
+            // though the new sidecar is already authoritative on disk.
+            try {
+                pageVolume = volumeFactory.open(path);
+            } catch (IOException reopenFailure) {
+                pageVolume = null;
+            }
+        } catch (IOException | RuntimeException | Error failure) {
+            if (replacement != null && !replacementClosed) {
+                try {
+                    replacement.close();
+                } catch (IOException closeFailure) {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
+            if (!replacementInstalled) {
+                try {
+                    Files.deleteIfExists(replacementPath);
+                } catch (IOException cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+            }
+            throw failure;
         }
-        pageVolume.force();
-        installSnapshot(new Snapshot(pageVolume.pageCount(), sorted));
+        installSnapshot(new Snapshot(replacementPageCount, sorted));
         rebuildCount++;
     }
 
@@ -93,15 +157,15 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
         return loaded;
     }
 
-    public synchronized long pageCount() throws IOException {
+    public synchronized long pageCount() {
         return snapshot.pageCount();
     }
 
-    public synchronized long entryCount() throws IOException {
+    public synchronized long entryCount() {
         return snapshot.entries().size();
     }
 
-    public synchronized int distinctKeyCount() throws IOException {
+    public synchronized int distinctKeyCount() {
         int count = 0;
         Entry previous = null;
         for (Entry entry : snapshot.entries()) {
@@ -115,7 +179,7 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
         return count;
     }
 
-    public synchronized List<Long> rowIdsFor(int column, String key) throws IOException {
+    public synchronized List<Long> rowIdsFor(int column, String key) {
         requireValidColumn(column);
         String normalizedKey = Entry.normalizeKeyForLookup(Objects.requireNonNull(key, "key"));
         requireTypedLookupCompatible(column, OrderedIndexKeyCodec.isEncoded(normalizedKey));
@@ -141,18 +205,19 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
             String lowerKey,
             boolean lowerInclusive,
             String upperKey,
-            boolean upperInclusive) throws IOException {
+            boolean upperInclusive) {
         requireValidColumn(column);
         String normalizedLowerKey = lowerKey == null ? null : Entry.normalizeKeyForLookup(lowerKey);
         String normalizedUpperKey = upperKey == null ? null : Entry.normalizeKeyForLookup(upperKey);
-        if (normalizedLowerKey != null && normalizedUpperKey != null
-                && compareKeys(normalizedLowerKey, normalizedUpperKey) > 0) {
-            return List.of();
-        }
         requireTypedLookupCompatible(
                 column,
                 OrderedIndexKeyCodec.isEncoded(normalizedLowerKey)
                         || OrderedIndexKeyCodec.isEncoded(normalizedUpperKey));
+        requireRangeLookupCompatible(column, normalizedLowerKey, normalizedUpperKey);
+        if (normalizedLowerKey != null && normalizedUpperKey != null
+                && compareKeys(normalizedLowerKey, normalizedUpperKey) > 0) {
+            return List.of();
+        }
 
         List<Entry> entries = snapshot.entries();
         int index = normalizedLowerKey == null
@@ -181,7 +246,7 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
         return rebuildCount;
     }
 
-    public synchronized List<String> entrySummaries() throws IOException {
+    public synchronized List<String> entrySummaries() {
         return snapshot.entries().stream()
                 .map(entry -> "col:" + entry.column() + "|key:" + OrderedIndexKeyCodec.display(entry.key()) + "|row:" + entry.rowId())
                 .toList();
@@ -192,10 +257,11 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
     }
 
     private Snapshot readFromVolume() throws IOException {
+        DelosPageVolume volume = ensureVolumeOpen();
         List<Entry> entries = new ArrayList<>();
-        long count = pageVolume.pageCount();
+        long count = volume.pageCount();
         for (long pageNumber = 0L; pageNumber < count; pageNumber++) {
-            DelosPage page = pageVolume.readPage(new DelosPageId(pageNumber));
+            DelosPage page = volume.readPage(new DelosPageId(pageNumber));
             if (page.pageType() != ORDERED_INDEX_PAGE_TYPE) {
                 throw new IllegalStateException("expected MVCC ordered index page type "
                         + ORDERED_INDEX_PAGE_TYPE + ", got " + page.pageType() + " at page " + pageNumber);
@@ -214,18 +280,36 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
     private void installSnapshot(Snapshot installed) {
         snapshot = Objects.requireNonNull(installed, "installed");
         Set<Integer> legacyColumns = new HashSet<>();
+        Set<Integer> oversizedColumns = new HashSet<>();
         for (Entry entry : installed.entries()) {
-            if (!OrderedIndexKeyCodec.isEncoded(entry.key())) {
+            if (Entry.isOversizedSurrogate(entry.key())) {
+                oversizedColumns.add(entry.column());
+            } else if (!OrderedIndexKeyCodec.isEncoded(entry.key())) {
                 legacyColumns.add(entry.column());
             }
         }
         columnsWithLegacyKeys = Set.copyOf(legacyColumns);
+        columnsWithOversizedKeys = Set.copyOf(oversizedColumns);
     }
 
     private void requireTypedLookupCompatible(int column, boolean typedLookup) {
         if (typedLookup && columnsWithLegacyKeys.contains(column)) {
-            throw new IllegalStateException("ordered index contains legacy untyped keys for column "
-                    + column + "; full committed scan fallback is required");
+            throw new UnsupportedLookupException(
+                    "ordered index contains legacy untyped keys for column "
+                            + column + "; full committed scan fallback is required");
+        }
+    }
+
+    private void requireRangeLookupCompatible(
+            int column,
+            String normalizedLowerKey,
+            String normalizedUpperKey) {
+        if (columnsWithOversizedKeys.contains(column)
+                || Entry.isOversizedSurrogate(normalizedLowerKey)
+                || Entry.isOversizedSurrogate(normalizedUpperKey)) {
+            throw new UnsupportedLookupException(
+                    "ordered index or range bound contains an oversized surrogate key for column "
+                            + column + "; full committed scan fallback is required for range lookup");
         }
     }
 
@@ -270,25 +354,50 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
 
     @Override
     public synchronized void close() throws IOException {
-        pageVolume.close();
+        closeCurrentVolume();
     }
 
-    private void appendEncoded(byte[] encoded) throws IOException {
+    private DelosPageVolume ensureVolumeOpen() throws IOException {
+        if (pageVolume == null) {
+            pageVolume = volumeFactory.open(path);
+        }
+        return pageVolume;
+    }
+
+    private void closeCurrentVolume() throws IOException {
+        DelosPageVolume current = pageVolume;
+        pageVolume = null;
+        if (current != null) {
+            current.close();
+        }
+    }
+
+    private static void appendEncoded(DelosPageVolume volume, byte[] encoded) throws IOException {
         if (encoded.length + SLOT_OVERHEAD_BYTES > maxPayloadBytes()) {
             throw new IllegalArgumentException("ordered MVCC index entry is too large: " + encoded.length);
         }
-        long count = pageVolume.pageCount();
+        long count = volume.pageCount();
         DelosPage page;
         if (count == 0L) {
-            page = pageVolume.allocatePage(ORDERED_INDEX_PAGE_TYPE);
+            page = volume.allocatePage(ORDERED_INDEX_PAGE_TYPE);
         } else {
-            page = pageVolume.readPage(new DelosPageId(count - 1L));
+            page = volume.readPage(new DelosPageId(count - 1L));
             if (page.pageType() != ORDERED_INDEX_PAGE_TYPE || page.freeBytes() < encoded.length + SLOT_OVERHEAD_BYTES) {
-                page = pageVolume.allocatePage(ORDERED_INDEX_PAGE_TYPE);
+                page = volume.allocatePage(ORDERED_INDEX_PAGE_TYPE);
             }
         }
         page.appendRecord(encoded);
-        pageVolume.writePage(page);
+        volume.writePage(page);
+    }
+
+    private Path createReplacementPath() throws IOException {
+        Path absolute = path.toAbsolutePath();
+        Path parent = absolute.getParent();
+        if (parent == null) {
+            throw new IOException("ordered MVCC index path has no parent: " + path);
+        }
+        Files.createDirectories(parent);
+        return Files.createTempFile(parent, path.getFileName() + ".rewrite-", ".tmp");
     }
 
     private static byte[] encode(Entry entry) {
@@ -398,6 +507,10 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
                 return normalized;
             }
             return "<oversized:" + keyBytes.length + ":" + sha256Hex(keyBytes) + ">";
+        }
+
+        private static boolean isOversizedSurrogate(String key) {
+            return key != null && key.startsWith("<oversized:") && key.endsWith(">");
         }
 
         private static int encodedLength(int keyLength) {
@@ -553,6 +666,16 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
                         && key.charAt(KIND_OFFSET + 1) == SEPARATOR
                         && Kind.isKnownCode(key.charAt(KIND_OFFSET));
             }
+        }
+    }
+
+
+    /** Signals a valid sidecar that cannot safely answer the requested lookup shape. */
+    public static final class UnsupportedLookupException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        private UnsupportedLookupException(String message) {
+            super(message);
         }
     }
 

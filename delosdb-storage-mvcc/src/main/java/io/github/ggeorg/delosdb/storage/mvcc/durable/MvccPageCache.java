@@ -1,7 +1,9 @@
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -127,65 +129,50 @@ final class MvccPageCache {
         putUnlocked(Objects.requireNonNull(page, "page"), true, false);
     }
 
-    synchronized void flush(DelosPageVolume volume, DelosPageId pageId) throws IOException {
-        Objects.requireNonNull(volume, "volume");
-        Objects.requireNonNull(pageId, "pageId");
-        CachedPage cached = pages.get(pageId.value());
-        if (cached == null || !cached.dirty) {
-            return;
-        }
-        volume.writePage(DelosPageIo.decode(cached.bytes, pageId));
-        cached.dirty = false;
-        flushes++;
-        noVictimKnown = false;
-        trimToMaxPagesUnlocked();
-    }
-
-    synchronized void flushAll(DelosPageVolume volume) throws IOException {
-        flushAll(volume, null);
-    }
-
     synchronized long flushAll(
             DelosPageVolume volume,
             MvccBufferFlushCoordinator flushCoordinator) throws IOException {
         Objects.requireNonNull(volume, "volume");
-        long flushedPages = 0L;
-        long checksBefore = coordinatorSnapshot(flushCoordinator).walBeforeFlushChecks();
-        long failuresBefore = coordinatorSnapshot(flushCoordinator).walBeforeFlushFailures();
-        for (Map.Entry<Long, CachedPage> entry : pages.entrySet()) {
-            CachedPage cached = entry.getValue();
-            if (!cached.dirty) {
-                continue;
-            }
-            DelosPageId pageId = new DelosPageId(entry.getKey());
-            DelosPage page = DelosPageIo.decode(cached.bytes, pageId);
-            if (flushCoordinator != null) {
+        Objects.requireNonNull(flushCoordinator, "flushCoordinator");
+        MvccBufferFlushCoordinator.Snapshot before = flushCoordinator.snapshot();
+        List<FlushCandidate> candidates = new ArrayList<>();
+        try {
+            for (Map.Entry<Long, CachedPage> entry : pages.entrySet()) {
+                CachedPage cached = entry.getValue();
+                if (!cached.dirty) {
+                    continue;
+                }
+                DelosPage page = DelosPageIo.decode(cached.bytes, new DelosPageId(entry.getKey()));
                 flushCoordinator.beforePageFlush(page);
+                candidates.add(new FlushCandidate(cached, page));
             }
-            volume.writePage(page);
-            cached.dirty = false;
-            noVictimKnown = false;
-            flushes++;
-            flushedPages++;
-        }
-        if (flushCoordinator != null) {
-            flushCoordinator.forcePageVolumeAfterBatch(volume, flushedPages);
+
+            for (FlushCandidate candidate : candidates) {
+                volume.writePage(candidate.page());
+            }
+            flushCoordinator.forcePageVolumeAfterBatch(volume, candidates.size());
+
+            // A page remains dirty until the complete WAL-checked write batch
+            // and its grouped force boundary succeed. Partial writes are safe
+            // to repeat; prematurely clearing dirty state is not.
+            for (FlushCandidate candidate : candidates) {
+                candidate.cachedPage().dirty = false;
+            }
+            if (!candidates.isEmpty()) {
+                noVictimKnown = false;
+                flushes += candidates.size();
+            }
+            trimToMaxPagesUnlocked();
+            return candidates.size();
+        } finally {
             MvccBufferFlushCoordinator.Snapshot after = flushCoordinator.snapshot();
             groupedForceBatches = after.groupCommitBatches();
             groupedForcedPages = after.groupedPageFlushes();
-            walBeforeFlushChecks += Math.max(0L, after.walBeforeFlushChecks() - checksBefore);
-            walBeforeFlushFailures += Math.max(0L, after.walBeforeFlushFailures() - failuresBefore);
+            walBeforeFlushChecks += Math.max(
+                    0L, after.walBeforeFlushChecks() - before.walBeforeFlushChecks());
+            walBeforeFlushFailures += Math.max(
+                    0L, after.walBeforeFlushFailures() - before.walBeforeFlushFailures());
         }
-        trimToMaxPagesUnlocked();
-        return flushedPages;
-    }
-
-    private static MvccBufferFlushCoordinator.Snapshot coordinatorSnapshot(
-            MvccBufferFlushCoordinator flushCoordinator) {
-        if (flushCoordinator == null) {
-            return new MvccBufferFlushCoordinator.Snapshot(0L, 0L, 0L, 0L, 0L, 0L);
-        }
-        return flushCoordinator.snapshot();
     }
 
     synchronized void invalidate(DelosPageId pageId) {
@@ -360,6 +347,13 @@ final class MvccPageCache {
                 closed = true;
                 MvccPageCache.this.unpin(pageNumber, cachedAtAcquire);
             }
+        }
+    }
+
+    private record FlushCandidate(CachedPage cachedPage, DelosPage page) {
+        private FlushCandidate {
+            Objects.requireNonNull(cachedPage, "cachedPage");
+            Objects.requireNonNull(page, "page");
         }
     }
 

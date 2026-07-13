@@ -8,7 +8,6 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -25,14 +24,14 @@ public final class JdbcBenchmarkTransactionsTest extends MvccSqlTestSupport {
     private static final String PREFIX = "delosdb.benchmark.transactions.";
 
     public void testProviderNeutralExplicitTransactionBaseline() throws Exception {
-        Path databaseRoot = Path.of(requiredProperty(PREFIX + "databaseRoot"));
-        Path reportDirectory = Path.of(requiredProperty(PREFIX + "reportDirectory"));
-        List<Integer> rows = integerListProperty(PREFIX + "rows", "1000");
-        List<Integer> readWidths = integerListProperty(PREFIX + "readWidths", "1,10");
-        List<Integer> writeWidths = integerListProperty(PREFIX + "writeWidths", "1,10");
-        int transactionsPerInterval = integerProperty(PREFIX + "cycles", 10);
-        int iterations = integerProperty(PREFIX + "iterations", 1);
-        int runs = integerProperty(PREFIX + "runs", 2);
+        Path databaseRoot = Path.of(JdbcBenchmarkTestProperties.required(PREFIX + "databaseRoot"));
+        Path reportDirectory = Path.of(JdbcBenchmarkTestProperties.required(PREFIX + "reportDirectory"));
+        List<Integer> rows = JdbcBenchmarkTestProperties.integerList(PREFIX + "rows", "1000");
+        List<Integer> readWidths = JdbcBenchmarkTestProperties.integerList(PREFIX + "readWidths", "1,10");
+        List<Integer> writeWidths = JdbcBenchmarkTestProperties.integerList(PREFIX + "writeWidths", "1,10");
+        int transactionsPerInterval = JdbcBenchmarkTestProperties.integer(PREFIX + "cycles", 10);
+        int iterations = JdbcBenchmarkTestProperties.integer(PREFIX + "iterations", 1);
+        int runs = JdbcBenchmarkTestProperties.integer(PREFIX + "runs", 2);
 
         List<DelosBenchmarkTransactionMeasurement> measurements =
                 DelosJdbcBenchmarkTransactions.run(
@@ -42,9 +41,9 @@ public final class JdbcBenchmarkTransactionsTest extends MvccSqlTestSupport {
                         readWidths,
                         writeWidths,
                         transactionsPerInterval,
-                        integerProperty(PREFIX + "payload", 128),
-                        integerProperty(PREFIX + "fixtureBatch", 100),
-                        integerProperty(PREFIX + "warmups", 1),
+                        JdbcBenchmarkTestProperties.integer(PREFIX + "payload", 128),
+                        JdbcBenchmarkTestProperties.integer(PREFIX + "fixtureBatch", 100),
+                        JdbcBenchmarkTestProperties.integer(PREFIX + "warmups", 1),
                         iterations,
                         runs);
 
@@ -126,31 +125,6 @@ public final class JdbcBenchmarkTransactionsTest extends MvccSqlTestSupport {
                 "Semantic verification/restoration outside timing interval: true"));
         assertTrue(summaryText.contains(
                 "Provider and transaction-shape order alternates by run: true"));
-    }
-
-    private static List<Integer> integerListProperty(String key, String fallback) {
-        return Arrays.stream(property(key, fallback).split(","))
-                .map(String::trim)
-                .filter(value -> !value.isEmpty())
-                .map(Integer::parseInt)
-                .distinct()
-                .toList();
-    }
-
-    private static String requiredProperty(String key) {
-        String value = System.getProperty(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Missing required system property " + key);
-        }
-        return value;
-    }
-
-    private static String property(String key, String fallback) {
-        return System.getProperty(key, fallback);
-    }
-
-    private static int integerProperty(String key, int fallback) {
-        return Integer.parseInt(property(key, Integer.toString(fallback)));
     }
 
     private record MeasurementKey(

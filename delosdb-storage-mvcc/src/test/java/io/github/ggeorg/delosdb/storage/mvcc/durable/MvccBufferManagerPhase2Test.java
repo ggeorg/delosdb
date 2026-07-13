@@ -16,6 +16,14 @@ import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 
 final class MvccBufferManagerPhase2Test {
     @Test
+    void flushRequiresAnExplicitWalCoordinator() {
+        MvccPageCache cache = new MvccPageCache(4);
+        CountingPageVolume volume = new CountingPageVolume();
+
+        assertThrows(NullPointerException.class, () -> cache.flushAll(volume, null));
+    }
+
+    @Test
     void walBeforeFlushRejectsDirtyPageUntilCoveringLogRecordIsForced() throws Exception {
         MvccPageCache cache = new MvccPageCache(4);
         CountingPageVolume volume = new CountingPageVolume();
@@ -63,6 +71,51 @@ final class MvccBufferManagerPhase2Test {
         assertEquals(0L, cacheSnapshot.dirtyPages());
     }
 
+    @Test
+    void midBatchWriteFailureKeepsEveryPageDirtyForACompleteRetry() throws Exception {
+        MvccPageCache cache = new MvccPageCache(4);
+        CountingPageVolume volume = new CountingPageVolume();
+        MvccBufferFlushCoordinator coordinator = new MvccBufferFlushCoordinator();
+        cache.putDirty(dataPage(0L, 2L, (byte) 2));
+        cache.putDirty(dataPage(1L, 3L, (byte) 3));
+        coordinator.recordLogForcedThrough(new DelosLogSequenceNumber(3L));
+        volume.failWriteAttempt = 2L;
+
+        assertThrows(IOException.class, () -> cache.flushAll(volume, coordinator));
+
+        assertEquals(2L, cache.snapshot().dirtyPages(),
+                "a partial page-volume write must not clear any member of the dirty batch");
+        assertEquals(0L, volume.forceCount);
+
+        volume.failWriteAttempt = -1L;
+        assertEquals(2L, cache.flushAll(volume, coordinator));
+        assertEquals(0L, cache.snapshot().dirtyPages());
+        assertEquals(1L, volume.forceCount);
+    }
+
+    @Test
+    void groupedForceFailureKeepsEveryPageDirtyForACompleteRetry() throws Exception {
+        MvccPageCache cache = new MvccPageCache(4);
+        CountingPageVolume volume = new CountingPageVolume();
+        MvccBufferFlushCoordinator coordinator = new MvccBufferFlushCoordinator();
+        cache.putDirty(dataPage(0L, 2L, (byte) 2));
+        cache.putDirty(dataPage(1L, 3L, (byte) 3));
+        coordinator.recordLogForcedThrough(new DelosLogSequenceNumber(3L));
+        volume.failForce = true;
+
+        assertThrows(IOException.class, () -> cache.flushAll(volume, coordinator));
+
+        assertEquals(2L, cache.snapshot().dirtyPages(),
+                "pages are not clean until the grouped force boundary succeeds");
+        assertEquals(0L, coordinator.snapshot().groupCommitBatches());
+
+        volume.failForce = false;
+        assertEquals(2L, cache.flushAll(volume, coordinator));
+        assertEquals(0L, cache.snapshot().dirtyPages());
+        assertEquals(1L, coordinator.snapshot().groupCommitBatches());
+        assertEquals(2L, coordinator.snapshot().groupedPageFlushes());
+    }
+
     private static DelosPage dataPage(long pageId, long pageLsn, byte payload) {
         DelosPage page = DelosPage.empty(new DelosPageId(pageId), DelosPage.DATA_PAGE_TYPE);
         page.appendRecord(new byte[] {payload});
@@ -72,7 +125,10 @@ final class MvccBufferManagerPhase2Test {
     private static final class CountingPageVolume implements DelosPageVolume {
         private final Map<Long, DelosPage> pages = new LinkedHashMap<>();
         private long writeCount;
+        private long writeAttempts;
         private long forceCount;
+        private long failWriteAttempt = -1L;
+        private boolean failForce;
 
         @Override
         public DelosPage readPage(DelosPageId id) {
@@ -84,7 +140,11 @@ final class MvccBufferManagerPhase2Test {
         }
 
         @Override
-        public void writePage(DelosPage page) {
+        public void writePage(DelosPage page) throws IOException {
+            writeAttempts++;
+            if (writeAttempts == failWriteAttempt) {
+                throw new IOException("injected page write failure");
+            }
             pages.put(page.pageId().value(), page);
             writeCount++;
         }
@@ -102,7 +162,10 @@ final class MvccBufferManagerPhase2Test {
         }
 
         @Override
-        public void force() {
+        public void force() throws IOException {
+            if (failForce) {
+                throw new IOException("injected page force failure");
+            }
             forceCount++;
         }
 

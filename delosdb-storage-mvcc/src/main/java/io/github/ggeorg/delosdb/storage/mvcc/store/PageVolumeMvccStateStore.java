@@ -415,36 +415,21 @@ public final class PageVolumeMvccStateStore<T> {
         if (!enabled() || orderedIndexPageStore == null) {
             return 0L;
         }
-        try {
-            return orderedIndexPageStore.pageCount();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read MVCC ordered index page count for "
-                    + orderedIndexPagesFile(), e);
-        }
+        return orderedIndexPageStore.pageCount();
     }
 
     public long orderedIndexEntryCount() {
         if (!enabled() || orderedIndexPageStore == null) {
             return 0L;
         }
-        try {
-            return orderedIndexPageStore.entryCount();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read MVCC ordered index entry count for "
-                    + orderedIndexPagesFile(), e);
-        }
+        return orderedIndexPageStore.entryCount();
     }
 
     public int orderedIndexDistinctKeyCount() {
         if (!enabled() || orderedIndexPageStore == null) {
             return 0;
         }
-        try {
-            return orderedIndexPageStore.distinctKeyCount();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read MVCC ordered index distinct key count for "
-                    + orderedIndexPagesFile(), e);
-        }
+        return orderedIndexPageStore.distinctKeyCount();
     }
 
     public long orderedIndexRebuildCount() {
@@ -455,12 +440,7 @@ public final class PageVolumeMvccStateStore<T> {
         if (!enabled() || orderedIndexPageStore == null) {
             return List.of();
         }
-        try {
-            return orderedIndexPageStore.entrySummaries();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read MVCC ordered index entries for "
-                    + orderedIndexPagesFile(), e);
-        }
+        return orderedIndexPageStore.entrySummaries();
     }
 
     public Optional<List<Long>> orderedIndexRowIdsFor(int column, String key) {
@@ -474,8 +454,8 @@ public final class PageVolumeMvccStateStore<T> {
         }
         try {
             return OrderedIndexLookupResult.answered(orderedIndexPageStore.rowIdsFor(column, key));
-        } catch (IOException | RuntimeException e) {
-            return OrderedIndexLookupResult.fallback(classifyOrderedIndexLookupFailure(e));
+        } catch (MvccOrderedIndexPageStore.UnsupportedLookupException | IllegalArgumentException e) {
+            return OrderedIndexLookupResult.fallback(OrderedIndexLookupFallbackReason.UNSUPPORTED_KEY_OR_TYPE);
         }
     }
 
@@ -501,8 +481,8 @@ public final class PageVolumeMvccStateStore<T> {
         try {
             return OrderedIndexLookupResult.answered(orderedIndexPageStore.rowIdsInRangeFor(
                     column, lowerKey, lowerInclusive, upperKey, upperInclusive));
-        } catch (IOException | RuntimeException e) {
-            return OrderedIndexLookupResult.fallback(classifyOrderedIndexLookupFailure(e));
+        } catch (MvccOrderedIndexPageStore.UnsupportedLookupException | IllegalArgumentException e) {
+            return OrderedIndexLookupResult.fallback(OrderedIndexLookupFallbackReason.UNSUPPORTED_KEY_OR_TYPE);
         }
     }
 
@@ -521,18 +501,6 @@ public final class PageVolumeMvccStateStore<T> {
             return reason;
         }
         return null;
-    }
-
-    private OrderedIndexLookupFallbackReason classifyOrderedIndexLookupFailure(Throwable failure) {
-        String message = failure.getMessage();
-        if (message != null && message.contains("legacy untyped keys")) {
-            return OrderedIndexLookupFallbackReason.UNSUPPORTED_KEY_OR_TYPE;
-        }
-        Path path = orderedIndexPagesFile();
-        if (path == null || !Files.exists(path)) {
-            return OrderedIndexLookupFallbackReason.STALE_OR_MISSING_ORDERED_INDEX_SIDECAR;
-        }
-        return OrderedIndexLookupFallbackReason.MALFORMED_ORDERED_INDEX_SIDECAR;
     }
 
     public long pageCacheMaxPageCount() {

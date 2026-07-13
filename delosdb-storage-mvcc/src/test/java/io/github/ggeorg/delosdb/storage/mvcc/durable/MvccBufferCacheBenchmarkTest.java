@@ -14,13 +14,14 @@ final class MvccBufferCacheBenchmarkTest {
     @Test
     void recordsConfiguredBufferCacheBaseline() throws Exception {
         MvccBufferCacheBenchmark.Options options = new MvccBufferCacheBenchmark.Options(
-                Path.of(requiredProperty("delosdb.benchmark.bufferCache.reportDirectory")),
-                intProperty("delosdb.benchmark.bufferCache.capacity", 128),
-                intProperty("delosdb.benchmark.bufferCache.pages", 768),
-                intProperty("delosdb.benchmark.bufferCache.operations", 20_000),
-                intProperty("delosdb.benchmark.bufferCache.warmups", 1),
-                intProperty("delosdb.benchmark.bufferCache.iterations", 1),
-                intProperty("delosdb.benchmark.bufferCache.runs", 2),
+                Path.of(MvccBenchmarkTestProperties.required(
+                        "delosdb.benchmark.bufferCache.reportDirectory")),
+                MvccBenchmarkTestProperties.integer("delosdb.benchmark.bufferCache.capacity", 128),
+                MvccBenchmarkTestProperties.integer("delosdb.benchmark.bufferCache.pages", 768),
+                MvccBenchmarkTestProperties.integer("delosdb.benchmark.bufferCache.operations", 20_000),
+                MvccBenchmarkTestProperties.integer("delosdb.benchmark.bufferCache.warmups", 1),
+                MvccBenchmarkTestProperties.integer("delosdb.benchmark.bufferCache.iterations", 1),
+                MvccBenchmarkTestProperties.integer("delosdb.benchmark.bufferCache.runs", 2),
                 workloadsProperty());
 
         List<MvccBufferCacheMeasurement> measurements = MvccBufferCacheBenchmark.run(options);
@@ -49,27 +50,10 @@ final class MvccBufferCacheBenchmarkTest {
     }
 
     private static EnumSet<MvccBufferCacheMeasurement.Workload> workloadsProperty() {
-        String configured = System.getProperty("delosdb.benchmark.bufferCache.workloads", "").trim();
-        if (configured.isEmpty()) {
-            return EnumSet.allOf(MvccBufferCacheMeasurement.Workload.class);
-        }
-        EnumSet<MvccBufferCacheMeasurement.Workload> workloads =
-                EnumSet.noneOf(MvccBufferCacheMeasurement.Workload.class);
-        for (String value : configured.split(",")) {
-            workloads.add(MvccBufferCacheMeasurement.Workload.valueOf(value.trim()));
-        }
-        return workloads;
+        return MvccBenchmarkTestProperties.enumSet(
+                "delosdb.benchmark.bufferCache.workloads",
+                MvccBufferCacheMeasurement.Workload.class,
+                EnumSet.allOf(MvccBufferCacheMeasurement.Workload.class));
     }
 
-    private static int intProperty(String name, int defaultValue) {
-        return Integer.parseInt(System.getProperty(name, Integer.toString(defaultValue)));
-    }
-
-    private static String requiredProperty(String name) {
-        String value = System.getProperty(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Missing required system property: " + name);
-        }
-        return value;
-    }
 }

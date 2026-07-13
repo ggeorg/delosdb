@@ -63,9 +63,9 @@ public final class MvccScanController implements ScanManager {
     private final MvccBridgeIsolationPolicy isolationPolicy;
     private final boolean transactionScopedReader;
     private final boolean readerBorrowedFromWriter;
-    private final DelosStorageTransactionRegistry.Reader registeredReader;
     private final DelosStorageTransaction reader;
     private final DelosStorageSnapshot snapshot;
+    private boolean statementReaderClosed;
     private DelosStorageScan scan;
     private final FormatableBitSet scanColumnList;
     private Qualifier[][] qualifiers;
@@ -103,35 +103,59 @@ public final class MvccScanController implements ScanManager {
                 transactionManager,
                 state.table());
         this.transactionScopedReader = isolationPolicy.usesTransactionScopedSnapshot();
-        if (activeWriter != null) {
-            this.readerBorrowedFromWriter = true;
-            this.reader = activeWriter;
-            if (transactionScopedReader) {
-                this.registeredReader = DelosStorageTransactionRegistry.reader(transactionManager, state.table());
-                this.snapshot = state.snapshot(reader, registeredReader.snapshot());
-            } else {
-                this.registeredReader = null;
-                this.snapshot = state.snapshot(reader);
-            }
-        } else {
-            this.readerBorrowedFromWriter = false;
-            if (transactionScopedReader) {
-                this.registeredReader = DelosStorageTransactionRegistry.reader(transactionManager, state.table());
-                this.reader = registeredReader.transaction();
-                this.snapshot = registeredReader.snapshot();
-            } else {
-                this.registeredReader = null;
-                this.reader = state.beginReadOnlyTransaction();
-                this.snapshot = state.snapshot(reader);
-            }
-        }
+        ReaderContext readerContext = openReaderContext(activeWriter);
+        this.readerBorrowedFromWriter = readerContext.borrowedFromWriter();
+        this.reader = readerContext.transaction();
+        this.snapshot = readerContext.snapshot();
         try {
             openPreferredStorageAccess(qualifiers);
         } catch (StandardException e) {
+            cleanupFailedConstruction(e);
             throw new IllegalStateException("Could not open MVCC storage-api scan", e);
+        } catch (RuntimeException e) {
+            cleanupFailedConstruction(e);
+            throw e;
+        } catch (Error e) {
+            cleanupFailedConstruction(e);
+            throw e;
         }
     }
 
+
+    private ReaderContext openReaderContext(DelosStorageTransaction activeWriter) {
+        if (activeWriter != null) {
+            if (transactionScopedReader) {
+                DelosStorageTransactionRegistry.Reader transactionReader =
+                        DelosStorageTransactionRegistry.reader(transactionManager, state.table());
+                return new ReaderContext(
+                        true,
+                        activeWriter,
+                        state.snapshot(activeWriter, transactionReader.snapshot()));
+            }
+            return new ReaderContext(true, activeWriter, state.snapshot(activeWriter));
+        }
+
+        if (transactionScopedReader) {
+            DelosStorageTransactionRegistry.Reader transactionReader =
+                    DelosStorageTransactionRegistry.reader(transactionManager, state.table());
+            return new ReaderContext(
+                    false,
+                    transactionReader.transaction(),
+                    transactionReader.snapshot());
+        }
+
+        DelosStorageTransaction statementReader = state.beginReadOnlyTransaction();
+        try {
+            return new ReaderContext(false, statementReader, state.snapshot(statementReader));
+        } catch (RuntimeException | Error snapshotFailure) {
+            try {
+                state.abort(statementReader);
+            } catch (RuntimeException | Error abortFailure) {
+                snapshotFailure.addSuppressed(abortFailure);
+            }
+            throw snapshotFailure;
+        }
+    }
 
     public MvccConglomerate conglomerate() {
         return conglomerate;
@@ -140,13 +164,7 @@ public final class MvccScanController implements ScanManager {
     @Override
     public void close() {
         if (!closed) {
-            closeStorageScan();
-            closeReaderIfStatementScoped();
-            if (!completeWithDerbyTransaction) {
-                abortWriterIfActive();
-            }
-            closed = true;
-            transactionManager.closeMe(this);
+            closeOwnedResources(false);
         }
     }
 
@@ -154,11 +172,7 @@ public final class MvccScanController implements ScanManager {
     public boolean closeForEndTransaction(boolean closeHeldScan) {
         if (!hold || closeHeldScan) {
             if (!closed) {
-                closeStorageScan();
-                closeReaderIfStatementScoped();
-                commitWriterIfActive();
-                closed = true;
-                transactionManager.closeMe(this);
+                closeOwnedResources(true);
             }
             return true;
         }
@@ -513,8 +527,7 @@ public final class MvccScanController implements ScanManager {
             orderedIndexRowIds = null;
             return false;
         }
-        pageBackedCommittedRead = true;
-        Optional<List<Long>> indexedRowIds = state.orderedIndexRowIdsFor(indexQualifiers);
+        Optional<List<Long>> indexedRowIds = state.orderedIndexRowIdsFor(indexQualifiers, snapshot);
         if (indexedRowIds.isEmpty()) {
             if (MvccConglomerateState.hasIndexQualifiers(indexQualifiers)) {
                 DelosStorageAccessDecisionKind rejectedKind = rejectedOrderedIndexDecisionKind(indexQualifiers);
@@ -531,6 +544,7 @@ public final class MvccScanController implements ScanManager {
             orderedIndexRowIds = null;
             return false;
         }
+        pageBackedCommittedRead = true;
         List<Long> rowIds = indexedRowIds.get();
         orderedIndexRowIdScan = true;
         orderedIndexRowIds = rowIds.iterator();
@@ -727,13 +741,64 @@ public final class MvccScanController implements ScanManager {
         }
     }
 
+    private void cleanupFailedConstruction(Throwable failure) {
+        try {
+            closeStorageScan();
+        } catch (RuntimeException | Error cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+        }
+        try {
+            closeReaderIfStatementScoped();
+        } catch (RuntimeException | Error cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+        }
+    }
+
     private void closeReaderIfStatementScoped() {
-        if (readerBorrowedFromWriter) {
+        if (readerBorrowedFromWriter || transactionScopedReader || statementReaderClosed) {
             return;
         }
-        if (!transactionScopedReader) {
-            state.abort(reader);
+        state.abort(reader);
+        statementReaderClosed = true;
+    }
+
+    private void closeOwnedResources(boolean endTransaction) {
+        Throwable failure = null;
+        failure = attemptCleanup(failure, this::closeStorageScan);
+        failure = attemptCleanup(failure, this::closeReaderIfStatementScoped);
+        if (endTransaction) {
+            failure = attemptCleanup(failure, this::commitWriterIfActive);
+        } else if (!completeWithDerbyTransaction) {
+            failure = attemptCleanup(failure, this::abortWriterIfActive);
         }
+        if (failure == null) {
+            failure = attemptCleanup(failure, () -> transactionManager.closeMe(this));
+        }
+        if (failure == null) {
+            closed = true;
+            return;
+        }
+        rethrowCleanupFailure(failure);
+    }
+
+    private static Throwable attemptCleanup(Throwable failure, Runnable cleanup) {
+        try {
+            cleanup.run();
+            return failure;
+        } catch (RuntimeException | Error cleanupFailure) {
+            if (failure == null) {
+                return cleanupFailure;
+            }
+            failure.addSuppressed(cleanupFailure);
+            return failure;
+        }
+    }
+
+    private static void rethrowCleanupFailure(Throwable failure) {
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+        throw (Error) failure;
     }
 
     private DelosStorageTransaction writer() {
@@ -792,6 +857,16 @@ public final class MvccScanController implements ScanManager {
                 state.abort(writer);
             }
             writer = null;
+        }
+    }
+
+    private record ReaderContext(
+            boolean borrowedFromWriter,
+            DelosStorageTransaction transaction,
+            DelosStorageSnapshot snapshot) {
+        private ReaderContext {
+            transaction = java.util.Objects.requireNonNull(transaction, "transaction");
+            snapshot = java.util.Objects.requireNonNull(snapshot, "snapshot");
         }
     }
 

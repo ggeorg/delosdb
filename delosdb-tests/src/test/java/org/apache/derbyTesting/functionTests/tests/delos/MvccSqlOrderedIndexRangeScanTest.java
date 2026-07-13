@@ -22,6 +22,7 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
@@ -199,6 +200,92 @@ public final class MvccSqlOrderedIndexRangeScanTest extends MvccSqlTestSupport {
                     diagnostics.transactionLocalWriteIntentReadCountForTesting(0, containerId) > 0
                             || diagnostics.transactionLocalWriteIntentScanCountForTesting(0, containerId) > 0);
             writer.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+    }
+
+    public void testOversizedOrderedKeysForceRangeFallbackWithoutBreakingEquality() throws Exception {
+        String databaseName = databaseName("mvcc-ordered-index-oversized-range-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table ordered_index_oversized_range_t "
+                    + "(id int primary key, code varchar(20000)) using delos_mvcc");
+            executeUpdate(connection, "insert into ordered_index_oversized_range_t values (1, 'alpha')");
+            String oversized = "middle-" + "x".repeat(12000);
+            try (PreparedStatement insert = connection.prepareStatement(
+                    "insert into ordered_index_oversized_range_t values (?, ?)")) {
+                insert.setInt(1, 2);
+                insert.setString(2, oversized);
+                assertEquals(1, insert.executeUpdate());
+            }
+            connection.commit();
+
+            long containerId = mvccContainerId(connection, "ORDERED_INDEX_OVERSIZED_RANGE_T");
+            long fallbackBefore = diagnostics.orderedIndexFallbackCountForTesting(0, containerId);
+            diagnostics.resetScanCountersForTesting();
+            assertRows(connection,
+                    "select id from ordered_index_oversized_range_t "
+                            + "where code >= 'a' and code <= 'z'",
+                    "1", "2");
+            assertTrue("oversized surrogate keys must reject ordered range narrowing",
+                    diagnostics.orderedIndexFallbackCountForTesting(0, containerId) > fallbackBefore);
+            assertTrue("range fallback must use the authoritative committed full scan",
+                    diagnostics.pageBackedCommittedScanCountForTesting() > 0);
+
+            diagnostics.resetScanCountersForTesting();
+            try (PreparedStatement equality = connection.prepareStatement(
+                    "select id from ordered_index_oversized_range_t where code = ?")) {
+                equality.setString(1, oversized);
+                try (java.sql.ResultSet rows = equality.executeQuery()) {
+                    assertTrue(rows.next());
+                    assertEquals(2, rows.getInt(1));
+                    assertFalse(rows.next());
+                }
+            }
+            assertTrue("exact oversized equality remains safe through its SHA-256 surrogate",
+                    diagnostics.rowIdFastPathReadCountForTesting() > 0);
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+    }
+
+    public void testOversizedQueryBoundForcesRangeFallbackOnNormalIndexEntries() throws Exception {
+        String databaseName = databaseName("mvcc-ordered-index-oversized-bound-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table ordered_index_oversized_bound_t "
+                    + "(id int primary key, code varchar(20000)) using delos_mvcc");
+            executeUpdate(connection, "insert into ordered_index_oversized_bound_t values (1, 'alpha')");
+            executeUpdate(connection, "insert into ordered_index_oversized_bound_t values (2, 'omega')");
+            connection.commit();
+
+            long containerId = mvccContainerId(connection, "ORDERED_INDEX_OVERSIZED_BOUND_T");
+            long fallbackBefore = diagnostics.orderedIndexFallbackCountForTesting(0, containerId);
+            diagnostics.resetScanCountersForTesting();
+            try (PreparedStatement range = connection.prepareStatement(
+                    "select id from ordered_index_oversized_bound_t "
+                            + "where code >= ? and code <= ? order by id")) {
+                range.setString(1, "a");
+                range.setString(2, "z".repeat(12000));
+                try (java.sql.ResultSet rows = range.executeQuery()) {
+                    assertTrue(rows.next());
+                    assertEquals(1, rows.getInt(1));
+                    assertTrue(rows.next());
+                    assertEquals(2, rows.getInt(1));
+                    assertFalse(rows.next());
+                }
+            }
+            assertTrue("an oversized query bound must reject ordered range narrowing",
+                    diagnostics.orderedIndexFallbackCountForTesting(0, containerId) > fallbackBefore);
+            assertTrue("oversized-bound fallback must use the authoritative committed full scan",
+                    diagnostics.pageBackedCommittedScanCountForTesting() > 0);
+            connection.rollback();
         }
 
         shutdownDatabase(databaseName);

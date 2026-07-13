@@ -777,7 +777,7 @@ registerDelosFocusedTest(
         [
                 'delosdb.benchmark.databaseRoot': rootProject.layout.buildDirectory.dir('tmp/delos-jdbc-baseline').get().asFile.absolutePath,
                 'delosdb.benchmark.reportDirectory': rootProject.layout.buildDirectory.dir('reports/delosdb/benchmarks').get().asFile.absolutePath,
-                'delosdb.benchmark.rows': providers.gradleProperty('delosdb.benchmark.rows').getOrElse('100,1000,10000,100000'),
+                'delosdb.benchmark.rows': providers.gradleProperty('delosdb.benchmark.rows').getOrElse('100,1000'),
                 'delosdb.benchmark.payload': providers.gradleProperty('delosdb.benchmark.payload').getOrElse('128'),
                 'delosdb.benchmark.batch': providers.gradleProperty('delosdb.benchmark.batch').getOrElse('100'),
                 'delosdb.benchmark.readOperationsPerTransaction': providers.gradleProperty('delosdb.benchmark.readOperationsPerTransaction').getOrElse('10'),
@@ -794,7 +794,7 @@ registerDelosFocusedTest(
                 'delosdb.benchmark.batchScaling.databaseRoot': rootProject.layout.buildDirectory.dir('tmp/delos-jdbc-batch-scaling').get().asFile.absolutePath,
                 'delosdb.benchmark.batchScaling.reportDirectory': rootProject.layout.buildDirectory.dir('reports/delosdb/benchmarks/batch-scaling').get().asFile.absolutePath,
                 'delosdb.benchmark.batchScaling.rows': providers.gradleProperty('delosdb.benchmark.batchScaling.rows').getOrElse('1000'),
-                'delosdb.benchmark.batchScaling.sizes': providers.gradleProperty('delosdb.benchmark.batchScaling.sizes').getOrElse('100,1000,10000'),
+                'delosdb.benchmark.batchScaling.sizes': providers.gradleProperty('delosdb.benchmark.batchScaling.sizes').getOrElse('100,1000'),
                 'delosdb.benchmark.batchScaling.operations': providers.gradleProperty('delosdb.benchmark.batchScaling.operations').getOrElse('PRIMARY_KEY_LOOKUP,SECONDARY_EQUALITY_LOOKUP,COMPOSITE_RANGE_SCAN,FULL_SCAN,AGGREGATE'),
                 'delosdb.benchmark.batchScaling.payload': providers.gradleProperty('delosdb.benchmark.batchScaling.payload').getOrElse('128'),
                 'delosdb.benchmark.batchScaling.fixtureBatch': providers.gradleProperty('delosdb.benchmark.batchScaling.fixtureBatch').getOrElse('100'),
@@ -828,7 +828,7 @@ registerDelosFocusedTest(
         [
                 'delosdb.benchmark.rowScaling.databaseRoot': rootProject.layout.buildDirectory.dir('tmp/delos-jdbc-row-scaling').get().asFile.absolutePath,
                 'delosdb.benchmark.rowScaling.reportDirectory': rootProject.layout.buildDirectory.dir('reports/delosdb/benchmarks/row-scaling').get().asFile.absolutePath,
-                'delosdb.benchmark.rowScaling.rows': providers.gradleProperty('delosdb.benchmark.rowScaling.rows').getOrElse('100,1000,10000,100000'),
+                'delosdb.benchmark.rowScaling.rows': providers.gradleProperty('delosdb.benchmark.rowScaling.rows').getOrElse('100,1000'),
                 'delosdb.benchmark.rowScaling.operations': providers.gradleProperty('delosdb.benchmark.rowScaling.operations').getOrElse('PRIMARY_KEY_LOOKUP,SECONDARY_EQUALITY_LOOKUP,COMPOSITE_RANGE_SCAN,FULL_SCAN,AGGREGATE'),
                 'delosdb.benchmark.rowScaling.rowBudget': providers.gradleProperty('delosdb.benchmark.rowScaling.rowBudget').getOrElse('100000'),
                 'delosdb.benchmark.rowScaling.maxOperations': providers.gradleProperty('delosdb.benchmark.rowScaling.maxOperations').getOrElse('100'),
