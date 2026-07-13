@@ -74,7 +74,7 @@ public final class DelosStorageTransactionRegistry {
                 ownerTransaction,
                 ignored -> new IdentityHashMap<>());
         return readers.computeIfAbsent(table, ignored -> {
-            DelosStorageTransaction transaction = table.beginTransaction();
+            DelosStorageTransaction transaction = table.beginReadOnlyTransaction();
             DelosStorageSnapshot snapshot = table.snapshot(transaction);
             return new Reader(ownerTransaction, table, transaction, snapshot);
         });

@@ -116,7 +116,9 @@ public final class MvccConglomerateController implements ConglomerateController 
         DelosStorageTransaction activeWriter = DelosStorageTransactionRegistry.activeWriterTransaction(
                 transactionManager,
                 state.table());
-        DelosStorageTransaction reader = activeWriter == null ? state.beginTransaction() : activeWriter;
+        DelosStorageTransaction reader = activeWriter == null
+                ? state.beginReadOnlyTransaction()
+                : activeWriter;
         try {
             DelosStorageSnapshot snapshot = state.snapshot(reader);
             Optional<StoreDataValue[]> visible = readByRowIdFastPathOrSnapshot(

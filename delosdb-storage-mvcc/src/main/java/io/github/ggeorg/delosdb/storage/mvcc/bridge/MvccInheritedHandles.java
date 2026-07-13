@@ -35,13 +35,19 @@ final class MvccInheritedHandles {
 
     static final class Transaction implements DelosStorageTransaction {
         private final MvccTransaction nativeTransaction;
+        private final boolean readOnly;
         private final Map<String, MvccCommandSequence> savepoints = new LinkedHashMap<>();
         private final Map<Long, List<WriteIntent>> writeIntents = new LinkedHashMap<>();
         private final List<WriteIntent> appendedWriteIntents = new ArrayList<>();
         private long nextCommandSequence = 1L;
 
         Transaction(MvccTransaction nativeTransaction) {
+            this(nativeTransaction, false);
+        }
+
+        Transaction(MvccTransaction nativeTransaction, boolean readOnly) {
             this.nativeTransaction = Objects.requireNonNull(nativeTransaction, "nativeTransaction");
+            this.readOnly = readOnly;
         }
 
         @Override
@@ -50,7 +56,12 @@ final class MvccInheritedHandles {
         }
 
         MvccCommandSequence nextCommandSequence() {
+            requireWritable();
             return MvccCommandSequence.of(nextCommandSequence++);
+        }
+
+        boolean readOnly() {
+            return readOnly;
         }
 
         void setSavepoint(String savepointName) {
@@ -189,6 +200,7 @@ final class MvccInheritedHandles {
         }
 
         private void recordWriteIntent(WriteIntent intent) {
+            requireWritable();
             appendedWriteIntents.add(intent);
             writeIntents.computeIfAbsent(intent.rowId(), ignored -> new ArrayList<>()).add(intent);
         }
@@ -203,6 +215,12 @@ final class MvccInheritedHandles {
                 } else if (current.equals(savepointName)) {
                     remove = true;
                 }
+            }
+        }
+
+        private void requireWritable() {
+            if (readOnly) {
+                throw new IllegalStateException("read-only delos_mvcc transaction cannot record writes");
             }
         }
 

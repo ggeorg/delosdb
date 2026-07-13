@@ -121,7 +121,7 @@ public final class MvccScanController implements ScanManager {
                 this.snapshot = registeredReader.snapshot();
             } else {
                 this.registeredReader = null;
-                this.reader = state.beginTransaction();
+                this.reader = state.beginReadOnlyTransaction();
                 this.snapshot = state.snapshot(reader);
             }
         }

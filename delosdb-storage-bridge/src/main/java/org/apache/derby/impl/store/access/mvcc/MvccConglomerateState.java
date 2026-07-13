@@ -91,6 +91,10 @@ final class MvccConglomerateState {
         return table.beginTransaction();
     }
 
+    DelosStorageTransaction beginReadOnlyTransaction() {
+        return table.beginReadOnlyTransaction();
+    }
+
     DelosStorageSnapshot snapshot(DelosStorageTransaction transaction) {
         return table.snapshot(transaction);
     }

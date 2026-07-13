@@ -35,6 +35,18 @@ import org.apache.derby.shared.common.error.StandardException;
 public interface DelosStorageTable extends AutoCloseable {
     DelosStorageTransaction beginTransaction();
 
+    /**
+     * Begin a transaction that is guaranteed not to publish durable row
+     * versions. Providers may use a lighter lifecycle for read-only work while
+     * still retaining the transaction in their active-snapshot accounting.
+     *
+     * <p>The default preserves the existing provider contract. Providers that
+     * distinguish durable writers from transient readers may override it.</p>
+     */
+    default DelosStorageTransaction beginReadOnlyTransaction() {
+        return beginTransaction();
+    }
+
     DelosStorageSnapshot snapshot(DelosStorageTransaction transaction);
 
     /**

@@ -3,6 +3,7 @@ package io.github.ggeorg.delosdb.storage.mvcc.bridge;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 
@@ -13,6 +14,8 @@ import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
 
 /** Proofs the active Derby-facing MVCC storage transaction registry path. */
 final class MvccInheritedTransactionLifecycleTest {
@@ -107,6 +110,31 @@ final class MvccInheritedTransactionLifecycleTest {
         reopened.close();
     }
 
+
+    @Test
+    void registeredReadOnlyTransactionDoesNotGrowDurableStatusJournal() throws Exception {
+        Object writerOwner = new Object();
+        MvccInheritedTable table = table(4, 401);
+        DelosStorageTransaction writer = table.beginTransaction();
+        DelosStorageTransactionRegistry.register(writerOwner, table, writer);
+        table.insert(1L, durableEmptyRow(), writer);
+        DelosStorageTransactionRegistry.commit(writerOwner);
+
+        Path statusFile = PageVolumeMvccPaths.inheritedStoreDirectory(databaseDirectory)
+                .resolve("conglomerate-4-401.txstatus");
+        long statusBytesAfterWriter = Files.size(statusFile);
+
+        Object readerOwner = new Object();
+        DelosStorageTransactionRegistry.Reader reader =
+                DelosStorageTransactionRegistry.reader(readerOwner, table);
+        assertTrue(table.read(1L, reader.snapshot()).isPresent());
+        DelosStorageTransactionRegistry.commit(readerOwner);
+
+        assertEquals(statusBytesAfterWriter, Files.size(statusFile),
+                "read-only registry lifecycle must not force ACTIVE/ABORTED status records");
+        table.close();
+    }
+
     private MvccInheritedTable table(long segmentId, long containerId) {
         return new MvccInheritedTable(segmentId, containerId, databaseDirectory);
     }
@@ -120,7 +148,7 @@ final class MvccInheritedTransactionLifecycleTest {
     }
 
     private static Optional<StoreDataValue[]> read(MvccInheritedTable table, long rowId) {
-        DelosStorageTransaction reader = table.beginTransaction();
+        DelosStorageTransaction reader = table.beginReadOnlyTransaction();
         try {
             return table.read(rowId, table.snapshot(reader));
         } finally {

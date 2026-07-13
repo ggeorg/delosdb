@@ -112,6 +112,16 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public DelosStorageTransaction beginReadOnlyTransaction() {
+        return writeLocked(() -> {
+            MvccInheritedHandles.Transaction transaction =
+                    new MvccInheritedHandles.Transaction(transactions.beginReadOnly(), true);
+            activeTransactions.add(transaction);
+            return transaction;
+        });
+    }
+
+    @Override
     public DelosStorageSnapshot snapshot(DelosStorageTransaction transaction) {
         return readLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
@@ -251,6 +261,9 @@ final class MvccInheritedTable implements DelosStorageTable,
     public void commit(DelosStorageTransaction transaction) {
         durableMutationLocked(() -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+            if (handle.readOnly()) {
+                throw new IllegalStateException("read-only delos_mvcc transaction cannot commit");
+            }
             int committedChangedRows = 0;
             boolean committed = false;
             try {

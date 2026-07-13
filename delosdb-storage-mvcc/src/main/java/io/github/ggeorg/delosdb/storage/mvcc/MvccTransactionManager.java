@@ -19,6 +19,7 @@ import java.util.Set;
  */
 public final class MvccTransactionManager implements MvccTransactionCatalog {
     private long nextTransactionId = 1L;
+    private long nextReadOnlyTransactionId = Long.MAX_VALUE;
     private long currentCommitSequence = 0L;
     private long nextSnapshotLeaseId = 1L;
     private MvccTransactionId compactedTransactionIdThrough = MvccTransactionId.NONE;
@@ -44,7 +45,25 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
         statusStore.recordActive(id);
         activeTransactions.put(id, new TransactionState(
                 new MvccCommitSequence(currentCommitSequence),
-                1L));
+                1L,
+                true));
+        return new MvccTransaction(id);
+    }
+
+    /**
+     * Begin an in-memory read-only transaction. It participates in active
+     * snapshot and vacuum-watermark accounting but never writes transaction
+     * status records because it cannot own durable row versions.
+     */
+    public synchronized MvccTransaction beginReadOnly() {
+        if (nextReadOnlyTransactionId <= nextTransactionId) {
+            throw new IllegalStateException("MVCC read-only transaction id space exhausted");
+        }
+        MvccTransactionId id = new MvccTransactionId(nextReadOnlyTransactionId--);
+        activeTransactions.put(id, new TransactionState(
+                new MvccCommitSequence(currentCommitSequence),
+                1L,
+                false));
         return new MvccTransaction(id);
     }
 
@@ -95,7 +114,10 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
     }
 
     public synchronized MvccCommitSequence commit(MvccTransaction transaction) {
-        requireActive(transaction);
+        TransactionState state = requireActive(transaction);
+        if (!state.durableStatusTracked) {
+            throw new IllegalStateException("read-only MVCC transaction cannot commit: " + transaction.id());
+        }
         MvccCommitSequence sequence = new MvccCommitSequence(currentCommitSequence + 1L);
         statusStore.recordCommitted(transaction.id(), sequence);
         currentCommitSequence = sequence.value();
@@ -106,9 +128,12 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
     }
 
     public synchronized void abort(MvccTransaction transaction) {
-        requireActive(transaction);
-        statusStore.recordAborted(transaction.id());
+        TransactionState state = requireActive(transaction);
         activeTransactions.remove(transaction.id());
+        if (!state.durableStatusTracked) {
+            return;
+        }
+        statusStore.recordAborted(transaction.id());
         retainedOutcomes.put(transaction.id(), TransactionOutcome.aborted());
         compactRetainedOutcomes();
     }
@@ -180,9 +205,11 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
         }
         Map<MvccTransactionId, MvccCapturedVisibility.CapturedTransaction> captured = new LinkedHashMap<>();
         for (Map.Entry<MvccTransactionId, TransactionState> entry : activeTransactions.entrySet()) {
-            captured.put(entry.getKey(), new MvccCapturedVisibility.CapturedTransaction(
-                    MvccTransactionStatus.ACTIVE,
-                    MvccCommitSequence.NONE));
+            if (entry.getValue().durableStatusTracked) {
+                captured.put(entry.getKey(), new MvccCapturedVisibility.CapturedTransaction(
+                        MvccTransactionStatus.ACTIVE,
+                        MvccCommitSequence.NONE));
+            }
         }
         for (Map.Entry<MvccTransactionId, TransactionOutcome> entry : retainedOutcomes.entrySet()) {
             captured.put(entry.getKey(), new MvccCapturedVisibility.CapturedTransaction(
@@ -255,7 +282,12 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
     private MvccSnapshot captureSnapshot(
             MvccTransaction transaction,
             MvccCommandSequence visibleThroughCommand) {
-        Set<MvccTransactionId> active = new LinkedHashSet<>(activeTransactions.keySet());
+        Set<MvccTransactionId> active = new LinkedHashSet<>();
+        for (Map.Entry<MvccTransactionId, TransactionState> entry : activeTransactions.entrySet()) {
+            if (entry.getValue().durableStatusTracked) {
+                active.add(entry.getKey());
+            }
+        }
         active.remove(transaction.id());
         return new MvccSnapshot(
                 transaction.id(),
@@ -326,13 +358,16 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
 
     private static final class TransactionState {
         private final MvccCommitSequence snapshotSequence;
+        private final boolean durableStatusTracked;
         private long nextCommandSequence;
 
         private TransactionState(
                 MvccCommitSequence snapshotSequence,
-                long nextCommandSequence) {
+                long nextCommandSequence,
+                boolean durableStatusTracked) {
             this.snapshotSequence = snapshotSequence;
             this.nextCommandSequence = nextCommandSequence;
+            this.durableStatusTracked = durableStatusTracked;
         }
     }
 
