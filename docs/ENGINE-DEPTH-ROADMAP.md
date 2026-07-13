@@ -581,7 +581,7 @@ Required behavior delivered:
 ```text
 root validation task slots exist for JMH, jcstress, SQLancer, two-sided MVCC workload, and long-reader soak
 JMH/jcstress/SQLancer slots are not wired into S0
-built-in no-dependency MVCC microbenchmark harness records deterministic operation counters
+built-in no-dependency MVCC buffer-workload invariant proof records deterministic operation counters
 built-in concurrency harness stress-validates pin/unpin and dirty flush structures
 two-sided workload harness measures dirty write batching and warm read-path cache hits
 long-reader buffer-pressure harness validates the low-level pin invariant behind long-reader-vs-vacuum soak
@@ -591,7 +591,7 @@ benchmark baselines are invariant/counter reports, not wall-clock correctness as
 Not allowed:
 
 ```text
-no nondeterministic performance benchmark in s0CloseoutVerification
+no wall-clock performance benchmark in s0CloseoutVerification
 no benchmark-only behavior changes
 no SQLancer task that mutates normal developer databases
 no jcstress result treated as optional when concurrency structures are changed
@@ -601,6 +601,7 @@ Tests and validation tasks:
 
 ```text
 ./gradlew delosJmhMicrobenchmarks
+./gradlew -p benchmarks/jmh clean jmh
 ./gradlew delosJcstressConcurrencyValidation
 ./gradlew delosSqlancerMvccValidation
 ./gradlew delosTwoSidedMvccWorkloadBenchmark
@@ -618,6 +619,7 @@ Optional validation tasks:
 
 ```text
 ./gradlew delosJmhMicrobenchmarks
+./gradlew -p benchmarks/jmh clean jmh
 ./gradlew delosJcstressConcurrencyValidation
 ./gradlew delosTwoSidedMvccWorkloadBenchmark
 ./gradlew delosLongReaderVacuumSoak
@@ -627,7 +629,7 @@ Optional validation tasks:
 Implementation note:
 
 ```text
-Phase P adds built-in deterministic validation harnesses first rather than adding external JMH/jcstress/SQLancer dependencies blindly. The root task names are present and kept out of S0. Real external tool integration can replace or wrap these task slots after dependency policy is accepted.
+Phase P established deterministic invariant harnesses and stable root task slots outside S0. The later standalone JMH build now provides executable public-JDBC timing without coupling JMH dependencies to the root build; jcstress and SQLancer remain caller-controlled external lanes.
 ```
 
 Commit message:

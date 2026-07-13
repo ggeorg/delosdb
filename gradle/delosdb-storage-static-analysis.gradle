@@ -5798,8 +5798,8 @@ def delosRunExternalValidationCommand = { String propertyName, String displayNam
 
 tasks.register('delosJmhMicrobenchmarks') {
     group = 'verification'
-    description = 'Runs built-in MVCC microbenchmark validation, or an external JMH command with -Pdelosdb.jmh.command.'
-    dependsOn ':delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation'
+    description = 'Runs deterministic MVCC buffer-workload invariants, then an optional external JMH command supplied with -Pdelosdb.jmh.command.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest'
     doLast {
         if (providers.gradleProperty('delosdb.jmh.command').orNull != null) {
             delosRunExternalValidationCommand('delosdb.jmh.command', 'delosJmhMicrobenchmarks')
@@ -5820,8 +5820,8 @@ tasks.register('delosJcstressConcurrencyValidation') {
 
 tasks.register('delosTwoSidedMvccWorkloadBenchmark') {
     group = 'verification'
-    description = 'Runs built-in two-sided MVCC workload validation, or an external command with -Pdelosdb.twoSided.command.'
-    dependsOn ':delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation'
+    description = 'Runs deterministic two-sided MVCC buffer-workload invariants, then an optional command supplied with -Pdelosdb.twoSided.command.'
+    dependsOn ':delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest'
     doLast {
         if (providers.gradleProperty('delosdb.twoSided.command').orNull != null) {
             delosRunExternalValidationCommand('delosdb.twoSided.command', 'delosTwoSidedMvccWorkloadBenchmark')
@@ -5924,7 +5924,7 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
         }
         def storageMvccBuildText = file('delosdb-storage-mvcc/build.gradle').getText('UTF-8')
         [
-                'runDelosMvccMicrobenchmarkValidation',
+                'runDelosMvccBufferWorkloadInvariantTest',
                 'runDelosMvccConcurrencyValidation',
                 'runDelosMvccLongReaderValidation'
         ].each { taskName ->
@@ -5934,7 +5934,7 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
         }
         def checkSection = storageMvccBuildText.substring(storageMvccBuildText.indexOf("tasks.named('check')"))
         [
-                'runDelosMvccMicrobenchmarkValidation',
+                'runDelosMvccBufferWorkloadInvariantTest',
                 'runDelosMvccConcurrencyValidation',
                 'runDelosMvccLongReaderValidation'
         ].each { taskName ->
@@ -6440,13 +6440,13 @@ def delosExternalValidationToolingFile = file('gradle/static-analysis/delosdb-ex
 
 def delosExternalValidationSpecs = [
         [id: 'R6-JMH', taskName: 'delosJmhMicrobenchmarks', propertyName: 'delosdb.jmh.command',
-         category: 'microbenchmark', builtInTask: ':delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation',
-         reason: 'Focused JMH runs must wrap the existing deterministic MVCC microbenchmark validation instead of replacing the correctness proof.'],
+         category: 'microbenchmark', builtInTask: ':delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest',
+         reason: 'JMH remains an opt-in timing lane and must complement rather than replace deterministic MVCC buffer-workload invariants.'],
         [id: 'R6-JCSTRESS', taskName: 'delosJcstressConcurrencyValidation', propertyName: 'delosdb.jcstress.command',
          category: 'concurrency', builtInTask: ':delosdb-storage-mvcc:runDelosMvccConcurrencyValidation',
          reason: 'Jcstress-style checks must remain opt-in because JMM stress runs are long-running and environment-sensitive.'],
         [id: 'R6-TWO-SIDED', taskName: 'delosTwoSidedMvccWorkloadBenchmark', propertyName: 'delosdb.twoSided.command',
-         category: 'workload', builtInTask: ':delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation',
+         category: 'workload', builtInTask: ':delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest',
          reason: 'Two-sided read/write workload validation must be externally configurable while keeping the built-in no-dependency baseline available.'],
         [id: 'R6-LONG-READER', taskName: 'delosLongReaderVacuumSoak', propertyName: 'delosdb.longReaderSoak.command',
          category: 'soak', builtInTask: ':delosdb-storage-mvcc:runDelosMvccLongReaderValidation',

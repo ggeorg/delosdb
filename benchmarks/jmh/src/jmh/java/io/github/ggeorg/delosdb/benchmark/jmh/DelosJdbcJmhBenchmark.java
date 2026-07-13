@@ -49,12 +49,12 @@ public class DelosJdbcJmhBenchmark {
     }
 
     @Benchmark
-    public long emptyCommit(DelosJdbcJmhState state) throws SQLException {
-        return state.emptyCommit();
+    public long readTransactionCommit(DelosJdbcJmhState state) throws SQLException {
+        return state.readTransactionCommit();
     }
 
     @Benchmark
-    public long emptyRollback(DelosJdbcJmhState state) throws SQLException {
-        return state.emptyRollback();
+    public long readTransactionRollback(DelosJdbcJmhState state) throws SQLException {
+        return state.readTransactionRollback();
     }
 }

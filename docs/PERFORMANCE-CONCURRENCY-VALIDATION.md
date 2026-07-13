@@ -1,31 +1,86 @@
-# DelosDB Performance and Concurrency Validation
+# DelosDB performance and concurrency validation
 
-Phase P turns the engine-depth roadmap into measurable validation without adding
-slow or nondeterministic work to `s0CloseoutVerification`.
+Performance evidence is split into independent lanes. No wall-clock benchmark,
+JMH task, external stress tool, or long-running workload is an S0 dependency.
 
-No Phase P benchmark task is an S0 dependency. S0 only verifies that the harness,
-task slots, and documentation remain present.
+## Deterministic invariant proofs
 
-## Built-in no-dependency validation harnesses
+The MVCC module keeps fast, no-dependency correctness proofs for structures that
+performance work depends on:
 
-The first Phase P slice adds deterministic JVM/JUnit harnesses in
-`delosdb-storage-mvcc`:
+- `MvccBufferWorkloadInvariantTest` verifies dirty-page writes,
+  WAL-before-flush checks, grouped force accounting, and warm-cache hits;
+- `MvccConcurrencyValidationTest` stress-validates pin/unpin balancing and
+  dirty-page flush discipline;
+- `MvccLongReaderBufferPressureValidationTest` proves that a long-reader pin
+  survives cache pressure until it is released.
 
-* `MvccPerformanceValidationTest` records operation counters for a two-sided
-  MVCC workload: dirty page writes, WAL-before-flush checks, grouped force
-  batches, and warm read-path cache hits.
-* `MvccConcurrencyValidationTest` stress-validates pin/unpin balancing and
-  dirty-page flush discipline under concurrent readers/writers.
-* `MvccLongReaderBufferPressureValidationTest` holds a long-reader pin while
-  the cache experiences buffer pressure, proving the low-level pin invariant
-  behind long-reader-vs-vacuum validation.
+These are not wall-clock benchmarks. They assert counters and invariants so the
+results remain deterministic across machines.
 
-These harnesses intentionally avoid wall-clock assertions. They check counters
-and invariants so results stay deterministic across developer machines.
+Run the buffer-workload proof directly:
 
-## Root validation task slots
+```bash
+./gradlew :delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest
+```
 
-The following root tasks are available but are not wired into S0:
+The historical task name remains as a compatibility alias:
+
+```bash
+./gradlew :delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation
+```
+
+## JDBC/JUnit benchmark lanes
+
+The root test module owns deterministic report-producing JDBC workloads:
+
+```text
+runDelosJdbcBenchmarkBaseline
+runDelosJdbcBenchmarkBatchScaling
+runDelosJdbcBenchmarkTransactions
+runDelosJdbcBenchmarkRowScaling
+```
+
+They provide phase isolation, explicit transaction shapes, adaptive row-scaling
+budgets, semantic fingerprints, CSV/JSON summaries, and heap/MVCC comparison.
+They are opt-in and are not correctness gates.
+
+The MVCC module also owns implementation-local deterministic measurement lanes:
+
+```text
+runDelosMvccBufferCacheBenchmark
+runDelosMvccPageCodecBenchmark
+```
+
+Those lanes may access package-local cache and codec implementation types. They
+remain outside the standalone JMH build because exporting a benchmark-only
+production SPI would weaken module boundaries without runtime value.
+
+## Standalone JMH lane
+
+Executable JMH sources live in the independent build under `benchmarks/jmh`.
+The build consumes assembled runtime jars and uses only public JDBC, JDK, and
+JMH APIs. The repository root does not include or evaluate this build.
+
+```bash
+./gradlew jars
+./gradlew -p benchmarks/jmh clean check
+./gradlew -p benchmarks/jmh clean jmh
+```
+
+The JMH matrix covers prepared point/index/range/full-scan/aggregate reads and
+honest one-row read transactions ending in commit or rollback. Every measured
+read checks a deterministic semantic fingerprint. Reports include JSON, human
+output, and a run manifest containing SHA-256 fingerprints of runtime jars and
+benchmark inputs.
+
+The standalone lane is fixed to one thread. Concurrency claims belong to the
+concurrency and jcstress lanes rather than multiple unrelated embedded database
+fixtures.
+
+## Stable root task slots
+
+The following root tasks remain stable opt-in adapters:
 
 ```text
 ./gradlew delosJmhMicrobenchmarks
@@ -35,29 +90,19 @@ The following root tasks are available but are not wired into S0:
 ./gradlew delosSqlancerMvccValidation
 ```
 
-Current mapping:
+`delosJmhMicrobenchmarks` runs the deterministic MVCC buffer-workload invariant
+proof. A CI or release job may additionally supply a caller-owned command through
+`-Pdelosdb.jmh.command`. The executable repository JMH build is normally invoked
+directly with `./gradlew -p benchmarks/jmh jmh`; it is intentionally not wired
+into the root build.
 
-* `delosJmhMicrobenchmarks` runs the built-in deterministic microbenchmark
-  harness. A later slice may replace or wrap it with real JMH once the
-  dependency policy is accepted.
-* `delosJcstressConcurrencyValidation` runs the built-in concurrency harness.
-  A later slice may add real jcstress once the dependency policy is accepted.
-* `delosTwoSidedMvccWorkloadBenchmark` runs the same two-sided workload harness
-  as the current no-dependency benchmark baseline.
-* `delosLongReaderVacuumSoak` runs the built-in long-reader buffer-pressure
-  harness. Full SQL long-reader-vs-vacuum soak remains a future external task.
-* `delosSqlancerMvccValidation` is an explicit external-validation slot. It is
-  not a fake SQLancer run and it is not a success marker by itself.
+## Interpretation rules
 
-## External validation policy
-
-Real JMH, jcstress, and SQLancer integration should be added only when their
-version/dependency policy is accepted and the tasks can be kept outside S0.
-Until then, the built-in harnesses provide deterministic signal for MVCC
-buffer/cache behavior and operation counts.
-
-## What this phase does not claim
-
-This phase does not claim published performance numbers. It creates repeatable
-validation hooks and no-dependency baseline harnesses so later benchmark work can
-produce comparable reports without changing runtime behavior.
+- Benchmark values are evidence, not correctness assertions.
+- No performance threshold belongs in S0.
+- A behavior change requires a separate correctness and compatibility proof.
+- Compare identical JDK, JVM arguments, runtime-jar fingerprints, parameters,
+  and benchmark source fingerprints.
+- Smoke runs establish operability, not publishable confidence intervals.
+- Large row-count experiments must use explicit bounded/adaptive lanes rather
+  than accidental unbounded fixtures.

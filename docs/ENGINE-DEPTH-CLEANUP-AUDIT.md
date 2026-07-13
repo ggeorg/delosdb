@@ -199,7 +199,7 @@ If the cleanup touches MVCC recovery, WAL, buffer, or purge code, also run:
 ```bash
 ./gradlew :delosdb-storage-mvcc:runMvccRecoveryReplayEngineTest
 ./gradlew :delosdb-storage-mvcc:runPageVolumeMvccWriteAheadLogBatchTest
-./gradlew :delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation
+./gradlew :delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest
 ./gradlew :delosdb-storage-mvcc:runDelosMvccConcurrencyValidation
 ./gradlew :delosdb-storage-mvcc:runDelosMvccLongReaderValidation
 ```

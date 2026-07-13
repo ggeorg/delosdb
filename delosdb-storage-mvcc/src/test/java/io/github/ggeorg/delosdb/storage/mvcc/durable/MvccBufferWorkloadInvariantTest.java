@@ -1,3 +1,9 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to you under the Apache License, Version 2.0.
+ */
 package io.github.ggeorg.delosdb.storage.mvcc.durable;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -15,13 +21,13 @@ import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolume;
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 
 /**
- * Phase P built-in performance validation harness.
+ * Deterministic MVCC buffer-workload invariant proof.
  *
- * <p>This is deliberately not a wall-clock benchmark and it is not wired into
- * {@code check}. It records deterministic storage-operation counters that the
- * JMH task slot can later wrap without changing the correctness contract.</p>
+ * <p>This is deliberately not a wall-clock benchmark. It verifies storage-operation
+ * counters and WAL/flush/cache invariants that complement, but are not replaced by,
+ * the standalone JDBC JMH lane.</p>
  */
-final class MvccPerformanceValidationTest {
+final class MvccBufferWorkloadInvariantTest {
     @Test
     void twoSidedWorkloadRecordsWriteBatchAndReadPathCosts() throws Exception {
         int pageCount = 128;

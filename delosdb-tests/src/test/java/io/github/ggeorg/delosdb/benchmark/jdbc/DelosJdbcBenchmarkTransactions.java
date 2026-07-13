@@ -7,11 +7,8 @@
 package io.github.ggeorg.delosdb.benchmark.jdbc;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -64,8 +61,7 @@ public final class DelosJdbcBenchmarkTransactions {
                 iterations,
                 runs);
         options.validate();
-        Files.createDirectories(options.reportDirectory());
-        deleteRecursively(options.databaseRoot());
+        DelosBenchmarkSupport.prepareOutput(options.databaseRoot(), options.reportDirectory());
 
         List<DelosBenchmarkTransactionMeasurement> measurements = new ArrayList<>();
         Map<SemanticKey, Long> expectedSemantics = new HashMap<>();
@@ -114,13 +110,11 @@ public final class DelosJdbcBenchmarkTransactions {
                 + "-" + spec.outcome().name().toLowerCase(Locale.ROOT)
                 + "-w" + spec.operationsPerTransaction()
                 + "-run" + run);
-        deleteRecursively(database);
-        try (Connection connection = DriverManager.getConnection("jdbc:derby:" + database + ";create=true")) {
-            Exception measurementFailure = null;
-            try {
-                DelosJdbcBenchmarkScenario scenario = new DelosJdbcBenchmarkScenario(connection, provider, config);
-                scenario.prepare();
-                try (TransactionWorkload workload = prepareWorkload(connection, scenario, spec)) {
+        return DelosBenchmarkSupport.withFreshEmbeddedDatabase(database, connection -> {
+            DelosJdbcBenchmarkScenario scenario =
+                    new DelosJdbcBenchmarkScenario(connection, provider, config);
+            scenario.prepare();
+            try (TransactionWorkload workload = prepareWorkload(connection, scenario, spec)) {
                     Long warmupSemantic = null;
                     for (int warmup = 0; warmup < options.warmups(); warmup++) {
                         IntervalRun interval = runInterval(
@@ -192,16 +186,8 @@ public final class DelosJdbcBenchmarkTransactions {
                             (double) elapsedNanos / measuredTransactions,
                             measuredSemantic,
                             run);
-                }
-            } catch (Exception failure) {
-                measurementFailure = failure;
-                throw failure;
-            } finally {
-                rollbackOpenConnection(connection, measurementFailure);
             }
-        } finally {
-            deleteRecursively(database);
-        }
+        });
     }
 
     private static IntervalRun runInterval(
@@ -228,7 +214,7 @@ public final class DelosJdbcBenchmarkTransactions {
                     elapsedNanos,
                     mix(mix(executionFingerprint, stateFingerprint), spec.outcome().ordinal()));
         } catch (SQLException | RuntimeException failure) {
-            rollbackAfterFailure(connection, failure);
+            DelosBenchmarkSupport.rollbackAfterFailure(connection, failure);
             throw failure;
         }
     }
@@ -318,38 +304,15 @@ public final class DelosJdbcBenchmarkTransactions {
         return 31L * fingerprint + value;
     }
 
-    private static void rollbackOpenConnection(Connection connection, Throwable measurementFailure)
-            throws SQLException {
-        try {
-            if (!connection.isClosed() && !connection.getAutoCommit()) {
-                connection.rollback();
-            }
-        } catch (SQLException cleanupFailure) {
-            if (measurementFailure != null) {
-                measurementFailure.addSuppressed(cleanupFailure);
-                return;
-            }
-            throw cleanupFailure;
-        }
-    }
-
-    private static void rollbackAfterFailure(Connection connection, Throwable failure) {
-        try {
-            connection.rollback();
-        } catch (SQLException rollbackFailure) {
-            failure.addSuppressed(rollbackFailure);
-        }
-    }
-
     private static void writeReports(
             Options options,
             List<DelosBenchmarkTransactionMeasurement> measurements) throws IOException {
-        Files.writeString(options.reportDirectory().resolve("transaction-results.csv"),
-                csv(measurements), StandardCharsets.UTF_8);
-        Files.writeString(options.reportDirectory().resolve("transaction-results.json"),
-                json(measurements), StandardCharsets.UTF_8);
-        Files.writeString(options.reportDirectory().resolve("transaction-summary.txt"),
-                summary(options, measurements), StandardCharsets.UTF_8);
+        DelosBenchmarkSupport.writeUtf8(options.reportDirectory().resolve("transaction-results.csv"),
+                csv(measurements));
+        DelosBenchmarkSupport.writeUtf8(options.reportDirectory().resolve("transaction-results.json"),
+                json(measurements));
+        DelosBenchmarkSupport.writeUtf8(options.reportDirectory().resolve("transaction-summary.txt"),
+                summary(options, measurements));
     }
 
     private static String csv(List<DelosBenchmarkTransactionMeasurement> values) {
@@ -450,17 +413,6 @@ public final class DelosJdbcBenchmarkTransactions {
                     value.semanticFingerprint()));
         }
         return out.toString();
-    }
-
-    private static void deleteRecursively(Path path) throws IOException {
-        if (!Files.exists(path)) {
-            return;
-        }
-        try (var stream = Files.walk(path)) {
-            for (Path entry : stream.sorted(Comparator.reverseOrder()).toList()) {
-                Files.deleteIfExists(entry);
-            }
-        }
     }
 
     private interface TransactionWorkload extends AutoCloseable {

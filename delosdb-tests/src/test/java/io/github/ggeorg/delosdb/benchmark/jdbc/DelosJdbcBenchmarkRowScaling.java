@@ -7,11 +7,9 @@
 package io.github.ggeorg.delosdb.benchmark.jdbc;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -62,8 +60,7 @@ public final class DelosJdbcBenchmarkRowScaling {
                 iterations,
                 runs);
         options.validate();
-        Files.createDirectories(options.reportDirectory());
-        deleteRecursively(options.databaseRoot());
+        DelosBenchmarkSupport.prepareOutput(options.databaseRoot(), options.reportDirectory());
 
         List<DelosBenchmarkRowScalingMeasurement> measurements = new ArrayList<>();
         Map<SemanticKey, BatchSemantic> expectedSemantics = new HashMap<>();
@@ -102,41 +99,31 @@ public final class DelosJdbcBenchmarkRowScaling {
             Map<SemanticKey, BatchSemantic> expectedSemantics) throws Exception {
         Path database = Path.of(options.databaseRoot() + "-" + provider.id()
                 + "-" + config.rowCount() + "-run" + run);
-        deleteRecursively(database);
-        List<DelosBenchmarkRowScalingMeasurement> result = new ArrayList<>();
-        try (Connection connection = DriverManager.getConnection("jdbc:derby:" + database + ";create=true")) {
-            Exception providerFailure = null;
-            try {
-                DelosJdbcBenchmarkScenario scenario = new DelosJdbcBenchmarkScenario(connection, provider, config);
-                long fixtureStarted = System.nanoTime();
-                scenario.prepare();
-                long fixturePrepareNanos = System.nanoTime() - fixtureStarted;
-                long databaseBytesAfterFixture = directoryBytes(database);
-                int operationsPerInterval = operationsPerInterval(options, config.rowCount());
-                for (DelosBenchmarkOperation operation : operationsForRun(options.operations(), run)) {
-                    result.add(measureOperation(
-                            options,
-                            config,
-                            provider,
-                            run,
-                            expectedSemantics,
-                            connection,
-                            scenario,
-                            operation,
-                            operationsPerInterval,
-                            fixturePrepareNanos,
-                            databaseBytesAfterFixture));
-                }
-            } catch (Exception failure) {
-                providerFailure = failure;
-                throw failure;
-            } finally {
-                rollbackOpenConnection(connection, providerFailure);
+        return DelosBenchmarkSupport.withFreshEmbeddedDatabase(database, connection -> {
+            List<DelosBenchmarkRowScalingMeasurement> result = new ArrayList<>();
+            DelosJdbcBenchmarkScenario scenario =
+                    new DelosJdbcBenchmarkScenario(connection, provider, config);
+            long fixtureStarted = System.nanoTime();
+            scenario.prepare();
+            long fixturePrepareNanos = System.nanoTime() - fixtureStarted;
+            long databaseBytesAfterFixture = directoryBytes(database);
+            int operationsPerInterval = operationsPerInterval(options, config.rowCount());
+            for (DelosBenchmarkOperation operation : operationsForRun(options.operations(), run)) {
+                result.add(measureOperation(
+                        options,
+                        config,
+                        provider,
+                        run,
+                        expectedSemantics,
+                        connection,
+                        scenario,
+                        operation,
+                        operationsPerInterval,
+                        fixturePrepareNanos,
+                        databaseBytesAfterFixture));
             }
-        } finally {
-            deleteRecursively(database);
-        }
-        return List.copyOf(result);
+            return List.copyOf(result);
+        });
     }
 
     private static DelosBenchmarkRowScalingMeasurement measureOperation(
@@ -259,7 +246,7 @@ public final class DelosJdbcBenchmarkRowScaling {
             }
             return new BatchRun(elapsedNanos, fingerprint, last);
         } catch (SQLException | RuntimeException failure) {
-            rollbackAfterFailure(connection, failure);
+            DelosBenchmarkSupport.rollbackAfterFailure(connection, failure);
             throw failure;
         }
     }
@@ -333,38 +320,15 @@ public final class DelosJdbcBenchmarkRowScaling {
         }
     }
 
-    private static void rollbackOpenConnection(Connection connection, Throwable providerFailure)
-            throws SQLException {
-        try {
-            if (!connection.isClosed() && !connection.getAutoCommit()) {
-                connection.rollback();
-            }
-        } catch (SQLException cleanupFailure) {
-            if (providerFailure != null) {
-                providerFailure.addSuppressed(cleanupFailure);
-                return;
-            }
-            throw cleanupFailure;
-        }
-    }
-
-    private static void rollbackAfterFailure(Connection connection, Throwable failure) {
-        try {
-            connection.rollback();
-        } catch (SQLException rollbackFailure) {
-            failure.addSuppressed(rollbackFailure);
-        }
-    }
-
     private static void writeReports(
             Options options,
             List<DelosBenchmarkRowScalingMeasurement> measurements) throws IOException {
-        Files.writeString(options.reportDirectory().resolve("row-scaling-results.csv"),
-                csv(measurements), StandardCharsets.UTF_8);
-        Files.writeString(options.reportDirectory().resolve("row-scaling-results.json"),
-                json(measurements), StandardCharsets.UTF_8);
-        Files.writeString(options.reportDirectory().resolve("row-scaling-summary.txt"),
-                summary(options, measurements), StandardCharsets.UTF_8);
+        DelosBenchmarkSupport.writeUtf8(options.reportDirectory().resolve("row-scaling-results.csv"),
+                csv(measurements));
+        DelosBenchmarkSupport.writeUtf8(options.reportDirectory().resolve("row-scaling-results.json"),
+                json(measurements));
+        DelosBenchmarkSupport.writeUtf8(options.reportDirectory().resolve("row-scaling-summary.txt"),
+                summary(options, measurements));
     }
 
     private static String csv(List<DelosBenchmarkRowScalingMeasurement> values) {
@@ -491,17 +455,6 @@ public final class DelosJdbcBenchmarkRowScaling {
                     value.batchFingerprint()));
         }
         return out.toString();
-    }
-
-    private static void deleteRecursively(Path path) throws IOException {
-        if (!Files.exists(path)) {
-            return;
-        }
-        try (var paths = Files.walk(path)) {
-            for (Path candidate : paths.sorted(Comparator.reverseOrder()).toList()) {
-                Files.deleteIfExists(candidate);
-            }
-        }
     }
 
     private record SemanticKey(

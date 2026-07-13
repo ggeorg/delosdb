@@ -1075,22 +1075,22 @@ tasks.register('runMvccStaticAnalysisHardeningTest', Test) {
 
 
 
-tasks.register('runDelosMvccMicrobenchmarkValidation', Test) {
+tasks.register('runDelosMvccBufferWorkloadInvariantTest', Test) {
     group = 'verification'
-    description = 'Runs Phase P built-in MVCC microbenchmark validation harness without external JMH dependencies.'
+    description = 'Runs deterministic MVCC buffer, WAL-before-flush, and warm-cache workload invariants.'
     dependsOn 'compileDelosDbStorageMvccTests'
 
     useJUnitPlatform()
     testClassesDirs = files(testClassDir)
     classpath = sourceSets.test.runtimeClasspath
-    include '**/MvccPerformanceValidationTest.class'
+    include '**/MvccBufferWorkloadInvariantTest.class'
 
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccMicrobenchmarkValidation'))
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccBufferWorkloadInvariantTest'))
     reports {
         junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccMicrobenchmarkValidation'))
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccBufferWorkloadInvariantTest'))
         html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccMicrobenchmarkValidation'))
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccBufferWorkloadInvariantTest'))
     }
 
     testLogging {
@@ -1098,6 +1098,12 @@ tasks.register('runDelosMvccMicrobenchmarkValidation', Test) {
         exceptionFormat 'full'
         showStandardStreams = true
     }
+}
+
+tasks.register('runDelosMvccMicrobenchmarkValidation') {
+    group = 'verification'
+    description = 'Compatibility alias for the deterministic MVCC buffer-workload invariant proof.'
+    dependsOn 'runDelosMvccBufferWorkloadInvariantTest'
 }
 
 tasks.register('runDelosMvccConcurrencyValidation', Test) {

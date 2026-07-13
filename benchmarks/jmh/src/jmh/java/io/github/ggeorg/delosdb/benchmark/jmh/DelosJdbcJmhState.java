@@ -34,6 +34,7 @@ public class DelosJdbcJmhState {
     private static final String TABLE = "DELOS_JMH";
     private static final int CATEGORY_COUNT = 17;
     private static final int BUCKET_COUNT = 11;
+    private static final int MAX_ROWS = 1_000;
     private static final long CHECKSUM_SEED = 0x6A09E667F3BCC909L;
     private static final long CHECKSUM_MULTIPLIER = 0x9E3779B185EBCA87L;
 
@@ -57,7 +58,12 @@ public class DelosJdbcJmhState {
     private PreparedStatement compositeRangeScan;
     private PreparedStatement fullScan;
     private PreparedStatement aggregate;
-    private List<FixtureRow> model;
+    private PreparedStatement transactionProbe;
+    private long[] primaryChecksums;
+    private long[] categoryChecksums;
+    private long[] bucketChecksums;
+    private long fullScanChecksum;
+    private long aggregateChecksum;
     private int primaryCursor;
     private int categoryCursor;
     private int bucketCursor;
@@ -73,7 +79,8 @@ public class DelosJdbcJmhState {
             databaseName = databaseRoot.resolve("database").toAbsolutePath().toString();
             connection = DriverManager.getConnection("jdbc:derby:" + databaseName + ";create=true");
             connection.setAutoCommit(false);
-            model = createFixture();
+            List<FixtureRow> fixture = createFixture();
+            initializeExpectedChecksums(fixture);
             prepareStatements();
             verifySemanticSurface();
             connection.rollback();
@@ -110,66 +117,72 @@ public class DelosJdbcJmhState {
         int id = primaryCursor;
         primaryCursor = id == rows ? 1 : id + 1;
         primaryKeyLookup.setInt(1, id);
-        return queryTwoColumns(primaryKeyLookup);
+        long actual = queryTwoColumns(primaryKeyLookup);
+        requireChecksum("primary key " + id, primaryChecksums[id - 1], actual);
+        return actual;
     }
 
     long secondaryEqualityLookup() throws SQLException {
         int category = categoryCursor;
         categoryCursor = (category + 1) % CATEGORY_COUNT;
         secondaryEqualityLookup.setInt(1, category);
-        return queryTwoColumns(secondaryEqualityLookup);
+        long actual = queryTwoColumns(secondaryEqualityLookup);
+        requireChecksum("secondary category " + category, categoryChecksums[category], actual);
+        return actual;
     }
 
     long compositeRangeScan() throws SQLException {
         int bucket = bucketCursor;
         bucketCursor = (bucket + 1) % BUCKET_COUNT;
         compositeRangeScan.setInt(1, bucket);
-        return queryTwoColumns(compositeRangeScan);
+        long actual = queryTwoColumns(compositeRangeScan);
+        requireChecksum("composite range bucket " + bucket, bucketChecksums[bucket], actual);
+        return actual;
     }
 
     long fullScan() throws SQLException {
-        return queryTwoColumns(fullScan);
+        long actual = queryTwoColumns(fullScan);
+        requireChecksum("full scan", fullScanChecksum, actual);
+        return actual;
     }
 
     long aggregate() throws SQLException {
-        long checksum = CHECKSUM_SEED;
-        int count = 0;
-        try (ResultSet resultSet = aggregate.executeQuery()) {
-            while (resultSet.next()) {
-                checksum = mix(checksum, resultSet.getInt(1));
-                checksum = mix(checksum, resultSet.getLong(2));
-                checksum = mix(checksum, resultSet.getLong(3));
-                count++;
-            }
-        }
-        return finish(checksum, count);
+        long actual = queryAggregate();
+        requireChecksum("aggregate", aggregateChecksum, actual);
+        return actual;
     }
 
-    long emptyCommit() throws SQLException {
+    long readTransactionCommit() throws SQLException {
+        long probe = queryTransactionProbe();
         connection.commit();
-        return ++transactionSequence;
+        return mix(++transactionSequence, probe);
     }
 
-    long emptyRollback() throws SQLException {
+    long readTransactionRollback() throws SQLException {
+        long probe = queryTransactionProbe();
         connection.rollback();
-        return ++transactionSequence;
+        return mix(++transactionSequence, probe);
     }
 
     private void validateParameters() {
-        String normalizedProvider = provider == null ? "" : provider.toLowerCase(Locale.ROOT);
+        String normalizedProvider = provider == null
+                ? ""
+                : provider.trim().toLowerCase(Locale.ROOT);
         if (!normalizedProvider.equals("heap") && !normalizedProvider.equals("mvcc")) {
             throw new IllegalArgumentException("provider must be heap or mvcc: " + provider);
         }
         provider = normalizedProvider;
-        if (rows < 100) {
-            throw new IllegalArgumentException("rows must be at least 100: " + rows);
+        if (rows < 100 || rows > MAX_ROWS) {
+            throw new IllegalArgumentException(
+                    "rows must be between 100 and " + MAX_ROWS + ": " + rows);
         }
         if (payloadSize < 16 || payloadSize > 4096) {
             throw new IllegalArgumentException(
                     "payloadSize must be between 16 and 4096: " + payloadSize);
         }
-        if (commitBatchSize < 1) {
-            throw new IllegalArgumentException("commitBatchSize must be positive: " + commitBatchSize);
+        if (commitBatchSize < 1 || commitBatchSize > rows) {
+            throw new IllegalArgumentException(
+                    "commitBatchSize must be between 1 and rows: " + commitBatchSize);
         }
     }
 
@@ -184,7 +197,6 @@ public class DelosJdbcJmhState {
             statement.executeUpdate("create index " + TABLE + "_RANGE_IDX on " + TABLE + " (bucket, quantity)");
         }
 
-        int effectiveCommitBatch = Math.min(commitBatchSize, rows);
         List<FixtureRow> generated = new ArrayList<>(rows);
         Random random = new Random(SEED);
         try (PreparedStatement insert = connection.prepareStatement(
@@ -201,17 +213,45 @@ public class DelosJdbcJmhState {
                 insert.setInt(4, quantity);
                 insert.setString(5, payload(id, payloadSize));
                 insert.addBatch();
-                if (id % effectiveCommitBatch == 0) {
+                if (id % commitBatchSize == 0) {
                     insert.executeBatch();
                     connection.commit();
                 }
             }
-            if (rows % effectiveCommitBatch != 0) {
+            if (rows % commitBatchSize != 0) {
                 insert.executeBatch();
                 connection.commit();
             }
         }
         return List.copyOf(generated);
+    }
+
+    private void initializeExpectedChecksums(List<FixtureRow> fixture) {
+        primaryChecksums = new long[rows];
+        for (FixtureRow row : fixture) {
+            primaryChecksums[row.id() - 1] = fingerprintRows(List.of(row));
+        }
+
+        categoryChecksums = new long[CATEGORY_COUNT];
+        for (int category = 0; category < CATEGORY_COUNT; category++) {
+            int selectedCategory = category;
+            categoryChecksums[category] = fingerprintRows(fixture.stream()
+                    .filter(row -> row.category() == selectedCategory)
+                    .toList());
+        }
+
+        bucketChecksums = new long[BUCKET_COUNT];
+        for (int bucket = 0; bucket < BUCKET_COUNT; bucket++) {
+            int selectedBucket = bucket;
+            bucketChecksums[bucket] = fingerprintRows(fixture.stream()
+                    .filter(row -> row.bucket() == selectedBucket)
+                    .filter(row -> row.quantity() >= 2000 && row.quantity() <= 8000)
+                    .sorted(Comparator.comparingInt(FixtureRow::quantity).thenComparingInt(FixtureRow::id))
+                    .toList());
+        }
+
+        fullScanChecksum = fingerprintRows(fixture);
+        aggregateChecksum = expectedAggregate(fixture);
     }
 
     private void prepareStatements() throws SQLException {
@@ -227,66 +267,44 @@ public class DelosJdbcJmhState {
         aggregate = connection.prepareStatement(
                 "select category, count(*), sum(quantity) from " + TABLE
                         + " group by category order by category");
+        transactionProbe = connection.prepareStatement("values 1");
     }
 
     private void verifySemanticSurface() throws SQLException {
         int[] primaryIds = {1, Math.max(1, rows / 2), rows};
         for (int id : primaryIds) {
             primaryKeyLookup.setInt(1, id);
-            requireChecksum("primary key " + id, expectedPrimary(id), queryTwoColumns(primaryKeyLookup));
+            requireChecksum(
+                    "primary key " + id,
+                    primaryChecksums[id - 1],
+                    queryTwoColumns(primaryKeyLookup));
         }
 
-        int[] categories = {0, 7, CATEGORY_COUNT - 1};
-        for (int category : categories) {
+        for (int category = 0; category < CATEGORY_COUNT; category++) {
             secondaryEqualityLookup.setInt(1, category);
             requireChecksum(
                     "secondary category " + category,
-                    expectedSecondary(category),
+                    categoryChecksums[category],
                     queryTwoColumns(secondaryEqualityLookup));
         }
 
-        int[] buckets = {0, 5, BUCKET_COUNT - 1};
-        for (int bucket : buckets) {
+        for (int bucket = 0; bucket < BUCKET_COUNT; bucket++) {
             compositeRangeScan.setInt(1, bucket);
             requireChecksum(
                     "composite range bucket " + bucket,
-                    expectedRange(bucket),
+                    bucketChecksums[bucket],
                     queryTwoColumns(compositeRangeScan));
         }
 
-        requireChecksum("full scan", expectedFullScan(), queryTwoColumns(fullScan));
-        requireChecksum("aggregate", expectedAggregate(), aggregate());
+        requireChecksum("full scan", fullScanChecksum, queryTwoColumns(fullScan));
+        requireChecksum("aggregate", aggregateChecksum, queryAggregate());
+        requireChecksum("transaction probe", expectedTransactionProbe(), queryTransactionProbe());
     }
 
-    private long expectedPrimary(int id) {
-        FixtureRow row = model.get(id - 1);
-        return fingerprintRows(List.of(row));
-    }
-
-    private long expectedSecondary(int category) {
-        List<FixtureRow> selected = model.stream()
-                .filter(row -> row.category() == category)
-                .toList();
-        return fingerprintRows(selected);
-    }
-
-    private long expectedRange(int bucket) {
-        List<FixtureRow> selected = model.stream()
-                .filter(row -> row.bucket() == bucket)
-                .filter(row -> row.quantity() >= 2000 && row.quantity() <= 8000)
-                .sorted(Comparator.comparingInt(FixtureRow::quantity).thenComparingInt(FixtureRow::id))
-                .toList();
-        return fingerprintRows(selected);
-    }
-
-    private long expectedFullScan() {
-        return fingerprintRows(model);
-    }
-
-    private long expectedAggregate() {
+    private static long expectedAggregate(List<FixtureRow> fixture) {
         long[] counts = new long[CATEGORY_COUNT];
         long[] sums = new long[CATEGORY_COUNT];
-        for (FixtureRow row : model) {
+        for (FixtureRow row : fixture) {
             counts[row.category()]++;
             sums[row.category()] += row.quantity();
         }
@@ -326,6 +344,38 @@ public class DelosJdbcJmhState {
         return finish(checksum, count);
     }
 
+    private long queryAggregate() throws SQLException {
+        long checksum = CHECKSUM_SEED;
+        int count = 0;
+        try (ResultSet resultSet = aggregate.executeQuery()) {
+            while (resultSet.next()) {
+                checksum = mix(checksum, resultSet.getInt(1));
+                checksum = mix(checksum, resultSet.getLong(2));
+                checksum = mix(checksum, resultSet.getLong(3));
+                count++;
+            }
+        }
+        return finish(checksum, count);
+    }
+
+    private long queryTransactionProbe() throws SQLException {
+        long checksum = CHECKSUM_SEED;
+        int count = 0;
+        try (ResultSet resultSet = transactionProbe.executeQuery()) {
+            while (resultSet.next()) {
+                checksum = mix(checksum, resultSet.getInt(1));
+                count++;
+            }
+        }
+        long actual = finish(checksum, count);
+        requireChecksum("transaction probe", expectedTransactionProbe(), actual);
+        return actual;
+    }
+
+    private static long expectedTransactionProbe() {
+        return finish(mix(CHECKSUM_SEED, 1), 1);
+    }
+
     private static void requireChecksum(String operation, long expected, long actual) throws SQLException {
         if (expected != actual) {
             throw new SQLException(
@@ -356,6 +406,8 @@ public class DelosJdbcJmhState {
 
     private void closeResources() throws Exception {
         Throwable failure = null;
+        failure = closePreparedStatement(transactionProbe, failure);
+        transactionProbe = null;
         failure = closePreparedStatement(aggregate, failure);
         aggregate = null;
         failure = closePreparedStatement(fullScan, failure);
@@ -399,6 +451,10 @@ public class DelosJdbcJmhState {
                 databaseRoot = null;
             }
         }
+
+        primaryChecksums = null;
+        categoryChecksums = null;
+        bucketChecksums = null;
 
         if (failure != null) {
             if (failure instanceof Exception exception) {

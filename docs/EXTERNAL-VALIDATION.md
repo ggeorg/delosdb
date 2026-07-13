@@ -73,21 +73,29 @@ or release validation to opt into slower tools explicitly.
 
 ## JMH performance validation
 
-`delosJmhMicrobenchmarks` runs the built-in deterministic MVCC microbenchmark
-validation. An external JMH invocation may be supplied explicitly:
+The repository now contains an executable standalone JMH build under
+`benchmarks/jmh`. It consumes assembled runtime jars, targets public JDBC only,
+and remains absent from root settings, normal checks, and S0:
+
+```bash
+./gradlew jars
+./gradlew -p benchmarks/jmh clean check
+./gradlew -p benchmarks/jmh clean jmh
+```
+
+The stable root adapter remains available for deterministic invariants and
+caller-owned CI commands:
 
 ```bash
 ./gradlew delosJmhMicrobenchmarks
 ./gradlew delosJmhMicrobenchmarks \
-  -Pdelosdb.jmh.command="<compile-and-run JMH command>"
+  -Pdelosdb.jmh.command="<approved external JMH command>"
 ```
 
-The repository currently has no executable JMH source set. The previous
-implementation-coupled storage benchmark sources and standalone build were
-removed because they depended on unstable package-private MVCC classes and did
-not compile as an isolated build. A future JMH suite must use stable
-benchmark-facing APIs or SQL/JDBC workloads and remain outside normal runtime
-and S0 dependency paths.
+The built-in baseline is the MVCC buffer-workload invariant proof, not a
+wall-clock substitute for JMH. The standalone JMH lane uses public JDBC, checks
+semantic fingerprints during measurement, writes JSON and human reports, and
+records SHA-256 fingerprints of all runtime jars and benchmark inputs.
 
 ## Jcstress MVCC visibility probes
 

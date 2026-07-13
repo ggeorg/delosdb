@@ -649,7 +649,7 @@ The shared lifecycle consistency report aggregates heap and MVCC checkpoint, rec
 The MVCC buffer replacement policy now has a package-local testability seam:
 `MvccBufferReplacementStrategy`. The default production policy remains
 `MvccBufferReplacementPolicy` / `ACCESS_ORDER_LRU`, and the new injection path is
-for package-local proofs and future JMH comparison lanes only. This does not
+for package-local proofs and deterministic buffer-policy measurement lanes only. This does not
 authorize a policy replacement or shared heap/MVCC buffer extraction.
 
 
@@ -671,15 +671,18 @@ service extraction without a separate compatibility gate.
 
 Classification: VALIDATION_ALGORITHM and JDK25_MODERNIZATION_CANDIDATE.
 
-Current code: `delosJmhMicrobenchmarks`, backed by the deterministic
-`:delosdb-storage-mvcc:runDelosMvccMicrobenchmarkValidation` baseline.
+Current code: the independent `benchmarks/jmh` build, plus the stable
+`delosJmhMicrobenchmarks` root adapter and the deterministic
+`:delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest` baseline.
 
 Rules:
 
-* No JMH source or dependency is part of the normal DelosDB build.
+* JMH source and dependencies remain outside the normal DelosDB build.
 * S0 and module checks do not resolve JMH.
-* External JMH execution remains opt-in through `-Pdelosdb.jmh.command`.
-* A future executable JMH suite must target stable benchmark-facing APIs or SQL/JDBC behavior; it must not compile against package-private MVCC implementation classes.
+* The executable lane consumes assembled runtime jars and targets public JDBC only.
+* Package-private MVCC cache/codec measurements remain in module-local deterministic lanes rather than creating a benchmark-only production SPI.
+* JMH reports include parameter coverage checks and runtime/source fingerprints.
+* External command execution remains opt-in through `-Pdelosdb.jmh.command`.
 * Benchmark results do not authorize behavior changes without a separate correctness and compatibility proof.
 
 ## External validation algorithm lane: jcstress MVCC visibility probes

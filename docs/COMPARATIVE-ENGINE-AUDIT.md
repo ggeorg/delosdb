@@ -1,9 +1,9 @@
 # Comparative Engine Architecture Audit
 
-Status: audit only  
-Scope: DelosDB current green tree after engine-depth cleanup, H2 MVStore, PostgreSQL backend storage, and MariaDB/InnoDB storage engine source/reference model.  
-Behavior change: none.  
-S0 gate change: none.  
+Status: audit only
+Scope: DelosDB current green tree after engine-depth cleanup, H2 MVStore, PostgreSQL backend storage, and MariaDB/InnoDB storage engine source/reference model.
+Behavior change: none.
+S0 gate change: none.
 Module change: none.
 
 ## Purpose
@@ -308,24 +308,17 @@ Current DelosDB state:
 * External task slots exist.
 * S0 stays fast and deterministic.
 
-Remaining gap:
+Current closeout:
 
-* No real JMH, jcstress, or SQLancer integration yet.
-* No published benchmark numbers.
+* A real standalone JMH build exists for public JDBC heap/MVCC comparisons.
+* Deterministic buffer/cache and page/codec measurement lanes exist.
+* jcstress and SQLancer remain explicit external-validation lanes.
+* No benchmark or external tool is wired into S0.
+* No performance threshold is treated as a correctness gate.
 
-Priority: SHOULD_FIX.
-
-Next slice:
-
-`delosdb-external-validation-tooling-overlay.zip`
-
-Required behavior:
-
-* JMH harness exists for focused microbenchmarks,
-* jcstress harness exists for pin/unpin and purge/buffer concurrency,
-* SQLancer or SQLancer-compatible external runner can target MVCC tables,
-* all external tools remain outside S0,
-* CI can opt into them explicitly.
+Remaining work belongs to release/CI policy rather than engine implementation:
+repeatable environment control, longer multi-fork comparison runs, and approved
+external jcstress/SQLancer runners.
 
 ### 7. Heap compatibility and inherited cleanup
 

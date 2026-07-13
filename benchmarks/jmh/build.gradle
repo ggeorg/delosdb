@@ -3,6 +3,9 @@ plugins {
     id 'me.champeau.jmh' version '0.7.3'
 }
 
+import java.security.MessageDigest
+import java.util.regex.Pattern
+import java.util.regex.PatternSyntaxException
 import java.util.zip.ZipFile
 
 version = '0.1.0-dev'
@@ -22,7 +25,6 @@ final List<String> runtimeJarNames = [
         'derbytools.jar'
 ]
 final List<File> runtimeJarFiles = runtimeJarNames.collect { new File(runtimeJarDirectory, it) }
-
 static List<String> csvProperty(Project project, String name, List<String> defaults) {
     String raw = project.findProperty(name)?.toString()?.trim()
     if (raw == null || raw.isEmpty()) {
@@ -35,6 +37,38 @@ static List<String> csvProperty(Project project, String name, List<String> defau
         throw new GradleException("${name} must contain at least one non-empty value")
     }
     return List.copyOf(new LinkedHashSet<>(values))
+}
+
+
+static List<String> doubleSemicolonProperty(
+        Project project,
+        String name,
+        List<String> defaults) {
+    String raw = project.findProperty(name)?.toString()?.trim()
+    if (raw == null || raw.isEmpty()) {
+        return List.copyOf(defaults)
+    }
+    List<String> values = raw.split(/;;/)
+            .collect { it.trim() }
+            .findAll { !it.isEmpty() }
+    if (values.isEmpty()) {
+        throw new GradleException("${name} must contain at least one non-empty value")
+    }
+    return List.copyOf(values)
+}
+
+static String sha256(File file) {
+    MessageDigest digest = MessageDigest.getInstance('SHA-256')
+    file.withInputStream { input ->
+        byte[] buffer = new byte[8192]
+        int read
+        while ((read = input.read(buffer)) >= 0) {
+            if (read > 0) {
+                digest.update(buffer, 0, read)
+            }
+        }
+    }
+    return digest.digest().collect { String.format('%02x', it & 0xff) }.join()
 }
 
 static int positiveIntProperty(Project project, String name, int defaultValue) {
@@ -61,6 +95,16 @@ static String nonBlankProperty(Project project, String name, String defaultValue
     return raw
 }
 
+static Pattern regexProperty(String name, String raw) {
+    try {
+        return Pattern.compile(raw)
+    } catch (PatternSyntaxException failure) {
+        throw new GradleException(
+                name + ' must be a valid regular expression: ' + raw,
+                failure)
+    }
+}
+
 final List<String> providers = csvProperty(project, 'delosdb.jmh.providers', ['heap', 'mvcc'])
 final Set<String> unsupportedProviders = providers.findAll { !['heap', 'mvcc'].contains(it) } as Set<String>
 if (!unsupportedProviders.isEmpty()) {
@@ -71,7 +115,7 @@ final List<String> rowCounts = csvProperty(project, 'delosdb.jmh.rows', ['100'])
 final List<String> payloadSizes = csvProperty(project, 'delosdb.jmh.payloadSizes', ['128'])
 final List<String> commitBatchSizes = csvProperty(project, 'delosdb.jmh.commitBatchSizes', ['100'])
 
-def parseIntegerValues = { String propertyName, List<String> values, int minimum, int maximum ->
+def parsePositiveIntegerValues = { String propertyName, List<String> values ->
     values.collect { value ->
         int parsed
         try {
@@ -79,32 +123,55 @@ def parseIntegerValues = { String propertyName, List<String> values, int minimum
         } catch (NumberFormatException failure) {
             throw new GradleException("${propertyName} values must be integers: ${value}", failure)
         }
-        if (parsed < minimum || parsed > maximum) {
+        if (parsed < 1) {
             throw new GradleException(
-                    "${propertyName} values must be between ${minimum} and ${maximum}: ${value}")
+                    "${propertyName} values must be positive: ${value}")
         }
         parsed
     }
 }
 
-final List<Integer> parsedRows = parseIntegerValues(
-        'delosdb.jmh.rows', rowCounts, 100, Integer.MAX_VALUE)
-final List<Integer> parsedPayloadSizes = parseIntegerValues(
-        'delosdb.jmh.payloadSizes', payloadSizes, 16, 4096)
-final List<Integer> parsedCommitBatchSizes = parseIntegerValues(
-        'delosdb.jmh.commitBatchSizes', commitBatchSizes, 1, Integer.MAX_VALUE)
+final List<Integer> parsedRows = parsePositiveIntegerValues(
+        'delosdb.jmh.rows', rowCounts)
+final List<Integer> parsedPayloadSizes = parsePositiveIntegerValues(
+        'delosdb.jmh.payloadSizes', payloadSizes)
+final List<Integer> parsedCommitBatchSizes = parsePositiveIntegerValues(
+        'delosdb.jmh.commitBatchSizes', commitBatchSizes)
 if (parsedCommitBatchSizes.max() > parsedRows.min()) {
     throw new GradleException(
             'Every delosdb.jmh.commitBatchSizes value must be no greater than the smallest '
                     + "delosdb.jmh.rows value (${parsedRows.min()}); found ${parsedCommitBatchSizes}")
 }
 
-final List<String> configuredIncludes = csvProperty(
+final String configuredIncludeExpression = nonBlankProperty(
         project,
         'delosdb.jmh.includes',
-        ['.*DelosJdbcJmhBenchmark.*'])
+        '.*DelosJdbcJmhBenchmark.*')
+final List<String> configuredIncludes = List.of(configuredIncludeExpression)
+final String benchmarkClassName =
+        'io.github.ggeorg.delosdb.benchmark.jmh.DelosJdbcJmhBenchmark'
+final List<String> benchmarkMethodNames = [
+        'aggregate',
+        'compositeRangeScan',
+        'fullScan',
+        'primaryKeyLookup',
+        'readTransactionCommit',
+        'readTransactionRollback',
+        'secondaryEqualityLookup'
+]
+final Pattern configuredIncludePattern = regexProperty(
+        'delosdb.jmh.includes', configuredIncludeExpression)
+final Set<String> expectedBenchmarkNames = new LinkedHashSet<>(benchmarkMethodNames
+        .collect { benchmarkClassName + '.' + it }
+        .findAll { configuredIncludePattern.matcher(it).find() })
+if (expectedBenchmarkNames.isEmpty()) {
+    throw new GradleException(
+            'delosdb.jmh.includes does not select any standalone DelosDB benchmark: '
+                    + configuredIncludeExpression)
+}
 final List<String> configuredProfilers = csvProperty(project, 'delosdb.jmh.profilers', [])
-final List<String> configuredJvmArgs = csvProperty(project, 'delosdb.jmh.jvmArgs', [])
+final List<String> configuredJvmArgs = doubleSemicolonProperty(
+        project, 'delosdb.jmh.jvmArgs', [])
 
 // Plugin 0.7.3 models benchmarkParameters as
 // MapProperty<String, ListProperty<String>>. Keep provider-backed parameter
@@ -125,6 +192,20 @@ if (benchmarkThreads != 1) {
                     + 'and jcstress lanes for multi-threaded proofs.')
 }
 
+final int configuredWarmupIterations = positiveIntProperty(
+        project, 'delosdb.jmh.warmupIterations', 2)
+final int configuredMeasurementIterations = positiveIntProperty(
+        project, 'delosdb.jmh.iterations', 3)
+final String configuredWarmupTime = nonBlankProperty(
+        project, 'delosdb.jmh.warmupTime', '500ms')
+final String configuredMeasurementTime = nonBlankProperty(
+        project, 'delosdb.jmh.iterationTime', '500ms')
+final int configuredForks = positiveIntProperty(project, 'delosdb.jmh.forks', 1)
+final String configuredVerbosity = nonBlankProperty(
+        project, 'delosdb.jmh.verbosity', 'NORMAL')
+final String configuredTimeout = nonBlankProperty(
+        project, 'delosdb.jmh.timeout', '10m')
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
@@ -142,18 +223,18 @@ jmh {
     jmhVersion = '1.37'
     includes = configuredIncludes
     benchmarkMode = ['avgt']
-    warmupIterations = positiveIntProperty(project, 'delosdb.jmh.warmupIterations', 2)
-    iterations = positiveIntProperty(project, 'delosdb.jmh.iterations', 3)
-    warmup = nonBlankProperty(project, 'delosdb.jmh.warmupTime', '500ms')
-    timeOnIteration = nonBlankProperty(project, 'delosdb.jmh.iterationTime', '500ms')
-    fork = positiveIntProperty(project, 'delosdb.jmh.forks', 1)
+    warmupIterations = configuredWarmupIterations
+    iterations = configuredMeasurementIterations
+    warmup = configuredWarmupTime
+    timeOnIteration = configuredMeasurementTime
+    fork = configuredForks
     threads = benchmarkThreads
     failOnError = true
     forceGC = false
-    synchronizeIterations = true
+    synchronizeIterations = false
     timeUnit = 'us'
-    verbosity = nonBlankProperty(project, 'delosdb.jmh.verbosity', 'NORMAL')
-    jmhTimeout = nonBlankProperty(project, 'delosdb.jmh.timeout', '10m')
+    verbosity = configuredVerbosity
+    jmhTimeout = configuredTimeout
     resultFormat = 'JSON'
     resultsFile = layout.buildDirectory.file('reports/jmh/results.json').get().asFile
     humanOutputFile = layout.buildDirectory.file('reports/jmh/human.txt').get().asFile
@@ -182,7 +263,6 @@ tasks.register('verifyDelosRuntimeJars') {
                             + missing.collect { it.absolutePath }.join('\n  ')
                             + '\nBuild them first from the repository root with: ./gradlew jars')
         }
-
         File toolsJar = new File(runtimeJarDirectory, 'derbytools.jar')
         new ZipFile(toolsJar).withCloseable { zip ->
             if (zip.getEntry('org/apache/derby/jdbc/EmbeddedDriver.class') == null) {
@@ -271,21 +351,110 @@ tasks.named('compileJmhJava', JavaCompile) {
 
 tasks.named('jmhJar', Jar) {
     dependsOn tasks.named('verifyDelosRuntimeJars'), tasks.named('verifyJmhApiBoundary')
-    // Runtime jars all carry the same legal metadata. Keep one copy while
-    // retaining FAIL for duplicate classes through the JMH extension above.
+    // Fat jars routinely contain repeated license, notice, and other
+    // dependency metadata. Keep the first ordinary resource copy. The plugin's
+    // duplicateClassesStrategy remains FAIL, so duplicate .class entries are
+    // still rejected instead of silently shadowed.
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    // Module descriptors are inapplicable because this fat jar runs on the
+    // class path rather than as one merged JPMS module.
     exclude 'module-info.class'
     exclude 'META-INF/versions/**/module-info.class'
 }
 
-tasks.named('jmh') {
+tasks.register('writeJmhRunManifest') {
+    group = 'benchmark'
+    description = 'Writes reproducibility fingerprints for the standalone JMH inputs and configuration.'
     dependsOn tasks.named('verifyDelosRuntimeJars'), tasks.named('verifyJmhApiBoundary')
+
+    def benchmarkInputs = files(
+            fileTree('src/jmh/java') { include '**/*.java' },
+            file('build.gradle'),
+            file('settings.gradle'),
+            file('gradle.properties'))
+    inputs.files(runtimeJarFiles, benchmarkInputs)
+    inputs.property('providers', providers)
+    inputs.property('rows', rowCounts)
+    inputs.property('payloadSizes', payloadSizes)
+    inputs.property('commitBatchSizes', commitBatchSizes)
+    inputs.property('includes', configuredIncludes)
+    inputs.property('profilers', configuredProfilers)
+    inputs.property('jvmArgs', configuredJvmArgs)
+    inputs.property('warmupIterations', configuredWarmupIterations)
+    inputs.property('measurementIterations', configuredMeasurementIterations)
+    inputs.property('warmupTime', configuredWarmupTime)
+    inputs.property('measurementTime', configuredMeasurementTime)
+    inputs.property('forks', configuredForks)
+    inputs.property('threads', benchmarkThreads)
+    inputs.property('verbosity', configuredVerbosity)
+    inputs.property('timeout', configuredTimeout)
+    outputs.file(layout.buildDirectory.file('reports/jmh/run-manifest.txt'))
+
+    doLast {
+        File manifest = layout.buildDirectory.file('reports/jmh/run-manifest.txt').get().asFile
+        manifest.parentFile.mkdirs()
+        manifest.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB standalone JMH run manifest')
+            writer.println('JMH version: 1.37')
+            writer.println('JMH Gradle plugin: 0.7.3')
+            writer.println('Required Java toolchain: 25')
+            writer.println('Providers: ' + providers)
+            writer.println('Rows: ' + rowCounts)
+            writer.println('Payload sizes: ' + payloadSizes)
+            writer.println('Fixture commit batches: ' + commitBatchSizes)
+            writer.println('Includes: ' + configuredIncludes)
+            writer.println('Profilers: ' + configuredProfilers)
+            writer.println('JVM args: ' + configuredJvmArgs)
+            writer.println('Warmup iterations: '
+                    + configuredWarmupIterations)
+            writer.println('Measurement iterations: '
+                    + configuredMeasurementIterations)
+            writer.println('Warmup time: '
+                    + configuredWarmupTime)
+            writer.println('Measurement time: '
+                    + configuredMeasurementTime)
+            writer.println('Forks: ' + configuredForks)
+            writer.println('Threads: ' + benchmarkThreads)
+            writer.println()
+            writer.println('Runtime artifacts:')
+            runtimeJarFiles.each { jar ->
+                writer.println('  ' + jar.name + ' size=' + jar.length() + ' sha256=' + sha256(jar))
+            }
+            writer.println()
+            writer.println('Benchmark build inputs:')
+            benchmarkInputs.files.findAll { it.isFile() }.sort().each { input ->
+                String relative = layout.projectDirectory.asFile.toPath()
+                        .relativize(input.toPath()).toString()
+                writer.println('  ' + relative + ' size=' + input.length() + ' sha256=' + sha256(input))
+            }
+        }
+    }
+}
+
+tasks.named('jmh') {
+    dependsOn tasks.named('verifyDelosRuntimeJars'),
+            tasks.named('verifyJmhApiBoundary'),
+            tasks.named('writeJmhRunManifest')
+    // A benchmark invocation is an observation, not a reproducible build
+    // artifact. Never reuse an earlier timing result as an up-to-date output.
+    outputs.upToDateWhen { false }
+
     doFirst {
-        layout.buildDirectory.dir('reports/jmh').get().asFile.mkdirs()
+        File reportDirectory = layout.buildDirectory.dir('reports/jmh').get().asFile
+        reportDirectory.mkdirs()
+        [
+                new File(reportDirectory, 'results.json'),
+                new File(reportDirectory, 'human.txt')
+        ].each { report ->
+            if (report.exists() && !report.delete()) {
+                throw new GradleException("Could not remove stale JMH report: ${report}")
+            }
+        }
     }
     doLast {
         File jsonReport = layout.buildDirectory.file('reports/jmh/results.json').get().asFile
         File humanReport = layout.buildDirectory.file('reports/jmh/human.txt').get().asFile
+        File manifest = layout.buildDirectory.file('reports/jmh/run-manifest.txt').get().asFile
         if (!jsonReport.isFile() || jsonReport.length() == 0L) {
             throw new GradleException("JMH did not create a non-empty JSON report: ${jsonReport}")
         }
@@ -293,8 +462,86 @@ tasks.named('jmh') {
         if (!(parsed instanceof List) || parsed.isEmpty()) {
             throw new GradleException("JMH JSON report contains no benchmark results: ${jsonReport}")
         }
+
+        Set<String> expectedParameterNames = [
+                'provider', 'rows', 'payloadSize', 'commitBatchSize'
+        ] as Set<String>
+        Set<String> allowedProviders = providers as Set<String>
+        Set<String> allowedRows = rowCounts as Set<String>
+        Set<String> allowedPayloadSizes = payloadSizes as Set<String>
+        Set<String> allowedCommitBatchSizes = commitBatchSizes as Set<String>
+        int expectedCasesPerBenchmark = providers.size()
+                * rowCounts.size()
+                * payloadSizes.size()
+                * commitBatchSizes.size()
+        Map<String, Set<String>> casesByBenchmark = [:].withDefault { new LinkedHashSet<String>() }
+
+        parsed.eachWithIndex { result, index ->
+            if (!(result instanceof Map)) {
+                throw new GradleException("JMH result ${index} is not an object")
+            }
+            String benchmark = result.benchmark?.toString()
+            if (benchmark == null || benchmark.isBlank()) {
+                throw new GradleException("JMH result ${index} has no benchmark name")
+            }
+            if (!result.jdkVersion?.toString()?.startsWith('25')) {
+                throw new GradleException(
+                        "JMH result ${benchmark} did not run on JDK 25: ${result.jdkVersion}")
+            }
+            if (!(result.params instanceof Map)
+                    || (result.params.keySet() as Set<String>) != expectedParameterNames) {
+                throw new GradleException(
+                        "JMH result ${benchmark} has unexpected parameters: ${result.params}")
+            }
+            String providerValue = result.params.provider?.toString()
+            String rowsValue = result.params.rows?.toString()
+            String payloadValue = result.params.payloadSize?.toString()
+            String commitBatchValue = result.params.commitBatchSize?.toString()
+            if (!allowedProviders.contains(providerValue)
+                    || !allowedRows.contains(rowsValue)
+                    || !allowedPayloadSizes.contains(payloadValue)
+                    || !allowedCommitBatchSizes.contains(commitBatchValue)) {
+                throw new GradleException(
+                        "JMH result ${benchmark} contains an unrequested parameter case: ${result.params}")
+            }
+            String caseKey = [providerValue, rowsValue, payloadValue, commitBatchValue].join('|')
+            if (!casesByBenchmark[benchmark].add(caseKey)) {
+                throw new GradleException(
+                        "JMH result contains a duplicate case for ${benchmark}: ${result.params}")
+            }
+            if (!(result.primaryMetric instanceof Map)
+                    || !(result.primaryMetric.score instanceof Number)) {
+                throw new GradleException("JMH result ${benchmark} has no numeric primary score")
+            }
+            double score = ((Number) result.primaryMetric.score).doubleValue()
+            if (!Double.isFinite(score) || score < 0.0d) {
+                throw new GradleException("JMH result ${benchmark} has an invalid score: ${score}")
+            }
+        }
+
+        Set<String> reportedBenchmarkNames = casesByBenchmark.keySet() as Set<String>
+        if (reportedBenchmarkNames != expectedBenchmarkNames) {
+            Set<String> missingBenchmarks = new LinkedHashSet<>(expectedBenchmarkNames)
+            missingBenchmarks.removeAll(reportedBenchmarkNames)
+            Set<String> unexpectedBenchmarks = new LinkedHashSet<>(reportedBenchmarkNames)
+            unexpectedBenchmarks.removeAll(expectedBenchmarkNames)
+            throw new GradleException(
+                    'JMH result coverage does not match delosdb.jmh.includes; missing='
+                            + missingBenchmarks + ', unexpected=' + unexpectedBenchmarks)
+        }
+        expectedBenchmarkNames.each { benchmark ->
+            Set<String> cases = casesByBenchmark[benchmark]
+            if (cases.size() != expectedCasesPerBenchmark) {
+                throw new GradleException(
+                        "JMH benchmark ${benchmark} produced ${cases.size()} parameter cases; "
+                                + "expected ${expectedCasesPerBenchmark}")
+            }
+        }
         if (!humanReport.isFile() || humanReport.length() == 0L) {
             throw new GradleException("JMH did not create a non-empty human report: ${humanReport}")
+        }
+        if (!manifest.isFile() || manifest.length() == 0L) {
+            throw new GradleException("JMH did not create a non-empty run manifest: ${manifest}")
         }
     }
 }
