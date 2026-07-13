@@ -99,6 +99,9 @@ def generateClientResources = tasks.register('generateClientResources') {
 }
 
 tasks.named('processResources') {
+    // Java classes and resources intentionally share one runtime output tree.
+    // Compile first so JavaCompile cannot remove resources written earlier in a clean build.
+    dependsOn tasks.named('compileJava')
     dependsOn generateClientResources
     destinationDir = moduleClassDir.get().asFile
     from generatedProductInfoResourceDir

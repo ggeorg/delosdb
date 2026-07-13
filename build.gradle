@@ -231,7 +231,9 @@ def englishMessageGeneratorClasspath = files(buildToolsClassDir)
 def splitMessagesClasspath = files(buildToolsClassDir, commonsClassDir)
 
 tasks.register('splitEngineMessages') {
-    dependsOn 'compileDerbyBuildTools', ':delosdb-engine:processResources'
+    // This task writes generated messages into both shared module output trees.
+    // Compile the client first; engine processResources already compiles the engine first.
+    dependsOn 'compileDerbyBuildTools', ':delosdb-engine:processResources', ':delosdb-client:compileJava'
     inputs.file(engineMessagesXml)
     inputs.files(englishMessageGeneratorClasspath, splitMessagesClasspath)
             .withPropertyName('messageGeneratorClasspath')

@@ -7,6 +7,7 @@ import org.gradle.api.file.ArchiveOperations
 import org.gradle.api.file.FileSystemOperations
 import javax.inject.Inject
 import java.nio.file.Files
+import java.util.zip.ZipFile
 
 
 abstract class DelosDbEngineBuildServices {
@@ -182,10 +183,7 @@ tasks.named('compileJava', JavaCompile) {
     }
 }
 
-tasks.named('processResources') {
-    dependsOn tasks.named('generateEngineInfoProperties'), tasks.named('generateEngineServiceDescriptor')
-    destinationDir = moduleClassDir.get().asFile
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+def engineRuntimeResources = copySpec {
     from generatedProductInfoResourceDir
     from generatedServiceResourceDir
     from('src/main/resources')
@@ -196,6 +194,16 @@ tasks.named('processResources') {
         exclude '**/messages.xml'
         exclude '**/*.tmpl'
     }
+}
+
+tasks.named('processResources') {
+    // Java classes and resources intentionally share one runtime output tree.
+    // Compile first so JavaCompile cannot remove resources written earlier in a clean build.
+    dependsOn tasks.named('compileJava')
+    dependsOn tasks.named('generateEngineInfoProperties'), tasks.named('generateEngineServiceDescriptor')
+    destinationDir = moduleClassDir.get().asFile
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    with engineRuntimeResources
 }
 
 // Compatibility alias used by the root Derby build and extracted modules.
@@ -224,17 +232,48 @@ tasks.named('classes') {
     dependsOn tasks.named('compileJava'), tasks.named('processResources')
 }
 
+class DelosDbEngineJarVerifier {
+    static void assertBootResourcesPresent(File jarFile) {
+        def requiredEntries = [
+                'META-INF/services/java.sql.Driver',
+                'org/apache/derby/modules.properties',
+                'org/apache/derby/info/engine/info.properties'
+        ]
+        new ZipFile(jarFile).withCloseable { zip ->
+            def missing = requiredEntries.findAll { zip.getEntry(it) == null }
+            if (!missing.isEmpty()) {
+                throw new org.gradle.api.GradleException("${jarFile.name} is missing required embedded-engine boot resources: ${missing}")
+            }
+
+            def serviceEntry = zip.getEntry('META-INF/services/java.sql.Driver')
+            def serviceLines = zip.getInputStream(serviceEntry).getText('UTF-8')
+                    .readLines()
+                    .collect { it.trim() }
+                    .findAll { it && !it.startsWith('#') }
+            if (!serviceLines.contains('org.apache.derby.iapi.jdbc.AutoloadedDriver')) {
+                throw new org.gradle.api.GradleException("${jarFile.name} does not advertise the embedded JDBC driver; found ${serviceLines}")
+            }
+        }
+    }
+}
+
 def engineArchiveName = 'derby.jar'
 
 tasks.named('jar', Jar) {
     dependsOn ':splitEngineMessages', ':generateOdbcMetadata', ':ensureCatalogMetadataResources'
     archiveFileName = 'delosdb-engine.jar'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    // Assemble module-owned runtime resources from their authoritative sources.
+    // Do not rely only on the shared class/resource staging directory.
+    with engineRuntimeResources
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }
     manifest {
         attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Embedded Engine')
+    }
+    doLast {
+        DelosDbEngineJarVerifier.assertBootResourcesPresent(archiveFile.get().asFile)
     }
 }
 
@@ -254,6 +293,10 @@ tasks.register('derbyJar', Jar) {
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    // Keep the Derby-compatible artifact independent of shared-output staging
+    // for module-owned boot resources. Root-generated messages and metadata
+    // continue to come from moduleClassDir below.
+    with engineRuntimeResources
     from moduleClassDir
     from({
         enginePatchFiles.collect {
@@ -282,6 +325,9 @@ tasks.register('derbyJar', Jar) {
     }
     manifest {
         attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Embedded Engine')
+    }
+    doLast {
+        DelosDbEngineJarVerifier.assertBootResourcesPresent(archiveFile.get().asFile)
     }
 }
 

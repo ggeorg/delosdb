@@ -388,6 +388,29 @@ No other production deletion was made without evidence for source use,
 classfile-signature use, reflection, ServiceLoader, durable-format ownership,
 packaging, tests, and compatibility.
 
+## Shared Java/resource output ordering
+
+Several inherited compatibility modules intentionally place compiled classes and
+processed resources in one module output tree because root generators still
+consume that combined layout directly. Their `processResources` tasks therefore
+depend on `compileJava`; otherwise a clean `JavaCompile` can run after resource
+processing and remove files that were already written.
+
+`splitEngineMessages` also compiles the client module before writing client
+message resources into its shared output tree.
+
+The engine artifacts do not rely only on that shared staging directory for
+module-owned resources. Both `delosdb-engine.jar` and the Derby-compatible
+`derby.jar` assemble ordinary engine resources, the JDBC driver service
+descriptor, and engine product information directly from their authoritative
+source and generated-resource directories. Root-generated messages, ODBC
+metadata, and catalog metadata continue to come from the combined module output.
+
+Both engine JAR tasks verify the JDBC driver service descriptor,
+`modules.properties`, and engine product information before completing. This
+turns a missing boot-resource regression into an artifact-assembly failure rather
+than a later `No suitable driver` error in the native-authentication fixture.
+
 ## Phase 6 exit decision
 
 After this slice passes its JDK 25 focused checks and normal gates, Phase 6 meets
@@ -409,3 +432,4 @@ module boundaries documented and justified
 The next phase should be selected from a concrete correctness, compatibility,
 performance, or release-readiness need rather than extending cleanup for its own
 sake.
+
