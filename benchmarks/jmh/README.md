@@ -45,7 +45,7 @@ From the repository root:
 
 ```bash
 ./gradlew -p benchmarks/jmh clean jmh \
-  -Pdelosdb.jmh.includes=.*primaryKeyLookup \
+  '-Pdelosdb.jmh.includes=.*primaryKeyLookup' \
   -Pdelosdb.jmh.providers=heap,mvcc \
   -Pdelosdb.jmh.rows=100 \
   -Pdelosdb.jmh.payloadSizes=128 \

@@ -106,6 +106,18 @@ final List<String> configuredIncludes = csvProperty(
 final List<String> configuredProfilers = csvProperty(project, 'delosdb.jmh.profilers', [])
 final List<String> configuredJvmArgs = csvProperty(project, 'delosdb.jmh.jvmArgs', [])
 
+// Plugin 0.7.3 models benchmarkParameters as
+// MapProperty<String, ListProperty<String>>. Keep provider-backed parameter
+// lists until a released plugin version adopts ordinary List values.
+final def providerParameterValues = objects.listProperty(String)
+providerParameterValues.set(providers)
+final def rowParameterValues = objects.listProperty(String)
+rowParameterValues.set(rowCounts)
+final def payloadSizeParameterValues = objects.listProperty(String)
+payloadSizeParameterValues.set(payloadSizes)
+final def commitBatchParameterValues = objects.listProperty(String)
+commitBatchParameterValues.set(commitBatchSizes)
+
 final int benchmarkThreads = positiveIntProperty(project, 'delosdb.jmh.threads', 1)
 if (benchmarkThreads != 1) {
     throw new GradleException(
@@ -150,10 +162,10 @@ jmh {
     includeTests = false
     duplicateClassesStrategy = DuplicatesStrategy.FAIL
     benchmarkParameters = [
-            provider       : providers,
-            rows           : rowCounts,
-            payloadSize    : payloadSizes,
-            commitBatchSize: commitBatchSizes
+            provider       : providerParameterValues,
+            rows           : rowParameterValues,
+            payloadSize    : payloadSizeParameterValues,
+            commitBatchSize: commitBatchParameterValues
     ]
 }
 
