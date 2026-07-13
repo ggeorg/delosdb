@@ -1332,3 +1332,46 @@ tasks.register('runDelosMvccBufferCacheBenchmark', Test) {
         showStandardStreams = true
     }
 }
+
+tasks.register('runDelosMvccPageCodecBenchmark', Test) {
+    group = 'benchmark'
+    description = 'Runs the low-level MVCC page/codec Phase 5.6 baseline.'
+    dependsOn 'compileDelosDbStorageMvccTests'
+
+    useJUnitPlatform()
+    testClassesDirs = files(testClassDir)
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/MvccPageCodecBenchmarkTest.class'
+
+    systemProperty 'delosdb.benchmark.pageCodec.reportDirectory',
+            rootProject.layout.buildDirectory.dir('reports/delosdb/benchmarks/page-codec').get().asFile.absolutePath
+    systemProperty 'delosdb.benchmark.pageCodec.payloadSizes',
+            providers.gradleProperty('delosdb.benchmark.pageCodec.payloadSizes').getOrElse('16,128,1024,8192,65536')
+    systemProperty 'delosdb.benchmark.pageCodec.maxOperations',
+            providers.gradleProperty('delosdb.benchmark.pageCodec.maxOperations').getOrElse('10000')
+    systemProperty 'delosdb.benchmark.pageCodec.byteBudget',
+            providers.gradleProperty('delosdb.benchmark.pageCodec.byteBudget').getOrElse('4194304')
+    systemProperty 'delosdb.benchmark.pageCodec.workloads',
+            providers.gradleProperty('delosdb.benchmark.pageCodec.workloads').getOrElse('')
+    systemProperty 'delosdb.benchmark.pageCodec.warmups',
+            providers.gradleProperty('delosdb.benchmark.pageCodec.warmups').getOrElse('1')
+    systemProperty 'delosdb.benchmark.pageCodec.iterations',
+            providers.gradleProperty('delosdb.benchmark.pageCodec.iterations').getOrElse('1')
+    systemProperty 'delosdb.benchmark.pageCodec.runs',
+            providers.gradleProperty('delosdb.benchmark.pageCodec.runs').getOrElse('2')
+
+    outputs.upToDateWhen { false }
+    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDelosMvccPageCodecBenchmark'))
+    reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDelosMvccPageCodecBenchmark'))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDelosMvccPageCodecBenchmark'))
+    }
+
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = true
+    }
+}
