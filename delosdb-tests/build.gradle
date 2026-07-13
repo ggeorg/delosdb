@@ -202,8 +202,6 @@ dependencies {
     testImplementation project(':delosdb-optionaltools')
     testImplementation project(':delosdb-runner')
     testImplementation project(':delosdb-server')
-    testImplementation project(':delosdb-spi')
-    testImplementation project(':delosdb-annotations')
     testImplementation project(':delosdb-storage-io')
     testImplementation project(':delosdb-storage-derby')
     testImplementation project(':delosdb-tools')
