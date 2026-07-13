@@ -7,10 +7,7 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-// Real Gradle Java module for the DelosDB provider-facing SPI. Keep the
-// legacy compile/jar task names while the wider build is migrated away from
-// custom task wiring.
-def moduleName = 'io.github.ggeorg.delosdb.spi'
+// Gradle Java module for the DelosDB provider-facing SPI.
 def moduleClassDir = layout.buildDirectory.dir('classes/spi')
 
 java {
@@ -49,11 +46,6 @@ tasks.named('jar', Jar) {
     manifest {
         attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB SPI Stability Markers')
     }
-}
-
-// Compatibility alias used by the root `jars` task.
-tasks.register('delosDbSpiJar') {
-    dependsOn tasks.named('jar')
 }
 
 tasks.named('check') {

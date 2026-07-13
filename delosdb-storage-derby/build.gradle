@@ -78,32 +78,12 @@ tasks.named('jar', Jar) {
     }
 }
 
-// Compatibility runtime jar used by the root `jars` task.
-tasks.register('legacyDerbyStorageJar', Jar) {
-    dependsOn tasks.named('compileJava'), tasks.named('processResources')
-    archiveFileName = 'delosdb-storage-derby.jar'
-    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from(mainClassDir)
-    from(sourceSets.main.output.resourcesDir)
-    from(rootProject.ext.delosdbLegalFiles) {
-        into 'META-INF'
-    }
-    manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Derby Storage')
-    }
-}
-
-
 artifacts {
     derbyRuntimePatchElements(tasks.named('jar')) {
         builtBy tasks.named('jar')
     }
 }
 
-tasks.named('assemble') {
-    dependsOn tasks.named('legacyDerbyStorageJar')
-}
 
 tasks.named('check') {
     dependsOn tasks.named('classes')

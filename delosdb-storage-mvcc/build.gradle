@@ -8,8 +8,8 @@ import org.gradle.api.tasks.testing.Test
 version = rootProject.version
 group = rootProject.group
 
-// Real Gradle Java module for the experimental DelosDB MVCC storage provider.
-// Keep legacy compile/jar task names while downstream scripts are migrated.
+// Gradle Java module for the DelosDB MVCC storage provider. Its canonical
+// jar task owns the provider artifact used by runtime ServiceLoader checks.
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 def testClassDir = layout.buildDirectory.dir('classes/test')
 
@@ -1277,13 +1277,8 @@ tasks.named('jar', Jar) {
     }
 }
 
-// Compatibility alias used by the root `jars` task.
-tasks.register('delosDbStorageMvccJar') {
-    dependsOn tasks.named('jar')
-}
-
 tasks.named('assemble') {
-    dependsOn tasks.named('classes'), tasks.named('delosDbStorageMvccJar')
+    dependsOn tasks.named('classes'), tasks.named('jar')
 }
 
 tasks.named('check') {

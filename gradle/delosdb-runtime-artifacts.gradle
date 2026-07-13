@@ -7,19 +7,19 @@
 // distributions, and verification gates.
 
 ext.delosdbRuntimeJarArtifacts = [
-        [key: 'annotations', gradleProject: 'delosdb-annotations',   jarTask: 'delosDbAnnotationsJar',  jarName: 'delosdb-annotations.jar'],
-        [key: 'spi',         gradleProject: 'delosdb-spi',           jarTask: 'delosDbSpiJar',          jarName: 'delosdb-spi.jar'],
-        [key: 'storageIo',   gradleProject: 'delosdb-storage-io',    jarTask: 'delosDbStorageIoJar',    jarName: 'delosdb-storage-io.jar'],
-        [key: 'osgi',        gradleProject: 'delosdb-osgi-stub',     jarTask: 'osgiFrameworkStubJar',   jarName: 'osgi-framework-stub.jar'],
-        [key: 'commons',     gradleProject: 'delosdb-commons',       jarTask: 'derbySharedJar',         jarName: 'derbyshared.jar'],
+        [key: 'annotations', gradleProject: 'delosdb-annotations',   jarTask: 'jar',  jarName: 'delosdb-annotations.jar'],
+        [key: 'spi',         gradleProject: 'delosdb-spi',           jarTask: 'jar',          jarName: 'delosdb-spi.jar'],
+        [key: 'storageIo',   gradleProject: 'delosdb-storage-io',    jarTask: 'jar',    jarName: 'delosdb-storage-io.jar'],
+        [key: 'osgi',        gradleProject: 'delosdb-osgi-stub',     jarTask: 'jar',   jarName: 'osgi-framework-stub.jar'],
+        [key: 'commons',     gradleProject: 'delosdb-commons',       jarTask: 'jar',         jarName: 'derbyshared.jar'],
         [key: 'runtimeApi',  gradleProject: 'delosdb-runtime-api',   jarTask: 'delosDbRuntimeApiJar',   jarName: 'delosdb-runtime-api.jar'],
-        [key: 'storageMvcc', gradleProject: 'delosdb-storage-mvcc',  jarTask: 'delosDbStorageMvccJar',  jarName: 'delosdb-storage-mvcc.jar'],
+        [key: 'storageMvcc', gradleProject: 'delosdb-storage-mvcc',  jarTask: 'jar',  jarName: 'delosdb-storage-mvcc.jar'],
         [key: 'engine',      gradleProject: 'delosdb-engine',        jarTask: 'derbyJar',               jarName: 'derby.jar'],
-        [key: 'client',      gradleProject: 'delosdb-client',        jarTask: 'derbyClientJar',         jarName: 'derbyclient.jar'],
-        [key: 'tools',       gradleProject: 'delosdb-tools',         jarTask: 'derbyToolsJar',          jarName: 'derbytools.jar'],
-        [key: 'server',      gradleProject: 'delosdb-server',        jarTask: 'derbyNetJar',            jarName: 'derbynet.jar'],
-        [key: 'optional',    gradleProject: 'delosdb-optionaltools', jarTask: 'derbyOptionalToolsJar',  jarName: 'derbyoptionaltools.jar'],
-        [key: 'runner',      gradleProject: 'delosdb-runner',        jarTask: 'derbyRunJar',            jarName: 'derbyrun.jar']
+        [key: 'client',      gradleProject: 'delosdb-client',        jarTask: 'jar',         jarName: 'derbyclient.jar'],
+        [key: 'tools',       gradleProject: 'delosdb-tools',         jarTask: 'jar',          jarName: 'derbytools.jar'],
+        [key: 'server',      gradleProject: 'delosdb-server',        jarTask: 'jar',            jarName: 'derbynet.jar'],
+        [key: 'optional',    gradleProject: 'delosdb-optionaltools', jarTask: 'jar',  jarName: 'derbyoptionaltools.jar'],
+        [key: 'runner',      gradleProject: 'delosdb-runner',        jarTask: 'jar',            jarName: 'derbyrun.jar']
 ]
 
 // These jars are assembled and published/checked, but are not placed directly
@@ -27,8 +27,8 @@ ext.delosdbRuntimeJarArtifacts = [
 // merged into derby.jar. Keeping them separate avoids split-package drift while
 // still making root :jars build the complete artifact set.
 ext.delosdbAssembledSupportJarArtifacts = [
-        [key: 'storageApi', gradleProject: 'delosdb-storage-api',     jarTask: 'storageApiJar',   jarName: 'delosdb-storage-api.jar'],
-        [key: 'storeApi',   gradleProject: 'delosdb-derby-store-api', jarTask: 'derbyStoreApiJar', jarName: 'delosdb-derby-store-api.jar']
+        [key: 'storageApi', gradleProject: 'delosdb-storage-api',     jarTask: 'jar',   jarName: 'delosdb-storage-api.jar'],
+        [key: 'storeApi',   gradleProject: 'delosdb-derby-store-api', jarTask: 'jar', jarName: 'delosdb-derby-store-api.jar']
 ]
 
 ext.delosdbAssembledJarArtifacts = ext.delosdbRuntimeJarArtifacts + ext.delosdbAssembledSupportJarArtifacts
@@ -47,13 +47,18 @@ ext.delosdbRuntimeJars = {
 }
 
 ext.delosdbRuntimeBuildTasks = [
-        ':delosdb-storage-io:compileDelosDbStorageIo',
-        ':delosdb-runtime-api:compileDelosDbRuntimeApi',
-        ':delosdb-storage-api:compileStorageApi',
-        ':delosdb-engine:compileClassSizeCatalog',
-        'splitEngineMessages',
-        'generateOdbcMetadata',
-        'ensureCatalogMetadataResources'
+        ':delosdb-osgi-stub:classes',
+        ':delosdb-commons:classes',
+        ':delosdb-storage-io:classes',
+        ':delosdb-runtime-api:classes',
+        ':delosdb-storage-api:classes',
+        ':delosdb-engine:classes',
+        ':delosdb-client:classes',
+        ':delosdb-tools:classes',
+        ':delosdb-server:classes',
+        ':delosdb-optionaltools:classes',
+        ':delosdb-runner:classes',
+        ':delosdb-engine:compileClassSizeCatalog'
 ]
 
 tasks.register('compileAll') {
@@ -64,6 +69,9 @@ tasks.register('jars') {
     dependsOn project.ext.delosdbAssembledJarTaskPaths
 }
 
+def delosdbRuntimeJarFileCollection = objects.fileCollection().from(ext.delosdbRuntimeJarFiles.call())
+def delosdbAsmRuntimeFileCollection = objects.fileCollection().from(configurations.delosdbAsm)
+
 tasks.register('verifyDelosRuntimeStorageProviders') {
     group = 'verification'
     description = 'Verifies that storage-provider jars are modeled in the DelosDB runtime jar set and discoverable through ServiceLoader.'
@@ -73,15 +81,15 @@ tasks.register('verifyDelosRuntimeStorageProviders') {
     def serviceTypeName = 'org.apache.derby.iapi.store.types.DelosStorageProviderFactory'
     def expectedProviderClass = 'io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccInheritedStorageProviderFactory'
     def expectedProviderName = 'delos_mvcc'
-    def mvccProviderJar = project.layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar')
+    def mvccProviderJar = layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar')
 
-    inputs.files(project.ext.delosdbRuntimeJarFiles.call())
-    inputs.files(project.configurations.delosdbAsm)
+    inputs.files(delosdbRuntimeJarFileCollection).withPropertyName('runtimeJars')
+    inputs.files(delosdbAsmRuntimeFileCollection).withPropertyName('asmRuntime')
 
     doLast {
         def mvccJar = mvccProviderJar.get().asFile
         if (!mvccJar.isFile()) {
-            throw new GradleException("Missing MVCC provider runtime jar: ${mvccJar}. The root :jars task must model :delosdb-storage-mvcc:delosDbStorageMvccJar.")
+            throw new GradleException("Missing MVCC provider runtime jar: ${mvccJar}. The root :jars task must model :delosdb-storage-mvcc:jar.")
         }
 
         def serviceLines = []
@@ -100,8 +108,8 @@ tasks.register('verifyDelosRuntimeStorageProviders') {
             throw new GradleException("${mvccJar} does not advertise ${expectedProviderClass} in ${serviceResource}; found ${serviceLines}")
         }
 
-        def runtimeFiles = project.ext.delosdbRuntimeJarNames.collect { project.layout.buildDirectory.file("libs/${it}").get().asFile }
-        runtimeFiles.addAll(project.configurations.delosdbAsm.files)
+        def runtimeFiles = delosdbRuntimeJarFileCollection.files.toList()
+        runtimeFiles.addAll(delosdbAsmRuntimeFileCollection.files)
         def missingRuntimeFiles = runtimeFiles.findAll { !it.isFile() }
         if (!missingRuntimeFiles.isEmpty()) {
             throw new GradleException('DelosDB runtime jar set has missing file(s): ' + missingRuntimeFiles)

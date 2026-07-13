@@ -38,7 +38,6 @@ Current S0 dependency shape:
 - `delosRuntimeArtifactModelStaticAnalysis`
 - `delosModuleDependencyBoundaryStaticAnalysis`
 - `delosWorkspaceChurnStaticAnalysis`
-- `delosDeadCodeCandidateReport`
 - `delosHeapRawStoreDuplicateClassificationReport`
 - `delosDerbyModuleParityStaticAnalysis`
 - `delosDerbyForkDiffClassificationStaticAnalysis`

@@ -34,11 +34,6 @@ tasks.named('compileJava', JavaCompile) {
     options.compilerArgs.add('-Xlint:deprecation')
 }
 
-// Compatibility alias used by existing downstream tasks.
-tasks.register('compileDelosDbStorageIo') {
-    dependsOn tasks.named('compileJava')
-}
-
 tasks.named('jar', Jar) {
     archiveFileName = 'delosdb-storage-io.jar'
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
@@ -51,10 +46,6 @@ tasks.named('jar', Jar) {
     }
 }
 
-// Compatibility alias used by the root `jars` task.
-tasks.register('delosDbStorageIoJar') {
-    dependsOn tasks.named('jar')
-}
 
 tasks.named('check') {
     dependsOn tasks.named('classes')

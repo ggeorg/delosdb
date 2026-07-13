@@ -5,9 +5,8 @@ plugins {
 version = rootProject.version
 group = rootProject.group
 
-// Real Gradle Java module for inherited Derby store contracts. Keep the
-// legacy compile/jar task names as lifecycle aliases while downstream modules
-// are migrated away from custom task wiring.
+// Gradle Java module for inherited Derby store contracts. The retained
+// compile alias is consumed by patch-module build wiring.
 def mainClassDir = layout.buildDirectory.dir('classes/store-api')
 
 java {
@@ -55,10 +54,6 @@ tasks.named('jar') {
     }
 }
 
-// Compatibility alias used by the root `jars` task.
-tasks.register('derbyStoreApiJar') {
-    dependsOn tasks.named('jar')
-}
 
 tasks.named('check') {
     dependsOn tasks.named('classes')

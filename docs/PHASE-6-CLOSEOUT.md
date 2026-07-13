@@ -1,31 +1,14 @@
-# Phase 6 build and module closeout
+# Phase 6 build, cleanup, and module closeout
 
 ## Status
 
-Phase 6 implementation is complete in the repository after this closeout slice.
-The phase is closed only after the focused checks and normal JDK 25 gates for the
-slice are green.
+Phase 6 is ready to close when the focused JDK 25 verification and normal gates
+for this slice are green. This document records the resulting build ownership;
+it does not replace executable verification.
 
-This closeout covers:
+## Objective evidence
 
-```text
-production-code and build-edge review
-Gradle duplication and task ownership
-generated-resource ownership
-compatibility aliases
-custom source sets and patch configurations
-report/static-gate ownership
-Gradle 10 deprecation cleanup in touched resource tasks
-configuration-cache risk review
-module-consolidation assessment
-curated dead-code candidate resolution
-```
-
-No module merge is justified by the current evidence.
-
-## Repository evidence
-
-The source dependency report records:
+The module dependency report must remain at:
 
 ```text
 23 modules
@@ -36,400 +19,212 @@ The source dependency report records:
 0 cross-module output-directory backdoors
 ```
 
-The remaining dependency declarations without ordinary source references are
-intentional:
+The remaining declarations without ordinary source references are intentional:
 
 ```text
 delosdb-pptesting
     testImplementation -> delosdb-derby-store-api
-    classfile-signature dependency through StringDataValue inherited Store* types
-
+    inherited StringDataValue signatures expose Store* interfaces
 
 delosdb-engine
     derbyRuntimePatchArtifacts -> delosdb-storage-derby
     inherited org/apache/derby/impl/store/** classes are assembled into derby.jar
 
-
 delosdb-optionaltools
     enginePatchModule -> delosdb-storage-api
-    DataValueDescriptor signatures require inherited StoreOrderable/StoreDataValue types
+    inherited DataValueDescriptor signatures expose StoreOrderable/StoreDataValue
 ```
-
-The report remains evidence for human review. It is not an automatic dependency
-removal policy.
 
 ## Generated-resource ownership
 
-### Module-owned resources
+Generated resources now have one explicit owner and one output location.
 
-The module that publishes a product artifact owns its ordinary resources and
-product information:
+| Resource | Producer | Output owner | Artifact consumer |
+| --- | --- | --- | --- |
+| Product `info.properties` | shared `gradle/delosdb-product-info.gradle` convention, configured by each module | publishing module | commons, engine, client, tools, server, optional-tools JAR |
+| Embedded JDBC driver service | static engine resource | `delosdb-engine` | `delosdb-engine.jar`, `derby.jar` |
+| Client JDBC driver service | static client resource | `delosdb-client` | `derbyclient.jar` |
+| Engine/client message bundles | root `splitEngineMessages` cross-module generator | dedicated generated-resource directories in engine/client | engine and client `processResources` |
+| Locale message bundles | root `splitEngineMessages` | root locale output | locale/distribution tasks |
+| ODBC metadata | root `generateOdbcMetadata` build-tool execution | dedicated generated-resource directory in engine | engine `processResources` |
+| Catalog metadata | ordinary source resource under engine source ownership | engine `processResources` | engine artifacts |
+| SQL parser | `delosdb-engine:generateSqlParser` | engine generated sources | engine compilation |
+| ij parsers | `delosdb-tools:generateIjParsers` | tools generated sources | tools compilation |
+| `ClassSizeCatalogImpl` | root `generateClassSizeCatalog` plus runtime-api compile task | isolated runtime-api generated class output | Derby-compatible runtime-api JAR |
 
-| Artifact owner | Generated or copied resource owner |
-| --- | --- |
-| `delosdb-commons` | shared `info.properties` |
-| `delosdb-engine` | engine `info.properties`, JDBC driver service descriptor, ordinary engine resources |
-| `delosdb-client` | client `info.properties`, client JDBC service descriptor |
-| `delosdb-tools` | tools `info.properties`, ordinary tools resources |
-| `delosdb-server` | network-server `info.properties`, ordinary server resources |
-| `delosdb-optionaltools` | optional-tools `info.properties` |
-| `delosdb-storage-derby` | Derby-store ServiceLoader resources |
-| `delosdb-storage-bridge` | Derby/MVCC bridge ServiceLoader resources |
-| `delosdb-storage-mvcc` | MVCC provider ServiceLoader resource |
+The previous shared class/resource staging workaround is removed. Compilation
+writes classes to module class directories. `processResources` writes resources
+to the standard resource output. JAR tasks consume the source-set outputs rather
+than relying on compilation/resource ordering inside one mutable directory.
 
-The root `processDerbyResources` task was removed because it wrote the engine's
-ordinary resources, JDBC service descriptor, and product-information file into
-the same output tree already owned by `:delosdb-engine:processResources`.
+The six identical product-information implementations are consolidated in one
+small convention backed by Gradle's typed `WriteProperties` task. Each module still declares only its artifact-specific task
+name, resource path, technology name, and product filename.
 
-The root cross-module generators now depend directly on the engine-owned
-resource task:
+## Artifact ownership
 
-```text
-splitEngineMessages
-generateOdbcMetadata
-ensureCatalogMetadataResources
-```
-
-### Root-owned cross-module generation
-
-The root build continues to own generation that genuinely spans modules or uses
-build-tool execution:
+The root runtime-artifact model points to canonical `jar` tasks whenever the
+normal Gradle JAR and the Derby-compatible distribution JAR are identical.
+Duplicate JAR tasks and forwarding aliases were removed for:
 
 ```text
-split engine/client/locale messages
-ODBC metadata generation
-catalog metadata placement
-ClassSizeCatalog generation
+annotations
+SPI
+storage I/O
+OSGi stub
+commons
+storage API
+Derby store API
+MVCC provider
+client
+tools
+server
+optional tools
+runner
 ```
 
-This is not ordinary module resource copying. Keeping it at the root makes the
-cross-module inputs and outputs explicit.
+The canonical JAR writes directly to root `build/libs` for distribution-owned
+artifacts. Publication uses the same canonical task, so publication no longer
+expects archive properties from lifecycle-only aliases.
 
-### Product-information task duplication
-
-The product-information task bodies are similar, but they remain local to their
-artifact owners. A shared custom plugin or convention was not introduced because:
+Separate JAR tasks remain only where artifact contents genuinely differ:
 
 ```text
-the tasks are small
-the output paths and lifecycle owners are module-specific
-local ownership is immediately visible in each artifact build file
-extraction would reduce lines without removing an ownership boundary
+delosdb-engine:jar
+    ordinary engine module artifact
+
+delosdb-engine:derbyJar
+    Derby-compatible engine with patched store API/implementation content
+
+delosdb-runtime-api:jar
+    ordinary project-dependency artifact
+
+delosdb-runtime-api:delosDbRuntimeApiJar
+    Derby-compatible artifact including generated ClassSizeCatalogImpl
 ```
 
-The duplicate root producer was removed; the small local producers remain.
+`delosdb-storage-derby` and `delosdb-storage-bridge` keep their standard
+module-local JARs because those exact outgoing artifacts are consumed as
+`derbyRuntimePatchElements`. Their duplicate root-copy JAR tasks were removed.
 
-The root-only `moduleSourceRoots`, `productInfoResources`, `externalModulePath`,
-`javaccClasspath`, `delosdbConfigureJavaCompile`, `replaceInFile`, and
-`writeInfoProperties` declarations were also removed. Their consumers had already
-moved into the owning module build files, leaving the root declarations unused.
-The unconsumed `delosdbPublicationProjectNames` metadata export and
-`delosdbExtensionRuntimeJars` wrapper were removed for the same reason.
+The engine and client JAR tasks verify their boot-critical resources before
+completion. The engine check covers the embedded driver service,
+`modules.properties`, and engine product information. The client check covers
+the client driver service, product information, and generated messages.
 
-## Task and alias ownership
+## Task and report cleanup
 
-### Removed root forwarding tasks
-
-Forty-one root-level `mvcc*` forwarding tasks and five unconsumed module compile aliases were removed. They only delegated
-to canonical tasks in `:delosdb-storage-mvcc`, had no repository, documentation,
-CI, packaging, or aggregate-task consumers, and did not represent a Derby
-compatibility surface.
-
-The removed module aliases were `compileDelosDbAnnotations`, `compileDelosDbSpi`, `compileOsgiStubs`, `compileDelosDbStorageMvcc`, and `compileDerbyTestsModule`; their standard `compileJava` tasks and artifact tasks remain.
-
-Canonical focused verification remains available through project-qualified task
-names, for example:
+Removed build surface includes:
 
 ```text
-:delosdb-storage-mvcc:runMvccCoreModelTest
-:delosdb-storage-mvcc:runMvccRecoveryReplayEngineTest
-:delosdb-storage-mvcc:runDelosMvccLifecycleProofs
-:delosdb-storage-mvcc:check
+unused root module inventory and metadata exports
+41 root MVCC forwarding tasks
+five previously unconsumed module compile aliases
+one additional unconsumed storage-I/O compile alias
+15 duplicate or forwarding JAR tasks
+one obsolete engine service-copy alias
+three duplicate generated-resource wrapper/copy tasks
+two unconsumed historical test aggregators
+28 completed phase-specific static-analysis tasks
+28 completed phase-specific proof/state manifests
+stale one-shot cleanup scripts
 ```
 
-### Retained aliases
+Completed proof manifests were removed only when their task had no aggregate,
+CI, documentation, packaging, or runtime consumer and the underlying behavior is
+covered by maintained tests or current design documentation. Stable S0 checks,
+current compatibility classifications, JDK/JFR/optimizer/null-key proofs, and
+opt-in external validation tooling remain.
 
-The following alias categories remain because they have live ownership:
+The retained reusable script is:
 
 ```text
-module compile aliases
-    consumed by root bytecode verification or cross-module generation
-
-runtime jar tasks
-    consumed by gradle/delosdb-runtime-artifacts.gradle and publication
-
-copyEngineServiceDescriptors
-    consumed by the storeless compatibility module
-
-compileClassSizeCatalog
-    connects the engine artifact to the runtime-api generated catalog
-
-root Derby verification/distribution tasks
-    documented and/or called by CI
+scripts/module-dependency-tree.py
 ```
 
-Aliases were not removed merely because a direct source import did not reference
-them.
+It is consumed by `delosModuleDependencyReport`.
 
-## Custom source sets and configurations
+## Configuration-cache and Gradle ownership
 
-The custom source sets remain justified:
+Configuration-time Git revision lookup uses a `ValueSource`, preserving the
+short revision and `local` fallback while making the revision a tracked input.
+
+Execution-time build-tool tasks use captured file/provider inputs and injected
+Gradle services. The engine and tools parser generators, root message/ODBC/class
+size generators, server/optional-tools patch-module compilation, runtime artifact
+assembly, and stable S0 static checks do not reach back into a Gradle script
+object during task execution.
+
+`WriteProperties` declares each generated file as a typed task output and writes
+reproducible UTF-8 content without a timestamp.
+
+Configuration-cache verification is required for:
 
 ```text
-delosdb-buildtools
-    isolated build-time generators executed from a dedicated output tree
-
-
-delosdb-pptesting
-    package-private inherited test island compiled on the classpath
-
-
-delosdb-tests
-    inherited Derby test module and consumable test-classes output
-
-
-delosdb-storeless
-    inherited classpath-only storeless prototype that reaches engine internals
-
-
-delosdb-demos and delosdb-locales
-    non-production source/distribution ownership rather than runtime Java modules
+canonical runtime JAR assembly
+s0CloseoutVerification
 ```
 
-The custom patch/runtime configurations also remain justified:
+Gradle deprecation warnings must be reviewed with `--warning-mode all`. This
+phase does not hide unsupported tasks with `notCompatibleWithConfigurationCache`
+and does not add compatibility shims merely to silence warnings.
 
-```text
-enginePatch
-    patches inherited store API contracts into the engine module
+## Module-consolidation assessment
 
-derbyRuntimePatchArtifacts
-    assembles inherited Derby store implementation and bridge resources into derby.jar
-
-enginePatchModule
-    compiles server/optional tools against engine patch-module signatures
-
-derbyRuntimePatchElements
-    exposes exact patch artifacts from storage-derby and storage-bridge
-
-derbyEngineClasses
-    exposes engine classes to compile-only compatibility consumers
-
-derbyTestsClasses
-    exposes inherited test classes to package-private tests
-```
-
-They encode artifact or JPMS boundaries and are not ordinary source dependencies.
-
-## Runtime artifact and legal-file ownership
-
-`gradle/delosdb-runtime-artifacts.gradle` remains the single source of truth for:
-
-```text
-assembled runtime jars
-support jars
-runtime classpaths
-root jars task dependencies
-storage-provider discovery verification
-```
-
-Individual artifact tasks continue to own:
-
-```text
-archive name
-module class assembly
-legal files under META-INF
-artifact-specific manifest title
-artifact-specific generated resources
-```
-
-The superficially similar JAR blocks were not replaced by one generic JAR task
-because they produce different Derby-compatible artifacts and, in the engine's
-case, patch and merge additional storage content.
-
-## Static gates, reports, and cleanup scripts
-
-The stable S0 gates remain unchanged in purpose. Phase-specific implementation
-gates remain opt-in and are not S0 dependencies.
-
-Generated reports remain below `build/reports`; no generated report is committed
-as source. Each retained report has an owning task, and advisory reports remain
-explicitly advisory.
-
-Documentation task examples were checked against the registered build surface. The
-stale `networkServerSmoke` and `verifyReleaseDistribution` commands were removed;
-current documented commands resolve to live tasks. The old release-readiness plan
-is explicitly marked historical rather than presented as the active phase.
-
-The cleanup-script static check now recognizes both historical naming forms:
-
-```text
-cleanup-overlay-*.sh
-cleanup-*-overlay.sh
-```
-
-The stale Phase 5 one-shot cleanup script is removed by the Phase 6 cleanup
-script. The Phase 6 cleanup script removes itself after use so no new one-shot
-script remains in the repository.
-
-`scripts/module-dependency-tree.py` remains because it is a reusable maintained
-tool consumed by `delosModuleDependencyReport`.
-
-## Gradle and configuration-cache review
-
-The existing `ProcessResources` output assignments remain expressed with the
-property supported by the repository's Gradle 9.5.1 task type:
-
-```groovy
-destinationDir = outputDirectory.get().asFile
-```
-
-`destinationDirectory` is valid for task types such as `JavaCompile` and archive
-tasks, but it is not exposed by this build's `ProcessResources` task. The Phase 6
-cleanup therefore does not attempt a cosmetic property migration for resource
-processing.
-
-No custom plugin was added. No task was converted merely for style.
-
-The root build revision is obtained through `DelosDbGitRevisionValueSource`
-instead of calling `ExecOperations.exec` from a plain provider during project
-configuration. The value source preserves the existing short Git revision and
-`local` fallback semantics. Its returned value is a configuration input, so a
-Git revision change invalidates the stored configuration rather than reusing
-stale manifest and product-information metadata.
-
-The engine artifact path is also free of execution-time references to Gradle
-script model objects. In particular:
-
-```text
-splitEngineMessages
-    captures declared files, directories, and classpaths during configuration
-    and executes build tools through injected ExecOperations
-
-generateOdbcMetadata
-    captures its work directory, source resources, output file, and classpath
-    and uses JVM file copying rather than project.copy during task execution
-
-ensureCatalogMetadataResources
-    is a declarative Copy task rather than an ad-hoc project.copy action
-
-generateClassSizeCatalog
-    executes from declared FileCollection inputs through injected ExecOperations
-
-:delosdb-engine:compileJava
-    captures the engine patch path as a FileCollection instead of looking up a
-    Configuration from its doFirst action
-
-:delosdb-engine:generateSqlParser
-    uses injected FileSystemOperations and JVM file APIs rather than project
-    delete/helper closures during execution
-```
-
-The engine and shared product-information generators capture their version and
-build-revision values as explicit task inputs. This both avoids project-model
-access from task actions and causes the files to be regenerated when the Git
-revision or DelosDB version changes.
-
-Configuration-cache verification must be performed with the repository's JDK 25
-and Gradle wrapper. The required focused commands are recorded with the overlay
-that delivers this document.
-
-## Module-consolidation decision
-
-| Module | Boundary that justifies keeping it separate |
-| --- | --- |
-| `delosdb-annotations` | neutral published annotation API and JPMS module |
-| `delosdb-buildtools` | build-time generators; not runtime code |
-| `delosdb-client` | Derby-compatible `derbyclient.jar` and JPMS module |
-| `delosdb-commons` | Derby-compatible shared API/runtime artifact and JPMS module |
-| `delosdb-demos` | demo/distribution source ownership |
-| `delosdb-derby-store-api` | inherited store contracts and patch-module boundary |
-| `delosdb-engine` | Derby-compatible `derby.jar`, engine JPMS module, patch assembly owner |
-| `delosdb-locales` | locale distribution ownership |
-| `delosdb-optionaltools` | Derby-compatible optional-tools artifact and optional dependencies |
-| `delosdb-osgi-stub` | isolated OSGi compile/runtime compatibility stub |
-| `delosdb-pptesting` | package-private test isolation |
-| `delosdb-runner` | Derby-compatible runner artifact and JPMS module |
-| `delosdb-runtime-api` | extracted inherited runtime contracts and JPMS boundary |
-| `delosdb-server` | DRDA server artifact and JPMS module |
-| `delosdb-spi` | public DelosDB SPI and JPMS module |
-| `delosdb-storage-api` | provider-neutral storage contract boundary |
-| `delosdb-storage-bridge` | Derby-facing MVCC adapter and patch artifact |
-| `delosdb-storage-derby` | inherited Derby store implementation and derby.jar patch artifact |
-| `delosdb-storage-io` | low-level Delos-native page/volume contracts and JPMS module |
-| `delosdb-storage-mvcc` | independently discoverable storage provider runtime artifact |
-| `delosdb-storeless` | isolated inherited storeless compatibility prototype |
-| `delosdb-tests` | inherited compatibility/integration test artifact and task ownership |
-| `delosdb-tools` | Derby-compatible `derbytools.jar` and JPMS module |
-
-Consolidating any of these modules would currently erase a real compatibility,
-artifact, JPMS, ServiceLoader, test-isolation, or build-tool boundary. The Phase 6
-conclusion is therefore:
-
-```text
 No module merge is justified.
-```
 
-## Production dead-code review
+| Module | Boundary retained |
+| --- | --- |
+| `delosdb-osgi-stub` | isolated compile-time OSGi compatibility surface |
+| `delosdb-commons` | shared Derby utilities and published artifact |
+| `delosdb-runtime-api` | inherited runtime contracts and generated catalog artifact split |
+| `delosdb-annotations` | independently owned annotations artifact |
+| `delosdb-spi` | public DelosDB SPI artifact |
+| `delosdb-storage-io` | provider-neutral storage I/O artifact |
+| `delosdb-storage-api` | public storage provider contracts and patch boundary |
+| `delosdb-derby-store-api` | inherited Derby store signatures and patch boundary |
+| `delosdb-storage-mvcc` | independent provider implementation and ServiceLoader artifact |
+| `delosdb-storage-derby` | inherited Derby implementation patch artifact |
+| `delosdb-storage-bridge` | Derby-facing MVCC adapter and patch artifact |
+| `delosdb-engine` | Derby-compatible embedded engine artifact owner |
+| `delosdb-client` | network client JPMS/published artifact |
+| `delosdb-tools` | tools JPMS/published artifact and parser generation |
+| `delosdb-runner` | executable launcher artifact |
+| `delosdb-optionaltools` | optional deployment and patch-module compile boundary |
+| `delosdb-server` | network server JPMS/published artifact |
+| `delosdb-tests` | inherited integration-test ownership and test fixture generation |
+| `delosdb-pptesting` | package-private inherited test island |
+| `delosdb-storeless` | isolated inherited storeless compatibility prototype |
+| `delosdb-demos` | demo/distribution source ownership |
+| `delosdb-locales` | locale/distribution ownership |
+| `delosdb-buildtools` | isolated build-time generators |
 
-The two curated candidates were rechecked:
+## Production dead-code conclusion
 
-```text
-MvccDurableIndexStore
-    retained: compatibility facade used by durable-index proof tests
+The final high-confidence sweep found no production class safe to remove without
+changing a supported API, ServiceLoader path, durable behavior, reflection path,
+or maintained test. The former candidates `MvccDurableIndexStore` and
+`MvccVacuum` remain because focused durable-index and vacuum tests use them.
 
-MvccVacuum
-    retained: coordinator used by durable and concurrent vacuum tests
-```
+This closeout intentionally removes only proven dead build/report surface. It
+does not turn Phase 6 into a production architecture refactor.
 
-They are not dead code. Their active candidate rows were removed so the report no
-longer presents resolved items as open deletion hypotheses.
+## Exit criteria
 
-No other production deletion was made without evidence for source use,
-classfile-signature use, reflection, ServiceLoader, durable-format ownership,
-packaging, tests, and compatibility.
-
-## Shared Java/resource output ordering
-
-Several inherited compatibility modules intentionally place compiled classes and
-processed resources in one module output tree because root generators still
-consume that combined layout directly. Their `processResources` tasks therefore
-depend on `compileJava`; otherwise a clean `JavaCompile` can run after resource
-processing and remove files that were already written.
-
-`splitEngineMessages` also compiles the client module before writing client
-message resources into its shared output tree.
-
-The engine artifacts do not rely only on that shared staging directory for
-module-owned resources. Both `delosdb-engine.jar` and the Derby-compatible
-`derby.jar` assemble ordinary engine resources, the JDBC driver service
-descriptor, and engine product information directly from their authoritative
-source and generated-resource directories. Root-generated messages, ODBC
-metadata, and catalog metadata continue to come from the combined module output.
-
-Both engine JAR tasks verify the JDBC driver service descriptor,
-`modules.properties`, and engine product information before completing. This
-turns a missing boot-resource regression into an artifact-assembly failure rather
-than a later `No suitable driver` error in the native-authentication fixture.
-
-## Phase 6 exit decision
-
-After this slice passes its JDK 25 focused checks and normal gates, Phase 6 meets
-its closeout criteria:
+Phase 6 closes after the verification commands are green with:
 
 ```text
 no confirmed dead production code
 no unexplained dependency candidates
-no unjustified custom build-wiring edges
-no stale one-shot cleanup scripts
-no obsolete root MVCC forwarding or unconsumed module compile aliases
-no generated reports without task ownership
-no package ownership collisions
-no output-directory classpath backdoors
-no module merge without a real boundary benefit
-module boundaries documented and justified
+no duplicate generated-resource owner
+no duplicate identical JAR implementation
+no unjustified custom build-wiring edge
+no stale one-shot cleanup script
+no obsolete unconsumed task alias
+no consumerless committed proof/state report
+no package-owner collision
+no output-directory classpath backdoor
+configuration-cache reuse for the verified build surfaces
+all 23 module boundaries justified
+normal gates green
 ```
-
-The next phase should be selected from a concrete correctness, compatibility,
-performance, or release-readiness need rather than extending cleanup for its own
-sake.
-

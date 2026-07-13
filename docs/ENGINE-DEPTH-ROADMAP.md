@@ -84,7 +84,6 @@ no silent omission of provider-owned sidecar state
 Gate:
 
 ```text
-./gradlew delosBackupRestoreSidecarVerificationStaticAnalysis
 ./gradlew s0CloseoutVerification
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
 ./gradlew :delosdb-storage-derby:check :delosdb-storage-mvcc:check
@@ -139,7 +138,6 @@ no DRDA/JDBC behavior change outside the issue scope
 Gate:
 
 ```text
-./gradlew delosDerby7107ReviewStaticAnalysis
 ./gradlew delosDerbyForkDiffClassificationStaticAnalysis
 ./gradlew s0CloseoutVerification
 ```
@@ -206,7 +204,6 @@ heap optimizer behavior remains unchanged
 Gate:
 
 ```text
-./gradlew delosMvccStatisticsOptimizerCostIntegrationStaticAnalysis
 ./gradlew s0CloseoutVerification
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
 ./gradlew :delosdb-storage-bridge:check :delosdb-storage-mvcc:check
@@ -280,7 +277,6 @@ arbitrary WAL-offset fault injection: truncate, duplicate, and torn rewrite case
 Gate:
 
 ```text
-./gradlew delosMvccRecoveryReplayEngineStaticAnalysis
 ./gradlew s0CloseoutVerification
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
 ./gradlew :delosdb-storage-mvcc:check
@@ -353,7 +349,6 @@ Phase L recovery replay tests rerun after buffer-manager changes
 Gate:
 
 ```text
-./gradlew delosMvccBufferManagerPhase2StaticAnalysis
 ./gradlew s0CloseoutVerification
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
 ./gradlew :delosdb-storage-mvcc:check
@@ -421,7 +416,6 @@ reopen after purge remains correct
 Gate:
 
 ```text
-./gradlew delosMvccPurgeDaemonSchedulingStaticAnalysis
 ./gradlew s0CloseoutVerification
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
 ./gradlew :delosdb-storage-mvcc:check
@@ -485,7 +479,6 @@ no inherited-code cleanup without fork-diff classification update
 Tests and gates:
 
 ```text
-./gradlew delosHeapCleanupPhase2ForkDiffStaticAnalysis
 ./gradlew delosDerbyForkDiffClassificationStaticAnalysis
 ./gradlew s0CloseoutVerification
 ./gradlew :delosdb-storage-derby:check

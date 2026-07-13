@@ -221,11 +221,10 @@ delosModuleDependencyBoundaryStaticAnalysis
 delosOverlayCleanupScriptStaticAnalysis
 delosWorkspaceChurnStaticAnalysis
 delosDerbyModuleParityStaticAnalysis
-delosDeadCodeCandidateReport
 delosHeapRawStoreDuplicateClassificationReport
 ```
 
-The exit decision is intentionally conservative: the repo now has reports and guards for module boundaries, one-shot overlay scripts, workspace churn, inherited duplicate classification, and Derby module parity. Future work should return to feature or correctness slices rather than continuing broad cleanup.
+The exit decision is intentionally conservative: the repository keeps maintained gates for module boundaries, one-shot overlay scripts, workspace churn, inherited duplicate classification, and Derby module parity. Completed phase-specific proof manifests and the empty dead-code candidate report were removed rather than retained as permanent state. Future work should return to feature or correctness slices rather than continuing broad cleanup.
 
 ## Anti-goals for this phase
 

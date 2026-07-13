@@ -46,9 +46,6 @@ tasks.named('jar', Jar) {
     }
 }
 
-tasks.register('delosDbAnnotationsJar') {
-    dependsOn tasks.named('jar')
-}
 
 tasks.named('check') {
     dependsOn tasks.named('classes')

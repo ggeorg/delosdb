@@ -49,26 +49,9 @@ tasks.register('compileDerbyRunner') {
 def runnerArchiveName = 'derbyrun.jar'
 
 tasks.named('jar', Jar) {
-    archiveFileName = runnerArchiveName
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from(rootProject.ext.delosdbLegalFiles) {
-        into 'META-INF'
-    }
-    manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Runner')
-        attributes 'Main-Class': 'org.apache.derby.run.run'
-    }
-}
-
-// Compatibility runtime jar used by the root `jars` task. Keep root Derby
-// resource processing out of the normal Gradle jar consumed by project deps.
-tasks.register('derbyRunJar', Jar) {
-    dependsOn tasks.named('compileJava'), tasks.named('processResources')
-    archiveFileName = runnerArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    archiveFileName = runnerArchiveName
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from(moduleClassDir)
-    from(sourceSets.main.output.resourcesDir)
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }

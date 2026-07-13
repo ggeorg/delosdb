@@ -638,30 +638,6 @@ tasks.register('runExternalSortJvmPolicyProofTest', Test) {
 }
 
 
-tasks.register('runPostgresClassArchitectureProofTests') {
-    group = 'verification'
-    description = 'Runs focused proof tests for PostgreSQL-class DelosDB storage/concurrency architecture work.'
-    dependsOn 'runWalRecoveryArchitectureProofTest'
-    dependsOn 'runTransactionLockingRecoveryProofTest'
-    dependsOn 'runBTreeSearchRefactorProofTests'
-    dependsOn 'runBTreeIndexConcurrencyArchitectureProofTest'
-    dependsOn 'runVersionCleanupArchitectureProofTest'
-    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest'
-    dependsOn ':delosdb-storage-mvcc:runMvccTableScanModelTest'
-    dependsOn 'runExternalSortJvmPolicyProofTest'
-}
-
-tasks.register('runInheritedAlgorithmClosureProofTests') {
-    group = 'verification'
-    description = 'Runs focused closure proof tests for the inherited Derby modernization campaign.'
-    dependsOn 'runBTreeSearchRefactorProofTests'
-    dependsOn 'runTransactionLockingRecoveryProofTest'
-    dependsOn 'runExternalSortJvmPolicyProofTest'
-}
-
-
-
-
 tasks.named('classes') {
     dependsOn tasks.named('compileTestJava')
 }

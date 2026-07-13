@@ -3,12 +3,17 @@ plugins {
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.file.FileSystemOperations
 import org.gradle.process.ExecOperations
 import javax.inject.Inject
+import java.nio.file.Files
 
-abstract class DelosDbToolsExecSupport {
+abstract class DelosDbToolsBuildServices {
     @Inject
     abstract ExecOperations getExecOperations()
+
+    @Inject
+    abstract FileSystemOperations getFileSystemOperations()
 }
 
 version = rootProject.version
@@ -21,11 +26,10 @@ def moduleName = 'org.apache.derby.tools'
 def generatedSourceRoot = layout.buildDirectory.dir("generated/sources/${moduleName}")
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 def javaccClasspath = rootProject.files('tools/java/javacc.jar')
-def execSupport = objects.newInstance(DelosDbToolsExecSupport)
-
-def replaceInFile = { File file, Closure<String> transform ->
-    file.text = transform(file.text)
-}
+def toolsBuildServices = objects.newInstance(DelosDbToolsBuildServices)
+def ijGrammarDir = layout.projectDirectory.dir('src/main/java/org/apache/derby/impl/tools/ij')
+def ijGrammarFile = ijGrammarDir.file('ij.jj')
+def mtGrammarFile = ijGrammarDir.file('mtGrammar.jj')
 
 java {
     sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
@@ -54,71 +58,52 @@ tasks.register('generateIjParsers') {
     def outputDir = generatedSourceRoot.map {
         it.dir('org/apache/derby/impl/tools/ij')
     }
-    inputs.files(
-            rootProject.file('delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/ij.jj'),
-            rootProject.file('delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/mtGrammar.jj')
-    )
+    inputs.files(ijGrammarFile, mtGrammarFile)
+    inputs.files(javaccClasspath).withPropertyName('javaccClasspath')
     outputs.dir(outputDir)
     doLast {
-        delete outputDir
-        outputDir.get().asFile.mkdirs()
-        execSupport.execOperations.javaexec {
-            classpath = javaccClasspath
-            mainClass = 'javacc'
-            workingDir = rootProject.file('delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij')
-            args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'ij.jj'
+        def generatedDir = outputDir.get().asFile
+        toolsBuildServices.fileSystemOperations.delete {
+            delete generatedDir
         }
-        execSupport.execOperations.javaexec {
-            classpath = javaccClasspath
-            mainClass = 'javacc'
-            workingDir = rootProject.file('delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij')
-            args "-OUTPUT_DIRECTORY=${outputDir.get().asFile.absolutePath}", 'mtGrammar.jj'
-        }
-        delete new File(outputDir.get().asFile, 'ParseException.java')
-        def ijConstants = new File(outputDir.get().asFile, 'ijConstants.java')
-        def ijTokenManager = new File(outputDir.get().asFile, 'ijTokenManager.java')
-        def ijParser = new File(outputDir.get().asFile, 'ij.java')
-        def mtParser = new File(outputDir.get().asFile, 'mtGrammar.java')
-        if (ijConstants.exists()) {
-            replaceInFile(ijConstants) { text -> text.replace('public interface', 'interface') }
-        }
-        if (ijTokenManager.exists()) {
-            replaceInFile(ijTokenManager) { text -> text.replace('public class', 'class') }
-        }
-        if (ijParser.exists()) {
-            replaceInFile(ijParser) { text -> text.replace('tokenImage', 'ijConstants.tokenImage') }
-        }
-        if (mtParser.exists()) {
-            replaceInFile(mtParser) { text -> text.replace('tokenImage', 'mtGrammarConstants.tokenImage') }
-        }
-        def charStream = new File(outputDir.get().asFile, 'CharStream.java')
-        def simpleCharStream = new File(outputDir.get().asFile, 'SimpleCharStream.java')
-        if (charStream.exists()) {
-            replaceInFile(charStream) { text ->
-                text
-                        .replace('  int getColumn();', '  @Deprecated\n  int getColumn();')
-                        .replace('  int getLine();', '  @Deprecated\n  int getLine();')
+        generatedDir.mkdirs()
+
+        ['ij.jj', 'mtGrammar.jj'].each { grammarName ->
+            toolsBuildServices.execOperations.javaexec { spec ->
+                spec.classpath = javaccClasspath
+                spec.mainClass.set('javacc')
+                spec.workingDir(ijGrammarDir.asFile)
+                spec.args "-OUTPUT_DIRECTORY=${generatedDir.absolutePath}", grammarName
             }
         }
-        if (simpleCharStream.exists()) {
-            replaceInFile(simpleCharStream) { text ->
-                text
-                        .replace('  public int getColumn() {', '  @Deprecated\n  public int getColumn() {')
-                        .replace('  public int getLine() {', '  @Deprecated\n  public int getLine() {')
+
+        Files.deleteIfExists(new File(generatedDir, 'ParseException.java').toPath())
+
+        def replaceText = { String fileName, Closure<String> transform ->
+            def generated = new File(generatedDir, fileName)
+            if (generated.isFile()) {
+                generated.setText(transform(generated.getText('UTF-8')), 'UTF-8')
             }
+        }
+        replaceText('ijConstants.java') { it.replace('public interface', 'interface') }
+        replaceText('ijTokenManager.java') { it.replace('public class', 'class') }
+        replaceText('ij.java') { it.replace('tokenImage', 'ijConstants.tokenImage') }
+        replaceText('mtGrammar.java') { it.replace('tokenImage', 'mtGrammarConstants.tokenImage') }
+        replaceText('CharStream.java') { text ->
+            text
+                    .replace('  int getColumn();', '  @Deprecated\n  int getColumn();')
+                    .replace('  int getLine();', '  @Deprecated\n  int getLine();')
+        }
+        replaceText('SimpleCharStream.java') { text ->
+            text
+                    .replace('  public int getColumn() {', '  @Deprecated\n  public int getColumn() {')
+                    .replace('  public int getLine() {', '  @Deprecated\n  public int getLine() {')
         }
     }
 }
 
 tasks.named('compileJava', JavaCompile) {
     dependsOn tasks.named('generateIjParsers')
-    // The tools module compiles against the engine module output directory.
-    // Gradle 9 validates that every task writing into that directory is ordered
-    // before this compile; otherwise focused integration gates can fail with
-    // implicit-dependency errors when ODBC/catalog metadata generators update
-    // engine resources.
-    dependsOn rootProject.tasks.named('generateOdbcMetadata')
-    dependsOn rootProject.tasks.named('ensureCatalogMetadataResources')
     destinationDirectory.set(moduleClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
@@ -127,45 +112,16 @@ tasks.named('compileJava', JavaCompile) {
     options.compilerArgs.add('-Xlint:deprecation')
 }
 
-def generatedProductInfoResourceDir = layout.buildDirectory.dir('generated/resources/product-info')
-
-def registerProductInfoTask = { String taskName, String resourcePath, String technologyName, String productFile ->
-    def outputFile = generatedProductInfoResourceDir.map { it.file(resourcePath) }
-    tasks.register(taskName) {
-        outputs.file(outputFile)
-        doLast {
-            def target = outputFile.get().asFile
-            target.parentFile.mkdirs()
-            target.text = """# Generated by Gradle. Do not edit.
-derby.version.major=10
-derby.version.minor=17
-derby.version.maint=1000000
-derby.version.drdamaint=0
-derby.build.number=${rootProject.ext.buildNumberProvider.get()}
-derby.product.technology.name=${technologyName}
-derby.product.external.name=DelosDB
-derby.product.external.version=${rootProject.ext.delosDbVersion}
-delosdb.version=${rootProject.ext.delosDbVersion}
-derby.version.beta=false
-derby.product.vendor=DelosDB Project
-derby.product.file=${productFile}
-"""
-        }
-    }
-}
-
-registerProductInfoTask(
-        'generateToolsInfoProperties',
-        'org/apache/derby/info/tools/info.properties',
-        'DelosDB Tools',
-        'derbytools.jar')
+ext.delosdbProductInfo = [
+        taskName      : 'generateToolsInfoProperties',
+        resourcePath  : 'org/apache/derby/info/tools/info.properties',
+        technologyName: 'DelosDB Tools',
+        productFile   : 'derbytools.jar'
+]
+apply from: rootProject.file('gradle/delosdb-product-info.gradle')
 
 tasks.named('processResources') {
-    // Java classes and resources intentionally share one runtime output tree.
-    // Compile first so JavaCompile cannot remove resources written earlier in a clean build.
-    dependsOn tasks.named('compileJava')
-    dependsOn 'generateToolsInfoProperties'
-    destinationDir = moduleClassDir.get().asFile
+    dependsOn project.ext.delosdbProductInfoTask
     from('src/main/java') {
         include '**/*.properties'
         include '**/*.policy'
@@ -178,7 +134,7 @@ tasks.named('processResources') {
         include 'toolsmessages.properties'
         into 'org/apache/derby/loc/tools'
     }
-    from generatedProductInfoResourceDir
+    from project.ext.delosdbProductInfoResourceDir
 }
 
 // Compatibility alias used by the existing root build.
@@ -189,25 +145,9 @@ tasks.register('compileDerbyTools') {
 def toolsArchiveName = 'derbytools.jar'
 
 tasks.named('jar', Jar) {
-    archiveFileName = toolsArchiveName
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from(rootProject.ext.delosdbLegalFiles) {
-        into 'META-INF'
-    }
-    manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Tools')
-    }
-}
-
-// Compatibility runtime jar used by the root `jars` task. Keep root Derby
-// resource processing out of the normal Gradle jar consumed by project deps.
-tasks.register('derbyToolsJar', Jar) {
-    dependsOn tasks.named('compileJava'), tasks.named('processResources')
-    archiveFileName = toolsArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+    archiveFileName = toolsArchiveName
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from(moduleClassDir)
-    from(sourceSets.main.output.resourcesDir)
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }

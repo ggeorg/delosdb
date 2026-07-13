@@ -7,9 +7,9 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-// Real Gradle Java module for the small Derby build tools used by the root
-// resource/code-generation tasks. Keep the legacy compile task name while the
-// root build is migrated away from custom task wiring.
+// Gradle Java module for the small Derby build tools used by root
+// resource and code generation. The retained compile alias is consumed by
+// existing root generation and verification tasks.
 def buildToolsClassDir = layout.buildDirectory.dir('classes/build-tools')
 
 def buildToolSourceIncludes = [
@@ -53,22 +53,6 @@ tasks.named('compileJava', JavaCompile) {
     options.deprecation = false
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
-}
-
-// Keep build-tool resources beside the compiled build-tool classes because the
-// root generation tasks execute directly from this class directory.
-tasks.named('processResources') {
-    // Java classes and resources intentionally share one runtime output tree.
-    // Compile first so JavaCompile cannot remove resources written earlier in a clean build.
-    dependsOn tasks.named('compileJava')
-    destinationDir = buildToolsClassDir.get().asFile
-}
-
-// The Java plugin sees the shared build-tool output directory as both classes
-// and resources because root generation tasks execute directly from that
-// directory. Keep the runtime layout, but de-duplicate the normal Gradle jar.
-tasks.named('jar', Jar) {
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 // Compatibility alias used by the root build.

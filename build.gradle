@@ -191,10 +191,7 @@ def classSizeCrawlerClasspath = files(
 def rootProjectDirectory = layout.projectDirectory.asFile
 
 tasks.register('generateClassSizeCatalog') {
-    // ClassSizeCrawler scans the compiled engine output tree. Gradle 8.14
-    // requires every task which writes into that tree to be ordered before
-    // this scan, otherwise it reports an implicit dependency problem.
-    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-runtime-api:compileDelosDbRuntimeApi', ':delosdb-storage-api:compileStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-storage-bridge:compileStorageBridge', 'compileDerbyBuildTools', 'splitEngineMessages', 'generateOdbcMetadata', 'ensureCatalogMetadataResources'
+    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-runtime-api:compileDelosDbRuntimeApi', ':delosdb-storage-api:compileStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-storage-bridge:compileStorageBridge', 'compileDerbyBuildTools'
     inputs.files(classSizeCrawlerClasspath).withPropertyName('classSizeCrawlerClasspath')
     outputs.file(classSizeCatalogOutputFile)
     doLast {
@@ -224,16 +221,14 @@ tasks.register('generateClassSizeCatalog') {
 def engineMessagesXml = layout.projectDirectory.file('delosdb-engine/src/main/java/org/apache/derby/loc/messages.xml')
 def generatedMessagesDir = layout.buildDirectory.dir('generated/messages')
 def englishMessagesFile = generatedMessagesDir.map { it.file('messages_en.properties') }
-def engineMessageOutputDir = engineClassDir.map { it.dir('org/apache/derby/loc') }
-def clientMessageOutputDir = moduleClassDir(moduleNames.client).map { it.dir('org/apache/derby/loc/client') }
+def engineMessageOutputDir = project(':delosdb-engine').layout.buildDirectory.dir('generated/resources/messages/org/apache/derby/loc')
+def clientMessageOutputDir = project(':delosdb-client').layout.buildDirectory.dir('generated/resources/messages/org/apache/derby/loc/client')
 def localeMessageOutputDir = layout.buildDirectory.dir('generated/locale/org/apache/derby/loc')
 def englishMessageGeneratorClasspath = files(buildToolsClassDir)
 def splitMessagesClasspath = files(buildToolsClassDir, commonsClassDir)
 
 tasks.register('splitEngineMessages') {
-    // This task writes generated messages into both shared module output trees.
-    // Compile the client first; engine processResources already compiles the engine first.
-    dependsOn 'compileDerbyBuildTools', ':delosdb-engine:processResources', ':delosdb-client:compileJava'
+    dependsOn 'compileDerbyBuildTools'
     inputs.file(engineMessagesXml)
     inputs.files(englishMessageGeneratorClasspath, splitMessagesClasspath)
             .withPropertyName('messageGeneratorClasspath')
@@ -273,9 +268,9 @@ def jdbcMetadataSource = layout.projectDirectory.file('delosdb-engine/src/main/j
 def odbcFragmentsSource = layout.projectDirectory.file('delosdb-buildtools/src/main/java/org/apache/derbyBuild/odbcgen_fragments.properties')
 def buildToolsSourceResourceDir = layout.projectDirectory.dir('delosdb-buildtools/src/main/java')
 def engineSourceResourceDir = layout.projectDirectory.dir('delosdb-engine/src/main/java')
-def generatedMetadataDir = layout.buildDirectory.dir('generated/metadata')
+def generatedMetadataDir = project(':delosdb-engine').layout.buildDirectory.dir('generated/odbc-work')
 def generatedOdbcMetadataFile = generatedMetadataDir.map { it.file('odbc_metadata.properties') }
-def engineJdbcResourceDir = engineClassDir.map { it.dir('org/apache/derby/impl/jdbc') }
+def engineJdbcResourceDir = project(':delosdb-engine').layout.buildDirectory.dir('generated/resources/odbc/org/apache/derby/impl/jdbc')
 def engineJdbcMetadataFile = engineJdbcResourceDir.map { it.file('metadata.properties') }
 def odbcMetadataGeneratorClasspath = files(
         buildToolsClassDir,
@@ -284,7 +279,7 @@ def odbcMetadataGeneratorClasspath = files(
         engineSourceResourceDir)
 
 tasks.register('generateOdbcMetadata') {
-    dependsOn 'compileDerbyBuildTools', ':delosdb-engine:processResources'
+    dependsOn 'compileDerbyBuildTools'
     inputs.file(jdbcMetadataSource)
     inputs.file(odbcFragmentsSource)
     inputs.files(odbcMetadataGeneratorClasspath).withPropertyName('odbcMetadataGeneratorClasspath')
@@ -311,17 +306,6 @@ tasks.register('generateOdbcMetadata') {
     }
 }
 
-def catalogMetadataSource = layout.projectDirectory.file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/metadata_net.properties')
-def engineCatalogResourceDir = engineClassDir.map { it.dir('org/apache/derby/impl/sql/catalog') }
-def engineCatalogMetadataFile = engineCatalogResourceDir.map { it.file('metadata_net.properties') }
-
-tasks.register('ensureCatalogMetadataResources', Copy) {
-    dependsOn ':delosdb-engine:processResources', 'generateOdbcMetadata'
-    from catalogMetadataSource
-    into engineCatalogResourceDir
-    outputs.file(engineCatalogMetadataFile)
-}
-
 def moduleDirsForRuntime = files(
         project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
         project(':delosdb-storage-io').layout.buildDirectory.dir('classes/main'),
@@ -333,7 +317,15 @@ def moduleDirsForRuntime = files(
         moduleClassDir(moduleNames.tools),
         moduleClassDir(moduleNames.server),
         moduleClassDir(moduleNames.optionaltools),
-        moduleClassDir(moduleNames.runner)
+        moduleClassDir(moduleNames.runner),
+        project(':delosdb-commons').layout.buildDirectory.dir('resources/main'),
+        project(':delosdb-runtime-api').layout.buildDirectory.dir('resources/main'),
+        project(':delosdb-engine').layout.buildDirectory.dir('resources/main'),
+        project(':delosdb-client').layout.buildDirectory.dir('resources/main'),
+        project(':delosdb-tools').layout.buildDirectory.dir('resources/main'),
+        project(':delosdb-server').layout.buildDirectory.dir('resources/main'),
+        project(':delosdb-optionaltools').layout.buildDirectory.dir('resources/main'),
+        project(':delosdb-runner').layout.buildDirectory.dir('resources/main')
 )
 
 // Runtime artifact metadata and provider-discovery gates live in a dedicated
@@ -473,14 +465,14 @@ tasks.register('smoke', JavaExec) {
 // Maven coordinates are DelosDB-branded even while the binary distribution keeps
 // Derby-compatible runtime jar names for now.
 ext.delosdbPublicationMetadata = [
-        'delosdb-commons'      : [artifactId: 'delosdb-commons',       jarTask: 'derbySharedJar',        title: 'DelosDB Shared Utilities', dependencies: []],
-        'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'delosDbSpiJar',       title: 'DelosDB SPI Stability Markers', dependencies: []],
+        'delosdb-commons'      : [artifactId: 'delosdb-commons',       jarTask: 'jar',        title: 'DelosDB Shared Utilities', dependencies: []],
+        'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'jar',       title: 'DelosDB SPI Stability Markers', dependencies: []],
         'delosdb-engine'       : [artifactId: 'delosdb-engine',        jarTask: 'derbyJar',              title: 'DelosDB Embedded Engine', dependencies: ['delosdb-commons']],
-        'delosdb-client'       : [artifactId: 'delosdb-client',        jarTask: 'derbyClientJar',        title: 'DelosDB Network Client', dependencies: ['delosdb-commons']],
-        'delosdb-tools'        : [artifactId: 'delosdb-tools',         jarTask: 'derbyToolsJar',         title: 'DelosDB Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-client']],
-        'delosdb-runner'       : [artifactId: 'delosdb-runner',        jarTask: 'derbyRunJar',           title: 'DelosDB Runner', dependencies: ['delosdb-commons', 'delosdb-tools', 'delosdb-server']],
-        'delosdb-server'       : [artifactId: 'delosdb-server',        jarTask: 'derbyNetJar',           title: 'DelosDB Network Server', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-tools']],
-        'delosdb-optionaltools': [artifactId: 'delosdb-optionaltools', jarTask: 'derbyOptionalToolsJar', title: 'DelosDB Optional Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-tools']]
+        'delosdb-client'       : [artifactId: 'delosdb-client',        jarTask: 'jar',        title: 'DelosDB Network Client', dependencies: ['delosdb-commons']],
+        'delosdb-tools'        : [artifactId: 'delosdb-tools',         jarTask: 'jar',         title: 'DelosDB Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-client']],
+        'delosdb-runner'       : [artifactId: 'delosdb-runner',        jarTask: 'jar',           title: 'DelosDB Runner', dependencies: ['delosdb-commons', 'delosdb-tools', 'delosdb-server']],
+        'delosdb-server'       : [artifactId: 'delosdb-server',        jarTask: 'jar',           title: 'DelosDB Network Server', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-tools']],
+        'delosdb-optionaltools': [artifactId: 'delosdb-optionaltools', jarTask: 'jar', title: 'DelosDB Optional Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-tools']]
 ]
 
 subprojects { subproject ->

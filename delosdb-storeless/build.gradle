@@ -39,7 +39,7 @@ sourceSets {
 }
 
 tasks.named('compileJava', JavaCompile) {
-    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine:copyEngineServiceDescriptors', ':delosdb-engine:compileClassSizeCatalog', ':splitEngineMessages'
+    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-engine:compileClassSizeCatalog'
     destinationDirectory.set(storelessClassDir)
     modularity.inferModulePath = false
     options.release = rootProject.ext.javaRelease
