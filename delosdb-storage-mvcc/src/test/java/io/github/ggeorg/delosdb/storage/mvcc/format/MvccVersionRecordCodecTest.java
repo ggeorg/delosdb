@@ -118,6 +118,30 @@ public final class MvccVersionRecordCodecTest {
         }
     }
 
+
+    @Test
+    public void testPublicRecordOwnershipRemainsDefensive() {
+        byte[] source = "owned-payload".getBytes(StandardCharsets.UTF_8);
+        MvccVersionRecord record = new MvccVersionRecord(sampleRecord().header(), source);
+
+        source[0] ^= 0x01;
+        byte[] exposed = record.payload();
+        exposed[1] ^= 0x01;
+
+        assertArrayEquals("owned-payload".getBytes(StandardCharsets.UTF_8), record.payload());
+    }
+
+    @Test
+    public void testDecodedRecordDoesNotAliasEncodedInput() {
+        byte[] encoded = MvccVersionRecordCodec.encode(sampleRecord());
+        MvccVersionRecord decoded = MvccVersionRecordCodec.decode(encoded);
+        byte[] expectedPayload = decoded.payload();
+
+        encoded[encoded.length - 1] ^= 0x01;
+
+        assertArrayEquals(expectedPayload, decoded.payload());
+    }
+
     @Test
     public void testRejectsBadMagic() {
         byte[] encoded = MvccVersionRecordCodec.encode(sampleRecord());

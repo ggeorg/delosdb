@@ -18,22 +18,25 @@ public final class MvccPageRecordCodec {
     public static final int HEADER_SIZE = 24;
     public static final int RECORD_TYPE_VERSION = 1;
     public static final int FLAGS_NONE = 0;
+    private static final int CHECKSUM_OFFSET = 20;
 
     private MvccPageRecordCodec() {
     }
 
     public static byte[] encodeVersionRecord(MvccVersionRecord record) {
-        byte[] body = MvccVersionRecordCodec.encode(Objects.requireNonNull(record, "record"));
-        byte[] bytes = new byte[Math.addExact(HEADER_SIZE, body.length)];
+        Objects.requireNonNull(record, "record");
+        int bodyLength = record.encodedLength();
+        byte[] bytes = new byte[Math.addExact(HEADER_SIZE, bodyLength)];
         ByteBuffer buffer = MvccBinaryFormat.wrap(bytes);
         buffer.putInt(MAGIC);
         buffer.putShort(FORMAT_VERSION);
         buffer.putShort((short) HEADER_SIZE);
         buffer.putInt(RECORD_TYPE_VERSION);
         buffer.putInt(FLAGS_NONE);
-        buffer.putInt(body.length);
-        buffer.putInt(checksum(body));
-        buffer.put(body);
+        buffer.putInt(bodyLength);
+        buffer.putInt(0); // Filled after the version record is written in place.
+        MvccVersionRecordCodec.encodeInto(record, buffer);
+        buffer.putInt(CHECKSUM_OFFSET, checksum(bytes, HEADER_SIZE, bodyLength));
         return bytes;
     }
 
@@ -49,7 +52,9 @@ public final class MvccPageRecordCodec {
             throw new IllegalArgumentException("unsupported MVCC page-record type "
                     + header.metadata().recordType());
         }
-        return new PageRecord(header.metadata(), MvccVersionRecordCodec.decode(header.body()));
+        return new PageRecord(
+                header.metadata(),
+                MvccVersionRecordCodec.decode(bytes, header.bodyOffset(), header.metadata().bodyLength()));
     }
 
     public static MvccVersionRecord decodeVersionRecord(byte[] bytes) {
@@ -95,9 +100,7 @@ public final class MvccPageRecordCodec {
         int bodyChecksum = buffer.getInt();
         int expectedLength = Math.addExact(HEADER_SIZE, bodyLength);
         MvccBinaryFormat.requireExactLength(bytes, expectedLength, "MVCC page-record");
-        byte[] body = new byte[bodyLength];
-        buffer.get(body);
-        int computedChecksum = checksum(body);
+        int computedChecksum = checksum(bytes, HEADER_SIZE, bodyLength);
         if (bodyChecksum != computedChecksum) {
             throw new IllegalArgumentException("invalid MVCC page-record body checksum: expected 0x"
                     + Integer.toHexString(bodyChecksum) + ", computed 0x"
@@ -105,19 +108,21 @@ public final class MvccPageRecordCodec {
         }
         return new DecodedHeader(
                 new PageRecordMetadata(false, recordType, flags, bodyLength, bodyChecksum),
-                body);
+                HEADER_SIZE);
     }
 
-    private static int checksum(byte[] bytes) {
+    private static int checksum(byte[] bytes, int offset, int length) {
         CRC32 crc = new CRC32();
-        crc.update(bytes, 0, bytes.length);
+        crc.update(bytes, offset, length);
         return (int) crc.getValue();
     }
 
-    private record DecodedHeader(PageRecordMetadata metadata, byte[] body) {
+    private record DecodedHeader(PageRecordMetadata metadata, int bodyOffset) {
         private DecodedHeader {
             metadata = Objects.requireNonNull(metadata, "metadata");
-            body = Objects.requireNonNull(body, "body");
+            if (bodyOffset < 0) {
+                throw new IllegalArgumentException("bodyOffset must not be negative: " + bodyOffset);
+            }
         }
     }
 

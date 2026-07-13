@@ -15,8 +15,24 @@ public final class MvccVersionRecord {
     private final byte[] payload;
 
     public MvccVersionRecord(MvccTupleHeader header, byte[] payload) {
+        this(header, payload, false);
+    }
+
+    private MvccVersionRecord(MvccTupleHeader header, byte[] payload, boolean ownsPayload) {
         this.header = Objects.requireNonNull(header, "header");
-        this.payload = Objects.requireNonNull(payload, "payload").clone();
+        byte[] requiredPayload = Objects.requireNonNull(payload, "payload");
+        this.payload = ownsPayload ? requiredPayload : requiredPayload.clone();
+    }
+
+    /**
+     * Creates a record that takes ownership of a freshly decoded payload array.
+     *
+     * <p>This is intentionally package-private and reserved for trusted format
+     * codecs. Public construction and access continue to copy bytes so callers
+     * cannot mutate a durable record through an aliased array.</p>
+     */
+    static MvccVersionRecord fromOwnedPayload(MvccTupleHeader header, byte[] payload) {
+        return new MvccVersionRecord(header, payload, true);
     }
 
     public MvccTupleHeader header() {
@@ -25,6 +41,11 @@ public final class MvccVersionRecord {
 
     public byte[] payload() {
         return payload.clone();
+    }
+
+    /** Codec-only access to the immutable payload owned by this record. */
+    byte[] payloadBytes() {
+        return payload;
     }
 
     public int encodedLength() {

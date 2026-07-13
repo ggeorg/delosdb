@@ -76,6 +76,26 @@ final class MvccPageRecordCodecTest {
         assertTrue(decoded.metadata().versionRecord());
     }
 
+
+    @Test
+    void decodedPageRecordDoesNotAliasEncodedInput() {
+        byte[] encoded = MvccPageRecordCodec.encodeVersionRecord(sampleRecord());
+        MvccVersionRecord decoded = MvccPageRecordCodec.decodeVersionRecord(encoded);
+        byte[] expectedPayload = decoded.payload();
+
+        encoded[encoded.length - 1] ^= 0x01;
+
+        assertArrayEquals(expectedPayload, decoded.payload());
+    }
+
+    @Test
+    void metadataValidationStillRejectsChecksumDamageWithoutBodyCopy() {
+        byte[] encoded = MvccPageRecordCodec.encodeVersionRecord(sampleRecord());
+        encoded[encoded.length - 1] ^= 0x01;
+
+        assertThrows(IllegalArgumentException.class, () -> MvccPageRecordCodec.metadata(encoded));
+    }
+
     @Test
     void pageRecordRejectsChecksumDamageBeforeVersionDecode() {
         byte[] encoded = MvccPageRecordCodec.encodeVersionRecord(sampleRecord());

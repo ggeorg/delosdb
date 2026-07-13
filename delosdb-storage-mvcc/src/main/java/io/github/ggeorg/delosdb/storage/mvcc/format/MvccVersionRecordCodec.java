@@ -17,9 +17,21 @@ public final class MvccVersionRecordCodec {
 
     public static byte[] encode(MvccVersionRecord record) {
         Objects.requireNonNull(record, "record");
-        byte[] payload = record.payload();
-        byte[] bytes = new byte[Math.addExact(HEADER_SIZE, payload.length)];
-        ByteBuffer buffer = MvccBinaryFormat.wrap(bytes);
+        byte[] bytes = new byte[record.encodedLength()];
+        encodeInto(record, MvccBinaryFormat.wrap(bytes));
+        return bytes;
+    }
+
+    /** Writes one complete version record at the buffer's current position. */
+    static void encodeInto(MvccVersionRecord record, ByteBuffer buffer) {
+        Objects.requireNonNull(record, "record");
+        Objects.requireNonNull(buffer, "buffer");
+        byte[] payload = record.payloadBytes();
+        int required = Math.addExact(HEADER_SIZE, payload.length);
+        if (buffer.remaining() < required) {
+            throw new IllegalArgumentException("insufficient target space for MVCC version-record: required "
+                    + required + " bytes, found " + buffer.remaining());
+        }
         MvccTupleHeader header = record.header();
 
         buffer.putInt(MAGIC);
@@ -34,18 +46,37 @@ public final class MvccVersionRecordCodec {
         buffer.putLong(header.deletedByTx().value());
         buffer.putLong(header.commitSequence().value());
         buffer.put(payload);
-        return bytes;
     }
 
     public static MvccVersionRecord decode(byte[] bytes) {
         Objects.requireNonNull(bytes, "bytes");
-        ByteBuffer buffer = MvccBinaryFormat.requireHeader(
-                bytes,
-                HEADER_SIZE,
-                MAGIC,
-                FORMAT_VERSION,
-                HEADER_SIZE,
-                "MVCC version-record");
+        return decode(bytes, 0, bytes.length);
+    }
+
+    /** Decodes one version record from a validated byte-array slice. */
+    static MvccVersionRecord decode(byte[] bytes, int offset, int length) {
+        Objects.requireNonNull(bytes, "bytes");
+        requireSlice(bytes, offset, length);
+        if (length < HEADER_SIZE) {
+            throw new IllegalArgumentException("MVCC version-record is shorter than header: " + length);
+        }
+
+        ByteBuffer buffer = ByteBuffer.wrap(bytes, offset, length).slice().order(MvccBinaryFormat.BYTE_ORDER);
+        int actualMagic = buffer.getInt();
+        if (actualMagic != MAGIC) {
+            throw new IllegalArgumentException("invalid MVCC version-record magic 0x"
+                    + Integer.toHexString(actualMagic) + ", expected 0x" + Integer.toHexString(MAGIC));
+        }
+        short version = buffer.getShort();
+        if (version != FORMAT_VERSION) {
+            throw new IllegalArgumentException("unsupported MVCC version-record format version "
+                    + version + ", expected " + FORMAT_VERSION);
+        }
+        int headerSize = Short.toUnsignedInt(buffer.getShort());
+        if (headerSize != HEADER_SIZE) {
+            throw new IllegalArgumentException("unsupported MVCC version-record header size "
+                    + headerSize + ", expected " + HEADER_SIZE);
+        }
 
         int flags = buffer.getInt();
         MvccVersionRecordFlags.validate(flags);
@@ -54,7 +85,10 @@ public final class MvccVersionRecordCodec {
             throw new IllegalArgumentException("negative MVCC version-record payload length: " + payloadLength);
         }
         int expectedLength = Math.addExact(HEADER_SIZE, payloadLength);
-        MvccBinaryFormat.requireExactLength(bytes, expectedLength, "MVCC version-record");
+        if (length != expectedLength) {
+            throw new IllegalArgumentException("MVCC version-record length mismatch: expected "
+                    + expectedLength + " bytes, found " + length);
+        }
 
         MvccTupleHeader header = new MvccTupleHeader(
                 new MvccRowId(buffer.getLong()),
@@ -66,6 +100,13 @@ public final class MvccVersionRecordCodec {
                 flags);
         byte[] payload = new byte[payloadLength];
         buffer.get(payload);
-        return new MvccVersionRecord(header, payload);
+        return MvccVersionRecord.fromOwnedPayload(header, payload);
+    }
+
+    private static void requireSlice(byte[] bytes, int offset, int length) {
+        if (offset < 0 || length < 0 || offset > bytes.length - length) {
+            throw new IndexOutOfBoundsException("invalid MVCC version-record slice: offset="
+                    + offset + ", length=" + length + ", arrayLength=" + bytes.length);
+        }
     }
 }
