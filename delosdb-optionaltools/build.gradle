@@ -28,6 +28,7 @@ configurations {
     enginePatchModule {
         canBeResolved = true
         canBeConsumed = false
+        transitive = false
     }
 }
 
@@ -40,10 +41,14 @@ dependencies {
     compileOnly externalModulePath
     compileOnly "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
 
-    enginePatchModule(project(':delosdb-storage-api')) { transitive = false }
-    enginePatchModule(project(':delosdb-derby-store-api')) { transitive = false }
-    enginePatchModule(project(':delosdb-storage-derby')) { transitive = false }
-    enginePatchModule(project(':delosdb-storage-bridge')) { transitive = false }
+    // Optional dump tools compile against inherited Derby raw-store contracts
+    // and implementation helpers patched into org.apache.derby.engine.
+    // DataValueDescriptor's inherited Store* interfaces are owned by
+    // delosdb-storage-api, so that artifact is a classfile-signature input even
+    // though DataFileVTI does not import those interfaces directly.
+    enginePatchModule project(':delosdb-derby-store-api')
+    enginePatchModule project(':delosdb-storage-api')
+    enginePatchModule project(':delosdb-storage-derby')
 }
 
 sourceSets {
