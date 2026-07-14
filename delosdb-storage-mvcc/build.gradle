@@ -1219,6 +1219,8 @@ def delosMvccLifecycleProofTasks = [
          'Runs the Phase 7.6 immutable prepared-commit coordinator tests.'],
         ['runMvccCommitEnrollmentQueueTest', '**/MvccCommitEnrollmentQueueTest.class',
          'Runs the Phase 7.4-to-7.5 bounded commit-enrollment and differential-mode tests.'],
+        ['runMvccTransactionGroupCommitTest', '**/MvccTransactionGroupCommitTest.class',
+         'Runs the Phase 7.5 cross-transaction group-commit and differential-mode tests.'],
         ['runMvccTransactionSidecarForceBatchTest', '**/MvccTransactionSidecarForceBatchTest.class',
          'Runs the Phase 7.7 transaction sidecar force-batch and torn-tail recovery tests.'],
         ['runMvccAttributeOverflowRowPayloadCodecTest', '**/MvccAttributeOverflowRowPayloadCodecTest.class',

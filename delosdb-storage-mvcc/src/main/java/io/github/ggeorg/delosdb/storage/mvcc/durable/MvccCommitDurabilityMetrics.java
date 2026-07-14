@@ -92,6 +92,15 @@ public final class MvccCommitDurabilityMetrics {
             return EMPTY;
         }
 
+        public long totalForceCount() {
+            return transactionStatusForceCount
+                    + transactionOutcomeForceCount
+                    + writeAheadLogForceCount
+                    + otherSidecarForceCount
+                    + directoryForceCount
+                    + pageVolumeForceCount;
+        }
+
         public Snapshot plus(Snapshot other) {
             if (other == null) {
                 return this;

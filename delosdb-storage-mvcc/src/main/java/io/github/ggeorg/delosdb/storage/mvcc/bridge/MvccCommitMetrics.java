@@ -103,6 +103,13 @@ final class MvccCommitMetrics {
             long durabilityCoordinatorHoldNanos,
             String durabilityCoordinatorMode,
             int durabilityEnrollmentDepth,
+            long groupCommitId,
+            int groupCommitSize,
+            boolean groupCommitLeader,
+            long groupCommitWaitNanos,
+            long groupCommitSharedForceCount,
+            boolean groupCommitLeaderFailure,
+            boolean groupCommitFollowerFailure,
             long tableLockWaitNanos,
             long tableLockHoldNanos,
             long validationNanos,
@@ -126,6 +133,10 @@ final class MvccCommitMetrics {
                     "durabilityCoordinatorMode");
             if (durabilityEnrollmentDepth < 0) {
                 throw new IllegalArgumentException("durabilityEnrollmentDepth must not be negative");
+            }
+            if (groupCommitId < 0L || groupCommitSize <= 0 || groupCommitWaitNanos < 0L
+                    || groupCommitSharedForceCount < 0L) {
+                throw new IllegalArgumentException("invalid group commit measurement");
             }
             requestConcurrency = Objects.requireNonNull(requestConcurrency, "requestConcurrency");
             preparationConcurrency = Objects.requireNonNull(preparationConcurrency, "preparationConcurrency");

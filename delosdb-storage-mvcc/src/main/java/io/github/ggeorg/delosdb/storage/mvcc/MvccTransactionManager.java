@@ -1,7 +1,9 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -114,17 +116,49 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
     }
 
     public synchronized MvccCommitSequence commit(MvccTransaction transaction) {
-        TransactionState state = requireActive(transaction);
-        if (!state.durableStatusTracked) {
-            throw new IllegalStateException("read-only MVCC transaction cannot commit: " + transaction.id());
+        return commitBatch(List.of(transaction)).get(0);
+    }
+
+    /**
+     * Assigns ordered commit sequences and publishes all terminal transaction
+     * statuses through one forced status-store append.
+     */
+    public synchronized List<MvccCommitSequence> commitBatch(List<MvccTransaction> transactions) {
+        transactions = List.copyOf(Objects.requireNonNull(transactions, "transactions"));
+        if (transactions.isEmpty()) {
+            return List.of();
         }
-        MvccCommitSequence sequence = new MvccCommitSequence(currentCommitSequence + 1L);
-        statusStore.recordCommitted(transaction.id(), sequence);
-        currentCommitSequence = sequence.value();
-        activeTransactions.remove(transaction.id());
-        retainedOutcomes.put(transaction.id(), TransactionOutcome.committed(sequence));
+        Set<MvccTransactionId> uniqueIds = new LinkedHashSet<>();
+        List<MvccCommitSequence> sequences = new ArrayList<>(transactions.size());
+        List<MvccTransactionStatusStore.CommittedStatus> durableStatuses =
+                new ArrayList<>(transactions.size());
+        long nextSequence = currentCommitSequence;
+        for (MvccTransaction transaction : transactions) {
+            transaction = Objects.requireNonNull(transaction, "transactions entry");
+            TransactionState state = requireActive(transaction);
+            if (!state.durableStatusTracked) {
+                throw new IllegalStateException("read-only MVCC transaction cannot commit: " + transaction.id());
+            }
+            if (!uniqueIds.add(transaction.id())) {
+                throw new IllegalArgumentException("duplicate MVCC transaction in commit batch: "
+                        + transaction.id());
+            }
+            MvccCommitSequence sequence = new MvccCommitSequence(++nextSequence);
+            sequences.add(sequence);
+            durableStatuses.add(new MvccTransactionStatusStore.CommittedStatus(
+                    transaction.id(), sequence));
+        }
+
+        statusStore.recordCommittedBatch(durableStatuses);
+        currentCommitSequence = nextSequence;
+        for (int index = 0; index < transactions.size(); index++) {
+            MvccTransaction transaction = transactions.get(index);
+            MvccCommitSequence sequence = sequences.get(index);
+            activeTransactions.remove(transaction.id());
+            retainedOutcomes.put(transaction.id(), TransactionOutcome.committed(sequence));
+        }
         compactRetainedOutcomes();
-        return sequence;
+        return List.copyOf(sequences);
     }
 
     public synchronized void abort(MvccTransaction transaction) {

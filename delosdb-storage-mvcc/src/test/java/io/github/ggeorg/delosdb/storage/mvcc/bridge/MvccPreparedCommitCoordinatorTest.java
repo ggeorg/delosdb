@@ -74,7 +74,7 @@ final class MvccPreparedCommitCoordinatorTest {
                 .orElseThrow(),
                 "physical same-table publication remains serialized");
         assertTrue(events.stream().allMatch(event ->
-                "queued".equals(event.getString("durabilityCoordinatorMode"))));
+                "group".equals(event.getString("durabilityCoordinatorMode"))));
         assertEquals(2, events.stream()
                 .mapToInt(event -> event.getInt("durabilityEnrollmentDepth"))
                 .max()
@@ -84,9 +84,15 @@ final class MvccPreparedCommitCoordinatorTest {
         assertTrue(events.stream().allMatch(event -> event.getLong("durabilityCoordinatorHoldNanos")
                 >= event.getLong("tableLockHoldNanos")));
         assertTrue(events.stream().anyMatch(event -> event.getLong("durabilityCoordinatorWaitNanos") > 0L));
+        assertTrue(events.stream().allMatch(event -> event.getInt("groupCommitSize") == 2));
+        assertEquals(1L, events.stream().filter(event -> event.getBoolean("groupCommitLeader")).count());
+        assertEquals(3L, events.stream().mapToLong(event ->
+                event.getLong("transactionStatusForceCount")).sum(),
+                "two ACTIVE forces plus one shared COMMITTED force are expected");
+        assertTrue(events.stream().mapToLong(event ->
+                event.getLong("groupCommitSharedForceCount")).sum() > 0L);
         for (RecordedEvent event : events) {
             assertEquals(ROWS_PER_TRANSACTION, event.getInt("changedRows"));
-            assertEquals(2L, event.getLong("transactionStatusForceCount"));
             assertEquals(1L, event.getLong("transactionOutcomeForceCount"));
             assertEquals(1L, event.getLong("writeAheadLogForceCount"));
             assertEquals(2L, event.getLong("pageVolumeForceCount"));

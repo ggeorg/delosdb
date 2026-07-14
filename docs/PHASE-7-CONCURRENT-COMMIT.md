@@ -300,3 +300,24 @@ tablePreparationConcurrency > 1
 durabilityEnrollmentDepth   > 1
 tableDurabilityExecutionConcurrency = 1
 ```
+
+## Phase 7.5 first transaction group-commit boundary
+
+Prepared same-table commits now form bounded leader/follower groups. One group
+shares the forced COMMITTED transaction-status append and performs one final
+ordered-index rebuild after individual member page-state persistence.
+
+Normal mode is `group`. Temporary differential and rollback modes are available
+through `-Ddelosdb.mvcc.commit.mode=direct` and
+`-Ddelosdb.mvcc.commit.mode=queued`.
+
+The commit event and benchmark report group identity, group size, leader status,
+group wait, shared force count, and leader/follower failures. The authoritative
+protocol and remaining Phase 7.5 work are documented in:
+
+```text
+docs/PHASE-7-TRANSACTION-GROUP-COMMIT.md
+```
+
+This slice shares status and ordered-index durability only. WAL, mutation,
+outcome, main-page, checkpoint, and recovery-record forces remain individual.

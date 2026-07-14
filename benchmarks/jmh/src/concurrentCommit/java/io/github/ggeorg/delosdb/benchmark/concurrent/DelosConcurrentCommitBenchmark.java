@@ -296,6 +296,14 @@ public final class DelosConcurrentCommitBenchmark {
         long durabilityCoordinatorHoldNanos = 0L;
         String durabilityCoordinatorMode = "";
         int maxDurabilityEnrollmentDepth = 0;
+        long groupCommitLeaderCount = 0L;
+        long groupedCommitCount = 0L;
+        long groupCommitTransactionCount = 0L;
+        int maxGroupCommitSize = 0;
+        long groupCommitWaitNanos = 0L;
+        long groupCommitSharedForceCount = 0L;
+        long groupCommitLeaderFailureCount = 0L;
+        long groupCommitFollowerFailureCount = 0L;
         long tableLockWaitNanos = 0L;
         long tableLockHoldNanos = 0L;
         long validationNanos = 0L;
@@ -357,6 +365,23 @@ public final class DelosConcurrentCommitBenchmark {
                 maxDurabilityEnrollmentDepth = Math.max(
                         maxDurabilityEnrollmentDepth,
                         event.getInt("durabilityEnrollmentDepth"));
+                int groupSize = event.getInt("groupCommitSize");
+                maxGroupCommitSize = Math.max(maxGroupCommitSize, groupSize);
+                if (groupSize > 1) {
+                    groupedCommitCount++;
+                }
+                if (event.getBoolean("groupCommitLeader")) {
+                    groupCommitLeaderCount++;
+                    groupCommitTransactionCount += groupSize;
+                }
+                groupCommitWaitNanos += event.getLong("groupCommitWaitNanos");
+                groupCommitSharedForceCount += event.getLong("groupCommitSharedForceCount");
+                if (event.getBoolean("groupCommitLeaderFailure")) {
+                    groupCommitLeaderFailureCount++;
+                }
+                if (event.getBoolean("groupCommitFollowerFailure")) {
+                    groupCommitFollowerFailureCount++;
+                }
                 tableLockWaitNanos += event.getLong("tableLockWaitNanos");
                 tableLockHoldNanos += event.getLong("tableLockHoldNanos");
                 validationNanos += event.getLong("validationNanos");
@@ -411,6 +436,14 @@ public final class DelosConcurrentCommitBenchmark {
                 durabilityCoordinatorHoldNanos,
                 durabilityCoordinatorMode,
                 maxDurabilityEnrollmentDepth,
+                groupCommitLeaderCount,
+                groupedCommitCount,
+                groupCommitTransactionCount,
+                maxGroupCommitSize,
+                groupCommitWaitNanos,
+                groupCommitSharedForceCount,
+                groupCommitLeaderFailureCount,
+                groupCommitFollowerFailureCount,
                 tableLockWaitNanos,
                 tableLockHoldNanos,
                 validationNanos,
@@ -866,6 +899,14 @@ public final class DelosConcurrentCommitBenchmark {
             long durabilityCoordinatorHoldNanos,
             String durabilityCoordinatorMode,
             int maxDurabilityEnrollmentDepth,
+            long groupCommitLeaderCount,
+            long groupedCommitCount,
+            long groupCommitTransactionCount,
+            int maxGroupCommitSize,
+            long groupCommitWaitNanos,
+            long groupCommitSharedForceCount,
+            long groupCommitLeaderFailureCount,
+            long groupCommitFollowerFailureCount,
             long tableLockWaitNanos,
             long tableLockHoldNanos,
             long validationNanos,
@@ -921,7 +962,10 @@ public final class DelosConcurrentCommitBenchmark {
                     + "p50CommitMicros,p95CommitMicros,p99CommitMicros,avgCommitMicros,"
                     + "avgPreparationMicros,avgBackupWaitMicros,avgDurabilityCoordinatorWaitMicros,"
                     + "avgDurabilityCoordinatorHoldMicros,durabilityCoordinatorMode,"
-                    + "maxDurabilityEnrollmentDepth,avgTableLockWaitMicros,avgTableLockHoldMicros,"
+                    + "maxDurabilityEnrollmentDepth,groupCommitGroups,groupedCommits,"
+                    + "avgTransactionsPerGroup,maxGroupCommitSize,avgGroupCommitWaitMicros,"
+                    + "sharedForcesPerCommit,groupCommitLeaderFailures,groupCommitFollowerFailures,"
+                    + "avgTableLockWaitMicros,avgTableLockHoldMicros,"
                     + "avgValidationMicros,avgTransactionStatusCommitMicros,"
                     + "avgPageStatePersistenceMicros,avgOrderedIndexRebuildMicros,"
                     + "avgTransactionStatePublicationMicros,avgMaintenanceMicros,"
@@ -953,6 +997,14 @@ public final class DelosConcurrentCommitBenchmark {
                     decimal(micros(average(jfr.durabilityCoordinatorHoldNanos(), jfr.eventCount()))),
                     jfr.durabilityCoordinatorMode(),
                     Integer.toString(jfr.maxDurabilityEnrollmentDepth()),
+                    Long.toString(jfr.groupCommitLeaderCount()),
+                    Long.toString(jfr.groupedCommitCount()),
+                    decimal(average(jfr.groupCommitTransactionCount(), jfr.groupCommitLeaderCount())),
+                    Integer.toString(jfr.maxGroupCommitSize()),
+                    decimal(micros(average(jfr.groupCommitWaitNanos(), jfr.eventCount()))),
+                    decimal(average(jfr.groupCommitSharedForceCount(), jfr.eventCount())),
+                    Long.toString(jfr.groupCommitLeaderFailureCount()),
+                    Long.toString(jfr.groupCommitFollowerFailureCount()),
                     decimal(micros(average(jfr.tableLockWaitNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.tableLockHoldNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.validationNanos(), jfr.eventCount()))),
@@ -990,6 +1042,13 @@ public final class DelosConcurrentCommitBenchmark {
                     + decimal(micros(average(jfr.durabilityCoordinatorWaitNanos(), jfr.eventCount()))) + "us"
                     + " coordinatorMode=" + jfr.durabilityCoordinatorMode()
                     + " enrollmentDepth=" + jfr.maxDurabilityEnrollmentDepth()
+                    + " groupMax=" + jfr.maxGroupCommitSize()
+                    + " grouped=" + jfr.groupedCommitCount()
+                    + " groups=" + jfr.groupCommitLeaderCount()
+                    + " txPerGroup=" + decimal(average(
+                            jfr.groupCommitTransactionCount(), jfr.groupCommitLeaderCount()))
+                    + " sharedForces=" + decimal(average(
+                            jfr.groupCommitSharedForceCount(), jfr.eventCount()))
                     + " lockWait=" + decimal(micros(average(jfr.tableLockWaitNanos(), jfr.eventCount()))) + "us"
                     + " phases/revalidate=" + decimal(micros(average(jfr.validationNanos(), jfr.eventCount()))) + "us"
                     + " status=" + decimal(micros(average(jfr.transactionStatusCommitNanos(), jfr.eventCount()))) + "us"
@@ -1042,6 +1101,18 @@ public final class DelosConcurrentCommitBenchmark {
                     + jsonEscape(jfr.durabilityCoordinatorMode()) + "\",\n"
                     + next + "\"maxDurabilityEnrollmentDepth\": "
                     + jfr.maxDurabilityEnrollmentDepth() + ",\n"
+                    + next + "\"groupCommitGroups\": " + jfr.groupCommitLeaderCount() + ",\n"
+                    + next + "\"groupedCommits\": " + jfr.groupedCommitCount() + ",\n"
+                    + next + "\"groupCommitTransactionCount\": "
+                    + jfr.groupCommitTransactionCount() + ",\n"
+                    + next + "\"maxGroupCommitSize\": " + jfr.maxGroupCommitSize() + ",\n"
+                    + next + "\"groupCommitWaitNanos\": " + jfr.groupCommitWaitNanos() + ",\n"
+                    + next + "\"groupCommitSharedForceCount\": "
+                    + jfr.groupCommitSharedForceCount() + ",\n"
+                    + next + "\"groupCommitLeaderFailureCount\": "
+                    + jfr.groupCommitLeaderFailureCount() + ",\n"
+                    + next + "\"groupCommitFollowerFailureCount\": "
+                    + jfr.groupCommitFollowerFailureCount() + ",\n"
                     + next + "\"tableLockWaitNanos\": " + jfr.tableLockWaitNanos() + ",\n"
                     + next + "\"tableLockHoldNanos\": " + jfr.tableLockHoldNanos() + ",\n"
                     + next + "\"validationNanos\": " + jfr.validationNanos() + ",\n"

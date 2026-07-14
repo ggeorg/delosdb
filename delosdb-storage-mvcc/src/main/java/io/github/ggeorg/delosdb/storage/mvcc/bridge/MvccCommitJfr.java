@@ -55,6 +55,13 @@ final class MvccCommitJfr {
         event.durabilityCoordinatorHoldNanos = sample.durabilityCoordinatorHoldNanos();
         event.durabilityCoordinatorMode = sample.durabilityCoordinatorMode();
         event.durabilityEnrollmentDepth = sample.durabilityEnrollmentDepth();
+        event.groupCommitId = sample.groupCommitId();
+        event.groupCommitSize = sample.groupCommitSize();
+        event.groupCommitLeader = sample.groupCommitLeader();
+        event.groupCommitWaitNanos = sample.groupCommitWaitNanos();
+        event.groupCommitSharedForceCount = sample.groupCommitSharedForceCount();
+        event.groupCommitLeaderFailure = sample.groupCommitLeaderFailure();
+        event.groupCommitFollowerFailure = sample.groupCommitFollowerFailure();
         event.tableLockWaitNanos = sample.tableLockWaitNanos();
         event.tableLockHoldNanos = sample.tableLockHoldNanos();
         event.validationNanos = sample.validationNanos();
@@ -116,6 +123,21 @@ final class MvccCommitJfr {
         public String durabilityCoordinatorMode;
         @Label("Durability Enrollment Depth")
         public int durabilityEnrollmentDepth;
+        @Label("Group Commit ID")
+        public long groupCommitId;
+        @Label("Group Commit Size")
+        public int groupCommitSize;
+        @Label("Group Commit Leader")
+        public boolean groupCommitLeader;
+        @Label("Group Commit Wait")
+        @Timespan(Timespan.NANOSECONDS)
+        public long groupCommitWaitNanos;
+        @Label("Group Commit Shared Force Calls")
+        public long groupCommitSharedForceCount;
+        @Label("Group Commit Leader Failure")
+        public boolean groupCommitLeaderFailure;
+        @Label("Group Commit Follower Failure")
+        public boolean groupCommitFollowerFailure;
         @Label("Table Write Lock Wait")
         @Timespan(Timespan.NANOSECONDS)
         public long tableLockWaitNanos;

@@ -40,7 +40,7 @@ final class MvccCommitEnrollmentQueueTest {
 
     @Test
     void queuedModeUsesBoundedFifoEnrollment() throws Exception {
-        MvccCommitCoordinator coordinator = new MvccCommitCoordinator(
+        MvccCommitCoordinator<Integer, Integer> coordinator = new MvccCommitCoordinator<>(
                 MvccCommitCoordinator.Mode.QUEUED,
                 2);
         CountDownLatch releaseFirst = new CountDownLatch(1);
@@ -84,42 +84,39 @@ final class MvccCommitEnrollmentQueueTest {
 
     @Test
     void failedPublicationReleasesTheNextEnrollment() throws Exception {
-        MvccCommitCoordinator coordinator = new MvccCommitCoordinator(
+        MvccCommitCoordinator<Integer, Integer> coordinator = new MvccCommitCoordinator<>(
                 MvccCommitCoordinator.Mode.QUEUED,
                 2);
         CountDownLatch firstEntered = new CountDownLatch(1);
         CountDownLatch failFirst = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
-            Future<?> first = executor.submit(() -> {
-                try (MvccCommitCoordinator.Permit permit = coordinator.enter(true)) {
-                    if (permit.mode() != MvccCommitCoordinator.Mode.QUEUED) {
-                        throw new IllegalStateException("expected queued durability mode");
-                    }
-                    firstEntered.countDown();
-                    if (!failFirst.await(30L, TimeUnit.SECONDS)) {
-                        throw new IllegalStateException("timed out before injected publication failure");
-                    }
-                    throw new IllegalStateException("injected publication failure");
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IllegalStateException("interrupted before injected publication failure", e);
-                }
-            });
+            Future<MvccCommitCoordinator.Submission<Integer>> first = executor.submit(() ->
+                    coordinator.submit(1, true, items -> {
+                        firstEntered.countDown();
+                        try {
+                            if (!failFirst.await(30L, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("timed out before injected publication failure");
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException("interrupted before injected publication failure", e);
+                        }
+                        throw new IllegalStateException("injected publication failure");
+                    }));
             assertTrue(firstEntered.await(30L, TimeUnit.SECONDS));
-            Future<Integer> second = executor.submit(() -> {
-                try (MvccCommitCoordinator.Permit permit = coordinator.enter(true)) {
-                    return permit.enrollmentDepth();
-                }
-            });
+            Future<MvccCommitCoordinator.Submission<Integer>> second = executor.submit(() ->
+                    coordinator.submit(2, true, items ->
+                            List.of(MvccCommitCoordinator.Outcome.success(items.getFirst()))));
             awaitEnrollmentCount(coordinator, 2);
             failFirst.countDown();
 
-            ExecutionException failure = assertThrows(
-                    ExecutionException.class,
-                    () -> first.get(30L, TimeUnit.SECONDS));
-            assertTrue(failure.getCause() instanceof IllegalStateException);
-            assertEquals(2, second.get(30L, TimeUnit.SECONDS).intValue());
+            MvccCommitCoordinator.Submission<Integer> failed = first.get(30L, TimeUnit.SECONDS);
+            assertFalse(failed.succeeded());
+            assertTrue(failed.failure() instanceof IllegalStateException);
+            MvccCommitCoordinator.Submission<Integer> succeeded = second.get(30L, TimeUnit.SECONDS);
+            assertTrue(succeeded.succeeded());
+            assertEquals(2, succeeded.enrollmentDepth());
             assertEquals(0, coordinator.currentEnrollmentCountForTesting());
         } finally {
             executor.shutdownNow();
@@ -127,15 +124,16 @@ final class MvccCommitEnrollmentQueueTest {
     }
 
     @Test
-    void directAndQueuedModesHaveTheSameDurableAndFailureResults() throws Exception {
+    void directAndGroupModesHaveTheSameDurableAndFailureResults() throws Exception {
+
         DurableRun direct = runSuccessfulCommit(
                 MvccCommitCoordinator.Mode.DIRECT,
                 781L,
                 databaseDirectory.resolve("direct-success"));
         DurableRun queued = runSuccessfulCommit(
-                MvccCommitCoordinator.Mode.QUEUED,
+                MvccCommitCoordinator.Mode.GROUP,
                 782L,
-                databaseDirectory.resolve("queued-success"));
+                databaseDirectory.resolve("group-success"));
 
         assertEquals(direct.visibleRows(), queued.visibleRows());
         assertEquals(direct.logicalRows(), queued.logicalRows());
@@ -146,7 +144,7 @@ final class MvccCommitEnrollmentQueueTest {
         assertEquals(direct.sidecarForces(), queued.sidecarForces());
         assertEquals(direct.pageForces(), queued.pageForces());
         assertEquals("direct", direct.coordinatorMode());
-        assertEquals("queued", queued.coordinatorMode());
+        assertEquals("group", queued.coordinatorMode());
         assertEquals(1, direct.enrollmentDepth());
         assertEquals(1, queued.enrollmentDepth());
 
@@ -155,33 +153,39 @@ final class MvccCommitEnrollmentQueueTest {
                 783L,
                 databaseDirectory.resolve("direct-conflict"));
         List<String> queuedConflict = runPrePublicationConflict(
-                MvccCommitCoordinator.Mode.QUEUED,
+                MvccCommitCoordinator.Mode.GROUP,
                 784L,
-                databaseDirectory.resolve("queued-conflict"));
+                databaseDirectory.resolve("group-conflict"));
         assertEquals(directConflict, queuedConflict,
-                "direct and queued modes must preserve the same pre-publication failure result");
+                "direct and group modes must preserve the same pre-publication failure result");
     }
 
     private static int enterAndHold(
-            MvccCommitCoordinator coordinator,
+            MvccCommitCoordinator<Integer, Integer> coordinator,
             int marker,
             List<Integer> executionOrder,
             CountDownLatch release) {
-        try (MvccCommitCoordinator.Permit permit = coordinator.enter(true)) {
+        MvccCommitCoordinator.Submission<Integer> submission = coordinator.submit(marker, true, items -> {
             synchronized (executionOrder) {
-                executionOrder.add(marker);
+                executionOrder.add(items.getFirst());
             }
-            assertTrue(release.await(30L, TimeUnit.SECONDS),
-                    "timed out while holding durability enrollment " + marker);
-            return permit.enrollmentDepth();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("interrupted while proving commit enrollment", e);
+            try {
+                assertTrue(release.await(30L, TimeUnit.SECONDS),
+                        "timed out while holding durability enrollment " + marker);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted while proving commit enrollment", e);
+            }
+            return List.of(MvccCommitCoordinator.Outcome.success(items.getFirst()));
+        });
+        if (!submission.succeeded()) {
+            throw new IllegalStateException("queued enrollment failed", submission.failure());
         }
+        return submission.enrollmentDepth();
     }
 
     private static void awaitEnrollmentCount(
-            MvccCommitCoordinator coordinator,
+            MvccCommitCoordinator<?, ?> coordinator,
             int expected) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30L);
         while (System.nanoTime() < deadline) {

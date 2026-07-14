@@ -1,0 +1,178 @@
+# Phase 7.5 transaction group commit
+
+## Scope
+
+This slice introduces the first real cross-transaction durability sharing for
+prepared commits on one `delos_mvcc` table.
+
+The bounded enrollment queue now has a leader/follower group mode. The FIFO head
+waits for at most one millisecond and drains at most sixteen already-prepared
+commits from the bounded sixty-four-entry enrollment queue.
+
+The group executes under one backup mutation guard and one inherited-table write
+lock. Physical publication remains ordered.
+
+## Shared durability in this slice
+
+The group leader performs these operations once for the group:
+
+```text
+allocate ordered commit sequences
+append every COMMITTED transaction-status record
+force the transaction-status log once
+rebuild and force the ordered index once after member persistence
+run post-commit maintenance once
+```
+
+Each member still owns an individual:
+
+```text
+page-volume WAL transaction batch and force
+prepared mutation payload batch and force
+transaction-outcome fence and force
+main-table page batch and force
+checkpoint publication
+subsystem recovery publication
+```
+
+This is real transaction group commit because multiple transactions share a
+transaction-status durability force. It is intentionally not yet the final
+all-subsystem group fence.
+
+## Modes and comparison boundary
+
+Normal execution uses group mode. A temporary synchronous comparison path is
+available through:
+
+```text
+-Ddelosdb.mvcc.commit.mode=direct
+```
+
+Accepted values are:
+
+```text
+group   bounded leader/follower grouping
+direct  one synchronous commit under the former fair lock
+queued  bounded FIFO enrollment with group size one
+```
+
+All modes execute the same publication implementation. The direct mode exists
+for differential proof and rollback while Phase 7.5 is being completed.
+
+## Ordering
+
+For one successful group:
+
+```text
+concurrent immutable preparation
+bounded FIFO enrollment
+bounded group-formation delay
+backup durable-mutation guard
+inherited-table write lock
+per-member revalidation
+one ordered commit-sequence allocation batch
+one forced COMMITTED status append
+per-member page-state persistence
+one ordered-index rebuild
+per-member transaction-state publication
+one maintenance decision
+individual acknowledgements
+```
+
+Commit sequences preserve FIFO group order.
+
+## Failure semantics
+
+```text
+failure before enrollment
+    no group request exists
+
+member revalidation conflict
+    only that member is aborted and rejected
+    non-conflicting members may continue
+
+shared status append or force failure
+    every surviving member receives the shared failure
+    no page publication is attempted by the group
+
+individual page-state persistence failure
+    that member receives its failure
+    other status-committed members continue publication
+
+shared ordered-index or maintenance failure
+    every otherwise successful member receives the shared failure
+
+coordinator processor failure
+    leader and followers receive the same failure
+    queue ownership is released
+```
+
+A transaction is acknowledged only after its individual page-state publication
+and the shared post-publication work succeed.
+
+## Observability
+
+The commit JFR event adds:
+
+```text
+groupCommitId
+groupCommitSize
+groupCommitLeader
+groupCommitWaitNanos
+groupCommitSharedForceCount
+groupCommitLeaderFailure
+groupCommitFollowerFailure
+```
+
+The benchmark reports:
+
+```text
+groups
+grouped commits
+average transactions per group
+maximum group size
+average group wait
+shared forces per commit
+leader and follower failures
+```
+
+The expected two-transaction force comparison is:
+
+```text
+direct:
+    transaction-status forces = 4
+    page-volume forces         = 4
+
+group:
+    transaction-status forces = 3
+    page-volume forces         = 3
+```
+
+The status total consists of two ACTIVE forces and one shared COMMITTED force.
+The page total consists of two member main-table forces and one shared ordered-
+index force.
+
+## Required proof
+
+The focused gate must prove:
+
+```text
+two non-conflicting transactions form one group
+one leader and one follower are reported
+commit sequences remain ordered
+one status force is shared
+one ordered-index rebuild is shared
+direct and group modes reopen to the same logical state
+single-transaction force counts remain unchanged
+a shared processor failure reaches leader and follower
+```
+
+## Remaining Phase 7.5 work
+
+This slice does not yet share WAL, prepared-payload, outcome, main-page,
+checkpoint, or subsystem-recovery forces. It also does not yet add explicit
+coordinator shutdown/cancellation or the final backup-starts-while-queued proof.
+
+Those remain separate overlays. The next force-sharing slice must preserve the
+existing per-transaction outcome fence and all-or-none recovery proof while
+combining additional physical force boundaries.

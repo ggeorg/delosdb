@@ -193,3 +193,14 @@ change physical same-table serialization
 change checkpoint or index publication
 change backup, vacuum, purge, SQL, JDBC, DRDA, or catalog behavior
 ```
+
+## Group-commit follow-up
+
+The bounded queue now feeds a leader/follower group mode. Multiple prepared
+transactions share one forced COMMITTED status append and one final ordered-
+index rebuild. Direct and one-at-a-time queued modes remain available for
+comparison. See:
+
+```text
+docs/PHASE-7-TRANSACTION-GROUP-COMMIT.md
+```

@@ -2,6 +2,7 @@ package io.github.ggeorg.delosdb.storage.mvcc;
 
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -50,6 +51,11 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
         }
 
         @Override
+        public void recordCommittedBatch(List<CommittedStatus> commits) {
+            validateCommittedBatch(commits);
+        }
+
+        @Override
         public void recordAborted(MvccTransactionId transactionId) {
             requireRealTransactionId(transactionId);
         }
@@ -90,8 +96,22 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
     }
 
     public void recordCommitted(MvccTransactionId transactionId, MvccCommitSequence commitSequence) {
-        validateCommitted(transactionId, commitSequence);
-        appendLine(RECORD_COMMIT, Long.toString(transactionId.value()), Long.toString(commitSequence.value()));
+        recordCommittedBatch(List.of(new CommittedStatus(transactionId, commitSequence)));
+    }
+
+    /** Publishes one or more ordered COMMITTED records through one forced append. */
+    public synchronized void recordCommittedBatch(List<CommittedStatus> commits) {
+        commits = validateCommittedBatch(commits);
+        if (!isEnabled() || commits.isEmpty()) {
+            return;
+        }
+        StringBuilder batch = new StringBuilder();
+        for (CommittedStatus commit : commits) {
+            appendLineTo(batch, RECORD_COMMIT,
+                    Long.toString(commit.transactionId().value()),
+                    Long.toString(commit.commitSequence().value()));
+        }
+        journal.append(batch.toString(), "MVCC transaction status commit group");
     }
 
     public void recordAborted(MvccTransactionId transactionId) {
@@ -176,12 +196,17 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
     }
 
     private synchronized void appendLine(String type, String... fields) {
-        StringBuilder line = new StringBuilder(LOG_VERSION).append('	').append(type);
-        for (String field : fields) {
-            line.append('	').append(field);
-        }
-        line.append('\n');
+        StringBuilder line = new StringBuilder();
+        appendLineTo(line, type, fields);
         journal.append(line.toString(), "MVCC transaction status record");
+    }
+
+    private static void appendLineTo(StringBuilder target, String type, String... fields) {
+        target.append(LOG_VERSION).append('\t').append(type);
+        for (String field : fields) {
+            target.append('\t').append(field);
+        }
+        target.append('\n');
     }
 
     private static void validateCommitted(MvccTransactionId transactionId, MvccCommitSequence commitSequence) {
@@ -189,6 +214,29 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
         Objects.requireNonNull(commitSequence, "commitSequence");
         if (commitSequence.equals(MvccCommitSequence.NONE)) {
             throw new IllegalArgumentException("commit sequence must be present for committed status");
+        }
+    }
+
+    private static List<CommittedStatus> validateCommittedBatch(List<CommittedStatus> commits) {
+        commits = List.copyOf(Objects.requireNonNull(commits, "commits"));
+        MvccCommitSequence previous = MvccCommitSequence.NONE;
+        for (CommittedStatus commit : commits) {
+            commit = Objects.requireNonNull(commit, "commits entry");
+            validateCommitted(commit.transactionId(), commit.commitSequence());
+            if (!previous.equals(MvccCommitSequence.NONE)
+                    && commit.commitSequence().compareTo(previous) <= 0) {
+                throw new IllegalArgumentException("commit sequences must increase in a status batch");
+            }
+            previous = commit.commitSequence();
+        }
+        return commits;
+    }
+
+    public record CommittedStatus(
+            MvccTransactionId transactionId,
+            MvccCommitSequence commitSequence) {
+        public CommittedStatus {
+            validateCommitted(transactionId, commitSequence);
         }
     }
 

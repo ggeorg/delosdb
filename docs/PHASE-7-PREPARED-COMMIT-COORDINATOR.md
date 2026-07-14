@@ -230,3 +230,10 @@ docs/PHASE-7-COMMIT-ENROLLMENT-QUEUE.md
 
 This follow-up still is not group commit: no force is shared and each transaction
 receives an individual result.
+
+## Transaction group-commit follow-up
+
+The prepared-commit boundary now supports bounded leader/follower groups. The
+first shared durability operations are the COMMITTED status append and final
+ordered-index rebuild. Page-state persistence remains individually fenced. See
+`docs/PHASE-7-TRANSACTION-GROUP-COMMIT.md`.
