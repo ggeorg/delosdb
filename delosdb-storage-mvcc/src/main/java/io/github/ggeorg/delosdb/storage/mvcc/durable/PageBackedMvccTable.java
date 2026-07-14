@@ -330,10 +330,9 @@ public final class PageBackedMvccTable implements AutoCloseable {
      * Persists one committed transaction through a single payload-log batch and
      * one transaction-outcome fence before materializing its page records.
      *
-     * <p>Page writes are intentionally still forced by the existing per-record
-     * path. Phase 7 first establishes all-or-none recovery and removes repeated
-     * payload/outcome log forces; page-force batching is a later, independently
-     * crash-tested change.</p>
+     * <p>All main-table page images are staged through one page-cache batch and
+     * followed by one page-volume force. The prepared payload batch and outcome
+     * fence remain the recovery authority if the page batch is interrupted.</p>
      */
     public synchronized List<MvccIndexTuple> persistCommittedTransaction(
             long transactionId,
@@ -364,11 +363,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
         }
 
         try {
-            List<MvccIndexTuple> tuples = new ArrayList<>(prepared.size());
-            for (PreparedCommittedWrite write : prepared) {
-                tuples.add(materializePreparedWrite(write));
-            }
-            return List.copyOf(tuples);
+            return materializePreparedWrites(prepared);
         } catch (IOException | RuntimeException failure) {
             if (commitFencePublished) {
                 throw new CommittedTransactionMaterializationException(
@@ -444,22 +439,36 @@ public final class PageBackedMvccTable implements AutoCloseable {
         return List.copyOf(prepared);
     }
 
-    private MvccIndexTuple materializePreparedWrite(PreparedCommittedWrite prepared) throws IOException {
-        MvccVersionLocator locator = store.append(prepared.record(), prepared.write().pageLsn());
-        MvccVersionRecord record = prepared.record();
-        directory.addNewCommitted(
-                prepared.write().key(),
-                prepared.rowId(),
-                new MvccRowDirectory.StoredVersion(locator, record, prepared.payload()));
-        rowDirectoryStore.recordHead(new MvccRowDirectoryStore.RowHeadRecord(
-                prepared.rowId(),
-                prepared.write().key(),
-                record.header().versionId(),
-                prepared.previousVersionId(),
-                locator,
-                record.header().isTombstone()));
+    private List<MvccIndexTuple> materializePreparedWrites(
+            List<PreparedCommittedWrite> prepared) throws IOException {
+        List<MvccVersionLocator> locators = store.appendTransactionBatch(
+                prepared.stream().map(PreparedCommittedWrite::record).toList(),
+                prepared.stream().map(write -> write.write().pageLsn()).toList());
+        if (locators.size() != prepared.size()) {
+            throw new IllegalStateException("MVCC transaction page batch returned " + locators.size()
+                    + " locators for " + prepared.size() + " prepared writes");
+        }
+
+        List<MvccIndexTuple> tuples = new ArrayList<>(prepared.size());
+        for (int index = 0; index < prepared.size(); index++) {
+            PreparedCommittedWrite write = prepared.get(index);
+            MvccVersionLocator locator = locators.get(index);
+            MvccVersionRecord record = write.record();
+            directory.addNewCommitted(
+                    write.write().key(),
+                    write.rowId(),
+                    new MvccRowDirectory.StoredVersion(locator, record, write.payload()));
+            rowDirectoryStore.recordHead(new MvccRowDirectoryStore.RowHeadRecord(
+                    write.rowId(),
+                    write.write().key(),
+                    record.header().versionId(),
+                    write.previousVersionId(),
+                    locator,
+                    record.header().isTombstone()));
+            tuples.add(MvccIndexTuple.active(write.rowId(), record.header().versionId(), locator));
+        }
         rebuildVisibilityMap();
-        return MvccIndexTuple.active(prepared.rowId(), record.header().versionId(), locator);
+        return List.copyOf(tuples);
     }
 
 

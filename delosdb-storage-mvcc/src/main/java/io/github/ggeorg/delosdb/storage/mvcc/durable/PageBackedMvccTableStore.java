@@ -145,31 +145,73 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     public MvccVersionLocator append(
             MvccVersionRecord record,
             DelosLogSequenceNumber pageLsn) throws IOException {
-        return writeLockedIo(() -> appendUnlocked(record, pageLsn));
+        return writeLockedIo(() -> {
+            try (MvccPageMutationContext context = beginPageMutationContext("append-version")) {
+                MvccVersionLocator locator = appendUnlocked(record, pageLsn, context);
+                forceDirtyPages();
+                context.commit();
+                return locator;
+            }
+        });
+    }
+
+    /**
+     * Appends all records from one committed transaction and forces the table
+     * page volume once after every dirty page image has been written.
+     *
+     * <p>The caller must make the covering WAL and transaction outcome durable
+     * before entering this method. The page cache keeps each touched page dirty
+     * until the complete write batch and its single force boundary succeed, so a
+     * failed or interrupted batch is safe to replay from the transaction payload
+     * log.</p>
+     */
+    List<MvccVersionLocator> appendTransactionBatch(
+            List<MvccVersionRecord> records,
+            List<DelosLogSequenceNumber> pageLsns) throws IOException {
+        records = List.copyOf(Objects.requireNonNull(records, "records"));
+        pageLsns = List.copyOf(Objects.requireNonNull(pageLsns, "pageLsns"));
+        if (records.isEmpty()) {
+            return List.of();
+        }
+        if (records.size() != pageLsns.size()) {
+            throw new IllegalArgumentException("MVCC page batch record/LSN count mismatch: records="
+                    + records.size() + ", pageLsns=" + pageLsns.size());
+        }
+
+        List<MvccVersionRecord> batchRecords = records;
+        List<DelosLogSequenceNumber> batchLsns = pageLsns;
+        return writeLockedIo(() -> {
+            try (MvccPageMutationContext context = beginPageMutationContext("append-transaction-batch")) {
+                List<MvccVersionLocator> locators = new ArrayList<>(batchRecords.size());
+                for (int index = 0; index < batchRecords.size(); index++) {
+                    locators.add(appendUnlocked(batchRecords.get(index), batchLsns.get(index), context));
+                }
+                forceDirtyPages();
+                context.commit();
+                return List.copyOf(locators);
+            }
+        });
     }
 
     private MvccVersionLocator appendUnlocked(
             MvccVersionRecord record,
-            DelosLogSequenceNumber pageLsn) throws IOException {
+            DelosLogSequenceNumber pageLsn,
+            MvccPageMutationContext context) throws IOException {
         Objects.requireNonNull(record, "record");
         pageLsn = Objects.requireNonNull(pageLsn, "pageLsn");
+        Objects.requireNonNull(context, "context");
         EncodedVersion encodedVersion = encodeForPageRecord(record);
         byte[] encoded = encodedVersion.bytes();
-        record = encodedVersion.record();
 
         int requiredBytes = Math.addExact(encoded.length, SLOT_OVERHEAD_BYTES);
         bufferFlushCoordinator.recordLogForcedThrough(pageLsn);
-        try (MvccPageMutationContext context = beginPageMutationContext("append-version")) {
-            context.reservePageCapacity(requiredBytes);
-            DelosPage page = writablePage(encoded.length);
-            int slotId = page.appendRecord(encoded);
-            DelosPage writtenPage = page.withPageLsn(pageLsn.value());
-            writePage(writtenPage, context);
-            updateFreeSpaceMap(writtenPage, context);
-            forceDirtyPages();
-            context.commit();
-            return new MvccVersionLocator(page.pageId(), slotId);
-        }
+        context.reservePageCapacity(requiredBytes);
+        DelosPage page = writablePage(encoded.length);
+        int slotId = page.appendRecord(encoded);
+        DelosPage writtenPage = page.withPageLsn(pageLsn.value());
+        writePage(writtenPage, context);
+        updateFreeSpaceMap(writtenPage, context);
+        return new MvccVersionLocator(page.pageId(), slotId);
     }
 
     public List<StoredVersionRecord> loadAll() throws IOException {

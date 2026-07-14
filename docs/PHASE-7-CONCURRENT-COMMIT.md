@@ -173,5 +173,12 @@ invariant, compatibility rules, and remaining page-force work are documented in:
 docs/PHASE-7-DURABILITY-PROTOCOL.md
 ```
 
-The table lock and page-force placement remain unchanged until the new fence and
-its crash-recovery matrix are green on JDK 25.
+Phase 7.4 now stages every main-table page mutation from one transaction and
+forces the table page volume once. The transaction-complete outcome fence remains
+the recovery authority, and injected partial-write and force-failure proofs show
+that recovery completes the full transaction without exposing a prefix.
+
+The expected inline-row benchmark shape is now two page-volume forces for both
+one-row and eight-row transactions: one main-table batch and one ordered-index
+materialization. Table-lock scope remains unchanged until the target-machine
+benchmark is rerun.

@@ -3,12 +3,13 @@
 ## Purpose
 
 This document is the authoritative description of the inherited `delos_mvcc`
-write-transaction durability route after the Phase 7.3 transaction-complete
-fence.
+write-transaction durability route after the Phase 7.4 transaction-level page
+force boundary.
 
-The fence changes payload and outcome logging only. Page materialization,
-checkpointing, ordered-index rebuilding, transaction locking, and page-force
-placement remain unchanged.
+The prepared payload batch and transaction outcome remain the recovery
+authority. Main-table page images are now staged as one transaction batch and
+forced once. Checkpointing, ordered-index rebuilding, transaction locking, and
+public behavior remain unchanged.
 
 ## Required crash invariant
 
@@ -79,7 +80,7 @@ remove the transaction from the active set
 ```
 
 This still occurs before page-volume persistence. Moving this publication is not
-part of Phase 7.3.
+part of Phase 7.4.
 
 ### 4. Page-volume WAL batch
 
@@ -161,21 +162,27 @@ Strict recovery also validates every page record already present in the page
 volume against the outcome log. A page version from an unknown or aborted
 transaction is rejected rather than silently exposed.
 
-### 7. Page materialization
+### 7. Transaction-level page materialization
 
-After the outcome fence, each prepared version is materialized through the
-existing page path:
+After the outcome fence, all prepared versions enter one page-store batch:
 
 ```text
-append one version to the page volume
-rewrite row-directory/free-space/visibility state as required
-force dirty page-volume pages
+encode and stage every changed version
+update free-space metadata for each touched page
+write every dirty main-table page image
+force the main-table page volume once
+publish row-directory and visibility sidecars
 ```
 
-This path still forces per changed row. If materialization fails after the
-outcome fence, the code reports a committed-transaction materialization failure
-and does not append a contradictory WAL ABORT. Recovery can complete the
-remaining versions from the prepared payload batch.
+The page cache retains dirty state until every page write and the single force
+boundary succeed. If a write or force fails after the outcome fence, the code
+reports a committed-transaction materialization failure and does not append a
+contradictory WAL ABORT. Recovery uses the prepared payload batch and outcome
+fence to complete all missing versions idempotently.
+
+Overflow payload volumes retain their existing independent force boundaries;
+this slice consolidates the main-table page volume measured by the ordinary
+one-row and eight-row benchmark workloads.
 
 ### 8. Cross-subsystem metadata and checkpoint
 
@@ -205,7 +212,7 @@ transaction status publication
 WAL batch force
 prepared payload batch force
 transaction outcome fence force
-all current page materialization and page forces
+one main-table page materialization force plus any required overflow forces
 cross-subsystem records
 checkpoint rewrite
 ordered-index rebuild
@@ -244,7 +251,7 @@ eight-row transaction:
     9 page-volume forces
 ```
 
-After Phase 7.3 the expected headline shape is:
+After Phase 7.4 the expected headline shape for inline row payloads is:
 
 ```text
 one-row transaction:
@@ -257,11 +264,12 @@ eight-row transaction:
     2 transaction-status forces
     1 transaction-outcome force
     1 WAL force
-    9 page-volume forces
+    2 page-volume forces
 ```
 
-The mutation payload log also moves from repeated VERSION/COMMIT forced appends
-to one forced transaction batch. Page-volume forces are deliberately unchanged.
+One page-volume force covers every dirty main-table page in the transaction; the
+second is the existing ordered-index materialization force. The mutation payload
+log remains one forced transaction batch.
 
 ## Compatibility
 
@@ -277,19 +285,19 @@ and strict recovery supports both forms.
 
 ## Remaining work
 
-Phase 7.3 establishes the transaction-complete fence and removes repeated
-payload/outcome log forcing. It does not yet solve:
+Phase 7.4 establishes one main-table page force per transaction. It does not yet
+solve:
 
 ```text
-per-row page-volume forces
-per-row row-directory/free-space/visibility rewrites
+per-row row-directory and free-space sidecar rewrites
+overflow-volume force consolidation
 table-wide write-lock scope
 cross-transaction group commit
 database-level maintenance scheduling
 transaction-table COMMITTED publication before the page-volume fence
 ```
 
-The next implementation slice should batch page materialization inside one
-page-mutation context and force the page volume once per transaction. It must
-reuse the outcome fence and rerun the same crash matrix before changing the
-table lock or adding group commit.
+The next decision must come from the rerun benchmark. If independent-table
+throughput remains durability-bound, sidecar/status forcing should be measured
+before lock-scope work. If the main force reduction removes that bottleneck, the
+next implementation slice can narrow same-table write-lock scope.

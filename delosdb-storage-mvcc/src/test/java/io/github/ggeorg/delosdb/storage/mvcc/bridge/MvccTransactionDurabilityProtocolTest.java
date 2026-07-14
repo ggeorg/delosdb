@@ -91,7 +91,7 @@ final class MvccTransactionDurabilityProtocolTest {
     }
 
     @Test
-    void multiRowCommitUsesOnePayloadBatchAndOneOutcomeFenceWhilePageForcesRemainPerRow() throws Exception {
+    void multiRowCommitUsesOnePayloadBatchOutcomeFenceAndMainPageForce() throws Exception {
         MvccInheritedTable table = new MvccInheritedTable(0L, 722L, databaseDirectory);
         Path recordingFile = databaseDirectory.resolve("eight-row-protocol.jfr");
         try {
@@ -104,8 +104,8 @@ final class MvccTransactionDurabilityProtocolTest {
                     "one transaction outcome record is the transaction-complete fence");
             assertEquals(1L, event.getLong("writeAheadLogForceCount"),
                     "the page-volume WAL is already one transaction batch");
-            assertEquals(9L, event.getLong("pageVolumeForceCount"),
-                    "the current protocol forces once per row plus ordered-index materialization");
+            assertEquals(2L, event.getLong("pageVolumeForceCount"),
+                    "the transaction uses one main-table page force plus ordered-index materialization");
 
             List<String[]> wal = fields(table.writeAheadLogFileForTesting());
             assertEquals(10, wal.size(), "BEGIN + eight row operations + COMMIT");

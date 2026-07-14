@@ -62,8 +62,8 @@ final class MvccCommitDurabilityInstrumentationTest {
         assertEquals(1L, event.getLong("transactionOutcomeForceCount"),
                 "one durable transaction outcome fences the complete payload batch");
         assertTrue(event.getLong("otherSidecarForceCount") > 0L);
-        assertEquals(4L, event.getLong("pageVolumeForceCount"),
-                "three row-page forces plus ordered-index materialization are expected today");
+        assertEquals(2L, event.getLong("pageVolumeForceCount"),
+                "one main-table page batch plus ordered-index materialization are expected");
         assertTrue(event.getLong("pageVolumePagesCovered") > 0L);
         assertTrue(event.getLong("sidecarBytesCovered") + event.getLong("pageVolumeBytesCovered") > 0L);
         assertEquals(1, event.getInt("tableRequestConcurrency"));
