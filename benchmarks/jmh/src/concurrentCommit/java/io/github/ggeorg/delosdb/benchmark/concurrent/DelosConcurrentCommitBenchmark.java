@@ -161,7 +161,19 @@ public final class DelosConcurrentCommitBenchmark {
                         failure)));
             }
             if (!ready.await(30L, TimeUnit.SECONDS)) {
+                Throwable workerFailure = failure.get();
+                if (workerFailure != null) {
+                    throw new IllegalStateException(
+                            "concurrent commit worker failed during setup for " + scenario,
+                            workerFailure);
+                }
                 throw new IllegalStateException("writers did not become ready for " + scenario);
+            }
+            Throwable setupFailure = failure.get();
+            if (setupFailure != null) {
+                throw new IllegalStateException(
+                        "concurrent commit worker failed during setup for " + scenario,
+                        setupFailure);
             }
             long started = System.nanoTime();
             start.countDown();
@@ -191,6 +203,7 @@ public final class DelosConcurrentCommitBenchmark {
             CountDownLatch ready,
             CountDownLatch start,
             AtomicReference<Throwable> firstFailure) {
+        boolean setupSignalled = false;
         try (Connection connection = DriverManager.getConnection(environment.jdbcUrl(writerId))) {
             connection.setAutoCommit(false);
             String table = environment.tableName(writerId);
@@ -199,6 +212,7 @@ public final class DelosConcurrentCommitBenchmark {
                     : "update " + table + " set value = ?, payload = ? where id = ?";
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 ready.countDown();
+                setupSignalled = true;
                 start.await();
                 for (int transaction = 0; transaction < transactionCount; transaction++) {
                     prepareBatch(statement, scenario, writerId, transaction, insertBase);
@@ -215,6 +229,9 @@ public final class DelosConcurrentCommitBenchmark {
             }
         } catch (Throwable failure) {
             firstFailure.compareAndSet(null, failure);
+            if (!setupSignalled) {
+                ready.countDown();
+            }
             throw unchecked("writer " + writerId + " failed", failure);
         }
     }
