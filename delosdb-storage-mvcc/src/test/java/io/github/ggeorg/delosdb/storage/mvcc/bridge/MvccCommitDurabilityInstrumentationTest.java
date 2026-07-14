@@ -59,8 +59,8 @@ final class MvccCommitDurabilityInstrumentationTest {
                 "ACTIVE and COMMITTED status records must both be attributed to the transaction");
         assertEquals(1L, event.getLong("writeAheadLogForceCount"),
                 "one page-volume WAL transaction batch should be forced");
-        assertEquals(3L, event.getLong("transactionOutcomeForceCount"),
-                "the current protocol forces one transaction outcome per changed row");
+        assertEquals(1L, event.getLong("transactionOutcomeForceCount"),
+                "one durable transaction outcome fences the complete payload batch");
         assertTrue(event.getLong("otherSidecarForceCount") > 0L);
         assertEquals(4L, event.getLong("pageVolumeForceCount"),
                 "three row-page forces plus ordered-index materialization are expected today");

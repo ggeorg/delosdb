@@ -3,6 +3,8 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -322,6 +324,142 @@ public final class PageBackedMvccTable implements AutoCloseable {
         MvccVersionId previous = requireExpectedCurrentVersion(key, expectedCurrentVersionId, "delete");
         return appendVersion(key, new byte[0], rowId, previous, transactionId, transactionId, commitSequence,
                 MvccVersionRecordFlags.TOMBSTONE, DelosLogSequenceNumber.NONE);
+    }
+
+    /**
+     * Persists one committed transaction through a single payload-log batch and
+     * one transaction-outcome fence before materializing its page records.
+     *
+     * <p>Page writes are intentionally still forced by the existing per-record
+     * path. Phase 7 first establishes all-or-none recovery and removes repeated
+     * payload/outcome log forces; page-force batching is a later, independently
+     * crash-tested change.</p>
+     */
+    public synchronized List<MvccIndexTuple> persistCommittedTransaction(
+            long transactionId,
+            long commitSequence,
+            List<CommittedWrite> writes) throws IOException {
+        requireTransactionId(transactionId);
+        requireCommittedSequence(commitSequence);
+        writes = List.copyOf(Objects.requireNonNull(writes, "writes"));
+        if (writes.isEmpty()) {
+            return List.of();
+        }
+        if ((mutationLog == null) != (outcomeLog == null)) {
+            throw new IllegalStateException("MVCC transaction batching requires both mutation and outcome logs");
+        }
+
+        List<PreparedCommittedWrite> prepared = prepareCommittedWrites(transactionId, commitSequence, writes);
+        if (mutationLog != null) {
+            mutationLog.appendPreparedTransaction(
+                    transactionId,
+                    commitSequence,
+                    prepared.stream().map(PreparedCommittedWrite::record).toList());
+        }
+
+        boolean commitFencePublished = false;
+        if (outcomeLog != null) {
+            outcomeLog.appendCommit(transactionId, commitSequence);
+            commitFencePublished = true;
+        }
+
+        try {
+            List<MvccIndexTuple> tuples = new ArrayList<>(prepared.size());
+            for (PreparedCommittedWrite write : prepared) {
+                tuples.add(materializePreparedWrite(write));
+            }
+            return List.copyOf(tuples);
+        } catch (IOException | RuntimeException failure) {
+            if (commitFencePublished) {
+                throw new CommittedTransactionMaterializationException(
+                        transactionId,
+                        commitSequence,
+                        failure);
+            }
+            throw failure;
+        }
+    }
+
+    private List<PreparedCommittedWrite> prepareCommittedWrites(
+            long transactionId,
+            long commitSequence,
+            List<CommittedWrite> writes) {
+        HashSet<String> keys = new HashSet<>();
+        List<PreparedCommittedWrite> prepared = new ArrayList<>(writes.size());
+        for (CommittedWrite candidate : writes) {
+            CommittedWrite write = Objects.requireNonNull(candidate, "writes entry");
+            if (!keys.add(write.key())) {
+                throw new IllegalArgumentException("committed MVCC transaction contains duplicate key: "
+                        + write.key());
+            }
+            MvccRowId rowId;
+            MvccVersionId previousVersionId;
+            long deletedByTransaction = 0L;
+            int flags = 0;
+            byte[] value;
+            switch (write.operation()) {
+            case INSERT -> {
+                if (directory.rowIdForKey(write.key()).isPresent()) {
+                    throw new MvccWriteConflictException(
+                            "logical row already exists in durable page store: " + write.key());
+                }
+                rowId = directory.nextRowId();
+                previousVersionId = MvccVersionId.NONE;
+                value = write.value();
+            }
+            case UPDATE -> {
+                rowId = rowIdForExistingKey(write.key(), "update");
+                previousVersionId = directory.newestVersionIdForKey(write.key())
+                        .orElseThrow(() -> new IllegalStateException(
+                                "cannot update row without versions: " + write.key()));
+                value = write.value();
+            }
+            case DELETE -> {
+                rowId = rowIdForExistingKey(write.key(), "delete");
+                previousVersionId = directory.newestVersionIdForKey(write.key())
+                        .orElseThrow(() -> new IllegalStateException(
+                                "cannot delete row without versions: " + write.key()));
+                deletedByTransaction = transactionId;
+                flags = MvccVersionRecordFlags.TOMBSTONE;
+                value = new byte[0];
+            }
+            default -> throw new IllegalStateException("unknown committed MVCC write operation: "
+                    + write.operation());
+            }
+
+            MvccVersionId versionId = directory.nextVersionId();
+            MvccRowPayload payload = new MvccRowPayload(write.key(), value);
+            MvccVersionRecord record = new MvccVersionRecord(
+                    new MvccTupleHeader(
+                            rowId,
+                            versionId,
+                            previousVersionId,
+                            new MvccTransactionId(transactionId),
+                            new MvccTransactionId(deletedByTransaction),
+                            new MvccCommitSequence(commitSequence),
+                            flags),
+                    MvccRowPayloadCodec.encode(payload));
+            prepared.add(new PreparedCommittedWrite(write, rowId, previousVersionId, payload, record));
+        }
+        return List.copyOf(prepared);
+    }
+
+    private MvccIndexTuple materializePreparedWrite(PreparedCommittedWrite prepared) throws IOException {
+        MvccVersionLocator locator = store.append(prepared.record(), prepared.write().pageLsn());
+        MvccVersionRecord record = prepared.record();
+        directory.addNewCommitted(
+                prepared.write().key(),
+                prepared.rowId(),
+                new MvccRowDirectory.StoredVersion(locator, record, prepared.payload()));
+        rowDirectoryStore.recordHead(new MvccRowDirectoryStore.RowHeadRecord(
+                prepared.rowId(),
+                prepared.write().key(),
+                record.header().versionId(),
+                prepared.previousVersionId(),
+                locator,
+                record.header().isTombstone()));
+        rebuildVisibilityMap();
+        return MvccIndexTuple.active(prepared.rowId(), record.header().versionId(), locator);
     }
 
 
@@ -1001,6 +1139,86 @@ public final class PageBackedMvccTable implements AutoCloseable {
         }
     }
 
+    public enum CommittedWriteOperation {
+        INSERT,
+        UPDATE,
+        DELETE
+    }
+
+    public record CommittedWrite(
+            CommittedWriteOperation operation,
+            String key,
+            byte[] value,
+            DelosLogSequenceNumber pageLsn) {
+        public CommittedWrite {
+            operation = Objects.requireNonNull(operation, "operation");
+            key = MvccRowPayload.requireKey(key);
+            pageLsn = Objects.requireNonNull(pageLsn, "pageLsn");
+            if (operation == CommittedWriteOperation.DELETE) {
+                value = new byte[0];
+            } else {
+                value = Objects.requireNonNull(value, "value").clone();
+            }
+        }
+
+        @Override
+        public byte[] value() {
+            return value.clone();
+        }
+
+        public static CommittedWrite insert(String key, byte[] value, DelosLogSequenceNumber pageLsn) {
+            return new CommittedWrite(CommittedWriteOperation.INSERT, key, value, pageLsn);
+        }
+
+        public static CommittedWrite update(String key, byte[] value, DelosLogSequenceNumber pageLsn) {
+            return new CommittedWrite(CommittedWriteOperation.UPDATE, key, value, pageLsn);
+        }
+
+        public static CommittedWrite delete(String key, DelosLogSequenceNumber pageLsn) {
+            return new CommittedWrite(CommittedWriteOperation.DELETE, key, new byte[0], pageLsn);
+        }
+    }
+
+    public static final class CommittedTransactionMaterializationException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        private final long transactionId;
+        private final long commitSequence;
+
+        private CommittedTransactionMaterializationException(
+                long transactionId,
+                long commitSequence,
+                Throwable cause) {
+            super("MVCC transaction " + transactionId + " reached durable commit fence "
+                    + commitSequence + " but page materialization did not complete", cause);
+            this.transactionId = transactionId;
+            this.commitSequence = commitSequence;
+        }
+
+        public long transactionId() {
+            return transactionId;
+        }
+
+        public long commitSequence() {
+            return commitSequence;
+        }
+    }
+
+    private record PreparedCommittedWrite(
+            CommittedWrite write,
+            MvccRowId rowId,
+            MvccVersionId previousVersionId,
+            MvccRowPayload payload,
+            MvccVersionRecord record) {
+        private PreparedCommittedWrite {
+            write = Objects.requireNonNull(write, "write");
+            rowId = Objects.requireNonNull(rowId, "rowId");
+            previousVersionId = Objects.requireNonNull(previousVersionId, "previousVersionId");
+            payload = Objects.requireNonNull(payload, "payload");
+            record = Objects.requireNonNull(record, "record");
+        }
+    }
+
     public static Path rowDirectoryPath(Path pageFile) {
         Objects.requireNonNull(pageFile, "pageFile");
         return pageFile.resolveSibling(pageFile.getFileName() + ".rowdir");
@@ -1147,6 +1365,12 @@ public final class PageBackedMvccTable implements AutoCloseable {
     private static byte[] stringBytes(String value) {
         Objects.requireNonNull(value, "value");
         return value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static void requireTransactionId(long transactionId) {
+        if (transactionId <= 0L) {
+            throw new IllegalArgumentException("transaction id must be positive: " + transactionId);
+        }
     }
 
     private static void requireCommittedSequence(long commitSequence) {

@@ -62,8 +62,13 @@ public final class MvccPageRecoveryRunner {
      */
     public RecoveryResult recoverStrict(MvccTransactionOutcomeLog outcomeLog) throws IOException {
         Objects.requireNonNull(outcomeLog, "outcomeLog");
+        var outcomes = outcomeLog.recoverOutcomes();
         Set<MvccVersionId> existingVersionIds = new HashSet<>();
         for (PageBackedMvccTableStore.StoredVersionRecord stored : store.loadAll()) {
+            if (outcomeLog.committedRecordOrEmpty(stored.record(), outcomes).isEmpty()) {
+                throw new IllegalStateException("durable page contains a version from an aborted transaction: "
+                        + stored.record().header().createdByTx());
+            }
             existingVersionIds.add(stored.record().header().versionId());
         }
         return applyRecords(log.recoverRecordsThroughOutcomeLog(outcomeLog), existingVersionIds, 0, 0);

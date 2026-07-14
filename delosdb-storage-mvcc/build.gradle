@@ -1209,6 +1209,8 @@ def delosMvccLifecycleProofTasks = [
          'Runs MVCC concurrent commit durability instrumentation tests.'],
         ['runMvccTransactionDurabilityProtocolTest', '**/MvccTransactionDurabilityProtocolTest.class',
          'Runs the Phase 7.2 MVCC transaction durability protocol authority tests.'],
+        ['runMvccTransactionCommitFenceRecoveryTest', '**/MvccTransactionCommitFenceRecoveryTest.class',
+         'Runs the Phase 7.3 MVCC transaction commit-fence recovery tests.'],
         ['runMvccAttributeOverflowRowPayloadCodecTest', '**/MvccAttributeOverflowRowPayloadCodecTest.class',
          'Runs MVCC attribute-overflow row payload codec tests.'],
         ['runMvccBufferManagerPhase2Test', '**/MvccBufferManagerPhase2Test.class',

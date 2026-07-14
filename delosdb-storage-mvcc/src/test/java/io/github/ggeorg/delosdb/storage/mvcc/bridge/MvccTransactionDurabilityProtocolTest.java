@@ -56,8 +56,11 @@ final class MvccTransactionDurabilityProtocolTest {
             assertEquals(commitSequence, Long.parseLong(wal.get(2)[4]));
 
             List<String[]> mutation = fields(table.pageMutationLogFileForTesting());
-            assertEquals(List.of("VERSION", "COMMIT"), types(mutation));
-            assertEquals(commitSequence, Long.parseLong(mutation.get(1)[3]));
+            assertEquals(List.of("BEGIN", "VERSION", "PREPARED"), types(mutation));
+            assertEquals(commitSequence, Long.parseLong(mutation.getFirst()[3]));
+            assertEquals(1, Integer.parseInt(mutation.getFirst()[4]));
+            assertEquals(commitSequence, Long.parseLong(mutation.getLast()[3]));
+            assertEquals(1, Integer.parseInt(mutation.getLast()[4]));
 
             Path outcomeFile = PageVolumeMvccPaths.transactionOutcomeLogFileFor(
                     table.pageVolumeStateFileForTesting());
@@ -88,7 +91,7 @@ final class MvccTransactionDurabilityProtocolTest {
     }
 
     @Test
-    void multiRowCommitPinsCurrentPerRowOutcomeAndPageForceAmplification() throws Exception {
+    void multiRowCommitUsesOnePayloadBatchAndOneOutcomeFenceWhilePageForcesRemainPerRow() throws Exception {
         MvccInheritedTable table = new MvccInheritedTable(0L, 722L, databaseDirectory);
         Path recordingFile = databaseDirectory.resolve("eight-row-protocol.jfr");
         try {
@@ -97,8 +100,8 @@ final class MvccTransactionDurabilityProtocolTest {
             RecordedEvent event = onlyCommitEvent(recordingFile);
             assertEquals(8, event.getInt("changedRows"));
             assertEquals(2L, event.getLong("transactionStatusForceCount"));
-            assertEquals(8L, event.getLong("transactionOutcomeForceCount"),
-                    "the current protocol forces one outcome record per changed row");
+            assertEquals(1L, event.getLong("transactionOutcomeForceCount"),
+                    "one transaction outcome record is the transaction-complete fence");
             assertEquals(1L, event.getLong("writeAheadLogForceCount"),
                     "the page-volume WAL is already one transaction batch");
             assertEquals(9L, event.getLong("pageVolumeForceCount"),
@@ -110,19 +113,19 @@ final class MvccTransactionDurabilityProtocolTest {
             assertEquals("COMMIT", wal.getLast()[2]);
 
             List<String[]> mutation = fields(table.pageMutationLogFileForTesting());
-            assertEquals(16, mutation.size(), "each row currently writes VERSION then COMMIT");
-            for (int index = 0; index < mutation.size(); index += 2) {
-                assertEquals("VERSION", mutation.get(index)[1]);
-                assertEquals("COMMIT", mutation.get(index + 1)[1]);
-            }
+            assertEquals(10, mutation.size(), "BEGIN + eight VERSION records + PREPARED");
+            assertEquals("BEGIN", mutation.getFirst()[1]);
+            assertEquals("PREPARED", mutation.getLast()[1]);
+            assertEquals(8, Integer.parseInt(mutation.getFirst()[4]));
+            assertEquals(8, Integer.parseInt(mutation.getLast()[4]));
+            assertTrue(mutation.subList(1, mutation.size() - 1).stream()
+                    .allMatch(record -> "VERSION".equals(record[1])));
 
             Path outcomeFile = PageVolumeMvccPaths.transactionOutcomeLogFileFor(
                     table.pageVolumeStateFileForTesting());
             List<String[]> outcomes = fields(outcomeFile);
-            assertEquals(8, outcomes.size());
-            assertTrue(outcomes.stream().allMatch(record -> "COMMIT".equals(record[1])));
-            assertEquals(1L, outcomes.stream().map(record -> record[3]).distinct().count(),
-                    "all repeated outcome records must carry one commit sequence");
+            assertEquals(1, outcomes.size());
+            assertEquals("COMMIT", outcomes.getFirst()[1]);
         } finally {
             table.close();
         }

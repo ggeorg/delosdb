@@ -145,8 +145,16 @@ public final class MvccTransactionOutcomeLog extends AbstractSidecarStore {
      * fail loudly. A50 will wire this policy into the page recovery runner.</p>
      */
     public Optional<MvccVersionRecord> committedRecordOrEmpty(MvccVersionRecord record) {
+        return committedRecordOrEmpty(record, recoverOutcomes());
+    }
+
+    Optional<MvccVersionRecord> committedRecordOrEmpty(
+            MvccVersionRecord record,
+            Map<MvccTransactionId, Outcome> outcomes) {
         Objects.requireNonNull(record, "record");
-        Outcome outcome = requireOutcome(record.header().createdByTx());
+        Objects.requireNonNull(outcomes, "outcomes");
+        Outcome outcome = Optional.ofNullable(outcomes.get(record.header().createdByTx()))
+                .orElseThrow(() -> new MvccUnresolvedTransactionOutcomeException(record.header().createdByTx()));
         if (outcome.status() == MvccTransactionStatus.ABORTED) {
             return Optional.empty();
         }

@@ -1,17 +1,16 @@
-# Phase 7.2 — MVCC Transaction Durability Protocol Authority
+# Phase 7 — MVCC Transaction Durability Protocol
 
 ## Purpose
 
-This document is the authoritative description of the current inherited
-`delos_mvcc` write-transaction durability route.
+This document is the authoritative description of the inherited `delos_mvcc`
+write-transaction durability route after the Phase 7.3 transaction-complete
+fence.
 
-It records the behavior that exists before Phase 7 changes force placement,
-writer locking, or commit batching. It is deliberately descriptive rather than
-aspirational. The current protocol remains unchanged by this slice.
+The fence changes payload and outcome logging only. Page materialization,
+checkpointing, ordered-index rebuilding, transaction locking, and page-force
+placement remain unchanged.
 
 ## Required crash invariant
-
-The target transaction contract is:
 
 ```text
 After commit acknowledgement:
@@ -19,22 +18,20 @@ After commit acknowledgement:
 
 Before commit acknowledgement:
     recovery may reconstruct the complete transaction or none of it,
-    but must never expose a partial committed transaction.
+    but must never expose a committed prefix.
 ```
 
-The current implementation does not yet have one explicit transaction-level
-durable fence that proves the second rule for a process crash in the middle of
-a multi-row persistence loop. Phase 7 must establish that fence before removing
-or deferring any existing force.
+The page-mutation and transaction-outcome logs now prove this invariant for a
+multi-row transaction.
 
-## Current identities
+## Transaction identities
 
-The live path uses two transaction identities:
+The live path still uses two transaction identities:
 
 ```text
 MVCC transaction-table id
     owned by MvccTransactionManager
-    recorded in the .txstatus file
+    recorded in .txstatus
     exposed in the commit JFR event
 
 page-volume transaction id
@@ -58,19 +55,17 @@ register the active transaction in memory
 return the transaction handle
 ```
 
-The ACTIVE force occurs before JDBC/storage `commit()` is called.
-
 ### 2. Commit admission
 
 `MvccInheritedTable.commit()`:
 
 ```text
-enter process-wide backup durable-mutation guard
+enter the backup durable-mutation guard
 acquire the inherited-table write lock
 validate all changed rows can be encoded and persisted
 ```
 
-The current write lock serializes same-table durability execution.
+The table write lock still serializes same-table durability execution.
 
 ### 3. Transaction-table publication
 
@@ -83,7 +78,8 @@ publish the committed outcome in the in-memory transaction catalog
 remove the transaction from the active set
 ```
 
-This currently happens before page-volume persistence.
+This still occurs before page-volume persistence. Moving this publication is not
+part of Phase 7.3.
 
 ### 4. Page-volume WAL batch
 
@@ -97,73 +93,124 @@ VERSION OPERATION(row N)
 COMMIT(page-volume transaction id, commit sequence)
 ```
 
-The WAL provides contiguous page LSNs and a WAL-before-page-flush boundary. It
-contains operation type and row id, but not the encoded row payload. The strict
-payload recovery path is therefore not able to reconstruct missing row values
-from this WAL alone.
+The WAL supplies page LSNs and the WAL-before-page boundary. It does not contain
+encoded row payloads.
 
-### 5. Per-row recovery and page publication
+### 5. Prepared payload batch
 
-For every changed row, `PageBackedMvccTable.appendCommittedRecord()` currently
-performs:
+`MvccPageMutationLog.appendPreparedTransaction()` forces one append containing:
 
 ```text
-force VERSION(page-volume transaction id, encoded version) into .pagemut
-force COMMIT(page-volume transaction id, commit sequence) into .txoutcome
-force COMMIT(page-volume transaction id, commit sequence) into .pagemut
-append the version to the page volume
-rewrite row-directory/free-space/visibility sidecars as required
+BEGIN(page-volume transaction id, commit sequence, expected row count)
+VERSION(page-volume transaction id, encoded version 1)
+...
+VERSION(page-volume transaction id, encoded version N)
+PREPARED(page-volume transaction id, commit sequence, expected row count)
+```
+
+`PREPARED` proves that the complete expected payload set reached the mutation
+log. It is not the commit authority.
+
+The batch is additive to the existing log format. Legacy VERSION/COMMIT records
+remain readable.
+
+### 6. Transaction-complete outcome fence
+
+After the prepared payload batch succeeds,
+`MvccTransactionOutcomeLog.appendCommit()` forces exactly one record:
+
+```text
+COMMIT(page-volume transaction id, commit sequence)
+```
+
+This outcome record is the page-volume transaction-complete fence.
+
+Recovery applies a prepared transaction only when:
+
+```text
+the BEGIN and PREPARED metadata agree
+the actual VERSION count equals the expected count
+the outcome log contains COMMIT for the same transaction
+the outcome commit sequence matches the prepared commit sequence
+```
+
+Recovery behavior is:
+
+```text
+prepared batch without outcome
+    ignore the whole transaction as pre-fence and uncommitted
+
+torn prepared batch without outcome
+    ignore the whole transaction
+
+committed outcome plus complete prepared batch
+    replay every version idempotently
+
+committed outcome plus incomplete or mismatched prepared batch
+    reject recovery before applying a prefix
+
+aborted outcome
+    suppress the complete transaction
+```
+
+Legacy standalone VERSION records keep their existing strict behavior: an
+unknown outcome remains an error. The pre-fence suppression rule applies only
+to the new BEGIN/PREPARED transaction format.
+
+Strict recovery also validates every page record already present in the page
+volume against the outcome log. A page version from an unknown or aborted
+transaction is rejected rather than silently exposed.
+
+### 7. Page materialization
+
+After the outcome fence, each prepared version is materialized through the
+existing page path:
+
+```text
+append one version to the page volume
+rewrite row-directory/free-space/visibility state as required
 force dirty page-volume pages
 ```
 
-The COMMIT records are intentionally idempotent, but they are currently repeated
-once per row. An N-row transaction therefore publishes N outcome COMMIT records,
-N mutation-log COMMIT records, and performs at least N row-page force cycles.
+This path still forces per changed row. If materialization fails after the
+outcome fence, the code reports a committed-transaction materialization failure
+and does not append a contradictory WAL ABORT. Recovery can complete the
+remaining versions from the prepared payload batch.
 
-### 6. Cross-subsystem metadata and checkpoint
+### 8. Cross-subsystem metadata and checkpoint
 
-After all changed rows have been persisted, the page-volume state store records
-its pre-rebuild subsystem snapshot:
+After all changed rows are materialized:
 
 ```text
 append ROW_PAGE recovery record
-append INDEX_PAGE recovery record for the currently materialized ordered-index state
+append INDEX_PAGE recovery record for the pre-rebuild index state
 append OVERFLOW_PAGE recovery record
 append FREE_SPACE_MAP recovery record
 append TRANSACTION_OUTCOME recovery record
 rewrite checkpoint metadata
 append CHECKPOINT recovery record
+rebuild ordered-index pages
+append INDEX_PAGE recovery record for the post-rebuild index state
 ```
 
-`MvccInheritedTable` then calls `indexMaintenance.rebuildFromCommittedRows()`.
-That rewrite appends a second `INDEX_PAGE` recovery record after the checkpoint:
+The final `INDEX_PAGE` record is the lifecycle snapshot for the rebuilt ordered
+index. Both index records currently use transaction id and commit sequence `0`.
 
-```text
-rebuild ordered-index pages from the committed row image
-append INDEX_PAGE recovery record for the post-rebuild ordered-index state
-```
-
-Both index records currently carry transaction id and commit sequence `0`. They
-are lifecycle snapshots rather than transaction-correlated records. The final
-`INDEX_PAGE` record is the one describing the ordered-index image produced by
-this commit's rebuild. This duplication and ordering are current protocol facts,
-not a recommended future durability fence.
-
-### 7. Acknowledgement
+### 9. Acknowledgement
 
 The commit call returns only after:
 
 ```text
 transaction status publication
 WAL batch force
-all per-row recovery records and page writes
-cross-subsystem recovery records
+prepared payload batch force
+transaction outcome fence force
+all current page materialization and page forces
+cross-subsystem records
 checkpoint rewrite
-ordered-index rebuild and post-rebuild INDEX_PAGE recovery record
+ordered-index rebuild
 optional synchronous purge
 ```
-
-have completed successfully.
 
 ## Current authority by responsibility
 
@@ -172,20 +219,16 @@ have completed successfully.
 | active/terminal transaction-table state | `.txstatus` |
 | commit-sequence allocation | `MvccTransactionManager` |
 | page LSN ordering and WAL-before-page check | page-volume `.wal` |
-| encoded row payload redo | `.pagemut` |
-| strict committed/aborted payload outcome | `.txoutcome` |
-| materialized row image | page volume plus row-directory sidecars |
-| cross-subsystem replay completeness metadata | `.recovery` |
-| final ordered-index lifecycle snapshot | the last post-rebuild `INDEX_PAGE` record in `.recovery` |
-| durable image summary and lifecycle marker | `.checkpoint` |
+| complete encoded payload batch | `.pagemut` BEGIN/VERSION/PREPARED transaction |
+| page-volume transaction-complete fence | one `.txoutcome` COMMIT |
+| materialized row image | page volume plus rebuildable row-directory sidecars |
+| cross-subsystem replay metadata | `.recovery` |
+| durable image summary | `.checkpoint` |
 | SQL/JDBC acknowledgement | return from `MvccInheritedTable.commit()` |
 
-No one component currently owns all of these as one transaction durability
-fence.
+## Measured and current force shape
 
-## Phase 7.1 measured cost
-
-The target JDK 25 benchmark established:
+The Phase 7.1 target-machine benchmark measured the old protocol as:
 
 ```text
 one-row transaction:
@@ -194,72 +237,59 @@ one-row transaction:
     1 WAL force
     2 page-volume forces
 
- eight-row transaction:
+eight-row transaction:
     2 transaction-status forces
     8 transaction-outcome forces
     1 WAL force
     9 page-volume forces
 ```
 
-The page-mutation COMMIT/version appends and other sidecar forces are reported
-separately from the headline outcome/WAL/page counters.
-
-The benchmark also proved:
+After Phase 7.3 the expected headline shape is:
 
 ```text
-same-table durability execution concurrency = 1
-different-table/process durability concurrency reaches the writer count
+one-row transaction:
+    2 transaction-status forces
+    1 transaction-outcome force
+    1 WAL force
+    2 page-volume forces
+
+eight-row transaction:
+    2 transaction-status forces
+    1 transaction-outcome force
+    1 WAL force
+    9 page-volume forces
 ```
 
-Independent tables still scale poorly because force amplification saturates the
-durable path before table-lock contention becomes the only limiting factor.
+The mutation payload log also moves from repeated VERSION/COMMIT forced appends
+to one forced transaction batch. Page-volume forces are deliberately unchanged.
 
-## Unresolved atomicity window
+## Compatibility
 
-The current sequence has no separate all-rows payload-complete marker between
-the per-row `.pagemut`/`.txoutcome` records and commit acknowledgement.
-
-A crash after some rows have completed step 5 but before all rows and subsystem
-records have completed leaves a structurally ambiguous image:
+The mutation log format is extended, not replaced:
 
 ```text
-.txstatus may already say COMMITTED
-.wal may describe the full transaction
-.pagemut/.txoutcome may contain committed payload records for only a prefix
-page volumes may contain only that same prefix
+legacy VERSION / COMMIT / ABORT / FSYNC
+new BEGIN / VERSION... / PREPARED
 ```
 
-The WAL cannot supply the missing payloads. Existing subsystem metadata is
-written after the row loop and is not itself the payload redo authority.
+Checkpoint rewrites continue to use the legacy compact committed-image format,
+and strict recovery supports both forms.
 
-Phase 7.3 must therefore introduce and prove one transaction-complete durable
-fence before consolidating forces. The required crash test must interrupt every
-stage of a multi-row commit and prove recovery exposes either all rows or none.
+## Remaining work
 
-## Next implementation boundary
-
-The next slice may change durability behavior only after it defines:
+Phase 7.3 establishes the transaction-complete fence and removes repeated
+payload/outcome log forcing. It does not yet solve:
 
 ```text
-PREPARING
-PAYLOAD_REDO_RECORDED
-TRANSACTION_OUTCOME_DURABLE
-PAGES_STAGED
-DURABLE
-PUBLISHED
-ACKNOWLEDGED
+per-row page-volume forces
+per-row row-directory/free-space/visibility rewrites
+table-wide write-lock scope
+cross-transaction group commit
+database-level maintenance scheduling
+transaction-table COMMITTED publication before the page-volume fence
 ```
 
-These names describe protocol states; they do not require a permanent production
-enum.
-
-The intended first optimization remains intra-transaction consolidation:
-
-```text
-record every row payload under one page-volume transaction
-publish one transaction terminal outcome
-force dirty pages once at the transaction fence
-acknowledge only after the fence succeeds
-```
-
-Cross-transaction group commit and table-lock narrowing remain later work.
+The next implementation slice should batch page materialization inside one
+page-mutation context and force the page volume once per transaction. It must
+reuse the outcome fence and rerun the same crash matrix before changing the
+table lock or adding group commit.

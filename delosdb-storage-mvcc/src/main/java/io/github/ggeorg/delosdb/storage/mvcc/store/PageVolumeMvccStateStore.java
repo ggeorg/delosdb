@@ -791,20 +791,25 @@ public final class PageVolumeMvccStateStore<T> {
                         durableCommitSequence,
                         walWrites);
                 wroteWalTransaction = true;
+                List<PageBackedMvccTable.CommittedWrite> committedWrites =
+                        new ArrayList<>(plannedWrites.size());
                 for (int i = 0; i < plannedWrites.size(); i++) {
                     PlannedPageWrite<T> planned = plannedWrites.get(i);
                     DelosLogSequenceNumber pageLsn = pageLsns.get(i);
                     switch (planned.operation()) {
-                        case DELETE -> table.deleteCommitted(
-                                planned.key(), transactionId, durableCommitSequence, pageLsn);
-                        case INSERT -> table.insertCommitted(
-                                planned.key(), planned.encodedValues(), transactionId, durableCommitSequence, pageLsn);
-                        case UPDATE -> table.updateCommitted(
-                                planned.key(), planned.encodedValues(), transactionId, durableCommitSequence, pageLsn);
+                        case DELETE -> committedWrites.add(
+                                PageBackedMvccTable.CommittedWrite.delete(planned.key(), pageLsn));
+                        case INSERT -> committedWrites.add(
+                                PageBackedMvccTable.CommittedWrite.insert(
+                                        planned.key(), planned.encodedValues(), pageLsn));
+                        case UPDATE -> committedWrites.add(
+                                PageBackedMvccTable.CommittedWrite.update(
+                                        planned.key(), planned.encodedValues(), pageLsn));
                         default -> throw new IllegalStateException("unknown MVCC planned page write: "
                                 + planned.operation());
                     }
                 }
+                table.persistCommittedTransaction(transactionId, durableCommitSequence, committedWrites);
                 appendSubsystemRecoveryRecords(transactionId, durableCommitSequence);
                 rewriteCheckpoint();
             }
@@ -814,6 +819,10 @@ public final class PageVolumeMvccStateStore<T> {
             }
             throw new UncheckedIOException("Could not persist inherited MVCC changed rows to page volume "
                     + pageFile, e);
+        } catch (PageBackedMvccTable.CommittedTransactionMaterializationException e) {
+            // The outcome fence is already durable. Recovery must finish page
+            // materialization; appending WAL ABORT here would contradict it.
+            throw e;
         } catch (RuntimeException e) {
             if (wroteWalTransaction) {
                 writeAheadLog.appendAbort(transactionId);

@@ -8,10 +8,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-
-import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
+import java.util.Optional;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatus;
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccTupleHeader;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordCodec;
@@ -19,20 +21,20 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordCodec;
 /**
  * Provider-local page-storage-aware recovery log for page-backed MVCC tables.
  *
- * <p>This is deliberately smaller than Derby WAL, but it follows the same core
- * rule as a real MVCC engine: version writes are not visible after recovery
- * unless the log also contains a commit record for the creating transaction.
- * The durable page file stores physical {@link MvccVersionRecord} instances;
- * this log stores the same record bytes plus transaction terminal records.</p>
+ * <p>Legacy callers may still append one VERSION and terminal record at a time.
+ * The transaction path uses {@link #appendPreparedTransaction(long, long, List)}:
+ * all payload records plus a PREPARED marker are forced by one append before the
+ * separate transaction-outcome log publishes the commit fence.</p>
  */
 public final class MvccPageMutationLog extends AbstractSidecarStore {
     private static final String LOG_VERSION = "1";
     private static final String LOG_NAME = "MVCC page mutation log";
+    private static final String RECORD_BEGIN = "BEGIN";
     private static final String RECORD_VERSION = "VERSION";
+    private static final String RECORD_PREPARED = "PREPARED";
     private static final String RECORD_COMMIT = "COMMIT";
     private static final String RECORD_ABORT = "ABORT";
     private static final String RECORD_FSYNC = "FSYNC";
-
 
     private final MvccAppendOnlyTextLog journal;
 
@@ -59,10 +61,47 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
 
     public void appendCommit(long transactionId, long commitSequence) {
         requireTransactionId(transactionId);
-        if (commitSequence <= 0L) {
-            throw new IllegalArgumentException("commit sequence must be positive: " + commitSequence);
-        }
+        requireCommitSequence(commitSequence);
         appendLine(RECORD_COMMIT, Long.toString(transactionId), Long.toString(commitSequence));
+    }
+
+    /**
+     * Forces one complete transaction payload batch.
+     *
+     * <p>The PREPARED marker is not the commit authority. It proves that all
+     * expected payload records reached the mutation log. The transaction outcome
+     * log is written afterwards and is the transaction-complete fence.</p>
+     */
+    public synchronized void appendPreparedTransaction(
+            long transactionId,
+            long commitSequence,
+            List<MvccVersionRecord> records) {
+        requireTransactionId(transactionId);
+        requireCommitSequence(commitSequence);
+        records = List.copyOf(Objects.requireNonNull(records, "records"));
+        if (records.isEmpty()) {
+            throw new IllegalArgumentException("prepared MVCC transaction must contain at least one version");
+        }
+        StringBuilder batch = new StringBuilder();
+        appendLine(batch, RECORD_BEGIN,
+                Long.toString(transactionId),
+                Long.toString(commitSequence),
+                Integer.toString(records.size()));
+        for (MvccVersionRecord record : records) {
+            Objects.requireNonNull(record, "records entry");
+            require(record.header().createdByTx().value() == transactionId,
+                    "prepared transaction id must match every record creator");
+            MvccCommitSequence recordSequence = record.header().commitSequence();
+            require(recordSequence.equals(MvccCommitSequence.NONE)
+                            || recordSequence.value() == commitSequence,
+                    "prepared transaction commit sequence must match every record");
+            appendLine(batch, RECORD_VERSION, Long.toString(transactionId), encodeRecord(record));
+        }
+        appendLine(batch, RECORD_PREPARED,
+                Long.toString(transactionId),
+                Long.toString(commitSequence),
+                Integer.toString(records.size()));
+        journal.append(batch.toString(), "MVCC prepared page-mutation transaction");
     }
 
     public void appendAbort(long transactionId) {
@@ -70,14 +109,6 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
         appendLine(RECORD_ABORT, Long.toString(transactionId));
     }
 
-    /**
-     * Records an explicit durable-boundary marker in the page mutation log.
-     *
-     * <p>The append operation itself is forced to stable storage by
-     * {@link #appendLine(String, String...)}, so this marker is a readable
-     * contract boundary for recovery tests and later checkpoint logic. Recovery
-     * accepts the marker but never turns it into a row version.</p>
-     */
     public void appendFsyncBoundary(long boundaryId) {
         if (boundaryId <= 0L) {
             throw new IllegalArgumentException("fsync boundary id must be positive: " + boundaryId);
@@ -85,11 +116,7 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
         appendLine(RECORD_FSYNC, Long.toString(boundaryId));
     }
 
-    /**
-     * Replaces the log with a compact committed image. The image is represented
-     * as one synthetic committed transaction so normal recovery logic can replay
-     * it without a separate checkpoint record format.
-     */
+    /** Replaces the log with a compact committed image using the legacy format. */
     public synchronized void rewriteCheckpoint(List<MvccVersionRecord> committedImage) {
         Objects.requireNonNull(committedImage, "committedImage");
         StringBuilder content = new StringBuilder();
@@ -130,7 +157,7 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
         List<Long> terminalOrder = new ArrayList<>();
 
         for (MvccDurableLineRecords.LineRecord record : journal.completeRecords()) {
-            parseLine(record.line(), record.lineIndex(), versionsByTransaction, terminalStates, terminalOrder);
+            parseLegacyLine(record.line(), record.lineIndex(), versionsByTransaction, terminalStates, terminalOrder);
         }
 
         List<MvccVersionRecord> committed = new ArrayList<>();
@@ -147,13 +174,13 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
     }
 
     /**
-     * Replays raw version mutations through the strict A49/A50 transaction outcome log.
+     * Replays version payloads through the transaction-outcome authority.
      *
-     * <p>This is deliberately separate from {@link #recoverCommittedRecords()},
-     * which keeps the legacy page-mutation-log behavior. The strict path treats
-     * the transaction outcome log as authoritative: committed creators
-     * materialize records, aborted creators are suppressed, and unknown creators
-     * fail loudly.</p>
+     * <p>Legacy VERSION-only records keep the old strict rule: an unknown
+     * outcome is an error. New BEGIN/PREPARED batches are different: a complete
+     * prepared batch without an outcome is a pre-fence transaction and is
+     * ignored as uncommitted. A committed outcome requires a complete matching
+     * batch and exact record count.</p>
      */
     public synchronized List<MvccVersionRecord> recoverRecordsThroughOutcomeLog(
             MvccTransactionOutcomeLog outcomeLog) {
@@ -162,33 +189,114 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
             return List.of();
         }
 
-        List<MvccVersionRecord> recovered = new ArrayList<>();
+        Map<MvccTransactionId, MvccTransactionOutcomeLog.Outcome> outcomes = outcomeLog.recoverOutcomes();
+        Map<Long, StrictTransaction> transactions = new LinkedHashMap<>();
         for (MvccDurableLineRecords.LineRecord lineRecord : journal.completeRecords()) {
-            int index = lineRecord.lineIndex();
-            String[] parts = MvccDurableLineRecords.tabFields(lineRecord.line());
-            require(parts.length >= 2, index, "record has too few fields");
-            require(LOG_VERSION.equals(parts[0]), index, "unsupported page mutation log version: " + parts[0]);
-            switch (parts[1]) {
-            case RECORD_VERSION -> {
-                require(parts.length == 4, index, "VERSION requires transaction id and record bytes");
-                long loggedTransactionId = parseLong(parts[2], index, "transaction id");
-                requireTransactionId(loggedTransactionId);
-                MvccVersionRecord record = decodeRecord(parts[3], index);
-                require(record.header().createdByTx().value() == loggedTransactionId, index,
-                        "VERSION transaction id must match record creator transaction id");
-                outcomeLog.committedRecordOrEmpty(record).ifPresent(recovered::add);
-            }
-            case RECORD_COMMIT, RECORD_ABORT, RECORD_FSYNC -> {
-                // Accepted for backward-compatible logs, but ignored here: the
-                // strict path is governed only by MvccTransactionOutcomeLog.
-            }
-            default -> throw corrupt(index, "unknown page mutation log record type: " + parts[1]);
+            parseStrictLine(lineRecord.line(), lineRecord.lineIndex(), transactions);
+        }
+
+        List<MvccVersionRecord> recovered = new ArrayList<>();
+        for (StrictTransaction transaction : transactions.values()) {
+            if (transaction.batched()) {
+                recoverPreparedTransaction(transaction, outcomes, recovered);
+            } else {
+                recoverLegacyTransaction(transaction, outcomeLog, outcomes, recovered);
             }
         }
         return List.copyOf(recovered);
     }
 
-    private void parseLine(
+    private static void recoverPreparedTransaction(
+            StrictTransaction transaction,
+            Map<MvccTransactionId, MvccTransactionOutcomeLog.Outcome> outcomes,
+            List<MvccVersionRecord> recovered) {
+        Optional<MvccTransactionOutcomeLog.Outcome> outcome =
+                Optional.ofNullable(outcomes.get(new MvccTransactionId(transaction.transactionId())));
+        if (!transaction.prepared()) {
+            if (outcome.isPresent() && outcome.get().status() == MvccTransactionStatus.COMMITTED) {
+                throw corrupt(transaction.lastLineIndex(),
+                        "committed outcome has no complete prepared mutation batch for transaction "
+                                + transaction.transactionId());
+            }
+            return;
+        }
+        require(transaction.expectedRecordCount() == transaction.records().size(),
+                transaction.lastLineIndex(),
+                "prepared mutation count mismatch for transaction " + transaction.transactionId()
+                        + ": expected=" + transaction.expectedRecordCount()
+                        + ", actual=" + transaction.records().size());
+        if (outcome.isEmpty()) {
+            return;
+        }
+        MvccTransactionOutcomeLog.Outcome terminal = outcome.get();
+        if (terminal.status() == MvccTransactionStatus.ABORTED) {
+            return;
+        }
+        require(terminal.commitSequence().value() == transaction.commitSequence(),
+                transaction.lastLineIndex(),
+                "prepared mutation commit sequence does not match outcome for transaction "
+                        + transaction.transactionId());
+        for (MvccVersionRecord record : transaction.records()) {
+            recovered.add(recordCommittedAt(record, terminal.commitSequence()));
+        }
+    }
+
+    private static void recoverLegacyTransaction(
+            StrictTransaction transaction,
+            MvccTransactionOutcomeLog outcomeLog,
+            Map<MvccTransactionId, MvccTransactionOutcomeLog.Outcome> outcomes,
+            List<MvccVersionRecord> recovered) {
+        for (MvccVersionRecord record : transaction.records()) {
+            outcomeLog.committedRecordOrEmpty(record, outcomes).ifPresent(recovered::add);
+        }
+    }
+
+    private void parseStrictLine(
+            String line,
+            int lineIndex,
+            Map<Long, StrictTransaction> transactions) {
+        String[] parts = MvccDurableLineRecords.tabFields(line);
+        require(parts.length >= 2, lineIndex, "record has too few fields");
+        require(LOG_VERSION.equals(parts[0]), lineIndex, "unsupported page mutation log version: " + parts[0]);
+        switch (parts[1]) {
+        case RECORD_BEGIN -> {
+            require(parts.length == 5, lineIndex,
+                    "BEGIN requires transaction id, commit sequence, and expected record count");
+            long transactionId = parseLong(parts[2], lineIndex, "transaction id");
+            long commitSequence = parseLong(parts[3], lineIndex, "commit sequence");
+            int expectedCount = parseCount(parts[4], lineIndex);
+            StrictTransaction transaction = transactions.computeIfAbsent(
+                    transactionId, StrictTransaction::new);
+            transaction.begin(commitSequence, expectedCount, lineIndex);
+        }
+        case RECORD_VERSION -> {
+            require(parts.length == 4, lineIndex, "VERSION requires transaction id and record bytes");
+            long transactionId = parseLong(parts[2], lineIndex, "transaction id");
+            requireTransactionId(transactionId);
+            MvccVersionRecord record = decodeRecord(parts[3], lineIndex);
+            require(record.header().createdByTx().value() == transactionId, lineIndex,
+                    "VERSION transaction id must match record creator transaction id");
+            transactions.computeIfAbsent(transactionId, StrictTransaction::new)
+                    .addRecord(record, lineIndex);
+        }
+        case RECORD_PREPARED -> {
+            require(parts.length == 5, lineIndex,
+                    "PREPARED requires transaction id, commit sequence, and expected record count");
+            long transactionId = parseLong(parts[2], lineIndex, "transaction id");
+            long commitSequence = parseLong(parts[3], lineIndex, "commit sequence");
+            int expectedCount = parseCount(parts[4], lineIndex);
+            transactions.computeIfAbsent(transactionId, StrictTransaction::new)
+                    .prepared(commitSequence, expectedCount, lineIndex);
+        }
+        case RECORD_COMMIT, RECORD_ABORT, RECORD_FSYNC -> {
+            // Legacy terminal and explicit force markers are not the strict
+            // transaction fence. The separate outcome log remains authoritative.
+        }
+        default -> throw corrupt(lineIndex, "unknown page mutation log record type: " + parts[1]);
+        }
+    }
+
+    private void parseLegacyLine(
             String line,
             int lineIndex,
             Map<Long, List<MvccVersionRecord>> versionsByTransaction,
@@ -217,10 +325,9 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
             long transactionId = parseLong(parts[2], lineIndex, "transaction id");
             recordTerminalState(transactionId, TerminalState.aborted(), terminalStates, terminalOrder);
         }
-        case RECORD_FSYNC -> {
-            require(parts.length == 3, lineIndex, "FSYNC requires boundary id");
-            long boundaryId = parseLong(parts[2], lineIndex, "fsync boundary id");
-            require(boundaryId > 0L, lineIndex, "fsync boundary id must be positive");
+        case RECORD_BEGIN, RECORD_PREPARED, RECORD_FSYNC -> {
+            // New transaction-batch markers and force markers are irrelevant to
+            // the compatibility recovery path.
         }
         default -> throw corrupt(lineIndex, "unknown page mutation log record type: " + parts[1]);
         }
@@ -238,11 +345,8 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
     }
 
     private synchronized void appendLine(String type, String... fields) {
-        StringBuilder line = new StringBuilder(LOG_VERSION).append('	').append(type);
-        for (String field : fields) {
-            line.append('	').append(field);
-        }
-        line.append('\n');
+        StringBuilder line = new StringBuilder();
+        appendLine(line, type, fields);
         journal.append(line.toString(), "MVCC page mutation log record");
     }
 
@@ -270,13 +374,15 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
         }
     }
 
-    private static MvccVersionRecord recordCommittedAt(MvccVersionRecord record, MvccCommitSequence commitSequence) {
+    private static MvccVersionRecord recordCommittedAt(
+            MvccVersionRecord record,
+            MvccCommitSequence commitSequence) {
         MvccTupleHeader header = record.header();
         if (!header.commitSequence().equals(MvccCommitSequence.NONE)) {
-            // Checkpoint rewrites encode an already-committed image under a
-            // synthetic page-log transaction. The synthetic COMMIT marks the
-            // checkpoint image durable; it must not replace the original row
-            // version's commit sequence.
+            if (!header.commitSequence().equals(commitSequence)) {
+                throw new IllegalStateException("mutation record commit sequence " + header.commitSequence()
+                        + " conflicts with durable outcome " + commitSequence);
+            }
             return record;
         }
         return new MvccVersionRecord(
@@ -295,9 +401,28 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
         return MvccDurableLineRecords.parseLong(value, lineIndex, fieldName, LOG_NAME);
     }
 
+    private static int parseCount(String value, int lineIndex) {
+        long count = parseLong(value, lineIndex, "expected record count");
+        require(count > 0L && count <= Integer.MAX_VALUE, lineIndex,
+                "expected record count must be a positive integer");
+        return (int) count;
+    }
+
     private static void requireTransactionId(long transactionId) {
         if (transactionId <= 0L) {
             throw new IllegalArgumentException("transaction id must be positive: " + transactionId);
+        }
+    }
+
+    private static void requireCommitSequence(long commitSequence) {
+        if (commitSequence <= 0L) {
+            throw new IllegalArgumentException("commit sequence must be positive: " + commitSequence);
+        }
+    }
+
+    private static void require(boolean condition, String message) {
+        if (!condition) {
+            throw new IllegalArgumentException(message);
         }
     }
 
@@ -320,6 +445,78 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
 
         private static TerminalState aborted() {
             return new TerminalState(false, MvccCommitSequence.NONE);
+        }
+    }
+
+    private static final class StrictTransaction {
+        private final long transactionId;
+        private final List<MvccVersionRecord> records = new ArrayList<>();
+        private boolean batched;
+        private boolean prepared;
+        private long commitSequence;
+        private int expectedRecordCount;
+        private int lastLineIndex;
+
+        private StrictTransaction(long transactionId) {
+            requireTransactionId(transactionId);
+            this.transactionId = transactionId;
+        }
+
+        private void begin(long sequence, int expectedCount, int lineIndex) {
+            require(!batched, lineIndex, "duplicate BEGIN for transaction " + transactionId);
+            require(records.isEmpty(), lineIndex,
+                    "BEGIN must precede VERSION records for transaction " + transactionId);
+            require(sequence > 0L, lineIndex, "commit sequence must be positive");
+            batched = true;
+            commitSequence = sequence;
+            expectedRecordCount = expectedCount;
+            lastLineIndex = lineIndex;
+        }
+
+        private void addRecord(MvccVersionRecord record, int lineIndex) {
+            require(!prepared, lineIndex,
+                    "VERSION must not follow PREPARED for transaction " + transactionId);
+            records.add(Objects.requireNonNull(record, "record"));
+            lastLineIndex = lineIndex;
+        }
+
+        private void prepared(long sequence, int expectedCount, int lineIndex) {
+            require(batched, lineIndex, "PREPARED without BEGIN for transaction " + transactionId);
+            require(!prepared, lineIndex, "duplicate PREPARED for transaction " + transactionId);
+            require(sequence == commitSequence, lineIndex,
+                    "PREPARED commit sequence does not match BEGIN for transaction " + transactionId);
+            require(expectedCount == expectedRecordCount, lineIndex,
+                    "PREPARED record count does not match BEGIN for transaction " + transactionId);
+            prepared = true;
+            lastLineIndex = lineIndex;
+        }
+
+        private long transactionId() {
+            return transactionId;
+        }
+
+        private List<MvccVersionRecord> records() {
+            return records;
+        }
+
+        private boolean batched() {
+            return batched;
+        }
+
+        private boolean prepared() {
+            return prepared;
+        }
+
+        private long commitSequence() {
+            return commitSequence;
+        }
+
+        private int expectedRecordCount() {
+            return expectedRecordCount;
+        }
+
+        private int lastLineIndex() {
+            return lastLineIndex;
         }
     }
 }

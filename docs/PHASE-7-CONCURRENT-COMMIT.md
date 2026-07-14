@@ -158,16 +158,20 @@ The reports establish:
 No optimization should be selected until these measurements are available on
 the target JDK 25 machine.
 
-## Phase 7.1 result and Phase 7.2 authority
+## Phase 7.1 result and transaction-complete fence
 
 The completed JDK 25 matrix proved that same-table durability execution remains
-serialized and that multi-row throughput is dominated by per-row outcome and
-page forcing. The current authoritative protocol, cross-file ordering, crash
-invariant, and unresolved multi-row atomicity window are documented in:
+serialized and that multi-row throughput is dominated by repeated outcome-log
+and page-volume forcing.
+
+Phase 7.2 documented the existing protocol. Phase 7.3 now records all payloads
+in one prepared mutation batch and publishes one transaction-outcome commit as
+the page-volume transaction-complete fence. The authoritative ordering, crash
+invariant, compatibility rules, and remaining page-force work are documented in:
 
 ```text
 docs/PHASE-7-DURABILITY-PROTOCOL.md
 ```
 
-No force or lock is changed until that protocol is replaced by a tested
-transaction-complete durability fence.
+The table lock and page-force placement remain unchanged until the new fence and
+its crash-recovery matrix are green on JDK 25.
