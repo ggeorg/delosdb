@@ -42,6 +42,7 @@ final class MvccInheritedHandles {
         private final Map<Long, List<WriteIntent>> writeIntents = new LinkedHashMap<>();
         private final List<WriteIntent> appendedWriteIntents = new ArrayList<>();
         private long nextCommandSequence = 1L;
+        private long writeIntentRevision;
 
         Transaction(MvccTransaction nativeTransaction) {
             this(nativeTransaction, false, MvccCommitDurabilityMetrics.Snapshot.empty());
@@ -140,6 +141,10 @@ final class MvccInheritedHandles {
             return appendedWriteIntents.size();
         }
 
+        long writeIntentRevision() {
+            return writeIntentRevision;
+        }
+
         boolean hasAppendedWriteIntent(
                 long rowId,
                 MvccCommandSequence commandSequence,
@@ -157,6 +162,7 @@ final class MvccInheritedHandles {
         void clearWriteIntents() {
             writeIntents.clear();
             appendedWriteIntents.clear();
+            writeIntentRevision++;
         }
 
         MvccCommandSequence rollbackCurrentCommand(MvccCommandSequence commandSequence) {
@@ -164,6 +170,7 @@ final class MvccInheritedHandles {
                     Objects.requireNonNull(commandSequence, "commandSequence").value() - 1L);
             removeWriteIntentsAfter(boundary);
             nextCommandSequence = boundary.value() + 1L;
+            writeIntentRevision++;
             return boundary;
         }
 
@@ -176,6 +183,7 @@ final class MvccInheritedHandles {
             removeSavepointsAfter(normalizedName);
             removeWriteIntentsAfter(boundary);
             nextCommandSequence = boundary.value() + 1L;
+            writeIntentRevision++;
             return boundary;
         }
 
@@ -217,6 +225,7 @@ final class MvccInheritedHandles {
             requireWritable();
             appendedWriteIntents.add(intent);
             writeIntents.computeIfAbsent(intent.rowId(), ignored -> new ArrayList<>()).add(intent);
+            writeIntentRevision++;
         }
 
         private void removeSavepointsAfter(String savepointName) {

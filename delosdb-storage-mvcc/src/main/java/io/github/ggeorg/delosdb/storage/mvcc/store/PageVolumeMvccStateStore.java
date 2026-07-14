@@ -723,34 +723,48 @@ public final class PageVolumeMvccStateStore<T> {
         return table.rowDirectoryHeadForRowId(new MvccRowId(rowId));
     }
 
-    public void requireChangedRowsCanBePersisted(List<PersistedChange<T>> changes) {
+    public PreparedChanges prepareChangedRows(List<PersistedChange<T>> changes) {
         Objects.requireNonNull(changes, "changes");
-        if (!enabled()) {
-            return;
+        if (!enabled() || changes.isEmpty()) {
+            return PreparedChanges.empty();
         }
         try {
+            List<PreparedChange> prepared = new ArrayList<>(changes.size());
             for (PersistedChange<T> change : changes) {
-                if (!change.delete()) {
-                    PageBackedMvccTable.requirePayloadCanBeEncoded(
-                            keyFor(change.rowId()),
-                            rowCodec.encode(change.values()));
+                if (change.delete()) {
+                    prepared.add(PreparedChange.delete(change.rowId()));
+                    continue;
                 }
+                byte[] encoded = rowCodec.encode(change.values());
+                PageBackedMvccTable.requirePayloadCanBeEncoded(keyFor(change.rowId()), encoded);
+                prepared.add(PreparedChange.upsert(change.rowId(), encoded));
             }
+            return new PreparedChanges(prepared);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not encode changed MVCC page-volume state " + pageFile, e);
         }
     }
 
+    public void requireChangedRowsCanBePersisted(List<PersistedChange<T>> changes) {
+        prepareChangedRows(changes);
+    }
+
     public void persistChangedRows(List<PersistedChange<T>> changes) {
-        persistChangedRows(changes, new MvccCommitSequence(nextCommitSequence()));
+        persistPreparedChanges(prepareChangedRows(changes), new MvccCommitSequence(nextCommitSequence()));
     }
 
     public void persistChangedRows(
             List<PersistedChange<T>> changes,
             MvccCommitSequence commitSequence) {
-        Objects.requireNonNull(changes, "changes");
+        persistPreparedChanges(prepareChangedRows(changes), commitSequence);
+    }
+
+    public void persistPreparedChanges(
+            PreparedChanges preparedChanges,
+            MvccCommitSequence commitSequence) {
+        Objects.requireNonNull(preparedChanges, "preparedChanges");
         Objects.requireNonNull(commitSequence, "commitSequence");
-        if (!enabled() || changes.isEmpty()) {
+        if (!enabled() || preparedChanges.isEmpty()) {
             return;
         }
         long durableCommitSequence = commitSequence.value();
@@ -764,7 +778,7 @@ public final class PageVolumeMvccStateStore<T> {
         try {
             List<PlannedPageWrite<T>> plannedWrites = new ArrayList<>();
             List<PageVolumeMvccWriteAheadLog.VersionWrite> walWrites = new ArrayList<>();
-            for (PersistedChange<T> change : changes) {
+            for (PreparedChange change : preparedChanges.changes()) {
                 String key = keyFor(change.rowId());
                 MvccRowDirectoryStore.RowHeadRecord existingHead = existingHeads.get(key);
                 if (change.delete()) {
@@ -774,7 +788,7 @@ public final class PageVolumeMvccStateStore<T> {
                     }
                     continue;
                 }
-                byte[] encoded = rowCodec.encode(change.values());
+                byte[] encoded = change.encodedValues();
                 if (existingHead == null) {
                     plannedWrites.add(PlannedPageWrite.insert(key, change.rowId(), encoded));
                     walWrites.add(PageVolumeMvccWriteAheadLog.VersionWrite.insert(change.rowId()));
@@ -1065,6 +1079,58 @@ public final class PageVolumeMvccStateStore<T> {
                     result.removedLogicalRows(),
                     result.remainingVersions(),
                     result.remainingLogicalRows());
+        }
+    }
+
+    /** Immutable row payloads prepared before entering the table durability coordinator. */
+    public static final class PreparedChanges {
+        private static final PreparedChanges EMPTY = new PreparedChanges(List.of());
+        private final List<PreparedChange> changes;
+
+        private PreparedChanges(List<PreparedChange> changes) {
+            this.changes = List.copyOf(changes);
+        }
+
+        static PreparedChanges empty() {
+            return EMPTY;
+        }
+
+        public int size() {
+            return changes.size();
+        }
+
+        public boolean isEmpty() {
+            return changes.isEmpty();
+        }
+
+        private List<PreparedChange> changes() {
+            return changes;
+        }
+    }
+
+    private record PreparedChange(long rowId, byte[] encodedValues, boolean delete) {
+        private PreparedChange {
+            if (rowId <= 0L) {
+                throw new IllegalArgumentException("prepared MVCC row id must be positive: " + rowId);
+            }
+            if (delete) {
+                encodedValues = null;
+            } else {
+                encodedValues = Objects.requireNonNull(encodedValues, "encodedValues").clone();
+            }
+        }
+
+        static PreparedChange upsert(long rowId, byte[] encodedValues) {
+            return new PreparedChange(rowId, encodedValues, false);
+        }
+
+        static PreparedChange delete(long rowId) {
+            return new PreparedChange(rowId, null, true);
+        }
+
+        @Override
+        public byte[] encodedValues() {
+            return encodedValues == null ? null : encodedValues.clone();
         }
     }
 

@@ -31,10 +31,12 @@ import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccCommitDurabilityMetrics
  */
 final class MvccCommitMetrics {
     private static final AtomicInteger PROCESS_REQUESTS = new AtomicInteger();
+    private static final AtomicInteger PROCESS_PREPARATIONS = new AtomicInteger();
     private static final AtomicInteger PROCESS_DURABILITY_QUEUE_ENTRIES = new AtomicInteger();
     private static final AtomicInteger PROCESS_DURABILITY_EXECUTIONS = new AtomicInteger();
 
     private final AtomicInteger tableRequests = new AtomicInteger();
+    private final AtomicInteger tablePreparations = new AtomicInteger();
     private final AtomicInteger tableDurabilityQueueEntries = new AtomicInteger();
     private final AtomicInteger tableDurabilityExecutions = new AtomicInteger();
 
@@ -51,6 +53,17 @@ final class MvccCommitMetrics {
 
     int activeTableRequests() {
         return tableRequests.get();
+    }
+
+    Concurrency enterPreparation() {
+        return new Concurrency(
+                tablePreparations.incrementAndGet(),
+                PROCESS_PREPARATIONS.incrementAndGet());
+    }
+
+    void exitPreparation() {
+        tablePreparations.decrementAndGet();
+        PROCESS_PREPARATIONS.decrementAndGet();
     }
 
     Concurrency enterDurabilityQueue() {
@@ -84,7 +97,10 @@ final class MvccCommitMetrics {
             long transactionId,
             int changedRows,
             long totalCommitNanos,
+            long preparationNanos,
             long backupWaitNanos,
+            long durabilityCoordinatorWaitNanos,
+            long durabilityCoordinatorHoldNanos,
             long tableLockWaitNanos,
             long tableLockHoldNanos,
             long validationNanos,
@@ -94,6 +110,7 @@ final class MvccCommitMetrics {
             long transactionStatePublicationNanos,
             long maintenanceNanos,
             Concurrency requestConcurrency,
+            Concurrency preparationConcurrency,
             Concurrency durabilityQueueConcurrency,
             Concurrency durabilityExecutionConcurrency,
             MvccCommitDurabilityMetrics.Snapshot durability,
@@ -103,6 +120,7 @@ final class MvccCommitMetrics {
         Sample {
             storageId = Objects.requireNonNull(storageId, "storageId");
             requestConcurrency = Objects.requireNonNull(requestConcurrency, "requestConcurrency");
+            preparationConcurrency = Objects.requireNonNull(preparationConcurrency, "preparationConcurrency");
             durabilityQueueConcurrency = Objects.requireNonNull(
                     durabilityQueueConcurrency,
                     "durabilityQueueConcurrency");

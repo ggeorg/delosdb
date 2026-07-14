@@ -1,5 +1,9 @@
 # Phase 7.5 — Same-Table Commit Boundary Audit
 
+> Phase 7.6 implements the first split described here. The current route is
+> documented in `docs/PHASE-7-PREPARED-COMMIT-COORDINATOR.md`. This document
+> remains the evidence and design record for the pre-split boundary.
+
 ## Purpose
 
 Phase 7.4 removed per-row outcome and main-page force amplification. The JDK 25
@@ -13,7 +17,7 @@ table durability execution concurrency = 1
 This slice measures and documents the remaining table-wide commit boundary
 before that boundary is changed. It does not remove or replace a lock.
 
-## Current boundary
+## Audited pre-Phase-7.6 boundary
 
 A writable commit currently enters the boundaries in this order:
 
@@ -158,7 +162,7 @@ than execute table-local maintenance while holding the commit boundary.
 
 ## First behavior target
 
-The next implementation should prove only this:
+Phase 7.6 was required to prove only this:
 
 ```text
 Two same-table transactions that modify different rows can create immutable
@@ -183,7 +187,7 @@ vacuum and backup remain excluded from durable publication
 
 ## Out of scope
 
-This audit does not:
+The Phase 7.5 audit did not:
 
 ```text
 change table-lock scope

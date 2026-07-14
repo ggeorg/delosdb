@@ -49,7 +49,10 @@ final class MvccCommitJfr {
         event.transactionId = sample.transactionId();
         event.changedRows = sample.changedRows();
         event.totalCommitNanos = sample.totalCommitNanos();
+        event.preparationNanos = sample.preparationNanos();
         event.backupWaitNanos = sample.backupWaitNanos();
+        event.durabilityCoordinatorWaitNanos = sample.durabilityCoordinatorWaitNanos();
+        event.durabilityCoordinatorHoldNanos = sample.durabilityCoordinatorHoldNanos();
         event.tableLockWaitNanos = sample.tableLockWaitNanos();
         event.tableLockHoldNanos = sample.tableLockHoldNanos();
         event.validationNanos = sample.validationNanos();
@@ -60,6 +63,8 @@ final class MvccCommitJfr {
         event.maintenanceNanos = sample.maintenanceNanos();
         event.tableRequestConcurrency = sample.requestConcurrency().table();
         event.processRequestConcurrency = sample.requestConcurrency().process();
+        event.tablePreparationConcurrency = sample.preparationConcurrency().table();
+        event.processPreparationConcurrency = sample.preparationConcurrency().process();
         event.tableDurabilityQueueConcurrency = sample.durabilityQueueConcurrency().table();
         event.processDurabilityQueueConcurrency = sample.durabilityQueueConcurrency().process();
         event.tableDurabilityExecutionConcurrency = sample.durabilityExecutionConcurrency().table();
@@ -93,9 +98,18 @@ final class MvccCommitJfr {
         @Label("Total Commit Time")
         @Timespan(Timespan.NANOSECONDS)
         public long totalCommitNanos;
+        @Label("Immutable Commit Preparation")
+        @Timespan(Timespan.NANOSECONDS)
+        public long preparationNanos;
         @Label("Backup Coordinator Wait")
         @Timespan(Timespan.NANOSECONDS)
         public long backupWaitNanos;
+        @Label("Table Durability Coordinator Wait")
+        @Timespan(Timespan.NANOSECONDS)
+        public long durabilityCoordinatorWaitNanos;
+        @Label("Table Durability Coordinator Hold")
+        @Timespan(Timespan.NANOSECONDS)
+        public long durabilityCoordinatorHoldNanos;
         @Label("Table Write Lock Wait")
         @Timespan(Timespan.NANOSECONDS)
         public long tableLockWaitNanos;
@@ -124,6 +138,10 @@ final class MvccCommitJfr {
         public int tableRequestConcurrency;
         @Label("Process Concurrent Commit Requests")
         public int processRequestConcurrency;
+        @Label("Table Concurrent Commit Preparations")
+        public int tablePreparationConcurrency;
+        @Label("Process Concurrent Commit Preparations")
+        public int processPreparationConcurrency;
         @Label("Table Concurrent Durability Queue Entries")
         public int tableDurabilityQueueConcurrency;
         @Label("Process Concurrent Durability Queue Entries")

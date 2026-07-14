@@ -3,8 +3,8 @@
 ## Purpose
 
 This document is the authoritative description of the inherited `delos_mvcc`
-write-transaction durability route after the Phase 7.4 transaction-level page
-force boundary.
+write-transaction durability route after the Phase 7.6 immutable prepared-commit
+boundary.
 
 The prepared payload batch and transaction outcome remain the recovery
 authority. Main-table page images are now staged as one transaction batch and
@@ -56,17 +56,24 @@ register the active transaction in memory
 return the transaction handle
 ```
 
-### 2. Commit admission
+### 2. Immutable preparation and commit admission
 
-`MvccInheritedTable.commit()`:
+`MvccInheritedTable.commit()` first captures the transaction's surviving write
+intents and revision under a short table read lock. It then deep-copies logical
+rows, encodes all non-delete payloads, and validates page-record limits outside
+the table write lock.
+
+The immutable prepared commit then enters:
 
 ```text
-enter the backup durable-mutation guard
-acquire the inherited-table write lock
-validate all changed rows can be encoded and persisted
+backup durable-mutation guard
+per-table durability coordinator
+inherited-table write lock
+revalidate transaction activity, revision, and same-row ownership
 ```
 
-The table write lock still serializes same-table durability execution.
+Multiple non-conflicting same-table commits may prepare concurrently. Physical
+same-table durability execution remains serialized by the per-table coordinator.
 
 ### 3. Transaction-table publication
 
@@ -164,10 +171,11 @@ transaction is rejected rather than silently exposed.
 
 ### 7. Transaction-level page materialization
 
-After the outcome fence, all prepared versions enter one page-store batch:
+After the outcome fence, all prepared versions enter one page-store batch. Row
+payload bytes were already encoded in the immutable commit preparation phase:
 
 ```text
-encode and stage every changed version
+stage every prepared changed version
 update free-space metadata for each touched page
 write every dirty main-table page image
 force the main-table page volume once

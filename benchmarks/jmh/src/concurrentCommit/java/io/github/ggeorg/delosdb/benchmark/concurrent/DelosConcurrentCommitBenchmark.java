@@ -290,7 +290,10 @@ public final class DelosConcurrentCommitBenchmark {
         long failedEventCount = 0L;
         long incompleteDurabilityMeasurementCount = 0L;
         long totalCommitNanos = 0L;
+        long preparationNanos = 0L;
         long backupWaitNanos = 0L;
+        long durabilityCoordinatorWaitNanos = 0L;
+        long durabilityCoordinatorHoldNanos = 0L;
         long tableLockWaitNanos = 0L;
         long tableLockHoldNanos = 0L;
         long validationNanos = 0L;
@@ -310,6 +313,8 @@ public final class DelosConcurrentCommitBenchmark {
         long pageVolumeBytesCovered = 0L;
         int maxTableRequestConcurrency = 0;
         int maxProcessRequestConcurrency = 0;
+        int maxTablePreparationConcurrency = 0;
+        int maxProcessPreparationConcurrency = 0;
         int maxTableDurabilityQueueConcurrency = 0;
         int maxProcessDurabilityQueueConcurrency = 0;
         int maxTableDurabilityExecutionConcurrency = 0;
@@ -336,7 +341,10 @@ public final class DelosConcurrentCommitBenchmark {
                     incompleteDurabilityMeasurementCount++;
                 }
                 totalCommitNanos += event.getLong("totalCommitNanos");
+                preparationNanos += event.getLong("preparationNanos");
                 backupWaitNanos += event.getLong("backupWaitNanos");
+                durabilityCoordinatorWaitNanos += event.getLong("durabilityCoordinatorWaitNanos");
+                durabilityCoordinatorHoldNanos += event.getLong("durabilityCoordinatorHoldNanos");
                 tableLockWaitNanos += event.getLong("tableLockWaitNanos");
                 tableLockHoldNanos += event.getLong("tableLockHoldNanos");
                 validationNanos += event.getLong("validationNanos");
@@ -360,6 +368,12 @@ public final class DelosConcurrentCommitBenchmark {
                 maxProcessRequestConcurrency = Math.max(
                         maxProcessRequestConcurrency,
                         event.getInt("processRequestConcurrency"));
+                maxTablePreparationConcurrency = Math.max(
+                        maxTablePreparationConcurrency,
+                        event.getInt("tablePreparationConcurrency"));
+                maxProcessPreparationConcurrency = Math.max(
+                        maxProcessPreparationConcurrency,
+                        event.getInt("processPreparationConcurrency"));
                 maxTableDurabilityQueueConcurrency = Math.max(
                         maxTableDurabilityQueueConcurrency,
                         event.getInt("tableDurabilityQueueConcurrency"));
@@ -379,7 +393,10 @@ public final class DelosConcurrentCommitBenchmark {
                 failedEventCount,
                 incompleteDurabilityMeasurementCount,
                 totalCommitNanos,
+                preparationNanos,
                 backupWaitNanos,
+                durabilityCoordinatorWaitNanos,
+                durabilityCoordinatorHoldNanos,
                 tableLockWaitNanos,
                 tableLockHoldNanos,
                 validationNanos,
@@ -399,6 +416,8 @@ public final class DelosConcurrentCommitBenchmark {
                 pageVolumeBytesCovered,
                 maxTableRequestConcurrency,
                 maxProcessRequestConcurrency,
+                maxTablePreparationConcurrency,
+                maxProcessPreparationConcurrency,
                 maxTableDurabilityQueueConcurrency,
                 maxProcessDurabilityQueueConcurrency,
                 maxTableDurabilityExecutionConcurrency,
@@ -827,7 +846,10 @@ public final class DelosConcurrentCommitBenchmark {
             long failedEventCount,
             long incompleteDurabilityMeasurementCount,
             long totalCommitNanos,
+            long preparationNanos,
             long backupWaitNanos,
+            long durabilityCoordinatorWaitNanos,
+            long durabilityCoordinatorHoldNanos,
             long tableLockWaitNanos,
             long tableLockHoldNanos,
             long validationNanos,
@@ -847,6 +869,8 @@ public final class DelosConcurrentCommitBenchmark {
             long pageVolumeBytesCovered,
             int maxTableRequestConcurrency,
             int maxProcessRequestConcurrency,
+            int maxTablePreparationConcurrency,
+            int maxProcessPreparationConcurrency,
             int maxTableDurabilityQueueConcurrency,
             int maxProcessDurabilityQueueConcurrency,
             int maxTableDurabilityExecutionConcurrency,
@@ -879,7 +903,8 @@ public final class DelosConcurrentCommitBenchmark {
         static String csvHeader() {
             return "topology,operation,writers,rowsPerTransaction,commits,commitsPerSecond,"
                     + "p50CommitMicros,p95CommitMicros,p99CommitMicros,avgCommitMicros,"
-                    + "avgTableLockWaitMicros,avgTableLockHoldMicros,avgBackupWaitMicros,"
+                    + "avgPreparationMicros,avgBackupWaitMicros,avgDurabilityCoordinatorWaitMicros,"
+                    + "avgDurabilityCoordinatorHoldMicros,avgTableLockWaitMicros,avgTableLockHoldMicros,"
                     + "avgValidationMicros,avgTransactionStatusCommitMicros,"
                     + "avgPageStatePersistenceMicros,avgOrderedIndexRebuildMicros,"
                     + "avgTransactionStatePublicationMicros,avgMaintenanceMicros,"
@@ -887,7 +912,8 @@ public final class DelosConcurrentCommitBenchmark {
                     + "walForcesPerCommit,otherSidecarForcesPerCommit,directoryForcesPerCommit,"
                     + "pageVolumeForcesPerCommit,pageVolumePagesCoveredPerCommit,"
                     + "logicalBytesCoveredPerCommit,maxTableRequestConcurrency,"
-                    + "maxProcessRequestConcurrency,maxTableDurabilityQueueConcurrency,"
+                    + "maxProcessRequestConcurrency,maxTablePreparationConcurrency,"
+                    + "maxProcessPreparationConcurrency,maxTableDurabilityQueueConcurrency,"
                     + "maxProcessDurabilityQueueConcurrency,maxTableDurabilityExecutionConcurrency,"
                     + "maxProcessDurabilityExecutionConcurrency";
         }
@@ -904,9 +930,12 @@ public final class DelosConcurrentCommitBenchmark {
                     decimal(micros(p95CommitNanos)),
                     decimal(micros(p99CommitNanos)),
                     decimal(micros(average(jfr.totalCommitNanos(), jfr.eventCount()))),
+                    decimal(micros(average(jfr.preparationNanos(), jfr.eventCount()))),
+                    decimal(micros(average(jfr.backupWaitNanos(), jfr.eventCount()))),
+                    decimal(micros(average(jfr.durabilityCoordinatorWaitNanos(), jfr.eventCount()))),
+                    decimal(micros(average(jfr.durabilityCoordinatorHoldNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.tableLockWaitNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.tableLockHoldNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.backupWaitNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.validationNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.transactionStatusCommitNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.pageStatePersistenceNanos(), jfr.eventCount()))),
@@ -925,6 +954,8 @@ public final class DelosConcurrentCommitBenchmark {
                             jfr.eventCount())),
                     Integer.toString(jfr.maxTableRequestConcurrency()),
                     Integer.toString(jfr.maxProcessRequestConcurrency()),
+                    Integer.toString(jfr.maxTablePreparationConcurrency()),
+                    Integer.toString(jfr.maxProcessPreparationConcurrency()),
                     Integer.toString(jfr.maxTableDurabilityQueueConcurrency()),
                     Integer.toString(jfr.maxProcessDurabilityQueueConcurrency()),
                     Integer.toString(jfr.maxTableDurabilityExecutionConcurrency()),
@@ -935,8 +966,11 @@ public final class DelosConcurrentCommitBenchmark {
             return scenario.fileStem()
                     + " commits/s=" + decimal(commitsPerSecond)
                     + " p95=" + decimal(micros(p95CommitNanos)) + "us"
+                    + " prepare=" + decimal(micros(average(jfr.preparationNanos(), jfr.eventCount()))) + "us"
+                    + " coordinatorWait="
+                    + decimal(micros(average(jfr.durabilityCoordinatorWaitNanos(), jfr.eventCount()))) + "us"
                     + " lockWait=" + decimal(micros(average(jfr.tableLockWaitNanos(), jfr.eventCount()))) + "us"
-                    + " phases/validate=" + decimal(micros(average(jfr.validationNanos(), jfr.eventCount()))) + "us"
+                    + " phases/revalidate=" + decimal(micros(average(jfr.validationNanos(), jfr.eventCount()))) + "us"
                     + " status=" + decimal(micros(average(jfr.transactionStatusCommitNanos(), jfr.eventCount()))) + "us"
                     + " state=" + decimal(micros(average(jfr.pageStatePersistenceNanos(), jfr.eventCount()))) + "us"
                     + " index=" + decimal(micros(average(jfr.orderedIndexRebuildNanos(), jfr.eventCount()))) + "us"
@@ -946,6 +980,8 @@ public final class DelosConcurrentCommitBenchmark {
                     + " outcome=" + decimal(average(jfr.transactionOutcomeForceCount(), jfr.eventCount()))
                     + " wal=" + decimal(average(jfr.writeAheadLogForceCount(), jfr.eventCount()))
                     + " page=" + decimal(average(jfr.pageVolumeForceCount(), jfr.eventCount()))
+                    + " tablePreparationConcurrency=" + jfr.maxTablePreparationConcurrency()
+                    + " processPreparationConcurrency=" + jfr.maxProcessPreparationConcurrency()
                     + " tableExecutionConcurrency=" + jfr.maxTableDurabilityExecutionConcurrency()
                     + " processExecutionConcurrency=" + jfr.maxProcessDurabilityExecutionConcurrency();
         }

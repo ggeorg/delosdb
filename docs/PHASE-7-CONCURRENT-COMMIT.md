@@ -218,3 +218,37 @@ immutable preparation of non-conflicting same-table commits followed by an
 explicit per-table durability queue. It does not yet claim concurrent physical
 page publication or cross-transaction group commit.
 
+
+
+## Phase 7.6 immutable prepared commits
+
+Phase 7.6 implements the first same-table boundary split. A commit now captures
+its surviving write intents and revision under a short table read lock, then
+deep-copies and encodes row payloads outside the table write lock. The resulting
+`MvccPreparedCommit` is queued at an explicit fair per-table durability
+coordinator.
+
+Immediately before publication, the table write lock revalidates transaction
+activity, write-intent revision, and same-row writer ownership. Physical
+page/checkpoint publication and the complete ordered-index rebuild remain
+serialized.
+
+The commit event and benchmark now report:
+
+```text
+immutable preparation time
+per-table and process-wide preparation concurrency
+durability-coordinator wait and hold time
+table-lock wait and hold time
+```
+
+The focused proof requires two non-conflicting same-table transactions to reach
+preparation concurrency two while durability execution remains one. The force
+and recovery contract remains two status forces, one outcome force, one WAL
+force, and two page-volume forces for ordinary inline-row transactions.
+
+The current route and invariants are authoritative in:
+
+```text
+docs/PHASE-7-PREPARED-COMMIT-COORDINATOR.md
+```
