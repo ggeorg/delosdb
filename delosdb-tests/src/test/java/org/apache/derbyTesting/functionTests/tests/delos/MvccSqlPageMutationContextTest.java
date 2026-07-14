@@ -58,8 +58,9 @@ public final class MvccSqlPageMutationContextTest extends MvccSqlTestSupport {
                     diagnostics.pageMutationContextPageWriteCountForTesting(0, containerId) > 0L);
             assertTrue("insert should update the free-space map through the mutation context",
                     diagnostics.pageMutationContextFreeSpaceMapUpdateCountForTesting(0, containerId) > 0L);
-            assertEquals("last append operation should be identified by the context",
-                    "append-version", diagnostics.lastPageMutationContextOperationForTesting(0, containerId));
+            assertEquals("last transaction append should be identified by the context",
+                    "append-transaction-batch",
+                    diagnostics.lastPageMutationContextOperationForTesting(0, containerId));
 
             executeUpdate(connection, "update page_mutation_context_t set payload = 'v2' where id = 1");
             connection.commit();
