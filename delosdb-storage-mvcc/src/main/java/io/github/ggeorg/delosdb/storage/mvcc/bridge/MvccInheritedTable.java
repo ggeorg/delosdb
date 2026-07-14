@@ -280,6 +280,11 @@ final class MvccInheritedTable implements DelosStorageTable,
         long backupWaitNanos = 0L;
         long tableLockWaitNanos = 0L;
         long tableLockHoldNanos = 0L;
+        long validationNanos = 0L;
+        long transactionStatusCommitNanos = 0L;
+        long pageStatePersistenceNanos = 0L;
+        long orderedIndexRebuildNanos = 0L;
+        long transactionStatePublicationNanos = 0L;
         long maintenanceNanos = 0L;
         MvccCommitMetrics.Concurrency durabilityQueueConcurrency = noConcurrency;
         MvccCommitMetrics.Concurrency durabilityExecutionConcurrency = noConcurrency;
@@ -315,6 +320,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                                 MvccCommitDurabilityMetrics.begin(observe);
                         try {
                             try {
+                                long validationStarted = observe ? System.nanoTime() : 0L;
                                 MvccTransaction nativeTx = handle.nativeTransaction();
                                 List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes =
                                         changedRows(handle);
@@ -324,18 +330,52 @@ final class MvccInheritedTable implements DelosStorageTable,
                                     abortIfActive(nativeTx, failure);
                                     handle.clearWriteIntents();
                                     throw failure;
+                                } finally {
+                                    if (observe) {
+                                        validationNanos = System.nanoTime() - validationStarted;
+                                    }
                                 }
+
+                                long transactionStatusCommitStarted = observe ? System.nanoTime() : 0L;
                                 MvccCommitSequence commitSequence = transactions.commit(nativeTx);
-                                persistCommittedChangesUnlocked(changes, commitSequence);
+                                if (observe) {
+                                    transactionStatusCommitNanos =
+                                            System.nanoTime() - transactionStatusCommitStarted;
+                                }
+
+                                long pageStatePersistenceStarted = observe ? System.nanoTime() : 0L;
+                                pageVolumeStateStore.persistChangedRows(changes, commitSequence);
+                                if (observe) {
+                                    pageStatePersistenceNanos =
+                                            System.nanoTime() - pageStatePersistenceStarted;
+                                }
+
+                                long orderedIndexRebuildStarted = observe ? System.nanoTime() : 0L;
+                                indexMaintenance.rebuildFromCommittedRows();
+                                if (observe) {
+                                    orderedIndexRebuildNanos =
+                                            System.nanoTime() - orderedIndexRebuildStarted;
+                                }
                                 committedChangedRows = changes.size();
                                 persistedCommit = true;
+
+                                long transactionStatePublicationStarted = observe ? System.nanoTime() : 0L;
                                 lastCommittedChangedRowCount = changes.size();
                                 lastCommittedWriteIntentCount = handle.writeIntentCount();
                                 lastCommittedWriteIntentPayloadSummaries =
                                         committedChangePayloadSummaries(changes);
                                 handle.clearWriteIntents();
+                                if (observe) {
+                                    transactionStatePublicationNanos +=
+                                            System.nanoTime() - transactionStatePublicationStarted;
+                                }
                             } finally {
+                                long transactionRemovalStarted = observe ? System.nanoTime() : 0L;
                                 activeTransactions.remove(handle);
+                                if (observe) {
+                                    transactionStatePublicationNanos +=
+                                            System.nanoTime() - transactionRemovalStarted;
+                                }
                             }
                         } finally {
                             commitDurability = durabilityScope.finish();
@@ -377,6 +417,11 @@ final class MvccInheritedTable implements DelosStorageTable,
                         backupWaitNanos,
                         tableLockWaitNanos,
                         tableLockHoldNanos,
+                        validationNanos,
+                        transactionStatusCommitNanos,
+                        pageStatePersistenceNanos,
+                        orderedIndexRebuildNanos,
+                        transactionStatePublicationNanos,
                         maintenanceNanos,
                         requestConcurrency,
                         durabilityQueueConcurrency,
@@ -508,13 +553,6 @@ final class MvccInheritedTable implements DelosStorageTable,
                     + "without a matching provider-first write intent for row " + rowId);
         }
         legacyWriteFrontShadowBypassCount++;
-    }
-
-    private void persistCommittedChangesUnlocked(
-            List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes,
-            MvccCommitSequence commitSequence) {
-        pageVolumeStateStore.persistChangedRows(changes, commitSequence);
-        indexMaintenance.rebuildFromCommittedRows();
     }
 
     @Override

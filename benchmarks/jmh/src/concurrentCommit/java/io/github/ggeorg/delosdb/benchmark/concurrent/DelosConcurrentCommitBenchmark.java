@@ -293,6 +293,11 @@ public final class DelosConcurrentCommitBenchmark {
         long backupWaitNanos = 0L;
         long tableLockWaitNanos = 0L;
         long tableLockHoldNanos = 0L;
+        long validationNanos = 0L;
+        long transactionStatusCommitNanos = 0L;
+        long pageStatePersistenceNanos = 0L;
+        long orderedIndexRebuildNanos = 0L;
+        long transactionStatePublicationNanos = 0L;
         long maintenanceNanos = 0L;
         long transactionStatusForceCount = 0L;
         long transactionOutcomeForceCount = 0L;
@@ -334,6 +339,11 @@ public final class DelosConcurrentCommitBenchmark {
                 backupWaitNanos += event.getLong("backupWaitNanos");
                 tableLockWaitNanos += event.getLong("tableLockWaitNanos");
                 tableLockHoldNanos += event.getLong("tableLockHoldNanos");
+                validationNanos += event.getLong("validationNanos");
+                transactionStatusCommitNanos += event.getLong("transactionStatusCommitNanos");
+                pageStatePersistenceNanos += event.getLong("pageStatePersistenceNanos");
+                orderedIndexRebuildNanos += event.getLong("orderedIndexRebuildNanos");
+                transactionStatePublicationNanos += event.getLong("transactionStatePublicationNanos");
                 maintenanceNanos += event.getLong("maintenanceNanos");
                 transactionStatusForceCount += event.getLong("transactionStatusForceCount");
                 transactionOutcomeForceCount += event.getLong("transactionOutcomeForceCount");
@@ -372,6 +382,11 @@ public final class DelosConcurrentCommitBenchmark {
                 backupWaitNanos,
                 tableLockWaitNanos,
                 tableLockHoldNanos,
+                validationNanos,
+                transactionStatusCommitNanos,
+                pageStatePersistenceNanos,
+                orderedIndexRebuildNanos,
+                transactionStatePublicationNanos,
                 maintenanceNanos,
                 transactionStatusForceCount,
                 transactionOutcomeForceCount,
@@ -815,6 +830,11 @@ public final class DelosConcurrentCommitBenchmark {
             long backupWaitNanos,
             long tableLockWaitNanos,
             long tableLockHoldNanos,
+            long validationNanos,
+            long transactionStatusCommitNanos,
+            long pageStatePersistenceNanos,
+            long orderedIndexRebuildNanos,
+            long transactionStatePublicationNanos,
             long maintenanceNanos,
             long transactionStatusForceCount,
             long transactionOutcomeForceCount,
@@ -860,7 +880,10 @@ public final class DelosConcurrentCommitBenchmark {
             return "topology,operation,writers,rowsPerTransaction,commits,commitsPerSecond,"
                     + "p50CommitMicros,p95CommitMicros,p99CommitMicros,avgCommitMicros,"
                     + "avgTableLockWaitMicros,avgTableLockHoldMicros,avgBackupWaitMicros,"
-                    + "avgMaintenanceMicros,statusForcesPerCommit,outcomeForcesPerCommit,"
+                    + "avgValidationMicros,avgTransactionStatusCommitMicros,"
+                    + "avgPageStatePersistenceMicros,avgOrderedIndexRebuildMicros,"
+                    + "avgTransactionStatePublicationMicros,avgMaintenanceMicros,"
+                    + "statusForcesPerCommit,outcomeForcesPerCommit,"
                     + "walForcesPerCommit,otherSidecarForcesPerCommit,directoryForcesPerCommit,"
                     + "pageVolumeForcesPerCommit,pageVolumePagesCoveredPerCommit,"
                     + "logicalBytesCoveredPerCommit,maxTableRequestConcurrency,"
@@ -884,6 +907,11 @@ public final class DelosConcurrentCommitBenchmark {
                     decimal(micros(average(jfr.tableLockWaitNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.tableLockHoldNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.backupWaitNanos(), jfr.eventCount()))),
+                    decimal(micros(average(jfr.validationNanos(), jfr.eventCount()))),
+                    decimal(micros(average(jfr.transactionStatusCommitNanos(), jfr.eventCount()))),
+                    decimal(micros(average(jfr.pageStatePersistenceNanos(), jfr.eventCount()))),
+                    decimal(micros(average(jfr.orderedIndexRebuildNanos(), jfr.eventCount()))),
+                    decimal(micros(average(jfr.transactionStatePublicationNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.maintenanceNanos(), jfr.eventCount()))),
                     decimal(average(jfr.transactionStatusForceCount(), jfr.eventCount())),
                     decimal(average(jfr.transactionOutcomeForceCount(), jfr.eventCount())),
@@ -908,6 +936,12 @@ public final class DelosConcurrentCommitBenchmark {
                     + " commits/s=" + decimal(commitsPerSecond)
                     + " p95=" + decimal(micros(p95CommitNanos)) + "us"
                     + " lockWait=" + decimal(micros(average(jfr.tableLockWaitNanos(), jfr.eventCount()))) + "us"
+                    + " phases/validate=" + decimal(micros(average(jfr.validationNanos(), jfr.eventCount()))) + "us"
+                    + " status=" + decimal(micros(average(jfr.transactionStatusCommitNanos(), jfr.eventCount()))) + "us"
+                    + " state=" + decimal(micros(average(jfr.pageStatePersistenceNanos(), jfr.eventCount()))) + "us"
+                    + " index=" + decimal(micros(average(jfr.orderedIndexRebuildNanos(), jfr.eventCount()))) + "us"
+                    + " publish=" + decimal(micros(average(jfr.transactionStatePublicationNanos(), jfr.eventCount()))) + "us"
+                    + " maintenance=" + decimal(micros(average(jfr.maintenanceNanos(), jfr.eventCount()))) + "us"
                     + " forces/status=" + decimal(average(jfr.transactionStatusForceCount(), jfr.eventCount()))
                     + " outcome=" + decimal(average(jfr.transactionOutcomeForceCount(), jfr.eventCount()))
                     + " wal=" + decimal(average(jfr.writeAheadLogForceCount(), jfr.eventCount()))
@@ -947,6 +981,15 @@ public final class DelosConcurrentCommitBenchmark {
                     + next + "\"backupWaitNanos\": " + jfr.backupWaitNanos() + ",\n"
                     + next + "\"tableLockWaitNanos\": " + jfr.tableLockWaitNanos() + ",\n"
                     + next + "\"tableLockHoldNanos\": " + jfr.tableLockHoldNanos() + ",\n"
+                    + next + "\"validationNanos\": " + jfr.validationNanos() + ",\n"
+                    + next + "\"transactionStatusCommitNanos\": "
+                    + jfr.transactionStatusCommitNanos() + ",\n"
+                    + next + "\"pageStatePersistenceNanos\": "
+                    + jfr.pageStatePersistenceNanos() + ",\n"
+                    + next + "\"orderedIndexRebuildNanos\": "
+                    + jfr.orderedIndexRebuildNanos() + ",\n"
+                    + next + "\"transactionStatePublicationNanos\": "
+                    + jfr.transactionStatePublicationNanos() + ",\n"
                     + next + "\"maintenanceNanos\": " + jfr.maintenanceNanos() + ",\n"
                     + next + "\"maxTableRequestConcurrency\": " + jfr.maxTableRequestConcurrency() + ",\n"
                     + next + "\"maxProcessRequestConcurrency\": "

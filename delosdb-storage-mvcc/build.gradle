@@ -1213,6 +1213,8 @@ def delosMvccLifecycleProofTasks = [
          'Runs the Phase 7.3 MVCC transaction commit-fence recovery tests.'],
         ['runMvccTransactionPageForceBatchRecoveryTest', '**/MvccTransactionPageForceBatchRecoveryTest.class',
          'Runs the Phase 7.4 MVCC transaction page-force batch recovery tests.'],
+        ['runMvccSameTableCommitBoundaryAuditTest', '**/MvccSameTableCommitBoundaryAuditTest.class',
+         'Runs the Phase 7.5 same-table commit critical-section audit tests.'],
         ['runMvccAttributeOverflowRowPayloadCodecTest', '**/MvccAttributeOverflowRowPayloadCodecTest.class',
          'Runs MVCC attribute-overflow row payload codec tests.'],
         ['runMvccBufferManagerPhase2Test', '**/MvccBufferManagerPhase2Test.class',

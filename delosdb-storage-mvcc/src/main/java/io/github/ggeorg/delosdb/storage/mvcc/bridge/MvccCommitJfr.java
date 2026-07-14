@@ -52,6 +52,11 @@ final class MvccCommitJfr {
         event.backupWaitNanos = sample.backupWaitNanos();
         event.tableLockWaitNanos = sample.tableLockWaitNanos();
         event.tableLockHoldNanos = sample.tableLockHoldNanos();
+        event.validationNanos = sample.validationNanos();
+        event.transactionStatusCommitNanos = sample.transactionStatusCommitNanos();
+        event.pageStatePersistenceNanos = sample.pageStatePersistenceNanos();
+        event.orderedIndexRebuildNanos = sample.orderedIndexRebuildNanos();
+        event.transactionStatePublicationNanos = sample.transactionStatePublicationNanos();
         event.maintenanceNanos = sample.maintenanceNanos();
         event.tableRequestConcurrency = sample.requestConcurrency().table();
         event.processRequestConcurrency = sample.requestConcurrency().process();
@@ -97,6 +102,21 @@ final class MvccCommitJfr {
         @Label("Table Write Lock Hold")
         @Timespan(Timespan.NANOSECONDS)
         public long tableLockHoldNanos;
+        @Label("Changed-Row Validation")
+        @Timespan(Timespan.NANOSECONDS)
+        public long validationNanos;
+        @Label("Transaction Status Commit")
+        @Timespan(Timespan.NANOSECONDS)
+        public long transactionStatusCommitNanos;
+        @Label("Page State Persistence")
+        @Timespan(Timespan.NANOSECONDS)
+        public long pageStatePersistenceNanos;
+        @Label("Ordered Index Rebuild")
+        @Timespan(Timespan.NANOSECONDS)
+        public long orderedIndexRebuildNanos;
+        @Label("Transaction State Publication")
+        @Timespan(Timespan.NANOSECONDS)
+        public long transactionStatePublicationNanos;
         @Label("Post-Commit Maintenance")
         @Timespan(Timespan.NANOSECONDS)
         public long maintenanceNanos;

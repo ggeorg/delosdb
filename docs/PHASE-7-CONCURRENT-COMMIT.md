@@ -49,6 +49,11 @@ changed-row count
 total commit latency
 backup-coordinator wait time
 table write-lock wait and hold time
+changed-row validation time
+transaction-status commit time
+page/checkpoint persistence time
+ordered-index rebuild time
+transaction-state publication time
 post-commit maintenance time
 per-table and process-wide commit-request concurrency
 per-table and process-wide durability-queue concurrency
@@ -182,3 +187,34 @@ The expected inline-row benchmark shape is now two page-volume forces for both
 one-row and eight-row transactions: one main-table batch and one ordered-index
 materialization. Table-lock scope remains unchanged until the target-machine
 benchmark is rerun.
+
+## Phase 7.5 same-table boundary audit
+
+After the Phase 7.4 target-machine rerun, eight-row inline transactions use one
+outcome force and two page-volume forces, but same-table execution remains one.
+Phase 7.5 therefore measures the work still enclosed by the inherited-table
+write lock before changing that lock.
+
+The commit JFR event and standalone benchmark now separate:
+
+```text
+changed-row validation
+transaction-status commit
+page/checkpoint persistence
+ordered-index rebuild
+transaction-state publication
+post-commit maintenance
+```
+
+The current ownership map, lower-level serialization points, and required first
+lock split are authoritative in:
+
+```text
+docs/PHASE-7-SAME-TABLE-COMMIT-BOUNDARY.md
+```
+
+This slice changes instrumentation only. The next behavior target is concurrent
+immutable preparation of non-conflicting same-table commits followed by an
+explicit per-table durability queue. It does not yet claim concurrent physical
+page publication or cross-transaction group commit.
+
