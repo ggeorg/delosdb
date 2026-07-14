@@ -100,10 +100,13 @@ guard.
 
 ## Explicit durability coordinator
 
-A fair per-table `ReentrantLock` now owns the durable publication queue. It is
-separate from the inherited-table read/write lock.
+The initial Phase 7.6 implementation used a fair per-table `ReentrantLock` to
+own durable publication order. The follow-up enrollment slice replaces that
+implicit wait set with a bounded FIFO coordinator while preserving the same
+one-at-a-time publication behavior. It remains separate from the inherited-table
+read/write lock.
 
-The distinction is intentional:
+The distinction remains intentional:
 
 ```text
 durability coordinator
@@ -141,8 +144,9 @@ tableDurabilityQueueConcurrency
 tableDurabilityExecutionConcurrency
 ```
 
-The standalone concurrent-commit benchmark includes the new measurements in
-console, CSV, JSON, and human reports.
+The standalone concurrent-commit benchmark includes the measurements in
+console, CSV, JSON, and human reports. The bounded enrollment follow-up also
+reports coordinator mode and enrollment depth.
 
 The expected first proof is:
 
@@ -213,3 +217,16 @@ Phase 7.7 acts on the dominant serialized page-state path identified after the
 prepared-commit split. It batches free-space-map and row-directory publication
 at the same transaction boundary. See
 `docs/PHASE-7-TRANSACTION-SIDECAR-FORCE-BATCH.md`.
+
+## Bounded enrollment follow-up
+
+Prepared commits now enter a bounded FIFO before individual durability
+publication. Normal execution uses queued mode; the former direct fair-lock mode
+is retained temporarily for differential tests only. See:
+
+```text
+docs/PHASE-7-COMMIT-ENROLLMENT-QUEUE.md
+```
+
+This follow-up still is not group commit: no force is shared and each transaction
+receives an individual result.

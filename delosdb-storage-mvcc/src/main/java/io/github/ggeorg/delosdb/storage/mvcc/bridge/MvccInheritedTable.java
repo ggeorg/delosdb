@@ -10,7 +10,6 @@ import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 
@@ -65,7 +64,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final List<MvccInheritedHandles.Transaction> activeTransactions = new ArrayList<>();
     private final ReentrantReadWriteLock tableLock = new ReentrantReadWriteLock();
     private final MvccCommitMetrics commitMetrics = new MvccCommitMetrics();
-    private final Lock durabilityCoordinator = new ReentrantLock(true);
+    private final MvccCommitCoordinator durabilityCoordinator;
     private final Lock readLock = tableLock.readLock();
     private final Lock writeLock = tableLock.writeLock();
     private long nextRowId = 1L;
@@ -86,6 +85,14 @@ final class MvccInheritedTable implements DelosStorageTable,
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
+        this(segmentId, containerId, databaseDirectory, MvccCommitCoordinator.Mode.QUEUED);
+    }
+
+    MvccInheritedTable(
+            long segmentId,
+            long containerId,
+            Path databaseDirectory,
+            MvccCommitCoordinator.Mode coordinatorMode) {
         this.segmentId = segmentId;
         this.containerId = containerId;
         this.retiredSnapshotFile = retiredSnapshotFile(databaseDirectory, segmentId, containerId);
@@ -99,6 +106,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 ? MvccTransactionStatusStore.disabled()
                 : MvccTransactionStatusStore.open(transactionStatusFile);
         this.transactions = new MvccTransactionManager(transactionStatusStore);
+        this.durabilityCoordinator = new MvccCommitCoordinator(coordinatorMode);
         this.purgeDaemonExecutor = Executors.newSingleThreadExecutor(runnable ->
                 Thread.ofVirtual()
                         .name("delosdb-mvcc-purge-daemon-" + segmentId + '-' + containerId)
@@ -286,6 +294,8 @@ final class MvccInheritedTable implements DelosStorageTable,
         long backupWaitNanos = 0L;
         long durabilityCoordinatorWaitNanos = 0L;
         long durabilityCoordinatorHoldNanos = 0L;
+        int durabilityEnrollmentDepth = 0;
+        String durabilityCoordinatorMode = durabilityCoordinator.mode().label();
         long tableLockWaitNanos = 0L;
         long tableLockHoldNanos = 0L;
         long validationNanos = 0L;
@@ -339,102 +349,105 @@ final class MvccInheritedTable implements DelosStorageTable,
                     durabilityQueueConcurrency = commitMetrics.enterDurabilityQueue();
                 }
                 try {
-                    long coordinatorWaitStarted = observe ? System.nanoTime() : 0L;
-                    durabilityCoordinator.lock();
-                    if (observe) {
-                        durabilityCoordinatorWaitNanos = System.nanoTime() - coordinatorWaitStarted;
-                        durabilityExecutionConcurrency = commitMetrics.enterDurabilityExecution();
-                    }
-                    long coordinatorHoldStarted = observe ? System.nanoTime() : 0L;
-                    try {
-                        long tableLockWaitStarted = observe ? System.nanoTime() : 0L;
-                        writeLock.lock();
+                    try (MvccCommitCoordinator.Permit permit = durabilityCoordinator.enter(observe)) {
+                        durabilityCoordinatorWaitNanos = permit.waitNanos();
+                        durabilityEnrollmentDepth = permit.enrollmentDepth();
+                        durabilityCoordinatorMode = permit.mode().label();
                         if (observe) {
-                            tableLockWaitNanos = System.nanoTime() - tableLockWaitStarted;
+                            durabilityExecutionConcurrency = commitMetrics.enterDurabilityExecution();
                         }
-                        long tableLockHoldStarted = observe ? System.nanoTime() : 0L;
+                        long coordinatorHoldStarted = observe ? System.nanoTime() : 0L;
                         try {
-                            MvccCommitDurabilityMetrics.Scope durabilityScope =
-                                    MvccCommitDurabilityMetrics.begin(observe);
+                            long tableLockWaitStarted = observe ? System.nanoTime() : 0L;
+                            writeLock.lock();
+                            if (observe) {
+                                tableLockWaitNanos = System.nanoTime() - tableLockWaitStarted;
+                            }
+                            long tableLockHoldStarted = observe ? System.nanoTime() : 0L;
                             try {
+                                MvccCommitDurabilityMetrics.Scope durabilityScope =
+                                        MvccCommitDurabilityMetrics.begin(observe);
                                 try {
-                                    long validationStarted = observe ? System.nanoTime() : 0L;
                                     try {
-                                        requirePreparedCommitCanPublish(preparedCommit);
-                                    } catch (RuntimeException failure) {
-                                        abortIfActive(preparedCommit.transaction(), failure);
-                                        preparedCommit.handle().clearWriteIntents();
-                                        throw failure;
-                                    } finally {
+                                        long validationStarted = observe ? System.nanoTime() : 0L;
+                                        try {
+                                            requirePreparedCommitCanPublish(preparedCommit);
+                                        } catch (RuntimeException failure) {
+                                            abortIfActive(preparedCommit.transaction(), failure);
+                                            preparedCommit.handle().clearWriteIntents();
+                                            throw failure;
+                                        } finally {
+                                            if (observe) {
+                                                validationNanos = System.nanoTime() - validationStarted;
+                                            }
+                                        }
+
+                                        long transactionStatusCommitStarted = observe ? System.nanoTime() : 0L;
+                                        MvccCommitSequence commitSequence =
+                                                transactions.commit(preparedCommit.transaction());
                                         if (observe) {
-                                            validationNanos = System.nanoTime() - validationStarted;
+                                            transactionStatusCommitNanos =
+                                                    System.nanoTime() - transactionStatusCommitStarted;
+                                        }
+
+                                        long pageStatePersistenceStarted = observe ? System.nanoTime() : 0L;
+                                        pageVolumeStateStore.persistPreparedChanges(
+                                                preparedCommit.preparedPageChanges(),
+                                                commitSequence);
+                                        if (observe) {
+                                            pageStatePersistenceNanos =
+                                                    System.nanoTime() - pageStatePersistenceStarted;
+                                        }
+
+                                        long orderedIndexRebuildStarted = observe ? System.nanoTime() : 0L;
+                                        indexMaintenance.rebuildFromCommittedRows();
+                                        if (observe) {
+                                            orderedIndexRebuildNanos =
+                                                    System.nanoTime() - orderedIndexRebuildStarted;
+                                        }
+                                        persistedCommit = true;
+
+                                        long transactionStatePublicationStarted =
+                                                observe ? System.nanoTime() : 0L;
+                                        lastCommittedChangedRowCount = preparedCommit.changedRowCount();
+                                        lastCommittedWriteIntentCount = preparedCommit.writeIntentCount();
+                                        lastCommittedWriteIntentPayloadSummaries =
+                                                preparedCommit.payloadSummaries();
+                                        preparedCommit.handle().clearWriteIntents();
+                                        if (observe) {
+                                            transactionStatePublicationNanos +=
+                                                    System.nanoTime() - transactionStatePublicationStarted;
+                                        }
+                                    } finally {
+                                        long transactionRemovalStarted = observe ? System.nanoTime() : 0L;
+                                        activeTransactions.remove(preparedCommit.handle());
+                                        if (observe) {
+                                            transactionStatePublicationNanos +=
+                                                    System.nanoTime() - transactionRemovalStarted;
                                         }
                                     }
-
-                                    long transactionStatusCommitStarted = observe ? System.nanoTime() : 0L;
-                                    MvccCommitSequence commitSequence =
-                                            transactions.commit(preparedCommit.transaction());
-                                    if (observe) {
-                                        transactionStatusCommitNanos =
-                                                System.nanoTime() - transactionStatusCommitStarted;
-                                    }
-
-                                    long pageStatePersistenceStarted = observe ? System.nanoTime() : 0L;
-                                    pageVolumeStateStore.persistPreparedChanges(
-                                            preparedCommit.preparedPageChanges(),
-                                            commitSequence);
-                                    if (observe) {
-                                        pageStatePersistenceNanos =
-                                                System.nanoTime() - pageStatePersistenceStarted;
-                                    }
-
-                                    long orderedIndexRebuildStarted = observe ? System.nanoTime() : 0L;
-                                    indexMaintenance.rebuildFromCommittedRows();
-                                    if (observe) {
-                                        orderedIndexRebuildNanos =
-                                                System.nanoTime() - orderedIndexRebuildStarted;
-                                    }
-                                    persistedCommit = true;
-
-                                    long transactionStatePublicationStarted = observe ? System.nanoTime() : 0L;
-                                    lastCommittedChangedRowCount = preparedCommit.changedRowCount();
-                                    lastCommittedWriteIntentCount = preparedCommit.writeIntentCount();
-                                    lastCommittedWriteIntentPayloadSummaries = preparedCommit.payloadSummaries();
-                                    preparedCommit.handle().clearWriteIntents();
-                                    if (observe) {
-                                        transactionStatePublicationNanos +=
-                                                System.nanoTime() - transactionStatePublicationStarted;
-                                    }
                                 } finally {
-                                    long transactionRemovalStarted = observe ? System.nanoTime() : 0L;
-                                    activeTransactions.remove(preparedCommit.handle());
+                                    commitDurability = durabilityScope.finish();
+                                }
+                                if (persistedCommit) {
+                                    long maintenanceStarted = observe ? System.nanoTime() : 0L;
+                                    runPurgeDaemonAfterCommit(committedChangedRows);
                                     if (observe) {
-                                        transactionStatePublicationNanos +=
-                                                System.nanoTime() - transactionRemovalStarted;
+                                        maintenanceNanos = System.nanoTime() - maintenanceStarted;
                                     }
                                 }
                             } finally {
-                                commitDurability = durabilityScope.finish();
-                            }
-                            if (persistedCommit) {
-                                long maintenanceStarted = observe ? System.nanoTime() : 0L;
-                                runPurgeDaemonAfterCommit(committedChangedRows);
                                 if (observe) {
-                                    maintenanceNanos = System.nanoTime() - maintenanceStarted;
+                                    tableLockHoldNanos = System.nanoTime() - tableLockHoldStarted;
                                 }
+                                writeLock.unlock();
                             }
                         } finally {
                             if (observe) {
-                                tableLockHoldNanos = System.nanoTime() - tableLockHoldStarted;
+                                durabilityCoordinatorHoldNanos = System.nanoTime() - coordinatorHoldStarted;
+                                commitMetrics.exitDurabilityExecution();
                             }
-                            writeLock.unlock();
                         }
-                    } finally {
-                        if (observe) {
-                            durabilityCoordinatorHoldNanos = System.nanoTime() - coordinatorHoldStarted;
-                            commitMetrics.exitDurabilityExecution();
-                        }
-                        durabilityCoordinator.unlock();
                     }
                 } finally {
                     if (observe) {
@@ -460,6 +473,8 @@ final class MvccInheritedTable implements DelosStorageTable,
                         backupWaitNanos,
                         durabilityCoordinatorWaitNanos,
                         durabilityCoordinatorHoldNanos,
+                        durabilityCoordinatorMode,
+                        durabilityEnrollmentDepth,
                         tableLockWaitNanos,
                         tableLockHoldNanos,
                         validationNanos,

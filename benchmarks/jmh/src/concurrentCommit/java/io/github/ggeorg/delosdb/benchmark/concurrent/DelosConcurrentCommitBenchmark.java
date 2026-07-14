@@ -294,6 +294,8 @@ public final class DelosConcurrentCommitBenchmark {
         long backupWaitNanos = 0L;
         long durabilityCoordinatorWaitNanos = 0L;
         long durabilityCoordinatorHoldNanos = 0L;
+        String durabilityCoordinatorMode = "";
+        int maxDurabilityEnrollmentDepth = 0;
         long tableLockWaitNanos = 0L;
         long tableLockHoldNanos = 0L;
         long validationNanos = 0L;
@@ -345,6 +347,16 @@ public final class DelosConcurrentCommitBenchmark {
                 backupWaitNanos += event.getLong("backupWaitNanos");
                 durabilityCoordinatorWaitNanos += event.getLong("durabilityCoordinatorWaitNanos");
                 durabilityCoordinatorHoldNanos += event.getLong("durabilityCoordinatorHoldNanos");
+                String eventCoordinatorMode = event.getString("durabilityCoordinatorMode");
+                if (durabilityCoordinatorMode.isEmpty()) {
+                    durabilityCoordinatorMode = eventCoordinatorMode;
+                } else if (!durabilityCoordinatorMode.equals(eventCoordinatorMode)) {
+                    throw new IllegalStateException("mixed durability coordinator modes in one scenario: "
+                            + durabilityCoordinatorMode + " and " + eventCoordinatorMode);
+                }
+                maxDurabilityEnrollmentDepth = Math.max(
+                        maxDurabilityEnrollmentDepth,
+                        event.getInt("durabilityEnrollmentDepth"));
                 tableLockWaitNanos += event.getLong("tableLockWaitNanos");
                 tableLockHoldNanos += event.getLong("tableLockHoldNanos");
                 validationNanos += event.getLong("validationNanos");
@@ -397,6 +409,8 @@ public final class DelosConcurrentCommitBenchmark {
                 backupWaitNanos,
                 durabilityCoordinatorWaitNanos,
                 durabilityCoordinatorHoldNanos,
+                durabilityCoordinatorMode,
+                maxDurabilityEnrollmentDepth,
                 tableLockWaitNanos,
                 tableLockHoldNanos,
                 validationNanos,
@@ -850,6 +864,8 @@ public final class DelosConcurrentCommitBenchmark {
             long backupWaitNanos,
             long durabilityCoordinatorWaitNanos,
             long durabilityCoordinatorHoldNanos,
+            String durabilityCoordinatorMode,
+            int maxDurabilityEnrollmentDepth,
             long tableLockWaitNanos,
             long tableLockHoldNanos,
             long validationNanos,
@@ -904,7 +920,8 @@ public final class DelosConcurrentCommitBenchmark {
             return "topology,operation,writers,rowsPerTransaction,commits,commitsPerSecond,"
                     + "p50CommitMicros,p95CommitMicros,p99CommitMicros,avgCommitMicros,"
                     + "avgPreparationMicros,avgBackupWaitMicros,avgDurabilityCoordinatorWaitMicros,"
-                    + "avgDurabilityCoordinatorHoldMicros,avgTableLockWaitMicros,avgTableLockHoldMicros,"
+                    + "avgDurabilityCoordinatorHoldMicros,durabilityCoordinatorMode,"
+                    + "maxDurabilityEnrollmentDepth,avgTableLockWaitMicros,avgTableLockHoldMicros,"
                     + "avgValidationMicros,avgTransactionStatusCommitMicros,"
                     + "avgPageStatePersistenceMicros,avgOrderedIndexRebuildMicros,"
                     + "avgTransactionStatePublicationMicros,avgMaintenanceMicros,"
@@ -934,6 +951,8 @@ public final class DelosConcurrentCommitBenchmark {
                     decimal(micros(average(jfr.backupWaitNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.durabilityCoordinatorWaitNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.durabilityCoordinatorHoldNanos(), jfr.eventCount()))),
+                    jfr.durabilityCoordinatorMode(),
+                    Integer.toString(jfr.maxDurabilityEnrollmentDepth()),
                     decimal(micros(average(jfr.tableLockWaitNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.tableLockHoldNanos(), jfr.eventCount()))),
                     decimal(micros(average(jfr.validationNanos(), jfr.eventCount()))),
@@ -969,6 +988,8 @@ public final class DelosConcurrentCommitBenchmark {
                     + " prepare=" + decimal(micros(average(jfr.preparationNanos(), jfr.eventCount()))) + "us"
                     + " coordinatorWait="
                     + decimal(micros(average(jfr.durabilityCoordinatorWaitNanos(), jfr.eventCount()))) + "us"
+                    + " coordinatorMode=" + jfr.durabilityCoordinatorMode()
+                    + " enrollmentDepth=" + jfr.maxDurabilityEnrollmentDepth()
                     + " lockWait=" + decimal(micros(average(jfr.tableLockWaitNanos(), jfr.eventCount()))) + "us"
                     + " phases/revalidate=" + decimal(micros(average(jfr.validationNanos(), jfr.eventCount()))) + "us"
                     + " status=" + decimal(micros(average(jfr.transactionStatusCommitNanos(), jfr.eventCount()))) + "us"
@@ -1017,6 +1038,10 @@ public final class DelosConcurrentCommitBenchmark {
                     + next + "\"sidecarBytesCovered\": " + jfr.sidecarBytesCovered() + ",\n"
                     + next + "\"pageVolumeBytesCovered\": " + jfr.pageVolumeBytesCovered() + ",\n"
                     + next + "\"backupWaitNanos\": " + jfr.backupWaitNanos() + ",\n"
+                    + next + "\"durabilityCoordinatorMode\": \""
+                    + json(jfr.durabilityCoordinatorMode()) + "\",\n"
+                    + next + "\"maxDurabilityEnrollmentDepth\": "
+                    + jfr.maxDurabilityEnrollmentDepth() + ",\n"
                     + next + "\"tableLockWaitNanos\": " + jfr.tableLockWaitNanos() + ",\n"
                     + next + "\"tableLockHoldNanos\": " + jfr.tableLockHoldNanos() + ",\n"
                     + next + "\"validationNanos\": " + jfr.validationNanos() + ",\n"

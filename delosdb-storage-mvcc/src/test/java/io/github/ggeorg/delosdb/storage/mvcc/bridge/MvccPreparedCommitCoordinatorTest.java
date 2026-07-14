@@ -73,6 +73,13 @@ final class MvccPreparedCommitCoordinatorTest {
                 .max()
                 .orElseThrow(),
                 "physical same-table publication remains serialized");
+        assertTrue(events.stream().allMatch(event ->
+                "queued".equals(event.getString("durabilityCoordinatorMode"))));
+        assertEquals(2, events.stream()
+                .mapToInt(event -> event.getInt("durabilityEnrollmentDepth"))
+                .max()
+                .orElseThrow(),
+                "both prepared commits must be enrolled before physical publication completes");
         assertTrue(events.stream().allMatch(event -> event.getLong("preparationNanos") > 0L));
         assertTrue(events.stream().allMatch(event -> event.getLong("durabilityCoordinatorHoldNanos")
                 >= event.getLong("tableLockHoldNanos")));

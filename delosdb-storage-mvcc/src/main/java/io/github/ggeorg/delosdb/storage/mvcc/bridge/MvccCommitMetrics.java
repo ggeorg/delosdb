@@ -101,6 +101,8 @@ final class MvccCommitMetrics {
             long backupWaitNanos,
             long durabilityCoordinatorWaitNanos,
             long durabilityCoordinatorHoldNanos,
+            String durabilityCoordinatorMode,
+            int durabilityEnrollmentDepth,
             long tableLockWaitNanos,
             long tableLockHoldNanos,
             long validationNanos,
@@ -119,6 +121,12 @@ final class MvccCommitMetrics {
             String failure) {
         Sample {
             storageId = Objects.requireNonNull(storageId, "storageId");
+            durabilityCoordinatorMode = Objects.requireNonNull(
+                    durabilityCoordinatorMode,
+                    "durabilityCoordinatorMode");
+            if (durabilityEnrollmentDepth < 0) {
+                throw new IllegalArgumentException("durabilityEnrollmentDepth must not be negative");
+            }
             requestConcurrency = Objects.requireNonNull(requestConcurrency, "requestConcurrency");
             preparationConcurrency = Objects.requireNonNull(preparationConcurrency, "preparationConcurrency");
             durabilityQueueConcurrency = Objects.requireNonNull(

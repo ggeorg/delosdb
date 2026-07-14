@@ -53,6 +53,8 @@ final class MvccCommitJfr {
         event.backupWaitNanos = sample.backupWaitNanos();
         event.durabilityCoordinatorWaitNanos = sample.durabilityCoordinatorWaitNanos();
         event.durabilityCoordinatorHoldNanos = sample.durabilityCoordinatorHoldNanos();
+        event.durabilityCoordinatorMode = sample.durabilityCoordinatorMode();
+        event.durabilityEnrollmentDepth = sample.durabilityEnrollmentDepth();
         event.tableLockWaitNanos = sample.tableLockWaitNanos();
         event.tableLockHoldNanos = sample.tableLockHoldNanos();
         event.validationNanos = sample.validationNanos();
@@ -110,6 +112,10 @@ final class MvccCommitJfr {
         @Label("Table Durability Coordinator Hold")
         @Timespan(Timespan.NANOSECONDS)
         public long durabilityCoordinatorHoldNanos;
+        @Label("Table Durability Coordinator Mode")
+        public String durabilityCoordinatorMode;
+        @Label("Durability Enrollment Depth")
+        public int durabilityEnrollmentDepth;
         @Label("Table Write Lock Wait")
         @Timespan(Timespan.NANOSECONDS)
         public long tableLockWaitNanos;

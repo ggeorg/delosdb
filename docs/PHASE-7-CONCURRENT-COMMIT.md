@@ -57,6 +57,7 @@ transaction-state publication time
 post-commit maintenance time
 per-table and process-wide commit-request concurrency
 per-table and process-wide durability-queue concurrency
+per-table durability coordinator mode and enrollment depth
 per-table and process-wide durability-execution concurrency
 transaction-status force calls
 transaction-outcome force calls
@@ -270,3 +271,32 @@ multiple rows: sidecar = S
 
 where `S` is the constant per-commit sidecar work. Page-volume force counts remain
 `page=2`.
+
+
+## Bounded enrollment before transaction group commit
+
+After immutable preparation and transaction sidecar batching, the per-table
+durability boundary now uses a bounded FIFO enrollment queue instead of only a
+fair lock. The queue preserves one-at-a-time physical publication and all
+existing force counts. It exists to prove that multiple prepared same-table
+commits can be enrolled before any cross-transaction force sharing is added.
+
+The former direct fair-lock mode is retained only as a package-private
+differential proof path. Direct and queued modes execute the same publication
+code and must produce the same durable state, force counts, recovery result, and
+pre-publication conflict result.
+
+The authoritative design and removal criteria for the temporary comparison mode
+are documented in:
+
+```text
+docs/PHASE-7-COMMIT-ENROLLMENT-QUEUE.md
+```
+
+Required evidence before real group commit:
+
+```text
+tablePreparationConcurrency > 1
+durabilityEnrollmentDepth   > 1
+tableDurabilityExecutionConcurrency = 1
+```
