@@ -309,3 +309,26 @@ The next decision must come from the rerun benchmark. If independent-table
 throughput remains durability-bound, sidecar/status forcing should be measured
 before lock-scope work. If the main force reduction removes that bottleneck, the
 next implementation slice can narrow same-table write-lock scope.
+
+## Phase 7.7 transaction sidecar batching
+
+The transaction-level page materialization boundary now also consolidates two
+rebuildable sidecars:
+
+```text
+free-space map:
+    update the in-memory map for every staged version
+    rewrite and force the complete map once per transaction
+
+row directory:
+    update every logical head in memory
+    append all durable head records once per transaction
+```
+
+The line-oriented row-directory format is unchanged. Open ignores and removes
+only a torn final line before reconciling the complete head image from version
+pages. Complete malformed records remain corruption.
+
+This removes two sidecar force calls for every additional inline row while
+preserving the existing outcome fence, page force, recovery, checkpoint, and
+ordered-index order.

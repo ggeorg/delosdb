@@ -979,6 +979,8 @@ public final class DelosConcurrentCommitBenchmark {
                     + " forces/status=" + decimal(average(jfr.transactionStatusForceCount(), jfr.eventCount()))
                     + " outcome=" + decimal(average(jfr.transactionOutcomeForceCount(), jfr.eventCount()))
                     + " wal=" + decimal(average(jfr.writeAheadLogForceCount(), jfr.eventCount()))
+                    + " sidecar=" + decimal(average(jfr.otherSidecarForceCount(), jfr.eventCount()))
+                    + " directory=" + decimal(average(jfr.directoryForceCount(), jfr.eventCount()))
                     + " page=" + decimal(average(jfr.pageVolumeForceCount(), jfr.eventCount()))
                     + " tablePreparationConcurrency=" + jfr.maxTablePreparationConcurrency()
                     + " processPreparationConcurrency=" + jfr.maxProcessPreparationConcurrency()

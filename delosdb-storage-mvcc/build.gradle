@@ -1217,6 +1217,8 @@ def delosMvccLifecycleProofTasks = [
          'Runs the Phase 7.5 same-table commit critical-section audit tests.'],
         ['runMvccPreparedCommitCoordinatorTest', '**/MvccPreparedCommitCoordinatorTest.class',
          'Runs the Phase 7.6 immutable prepared-commit coordinator tests.'],
+        ['runMvccTransactionSidecarForceBatchTest', '**/MvccTransactionSidecarForceBatchTest.class',
+         'Runs the Phase 7.7 transaction sidecar force-batch and torn-tail recovery tests.'],
         ['runMvccAttributeOverflowRowPayloadCodecTest', '**/MvccAttributeOverflowRowPayloadCodecTest.class',
          'Runs MVCC attribute-overflow row payload codec tests.'],
         ['runMvccBufferManagerPhase2Test', '**/MvccBufferManagerPhase2Test.class',

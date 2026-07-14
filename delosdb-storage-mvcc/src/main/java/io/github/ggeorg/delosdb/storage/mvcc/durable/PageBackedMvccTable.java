@@ -331,8 +331,9 @@ public final class PageBackedMvccTable implements AutoCloseable {
      * one transaction-outcome fence before materializing its page records.
      *
      * <p>All main-table page images are staged through one page-cache batch and
-     * followed by one page-volume force. The prepared payload batch and outcome
-     * fence remain the recovery authority if the page batch is interrupted.</p>
+     * followed by one page-volume force. Row-directory heads are published with
+     * one forced transaction append. The prepared payload batch and outcome fence
+     * remain the recovery authority if page or sidecar publication is interrupted.</p>
      */
     public synchronized List<MvccIndexTuple> persistCommittedTransaction(
             long transactionId,
@@ -450,6 +451,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
         }
 
         List<MvccIndexTuple> tuples = new ArrayList<>(prepared.size());
+        List<MvccRowDirectoryStore.RowHeadRecord> rowHeads = new ArrayList<>(prepared.size());
         for (int index = 0; index < prepared.size(); index++) {
             PreparedCommittedWrite write = prepared.get(index);
             MvccVersionLocator locator = locators.get(index);
@@ -458,7 +460,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
                     write.write().key(),
                     write.rowId(),
                     new MvccRowDirectory.StoredVersion(locator, record, write.payload()));
-            rowDirectoryStore.recordHead(new MvccRowDirectoryStore.RowHeadRecord(
+            rowHeads.add(new MvccRowDirectoryStore.RowHeadRecord(
                     write.rowId(),
                     write.write().key(),
                     record.header().versionId(),
@@ -467,6 +469,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
                     record.header().isTombstone()));
             tuples.add(MvccIndexTuple.active(write.rowId(), record.header().versionId(), locator));
         }
+        rowDirectoryStore.recordHeads(rowHeads);
         rebuildVisibilityMap();
         return List.copyOf(tuples);
     }

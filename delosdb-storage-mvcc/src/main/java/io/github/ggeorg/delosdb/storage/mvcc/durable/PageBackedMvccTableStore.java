@@ -147,7 +147,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             DelosLogSequenceNumber pageLsn) throws IOException {
         return writeLockedIo(() -> {
             try (MvccPageMutationContext context = beginPageMutationContext("append-version")) {
-                MvccVersionLocator locator = appendUnlocked(record, pageLsn, context);
+                MvccVersionLocator locator = appendUnlocked(record, pageLsn, context, false);
                 forceDirtyPages();
                 context.commit();
                 return locator;
@@ -157,7 +157,9 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     /**
      * Appends all records from one committed transaction and forces the table
-     * page volume once after every dirty page image has been written.
+     * page volume once after every dirty page image has been written. The
+     * free-space-map sidecar is also rewritten once after all page-capacity
+     * updates have been staged.
      *
      * <p>The caller must make the covering WAL and transaction outcome durable
      * before entering this method. The page cache keeps each touched page dirty
@@ -184,8 +186,10 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             try (MvccPageMutationContext context = beginPageMutationContext("append-transaction-batch")) {
                 List<MvccVersionLocator> locators = new ArrayList<>(batchRecords.size());
                 for (int index = 0; index < batchRecords.size(); index++) {
-                    locators.add(appendUnlocked(batchRecords.get(index), batchLsns.get(index), context));
+                    locators.add(appendUnlocked(
+                            batchRecords.get(index), batchLsns.get(index), context, true));
                 }
+                persistFreeSpaceMap();
                 forceDirtyPages();
                 context.commit();
                 return List.copyOf(locators);
@@ -196,7 +200,8 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     private MvccVersionLocator appendUnlocked(
             MvccVersionRecord record,
             DelosLogSequenceNumber pageLsn,
-            MvccPageMutationContext context) throws IOException {
+            MvccPageMutationContext context,
+            boolean deferFreeSpaceMapPersistence) throws IOException {
         Objects.requireNonNull(record, "record");
         pageLsn = Objects.requireNonNull(pageLsn, "pageLsn");
         Objects.requireNonNull(context, "context");
@@ -206,11 +211,11 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         int requiredBytes = Math.addExact(encoded.length, SLOT_OVERHEAD_BYTES);
         bufferFlushCoordinator.recordLogForcedThrough(pageLsn);
         context.reservePageCapacity(requiredBytes);
-        DelosPage page = writablePage(encoded.length);
+        DelosPage page = writablePage(encoded.length, deferFreeSpaceMapPersistence);
         int slotId = page.appendRecord(encoded);
         DelosPage writtenPage = page.withPageLsn(pageLsn.value());
         writePage(writtenPage, context);
-        updateFreeSpaceMap(writtenPage, context);
+        updateFreeSpaceMap(writtenPage, context, !deferFreeSpaceMapPersistence);
         return new MvccVersionLocator(page.pageId(), slotId);
     }
 
@@ -736,9 +741,11 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return DelosPage.empty(new DelosPageId(0L)).freeBytes() - SLOT_OVERHEAD_BYTES;
     }
 
-    private DelosPage writablePage(int encodedRecordLength) throws IOException {
+    private DelosPage writablePage(
+            int encodedRecordLength,
+            boolean deferFreeSpaceMapPersistence) throws IOException {
         int requiredBytes = Math.addExact(encodedRecordLength, SLOT_OVERHEAD_BYTES);
-        DelosPage mapped = pageFromFreeSpaceMap(requiredBytes);
+        DelosPage mapped = pageFromFreeSpaceMap(requiredBytes, deferFreeSpaceMapPersistence);
         if (mapped != null) {
             return mapped;
         }
@@ -757,7 +764,9 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return allocatePage(DelosPage.DATA_PAGE_TYPE);
     }
 
-    private DelosPage pageFromFreeSpaceMap(int requiredBytes) throws IOException {
+    private DelosPage pageFromFreeSpaceMap(
+            int requiredBytes,
+            boolean deferFreeSpaceMapPersistence) throws IOException {
         freeSpaceMapLookupCount++;
         boolean changed = false;
         long pageCount = pageVolume.pageCount();
@@ -788,7 +797,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                     entry.setValue(page.freeBytes());
                     changed = true;
                 }
-                if (changed) {
+                if (changed && !deferFreeSpaceMapPersistence) {
                     persistFreeSpaceMap();
                 }
                 return page;
@@ -798,7 +807,7 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             changed = true;
         }
         freeSpaceMapMissCount++;
-        if (changed) {
+        if (changed && !deferFreeSpaceMapPersistence) {
             persistFreeSpaceMap();
         }
         return null;
@@ -868,12 +877,21 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     }
 
     private void updateFreeSpaceMap(DelosPage page, MvccPageMutationContext context) throws IOException {
+        updateFreeSpaceMap(page, context, true);
+    }
+
+    private void updateFreeSpaceMap(
+            DelosPage page,
+            MvccPageMutationContext context,
+            boolean persistImmediately) throws IOException {
         freeBytesByPageId.put(page.pageId().value(), page.freeBytes());
         freeSpaceMapUpdateCount++;
         if (context != null) {
             context.recordFreeSpaceMapUpdate();
         }
-        persistFreeSpaceMap();
+        if (persistImmediately) {
+            persistFreeSpaceMap();
+        }
     }
 
     private void rebuildFreeSpaceMap() throws IOException {

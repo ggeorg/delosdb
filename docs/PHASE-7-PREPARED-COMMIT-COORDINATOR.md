@@ -206,3 +206,10 @@ add group commit
 move maintenance to a database-level service
 change SQL, JDBC, DRDA, or catalog behavior
 ```
+
+## Phase 7.7 follow-up
+
+Phase 7.7 acts on the dominant serialized page-state path identified after the
+prepared-commit split. It batches free-space-map and row-directory publication
+at the same transaction boundary. See
+`docs/PHASE-7-TRANSACTION-SIDECAR-FORCE-BATCH.md`.

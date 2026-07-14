@@ -252,3 +252,21 @@ The current route and invariants are authoritative in:
 ```text
 docs/PHASE-7-PREPARED-COMMIT-COORDINATOR.md
 ```
+
+## Phase 7.7 transaction sidecar force batching
+
+Phase 7.7 removes the remaining row-count-dependent sidecar force amplification
+from ordinary inline-row commits. The free-space map is rewritten once after all
+transaction page mutations are staged, and every row-directory head is appended
+with one forced transaction batch.
+
+The benchmark human output now includes `sidecar=` and `directory=` force counts.
+The expected comparison is:
+
+```text
+one row:   sidecar = S
+multiple rows: sidecar = S
+```
+
+where `S` is the constant per-commit sidecar work. Page-volume force counts remain
+`page=2`.

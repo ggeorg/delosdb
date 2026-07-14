@@ -38,10 +38,21 @@ final class MvccTransactionPageForceBatchRecoveryTest {
         List<MvccVersionRecord> records = records(1L, 1L, 8, 128);
 
         try (PageBackedMvccTableStore store = PageBackedMvccTableStore.open(tableFile, volume)) {
-            List<MvccVersionLocator> locators = store.appendTransactionBatch(records, noneLsns(records.size()));
+            MvccCommitDurabilityMetrics.Scope durability = MvccCommitDurabilityMetrics.begin(true);
+            List<MvccVersionLocator> locators;
+            MvccCommitDurabilityMetrics.Snapshot snapshot;
+            try {
+                locators = store.appendTransactionBatch(records, noneLsns(records.size()));
+            } finally {
+                snapshot = durability.finish();
+            }
             assertEquals(records.size(), locators.size());
             assertEquals(1L, volume.forceCount(),
                     "all dirty main-table pages from one transaction must share one force boundary");
+            assertEquals(1L, snapshot.otherSidecarForceCount(),
+                    "all free-space-map updates from one transaction must share one sidecar force");
+            assertEquals(1L, snapshot.directoryForceCount(),
+                    "the atomic free-space-map rewrite must publish one directory entry");
         }
     }
 

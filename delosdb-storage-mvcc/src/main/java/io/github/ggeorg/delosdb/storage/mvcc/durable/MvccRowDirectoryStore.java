@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import io.github.ggeorg.delosdb.storage.io.page.DelosPageId;
+import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
 
@@ -45,8 +46,24 @@ public final class MvccRowDirectoryStore extends AbstractSidecarStore implements
     }
 
     public synchronized void recordHead(RowHeadRecord record) throws IOException {
-        Objects.requireNonNull(record, "record");
-        appendUtf8Forced(encode(record) + System.lineSeparator(), "MVCC row-directory record");
+        recordHeads(List.of(Objects.requireNonNull(record, "record")));
+    }
+
+    /**
+     * Appends all row-head publications from one committed transaction with one
+     * forced sidecar append. Version pages remain the recovery authority, so a
+     * torn final batch is discarded and reconciled from page state on reopen.
+     */
+    public synchronized void recordHeads(Iterable<RowHeadRecord> records) throws IOException {
+        Objects.requireNonNull(records, "records");
+        StringBuilder content = new StringBuilder();
+        for (RowHeadRecord record : records) {
+            content.append(encode(Objects.requireNonNull(record, "records entry")))
+                    .append(System.lineSeparator());
+        }
+        if (content.length() > 0) {
+            appendUtf8Forced(content.toString(), "MVCC row-directory transaction batch");
+        }
     }
 
     public synchronized boolean hasRecords() throws IOException {
@@ -55,14 +72,15 @@ public final class MvccRowDirectoryStore extends AbstractSidecarStore implements
 
     public synchronized Map<MvccRowId, RowHeadRecord> recoverHeads() throws IOException {
         Map<MvccRowId, RowHeadRecord> heads = new LinkedHashMap<>();
-        List<String> lines = readUtf8LinesIfExists("MVCC row-directory");
-        for (int lineNumber = 0; lineNumber < lines.size(); lineNumber++) {
-            String line = lines.get(lineNumber);
-            if (line.isBlank()) {
-                continue;
-            }
-            RowHeadRecord record = decode(line, lineNumber + 1);
+        String content = readUtf8IfExists("MVCC row-directory");
+        List<MvccDurableLineRecords.LineRecord> completeRecords =
+                MvccDurableLineRecords.completeRecords(content, false);
+        for (MvccDurableLineRecords.LineRecord lineRecord : completeRecords) {
+            RowHeadRecord record = decode(lineRecord.line(), lineRecord.lineIndex() + 1);
             heads.put(record.rowId(), record);
+        }
+        if (!content.isEmpty() && !content.endsWith("\n") && !content.endsWith("\r")) {
+            rewriteHeads(heads.values());
         }
         return heads;
     }
