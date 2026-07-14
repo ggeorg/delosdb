@@ -212,11 +212,18 @@ java {
     }
 }
 
+sourceSets {
+    concurrentCommit {
+        java.srcDir('src/concurrentCommit/java')
+    }
+}
+
 dependencies {
     // The standalone build consumes only assembled DelosDB runtime artifacts.
     // It never imports root-project source sets or implementation-only modules.
     jmh files(runtimeJarFiles)
     jmh 'org.ow2.asm:asm:9.9'
+    concurrentCommitImplementation files(runtimeJarFiles)
 }
 
 jmh {
@@ -293,7 +300,9 @@ tasks.register('verifyJmhApiBoundary') {
     group = 'verification'
     description = 'Rejects implementation-internal imports and accidental root-build wiring.'
 
-    def benchmarkSources = fileTree('src/jmh/java') { include '**/*.java' }
+    def benchmarkSources = files(
+            fileTree('src/jmh/java') { include '**/*.java' },
+            fileTree('src/concurrentCommit/java') { include '**/*.java' })
     def rootBuildFiles = files(
             new File(repositoryRoot, 'settings.gradle'),
             new File(repositoryRoot, 'build.gradle'),
@@ -347,6 +356,114 @@ tasks.named('compileJmhJava', JavaCompile) {
     options.release = 25
     options.encoding = 'UTF-8'
     options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+}
+
+tasks.named('compileConcurrentCommitJava', JavaCompile) {
+    dependsOn tasks.named('verifyDelosRuntimeJars'), tasks.named('verifyJmhApiBoundary')
+    options.release = 25
+    options.encoding = 'UTF-8'
+    options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+}
+
+final List<String> concurrentCommitPropertyNames = [
+        'delosdb.concurrentCommit.writers',
+        'delosdb.concurrentCommit.topologies',
+        'delosdb.concurrentCommit.operations',
+        'delosdb.concurrentCommit.rowsPerTransaction',
+        'delosdb.concurrentCommit.transactionsPerWriter',
+        'delosdb.concurrentCommit.warmupTransactionsPerWriter',
+        'delosdb.concurrentCommit.databaseRoot',
+        'delosdb.concurrentCommit.keepJfr'
+]
+
+final def concurrentCommitSources = fileTree('src/concurrentCommit/java') {
+    include '**/*.java'
+}
+final List<File> concurrentCommitSourceFiles = concurrentCommitSources.files.sort()
+final Map<String, String> concurrentCommitProperties = concurrentCommitPropertyNames.collectEntries {
+    propertyName -> [propertyName, providers.gradleProperty(propertyName).getOrElse('')]
+}
+final File concurrentCommitReportDirectory =
+        layout.buildDirectory.dir('reports/concurrent-commit').get().asFile
+final File concurrentCommitManifest = new File(concurrentCommitReportDirectory, 'run-manifest.txt')
+
+
+tasks.register('writeConcurrentCommitRunManifest') {
+    group = 'benchmark'
+    description = 'Writes reproducibility fingerprints for the concurrent commit benchmark.'
+    dependsOn tasks.named('verifyDelosRuntimeJars'), tasks.named('verifyJmhApiBoundary')
+    inputs.files(runtimeJarFiles, concurrentCommitSourceFiles, file('build.gradle'), file('settings.gradle'))
+    inputs.properties(concurrentCommitProperties)
+    outputs.file(concurrentCommitManifest)
+
+    doLast {
+        concurrentCommitManifest.parentFile.mkdirs()
+        concurrentCommitManifest.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB concurrent commit benchmark manifest')
+            writer.println('Required Java toolchain: 25')
+            writer.println('Main class: io.github.ggeorg.delosdb.benchmark.concurrent.DelosConcurrentCommitBenchmark')
+            concurrentCommitPropertyNames.each { propertyName ->
+                String value = concurrentCommitProperties[propertyName]
+                writer.println(propertyName + ': ' + (value.isEmpty() ? '<default>' : value))
+            }
+            writer.println()
+            writer.println('Runtime artifacts:')
+            runtimeJarFiles.each { jar ->
+                writer.println('  ' + jar.name + ' size=' + jar.length() + ' sha256=' + sha256(jar))
+            }
+            writer.println()
+            writer.println('Benchmark sources:')
+            concurrentCommitSourceFiles.each { source ->
+                writer.println('  ' + source.name + ' size=' + source.length() + ' sha256=' + sha256(source))
+            }
+        }
+    }
+}
+
+
+tasks.register('runConcurrentCommitBenchmark', JavaExec) {
+    group = 'benchmark'
+    description = 'Measures concurrent MVCC commit throughput, latency, lock waits, and durability forces.'
+    dependsOn tasks.named('compileConcurrentCommitJava'), tasks.named('writeConcurrentCommitRunManifest')
+    classpath = sourceSets.concurrentCommit.runtimeClasspath
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.concurrent.DelosConcurrentCommitBenchmark'
+    systemProperty 'delosdb.concurrentCommit.outputDirectory', concurrentCommitReportDirectory.absolutePath
+    concurrentCommitProperties.each { propertyName, value ->
+        if (!value.isEmpty()) {
+            systemProperty propertyName, value
+        }
+    }
+    outputs.upToDateWhen { false }
+
+    doFirst {
+        concurrentCommitReportDirectory.mkdirs()
+        List<File> staleReports = ['results.csv', 'results.json', 'human.txt']
+                .collect { fileName -> new File(concurrentCommitReportDirectory, fileName) }
+        File[] reportFiles = concurrentCommitReportDirectory.listFiles()
+        if (reportFiles != null) {
+            staleReports.addAll(reportFiles.findAll { file ->
+                file.isFile() && file.name.endsWith('.jfr')
+            })
+        }
+        staleReports.each { report ->
+            if (report.exists() && !report.delete()) {
+                throw new GradleException('Could not remove stale concurrent commit report: ' + report)
+            }
+        }
+    }
+
+    doLast {
+        ['results.csv', 'results.json', 'human.txt', 'run-manifest.txt'].each { fileName ->
+            File report = new File(concurrentCommitReportDirectory, fileName)
+            if (!report.isFile() || report.length() == 0L) {
+                throw new GradleException('Concurrent commit benchmark did not create: ' + report)
+            }
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('compileConcurrentCommitJava'), tasks.named('verifyJmhApiBoundary')
 }
 
 tasks.named('jmhJar', Jar) {

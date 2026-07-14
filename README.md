@@ -128,6 +128,7 @@ The runtime artifact model also verifies `delos_mvcc` provider discovery before 
 See `docs/STORAGE-ARCHITECTURE.md` for the storage architecture and closeout baseline.
 See `docs/CLEANUP-CONSOLIDATION.md` for the cleanup/consolidation phase.
 See `docs/STORAGE-ROADMAP.md` for the closed checkpoint cycles and current fork-diff classification phase.
+See `docs/PHASE-7-CONCURRENT-COMMIT.md` for the concurrent commit measurement phase.
 
 ### Network server path
 
@@ -266,6 +267,7 @@ docs/BUILDING.md
 docs/DERBY-COMPATIBILITY.md
 docs/STORAGE-ARCHITECTURE.md
 docs/CLEANUP-CONSOLIDATION.md
+docs/PHASE-7-CONCURRENT-COMMIT.md
 docs/DELOSDB-SERVER.md
 docs/sql-extensions.md
 ```

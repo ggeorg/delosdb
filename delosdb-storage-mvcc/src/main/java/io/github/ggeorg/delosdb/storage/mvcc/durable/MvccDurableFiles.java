@@ -62,6 +62,7 @@ public final class MvccDurableFiles {
                 StandardOpenOption.WRITE)) {
             writeFully(channel, ByteBuffer.wrap(bytes));
             policy.force(channel, path);
+            MvccCommitDurabilityMetrics.recordFileForce(path, bytes.length);
         }
     }
 
@@ -80,6 +81,7 @@ public final class MvccDurableFiles {
                 StandardOpenOption.APPEND)) {
             writeFully(channel, ByteBuffer.wrap(bytes));
             policy.force(channel, path);
+            MvccCommitDurabilityMetrics.recordFileForce(path, bytes.length);
         }
     }
 
@@ -141,6 +143,7 @@ public final class MvccDurableFiles {
         }
         try (FileChannel channel = FileChannel.open(parent, StandardOpenOption.READ)) {
             policy.force(channel, parent);
+            MvccCommitDurabilityMetrics.recordDirectoryForce();
         } catch (IOException ignored) {
             // Some platforms do not support forcing directories. File data has already been forced.
         }

@@ -20,6 +20,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionManager;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccWriteConflictException;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccCommitDurabilityMetrics;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
 
@@ -62,6 +63,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final ExecutorService purgeDaemonExecutor;
     private final List<MvccInheritedHandles.Transaction> activeTransactions = new ArrayList<>();
     private final ReentrantReadWriteLock tableLock = new ReentrantReadWriteLock();
+    private final MvccCommitMetrics commitMetrics = new MvccCommitMetrics();
     private final Lock readLock = tableLock.readLock();
     private final Lock writeLock = tableLock.writeLock();
     private long nextRowId = 1L;
@@ -105,9 +107,19 @@ final class MvccInheritedTable implements DelosStorageTable,
     @Override
     public DelosStorageTransaction beginTransaction() {
         return writeLocked(() -> {
-            MvccInheritedHandles.Transaction transaction = new MvccInheritedHandles.Transaction(transactions.begin());
-            activeTransactions.add(transaction);
-            return transaction;
+            MvccCommitDurabilityMetrics.Scope durabilityScope =
+                    MvccCommitDurabilityMetrics.begin(MvccCommitJfr.enabled());
+            try {
+                MvccTransaction nativeTransaction = transactions.begin();
+                MvccInheritedHandles.Transaction transaction = new MvccInheritedHandles.Transaction(
+                        nativeTransaction,
+                        false,
+                        durabilityScope.finish());
+                activeTransactions.add(transaction);
+                return transaction;
+            } finally {
+                durabilityScope.finish();
+            }
         });
     }
 
@@ -259,38 +271,131 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public void commit(DelosStorageTransaction transaction) {
-        durableMutationLocked(() -> {
-            MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
-            if (handle.readOnly()) {
-                throw new IllegalStateException("read-only delos_mvcc transaction cannot commit");
-            }
-            int committedChangedRows = 0;
-            boolean committed = false;
-            try {
-                MvccTransaction nativeTx = handle.nativeTransaction();
-                List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes = changedRows(handle);
-                try {
-                    pageVolumeStateStore.requireChangedRowsCanBePersisted(changes);
-                } catch (RuntimeException failure) {
-                    abortIfActive(nativeTx, failure);
-                    handle.clearWriteIntents();
-                    throw failure;
+        boolean observe = MvccCommitJfr.enabled();
+        MvccCommitMetrics.Concurrency noConcurrency = MvccCommitMetrics.Concurrency.NONE;
+        MvccCommitMetrics.Concurrency requestConcurrency = observe
+                ? commitMetrics.enterRequest()
+                : noConcurrency;
+        long commitStarted = observe ? System.nanoTime() : 0L;
+        long backupWaitNanos = 0L;
+        long tableLockWaitNanos = 0L;
+        long tableLockHoldNanos = 0L;
+        long maintenanceNanos = 0L;
+        MvccCommitMetrics.Concurrency durabilityQueueConcurrency = noConcurrency;
+        MvccCommitMetrics.Concurrency durabilityExecutionConcurrency = noConcurrency;
+        MvccInheritedHandles.Transaction handle = null;
+        int committedChangedRows = 0;
+        boolean persistedCommit = false;
+        boolean success = false;
+        Throwable commitFailure = null;
+        MvccCommitDurabilityMetrics.Snapshot commitDurability =
+                MvccCommitDurabilityMetrics.Snapshot.empty();
+        try {
+            long backupWaitStarted = observe ? System.nanoTime() : 0L;
+            try (DelosStorageBackupCoordinator.Guard ignored =
+                         DelosStorageBackupCoordinator.enterDurableMutation()) {
+                if (observe) {
+                    backupWaitNanos = System.nanoTime() - backupWaitStarted;
+                    durabilityQueueConcurrency = commitMetrics.enterDurabilityQueue();
                 }
-                MvccCommitSequence commitSequence = transactions.commit(nativeTx);
-                persistCommittedChangesUnlocked(changes, commitSequence);
-                committedChangedRows = changes.size();
-                committed = true;
-                lastCommittedChangedRowCount = changes.size();
-                lastCommittedWriteIntentCount = handle.writeIntentCount();
-                lastCommittedWriteIntentPayloadSummaries = committedChangePayloadSummaries(changes);
-                handle.clearWriteIntents();
-            } finally {
-                activeTransactions.remove(handle);
+                try {
+                    long tableLockWaitStarted = observe ? System.nanoTime() : 0L;
+                    writeLock.lock();
+                    if (observe) {
+                        tableLockWaitNanos = System.nanoTime() - tableLockWaitStarted;
+                        durabilityExecutionConcurrency = commitMetrics.enterDurabilityExecution();
+                    }
+                    long tableLockHoldStarted = observe ? System.nanoTime() : 0L;
+                    try {
+                        handle = nativeTransactionHandle(transaction);
+                        if (handle.readOnly()) {
+                            throw new IllegalStateException("read-only delos_mvcc transaction cannot commit");
+                        }
+                        MvccCommitDurabilityMetrics.Scope durabilityScope =
+                                MvccCommitDurabilityMetrics.begin(observe);
+                        try {
+                            try {
+                                MvccTransaction nativeTx = handle.nativeTransaction();
+                                List<PageVolumeMvccStateStore.PersistedChange<StoreDataValue[]>> changes =
+                                        changedRows(handle);
+                                try {
+                                    pageVolumeStateStore.requireChangedRowsCanBePersisted(changes);
+                                } catch (RuntimeException failure) {
+                                    abortIfActive(nativeTx, failure);
+                                    handle.clearWriteIntents();
+                                    throw failure;
+                                }
+                                MvccCommitSequence commitSequence = transactions.commit(nativeTx);
+                                persistCommittedChangesUnlocked(changes, commitSequence);
+                                committedChangedRows = changes.size();
+                                persistedCommit = true;
+                                lastCommittedChangedRowCount = changes.size();
+                                lastCommittedWriteIntentCount = handle.writeIntentCount();
+                                lastCommittedWriteIntentPayloadSummaries =
+                                        committedChangePayloadSummaries(changes);
+                                handle.clearWriteIntents();
+                            } finally {
+                                activeTransactions.remove(handle);
+                            }
+                        } finally {
+                            commitDurability = durabilityScope.finish();
+                        }
+                        if (persistedCommit) {
+                            long maintenanceStarted = observe ? System.nanoTime() : 0L;
+                            runPurgeDaemonAfterCommit(committedChangedRows);
+                            if (observe) {
+                                maintenanceNanos = System.nanoTime() - maintenanceStarted;
+                            }
+                        }
+                    } finally {
+                        if (observe) {
+                            tableLockHoldNanos = System.nanoTime() - tableLockHoldStarted;
+                            commitMetrics.exitDurabilityExecution();
+                        }
+                        writeLock.unlock();
+                    }
+                } finally {
+                    if (observe) {
+                        commitMetrics.exitDurabilityQueue();
+                    }
+                }
             }
-            if (committed) {
-                runPurgeDaemonAfterCommit(committedChangedRows);
+            success = true;
+        } catch (RuntimeException | Error failure) {
+            commitFailure = failure;
+            throw failure;
+        } finally {
+            if (observe) {
+                MvccCommitDurabilityMetrics.Snapshot beginDurability = handle == null
+                        ? MvccCommitDurabilityMetrics.Snapshot.empty()
+                        : handle.beginDurability();
+                MvccCommitMetrics.Sample sample = new MvccCommitMetrics.Sample(
+                        storageId(segmentId, containerId),
+                        handle == null ? -1L : handle.nativeTransaction().id().value(),
+                        committedChangedRows,
+                        System.nanoTime() - commitStarted,
+                        backupWaitNanos,
+                        tableLockWaitNanos,
+                        tableLockHoldNanos,
+                        maintenanceNanos,
+                        requestConcurrency,
+                        durabilityQueueConcurrency,
+                        durabilityExecutionConcurrency,
+                        beginDurability.plus(commitDurability),
+                        beginDurability.observed() && commitDurability.observed(),
+                        success,
+                        failureSummary(commitFailure));
+                try {
+                    MvccCommitJfr.record(sample);
+                } catch (RuntimeException instrumentationFailure) {
+                    if (commitFailure != null) {
+                        commitFailure.addSuppressed(instrumentationFailure);
+                    }
+                } finally {
+                    commitMetrics.exitRequest();
+                }
             }
-        });
+        }
     }
 
     @Override
@@ -1278,6 +1383,18 @@ final class MvccInheritedTable implements DelosStorageTable,
     private boolean canReadCommittedImageUnlocked(DelosStorageSnapshot snapshot) {
         MvccSnapshot nativeSnapshot = nativeSnapshot(snapshot);
         return nativeSnapshot.visibleThrough().equals(transactions.newestCommitSequence());
+    }
+
+    int activeCommitRequestsForTesting() {
+        return commitMetrics.activeTableRequests();
+    }
+
+    private static String failureSummary(Throwable failure) {
+        if (failure == null) {
+            return "";
+        }
+        String message = failure.getMessage();
+        return failure.getClass().getName() + (message == null || message.isBlank() ? "" : ": " + message);
     }
 
     private <T> T readLocked(Supplier<T> operation) {

@@ -113,7 +113,7 @@ final class MvccConcurrencyValidationTest {
         assertEquals(workers * pagesPerWorker, cache.flushAll(volume, coordinator));
         assertEquals(0L, cache.snapshot().dirtyPages());
         assertEquals(0L, cache.snapshot().walBeforeFlushFailures());
-        assertEquals(1L, coordinator.snapshot().groupCommitBatches());
+        assertEquals(1L, coordinator.snapshot().pageFlushBatches());
     }
 
     private static DelosPage dataPage(long pageId, long pageLsn, byte payload) {

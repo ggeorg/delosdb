@@ -64,8 +64,8 @@ final class MvccBufferManagerPhase2Test {
         MvccPageCache.Snapshot cacheSnapshot = cache.snapshot();
         assertEquals(2L, volume.writeCount);
         assertEquals(1L, volume.forceCount);
-        assertEquals(1L, flushSnapshot.groupCommitBatches());
-        assertEquals(2L, flushSnapshot.groupedPageFlushes());
+        assertEquals(1L, flushSnapshot.pageFlushBatches());
+        assertEquals(2L, flushSnapshot.pageFlushPages());
         assertEquals(1L, cacheSnapshot.groupedForceBatches());
         assertEquals(2L, cacheSnapshot.groupedForcedPages());
         assertEquals(0L, cacheSnapshot.dirtyPages());
@@ -107,13 +107,13 @@ final class MvccBufferManagerPhase2Test {
 
         assertEquals(2L, cache.snapshot().dirtyPages(),
                 "pages are not clean until the grouped force boundary succeeds");
-        assertEquals(0L, coordinator.snapshot().groupCommitBatches());
+        assertEquals(0L, coordinator.snapshot().pageFlushBatches());
 
         volume.failForce = false;
         assertEquals(2L, cache.flushAll(volume, coordinator));
         assertEquals(0L, cache.snapshot().dirtyPages());
-        assertEquals(1L, coordinator.snapshot().groupCommitBatches());
-        assertEquals(2L, coordinator.snapshot().groupedPageFlushes());
+        assertEquals(1L, coordinator.snapshot().pageFlushBatches());
+        assertEquals(2L, coordinator.snapshot().pageFlushPages());
     }
 
     private static DelosPage dataPage(long pageId, long pageLsn, byte payload) {

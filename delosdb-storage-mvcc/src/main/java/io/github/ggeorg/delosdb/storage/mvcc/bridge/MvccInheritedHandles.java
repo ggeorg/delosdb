@@ -10,6 +10,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccStorageNames;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommandSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccCommitDurabilityMetrics;
 
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
@@ -36,18 +37,27 @@ final class MvccInheritedHandles {
     static final class Transaction implements DelosStorageTransaction {
         private final MvccTransaction nativeTransaction;
         private final boolean readOnly;
+        private final MvccCommitDurabilityMetrics.Snapshot beginDurability;
         private final Map<String, MvccCommandSequence> savepoints = new LinkedHashMap<>();
         private final Map<Long, List<WriteIntent>> writeIntents = new LinkedHashMap<>();
         private final List<WriteIntent> appendedWriteIntents = new ArrayList<>();
         private long nextCommandSequence = 1L;
 
         Transaction(MvccTransaction nativeTransaction) {
-            this(nativeTransaction, false);
+            this(nativeTransaction, false, MvccCommitDurabilityMetrics.Snapshot.empty());
         }
 
         Transaction(MvccTransaction nativeTransaction, boolean readOnly) {
+            this(nativeTransaction, readOnly, MvccCommitDurabilityMetrics.Snapshot.empty());
+        }
+
+        Transaction(
+                MvccTransaction nativeTransaction,
+                boolean readOnly,
+                MvccCommitDurabilityMetrics.Snapshot beginDurability) {
             this.nativeTransaction = Objects.requireNonNull(nativeTransaction, "nativeTransaction");
             this.readOnly = readOnly;
+            this.beginDurability = Objects.requireNonNull(beginDurability, "beginDurability");
         }
 
         @Override
@@ -62,6 +72,10 @@ final class MvccInheritedHandles {
 
         boolean readOnly() {
             return readOnly;
+        }
+
+        MvccCommitDurabilityMetrics.Snapshot beginDurability() {
+            return beginDurability;
         }
 
         void setSavepoint(String savepointName) {

@@ -126,6 +126,7 @@ public final class MvccOverflowPayloadStore implements AutoCloseable {
         int slotId = page.appendRecord(encodedChunk);
         pageVolume.writePage(page);
         pageVolume.force();
+        MvccCommitDurabilityMetrics.recordPageVolumeForce(1L);
         return new MvccVersionLocator(page.pageId(), slotId);
     }
 

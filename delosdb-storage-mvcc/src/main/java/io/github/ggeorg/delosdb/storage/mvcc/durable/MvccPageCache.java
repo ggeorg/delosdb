@@ -166,8 +166,8 @@ final class MvccPageCache {
             return candidates.size();
         } finally {
             MvccBufferFlushCoordinator.Snapshot after = flushCoordinator.snapshot();
-            groupedForceBatches = after.groupCommitBatches();
-            groupedForcedPages = after.groupedPageFlushes();
+            groupedForceBatches = after.pageFlushBatches();
+            groupedForcedPages = after.pageFlushPages();
             walBeforeFlushChecks += Math.max(
                     0L, after.walBeforeFlushChecks() - before.walBeforeFlushChecks());
             walBeforeFlushFailures += Math.max(

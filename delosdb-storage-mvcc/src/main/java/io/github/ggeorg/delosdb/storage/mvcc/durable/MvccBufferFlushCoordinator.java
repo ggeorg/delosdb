@@ -21,8 +21,8 @@ final class MvccBufferFlushCoordinator {
     private long durableLogLsn = DelosLogSequenceNumber.NONE.value();
     private long walBeforeFlushChecks;
     private long walBeforeFlushFailures;
-    private long groupCommitBatches;
-    private long groupedPageFlushes;
+    private long pageFlushBatches;
+    private long pageFlushPages;
     private long skippedForceBatches;
 
     synchronized void recordLogForcedThrough(DelosLogSequenceNumber lsn) {
@@ -56,8 +56,9 @@ final class MvccBufferFlushCoordinator {
             return;
         }
         volume.force();
-        groupCommitBatches++;
-        groupedPageFlushes += flushedPages;
+        MvccCommitDurabilityMetrics.recordPageVolumeForce(flushedPages);
+        pageFlushBatches++;
+        pageFlushPages += flushedPages;
     }
 
     synchronized Snapshot snapshot() {
@@ -65,8 +66,8 @@ final class MvccBufferFlushCoordinator {
                 durableLogLsn,
                 walBeforeFlushChecks,
                 walBeforeFlushFailures,
-                groupCommitBatches,
-                groupedPageFlushes,
+                pageFlushBatches,
+                pageFlushPages,
                 skippedForceBatches);
     }
 
@@ -74,8 +75,8 @@ final class MvccBufferFlushCoordinator {
             long durableLogLsn,
             long walBeforeFlushChecks,
             long walBeforeFlushFailures,
-            long groupCommitBatches,
-            long groupedPageFlushes,
+            long pageFlushBatches,
+            long pageFlushPages,
             long skippedForceBatches) {
     }
 }

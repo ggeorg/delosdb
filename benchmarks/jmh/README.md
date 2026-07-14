@@ -135,3 +135,39 @@ that JDK 25 was used, and that every primary score is finite.
 - `delosdb.jmh.jvmArgs` — separate multiple arguments with `;;`, preserving commas inside an argument
 
 The build pins JMH `1.37` and the Gradle JMH plugin `0.7.3`.
+
+## Concurrent commit durability benchmark
+
+The standalone build also includes a public-JDBC concurrency runner for Phase 7:
+
+```bash
+./gradlew -p benchmarks/jmh runConcurrentCommitBenchmark
+```
+
+It measures commit throughput and p50/p95/p99 latency for same-table,
+different-table, and different-database writers. DelosDB's
+`org.apache.derby.delosdb.mvcc.Commit` JFR event supplies table-lock waits,
+backup-boundary waits, per-table and process-wide durability concurrency,
+force counts, and logical pages/bytes covered by force calls without exposing
+implementation APIs to the benchmark. It also verifies insert row counts,
+commit-event transaction and changed-row identities, and the final contents of
+every updated fixture row. The runner deliberately records one JFR event per
+commit, so reported absolute throughput includes that diagnostic cost.
+
+Configuration uses Gradle properties:
+
+```text
+delosdb.concurrentCommit.writers
+delosdb.concurrentCommit.topologies
+delosdb.concurrentCommit.operations
+delosdb.concurrentCommit.rowsPerTransaction
+delosdb.concurrentCommit.transactionsPerWriter
+delosdb.concurrentCommit.warmupTransactionsPerWriter
+delosdb.concurrentCommit.databaseRoot
+delosdb.concurrentCommit.keepJfr
+```
+
+Reports are written under `build/reports/concurrent-commit`. The benchmark is
+external validation: it is not part of the root build, the root `check`, or S0.
+The standalone benchmark build's own `check` task compiles this runner and
+verifies that it uses only the public JDBC boundary.

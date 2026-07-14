@@ -168,6 +168,7 @@ public final class MvccIndexStore implements AutoCloseable {
         byte[] encoded = MvccIndexTupleCodec.encode(indexKey, tuple);
         appendEncoded(encoded);
         pageVolume.force();
+        MvccCommitDurabilityMetrics.recordPageVolumeForce(1L);
     }
 
     private void appendEncoded(byte[] encoded) throws IOException {
@@ -213,7 +214,9 @@ public final class MvccIndexStore implements AutoCloseable {
         for (Candidate candidate : retained) {
             appendEncoded(MvccIndexTupleCodec.encode(candidate.indexKey(), candidate.tuple()));
         }
+        long rewrittenPages = pageVolume.pageCount();
         pageVolume.force();
+        MvccCommitDurabilityMetrics.recordPageVolumeForce(rewrittenPages);
     }
 
     private static MvccIndexTuple keyedTuple(String indexName, Object indexKey, MvccIndexTuple tuple) {

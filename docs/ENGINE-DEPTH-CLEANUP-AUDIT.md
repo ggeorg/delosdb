@@ -143,7 +143,8 @@ Delivered cleanup overlay:
 The Phase L/M compromise fixes added useful counters, but the terminology is now
 mixed:
 
-- WAL batch vs group commit
+- WAL transaction batch vs page-volume force batch (coordinator terminology
+  normalized in Phase 7.1)
 - page-volume force batch vs transaction WAL batch
 - replay plan vs subsystem completeness
 - `ForTesting` suffixes in diagnostics-facing counters

@@ -97,6 +97,7 @@ public final class MvccOrderedIndexPageStore implements AutoCloseable {
             }
             replacementPageCount = replacement.pageCount();
             replacement.force();
+            MvccCommitDurabilityMetrics.recordPageVolumeForce(replacementPageCount);
             replacement.close();
             replacementClosed = true;
 

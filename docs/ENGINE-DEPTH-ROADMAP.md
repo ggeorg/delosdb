@@ -319,7 +319,7 @@ pin/unpin remains JMM-safe under contention
 bounded eviction chooses only evictable pages
 WAL-before-flush invariant prevents dirty page publication before covering log records are forced
 dirty-page flush scheduling integrates with checkpoints
-group commit batches compatible fsync work
+page-flush batches combine compatible dirty-page force work
 flush ordering is deterministic enough for tests and observable diagnostics
 Phase L recovery replay harness remains a standing gate for buffer-manager changes
 ```
@@ -330,7 +330,7 @@ Not allowed:
 no dirty page reaches disk before its covering WAL/sidecar record is durable
 no eviction of pinned pages
 no checkpoint metadata that lies about unflushed dirty pages
-no group-commit batching that changes commit visibility semantics
+no page-flush batching that changes commit visibility semantics
 no heap page-format or raw-log changes
 ```
 
@@ -341,7 +341,7 @@ pin prevents eviction under concurrent readers and writers
 unpin allows eviction
 dirty page enters flush scheduling
 WAL-before-flush violation is detected by a fault-injection test
-group commit reduces forced-write count under batched commits without changing visibility
+page-flush batching reduces page-volume force count for dirty pages without changing visibility
 checkpoint/reopen remains clean under buffer pressure
 Phase L recovery replay tests rerun after buffer-manager changes
 ```

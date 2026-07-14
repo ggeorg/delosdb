@@ -43,8 +43,8 @@ final class MvccBufferWorkloadInvariantTest {
         assertEquals(pageCount, cache.flushAll(volume, coordinator));
         assertEquals(pageCount, volume.writeCount);
         assertEquals(1L, volume.forceCount);
-        assertEquals(1L, coordinator.snapshot().groupCommitBatches());
-        assertEquals(pageCount, coordinator.snapshot().groupedPageFlushes());
+        assertEquals(1L, coordinator.snapshot().pageFlushBatches());
+        assertEquals(pageCount, coordinator.snapshot().pageFlushPages());
 
         for (int pass = 0; pass < 2; pass++) {
             for (int pageId = 0; pageId < pageCount; pageId++) {
