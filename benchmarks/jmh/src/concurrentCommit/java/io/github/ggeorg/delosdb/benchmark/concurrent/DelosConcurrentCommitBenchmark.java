@@ -450,13 +450,13 @@ public final class DelosConcurrentCommitBenchmark {
     private static void writeJson(Path path, Config config, List<Result> results) throws IOException {
         try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8))) {
             writer.println("{");
-            writer.println("  \"generatedAt\": \"" + json(Instant.now().toString()) + "\",");
-            writer.println("  \"javaVersion\": \"" + json(System.getProperty("java.version")) + "\",");
+            writer.println("  \"generatedAt\": \"" + jsonEscape(Instant.now().toString()) + "\",");
+            writer.println("  \"javaVersion\": \"" + jsonEscape(System.getProperty("java.version")) + "\",");
             writer.println("  \"transactionsPerWriter\": " + config.transactionsPerWriter() + ',');
             writer.println("  \"warmupTransactionsPerWriter\": "
                     + config.warmupTransactionsPerWriter() + ',');
             writer.println("  \"databaseRoot\": \""
-                    + json(config.databaseRoot().toString()) + "\",");
+                    + jsonEscape(config.databaseRoot().toString()) + "\",");
             writer.println("  \"results\": [");
             for (int index = 0; index < results.size(); index++) {
                 writer.print(results.get(index).json("    "));
@@ -502,7 +502,7 @@ public final class DelosConcurrentCommitBenchmark {
         }
     }
 
-    private static String json(String value) {
+    private static String jsonEscape(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
@@ -1039,7 +1039,7 @@ public final class DelosConcurrentCommitBenchmark {
                     + next + "\"pageVolumeBytesCovered\": " + jfr.pageVolumeBytesCovered() + ",\n"
                     + next + "\"backupWaitNanos\": " + jfr.backupWaitNanos() + ",\n"
                     + next + "\"durabilityCoordinatorMode\": \""
-                    + json(jfr.durabilityCoordinatorMode()) + "\",\n"
+                    + jsonEscape(jfr.durabilityCoordinatorMode()) + "\",\n"
                     + next + "\"maxDurabilityEnrollmentDepth\": "
                     + jfr.maxDurabilityEnrollmentDepth() + ",\n"
                     + next + "\"tableLockWaitNanos\": " + jfr.tableLockWaitNanos() + ",\n"
