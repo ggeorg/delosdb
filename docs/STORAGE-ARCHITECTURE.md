@@ -96,11 +96,24 @@ The bridge exposes an explicit isolation policy for MVCC scans:
 READ COMMITTED and weaker
   fresh statement-scoped read view
 
-REPEATABLE READ / SERIALIZABLE
+REPEATABLE READ
   transaction-scoped stable read view
+
+SERIALIZABLE
+  transaction-scoped stable read view for Derby/JDBC compatibility
+  no full-serializability guarantee for delos_mvcc
 ```
 
-The policy is intentionally documented in storage-bridge code rather than hidden as a private condition inside scan logic. SQL integration tests verify statement refresh for `READ COMMITTED`, stable visibility for `REPEATABLE READ`, read-your-writes behavior, and historical page-backed snapshot use.
+The policy is intentionally documented in storage-bridge code rather than
+hidden as a private condition inside scan logic. SQL integration tests verify
+statement refresh for `READ COMMITTED`, stable visibility for `REPEATABLE READ`,
+read-your-writes behavior, historical page-backed snapshot use, and the current
+`SERIALIZABLE` write-skew limitation.
+
+`delos_mvcc` currently has no predicate or range locking, SSI dangerous-
+structure detection, or serialization-failure protocol. Full serializability
+must be implemented deliberately in a later phase or exposed as unsupported;
+it must not be inferred from the current JDBC isolation name.
 
 ## Object deserialization boundary
 

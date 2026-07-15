@@ -307,9 +307,9 @@ Prepared same-table commits now form bounded leader/follower groups. One group
 shares the forced COMMITTED transaction-status append and performs one final
 ordered-index rebuild after individual member page-state persistence.
 
-Normal mode is `group`. Temporary differential and rollback modes are available
-through `-Ddelosdb.mvcc.commit.mode=direct` and
-`-Ddelosdb.mvcc.commit.mode=queued`.
+Normal production mode is `group`. The former
+`delosdb.mvcc.commit.mode` JVM property is retired. `direct` and `queued` remain
+package-private construction modes for focused differential tests only.
 
 The commit event and benchmark report group identity, group size, leader status,
 group wait, shared force count, and leader/follower failures. The authoritative
@@ -368,3 +368,11 @@ close all use the named database mutation boundary. A backup of one database no
 longer stalls commits in another database. Writer wait and backup start/end
 commit counters are documented in
 `docs/PHASE-7-DATABASE-BACKUP-COORDINATION.md`.
+
+## Phase 7 closeout
+
+The concurrent commit plan is complete through database-scoped backup
+coordination. Production construction now fixes the commit coordinator to group
+mode; comparison modes remain test-only. The current `SERIALIZABLE` mapping is
+also documented and tested as transaction-snapshot visibility rather than full
+serializability. See `docs/PHASE-7-CLOSEOUT.md`.

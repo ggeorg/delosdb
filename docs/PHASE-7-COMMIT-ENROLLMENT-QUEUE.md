@@ -31,9 +31,9 @@ QUEUED
     bounded FIFO enrollment followed by one-at-a-time publication
 ```
 
-Normal tables use `QUEUED`. `DIRECT` is retained temporarily for differential
-proof only. Both modes call the same commit-publication code; there are not two
-commit engines.
+During this transition slice, normal tables used `QUEUED` and `DIRECT` was
+retained for differential proof. Both modes called the same commit-publication
+code; there were never two commit engines.
 
 The comparison mode verifies identical:
 
@@ -110,7 +110,7 @@ the transaction enrolls, including the currently publishing transaction.
 The benchmark reports:
 
 ```text
-coordinatorMode=<direct|queued>
+coordinatorMode=<direct|queued|group>
 enrollmentDepth=<maximum observed depth>
 ```
 
@@ -198,8 +198,8 @@ change backup, vacuum, purge, SQL, JDBC, DRDA, or catalog behavior
 
 The bounded queue now feeds a leader/follower group mode. Multiple prepared
 transactions share one forced COMMITTED status append and one final ordered-
-index rebuild. Direct and one-at-a-time queued modes remain available for
-comparison. See:
+index rebuild. Production construction uses group mode. Direct and one-at-a-
+time queued modes remain package-private focused-test choices only. See:
 
 ```text
 docs/PHASE-7-TRANSACTION-GROUP-COMMIT.md

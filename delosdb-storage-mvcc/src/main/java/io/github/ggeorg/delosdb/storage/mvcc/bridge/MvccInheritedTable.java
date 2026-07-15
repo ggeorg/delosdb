@@ -93,7 +93,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
-        this(segmentId, containerId, databaseDirectory, configuredCommitCoordinatorMode());
+        this(segmentId, containerId, databaseDirectory, MvccCommitCoordinator.Mode.GROUP);
     }
 
     private static DelosStorageBackupCoordinator isolatedBackupCoordinator(
@@ -104,17 +104,6 @@ final class MvccInheritedTable implements DelosStorageTable,
                 ? storageId(segmentId, containerId)
                 : databaseDirectory.toAbsolutePath().normalize() + ":" + storageId(segmentId, containerId);
         return DelosStorageBackupCoordinator.isolatedDatabase(description).coordinator();
-    }
-
-    static MvccCommitCoordinator.Mode configuredCommitCoordinatorMode() {
-        String configured = System.getProperty("delosdb.mvcc.commit.mode", "group").trim().toLowerCase();
-        return switch (configured) {
-            case "group" -> MvccCommitCoordinator.Mode.GROUP;
-            case "direct" -> MvccCommitCoordinator.Mode.DIRECT;
-            case "queued" -> MvccCommitCoordinator.Mode.QUEUED;
-            default -> throw new IllegalArgumentException(
-                    "unsupported delosdb.mvcc.commit.mode: " + configured);
-        };
     }
 
     MvccInheritedTable(
@@ -128,7 +117,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 segmentId,
                 containerId,
                 databaseDirectory,
-                configuredCommitCoordinatorMode(),
+                MvccCommitCoordinator.Mode.GROUP,
                 MvccCommitCoordinator.DEFAULT_CAPACITY,
                 MvccCommitCoordinator.DEFAULT_MAX_GROUP_SIZE,
                 MvccCommitCoordinator.DEFAULT_MAX_GROUP_DELAY_NANOS,

@@ -52,11 +52,24 @@ The MVCC bridge uses an explicit read-view policy:
 READ COMMITTED and weaker
   statement-scoped current read view
 
-REPEATABLE READ / SERIALIZABLE
+REPEATABLE READ
   transaction-scoped stable read view
+
+SERIALIZABLE
+  Derby/JDBC compatibility mapping to the same transaction-scoped snapshot
+  not a full-serializability guarantee for delos_mvcc
 ```
 
-This is a storage-engine behavior checkpoint, not new SQL syntax. Applications continue to use Derby/JDBC transaction isolation controls.
+The current `delos_mvcc` implementation has no predicate locks, range locks,
+SSI conflict tracking, or serialization-failure protocol. Two transactions can
+therefore read the same invariant, update disjoint rows, and both commit a
+write-skew outcome. `MvccSqlSerializableSemanticsTest` is the executable truth
+gate for this limitation.
+
+Applications continue to use Derby/JDBC transaction isolation controls, but
+must not rely on `Connection.TRANSACTION_SERIALIZABLE` to prevent write skew or
+phantoms on `delos_mvcc` tables. True serializability is a separate architecture
+phase.
 
 ## Consistency diagnostics
 

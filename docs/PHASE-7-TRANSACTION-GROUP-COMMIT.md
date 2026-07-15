@@ -41,23 +41,26 @@ all-subsystem group fence.
 
 ## Modes and comparison boundary
 
-Normal execution uses group mode. A temporary synchronous comparison path is
-available through:
-
-```text
--Ddelosdb.mvcc.commit.mode=direct
-```
-
-Accepted values are:
+Normal production construction always uses group mode:
 
 ```text
 group   bounded leader/follower grouping
+```
+
+The former JVM property `delosdb.mvcc.commit.mode` is retired. Production code
+no longer reads it, so deployment configuration cannot silently select the
+older paths.
+
+The coordinator still has package-private `DIRECT` and `QUEUED` modes for
+focused differential tests:
+
+```text
 direct  one synchronous commit under the former fair lock
 queued  bounded FIFO enrollment with group size one
 ```
 
-All modes execute the same publication implementation. The direct mode exists
-for differential proof and rollback while Phase 7.5 is being completed.
+All modes execute the same publication implementation. The comparison modes
+are test construction choices, not supported production configuration.
 
 ## Ordering
 
@@ -216,15 +219,20 @@ This proves the required Phase 7.5 cases for partial preparation failure,
 leader/shared-force failure, backup start with queued commits, and shutdown with
 queued commits.
 
-## Remaining Phase 7.5 work
+## Phase 7.5 closeout
 
-This slice still does not share WAL, prepared-payload, outcome, main-page,
-checkpoint, or subsystem-recovery forces. The next force-sharing slice must
-preserve the existing per-transaction outcome fence and all-or-none recovery
-proof while combining an additional physical force boundary.
+The planned Phase 7 transaction group-commit requirement is complete: prepared
+same-table commits form bounded groups, share a real durability operation,
+retain individual results, propagate shared failures honestly, drain during
+shutdown, and coordinate with backup.
 
-The temporary `direct` and `queued` comparison modes remain until that broader
-shared-fence work has differential and crash proof.
+WAL, prepared-payload, outcome, main-page, checkpoint, and subsystem-recovery
+forces remain individually fenced. Sharing any of those boundaries is a future
+throughput optimization, not unfinished Phase 7 scope, and requires new crash
+proof before a force is removed.
+
+`DIRECT` and `QUEUED` remain package-private test modes only. Production table
+construction always selects `GROUP`.
 
 
 ## Database-scoped backup ownership

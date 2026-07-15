@@ -220,9 +220,10 @@ at the same transaction boundary. See
 
 ## Bounded enrollment follow-up
 
-Prepared commits now enter a bounded FIFO before individual durability
-publication. Normal execution uses queued mode; the former direct fair-lock mode
-is retained temporarily for differential tests only. See:
+Prepared commits next entered a bounded FIFO before individual durability
+publication. That transition used queued mode while the former direct fair-lock
+mode was retained for differential tests. Production construction now uses
+group mode; direct and queued remain package-private focused-test choices. See:
 
 ```text
 docs/PHASE-7-COMMIT-ENROLLMENT-QUEUE.md

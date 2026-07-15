@@ -34,10 +34,12 @@ import org.apache.derby.iapi.store.access.TransactionController;
  * mapping here prevents future changes from hiding the isolation contract in a
  * boolean expression inside the scan controller.</p>
  *
- * <p>This policy is a read-view selection policy only. It does not introduce
- * new predicate-lock, range-lock, or phantom-prevention semantics; those remain
- * the responsibility of Derby's access/locking layers and must not be inferred
- * from the SERIALIZABLE-to-transaction-snapshot mapping alone.</p>
+ * <p>For {@code delos_mvcc}, the SERIALIZABLE mapping is a Derby/JDBC
+ * compatibility mapping to transaction-snapshot visibility. It is not a claim
+ * of full serializability. This policy does not provide predicate locks, range
+ * locks, SSI conflict tracking, write-skew prevention, or a serialization-
+ * failure protocol. True serializability requires a separate architecture
+ * decision and must not be inferred from this read-view mapping.</p>
  */
 final class MvccBridgeIsolationPolicy {
     private final int derbyIsolationLevel;
