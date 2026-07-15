@@ -704,6 +704,11 @@ registerDelosFocusedTest(
         'Runs the delos_mvcc SERIALIZABLE transaction-snapshot truth gate.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSerializableSemanticsTest.class'])
 
+registerDelosFocusedTest(
+        'runDelosMvccSqlLongRowBoundaryTest',
+        'Runs the MVCC long-row overflow, compress-table, and reopen lifecycle proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class'])
+
 
 registerDelosFocusedTest(
         'runDelosMvccStoragePathDiagnosticsRuntimeTest',

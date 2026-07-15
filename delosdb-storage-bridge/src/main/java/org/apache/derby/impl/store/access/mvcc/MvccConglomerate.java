@@ -50,6 +50,7 @@ import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.DelosStorageStore;
+import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 import org.apache.derby.iapi.store.types.StoreDataValueBase;
@@ -110,6 +111,7 @@ public final class MvccConglomerate
 
     @Override
     public void drop(TransactionManager xactManager) {
+        DelosStorageTransactionRegistry.abortTableParticipants(state.table());
         state.dropDurableState();
         MvccConglomerateState removed = STATES.remove(new StateIdentity(databaseDirectory, id));
         if (removed != null) {

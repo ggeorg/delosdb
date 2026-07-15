@@ -156,6 +156,37 @@ public final class DelosStorageTransactionRegistry {
         rethrowFailure(failure);
     }
 
+    /**
+     * Abort and detach every transaction participant that belongs to a table
+     * which is about to be physically retired.
+     *
+     * <p>Derby table maintenance can replace a conglomerate inside a larger
+     * transaction. The old provider table must release its reader snapshots and
+     * writer transactions before its files and runtime state are closed, while
+     * participants for the replacement table must remain enrolled for the
+     * enclosing Derby commit.</p>
+     *
+     * <p>Every participant is attempted. Successfully aborted participants are
+     * removed from their owner transaction. Failed participants remain
+     * registered so the caller can retry or fail the physical retirement
+     * without silently losing cleanup ownership.</p>
+     */
+    public static void abortTableParticipants(DelosStorageTable table) {
+        DelosStorageTable requiredTable = Objects.requireNonNull(table, "table");
+        Throwable failure = null;
+        for (Writer writer : writersForTable(requiredTable)) {
+            failure = completeParticipant(failure, writer::abort, () -> complete(writer));
+        }
+        for (OwnedReader ownedReader : readersForTable(requiredTable)) {
+            Reader reader = ownedReader.reader();
+            failure = completeParticipant(
+                    failure,
+                    reader::close,
+                    () -> completeReader(ownedReader.ownerTransaction(), reader));
+        }
+        rethrowFailure(failure);
+    }
+
     private static Throwable completeParticipant(
             Throwable failure,
             Runnable operation,
@@ -270,6 +301,29 @@ public final class DelosStorageTransactionRegistry {
             return List.of();
         }
         return List.copyOf(readers.values());
+    }
+
+    private static synchronized List<Writer> writersForTable(DelosStorageTable table) {
+        List<Writer> matching = new ArrayList<>();
+        for (List<Writer> writers : WRITERS.values()) {
+            for (Writer writer : writers) {
+                if (!writer.completed && writer.table == table) {
+                    matching.add(writer);
+                }
+            }
+        }
+        return List.copyOf(matching);
+    }
+
+    private static synchronized List<OwnedReader> readersForTable(DelosStorageTable table) {
+        List<OwnedReader> matching = new ArrayList<>();
+        for (Map.Entry<Object, Map<DelosStorageTable, Reader>> entry : READERS.entrySet()) {
+            Reader reader = entry.getValue().get(table);
+            if (reader != null && !reader.completed) {
+                matching.add(new OwnedReader(entry.getKey(), reader));
+            }
+        }
+        return List.copyOf(matching);
     }
 
     private static synchronized void completeReader(Object ownerTransaction, Reader reader) {
@@ -396,6 +450,13 @@ public final class DelosStorageTransactionRegistry {
             if (!completed && table instanceof DelosStorageSavepointParticipant participant) {
                 participant.releaseSavepoint(transaction, savepointName);
             }
+        }
+    }
+
+    private record OwnedReader(Object ownerTransaction, Reader reader) {
+        private OwnedReader {
+            Objects.requireNonNull(ownerTransaction, "ownerTransaction");
+            Objects.requireNonNull(reader, "reader");
         }
     }
 

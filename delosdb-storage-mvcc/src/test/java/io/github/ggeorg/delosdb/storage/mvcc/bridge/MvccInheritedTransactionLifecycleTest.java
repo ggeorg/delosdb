@@ -228,6 +228,59 @@ final class MvccInheritedTransactionLifecycleTest {
 
 
     @Test
+    void physicalTableRetirementAbortsOnlyItsParticipants() {
+        Object owner = new Object();
+        FailingLifecycleTable retired = new FailingLifecycleTable(false, false);
+        FailingLifecycleTable replacement = new FailingLifecycleTable(false, false);
+
+        DelosStorageTransactionRegistry.register(owner, retired, retired.beginTransaction());
+        DelosStorageTransactionRegistry.reader(owner, retired);
+        DelosStorageTransactionRegistry.register(owner, replacement, replacement.beginTransaction());
+        DelosStorageTransactionRegistry.reader(owner, replacement);
+
+        assertEquals(4, DelosStorageTransactionRegistry.pendingCountForTesting(owner));
+        DelosStorageTransactionRegistry.abortTableParticipants(retired);
+
+        assertEquals(2, retired.abortCount,
+                "retiring a physical table must release both its writer and reader snapshot");
+        assertEquals(0, retired.commitCount);
+        assertEquals(2, DelosStorageTransactionRegistry.pendingCountForTesting(owner),
+                "replacement-table participants must remain enrolled in the Derby transaction");
+
+        DelosStorageTransactionRegistry.commit(owner);
+
+        assertEquals(1, replacement.commitCount);
+        assertEquals(1, replacement.abortCount,
+                "the replacement table reader must close at the normal Derby commit boundary");
+        assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(owner));
+    }
+
+    @Test
+    void failedPhysicalTableRetirementKeepsCleanupOwnershipForRetry() {
+        Object owner = new Object();
+        FailingLifecycleTable retired = new FailingLifecycleTable(false, true);
+
+        DelosStorageTransactionRegistry.register(owner, retired, retired.beginTransaction());
+        DelosStorageTransactionRegistry.reader(owner, retired);
+
+        RuntimeException failure = assertThrows(
+                RuntimeException.class,
+                () -> DelosStorageTransactionRegistry.abortTableParticipants(retired));
+
+        assertEquals("abort failure", failure.getMessage());
+        assertEquals(1, failure.getSuppressed().length,
+                "retirement must attempt both the writer and reader participant");
+        assertEquals(2, DelosStorageTransactionRegistry.pendingCountForTesting(owner),
+                "failed participants must remain registered for an explicit retry");
+
+        retired.failAbort = false;
+        DelosStorageTransactionRegistry.abortTableParticipants(retired);
+        assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(owner));
+        assertEquals(4, retired.abortCount,
+                "each participant must be attempted once per retirement attempt");
+    }
+
+    @Test
     void failedReaderSnapshotCreationAbortsTheUnregisteredReadOnlyTransaction() {
         Object owner = new Object();
         FailingLifecycleTable table = new FailingLifecycleTable(false, false);
