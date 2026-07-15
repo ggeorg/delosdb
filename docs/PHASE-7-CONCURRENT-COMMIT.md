@@ -18,7 +18,7 @@ begin transaction
     force ACTIVE transaction-status record
 
 commit request
-    wait for process-level backup mutation guard
+    wait for database-scoped backup mutation guard
     wait for inherited-table write lock
     validate changed rows
     force COMMITTED transaction-status record
@@ -357,3 +357,14 @@ wakeups and periodic idle-table scans are deduplicated and prioritized by
 visibility debt and obsolete-version growth. The table remains the authority
 for reader-horizon, backup-boundary, and vacuum safety. See
 `PHASE-7-DATABASE-MAINTENANCE-SERVICE.md`.
+
+
+## Phase 7.7 database-scoped backup boundary
+
+The original process-wide freeze has been replaced by one coordinator per
+normalized database identity. Durable `ACTIVE`, `COMMITTED`, and `ABORTED`
+status writes, page/index publication, vacuum, maintenance, drop, and table
+close all use the named database mutation boundary. A backup of one database no
+longer stalls commits in another database. Writer wait and backup start/end
+commit counters are documented in
+`docs/PHASE-7-DATABASE-BACKUP-COORDINATION.md`.

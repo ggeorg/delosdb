@@ -101,8 +101,10 @@ final class DelosMvccBackupSidecarSupport {
             files.removeDirectory(backupMvccDirectory);
         }
 
-        try (DelosStorageBackupCoordinator.Guard ignored =
-                     DelosStorageBackupCoordinator.enterBackupSnapshot()) {
+        try (DelosStorageBackupCoordinator.DatabaseLease coordinatorLease =
+                     backupCoordinatorLease();
+             DelosStorageBackupCoordinator.Guard ignored =
+                     coordinatorLease.coordinator().enterBackupSnapshot()) {
             copyCoordinatedSnapshot(sourceMvccDirectory, backupMvccDirectory);
             SidecarBackupManifest backupManifest = SidecarBackupManifest.from(backupMvccDirectory);
             writeBackupManifest(backupcopy, backupManifest);
@@ -116,6 +118,15 @@ final class DelosMvccBackupSidecarSupport {
      * by {@link DelosStorageBackupCoordinator}. Cross-subsystem page, outcome,
      * recovery, checkpoint, and WAL files therefore belong to one boundary.
      */
+    private DelosStorageBackupCoordinator.DatabaseLease backupCoordinatorLease()
+            throws StandardException {
+        try {
+            return DelosStorageBackupCoordinator.openDatabase(storageFactory.getCanonicalName());
+        } catch (IOException | RuntimeException e) {
+            throw StandardException.plainWrapException(e);
+        }
+    }
+
     private static void copyCoordinatedSnapshot(File sourceDirectory, File targetDirectory)
             throws StandardException {
         try {

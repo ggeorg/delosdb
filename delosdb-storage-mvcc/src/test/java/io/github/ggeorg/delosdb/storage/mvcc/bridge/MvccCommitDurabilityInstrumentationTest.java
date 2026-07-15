@@ -89,7 +89,7 @@ final class MvccCommitDurabilityInstrumentationTest {
             Future<?> firstCommit;
             Future<?> secondCommit;
             try (DelosStorageBackupCoordinator.Guard ignored =
-                         DelosStorageBackupCoordinator.enterBackupSnapshot()) {
+                         table.backupCoordinatorForTesting().enterBackupSnapshot()) {
                 firstCommit = executor.submit(() -> commitAfterStart(table, first, ready, start));
                 secondCommit = executor.submit(() -> commitAfterStart(table, second, ready, start));
                 assertTrue(ready.await(5L, TimeUnit.SECONDS));

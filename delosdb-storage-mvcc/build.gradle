@@ -1225,6 +1225,8 @@ def delosMvccLifecycleProofTasks = [
          'Runs Phase 7.5 group-commit failure, backup, and shutdown hardening tests.'],
         ['runMvccDatabaseMaintenanceServiceTest', '**/MvccDatabaseMaintenanceServiceTest.class',
          'Runs the Phase 7.6 database-owned MVCC maintenance service tests.'],
+        ['runMvccDatabaseBackupCoordinatorTest', '**/MvccDatabaseBackupCoordinatorTest.class',
+         'Runs the Phase 7.7 database-scoped backup coordination and writer-stall tests.'],
         ['runMvccTransactionSidecarForceBatchTest', '**/MvccTransactionSidecarForceBatchTest.class',
          'Runs the Phase 7.7 transaction sidecar force-batch and torn-tail recovery tests.'],
         ['runMvccAttributeOverflowRowPayloadCodecTest', '**/MvccAttributeOverflowRowPayloadCodecTest.class',

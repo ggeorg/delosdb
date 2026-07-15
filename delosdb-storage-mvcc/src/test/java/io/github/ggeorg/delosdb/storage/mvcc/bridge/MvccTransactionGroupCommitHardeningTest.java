@@ -145,7 +145,7 @@ final class MvccTransactionGroupCommitHardeningTest {
         Future<?> secondCommit;
         Future<?> close;
         try (DelosStorageBackupCoordinator.Guard ignored =
-                     DelosStorageBackupCoordinator.enterBackupSnapshot()) {
+                     table.backupCoordinatorForTesting().enterBackupSnapshot()) {
             firstCommit = executor.submit(() -> commitAfterSignal(table, first, ready, start));
             secondCommit = executor.submit(() -> commitAfterSignal(table, second, ready, start));
             assertTrue(ready.await(30L, TimeUnit.SECONDS));

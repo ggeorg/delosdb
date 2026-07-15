@@ -63,6 +63,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final MvccTransactionManager transactions;
     private final MvccPurgeDaemon purgeDaemon = new MvccPurgeDaemon();
     private final MvccDatabaseMaintenanceService maintenanceService;
+    private final DelosStorageBackupCoordinator backupCoordinator;
     private final MvccDatabaseMaintenanceService.Registration maintenanceRegistration;
     private final boolean ownsMaintenanceService;
     private final Consumer<MvccInheritedTable> closeCallback;
@@ -95,6 +96,16 @@ final class MvccInheritedTable implements DelosStorageTable,
         this(segmentId, containerId, databaseDirectory, configuredCommitCoordinatorMode());
     }
 
+    private static DelosStorageBackupCoordinator isolatedBackupCoordinator(
+            long segmentId,
+            long containerId,
+            Path databaseDirectory) {
+        String description = databaseDirectory == null
+                ? storageId(segmentId, containerId)
+                : databaseDirectory.toAbsolutePath().normalize() + ":" + storageId(segmentId, containerId);
+        return DelosStorageBackupCoordinator.isolatedDatabase(description).coordinator();
+    }
+
     static MvccCommitCoordinator.Mode configuredCommitCoordinatorMode() {
         String configured = System.getProperty("delosdb.mvcc.commit.mode", "group").trim().toLowerCase();
         return switch (configured) {
@@ -111,6 +122,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             long containerId,
             Path databaseDirectory,
             MvccDatabaseMaintenanceService maintenanceService,
+            DelosStorageBackupCoordinator backupCoordinator,
             Consumer<MvccInheritedTable> closeCallback) {
         this(
                 segmentId,
@@ -122,6 +134,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 MvccCommitCoordinator.DEFAULT_MAX_GROUP_DELAY_NANOS,
                 SharedStatusForceHook.NOOP,
                 maintenanceService,
+                backupCoordinator,
                 false,
                 closeCallback);
     }
@@ -161,6 +174,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 maxGroupDelayNanos,
                 sharedStatusForceHook,
                 new MvccDatabaseMaintenanceService(databaseDirectory),
+                isolatedBackupCoordinator(segmentId, containerId, databaseDirectory),
                 true,
                 ignored -> { });
     }
@@ -175,6 +189,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             long maxGroupDelayNanos,
             SharedStatusForceHook sharedStatusForceHook,
             MvccDatabaseMaintenanceService maintenanceService,
+            DelosStorageBackupCoordinator backupCoordinator,
             boolean ownsMaintenanceService,
             Consumer<MvccInheritedTable> closeCallback) {
         this.segmentId = segmentId;
@@ -194,6 +209,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 coordinatorMode, coordinatorCapacity, maxGroupSize, maxGroupDelayNanos);
         this.sharedStatusForceHook = Objects.requireNonNull(sharedStatusForceHook, "sharedStatusForceHook");
         this.maintenanceService = Objects.requireNonNull(maintenanceService, "maintenanceService");
+        this.backupCoordinator = Objects.requireNonNull(backupCoordinator, "backupCoordinator");
         this.ownsMaintenanceService = ownsMaintenanceService;
         this.closeCallback = Objects.requireNonNull(closeCallback, "closeCallback");
         loadCommittedState();
@@ -202,7 +218,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public DelosStorageTransaction beginTransaction() {
-        return writeLocked(() -> {
+        return durableMutationLocked(DelosStorageBackupCoordinator.Mutation.TRANSACTION_BEGIN, () -> {
             MvccCommitDurabilityMetrics.Scope durabilityScope =
                     MvccCommitDurabilityMetrics.begin(MvccCommitJfr.enabled());
             try {
@@ -496,7 +512,8 @@ final class MvccInheritedTable implements DelosStorageTable,
         }
         long backupWaitStarted = observe ? System.nanoTime() : 0L;
         try (DelosStorageBackupCoordinator.Guard ignored =
-                     DelosStorageBackupCoordinator.enterDurableMutation()) {
+                     backupCoordinator.enterDurableMutation(
+                             DelosStorageBackupCoordinator.Mutation.COMMIT_PUBLICATION)) {
             long backupWaitNanos = observe ? System.nanoTime() - backupWaitStarted : 0L;
             MvccCommitMetrics.Concurrency executionConcurrency = observe
                     ? commitMetrics.enterDurabilityExecution()
@@ -605,6 +622,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             sequences = transactions.commitBatch(survivingCommits.stream()
                     .map(MvccPreparedCommit::transaction)
                     .toList());
+            backupCoordinator.recordCommittedTransactions(survivors.size());
         } catch (RuntimeException | Error failure) {
             sharedDurability = sharedScope.finish();
             for (int survivor : survivors) {
@@ -726,7 +744,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public void abort(DelosStorageTransaction transaction) {
-        writeLocked(() -> {
+        durableMutationLocked(DelosStorageBackupCoordinator.Mutation.TRANSACTION_ABORT, () -> {
             MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
             try {
                 transactions.abort(handle.nativeTransaction());
@@ -773,7 +791,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     private void runScheduledMaintenance(MvccDatabaseMaintenanceService.Trigger trigger) {
-        durableMutationLocked(() -> {
+        durableMutationLocked(DelosStorageBackupCoordinator.Mutation.ASYNCHRONOUS_MAINTENANCE, () -> {
             if (closed.get()) {
                 return;
             }
@@ -861,7 +879,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public void dropDurableState() {
-        durableMutationLocked(() -> {
+        durableMutationLocked(DelosStorageBackupCoordinator.Mutation.DROP_DURABLE_STATE, () -> {
             indexMaintenance.clear();
             try {
                 pageVolumeStateStore.drop();
@@ -1642,7 +1660,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public DelosVacuumOutcome vacuumSafely() {
-        return durableMutationLocked(() -> {
+        return durableMutationLocked(DelosStorageBackupCoordinator.Mutation.VACUUM, () -> {
             lastVacuumOutcome = vacuumOutcome(pageVolumeStateStore.vacuumSafely(hasRetainedInheritedSnapshot()));
             return lastVacuumOutcome;
         });
@@ -1669,7 +1687,9 @@ final class MvccInheritedTable implements DelosStorageTable,
         }
         maintenanceRegistration.close();
         try {
-            durableMutationLocked(pageVolumeStateStore::close);
+            durableMutationLocked(
+                    DelosStorageBackupCoordinator.Mutation.TABLE_CLOSE,
+                    pageVolumeStateStore::close);
         } finally {
             closeCallback.accept(this);
         }
@@ -1677,6 +1697,10 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     MvccDatabaseMaintenanceService maintenanceServiceForTesting() {
         return maintenanceService;
+    }
+
+    DelosStorageBackupCoordinator backupCoordinatorForTesting() {
+        return backupCoordinator;
     }
 
 
@@ -1725,7 +1749,8 @@ final class MvccInheritedTable implements DelosStorageTable,
             MvccInheritedHandles.Transaction handle,
             RuntimeException failure) {
         try (DelosStorageBackupCoordinator.Guard ignored =
-                     DelosStorageBackupCoordinator.enterDurableMutation()) {
+                     backupCoordinator.enterDurableMutation(
+                             DelosStorageBackupCoordinator.Mutation.PREPARATION_FAILURE_CLEANUP)) {
             writeLock.lock();
             try {
                 if (!activeTransactions.contains(handle)) {
@@ -1927,16 +1952,20 @@ final class MvccInheritedTable implements DelosStorageTable,
         }
     }
 
-    private <T> T durableMutationLocked(Supplier<T> operation) {
+    private <T> T durableMutationLocked(
+            DelosStorageBackupCoordinator.Mutation mutation,
+            Supplier<T> operation) {
         try (DelosStorageBackupCoordinator.Guard ignored =
-                     DelosStorageBackupCoordinator.enterDurableMutation()) {
+                     backupCoordinator.enterDurableMutation(mutation)) {
             return writeLocked(operation);
         }
     }
 
-    private void durableMutationLocked(Runnable operation) {
+    private void durableMutationLocked(
+            DelosStorageBackupCoordinator.Mutation mutation,
+            Runnable operation) {
         try (DelosStorageBackupCoordinator.Guard ignored =
-                     DelosStorageBackupCoordinator.enterDurableMutation()) {
+                     backupCoordinator.enterDurableMutation(mutation)) {
             writeLocked(operation);
         }
     }

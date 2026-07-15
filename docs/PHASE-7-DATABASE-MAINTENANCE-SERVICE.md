@@ -162,4 +162,4 @@ This slice does not:
 - change checkpoint format or frequency;
 - add cross-database workers;
 - tune worker count automatically;
-- implement Phase 7.7 database-scoped backup coordination.
+- bypass the Phase 7.7 database-scoped backup coordinator.

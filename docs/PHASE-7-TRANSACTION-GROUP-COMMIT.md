@@ -225,3 +225,12 @@ proof while combining an additional physical force boundary.
 
 The temporary `direct` and `queued` comparison modes remain until that broader
 shared-fence work has differential and crash proof.
+
+
+## Database-scoped backup ownership
+
+Group publication now enters the coordinator owned by the transaction's
+database store. Grouped commits in one database remain frozen during that
+database's sidecar backup, while unrelated databases continue independently.
+The coordinator records committed-status counts at backup start and end; the
+counts remain equal across the exclusive copy interval.

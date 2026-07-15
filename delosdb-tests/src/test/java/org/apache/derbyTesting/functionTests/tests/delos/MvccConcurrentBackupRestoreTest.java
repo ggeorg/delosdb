@@ -31,10 +31,15 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+
+import org.apache.derby.iapi.store.types.DelosStorageBackupCoordinator;
 
 /** Online backup proof while committed MVCC writes continue on another connection. */
 public final class MvccConcurrentBackupRestoreTest extends MvccSqlTestSupport {
@@ -120,6 +125,77 @@ public final class MvccConcurrentBackupRestoreTest extends MvccSqlTestSupport {
                     "1000000");
         }
         shutdownDatabase(restoredDatabase);
+    }
+
+
+    public void testBackupOfOneDatabaseDoesNotFreezeAnotherDatabase() throws Exception {
+        String firstDatabase = databaseName("mvcc-backup-isolation-first-db");
+        String secondDatabase = databaseName("mvcc-backup-isolation-second-db");
+        Path backupRoot = Path.of(databaseName("mvcc-backup-isolation-copy-root"));
+
+        deleteRecursively(Path.of(firstDatabase));
+        deleteRecursively(Path.of(secondDatabase));
+        deleteRecursively(backupRoot);
+
+        try (Connection first = openDatabase(firstDatabase, true);
+             Connection second = openDatabase(secondDatabase, true)) {
+            executeUpdate(first,
+                    "create table mvcc_backup_isolation_a "
+                            + "(id int primary key, name varchar(40)) using delos_mvcc");
+            executeUpdate(first,
+                    "insert into mvcc_backup_isolation_a values (1, 'before-backup')");
+            executeUpdate(second,
+                    "create table mvcc_backup_isolation_b "
+                            + "(id int primary key, name varchar(40)) using delos_mvcc");
+
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            Future<?> backup;
+            try (DelosStorageBackupCoordinator.DatabaseLease lease =
+                         DelosStorageBackupCoordinator.openDatabase(Path.of(firstDatabase));
+                 DelosStorageBackupCoordinator.Guard ignored =
+                         lease.coordinator().enterDurableMutation(
+                                 DelosStorageBackupCoordinator.Mutation.VACUUM)) {
+                DelosStorageBackupCoordinator coordinator = lease.coordinator();
+                backup = executor.submit(() -> {
+                    try (Connection connection = openDatabase(firstDatabase, false)) {
+                        backupDatabase(connection, backupRoot);
+                    } catch (SQLException failure) {
+                        throw new RuntimeException(failure);
+                    }
+                });
+
+                waitForBackupBoundaryWaiter(coordinator);
+                assertFalse("first database backup should wait at its own MVCC boundary", backup.isDone());
+
+                executeUpdate(second,
+                        "insert into mvcc_backup_isolation_b values (2, 'independent-commit')");
+                assertRows(second,
+                        "select id, name from mvcc_backup_isolation_b order by id",
+                        "2|independent-commit");
+            }
+
+            try {
+                backup.get(30L, TimeUnit.SECONDS);
+            } finally {
+                executor.shutdownNow();
+            }
+
+            try (DelosStorageBackupCoordinator.DatabaseLease lease =
+                         DelosStorageBackupCoordinator.openDatabase(Path.of(firstDatabase))) {
+                DelosStorageBackupCoordinator.Snapshot snapshot = lease.coordinator().snapshot();
+                assertTrue("RawStore backup should enter the first database coordinator",
+                        snapshot.backupSnapshotStartCount() > 0L);
+                assertEquals("backup start/end committed counts must match",
+                        snapshot.lastBackupStartCommittedTransactionCount(),
+                        snapshot.lastBackupEndCommittedTransactionCount());
+            }
+        }
+
+        Path backupDatabase = backupRoot.resolve(Path.of(firstDatabase).getFileName());
+        assertTrue("isolated backup must contain first-database MVCC sidecars",
+                Files.isDirectory(backupDatabase.resolve("delos_mvcc")));
+        shutdownDatabase(firstDatabase);
+        shutdownDatabase(secondDatabase);
     }
 
 
@@ -327,6 +403,18 @@ public final class MvccConcurrentBackupRestoreTest extends MvccSqlTestSupport {
 
     private static String marker(int id, int revision) {
         return "row-" + id + "-rev-" + revision;
+    }
+
+    private static void waitForBackupBoundaryWaiter(
+            DelosStorageBackupCoordinator coordinator) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30L);
+        while (System.nanoTime() < deadline) {
+            if (coordinator.snapshot().waitingBackupSnapshotCount() > 0) {
+                return;
+            }
+            Thread.sleep(5L);
+        }
+        fail("RawStore backup did not reach the database-scoped MVCC boundary");
     }
 
     private static void backupDatabase(Connection connection, Path backupRoot) throws SQLException {
