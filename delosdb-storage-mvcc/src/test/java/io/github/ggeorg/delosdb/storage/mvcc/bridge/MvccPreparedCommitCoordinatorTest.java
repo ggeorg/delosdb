@@ -95,8 +95,16 @@ final class MvccPreparedCommitCoordinatorTest {
             assertEquals(ROWS_PER_TRANSACTION, event.getInt("changedRows"));
             assertEquals(1L, event.getLong("transactionOutcomeForceCount"));
             assertEquals(1L, event.getLong("writeAheadLogForceCount"));
-            assertEquals(2L, event.getLong("pageVolumeForceCount"));
         }
+        assertEquals(3L, events.stream().mapToLong(event ->
+                event.getLong("pageVolumeForceCount")).sum(),
+                "two main-table page forces plus one shared ordered-index force are expected");
+        assertEquals(1L, events.stream().filter(event ->
+                event.getLong("pageVolumeForceCount") == 2L).count(),
+                "exactly one group member must own the shared ordered-index force");
+        assertEquals(1L, events.stream().filter(event ->
+                event.getLong("pageVolumeForceCount") == 1L).count(),
+                "the other group member must retain only its main-table page force");
     }
 
     @Test
