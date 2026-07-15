@@ -116,7 +116,7 @@ final class MvccCommitCoordinator<T, R> {
     }
 
     MvccCommitCoordinator(Mode mode, int capacity) {
-        this(mode, capacity, DEFAULT_MAX_GROUP_SIZE, DEFAULT_MAX_GROUP_DELAY_NANOS);
+        this(mode, capacity, Math.min(DEFAULT_MAX_GROUP_SIZE, capacity), DEFAULT_MAX_GROUP_DELAY_NANOS);
     }
 
     MvccCommitCoordinator(Mode mode, int capacity, int maxGroupSize, long maxGroupDelayNanos) {
