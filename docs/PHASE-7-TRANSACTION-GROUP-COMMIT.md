@@ -167,12 +167,61 @@ single-transaction force counts remain unchanged
 a shared processor failure reaches leader and follower
 ```
 
+## Coordinator lifecycle hardening
+
+The coordinator now has an explicit graceful shutdown contract:
+
+```text
+stop accepting new submissions
+allow already-enrolled groups to finish
+wait until the FIFO and in-flight group are empty
+mark the coordinator closed
+reject later submissions
+```
+
+`MvccInheritedTable.close()` drains the commit coordinator before closing page,
+sidecar, index, and purge resources. A table close therefore cannot race an
+already-enrolled commit into a closed page store.
+
+Submissions that have not entered the queue when shutdown begins are rejected
+with `CoordinatorClosedException`. Already-enrolled transactions retain their
+individual commit result; shutdown does not silently convert them into aborts.
+
+## Backup and failure hardening
+
+The focused hardening proof covers:
+
+```text
+backup snapshot owns the exclusive mutation boundary
+    prepared commits may enroll
+    the group blocks before durable publication
+    the backup-visible committed image remains unchanged
+
+concurrent table close
+    stops new commit enrollment
+    waits for the backup-blocked group
+    closes storage only after the enrolled commits finish
+
+shared COMMITTED-status force failure
+    leader and follower receive the same failure
+    no member page publication begins
+    transactions remain active and may be explicitly aborted
+
+one preparation failure beside one valid transaction
+    the invalid transaction is aborted before enrollment
+    the valid transaction commits and reopens normally
+```
+
+This proves the required Phase 7.5 cases for partial preparation failure,
+leader/shared-force failure, backup start with queued commits, and shutdown with
+queued commits.
+
 ## Remaining Phase 7.5 work
 
-This slice does not yet share WAL, prepared-payload, outcome, main-page,
-checkpoint, or subsystem-recovery forces. It also does not yet add explicit
-coordinator shutdown/cancellation or the final backup-starts-while-queued proof.
+This slice still does not share WAL, prepared-payload, outcome, main-page,
+checkpoint, or subsystem-recovery forces. The next force-sharing slice must
+preserve the existing per-transaction outcome fence and all-or-none recovery
+proof while combining an additional physical force boundary.
 
-Those remain separate overlays. The next force-sharing slice must preserve the
-existing per-transaction outcome fence and all-or-none recovery proof while
-combining additional physical force boundaries.
+The temporary `direct` and `queued` comparison modes remain until that broader
+shared-fence work has differential and crash proof.

@@ -31,7 +31,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 /** Per-table boundary between prepared commits and ordered durable publication. */
-final class MvccCommitCoordinator<T, R> {
+final class MvccCommitCoordinator<T, R> implements AutoCloseable {
     static final int DEFAULT_CAPACITY = 64;
     static final int DEFAULT_MAX_GROUP_SIZE = 16;
     static final long DEFAULT_MAX_GROUP_DELAY_NANOS = TimeUnit.MILLISECONDS.toNanos(1L);
@@ -110,6 +110,8 @@ final class MvccCommitCoordinator<T, R> {
     private final AtomicLong nextGroupId = new AtomicLong(1L);
     private boolean groupLeaderActive;
     private int inFlightCount;
+    private boolean accepting = true;
+    private boolean closed;
 
     MvccCommitCoordinator(Mode mode) {
         this(mode, DEFAULT_CAPACITY, DEFAULT_MAX_GROUP_SIZE, DEFAULT_MAX_GROUP_DELAY_NANOS);
@@ -139,6 +141,7 @@ final class MvccCommitCoordinator<T, R> {
     Submission<R> submit(T item, boolean measureWait, GroupProcessor<T, R> processor) {
         Objects.requireNonNull(item, "item");
         Objects.requireNonNull(processor, "processor");
+        requireAccepting();
         if (mode == Mode.DIRECT) {
             return submitDirect(item, measureWait, processor);
         }
@@ -150,6 +153,7 @@ final class MvccCommitCoordinator<T, R> {
             boolean leader = false;
             queueLock.lock();
             try {
+                requireAcceptingLocked();
                 queue.addLast(request);
                 request.enrollmentDepth = queue.size() + inFlightCount;
                 queueChanged.signalAll();
@@ -197,6 +201,7 @@ final class MvccCommitCoordinator<T, R> {
         long started = measureWait ? System.nanoTime() : 0L;
         directLock.lock();
         try {
+            requireAccepting();
             long executionStarted = System.nanoTime();
             long groupId = nextGroupId.getAndIncrement();
             Outcome<R> outcome;
@@ -297,6 +302,83 @@ final class MvccCommitCoordinator<T, R> {
             queueChanged.signalAll();
         } finally {
             queueLock.unlock();
+        }
+    }
+
+    @Override
+    public void close() {
+        beginShutdown();
+        if (mode == Mode.DIRECT) {
+            directLock.lock();
+            try {
+                markClosed();
+            } finally {
+                directLock.unlock();
+            }
+            return;
+        }
+
+        queueLock.lock();
+        try {
+            while (groupLeaderActive || !queue.isEmpty() || inFlightCount > 0) {
+                queueChanged.awaitUninterruptibly();
+            }
+            closed = true;
+            queueChanged.signalAll();
+        } finally {
+            queueLock.unlock();
+        }
+    }
+
+    boolean closedForTesting() {
+        queueLock.lock();
+        try {
+            return closed;
+        } finally {
+            queueLock.unlock();
+        }
+    }
+
+    private void beginShutdown() {
+        queueLock.lock();
+        try {
+            accepting = false;
+            queueChanged.signalAll();
+        } finally {
+            queueLock.unlock();
+        }
+    }
+
+    private void markClosed() {
+        queueLock.lock();
+        try {
+            closed = true;
+            queueChanged.signalAll();
+        } finally {
+            queueLock.unlock();
+        }
+    }
+
+    private void requireAccepting() {
+        queueLock.lock();
+        try {
+            requireAcceptingLocked();
+        } finally {
+            queueLock.unlock();
+        }
+    }
+
+    private void requireAcceptingLocked() {
+        if (!accepting) {
+            throw new CoordinatorClosedException();
+        }
+    }
+
+    static final class CoordinatorClosedException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        CoordinatorClosedException() {
+            super("MVCC commit coordinator is closed");
         }
     }
 

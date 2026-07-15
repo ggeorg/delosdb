@@ -321,3 +321,29 @@ docs/PHASE-7-TRANSACTION-GROUP-COMMIT.md
 
 This slice shares status and ordered-index durability only. WAL, mutation,
 outcome, main-page, checkpoint, and recovery-record forces remain individual.
+
+## Phase 7.5 group-commit lifecycle hardening
+
+The first shared status/index group boundary now has an explicit shutdown and
+backup contract. Coordinator close rejects new submissions, drains all already-
+enrolled work, and only then allows the table to close durable resources.
+
+The hardening gate proves:
+
+```text
+shared status-force failure reaches leader and follower
+no page publication follows a failed shared status boundary
+one preparation failure does not block another valid commit
+backup may start while commits are enrolled
+backup holds the pre-commit durable image
+concurrent table close waits for the blocked group
+reopen contains every successfully drained commit
+closed coordinators reject new submissions
+```
+
+The authoritative lifecycle and remaining force-sharing scope are documented in:
+
+```text
+docs/PHASE-7-TRANSACTION-GROUP-COMMIT.md
+```
+

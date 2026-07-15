@@ -67,6 +67,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final ReentrantReadWriteLock tableLock = new ReentrantReadWriteLock();
     private final MvccCommitMetrics commitMetrics = new MvccCommitMetrics();
     private final MvccCommitCoordinator<MvccPreparedCommit, CommitPublication> durabilityCoordinator;
+    private final SharedStatusForceHook sharedStatusForceHook;
     private final Lock readLock = tableLock.readLock();
     private final Lock writeLock = tableLock.writeLock();
     private long nextRowId = 1L;
@@ -106,6 +107,26 @@ final class MvccInheritedTable implements DelosStorageTable,
             long containerId,
             Path databaseDirectory,
             MvccCommitCoordinator.Mode coordinatorMode) {
+        this(
+                segmentId,
+                containerId,
+                databaseDirectory,
+                coordinatorMode,
+                MvccCommitCoordinator.DEFAULT_CAPACITY,
+                MvccCommitCoordinator.DEFAULT_MAX_GROUP_SIZE,
+                MvccCommitCoordinator.DEFAULT_MAX_GROUP_DELAY_NANOS,
+                SharedStatusForceHook.NOOP);
+    }
+
+    MvccInheritedTable(
+            long segmentId,
+            long containerId,
+            Path databaseDirectory,
+            MvccCommitCoordinator.Mode coordinatorMode,
+            int coordinatorCapacity,
+            int maxGroupSize,
+            long maxGroupDelayNanos,
+            SharedStatusForceHook sharedStatusForceHook) {
         this.segmentId = segmentId;
         this.containerId = containerId;
         this.retiredSnapshotFile = retiredSnapshotFile(databaseDirectory, segmentId, containerId);
@@ -119,7 +140,9 @@ final class MvccInheritedTable implements DelosStorageTable,
                 ? MvccTransactionStatusStore.disabled()
                 : MvccTransactionStatusStore.open(transactionStatusFile);
         this.transactions = new MvccTransactionManager(transactionStatusStore);
-        this.durabilityCoordinator = new MvccCommitCoordinator<>(coordinatorMode);
+        this.durabilityCoordinator = new MvccCommitCoordinator<>(
+                coordinatorMode, coordinatorCapacity, maxGroupSize, maxGroupDelayNanos);
+        this.sharedStatusForceHook = Objects.requireNonNull(sharedStatusForceHook, "sharedStatusForceHook");
         this.purgeDaemonExecutor = Executors.newSingleThreadExecutor(runnable ->
                 Thread.ofVirtual()
                         .name("delosdb-mvcc-purge-daemon-" + segmentId + '-' + containerId)
@@ -525,8 +548,12 @@ final class MvccInheritedTable implements DelosStorageTable,
         long statusStarted = observe ? System.nanoTime() : 0L;
         List<MvccCommitSequence> sequences;
         try {
-            sequences = transactions.commitBatch(survivors.stream()
-                    .map(index -> preparedCommits.get(index).transaction())
+            List<MvccPreparedCommit> survivingCommits = survivors.stream()
+                    .map(preparedCommits::get)
+                    .toList();
+            sharedStatusForceHook.beforeForce(survivingCommits);
+            sequences = transactions.commitBatch(survivingCommits.stream()
+                    .map(MvccPreparedCommit::transaction)
                     .toList());
         } catch (RuntimeException | Error failure) {
             sharedDurability = sharedScope.finish();
@@ -1515,6 +1542,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public void close() {
+        durabilityCoordinator.close();
         durableMutationLocked(() -> {
             purgeDaemonExecutor.shutdownNow();
             pageVolumeStateStore.close();
@@ -1701,6 +1729,10 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     int activeCommitRequestsForTesting() {
         return commitMetrics.activeTableRequests();
+    }
+
+    int durabilityEnrollmentCountForTesting() {
+        return durabilityCoordinator.currentEnrollmentCountForTesting();
     }
 
     private static String failureSummary(Throwable failure) {
@@ -1893,6 +1925,13 @@ final class MvccInheritedTable implements DelosStorageTable,
                     durabilityExecutionConcurrency,
                     durability.plus(sharedDurability));
         }
+    }
+
+    @FunctionalInterface
+    interface SharedStatusForceHook {
+        SharedStatusForceHook NOOP = preparedCommits -> { };
+
+        void beforeForce(List<MvccPreparedCommit> preparedCommits);
     }
 
     private record CommitInput(
