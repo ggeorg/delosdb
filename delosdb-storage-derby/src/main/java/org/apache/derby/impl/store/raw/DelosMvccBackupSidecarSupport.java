@@ -289,7 +289,7 @@ final class DelosMvccBackupSidecarSupport {
         }
         try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
             channel.force(true);
-        } catch (UnsupportedOperationException e) {
+        } catch (UnsupportedOperationException | IOException e) {
             // Some file systems do not expose directory fsync through FileChannel.
         }
     }

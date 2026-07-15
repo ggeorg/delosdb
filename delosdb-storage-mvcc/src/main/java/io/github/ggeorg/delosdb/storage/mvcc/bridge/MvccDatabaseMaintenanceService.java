@@ -58,6 +58,12 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
         PERIODIC
     }
 
+    private enum TaskState {
+        IDLE,
+        QUEUED,
+        RUNNING
+    }
+
     interface Target {
         String maintenanceIdentity();
 
@@ -110,7 +116,7 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
     final class Registration implements AutoCloseable {
         private final Target target;
         private boolean active = true;
-        private boolean queuedOrRunning;
+        private TaskState state = TaskState.IDLE;
         private boolean rerunRequested;
         private Priority latestPriority = new Priority(0L, 0L, 0L);
         private Trigger latestTrigger = Trigger.PERIODIC;
@@ -129,7 +135,7 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
                 if (!active || !accepting.get()) {
                     return false;
                 }
-                if (queuedOrRunning) {
+                if (state != TaskState.IDLE) {
                     if (!rerunRequested || priority.compareTo(latestPriority) < 0) {
                         latestPriority = priority;
                     }
@@ -139,24 +145,35 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
                 }
                 latestPriority = priority;
                 latestTrigger = trigger;
-                queuedOrRunning = true;
-                return enqueue(this, latestPriority, latestTrigger);
+                state = TaskState.QUEUED;
+                if (enqueue(this, latestPriority, latestTrigger)) {
+                    return true;
+                }
+                state = TaskState.IDLE;
+                notifyAll();
+                return false;
             }
         }
 
         private void run(Trigger trigger) {
             synchronized (this) {
                 if (!active) {
-                    finishWithoutRerun();
+                    state = TaskState.IDLE;
+                    rerunRequested = false;
+                    notifyAll();
                     return;
                 }
+                if (state != TaskState.QUEUED) {
+                    return;
+                }
+                state = TaskState.RUNNING;
             }
             int activeNow = activeWorkers.incrementAndGet();
             maximumActiveWorkers.accumulateAndGet(activeNow, Math::max);
             try {
                 target.runMaintenance(trigger);
                 runCount.incrementAndGet();
-            } catch (RuntimeException | Error failure) {
+            } catch (RuntimeException failure) {
                 failureCount.incrementAndGet();
             } finally {
                 activeWorkers.decrementAndGet();
@@ -168,6 +185,7 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
             synchronized (this) {
                 if (active && accepting.get() && rerunRequested) {
                     rerunRequested = false;
+                    state = TaskState.QUEUED;
                     if (enqueue(this, latestPriority, latestTrigger)) {
                         return;
                     }
@@ -177,14 +195,16 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
         }
 
         private void finishWithoutRerun() {
-            queuedOrRunning = false;
+            state = TaskState.IDLE;
             rerunRequested = false;
             notifyAll();
         }
 
         private void cancelQueuedTask() {
             synchronized (this) {
-                finishWithoutRerun();
+                if (state == TaskState.QUEUED) {
+                    finishWithoutRerun();
+                }
             }
         }
 
@@ -194,7 +214,7 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
             synchronized (this) {
                 active = false;
                 rerunRequested = false;
-                while (queuedOrRunning) {
+                while (state != TaskState.IDLE) {
                     try {
                         wait();
                     } catch (InterruptedException e) {
@@ -214,6 +234,7 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
     private final Set<Registration> registrations = ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor workers;
     private final ScheduledExecutorService periodicScanner;
+    private final Duration shutdownTimeout;
     private final AtomicBoolean accepting = new AtomicBoolean(true);
     private final AtomicLong sequence = new AtomicLong();
     private final AtomicLong commitWakeupCount = new AtomicLong();
@@ -225,20 +246,33 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
     private final AtomicInteger maximumActiveWorkers = new AtomicInteger();
 
     MvccDatabaseMaintenanceService(Path databaseDirectory) {
-        this(databaseDirectory, configuredWorkerCount(), configuredPeriodMillis());
+        this(databaseDirectory, configuredWorkerCount(), configuredPeriodMillis(), SHUTDOWN_TIMEOUT);
     }
 
     MvccDatabaseMaintenanceService(Path databaseDirectory, int workerCount, long periodMillis) {
+        this(databaseDirectory, workerCount, periodMillis, SHUTDOWN_TIMEOUT);
+    }
+
+    MvccDatabaseMaintenanceService(
+            Path databaseDirectory,
+            int workerCount,
+            long periodMillis,
+            Duration shutdownTimeout) {
         if (workerCount < 1 || workerCount > MAX_WORKER_COUNT) {
             throw new IllegalArgumentException("workerCount must be in [1, " + MAX_WORKER_COUNT + ']');
         }
         if (periodMillis < 1L) {
             throw new IllegalArgumentException("periodMillis must be positive");
         }
+        if (Objects.requireNonNull(shutdownTimeout, "shutdownTimeout").isZero()
+                || shutdownTimeout.isNegative()) {
+            throw new IllegalArgumentException("shutdownTimeout must be positive");
+        }
         this.databaseIdentity = databaseDirectory == null
                 ? "memory-" + Integer.toHexString(System.identityHashCode(this))
                 : databaseDirectory.toAbsolutePath().normalize().toString();
         this.workerCount = workerCount;
+        this.shutdownTimeout = shutdownTimeout;
         String threadIdentity = Integer.toHexString(databaseIdentity.hashCode());
         ThreadFactory workerFactory = Thread.ofVirtual()
                 .name("delosdb-mvcc-maintenance-worker-" + threadIdentity + '-', 0L)
@@ -314,7 +348,7 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
             try {
                 registration.target.periodicMaintenancePriority()
                         .ifPresent(priority -> registration.request(priority, Trigger.PERIODIC));
-            } catch (RuntimeException | Error failure) {
+            } catch (RuntimeException failure) {
                 failureCount.incrementAndGet();
             }
         }
@@ -322,21 +356,30 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
 
     @Override
     public void close() {
-        if (!accepting.compareAndSet(true, false)) {
-            return;
+        if (accepting.compareAndSet(true, false)) {
+            periodicScanner.shutdownNow();
+            workers.shutdown();
         }
-        periodicScanner.shutdownNow();
-        workers.shutdown();
         boolean interrupted = false;
         try {
-            if (!workers.awaitTermination(SHUTDOWN_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {
+            if (!periodicScanner.awaitTermination(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                periodicScanner.shutdownNow();
+                if (!periodicScanner.awaitTermination(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                    throw new IllegalStateException("MVCC maintenance scanner did not terminate for "
+                            + databaseIdentity);
+                }
+            }
+            if (!workers.awaitTermination(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
                 List<Runnable> cancelled = workers.shutdownNow();
                 for (Runnable runnable : cancelled) {
                     if (runnable instanceof MaintenanceTask task) {
                         task.cancel();
                     }
                 }
-                workers.awaitTermination(SHUTDOWN_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+                if (!workers.awaitTermination(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                    throw new IllegalStateException("MVCC maintenance workers did not terminate for "
+                            + databaseIdentity + "; table resources remain open");
+                }
             }
         } catch (InterruptedException e) {
             interrupted = true;
@@ -346,12 +389,15 @@ final class MvccDatabaseMaintenanceService implements AutoCloseable {
                     task.cancel();
                 }
             }
+            throw new IllegalStateException("Interrupted while closing MVCC maintenance for "
+                    + databaseIdentity, e);
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
         for (Registration registration : new ArrayList<>(registrations)) {
-            registration.cancelQueuedTask();
-        }
-        if (interrupted) {
-            Thread.currentThread().interrupt();
+            registration.close();
         }
     }
 

@@ -20,6 +20,7 @@ import java.util.function.Function;
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusRecord;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccWriteConflictException;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccTupleHeader;
@@ -84,15 +85,17 @@ public final class PageBackedMvccTable implements AutoCloseable {
      */
     public static PageBackedMvccTable open(Path path, Path mutationLogPath) throws IOException {
         return openInternal(path, mutationLogPath, null, false,
-                MvccSubsystemRecoveryRecordStore.ReplayPlan.empty(null));
+                MvccSubsystemRecoveryRecordStore.ReplayPlan.empty(null), Map.of());
     }
 
     /**
      * Opens a page-backed table with an optional transaction outcome log. If the
-     * outcome log already exists, recovery treats it as the authority for
+     * outcome log already exists, recovery treats it as the local authority for
      * deciding which page mutations materialize; otherwise the legacy mutation
      * log terminal markers are used once for compatibility and future writes
-     * start maintaining the outcome log.
+     * start maintaining the outcome log. The inherited-store open path may also
+     * supply explicitly correlated database transaction statuses for a prepared
+     * batch whose local outcome mirror was interrupted.
      */
     public static PageBackedMvccTable open(
             Path path,
@@ -107,8 +110,23 @@ public final class PageBackedMvccTable implements AutoCloseable {
             Path mutationLogPath,
             Path outcomeLogPath,
             MvccSubsystemRecoveryRecordStore.ReplayPlan subsystemReplayPlan) throws IOException {
+        return open(path, mutationLogPath, outcomeLogPath, subsystemReplayPlan, Map.of());
+    }
+
+    public static PageBackedMvccTable open(
+            Path path,
+            Path mutationLogPath,
+            Path outcomeLogPath,
+            MvccSubsystemRecoveryRecordStore.ReplayPlan subsystemReplayPlan,
+            Map<MvccTransactionId, MvccTransactionStatusRecord> statusFallback) throws IOException {
         boolean strictRecovery = outcomeLogPath != null && Files.exists(outcomeLogPath);
-        return openInternal(path, mutationLogPath, outcomeLogPath, strictRecovery, subsystemReplayPlan);
+        return openInternal(
+                path,
+                mutationLogPath,
+                outcomeLogPath,
+                strictRecovery,
+                subsystemReplayPlan,
+                statusFallback);
     }
 
     /** Opens a table and always requires transaction-outcome-log recovery. */
@@ -119,7 +137,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
         Objects.requireNonNull(mutationLogPath, "mutationLogPath");
         Objects.requireNonNull(outcomeLogPath, "outcomeLogPath");
         return openInternal(path, mutationLogPath, outcomeLogPath, true,
-                MvccSubsystemRecoveryRecordStore.ReplayPlan.empty(null));
+                MvccSubsystemRecoveryRecordStore.ReplayPlan.empty(null), Map.of());
     }
 
     public static PageBackedMvccTable openStrict(
@@ -129,7 +147,7 @@ public final class PageBackedMvccTable implements AutoCloseable {
             MvccSubsystemRecoveryRecordStore.ReplayPlan subsystemReplayPlan) throws IOException {
         Objects.requireNonNull(mutationLogPath, "mutationLogPath");
         Objects.requireNonNull(outcomeLogPath, "outcomeLogPath");
-        return openInternal(path, mutationLogPath, outcomeLogPath, true, subsystemReplayPlan);
+        return openInternal(path, mutationLogPath, outcomeLogPath, true, subsystemReplayPlan, Map.of());
     }
 
     private static PageBackedMvccTable openInternal(
@@ -137,7 +155,8 @@ public final class PageBackedMvccTable implements AutoCloseable {
             Path mutationLogPath,
             Path outcomeLogPath,
             boolean strictRecovery,
-            MvccSubsystemRecoveryRecordStore.ReplayPlan subsystemReplayPlan) throws IOException {
+            MvccSubsystemRecoveryRecordStore.ReplayPlan subsystemReplayPlan,
+            Map<MvccTransactionId, MvccTransactionStatusRecord> statusFallback) throws IOException {
         PageBackedMvccTableStore store = PageBackedMvccTableStore.open(path);
         try {
             MvccPageMutationLog log = null;
@@ -147,7 +166,9 @@ public final class PageBackedMvccTable implements AutoCloseable {
             if (mutationLogPath != null) {
                 log = MvccPageMutationLog.open(mutationLogPath);
                 MvccPageRecoveryRunner recovery = new MvccPageRecoveryRunner(log, store);
-                if (strictRecovery) {
+                boolean useStrictRecovery = strictRecovery
+                        || (!statusFallback.isEmpty() && log.hasPreparedTransactions());
+                if (useStrictRecovery) {
                     if (outcomes == null) {
                         throw new IllegalArgumentException("strict MVCC recovery requires a transaction outcome log");
                     }
@@ -156,7 +177,8 @@ public final class PageBackedMvccTable implements AutoCloseable {
                             outcomes,
                             store,
                             subsystemReplayPlan,
-                            MvccRecoveryReplayEngine.rowIndexOverflowFreeSpaceOutcomeSubsystems()).recoverStrict();
+                            MvccRecoveryReplayEngine.rowIndexOverflowFreeSpaceOutcomeSubsystems(),
+                            statusFallback).recoverStrict();
                 } else {
                     recovery.recover();
                 }
@@ -327,53 +349,125 @@ public final class PageBackedMvccTable implements AutoCloseable {
     }
 
     /**
-     * Persists one committed transaction through a single payload-log batch and
-     * one transaction-outcome fence before materializing its page records.
+     * Persists one page transaction through a single payload-log batch and one
+     * local transaction-outcome fence before materializing its page records.
      *
      * <p>All main-table page images are staged through one page-cache batch and
      * followed by one page-volume force. Row-directory heads are published with
-     * one forced transaction append. The prepared payload batch and outcome fence
-     * remain the recovery authority if page or sidecar publication is interrupted.</p>
+     * one forced transaction append. The prepared payload batch and local outcome
+     * remain the ordinary recovery authority if page or sidecar publication is
+     * interrupted.</p>
      */
     public synchronized List<MvccIndexTuple> persistCommittedTransaction(
             long transactionId,
             long commitSequence,
             List<CommittedWrite> writes) throws IOException {
+        PreparedTransaction prepared = prepareCommittedTransaction(transactionId, commitSequence, 0L, writes);
+        stagePreparedTransaction(prepared);
+        return publishPreparedTransaction(prepared);
+    }
+
+    /**
+     * Builds immutable page-mutation records without publishing any durable
+     * transaction outcome.
+     */
+    public synchronized PreparedTransaction prepareCommittedTransaction(
+            long transactionId,
+            long commitSequence,
+            List<CommittedWrite> writes) {
+        return prepareCommittedTransaction(transactionId, commitSequence, 0L, writes);
+    }
+
+    public synchronized PreparedTransaction prepareCommittedTransaction(
+            long transactionId,
+            long commitSequence,
+            long statusTransactionId,
+            List<CommittedWrite> writes) {
         requireTransactionId(transactionId);
+        if (statusTransactionId < 0L) {
+            throw new IllegalArgumentException("status transaction id must not be negative: "
+                    + statusTransactionId);
+        }
         requireCommittedSequence(commitSequence);
         writes = List.copyOf(Objects.requireNonNull(writes, "writes"));
         if (writes.isEmpty()) {
-            return List.of();
+            return new PreparedTransaction(
+                    this, transactionId, commitSequence, statusTransactionId, List.of());
         }
         if ((mutationLog == null) != (outcomeLog == null)) {
             throw new IllegalStateException("MVCC transaction batching requires both mutation and outcome logs");
         }
 
         List<PreparedCommittedWrite> prepared = prepareCommittedWrites(transactionId, commitSequence, writes);
-        if (mutationLog != null) {
-            mutationLog.appendPreparedTransaction(
-                    transactionId,
-                    commitSequence,
-                    prepared.stream().map(PreparedCommittedWrite::record).toList());
-        }
+        return new PreparedTransaction(
+                this, transactionId, commitSequence, statusTransactionId, prepared);
+    }
 
+    /**
+     * Durably stages a complete payload batch while leaving the transaction
+     * uncommitted. Strict recovery ignores the batch until a terminal outcome
+     * exists.
+     */
+    public synchronized void stagePreparedTransaction(PreparedTransaction transaction) {
+        PreparedTransaction prepared = requirePreparedTransaction(transaction);
+        if (prepared.writes.isEmpty() || mutationLog == null) {
+            return;
+        }
+        mutationLog.appendPreparedTransaction(
+                prepared.transactionId,
+                prepared.commitSequence,
+                prepared.statusTransactionId,
+                prepared.writes.stream().map(PreparedCommittedWrite::record).toList());
+    }
+
+    /**
+     * Publishes the local outcome mirror and materializes an already staged
+     * payload batch. The caller invokes this only after the database transaction
+     * status is COMMITTED, so any failure is a committed transaction requiring
+     * recovery even when the local outcome append itself was interrupted.
+     */
+    public synchronized List<MvccIndexTuple> publishPreparedTransaction(
+            PreparedTransaction transaction) throws IOException {
+        PreparedTransaction prepared = requirePreparedTransaction(transaction);
+        if (prepared.writes.isEmpty()) {
+            return List.of();
+        }
         boolean commitFencePublished = false;
         if (outcomeLog != null) {
-            outcomeLog.appendCommit(transactionId, commitSequence);
+            outcomeLog.appendCommit(prepared.transactionId, prepared.commitSequence);
             commitFencePublished = true;
         }
 
         try {
-            return materializePreparedWrites(prepared);
+            return materializePreparedWrites(prepared.writes);
         } catch (IOException | RuntimeException failure) {
             if (commitFencePublished) {
                 throw new CommittedTransactionMaterializationException(
-                        transactionId,
-                        commitSequence,
+                        prepared.transactionId,
+                        prepared.commitSequence,
                         failure);
             }
             throw failure;
         }
+    }
+
+    /** Marks a staged but unpublished payload batch as aborted. */
+    public synchronized void abortPreparedTransaction(long transactionId) {
+        requireTransactionId(transactionId);
+        if (outcomeLog != null) {
+            outcomeLog.appendAbort(transactionId);
+        }
+        if (mutationLog != null) {
+            mutationLog.appendAbort(transactionId);
+        }
+    }
+
+    private PreparedTransaction requirePreparedTransaction(PreparedTransaction transaction) {
+        PreparedTransaction prepared = Objects.requireNonNull(transaction, "transaction");
+        if (prepared.owner != this) {
+            throw new IllegalArgumentException("prepared MVCC transaction belongs to another page table");
+        }
+        return prepared;
     }
 
     private List<PreparedCommittedWrite> prepareCommittedWrites(
@@ -1188,6 +1282,44 @@ public final class PageBackedMvccTable implements AutoCloseable {
 
         public static CommittedWrite delete(String key, DelosLogSequenceNumber pageLsn) {
             return new CommittedWrite(CommittedWriteOperation.DELETE, key, new byte[0], pageLsn);
+        }
+    }
+
+    /** Opaque prepared transaction owned by the page table that created it. */
+    public static final class PreparedTransaction {
+        private final PageBackedMvccTable owner;
+        private final long transactionId;
+        private final long commitSequence;
+        private final long statusTransactionId;
+        private final List<PreparedCommittedWrite> writes;
+
+        private PreparedTransaction(
+                PageBackedMvccTable owner,
+                long transactionId,
+                long commitSequence,
+                long statusTransactionId,
+                List<PreparedCommittedWrite> writes) {
+            this.owner = Objects.requireNonNull(owner, "owner");
+            this.transactionId = transactionId;
+            this.commitSequence = commitSequence;
+            this.statusTransactionId = statusTransactionId;
+            this.writes = List.copyOf(Objects.requireNonNull(writes, "writes"));
+        }
+
+        public long transactionId() {
+            return transactionId;
+        }
+
+        public long commitSequence() {
+            return commitSequence;
+        }
+
+        public long statusTransactionId() {
+            return statusTransactionId;
+        }
+
+        public int writeCount() {
+            return writes.size();
         }
     }
 

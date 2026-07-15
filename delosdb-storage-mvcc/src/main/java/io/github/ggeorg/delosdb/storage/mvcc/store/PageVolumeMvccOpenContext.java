@@ -28,6 +28,7 @@ import java.util.Objects;
 
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccOrderedIndexPageStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccTable;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
 
 /**
  * Open-time sidecar context for inherited MVCC page-volume storage.
@@ -83,11 +84,14 @@ final class PageVolumeMvccOpenContext {
                 databaseDirectory, storageId);
         MvccSubsystemRecoveryRecordStore recoveryRecordStore = MvccSubsystemRecoveryRecordStore.open(
                 databaseDirectory, storageId);
+        Path transactionStatusFile = PageVolumeMvccPaths.transactionStatusFile(databaseDirectory, storageId);
+        var transactionStatuses = MvccTransactionStatusStore.open(transactionStatusFile).recoverStatuses();
         PageBackedMvccTable table = PageBackedMvccTable.open(
                 pageFile,
                 pageMutationLog,
                 transactionOutcomeLog,
-                recoveryRecordStore.replayPlan());
+                recoveryRecordStore.replayPlan(),
+                transactionStatuses);
         Path orderedIndexPagesPath = PageBackedMvccTable.orderedIndexPagesPath(pageFile);
         boolean orderedIndexPagesExisted = Files.exists(orderedIndexPagesPath);
         OrderedIndexOpenResult orderedIndexOpenResult = openOrderedIndexPagesSafely(

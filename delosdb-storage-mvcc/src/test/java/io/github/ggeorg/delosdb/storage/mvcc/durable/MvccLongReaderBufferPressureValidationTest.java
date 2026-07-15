@@ -29,7 +29,12 @@ final class MvccLongReaderBufferPressureValidationTest {
         MvccPageCache cache = new MvccPageCache(2);
         try (MvccPageCache.PinnedPage longReader = cache.readPinned(volume, new DelosPageId(0L))) {
             for (int pageId = 1; pageId < 32; pageId++) {
-                cache.read(volume, new DelosPageId(pageId));
+                DelosPageId candidate = new DelosPageId(pageId);
+                cache.read(volume, candidate);
+                // The first cold read is intentionally bypassed. The second
+                // touch forces admission and therefore exercises replacement
+                // while the long-reader page remains pinned.
+                cache.read(volume, candidate);
             }
             MvccPageCache.Snapshot underPressure = cache.snapshot();
             assertEquals(1L, underPressure.pinnedPages());

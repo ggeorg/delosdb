@@ -64,8 +64,7 @@ final class MvccTransactionGroupCommitHardeningTest {
                         && failure.getMessage().contains("shared status force failure")));
         assertEquals(0, table.logicalRowCountForTesting());
 
-        table.abort(first);
-        table.abort(second);
+        assertEquals(0, table.activeTransactionCountForTesting());
         table.close();
 
         MvccInheritedTable reopened = new MvccInheritedTable(0L, 901L, directory);
@@ -188,6 +187,203 @@ final class MvccTransactionGroupCommitHardeningTest {
                         MvccCommitCoordinator.Outcome.success(items.getFirst()))));
     }
 
+    @Test
+    void committedStatusRecoversStagedPayloadWhenOutcomeFencePublicationFails() {
+        Path directory = databaseDirectory.resolve("outcome-fence-failure");
+        MvccInheritedTable table = new MvccInheritedTable(0L, 904L, directory);
+        table.setPagePublicationHookForTesting((stage, changes) -> {
+            if (stage == io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore
+                    .PublicationStage.OUTCOME_FENCE) {
+                throw new IllegalStateException("injected outcome fence failure");
+            }
+        });
+
+        Path mutationLog = table.pageMutationLogFileForTesting();
+        Path writeAheadLog = table.writeAheadLogFileForTesting();
+        DelosStorageTransaction abortedBeforePageWrite = table.beginTransaction();
+        table.abort(abortedBeforePageWrite);
+
+        DelosStorageTransaction transaction = table.beginTransaction();
+        assertEquals(2L, transactionId(transaction));
+        table.insert(1L, emptyRow(), transaction);
+
+        MvccInheritedTable.CommittedTransactionRecoveryRequiredException failure = assertThrows(
+                MvccInheritedTable.CommittedTransactionRecoveryRequiredException.class,
+                () -> table.commit(transaction));
+        assertEquals(transactionId(transaction), failure.transactionId());
+        assertTrue(failure.commitSequence() > 0L);
+        assertTrue(table.recoveryRequiredForTesting());
+        assertTrue(table.recoveryRequiredSummaryForTesting().contains("committed page publication"));
+        assertThrows(
+                MvccInheritedTable.TableRecoveryRequiredException.class,
+                table::logicalRowCountForTesting);
+        assertFalse(read(mutationLog).contains("\tABORT\t"));
+        assertFalse(read(writeAheadLog).contains("\tABORT\t"));
+
+        table.close();
+
+        MvccInheritedTable reopened = new MvccInheritedTable(0L, 904L, directory);
+        try {
+            assertEquals(1, reopened.logicalRowCountForTesting());
+            reopened.assertConsistentForTesting();
+        } finally {
+            reopened.close();
+        }
+    }
+
+    @Test
+    void failureAfterSharedStatusForceNeverAppendsAbortAndRecoversCommittedRow() {
+        Path directory = databaseDirectory.resolve("status-post-force-failure");
+        MvccInheritedTable.SharedStatusForceHook hook = new MvccInheritedTable.SharedStatusForceHook() {
+            @Override
+            public void beforeForce(List<MvccPreparedCommit> preparedCommits) {
+            }
+
+            @Override
+            public void afterForce(List<MvccPreparedCommit> preparedCommits) {
+                throw new IllegalStateException("injected failure after shared status force");
+            }
+        };
+        MvccInheritedTable table = new MvccInheritedTable(
+                0L, 905L, directory, MvccCommitCoordinator.Mode.GROUP,
+                8, 8, GROUP_DELAY_NANOS, hook);
+        Path mutationLog = table.pageMutationLogFileForTesting();
+        Path writeAheadLog = table.writeAheadLogFileForTesting();
+        DelosStorageTransaction transaction = table.beginTransaction();
+        table.insert(1L, emptyRow(), transaction);
+
+        MvccInheritedTable.CommittedTransactionRecoveryRequiredException failure = assertThrows(
+                MvccInheritedTable.CommittedTransactionRecoveryRequiredException.class,
+                () -> table.commit(transaction));
+        assertEquals(transactionId(transaction), failure.transactionId());
+        assertTrue(table.recoveryRequiredForTesting());
+        assertFalse(read(mutationLog).contains("\tABORT\t"));
+        assertFalse(read(writeAheadLog).contains("\tABORT\t"));
+        table.close();
+
+        MvccInheritedTable reopened = new MvccInheritedTable(0L, 905L, directory);
+        try {
+            assertEquals(1, reopened.logicalRowCountForTesting());
+            reopened.assertConsistentForTesting();
+        } finally {
+            reopened.close();
+        }
+    }
+
+    @Test
+    void subsystemRecoveryRecordFailureIsCommittedAndRecoveredOnReopen() {
+        assertCommittedPublicationFailureRecovers(
+                io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore
+                        .PublicationStage.SUBSYSTEM_RECOVERY_RECORDS,
+                906L);
+    }
+
+    @Test
+    void checkpointFailureIsCommittedAndRecoveredOnReopen() {
+        assertCommittedPublicationFailureRecovers(
+                io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore
+                        .PublicationStage.CHECKPOINT,
+                907L);
+    }
+
+    @Test
+    void orderedIndexFailurePoisonsLiveTableButReopenRebuildsAuthority() {
+        Path directory = databaseDirectory.resolve("ordered-index-failure");
+        MvccInheritedTable table = new MvccInheritedTable(0L, 908L, directory);
+        table.setOrderedIndexPublicationHookForTesting(() -> {
+            throw new IllegalStateException("injected ordered-index publication failure");
+        });
+        DelosStorageTransaction transaction = table.beginTransaction();
+        table.insert(1L, emptyRow(), transaction);
+
+        MvccInheritedTable.CommittedTransactionRecoveryRequiredException failure = assertThrows(
+                MvccInheritedTable.CommittedTransactionRecoveryRequiredException.class,
+                () -> table.commit(transaction));
+        assertTrue(failure.getMessage().contains("must not be retried"));
+        assertTrue(table.recoveryRequiredSummaryForTesting().contains("ordered-index publication"));
+        assertThrows(
+                MvccInheritedTable.TableRecoveryRequiredException.class,
+                table::logicalRowCountForTesting);
+        table.close();
+
+        MvccInheritedTable reopened = new MvccInheritedTable(0L, 908L, directory);
+        try {
+            assertEquals(1, reopened.logicalRowCountForTesting());
+            reopened.assertConsistentForTesting();
+        } finally {
+            reopened.close();
+        }
+    }
+
+    @Test
+    void postCommitMaintenanceFailureDoesNotTurnDurableCommitIntoFailure() {
+        Path directory = databaseDirectory.resolve("post-commit-maintenance-failure");
+        MvccInheritedTable table = new MvccInheritedTable(0L, 909L, directory);
+        table.setPostCommitMaintenanceHookForTesting(() -> {
+            throw new IllegalStateException("injected post-commit maintenance failure");
+        });
+        DelosStorageTransaction transaction = table.beginTransaction();
+        table.insert(1L, emptyRow(), transaction);
+
+        table.commit(transaction);
+
+        assertEquals(1, table.logicalRowCountForTesting());
+        assertEquals(1L, table.postCommitMaintenanceFailureCountForTesting());
+        assertTrue(table.lastPostCommitMaintenanceFailureForTesting()
+                .contains("post-commit maintenance failure"));
+        assertFalse(table.recoveryRequiredForTesting());
+        table.close();
+
+        MvccInheritedTable reopened = new MvccInheritedTable(0L, 909L, directory);
+        try {
+            assertEquals(1, reopened.logicalRowCountForTesting());
+            reopened.assertConsistentForTesting();
+        } finally {
+            reopened.close();
+        }
+    }
+
+    private void assertCommittedPublicationFailureRecovers(
+            io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore.PublicationStage stage,
+            long containerId) {
+        Path directory = databaseDirectory.resolve("publication-failure-" + stage.name().toLowerCase());
+        MvccInheritedTable table = new MvccInheritedTable(0L, containerId, directory);
+        table.setPagePublicationHookForTesting((candidate, changes) -> {
+            if (candidate == stage) {
+                throw new IllegalStateException("injected " + stage + " failure");
+            }
+        });
+        Path mutationLog = table.pageMutationLogFileForTesting();
+        Path writeAheadLog = table.writeAheadLogFileForTesting();
+        DelosStorageTransaction transaction = table.beginTransaction();
+        table.insert(1L, emptyRow(), transaction);
+
+        MvccInheritedTable.CommittedTransactionRecoveryRequiredException failure = assertThrows(
+                MvccInheritedTable.CommittedTransactionRecoveryRequiredException.class,
+                () -> table.commit(transaction));
+        assertTrue(failure.getMessage().contains("must not be retried"));
+        assertTrue(table.recoveryRequiredForTesting());
+        assertFalse(read(mutationLog).contains("\tABORT\t"));
+        assertFalse(read(writeAheadLog).contains("\tABORT\t"));
+        table.close();
+
+        MvccInheritedTable reopened = new MvccInheritedTable(0L, containerId, directory);
+        try {
+            assertEquals(1, reopened.logicalRowCountForTesting());
+            reopened.assertConsistentForTesting();
+        } finally {
+            reopened.close();
+        }
+    }
+
+    private static String read(Path path) {
+        try {
+            return path == null || !Files.exists(path) ? "" : Files.readString(path);
+        } catch (IOException failure) {
+            throw new IllegalStateException("could not read test durability file " + path, failure);
+        }
+    }
+
     private static List<Throwable> commitTogetherExpectingFailure(
             MvccInheritedTable table,
             DelosStorageTransaction first,
@@ -213,6 +409,10 @@ final class MvccTransactionGroupCommitHardeningTest {
                 ExecutionException.class,
                 () -> future.get(30L, TimeUnit.SECONDS));
         return failure.getCause();
+    }
+
+    private static long transactionId(DelosStorageTransaction transaction) {
+        return MvccInheritedHandles.transaction(transaction).nativeTransaction().id().value();
     }
 
     private static void commitAfterSignal(

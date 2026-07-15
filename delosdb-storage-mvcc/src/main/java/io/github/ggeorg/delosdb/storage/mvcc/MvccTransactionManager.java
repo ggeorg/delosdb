@@ -124,14 +124,26 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
      * statuses through one forced status-store append.
      */
     public synchronized List<MvccCommitSequence> commitBatch(List<MvccTransaction> transactions) {
+        PreparedCommitBatch prepared = prepareCommitBatch(transactions);
+        publishPreparedCommitBatch(prepared);
+        return prepared.sequences();
+    }
+
+    /**
+     * Reserves ordered commit sequences without publishing terminal status.
+     *
+     * <p>The caller may durably stage transaction payloads using these
+     * sequences before the shared COMMITTED append.  No transaction becomes
+     * visible and {@link #newestCommitSequence()} does not advance until
+     * {@link #publishPreparedCommitBatch(PreparedCommitBatch)} succeeds.</p>
+     */
+    public synchronized PreparedCommitBatch prepareCommitBatch(List<MvccTransaction> transactions) {
         transactions = List.copyOf(Objects.requireNonNull(transactions, "transactions"));
         if (transactions.isEmpty()) {
-            return List.of();
+            return new PreparedCommitBatch(currentCommitSequence, List.of());
         }
         Set<MvccTransactionId> uniqueIds = new LinkedHashSet<>();
-        List<MvccCommitSequence> sequences = new ArrayList<>(transactions.size());
-        List<MvccTransactionStatusStore.CommittedStatus> durableStatuses =
-                new ArrayList<>(transactions.size());
+        List<PreparedCommit> commits = new ArrayList<>(transactions.size());
         long nextSequence = currentCommitSequence;
         for (MvccTransaction transaction : transactions) {
             transaction = Objects.requireNonNull(transaction, "transactions entry");
@@ -143,22 +155,72 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
                 throw new IllegalArgumentException("duplicate MVCC transaction in commit batch: "
                         + transaction.id());
             }
-            MvccCommitSequence sequence = new MvccCommitSequence(++nextSequence);
-            sequences.add(sequence);
+            commits.add(new PreparedCommit(transaction, new MvccCommitSequence(++nextSequence)));
+        }
+        return new PreparedCommitBatch(currentCommitSequence, commits);
+    }
+
+    /** Publishes a previously prepared batch through one forced status append. */
+    public synchronized void publishPreparedCommitBatch(PreparedCommitBatch preparedBatch) {
+        Objects.requireNonNull(preparedBatch, "preparedBatch");
+        if (preparedBatch.commits().isEmpty()) {
+            return;
+        }
+        if (preparedBatch.baseCommitSequence() != currentCommitSequence) {
+            throw new IllegalStateException("MVCC prepared commit batch is stale: expected base "
+                    + currentCommitSequence + " but was " + preparedBatch.baseCommitSequence());
+        }
+
+        List<MvccTransactionStatusStore.CommittedStatus> durableStatuses =
+                new ArrayList<>(preparedBatch.commits().size());
+        long previousSequence = currentCommitSequence;
+        for (PreparedCommit prepared : preparedBatch.commits()) {
+            TransactionState state = requireActive(prepared.transaction());
+            if (!state.durableStatusTracked) {
+                throw new IllegalStateException("read-only MVCC transaction cannot commit: "
+                        + prepared.transaction().id());
+            }
+            if (prepared.commitSequence().value() <= previousSequence) {
+                throw new IllegalArgumentException("prepared commit sequences must increase beyond "
+                        + currentCommitSequence);
+            }
+            previousSequence = prepared.commitSequence().value();
             durableStatuses.add(new MvccTransactionStatusStore.CommittedStatus(
-                    transaction.id(), sequence));
+                    prepared.transaction().id(), prepared.commitSequence()));
         }
 
         statusStore.recordCommittedBatch(durableStatuses);
-        currentCommitSequence = nextSequence;
-        for (int index = 0; index < transactions.size(); index++) {
-            MvccTransaction transaction = transactions.get(index);
-            MvccCommitSequence sequence = sequences.get(index);
-            activeTransactions.remove(transaction.id());
-            retainedOutcomes.put(transaction.id(), TransactionOutcome.committed(sequence));
+        currentCommitSequence = previousSequence;
+        for (PreparedCommit prepared : preparedBatch.commits()) {
+            activeTransactions.remove(prepared.transaction().id());
+            retainedOutcomes.put(
+                    prepared.transaction().id(),
+                    TransactionOutcome.committed(prepared.commitSequence()));
         }
         compactRetainedOutcomes();
-        return List.copyOf(sequences);
+    }
+
+    public record PreparedCommit(MvccTransaction transaction, MvccCommitSequence commitSequence) {
+        public PreparedCommit {
+            transaction = Objects.requireNonNull(transaction, "transaction");
+            commitSequence = Objects.requireNonNull(commitSequence, "commitSequence");
+            if (commitSequence.equals(MvccCommitSequence.NONE)) {
+                throw new IllegalArgumentException("prepared commit sequence must be present");
+            }
+        }
+    }
+
+    public record PreparedCommitBatch(long baseCommitSequence, List<PreparedCommit> commits) {
+        public PreparedCommitBatch {
+            if (baseCommitSequence < 0L) {
+                throw new IllegalArgumentException("base commit sequence must not be negative");
+            }
+            commits = List.copyOf(Objects.requireNonNull(commits, "commits"));
+        }
+
+        public List<MvccCommitSequence> sequences() {
+            return commits.stream().map(PreparedCommit::commitSequence).toList();
+        }
     }
 
     public synchronized void abort(MvccTransaction transaction) {

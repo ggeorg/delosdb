@@ -42,6 +42,14 @@ public final class PageVolumeMvccPaths {
         return pageFile.resolveSibling(pageFile.getFileName() + ".txoutcome");
     }
 
+    public static Path transactionStatusFile(Path databaseDirectory, String storageId) {
+        Path directory = inheritedStoreDirectory(databaseDirectory);
+        if (directory == null) {
+            return null;
+        }
+        return directory.resolve(requireStorageId(storageId) + ".txstatus");
+    }
+
     public static Path writeAheadLogFile(Path databaseDirectory, String storageId) {
         Path directory = inheritedStoreDirectory(databaseDirectory);
         if (directory == null) {

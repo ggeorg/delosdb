@@ -3,11 +3,14 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
 import io.github.ggeorg.delosdb.storage.mvcc.store.MvccSubsystemRecoveryRecordStore;
 import io.github.ggeorg.delosdb.storage.mvcc.store.MvccSubsystemRecoveryRecordStore.Subsystem;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusRecord;
 
 /**
  * Strict MVCC recovery replay coordinator.
@@ -25,12 +28,13 @@ public final class MvccRecoveryReplayEngine {
     private final PageBackedMvccTableStore store;
     private final MvccSubsystemRecoveryRecordStore.ReplayPlan subsystemReplayPlan;
     private final Set<Subsystem> requiredSubsystems;
+    private final Map<MvccTransactionId, MvccTransactionStatusRecord> statusFallback;
 
     public MvccRecoveryReplayEngine(
             MvccPageMutationLog mutationLog,
             MvccTransactionOutcomeLog outcomeLog,
             PageBackedMvccTableStore store) {
-        this(mutationLog, outcomeLog, store, null, Set.of());
+        this(mutationLog, outcomeLog, store, null, Set.of(), Map.of());
     }
 
     public MvccRecoveryReplayEngine(
@@ -39,6 +43,16 @@ public final class MvccRecoveryReplayEngine {
             PageBackedMvccTableStore store,
             MvccSubsystemRecoveryRecordStore.ReplayPlan subsystemReplayPlan,
             Set<Subsystem> requiredSubsystems) {
+        this(mutationLog, outcomeLog, store, subsystemReplayPlan, requiredSubsystems, Map.of());
+    }
+
+    public MvccRecoveryReplayEngine(
+            MvccPageMutationLog mutationLog,
+            MvccTransactionOutcomeLog outcomeLog,
+            PageBackedMvccTableStore store,
+            MvccSubsystemRecoveryRecordStore.ReplayPlan subsystemReplayPlan,
+            Set<Subsystem> requiredSubsystems,
+            Map<MvccTransactionId, MvccTransactionStatusRecord> statusFallback) {
         this.mutationLog = Objects.requireNonNull(mutationLog, "mutationLog");
         this.outcomeLog = Objects.requireNonNull(outcomeLog, "outcomeLog");
         this.store = Objects.requireNonNull(store, "store");
@@ -46,6 +60,7 @@ public final class MvccRecoveryReplayEngine {
                 ? MvccSubsystemRecoveryRecordStore.ReplayPlan.empty(null)
                 : subsystemReplayPlan;
         this.requiredSubsystems = immutableSubsystemSet(requiredSubsystems);
+        this.statusFallback = Map.copyOf(Objects.requireNonNull(statusFallback, "statusFallback"));
     }
 
     public static ReplayResult recoverStrict(Path mutationLogPath, Path outcomeLogPath, Path tablePath)
@@ -80,7 +95,8 @@ public final class MvccRecoveryReplayEngine {
     }
 
     /**
-     * Replays mutations through the strict transaction-outcome authority.
+     * Replays mutations through the strict local outcome authority plus any
+     * explicitly correlated database transaction-status fallback.
      *
      * <p>Subsystem metadata validation happens before any page mutation replay.
      * That ordering is intentional: a crash simulation that contains row-page
@@ -91,7 +107,7 @@ public final class MvccRecoveryReplayEngine {
     public ReplayResult recoverStrict() throws IOException {
         subsystemReplayPlan.requireCrossSubsystemCompleteness(requiredSubsystems);
         MvccPageRecoveryRunner.RecoveryResult pageResult =
-                new MvccPageRecoveryRunner(mutationLog, store).recoverStrict(outcomeLog);
+                new MvccPageRecoveryRunner(mutationLog, store).recoverStrict(outcomeLog, statusFallback);
         return new ReplayResult(
                 pageResult.appliedRecords(),
                 pageResult.skippedExistingRecords(),

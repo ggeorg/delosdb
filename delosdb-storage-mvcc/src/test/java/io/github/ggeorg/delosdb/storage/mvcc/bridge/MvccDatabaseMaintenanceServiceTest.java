@@ -9,6 +9,7 @@ package io.github.ggeorg.delosdb.storage.mvcc.bridge;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -162,6 +163,38 @@ final class MvccDatabaseMaintenanceServiceTest {
         assertFalse(service.metrics().accepting());
         first.close();
         second.close();
+    }
+
+    @Test
+    void closeFailsWithoutClosingTableResourcesWhileRunningWorkerIgnoresInterrupt() throws Exception {
+        MvccDatabaseMaintenanceService service = new MvccDatabaseMaintenanceService(
+                databaseDirectory.resolve("stubborn-worker"),
+                1,
+                TimeUnit.DAYS.toMillis(1L),
+                Duration.ofMillis(50L));
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        MvccDatabaseMaintenanceService.Registration registration = service.register(target(
+                "stubborn",
+                Optional::empty,
+                trigger -> {
+                    started.countDown();
+                    await(release);
+                }));
+
+        registration.request(
+                new MvccDatabaseMaintenanceService.Priority(1L, 1L, 0L),
+                MvccDatabaseMaintenanceService.Trigger.COMMIT);
+        assertTrue(started.await(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS));
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, service::close);
+        assertTrue(failure.getMessage().contains("table resources remain open"));
+        assertEquals(1, service.metrics().activeWorkerCount());
+
+        release.countDown();
+        waitUntil(() -> service.metrics().activeWorkerCount() == 0);
+        service.close();
+        assertFalse(service.metrics().accepting());
     }
 
     private static MvccDatabaseMaintenanceService.Target target(

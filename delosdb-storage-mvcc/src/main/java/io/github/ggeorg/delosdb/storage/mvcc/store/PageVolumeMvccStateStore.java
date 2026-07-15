@@ -68,6 +68,7 @@ public final class PageVolumeMvccStateStore<T> {
     private final MvccOrderedIndexPageStore orderedIndexPageStore;
     private OrderedIndexLookupFallbackReason orderedIndexOpenFallbackReason;
     private OrderedIndexLookupFallbackReason pendingOrderedIndexLookupFallbackReason;
+    private volatile PublicationHook publicationHook = PublicationHook.NOOP;
     private long nextTransactionId;
     private long nextCommitSequence;
 
@@ -762,10 +763,32 @@ public final class PageVolumeMvccStateStore<T> {
     public void persistPreparedChanges(
             PreparedChanges preparedChanges,
             MvccCommitSequence commitSequence) {
+        StagedChanges staged = stagePreparedChanges(preparedChanges, commitSequence, 0L);
+        publishStagedChanges(staged);
+    }
+
+    /**
+     * Durably stages one transaction payload before the transaction-status
+     * COMMITTED record is published.
+     *
+     * <p>A complete staged batch without a terminal outcome is ignored by
+     * strict recovery. The caller may therefore abort the transaction safely if
+     * another group member fails before the shared status force.</p>
+     */
+    public StagedChanges stagePreparedChanges(
+            PreparedChanges preparedChanges,
+            MvccCommitSequence commitSequence,
+            long statusTransactionId) {
         Objects.requireNonNull(preparedChanges, "preparedChanges");
         Objects.requireNonNull(commitSequence, "commitSequence");
+        if (statusTransactionId < 0L) {
+            throw new IllegalArgumentException("statusTransactionId must not be negative: "
+                    + statusTransactionId);
+        }
+        long transactionId = nextTransactionId();
         if (!enabled() || preparedChanges.isEmpty()) {
-            return;
+            return StagedChanges.empty(
+                    this, transactionId, statusTransactionId, commitSequence.value());
         }
         long durableCommitSequence = commitSequence.value();
         nextCommitSequence = Math.max(nextCommitSequence, durableCommitSequence + 1L);
@@ -773,8 +796,9 @@ public final class PageVolumeMvccStateStore<T> {
         for (MvccRowDirectoryStore.RowHeadRecord head : table.durableRowDirectoryHeads().values()) {
             existingHeads.put(head.key(), head);
         }
-        long transactionId = nextTransactionId();
+
         boolean wroteWalTransaction = false;
+        PageBackedMvccTable.PreparedTransaction pageTransaction = null;
         try {
             List<PlannedPageWrite<T>> plannedWrites = new ArrayList<>();
             List<PageVolumeMvccWriteAheadLog.VersionWrite> walWrites = new ArrayList<>();
@@ -799,51 +823,150 @@ public final class PageVolumeMvccStateStore<T> {
                     walWrites.add(PageVolumeMvccWriteAheadLog.VersionWrite.update(change.rowId()));
                 }
             }
-            if (!plannedWrites.isEmpty()) {
-                List<DelosLogSequenceNumber> pageLsns = writeAheadLog.appendVersionBatch(
-                        transactionId,
-                        durableCommitSequence,
-                        walWrites);
-                wroteWalTransaction = true;
-                List<PageBackedMvccTable.CommittedWrite> committedWrites =
-                        new ArrayList<>(plannedWrites.size());
-                for (int i = 0; i < plannedWrites.size(); i++) {
-                    PlannedPageWrite<T> planned = plannedWrites.get(i);
-                    DelosLogSequenceNumber pageLsn = pageLsns.get(i);
-                    switch (planned.operation()) {
-                        case DELETE -> committedWrites.add(
-                                PageBackedMvccTable.CommittedWrite.delete(planned.key(), pageLsn));
-                        case INSERT -> committedWrites.add(
-                                PageBackedMvccTable.CommittedWrite.insert(
-                                        planned.key(), planned.encodedValues(), pageLsn));
-                        case UPDATE -> committedWrites.add(
-                                PageBackedMvccTable.CommittedWrite.update(
-                                        planned.key(), planned.encodedValues(), pageLsn));
-                        default -> throw new IllegalStateException("unknown MVCC planned page write: "
-                                + planned.operation());
-                    }
+            if (plannedWrites.isEmpty()) {
+                return StagedChanges.empty(
+                        this, transactionId, statusTransactionId, durableCommitSequence);
+            }
+
+            List<DelosLogSequenceNumber> pageLsns = writeAheadLog.appendVersionBatch(
+                    transactionId,
+                    durableCommitSequence,
+                    walWrites);
+            wroteWalTransaction = true;
+            List<PageBackedMvccTable.CommittedWrite> committedWrites =
+                    new ArrayList<>(plannedWrites.size());
+            for (int i = 0; i < plannedWrites.size(); i++) {
+                PlannedPageWrite<T> planned = plannedWrites.get(i);
+                DelosLogSequenceNumber pageLsn = pageLsns.get(i);
+                switch (planned.operation()) {
+                    case DELETE -> committedWrites.add(
+                            PageBackedMvccTable.CommittedWrite.delete(planned.key(), pageLsn));
+                    case INSERT -> committedWrites.add(
+                            PageBackedMvccTable.CommittedWrite.insert(
+                                    planned.key(), planned.encodedValues(), pageLsn));
+                    case UPDATE -> committedWrites.add(
+                            PageBackedMvccTable.CommittedWrite.update(
+                                    planned.key(), planned.encodedValues(), pageLsn));
+                    default -> throw new IllegalStateException("unknown MVCC planned page write: "
+                            + planned.operation());
                 }
-                table.persistCommittedTransaction(transactionId, durableCommitSequence, committedWrites);
-                appendSubsystemRecoveryRecords(transactionId, durableCommitSequence);
-                rewriteCheckpoint();
             }
-        } catch (IOException e) {
-            if (wroteWalTransaction) {
-                writeAheadLog.appendAbort(transactionId);
-            }
-            throw new UncheckedIOException("Could not persist inherited MVCC changed rows to page volume "
-                    + pageFile, e);
-        } catch (PageBackedMvccTable.CommittedTransactionMaterializationException e) {
-            // The outcome fence is already durable. Recovery must finish page
-            // materialization; appending WAL ABORT here would contradict it.
-            throw e;
-        } catch (RuntimeException e) {
-            if (wroteWalTransaction) {
-                writeAheadLog.appendAbort(transactionId);
-            }
-            throw e;
+            pageTransaction = table.prepareCommittedTransaction(
+                    transactionId,
+                    durableCommitSequence,
+                    statusTransactionId,
+                    committedWrites);
+            table.stagePreparedTransaction(pageTransaction);
+            return new StagedChanges(
+                    this,
+                    transactionId,
+                    statusTransactionId,
+                    durableCommitSequence,
+                    pageTransaction,
+                    true);
+        } catch (RuntimeException | Error failure) {
+            abortFailedStage(transactionId, wroteWalTransaction, pageTransaction, failure);
+            throw failure;
         }
     }
+
+    /**
+     * Publishes a staged transaction after the shared transaction-status force.
+     * Any failure is therefore a committed transaction that requires recovery;
+     * it is never converted into WAL ABORT.
+     */
+    public void publishStagedChanges(StagedChanges stagedChanges) {
+        StagedChanges staged = requireStagedChanges(stagedChanges);
+        if (staged.empty()) {
+            return;
+        }
+        PublicationStage stage = PublicationStage.OUTCOME_FENCE;
+        try {
+            publicationHook.beforeStage(stage, staged);
+            table.publishPreparedTransaction(staged.pageTransaction());
+            stage = PublicationStage.SUBSYSTEM_RECOVERY_RECORDS;
+            publicationHook.beforeStage(stage, staged);
+            appendSubsystemRecoveryRecords(staged.transactionId(), staged.commitSequence());
+            stage = PublicationStage.CHECKPOINT;
+            publicationHook.beforeStage(stage, staged);
+            rewriteCheckpoint();
+        } catch (PageBackedMvccTable.CommittedTransactionMaterializationException failure) {
+            throw new CommittedTransactionPublicationException(
+                    staged.transactionId(),
+                    staged.commitSequence(),
+                    PublicationStage.PAGE_MATERIALIZATION,
+                    failure);
+        } catch (IOException failure) {
+            throw new CommittedTransactionPublicationException(
+                    staged.transactionId(), staged.commitSequence(), stage, failure);
+        } catch (RuntimeException | Error failure) {
+            throw new CommittedTransactionPublicationException(
+                    staged.transactionId(), staged.commitSequence(), stage, failure);
+        }
+    }
+
+    /** Aborts a staged payload when the shared COMMITTED status force failed. */
+    public void abortStagedChanges(StagedChanges stagedChanges) {
+        StagedChanges staged = requireStagedChanges(stagedChanges);
+        if (staged.empty()) {
+            return;
+        }
+        Throwable failure = null;
+        try {
+            table.abortPreparedTransaction(staged.transactionId());
+        } catch (RuntimeException | Error abortFailure) {
+            failure = abortFailure;
+        }
+        try {
+            writeAheadLog.appendAbort(staged.transactionId());
+        } catch (RuntimeException | Error walFailure) {
+            if (failure == null) {
+                failure = walFailure;
+            } else {
+                failure.addSuppressed(walFailure);
+            }
+        }
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+        if (failure instanceof Error error) {
+            throw error;
+        }
+    }
+
+    private void abortFailedStage(
+            long transactionId,
+            boolean wroteWalTransaction,
+            PageBackedMvccTable.PreparedTransaction pageTransaction,
+            Throwable failure) {
+        if (pageTransaction != null) {
+            try {
+                table.abortPreparedTransaction(transactionId);
+            } catch (RuntimeException | Error abortFailure) {
+                failure.addSuppressed(abortFailure);
+            }
+        }
+        if (wroteWalTransaction) {
+            try {
+                writeAheadLog.appendAbort(transactionId);
+            } catch (RuntimeException | Error abortFailure) {
+                failure.addSuppressed(abortFailure);
+            }
+        }
+    }
+
+    private StagedChanges requireStagedChanges(StagedChanges stagedChanges) {
+        StagedChanges staged = Objects.requireNonNull(stagedChanges, "stagedChanges");
+        if (staged.owner() != this) {
+            throw new IllegalArgumentException("staged MVCC changes belong to another state store");
+        }
+        return staged;
+    }
+
+    public void setPublicationHookForTesting(PublicationHook publicationHook) {
+        this.publicationHook = Objects.requireNonNull(publicationHook, "publicationHook");
+    }
+
 
     public void drop() {
         if (!enabled()) {
@@ -974,6 +1097,90 @@ public final class PageVolumeMvccStateStore<T> {
     }
 
 
+
+    public enum PublicationStage {
+        OUTCOME_FENCE,
+        PAGE_MATERIALIZATION,
+        SUBSYSTEM_RECOVERY_RECORDS,
+        CHECKPOINT
+    }
+
+    @FunctionalInterface
+    public interface PublicationHook {
+        PublicationHook NOOP = (stage, changes) -> { };
+
+        void beforeStage(PublicationStage stage, StagedChanges changes);
+    }
+
+    public static final class CommittedTransactionPublicationException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        private final long transactionId;
+        private final long commitSequence;
+        private final PublicationStage stage;
+
+        private CommittedTransactionPublicationException(
+                long transactionId,
+                long commitSequence,
+                PublicationStage stage,
+                Throwable cause) {
+            super("MVCC transaction " + transactionId + " is committed at sequence "
+                    + commitSequence + " but publication failed during " + stage, cause);
+            this.transactionId = transactionId;
+            this.commitSequence = commitSequence;
+            this.stage = Objects.requireNonNull(stage, "stage");
+        }
+
+        public long transactionId() {
+            return transactionId;
+        }
+
+        public long commitSequence() {
+            return commitSequence;
+        }
+
+        public PublicationStage stage() {
+            return stage;
+        }
+    }
+
+    public record StagedChanges(
+            PageVolumeMvccStateStore<?> owner,
+            long transactionId,
+            long statusTransactionId,
+            long commitSequence,
+            PageBackedMvccTable.PreparedTransaction pageTransaction,
+            boolean walTransactionWritten) {
+        public StagedChanges {
+            owner = Objects.requireNonNull(owner, "owner");
+            if (transactionId <= 0L) {
+                throw new IllegalArgumentException("transactionId must be positive: " + transactionId);
+            }
+            if (statusTransactionId < 0L) {
+                throw new IllegalArgumentException("statusTransactionId must not be negative: "
+                        + statusTransactionId);
+            }
+            if (commitSequence <= 0L) {
+                throw new IllegalArgumentException("commitSequence must be positive: " + commitSequence);
+            }
+            if ((pageTransaction == null) != !walTransactionWritten) {
+                throw new IllegalArgumentException("staged page transaction and WAL state must agree");
+            }
+        }
+
+        static StagedChanges empty(
+                PageVolumeMvccStateStore<?> owner,
+                long transactionId,
+                long statusTransactionId,
+                long commitSequence) {
+            return new StagedChanges(
+                    owner, transactionId, statusTransactionId, commitSequence, null, false);
+        }
+
+        public boolean empty() {
+            return pageTransaction == null;
+        }
+    }
 
     private enum PlannedPageWriteOperation {
         INSERT,

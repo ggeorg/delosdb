@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
@@ -67,9 +68,12 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final MvccDatabaseMaintenanceService.Registration maintenanceRegistration;
     private final boolean ownsMaintenanceService;
     private final Consumer<MvccInheritedTable> closeCallback;
+    private final AtomicBoolean closeStarted = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final AtomicReference<RecoveryRequired> recoveryRequired = new AtomicReference<>();
     private final List<MvccInheritedHandles.Transaction> activeTransactions = new ArrayList<>();
     private final ReentrantReadWriteLock tableLock = new ReentrantReadWriteLock();
+    private final Lock closeLock = new java.util.concurrent.locks.ReentrantLock();
     private final MvccCommitMetrics commitMetrics = new MvccCommitMetrics();
     private final MvccCommitCoordinator<MvccPreparedCommit, CommitPublication> durabilityCoordinator;
     private final SharedStatusForceHook sharedStatusForceHook;
@@ -91,6 +95,10 @@ final class MvccInheritedTable implements DelosStorageTable,
     private int pageBackedHistoricalSnapshotReadCount;
     private int pageBackedHistoricalSnapshotScanCount;
     private DelosVacuumOutcome lastVacuumOutcome = DelosVacuumOutcome.disabled();
+    private long postCommitMaintenanceFailureCount;
+    private String lastPostCommitMaintenanceFailure = "";
+    private volatile Runnable orderedIndexPublicationHook = () -> { };
+    private volatile Runnable postCommitMaintenanceHook = () -> { };
 
     MvccInheritedTable(long segmentId, long containerId, Path databaseDirectory) {
         this(segmentId, containerId, databaseDirectory, MvccCommitCoordinator.Mode.GROUP);
@@ -601,17 +609,14 @@ final class MvccInheritedTable implements DelosStorageTable,
 
         MvccCommitDurabilityMetrics.Scope sharedScope = MvccCommitDurabilityMetrics.begin(observe);
         MvccCommitDurabilityMetrics.Snapshot sharedDurability;
-        long statusStarted = observe ? System.nanoTime() : 0L;
-        List<MvccCommitSequence> sequences;
+        List<MvccPreparedCommit> survivingCommits = survivors.stream()
+                .map(preparedCommits::get)
+                .toList();
+        MvccTransactionManager.PreparedCommitBatch preparedStatusBatch;
         try {
-            List<MvccPreparedCommit> survivingCommits = survivors.stream()
-                    .map(preparedCommits::get)
-                    .toList();
-            sharedStatusForceHook.beforeForce(survivingCommits);
-            sequences = transactions.commitBatch(survivingCommits.stream()
+            preparedStatusBatch = transactions.prepareCommitBatch(survivingCommits.stream()
                     .map(MvccPreparedCommit::transaction)
                     .toList());
-            backupCoordinator.recordCommittedTransactions(survivors.size());
         } catch (RuntimeException | Error failure) {
             sharedDurability = sharedScope.finish();
             for (int survivor : survivors) {
@@ -619,98 +624,185 @@ final class MvccInheritedTable implements DelosStorageTable,
             }
             return;
         }
-        long statusNanos = observe ? System.nanoTime() - statusStarted : 0L;
 
-        List<CommitPublication> publications = new ArrayList<>(survivors.size());
-        boolean anyPersisted = false;
-        int totalChangedRows = 0;
+        List<Integer> stagedSurvivors = new ArrayList<>();
+        List<MvccPreparedCommit> stagedCommits = new ArrayList<>();
+        List<MvccTransactionManager.PreparedCommit> stagedStatuses = new ArrayList<>();
+        List<PageVolumeMvccStateStore.StagedChanges> stagedChanges = new ArrayList<>();
+        List<CommitPublication> publications = new ArrayList<>();
         for (int position = 0; position < survivors.size(); position++) {
             int index = survivors.get(position);
             MvccPreparedCommit prepared = preparedCommits.get(index);
+            MvccTransactionManager.PreparedCommit preparedStatus = preparedStatusBatch.commits().get(position);
             MvccCommitDurabilityMetrics.Scope memberScope = MvccCommitDurabilityMetrics.begin(observe);
             long persistenceStarted = observe ? System.nanoTime() : 0L;
-            Throwable failure = null;
             try {
-                pageVolumeStateStore.persistPreparedChanges(
+                PageVolumeMvccStateStore.StagedChanges staged = pageVolumeStateStore.stagePreparedChanges(
                         prepared.preparedPageChanges(),
-                        sequences.get(position));
-                anyPersisted = true;
-                totalChangedRows += prepared.changedRowCount();
-            } catch (RuntimeException | Error memberFailure) {
-                failure = memberFailure;
+                        preparedStatus.commitSequence(),
+                        prepared.transaction().id().value());
+                stagedSurvivors.add(index);
+                stagedCommits.add(prepared);
+                stagedStatuses.add(preparedStatus);
+                stagedChanges.add(staged);
+                long persistenceNanos = observe ? System.nanoTime() - persistenceStarted : 0L;
+                publications.add(new CommitPublication(
+                        prepared.changedRowCount(),
+                        stagedSurvivors.size() == 1 ? backupWaitNanos : 0L,
+                        0L,
+                        stagedSurvivors.size() == 1 ? tableLockWaitNanos : 0L,
+                        0L,
+                        validationNanos[index],
+                        0L,
+                        persistenceNanos,
+                        0L,
+                        0L,
+                        0L,
+                        0L,
+                        executionConcurrency,
+                        memberScope.finish()));
+            } catch (RuntimeException | Error stageFailure) {
+                memberScope.finish();
+                abortIfActive(prepared.transaction(), stageFailure);
+                prepared.handle().clearWriteIntents();
+                activeTransactions.remove(prepared.handle());
+                outcomes.set(index, MvccCommitCoordinator.Outcome.failure(stageFailure));
             }
-            long persistenceNanos = observe ? System.nanoTime() - persistenceStarted : 0L;
-            MvccCommitDurabilityMetrics.Snapshot durability = memberScope.finish();
-            boolean sharedOwner = position == 0;
-            CommitPublication publication = new CommitPublication(
-                    prepared.changedRowCount(),
-                    sharedOwner ? backupWaitNanos : 0L,
-                    0L,
-                    sharedOwner ? tableLockWaitNanos : 0L,
-                    0L,
-                    validationNanos[index],
-                    0L,
-                    persistenceNanos,
-                    0L,
-                    0L,
-                    0L,
-                    0L,
-                    executionConcurrency,
-                    durability);
-            publications.add(publication);
-            if (failure != null) {
-                outcomes.set(index, MvccCommitCoordinator.Outcome.failure(failure));
+        }
+        if (stagedSurvivors.isEmpty()) {
+            sharedScope.finish();
+            return;
+        }
+
+        long statusStarted = observe ? System.nanoTime() : 0L;
+        try {
+            sharedStatusForceHook.beforeForce(List.copyOf(stagedCommits));
+        } catch (RuntimeException | Error failure) {
+            abortStagedBeforeStatusPublication(
+                    stagedSurvivors, stagedCommits, stagedChanges, outcomes, failure);
+            sharedScope.finish();
+            return;
+        }
+
+        boolean statusPublicationCompleted = false;
+        try {
+            transactions.publishPreparedCommitBatch(new MvccTransactionManager.PreparedCommitBatch(
+                    preparedStatusBatch.baseCommitSequence(),
+                    stagedStatuses));
+            statusPublicationCompleted = true;
+            sharedStatusForceHook.afterForce(List.copyOf(stagedCommits));
+            backupCoordinator.recordCommittedTransactions(stagedSurvivors.size());
+        } catch (RuntimeException | Error failure) {
+            RecoveryRequired unhealthy = markRecoveryRequired(
+                    "transaction-status publication", failure);
+            for (int position = 0; position < stagedSurvivors.size(); position++) {
+                MvccPreparedCommit prepared = stagedCommits.get(position);
+                prepared.handle().clearWriteIntents();
+                activeTransactions.remove(prepared.handle());
+                RuntimeException outcomeFailure = statusPublicationCompleted
+                        ? new CommittedTransactionRecoveryRequiredException(
+                                storageId(segmentId, containerId),
+                                prepared.transaction().id().value(),
+                                stagedStatuses.get(position).commitSequence().value(),
+                                unhealthy,
+                                failure)
+                        : new TransactionStatusOutcomeUnknownException(
+                                storageId(segmentId, containerId),
+                                prepared.transaction().id().value(),
+                                stagedStatuses.get(position).commitSequence().value(),
+                                unhealthy,
+                                failure);
+                outcomes.set(stagedSurvivors.get(position),
+                        MvccCommitCoordinator.Outcome.failure(outcomeFailure));
+            }
+            sharedScope.finish();
+            return;
+        }
+        long statusNanos = observe ? System.nanoTime() - statusStarted : 0L;
+
+        boolean anyMaterialized = false;
+        int totalChangedRows = 0;
+        for (int position = 0; position < stagedSurvivors.size(); position++) {
+            int index = stagedSurvivors.get(position);
+            MvccPreparedCommit prepared = stagedCommits.get(position);
+            PageVolumeMvccStateStore.StagedChanges staged = stagedChanges.get(position);
+            long publicationStarted = observe ? System.nanoTime() : 0L;
+            RecoveryRequired existingRecovery = recoveryRequired.get();
+            if (existingRecovery != null) {
+                outcomes.set(index, MvccCommitCoordinator.Outcome.failure(
+                        new CommittedTransactionRecoveryRequiredException(
+                                storageId(segmentId, containerId),
+                                prepared.transaction().id().value(),
+                                staged.commitSequence(),
+                                existingRecovery,
+                                new IllegalStateException(existingRecovery.failureSummary()))));
+                prepared.handle().clearWriteIntents();
+                activeTransactions.remove(prepared.handle());
+                continue;
+            }
+            MvccCommitDurabilityMetrics.Scope publicationScope =
+                    MvccCommitDurabilityMetrics.begin(observe);
+            try {
+                pageVolumeStateStore.publishStagedChanges(staged);
+                anyMaterialized |= !staged.empty();
+                totalChangedRows += prepared.changedRowCount();
+            } catch (RuntimeException | Error publicationFailure) {
+                RecoveryRequired unhealthy = markRecoveryRequired("committed page publication", publicationFailure);
+                outcomes.set(index, MvccCommitCoordinator.Outcome.failure(
+                        new CommittedTransactionRecoveryRequiredException(
+                                storageId(segmentId, containerId),
+                                prepared.transaction().id().value(),
+                                staged.commitSequence(),
+                                unhealthy,
+                                publicationFailure)));
+            } finally {
+                MvccCommitDurabilityMetrics.Snapshot publicationDurability = publicationScope.finish();
+                prepared.handle().clearWriteIntents();
+                activeTransactions.remove(prepared.handle());
+                if (observe) {
+                    publications.set(position, publications.get(position).withTransactionPublication(
+                            System.nanoTime() - publicationStarted,
+                            publicationDurability));
+                }
             }
         }
 
         long indexNanos = 0L;
         Throwable sharedFailure = null;
-        if (anyPersisted) {
+        if (recoveryRequired.get() == null && anyMaterialized) {
             long indexStarted = observe ? System.nanoTime() : 0L;
             try {
+                orderedIndexPublicationHook.run();
                 indexMaintenance.rebuildFromCommittedRows();
             } catch (RuntimeException | Error failure) {
-                sharedFailure = failure;
+                RecoveryRequired unhealthy = markRecoveryRequired("ordered-index publication", failure);
+                sharedFailure = new CommittedTransactionRecoveryRequiredException(
+                        storageId(segmentId, containerId),
+                        -1L,
+                        stagedStatuses.getLast().commitSequence().value(),
+                        unhealthy,
+                        failure);
             }
             indexNanos = observe ? System.nanoTime() - indexStarted : 0L;
         }
 
-        long publicationStarted = observe ? System.nanoTime() : 0L;
-        for (int position = 0; position < survivors.size(); position++) {
-            int index = survivors.get(position);
-            MvccPreparedCommit prepared = preparedCommits.get(index);
-            try {
-                if (outcomes.get(index) == null && sharedFailure == null) {
-                    lastCommittedChangedRowCount = prepared.changedRowCount();
-                    lastCommittedWriteIntentCount = prepared.writeIntentCount();
-                    lastCommittedWriteIntentPayloadSummaries = prepared.payloadSummaries();
-                }
-            } finally {
-                // commitBatch() already published COMMITTED status for every survivor.
-                // Later page, index, or maintenance failure is therefore a committed
-                // materialization failure, not an active transaction that may retain
-                // provider write intents.
-                prepared.handle().clearWriteIntents();
-                activeTransactions.remove(prepared.handle());
-            }
-        }
-        long publicationNanos = observe ? System.nanoTime() - publicationStarted : 0L;
-
         long maintenanceNanos = 0L;
-        if (sharedFailure == null && anyPersisted) {
+        if (sharedFailure == null && recoveryRequired.get() == null && anyMaterialized) {
             long maintenanceStarted = observe ? System.nanoTime() : 0L;
             try {
+                postCommitMaintenanceHook.run();
                 runPurgeDaemonAfterCommit(totalChangedRows);
-            } catch (RuntimeException | Error failure) {
-                sharedFailure = failure;
+            } catch (RuntimeException maintenanceFailure) {
+                postCommitMaintenanceFailureCount++;
+                lastPostCommitMaintenanceFailure = failureSummary(maintenanceFailure);
             }
             maintenanceNanos = observe ? System.nanoTime() - maintenanceStarted : 0L;
         }
         sharedDurability = sharedScope.finish();
 
-        int leaderIndex = survivors.get(0);
-        for (int position = 0; position < survivors.size(); position++) {
-            int index = survivors.get(position);
+        int leaderIndex = stagedSurvivors.getFirst();
+        for (int position = 0; position < stagedSurvivors.size(); position++) {
+            int index = stagedSurvivors.get(position);
             if (outcomes.get(index) != null) {
                 continue;
             }
@@ -718,12 +810,15 @@ final class MvccInheritedTable implements DelosStorageTable,
                 outcomes.set(index, MvccCommitCoordinator.Outcome.failure(sharedFailure));
                 continue;
             }
+            MvccPreparedCommit prepared = stagedCommits.get(position);
+            lastCommittedChangedRowCount = prepared.changedRowCount();
+            lastCommittedWriteIntentCount = prepared.writeIntentCount();
+            lastCommittedWriteIntentPayloadSummaries = prepared.payloadSummaries();
             CommitPublication publication = publications.get(position);
             if (index == leaderIndex) {
                 publication = publication.withShared(
                         statusNanos,
                         indexNanos,
-                        publicationNanos,
                         maintenanceNanos,
                         sharedDurability);
             }
@@ -744,6 +839,26 @@ final class MvccInheritedTable implements DelosStorageTable,
         });
     }
 
+
+    private void abortStagedBeforeStatusPublication(
+            List<Integer> stagedSurvivors,
+            List<MvccPreparedCommit> stagedCommits,
+            List<PageVolumeMvccStateStore.StagedChanges> stagedChanges,
+            List<MvccCommitCoordinator.Outcome<CommitPublication>> outcomes,
+            Throwable failure) {
+        for (int position = 0; position < stagedSurvivors.size(); position++) {
+            try {
+                pageVolumeStateStore.abortStagedChanges(stagedChanges.get(position));
+            } catch (RuntimeException | Error abortFailure) {
+                failure.addSuppressed(abortFailure);
+            }
+            MvccPreparedCommit prepared = stagedCommits.get(position);
+            abortIfActive(prepared.transaction(), failure);
+            prepared.handle().clearWriteIntents();
+            activeTransactions.remove(prepared.handle());
+            outcomes.set(stagedSurvivors.get(position), MvccCommitCoordinator.Outcome.failure(failure));
+        }
+    }
 
     private void runPurgeDaemonAfterCommit(int changedRows) {
         MvccVisibilityDebtPolicy.Snapshot debt = visibilityDebtSnapshot();
@@ -766,6 +881,9 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     private Optional<MvccDatabaseMaintenanceService.Priority> periodicMaintenancePriority() {
+        if (closeStarted.get() || closed.get() || recoveryRequired.get() != null) {
+            return Optional.empty();
+        }
         return readLocked(() -> {
             if (closed.get()) {
                 return Optional.empty();
@@ -780,6 +898,9 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     private void runScheduledMaintenance(MvccDatabaseMaintenanceService.Trigger trigger) {
+        if (closeStarted.get() || closed.get() || recoveryRequired.get() != null) {
+            return;
+        }
         durableMutationLocked(DelosStorageBackupCoordinator.Mutation.ASYNCHRONOUS_MAINTENANCE, () -> {
             if (closed.get()) {
                 return;
@@ -1125,7 +1246,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public int logicalRowCountForTesting() {
-        return readLocked(pageVolumeStateStore::logicalRowCount);
+        return diagnosticReadLocked(pageVolumeStateStore::logicalRowCount);
     }
 
     @Override
@@ -1667,20 +1788,48 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) {
-            return;
-        }
-        durabilityCoordinator.close();
-        if (ownsMaintenanceService) {
-            maintenanceService.close();
-        }
-        maintenanceRegistration.close();
+        closeLock.lock();
         try {
-            durableMutationLocked(
-                    DelosStorageBackupCoordinator.Mutation.TABLE_CLOSE,
-                    pageVolumeStateStore::close);
+            if (closed.get()) {
+                return;
+            }
+            closeStarted.set(true);
+            durabilityCoordinator.close();
+            if (ownsMaintenanceService) {
+                maintenanceService.close();
+            }
+            maintenanceRegistration.close();
+            Throwable failure = null;
+            try {
+                try (DelosStorageBackupCoordinator.Guard ignored =
+                             backupCoordinator.enterDurableMutation(
+                                     DelosStorageBackupCoordinator.Mutation.TABLE_CLOSE)) {
+                    writeLock.lock();
+                    try {
+                        pageVolumeStateStore.close();
+                    } finally {
+                        writeLock.unlock();
+                    }
+                }
+            } catch (RuntimeException | Error closeFailure) {
+                failure = closeFailure;
+            } finally {
+                closed.set(true);
+                try {
+                    closeCallback.accept(this);
+                } catch (RuntimeException | Error callbackFailure) {
+                    if (failure == null) {
+                        failure = callbackFailure;
+                    } else {
+                        failure.addSuppressed(callbackFailure);
+                    }
+                }
+            }
+            if (failure != null) {
+                throwUnchecked(failure);
+            }
         } finally {
-            closeCallback.accept(this);
+            closeLock.unlock();
         }
     }
 
@@ -1690,6 +1839,18 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     DelosStorageBackupCoordinator backupCoordinatorForTesting() {
         return backupCoordinator;
+    }
+
+    void setPagePublicationHookForTesting(PageVolumeMvccStateStore.PublicationHook hook) {
+        pageVolumeStateStore.setPublicationHookForTesting(hook);
+    }
+
+    void setOrderedIndexPublicationHookForTesting(Runnable hook) {
+        orderedIndexPublicationHook = Objects.requireNonNull(hook, "hook");
+    }
+
+    void setPostCommitMaintenanceHookForTesting(Runnable hook) {
+        postCommitMaintenanceHook = Objects.requireNonNull(hook, "hook");
     }
 
 
@@ -1889,6 +2050,10 @@ final class MvccInheritedTable implements DelosStorageTable,
         return nativeSnapshot.visibleThrough().equals(transactions.newestCommitSequence());
     }
 
+    int activeTransactionCountForTesting() {
+        return transactions.activeTransactionCount();
+    }
+
     int activeCommitRequestsForTesting() {
         return commitMetrics.activeTableRequests();
     }
@@ -1905,9 +2070,64 @@ final class MvccInheritedTable implements DelosStorageTable,
         return failure.getClass().getName() + (message == null || message.isBlank() ? "" : ": " + message);
     }
 
-    private <T> T readLocked(Supplier<T> operation) {
+    private void requireOperational() {
+        if (closeStarted.get() || closed.get()) {
+            throw new IllegalStateException("delos_mvcc table is closing or closed: "
+                    + storageId(segmentId, containerId));
+        }
+        RecoveryRequired unhealthy = recoveryRequired.get();
+        if (unhealthy != null) {
+            throw new TableRecoveryRequiredException(storageId(segmentId, containerId), unhealthy);
+        }
+    }
+
+    private RecoveryRequired markRecoveryRequired(String stage, Throwable failure) {
+        RecoveryRequired candidate = new RecoveryRequired(
+                Objects.requireNonNull(stage, "stage"),
+                failureSummary(Objects.requireNonNull(failure, "failure")));
+        recoveryRequired.compareAndSet(null, candidate);
+        return recoveryRequired.get();
+    }
+
+    boolean recoveryRequiredForTesting() {
+        return recoveryRequired.get() != null;
+    }
+
+    String recoveryRequiredSummaryForTesting() {
+        RecoveryRequired unhealthy = recoveryRequired.get();
+        return unhealthy == null ? "" : unhealthy.stage() + ": " + unhealthy.failureSummary();
+    }
+
+    long postCommitMaintenanceFailureCountForTesting() {
+        return postCommitMaintenanceFailureCount;
+    }
+
+    String lastPostCommitMaintenanceFailureForTesting() {
+        return lastPostCommitMaintenanceFailure;
+    }
+
+    private <T> T diagnosticReadLocked(Supplier<T> operation) {
         readLock.lock();
         try {
+            if (closed.get()) {
+                throw new IllegalStateException("delos_mvcc table is closed: "
+                        + storageId(segmentId, containerId));
+            }
+            RecoveryRequired unhealthy = recoveryRequired.get();
+            if (unhealthy != null) {
+                throw new TableRecoveryRequiredException(storageId(segmentId, containerId), unhealthy);
+            }
+            return operation.get();
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    private <T> T readLocked(Supplier<T> operation) {
+        requireOperational();
+        readLock.lock();
+        try {
+            requireOperational();
             return operation.get();
         } finally {
             readLock.unlock();
@@ -1915,8 +2135,10 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     private void readLocked(Runnable operation) {
+        requireOperational();
         readLock.lock();
         try {
+            requireOperational();
             operation.run();
         } finally {
             readLock.unlock();
@@ -1924,8 +2146,10 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     private <T> T writeLocked(Supplier<T> operation) {
+        requireOperational();
         writeLock.lock();
         try {
+            requireOperational();
             return operation.get();
         } finally {
             writeLock.unlock();
@@ -1933,8 +2157,10 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     private void writeLocked(Runnable operation) {
+        requireOperational();
         writeLock.lock();
         try {
+            requireOperational();
             operation.run();
         } finally {
             writeLock.unlock();
@@ -2076,17 +2302,28 @@ final class MvccInheritedTable implements DelosStorageTable,
                     maintenanceNanos, sharedForceCount, durabilityExecutionConcurrency, durability);
         }
 
+        CommitPublication withTransactionPublication(
+                long nanos,
+                MvccCommitDurabilityMetrics.Snapshot publicationDurability) {
+            return new CommitPublication(
+                    changedRows, backupWaitNanos, coordinatorHoldNanos,
+                    tableLockWaitNanos, tableLockHoldNanos, validationNanos,
+                    transactionStatusCommitNanos, pageStatePersistenceNanos,
+                    orderedIndexRebuildNanos, nanos,
+                    maintenanceNanos, sharedForceCount, durabilityExecutionConcurrency,
+                    durability.plus(publicationDurability));
+        }
+
         CommitPublication withShared(
                 long statusNanos,
                 long indexNanos,
-                long publicationNanos,
                 long maintenanceNanos,
                 MvccCommitDurabilityMetrics.Snapshot sharedDurability) {
             return new CommitPublication(
                     changedRows, backupWaitNanos, coordinatorHoldNanos,
                     tableLockWaitNanos, tableLockHoldNanos, validationNanos,
                     statusNanos, pageStatePersistenceNanos, indexNanos,
-                    publicationNanos, maintenanceNanos,
+                    transactionStatePublicationNanos, maintenanceNanos,
                     sharedDurability.totalForceCount(),
                     durabilityExecutionConcurrency,
                     durability.plus(sharedDurability));
@@ -2098,6 +2335,81 @@ final class MvccInheritedTable implements DelosStorageTable,
         SharedStatusForceHook NOOP = preparedCommits -> { };
 
         void beforeForce(List<MvccPreparedCommit> preparedCommits);
+
+        default void afterForce(List<MvccPreparedCommit> preparedCommits) {
+        }
+    }
+
+    private record RecoveryRequired(String stage, String failureSummary) {
+        private RecoveryRequired {
+            stage = Objects.requireNonNull(stage, "stage");
+            failureSummary = Objects.requireNonNull(failureSummary, "failureSummary");
+        }
+    }
+
+    static final class TableRecoveryRequiredException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        private TableRecoveryRequiredException(String storageId, RecoveryRequired recoveryRequired) {
+            super("MVCC table " + storageId + " requires close and reopen after "
+                    + recoveryRequired.stage() + ": " + recoveryRequired.failureSummary());
+        }
+    }
+
+    static final class TransactionStatusOutcomeUnknownException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        private final long transactionId;
+        private final long proposedCommitSequence;
+
+        private TransactionStatusOutcomeUnknownException(
+                String storageId,
+                long transactionId,
+                long proposedCommitSequence,
+                RecoveryRequired recoveryRequired,
+                Throwable cause) {
+            super("MVCC transaction " + transactionId + " has an unknown durable outcome for "
+                    + storageId + " after transaction-status publication failed; close and reopen "
+                    + "the table before deciding whether the transaction may be retried", cause);
+            this.transactionId = transactionId;
+            this.proposedCommitSequence = proposedCommitSequence;
+        }
+
+        long transactionId() {
+            return transactionId;
+        }
+
+        long proposedCommitSequence() {
+            return proposedCommitSequence;
+        }
+    }
+
+    static final class CommittedTransactionRecoveryRequiredException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        private final long transactionId;
+        private final long commitSequence;
+
+        private CommittedTransactionRecoveryRequiredException(
+                String storageId,
+                long transactionId,
+                long commitSequence,
+                RecoveryRequired recoveryRequired,
+                Throwable cause) {
+            super("MVCC transaction " + transactionId + " committed at sequence " + commitSequence
+                    + " for " + storageId + ", but the table requires close and reopen after "
+                    + recoveryRequired.stage() + "; the transaction must not be retried", cause);
+            this.transactionId = transactionId;
+            this.commitSequence = commitSequence;
+        }
+
+        long transactionId() {
+            return transactionId;
+        }
+
+        long commitSequence() {
+            return commitSequence;
+        }
     }
 
     private record CommitInput(
@@ -2150,7 +2462,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         return List.copyOf(summaries);
     }
 
-    private void abortIfActive(MvccTransaction transaction, RuntimeException failure) {
+    private void abortIfActive(MvccTransaction transaction, Throwable failure) {
         try {
             transactions.abort(transaction);
         } catch (RuntimeException abortFailure) {
@@ -2204,10 +2516,6 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     private static Path transactionStatusFile(Path databaseDirectory, long segmentId, long containerId) {
-        Path directory = PageVolumeMvccPaths.inheritedStoreDirectory(databaseDirectory);
-        if (directory == null) {
-            return null;
-        }
-        return directory.resolve("conglomerate-" + segmentId + "-" + containerId + ".txstatus");
+        return PageVolumeMvccPaths.transactionStatusFile(databaseDirectory, storageId(segmentId, containerId));
     }
 }

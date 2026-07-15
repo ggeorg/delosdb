@@ -18,6 +18,7 @@ final class MvccInheritedStore implements DelosStorageStore {
     private final DelosStorageBackupCoordinator.DatabaseLease backupCoordinatorLease;
     private final DelosStorageBackupCoordinator backupCoordinator;
     private final Set<MvccInheritedTable> openTables = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean closeStarted = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
 
     MvccInheritedStore(Path databaseDirectory) {
@@ -50,7 +51,7 @@ final class MvccInheritedStore implements DelosStorageStore {
 
     @Override
     public synchronized DelosStorageTable openTable(DelosStorageTableKey key) {
-        if (closed.get()) {
+        if (closeStarted.get() || closed.get()) {
             throw new IllegalStateException("delos_mvcc store is closed");
         }
         MvccInheritedTable table = new MvccInheritedTable(
@@ -61,7 +62,7 @@ final class MvccInheritedStore implements DelosStorageStore {
                 backupCoordinator,
                 openTables::remove);
         openTables.add(table);
-        if (closed.get()) {
+        if (closeStarted.get() || closed.get()) {
             table.close();
             throw new IllegalStateException("delos_mvcc store is closed");
         }
@@ -70,15 +71,40 @@ final class MvccInheritedStore implements DelosStorageStore {
 
     @Override
     public synchronized void close() {
-        if (!closed.compareAndSet(false, true)) {
+        if (closed.get()) {
             return;
         }
+        closeStarted.set(true);
         maintenanceService.close();
+        Throwable failure = null;
         for (MvccInheritedTable table : new ArrayList<>(openTables)) {
-            table.close();
+            try {
+                table.close();
+            } catch (RuntimeException | Error tableFailure) {
+                if (failure == null) {
+                    failure = tableFailure;
+                } else {
+                    failure.addSuppressed(tableFailure);
+                }
+            }
         }
         openTables.clear();
-        backupCoordinatorLease.close();
+        try {
+            backupCoordinatorLease.close();
+        } catch (RuntimeException | Error leaseFailure) {
+            if (failure == null) {
+                failure = leaseFailure;
+            } else {
+                failure.addSuppressed(leaseFailure);
+            }
+        }
+        closed.set(true);
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+        if (failure instanceof Error error) {
+            throw error;
+        }
     }
 
     MvccDatabaseMaintenanceService maintenanceServiceForTesting() {

@@ -3,11 +3,14 @@ package io.github.ggeorg.delosdb.storage.mvcc.durable;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusRecord;
 
 /** Applies committed page-mutation log records into a page-backed MVCC table store. */
 public final class MvccPageRecoveryRunner {
@@ -61,6 +64,12 @@ public final class MvccPageRecoveryRunner {
      * proves their creating transaction reached a durable terminal outcome.
      */
     public RecoveryResult recoverStrict(MvccTransactionOutcomeLog outcomeLog) throws IOException {
+        return recoverStrict(outcomeLog, Map.of());
+    }
+
+    public RecoveryResult recoverStrict(
+            MvccTransactionOutcomeLog outcomeLog,
+            Map<MvccTransactionId, MvccTransactionStatusRecord> statusFallback) throws IOException {
         Objects.requireNonNull(outcomeLog, "outcomeLog");
         var outcomes = outcomeLog.recoverOutcomes();
         Set<MvccVersionId> existingVersionIds = new HashSet<>();
@@ -71,7 +80,11 @@ public final class MvccPageRecoveryRunner {
             }
             existingVersionIds.add(stored.record().header().versionId());
         }
-        return applyRecords(log.recoverRecordsThroughOutcomeLog(outcomeLog), existingVersionIds, 0, 0);
+        return applyRecords(
+                log.recoverRecordsThroughOutcomeLog(outcomeLog, statusFallback),
+                existingVersionIds,
+                0,
+                0);
     }
 
     private RecoveryResult applyRecords(
