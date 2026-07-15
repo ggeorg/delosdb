@@ -1223,6 +1223,8 @@ def delosMvccLifecycleProofTasks = [
          'Runs the Phase 7.5 cross-transaction group-commit and differential-mode tests.'],
         ['runMvccTransactionGroupCommitHardeningTest', '**/MvccTransactionGroupCommitHardeningTest.class',
          'Runs Phase 7.5 group-commit failure, backup, and shutdown hardening tests.'],
+        ['runMvccDatabaseMaintenanceServiceTest', '**/MvccDatabaseMaintenanceServiceTest.class',
+         'Runs the Phase 7.6 database-owned MVCC maintenance service tests.'],
         ['runMvccTransactionSidecarForceBatchTest', '**/MvccTransactionSidecarForceBatchTest.class',
          'Runs the Phase 7.7 transaction sidecar force-batch and torn-tail recovery tests.'],
         ['runMvccAttributeOverflowRowPayloadCodecTest', '**/MvccAttributeOverflowRowPayloadCodecTest.class',

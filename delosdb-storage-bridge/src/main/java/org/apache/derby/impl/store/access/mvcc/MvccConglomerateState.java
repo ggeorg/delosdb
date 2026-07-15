@@ -23,6 +23,7 @@ package org.apache.derby.impl.store.access.mvcc;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.ServiceLoader;
 
@@ -69,9 +70,13 @@ final class MvccConglomerateState {
     private final DelosStorageTableDiagnostics diagnostics;
 
     MvccConglomerateState(ContainerKey key, Path databaseDirectory) {
+        this(key, openStore(databaseDirectory));
+    }
+
+    MvccConglomerateState(ContainerKey key, DelosStorageStore store) {
         this.key = key;
-        DelosStorageStore store = providerFactory().openStore(databaseDirectory);
-        this.table = store.openTable(new DelosStorageTableKey(key.getSegmentId(), key.getContainerId()));
+        this.table = Objects.requireNonNull(store, "store")
+                .openTable(new DelosStorageTableKey(key.getSegmentId(), key.getContainerId()));
         this.maintenance = requireCapability(table, DelosStorageMaintenance.class);
         this.rowLocator = requireCapability(table, DelosStorageRowLocator.class);
         this.candidateIndex = requireCapability(table, DelosStorageCandidateIndex.class);
@@ -694,6 +699,42 @@ final class MvccConglomerateState {
         return diagnostics.purgeDaemonLastVisibilityDebtSummaryForTesting();
     }
 
+    synchronized int databaseMaintenanceWorkerCountForTesting() {
+        return diagnostics.databaseMaintenanceWorkerCountForTesting();
+    }
+
+    synchronized int databaseMaintenanceRegisteredTableCountForTesting() {
+        return diagnostics.databaseMaintenanceRegisteredTableCountForTesting();
+    }
+
+    synchronized int databaseMaintenanceQueuedTaskCountForTesting() {
+        return diagnostics.databaseMaintenanceQueuedTaskCountForTesting();
+    }
+
+    synchronized long databaseMaintenanceCommitWakeupCountForTesting() {
+        return diagnostics.databaseMaintenanceCommitWakeupCountForTesting();
+    }
+
+    synchronized long databaseMaintenancePeriodicScanCountForTesting() {
+        return diagnostics.databaseMaintenancePeriodicScanCountForTesting();
+    }
+
+    synchronized long databaseMaintenanceRunCountForTesting() {
+        return diagnostics.databaseMaintenanceRunCountForTesting();
+    }
+
+    synchronized long databaseMaintenanceFailureCountForTesting() {
+        return diagnostics.databaseMaintenanceFailureCountForTesting();
+    }
+
+    synchronized int databaseMaintenanceMaximumActiveWorkerCountForTesting() {
+        return diagnostics.databaseMaintenanceMaximumActiveWorkerCountForTesting();
+    }
+
+    synchronized boolean databaseMaintenanceAcceptingForTesting() {
+        return diagnostics.databaseMaintenanceAcceptingForTesting();
+    }
+
     synchronized DelosVacuumOutcome vacuumSafely() {
         return maintenance.vacuumSafely();
     }
@@ -944,6 +985,10 @@ final class MvccConglomerateState {
         }
         throw new IllegalStateException("Storage table " + table.getClass().getName()
                 + " does not implement required capability " + capability.getName());
+    }
+
+    static DelosStorageStore openStore(Path databaseDirectory) {
+        return providerFactory().openStore(databaseDirectory);
     }
 
     private static DelosStorageProviderFactory providerFactory() {

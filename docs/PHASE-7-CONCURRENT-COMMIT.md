@@ -347,3 +347,13 @@ The authoritative lifecycle and remaining force-sharing scope are documented in:
 docs/PHASE-7-TRANSACTION-GROUP-COMMIT.md
 ```
 
+
+## Revised Phase 7.6 database maintenance ownership
+
+After group-commit hardening, asynchronous purge scheduling is no longer owned
+by one executor per table. `MvccInheritedStore` now owns one bounded
+`MvccDatabaseMaintenanceService` for all MVCC tables in the database. Commit
+wakeups and periodic idle-table scans are deduplicated and prioritized by
+visibility debt and obsolete-version growth. The table remains the authority
+for reader-horizon, backup-boundary, and vacuum safety. See
+`PHASE-7-DATABASE-MAINTENANCE-SERVICE.md`.

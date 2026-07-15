@@ -309,6 +309,42 @@ public interface DelosStorageTableDiagnostics {
         return "none";
     }
 
+    default int databaseMaintenanceWorkerCountForTesting() {
+        return 0;
+    }
+
+    default int databaseMaintenanceRegisteredTableCountForTesting() {
+        return 0;
+    }
+
+    default int databaseMaintenanceQueuedTaskCountForTesting() {
+        return 0;
+    }
+
+    default long databaseMaintenanceCommitWakeupCountForTesting() {
+        return 0L;
+    }
+
+    default long databaseMaintenancePeriodicScanCountForTesting() {
+        return 0L;
+    }
+
+    default long databaseMaintenanceRunCountForTesting() {
+        return 0L;
+    }
+
+    default long databaseMaintenanceFailureCountForTesting() {
+        return 0L;
+    }
+
+    default int databaseMaintenanceMaximumActiveWorkerCountForTesting() {
+        return 0;
+    }
+
+    default boolean databaseMaintenanceAcceptingForTesting() {
+        return false;
+    }
+
     default long orderedIndexPageCountForTesting() {
         return 0L;
     }

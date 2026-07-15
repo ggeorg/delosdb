@@ -492,6 +492,51 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public int databaseMaintenanceWorkerCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.databaseMaintenanceWorkerCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public int databaseMaintenanceRegisteredTableCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.databaseMaintenanceRegisteredTableCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public int databaseMaintenanceQueuedTaskCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.databaseMaintenanceQueuedTaskCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long databaseMaintenanceCommitWakeupCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.databaseMaintenanceCommitWakeupCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long databaseMaintenancePeriodicScanCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.databaseMaintenancePeriodicScanCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long databaseMaintenanceRunCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.databaseMaintenanceRunCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public long databaseMaintenanceFailureCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.databaseMaintenanceFailureCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public int databaseMaintenanceMaximumActiveWorkerCountForTesting(int segment, long containerId) {
+        return MvccConglomerate.databaseMaintenanceMaximumActiveWorkerCountForDiagnostics(segment, containerId);
+    }
+
+    @Override
+    public boolean databaseMaintenanceAcceptingForTesting(int segment, long containerId) {
+        return MvccConglomerate.databaseMaintenanceAcceptingForDiagnostics(segment, containerId);
+    }
+
+    @Override
     public long orderedIndexPageCountForTesting(int segment, long containerId) {
         return MvccConglomerate.orderedIndexPageCountForDiagnostics(segment, containerId);
     }

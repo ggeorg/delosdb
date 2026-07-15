@@ -9,10 +9,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommandSequence;
@@ -62,7 +62,11 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final MvccTransactionStatusStore transactionStatusStore;
     private final MvccTransactionManager transactions;
     private final MvccPurgeDaemon purgeDaemon = new MvccPurgeDaemon();
-    private final ExecutorService purgeDaemonExecutor;
+    private final MvccDatabaseMaintenanceService maintenanceService;
+    private final MvccDatabaseMaintenanceService.Registration maintenanceRegistration;
+    private final boolean ownsMaintenanceService;
+    private final Consumer<MvccInheritedTable> closeCallback;
+    private final AtomicBoolean closed = new AtomicBoolean();
     private final List<MvccInheritedHandles.Transaction> activeTransactions = new ArrayList<>();
     private final ReentrantReadWriteLock tableLock = new ReentrantReadWriteLock();
     private final MvccCommitMetrics commitMetrics = new MvccCommitMetrics();
@@ -91,7 +95,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         this(segmentId, containerId, databaseDirectory, configuredCommitCoordinatorMode());
     }
 
-    private static MvccCommitCoordinator.Mode configuredCommitCoordinatorMode() {
+    static MvccCommitCoordinator.Mode configuredCommitCoordinatorMode() {
         String configured = System.getProperty("delosdb.mvcc.commit.mode", "group").trim().toLowerCase();
         return switch (configured) {
             case "group" -> MvccCommitCoordinator.Mode.GROUP;
@@ -100,6 +104,26 @@ final class MvccInheritedTable implements DelosStorageTable,
             default -> throw new IllegalArgumentException(
                     "unsupported delosdb.mvcc.commit.mode: " + configured);
         };
+    }
+
+    MvccInheritedTable(
+            long segmentId,
+            long containerId,
+            Path databaseDirectory,
+            MvccDatabaseMaintenanceService maintenanceService,
+            Consumer<MvccInheritedTable> closeCallback) {
+        this(
+                segmentId,
+                containerId,
+                databaseDirectory,
+                configuredCommitCoordinatorMode(),
+                MvccCommitCoordinator.DEFAULT_CAPACITY,
+                MvccCommitCoordinator.DEFAULT_MAX_GROUP_SIZE,
+                MvccCommitCoordinator.DEFAULT_MAX_GROUP_DELAY_NANOS,
+                SharedStatusForceHook.NOOP,
+                maintenanceService,
+                false,
+                closeCallback);
     }
 
     MvccInheritedTable(
@@ -127,6 +151,32 @@ final class MvccInheritedTable implements DelosStorageTable,
             int maxGroupSize,
             long maxGroupDelayNanos,
             SharedStatusForceHook sharedStatusForceHook) {
+        this(
+                segmentId,
+                containerId,
+                databaseDirectory,
+                coordinatorMode,
+                coordinatorCapacity,
+                maxGroupSize,
+                maxGroupDelayNanos,
+                sharedStatusForceHook,
+                new MvccDatabaseMaintenanceService(databaseDirectory),
+                true,
+                ignored -> { });
+    }
+
+    private MvccInheritedTable(
+            long segmentId,
+            long containerId,
+            Path databaseDirectory,
+            MvccCommitCoordinator.Mode coordinatorMode,
+            int coordinatorCapacity,
+            int maxGroupSize,
+            long maxGroupDelayNanos,
+            SharedStatusForceHook sharedStatusForceHook,
+            MvccDatabaseMaintenanceService maintenanceService,
+            boolean ownsMaintenanceService,
+            Consumer<MvccInheritedTable> closeCallback) {
         this.segmentId = segmentId;
         this.containerId = containerId;
         this.retiredSnapshotFile = retiredSnapshotFile(databaseDirectory, segmentId, containerId);
@@ -143,11 +193,11 @@ final class MvccInheritedTable implements DelosStorageTable,
         this.durabilityCoordinator = new MvccCommitCoordinator<>(
                 coordinatorMode, coordinatorCapacity, maxGroupSize, maxGroupDelayNanos);
         this.sharedStatusForceHook = Objects.requireNonNull(sharedStatusForceHook, "sharedStatusForceHook");
-        this.purgeDaemonExecutor = Executors.newSingleThreadExecutor(runnable ->
-                Thread.ofVirtual()
-                        .name("delosdb-mvcc-purge-daemon-" + segmentId + '-' + containerId)
-                        .unstarted(runnable));
+        this.maintenanceService = Objects.requireNonNull(maintenanceService, "maintenanceService");
+        this.ownsMaintenanceService = ownsMaintenanceService;
+        this.closeCallback = Objects.requireNonNull(closeCallback, "closeCallback");
         loadCommittedState();
+        this.maintenanceRegistration = maintenanceService.register(new MaintenanceTarget());
     }
 
     @Override
@@ -695,18 +745,9 @@ final class MvccInheritedTable implements DelosStorageTable,
                 return;
             }
             purgeDaemon.recordAsyncScheduled(changedRows, debt);
-            purgeDaemonExecutor.execute(() -> durableMutationLocked(() -> {
-                if (hasRetainedInheritedSnapshot()) {
-                    purgeDaemon.recordAsyncSkip("retained inherited MVCC transaction or scan");
-                    return;
-                }
-                if (!purgeDaemon.eligibleVisibilityDebt(visibilityDebtSnapshot())) {
-                    return;
-                }
-                DelosVacuumOutcome outcome = vacuumOutcome(pageVolumeStateStore.vacuumSafely(false));
-                lastVacuumOutcome = outcome;
-                purgeDaemon.recordAsyncRun(outcome);
-            }));
+            maintenanceRegistration.request(
+                    MvccDatabaseMaintenanceService.Priority.from(debt),
+                    MvccDatabaseMaintenanceService.Trigger.COMMIT);
             return;
         }
         purgeDaemon.maybeRunAfterCommit(
@@ -715,6 +756,38 @@ final class MvccInheritedTable implements DelosStorageTable,
                 this::hasRetainedInheritedSnapshot,
                 () -> vacuumOutcome(pageVolumeStateStore.vacuumSafely(false)))
                 .ifPresent(outcome -> lastVacuumOutcome = outcome);
+    }
+
+    private Optional<MvccDatabaseMaintenanceService.Priority> periodicMaintenancePriority() {
+        return readLocked(() -> {
+            if (closed.get()) {
+                return Optional.empty();
+            }
+            MvccVisibilityDebtPolicy.Snapshot debt = visibilityDebtSnapshot();
+            if (!purgeDaemon.periodicMaintenanceEligible(debt)) {
+                return Optional.empty();
+            }
+            purgeDaemon.recordPeriodicScheduled(debt);
+            return Optional.of(MvccDatabaseMaintenanceService.Priority.from(debt));
+        });
+    }
+
+    private void runScheduledMaintenance(MvccDatabaseMaintenanceService.Trigger trigger) {
+        durableMutationLocked(() -> {
+            if (closed.get()) {
+                return;
+            }
+            if (hasRetainedInheritedSnapshot()) {
+                purgeDaemon.recordAsyncSkip("retained inherited MVCC transaction or scan");
+                return;
+            }
+            if (!purgeDaemon.eligibleVisibilityDebt(visibilityDebtSnapshot())) {
+                return;
+            }
+            DelosVacuumOutcome outcome = vacuumOutcome(pageVolumeStateStore.vacuumSafely(false));
+            lastVacuumOutcome = outcome;
+            purgeDaemon.recordAsyncRun(outcome);
+        });
     }
 
     private MvccVisibilityDebtPolicy.Snapshot visibilityDebtSnapshot() {
@@ -1297,6 +1370,51 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public int databaseMaintenanceWorkerCountForTesting() {
+        return maintenanceService.metrics().workerCount();
+    }
+
+    @Override
+    public int databaseMaintenanceRegisteredTableCountForTesting() {
+        return maintenanceService.metrics().registeredTableCount();
+    }
+
+    @Override
+    public int databaseMaintenanceQueuedTaskCountForTesting() {
+        return maintenanceService.metrics().queuedTaskCount();
+    }
+
+    @Override
+    public long databaseMaintenanceCommitWakeupCountForTesting() {
+        return maintenanceService.metrics().commitWakeupCount();
+    }
+
+    @Override
+    public long databaseMaintenancePeriodicScanCountForTesting() {
+        return maintenanceService.metrics().periodicScanCount();
+    }
+
+    @Override
+    public long databaseMaintenanceRunCountForTesting() {
+        return maintenanceService.metrics().runCount();
+    }
+
+    @Override
+    public long databaseMaintenanceFailureCountForTesting() {
+        return maintenanceService.metrics().failureCount();
+    }
+
+    @Override
+    public int databaseMaintenanceMaximumActiveWorkerCountForTesting() {
+        return maintenanceService.metrics().maximumActiveWorkerCount();
+    }
+
+    @Override
+    public boolean databaseMaintenanceAcceptingForTesting() {
+        return maintenanceService.metrics().accepting();
+    }
+
+    @Override
     public long orderedIndexPageCountForTesting() {
         return readLocked(indexMaintenance::orderedIndexPageCountForTesting);
     }
@@ -1542,11 +1660,41 @@ final class MvccInheritedTable implements DelosStorageTable,
 
     @Override
     public void close() {
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
         durabilityCoordinator.close();
-        durableMutationLocked(() -> {
-            purgeDaemonExecutor.shutdownNow();
-            pageVolumeStateStore.close();
-        });
+        if (ownsMaintenanceService) {
+            maintenanceService.close();
+        }
+        maintenanceRegistration.close();
+        try {
+            durableMutationLocked(pageVolumeStateStore::close);
+        } finally {
+            closeCallback.accept(this);
+        }
+    }
+
+    MvccDatabaseMaintenanceService maintenanceServiceForTesting() {
+        return maintenanceService;
+    }
+
+
+    private final class MaintenanceTarget implements MvccDatabaseMaintenanceService.Target {
+        @Override
+        public String maintenanceIdentity() {
+            return segmentId + ":" + containerId;
+        }
+
+        @Override
+        public Optional<MvccDatabaseMaintenanceService.Priority> periodicMaintenancePriority() {
+            return MvccInheritedTable.this.periodicMaintenancePriority();
+        }
+
+        @Override
+        public void runMaintenance(MvccDatabaseMaintenanceService.Trigger trigger) {
+            MvccInheritedTable.this.runScheduledMaintenance(trigger);
+        }
     }
 
 

@@ -376,6 +376,42 @@ public interface DelosStorageDiagnostics {
         return "none";
     }
 
+    default int databaseMaintenanceWorkerCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default int databaseMaintenanceRegisteredTableCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default int databaseMaintenanceQueuedTaskCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default long databaseMaintenanceCommitWakeupCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long databaseMaintenancePeriodicScanCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long databaseMaintenanceRunCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default long databaseMaintenanceFailureCountForTesting(int segment, long containerId) {
+        return 0L;
+    }
+
+    default int databaseMaintenanceMaximumActiveWorkerCountForTesting(int segment, long containerId) {
+        return 0;
+    }
+
+    default boolean databaseMaintenanceAcceptingForTesting(int segment, long containerId) {
+        return false;
+    }
+
     default long orderedIndexPageCountForTesting(int segment, long containerId) {
         return 0L;
     }

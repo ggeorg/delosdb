@@ -21,6 +21,10 @@
 package org.apache.derby.iapi.store.types;
 
 /** Storage-api entry point used by compatibility adapters. */
-public interface DelosStorageStore {
+public interface DelosStorageStore extends AutoCloseable {
     DelosStorageTable openTable(DelosStorageTableKey key);
+
+    @Override
+    default void close() {
+    }
 }

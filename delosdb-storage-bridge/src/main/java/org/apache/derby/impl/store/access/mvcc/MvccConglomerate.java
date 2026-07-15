@@ -49,6 +49,7 @@ import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
+import org.apache.derby.iapi.store.types.DelosStorageStore;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 import org.apache.derby.iapi.store.types.StoreDataValueBase;
@@ -67,6 +68,7 @@ public final class MvccConglomerate
         extends StoreDataValueBase
         implements org.apache.derby.iapi.store.access.conglomerate.Conglomerate, StaticCompiledOpenConglomInfo {
     private static final Map<StateIdentity, MvccConglomerateState> STATES = new ConcurrentHashMap<>();
+    private static final Map<DatabaseIdentity, DelosStorageStore> STORES = new ConcurrentHashMap<>();
     private static volatile Path databaseDirectory;
 
     private ContainerKey id;
@@ -109,7 +111,10 @@ public final class MvccConglomerate
     @Override
     public void drop(TransactionManager xactManager) {
         state.dropDurableState();
-        STATES.remove(new StateIdentity(databaseDirectory, id));
+        MvccConglomerateState removed = STATES.remove(new StateIdentity(databaseDirectory, id));
+        if (removed != null) {
+            removed.close();
+        }
     }
 
     @Override
@@ -309,24 +314,35 @@ public final class MvccConglomerate
 
     static void clearStatesForDatabase(Path directory) {
         Path normalized = directory == null ? null : directory.toAbsolutePath().normalize();
-        STATES.entrySet().removeIf(entry -> {
-            if (!Objects.equals(entry.getKey().databaseDirectory(), normalized)) {
-                return false;
-            }
-            entry.getValue().close();
-            return true;
-        });
+        List<MvccConglomerateState> removedStates = STATES.entrySet().stream()
+                .filter(entry -> Objects.equals(entry.getKey().databaseDirectory(), normalized))
+                .map(Map.Entry::getValue)
+                .toList();
+        STATES.entrySet().removeIf(entry ->
+                Objects.equals(entry.getKey().databaseDirectory(), normalized));
+        DelosStorageStore store = STORES.remove(new DatabaseIdentity(normalized));
+        if (store != null) {
+            store.close();
+        } else {
+            removedStates.forEach(MvccConglomerateState::close);
+        }
     }
 
     static void clearStatesForDiagnostics() {
-        for (MvccConglomerateState state : STATES.values()) {
-            state.close();
-        }
+        List<MvccConglomerateState> orphanedStates = List.copyOf(STATES.values());
         STATES.clear();
+        List<DelosStorageStore> stores = List.copyOf(STORES.values());
+        STORES.clear();
+        stores.forEach(DelosStorageStore::close);
+        orphanedStates.forEach(MvccConglomerateState::close);
     }
 
     static int stateCountForDiagnostics() {
         return STATES.size();
+    }
+
+    static int storeCountForDiagnostics() {
+        return STORES.size();
     }
 
     static Path pageVolumeStateFileForDiagnostics(int segment, long containerId) {
@@ -684,6 +700,42 @@ public final class MvccConglomerate
         return stateFor(new ContainerKey(segment, containerId)).purgeDaemonLastVisibilityDebtSummaryForTesting();
     }
 
+    static int databaseMaintenanceWorkerCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).databaseMaintenanceWorkerCountForTesting();
+    }
+
+    static int databaseMaintenanceRegisteredTableCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).databaseMaintenanceRegisteredTableCountForTesting();
+    }
+
+    static int databaseMaintenanceQueuedTaskCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).databaseMaintenanceQueuedTaskCountForTesting();
+    }
+
+    static long databaseMaintenanceCommitWakeupCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).databaseMaintenanceCommitWakeupCountForTesting();
+    }
+
+    static long databaseMaintenancePeriodicScanCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).databaseMaintenancePeriodicScanCountForTesting();
+    }
+
+    static long databaseMaintenanceRunCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).databaseMaintenanceRunCountForTesting();
+    }
+
+    static long databaseMaintenanceFailureCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).databaseMaintenanceFailureCountForTesting();
+    }
+
+    static int databaseMaintenanceMaximumActiveWorkerCountForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).databaseMaintenanceMaximumActiveWorkerCountForTesting();
+    }
+
+    static boolean databaseMaintenanceAcceptingForDiagnostics(int segment, long containerId) {
+        return stateFor(new ContainerKey(segment, containerId)).databaseMaintenanceAcceptingForTesting();
+    }
+
     static long orderedIndexPageCountForDiagnostics(int segment, long containerId) {
         return stateFor(new ContainerKey(segment, containerId)).orderedIndexPageCountForTesting();
     }
@@ -892,7 +944,21 @@ public final class MvccConglomerate
 
     private static MvccConglomerateState stateFor(ContainerKey key) {
         StateIdentity identity = new StateIdentity(databaseDirectory, key);
-        return STATES.computeIfAbsent(identity, ignored -> new MvccConglomerateState(key, identity.databaseDirectory()));
+        return STATES.computeIfAbsent(identity, ignored ->
+                new MvccConglomerateState(key, storeFor(identity.databaseDirectory())));
+    }
+
+    private static DelosStorageStore storeFor(Path directory) {
+        DatabaseIdentity identity = new DatabaseIdentity(directory);
+        return STORES.computeIfAbsent(identity, ignored -> MvccConglomerateState.openStore(directory));
+    }
+
+    private record DatabaseIdentity(Path databaseDirectory) {
+        private DatabaseIdentity {
+            databaseDirectory = databaseDirectory == null
+                    ? null
+                    : databaseDirectory.toAbsolutePath().normalize();
+        }
     }
 
     private record StateIdentity(Path databaseDirectory, ContainerKey key) {

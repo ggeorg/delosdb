@@ -22,6 +22,7 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
+import java.util.function.BooleanSupplier;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
@@ -31,6 +32,8 @@ public final class MvccSqlPurgeDaemonSchedulingTest extends MvccSqlTestSupport {
     private static final String THRESHOLD_PROPERTY = "delosdb.mvcc.purgeDaemon.changedRowsThreshold";
     private static final String VISIBILITY_DEBT_THRESHOLD_PROPERTY =
             "delosdb.mvcc.purgeDaemon.visibilityDebtThreshold";
+    private static final String ASYNC_ENABLED_PROPERTY = "delosdb.mvcc.purgeDaemon.async.enabled";
+    private static final String MAINTENANCE_PERIOD_PROPERTY = "delosdb.mvcc.maintenance.periodMillis";
 
     public void testPurgeDaemonRunsDeterministicallyAfterCommittedWriteBurst() throws Exception {
         String databaseName = databaseName("mvcc-purge-daemon-db");
@@ -136,6 +139,61 @@ public final class MvccSqlPurgeDaemonSchedulingTest extends MvccSqlTestSupport {
         }
     }
 
+
+    public void testAsyncPurgeUsesOneDatabaseMaintenanceService() throws Exception {
+        String databaseName = databaseName("mvcc-database-maintenance-service-db");
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+
+        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
+             SystemPropertyScope async = setSystemProperty(ASYNC_ENABLED_PROPERTY, "true");
+             SystemPropertyScope changedRowsThreshold = setSystemProperty(THRESHOLD_PROPERTY, "1");
+             SystemPropertyScope debtThreshold = setSystemProperty(VISIBILITY_DEBT_THRESHOLD_PROPERTY, "1");
+             SystemPropertyScope period = setSystemProperty(MAINTENANCE_PERIOD_PROPERTY, "25");
+             Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table maintenance_a "
+                    + "(id int primary key, payload varchar(64)) using delos_mvcc");
+            executeUpdate(connection, "create table maintenance_b "
+                    + "(id int primary key, payload varchar(64)) using delos_mvcc");
+            connection.commit();
+            long firstContainerId = mvccContainerId(connection, "MAINTENANCE_A");
+            long secondContainerId = mvccContainerId(connection, "MAINTENANCE_B");
+            connection.rollback();
+
+            assertEquals("both tables should share the database maintenance service",
+                    2, diagnostics.databaseMaintenanceRegisteredTableCountForTesting(0, firstContainerId));
+            assertEquals("the default database maintenance service should use one worker",
+                    1, diagnostics.databaseMaintenanceWorkerCountForTesting(0, secondContainerId));
+            assertTrue("the database maintenance service should accept work while the database is open",
+                    diagnostics.databaseMaintenanceAcceptingForTesting(0, firstContainerId));
+
+            executeUpdate(connection, "insert into maintenance_a values (1, 'a1')");
+            executeUpdate(connection, "insert into maintenance_b values (1, 'b1')");
+            connection.commit();
+            executeUpdate(connection, "update maintenance_a set payload = 'a2' where id = 1");
+            executeUpdate(connection, "update maintenance_b set payload = 'b2' where id = 1");
+            connection.commit();
+
+            awaitCondition(() -> diagnostics.databaseMaintenanceCommitWakeupCountForTesting(
+                    0, firstContainerId) >= 2L);
+            awaitCondition(() -> diagnostics.purgeDaemonRunCountForTesting(0, firstContainerId) > 0L);
+            awaitCondition(() -> diagnostics.purgeDaemonRunCountForTesting(0, secondContainerId) > 0L);
+
+            assertEquals("database maintenance worker concurrency should remain bounded",
+                    1, diagnostics.databaseMaintenanceMaximumActiveWorkerCountForTesting(
+                            0, firstContainerId));
+            assertEquals("database maintenance should not report scheduler failures",
+                    0L, diagnostics.databaseMaintenanceFailureCountForTesting(0, firstContainerId));
+            diagnostics.assertConsistentForTesting(0, firstContainerId);
+            diagnostics.assertConsistentForTesting(0, secondContainerId);
+            assertRows(connection, "select id, payload from maintenance_a", "1|a2");
+            assertRows(connection, "select id, payload from maintenance_b", "1|b2");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+    }
+
     public void testPurgeDaemonIsPausedByDefault() throws Exception {
         String databaseName = databaseName("mvcc-purge-daemon-default-paused-db");
         DelosStorageDiagnostics diagnostics = mvccDiagnostics();
@@ -165,4 +223,14 @@ public final class MvccSqlPurgeDaemonSchedulingTest extends MvccSqlTestSupport {
             connection.rollback();
         }
     }
+    private static void awaitCondition(BooleanSupplier condition) throws Exception {
+        long deadline = System.nanoTime() + 10_000_000_000L;
+        while (!condition.getAsBoolean()) {
+            if (System.nanoTime() >= deadline) {
+                throw new AssertionError("condition was not satisfied before timeout");
+            }
+            Thread.sleep(10L);
+        }
+    }
+
 }

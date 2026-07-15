@@ -31,9 +31,10 @@ import org.apache.derby.iapi.store.types.DelosVacuumOutcome;
  * Deterministic cooperative purge-daemon scheduler for inherited MVCC tables.
  *
  * <p>The default mode remains deterministic and commit-boundary driven.  An
- * explicit async property can move the actual purge work to a short-lived daemon
- * thread, but scheduling still happens at safe commit boundaries and still
- * rechecks retained readers/snapshots before vacuuming.</p>
+ * explicit async property moves the actual purge work to the database-owned
+ * maintenance service. Scheduling still begins at safe commit boundaries or
+ * periodic idle-table scans and still rechecks retained readers/snapshots
+ * before vacuuming.</p>
  */
 final class MvccPurgeDaemon {
     static final String ENABLED_PROPERTY = "delosdb.mvcc.purgeDaemon.enabled";
@@ -50,7 +51,7 @@ final class MvccPurgeDaemon {
     private String lastVisibilityDebtSummary = "none";
     private String lastDecision = "disabled";
 
-    Optional<DelosVacuumOutcome> maybeRunAfterCommit(
+    synchronized Optional<DelosVacuumOutcome> maybeRunAfterCommit(
             int changedRows,
             Supplier<MvccVisibilityDebtPolicy.Snapshot> debtSupplier,
             BooleanSupplier retainedReaderSupplier,
@@ -73,11 +74,11 @@ final class MvccPurgeDaemon {
         return Optional.of(outcome);
     }
 
-    boolean asynchronousEnabled() {
+    synchronized boolean asynchronousEnabled() {
         return enabled() && asyncEnabled();
     }
 
-    boolean eligibleAfterCommit(int changedRows, MvccVisibilityDebtPolicy.Snapshot debt) {
+    synchronized boolean eligibleAfterCommit(int changedRows, MvccVisibilityDebtPolicy.Snapshot debt) {
         Objects.requireNonNull(debt, "debt");
         lastTriggerChangedRows = Math.max(0, changedRows);
         recordVisibilityDebt(debt);
@@ -91,7 +92,7 @@ final class MvccPurgeDaemon {
         return eligibleVisibilityDebt(debt);
     }
 
-    boolean eligibleChangedRows(int changedRows) {
+    synchronized boolean eligibleChangedRows(int changedRows) {
         if (changedRows <= 0) {
             skip("no committed row changes");
             return false;
@@ -104,7 +105,7 @@ final class MvccPurgeDaemon {
         return true;
     }
 
-    boolean eligibleVisibilityDebt(MvccVisibilityDebtPolicy.Snapshot debt) {
+    synchronized boolean eligibleVisibilityDebt(MvccVisibilityDebtPolicy.Snapshot debt) {
         Objects.requireNonNull(debt, "debt");
         recordVisibilityDebt(debt);
         if (!MvccVisibilityDebtPolicy.eligible(debt)) {
@@ -116,7 +117,21 @@ final class MvccPurgeDaemon {
         return true;
     }
 
-    void recordAsyncScheduled(int changedRows, MvccVisibilityDebtPolicy.Snapshot debt) {
+    synchronized boolean periodicMaintenanceEligible(MvccVisibilityDebtPolicy.Snapshot debt) {
+        Objects.requireNonNull(debt, "debt");
+        recordVisibilityDebt(debt);
+        return asynchronousEnabled() && MvccVisibilityDebtPolicy.eligible(debt);
+    }
+
+    synchronized void recordPeriodicScheduled(MvccVisibilityDebtPolicy.Snapshot debt) {
+        Objects.requireNonNull(debt, "debt");
+        recordVisibilityDebt(debt);
+        scheduleCount++;
+        asyncScheduleCount++;
+        lastDecision = "scheduled periodic; debt " + lastVisibilityDebtSummary;
+    }
+
+    synchronized void recordAsyncScheduled(int changedRows, MvccVisibilityDebtPolicy.Snapshot debt) {
         lastTriggerChangedRows = Math.max(0, changedRows);
         recordVisibilityDebt(debt);
         scheduleCount++;
@@ -124,45 +139,45 @@ final class MvccPurgeDaemon {
         lastDecision = "scheduled async; debt " + lastVisibilityDebtSummary;
     }
 
-    void recordAsyncRun(DelosVacuumOutcome outcome) {
+    synchronized void recordAsyncRun(DelosVacuumOutcome outcome) {
         runCount++;
         lastDecision = "async ran: " + Objects.requireNonNull(outcome, "outcome").reason()
                 + "; debt " + lastVisibilityDebtSummary;
     }
 
-    void recordAsyncSkip(String reason) {
+    synchronized void recordAsyncSkip(String reason) {
         skip(reason);
     }
 
-    long scheduleCount() {
+    synchronized long scheduleCount() {
         return scheduleCount;
     }
 
-    long asyncScheduleCount() {
+    synchronized long asyncScheduleCount() {
         return asyncScheduleCount;
     }
 
-    long runCount() {
+    synchronized long runCount() {
         return runCount;
     }
 
-    long skipCount() {
+    synchronized long skipCount() {
         return skipCount;
     }
 
-    long lastTriggerChangedRows() {
+    synchronized long lastTriggerChangedRows() {
         return lastTriggerChangedRows;
     }
 
-    long lastVisibilityDebtScore() {
+    synchronized long lastVisibilityDebtScore() {
         return lastVisibilityDebtScore;
     }
 
-    String lastVisibilityDebtSummary() {
+    synchronized String lastVisibilityDebtSummary() {
         return lastVisibilityDebtSummary;
     }
 
-    String lastDecision() {
+    synchronized String lastDecision() {
         return lastDecision;
     }
 
