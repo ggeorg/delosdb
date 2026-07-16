@@ -7,8 +7,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 
+import org.apache.derby.iapi.store.types.DelosStorageCommitCoordinator;
+import org.apache.derby.iapi.store.types.DelosStorageCoordinatedCommitTable;
 import org.apache.derby.iapi.store.types.DelosStorageSavepointParticipant;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
@@ -228,8 +231,11 @@ final class MvccInheritedTransactionLifecycleTest {
     @Test
     void registryCommitCompletesEveryParticipantAndPreservesAllFailures() {
         Object owner = new Object();
-        FailingLifecycleTable firstWriter = new FailingLifecycleTable(true, false);
-        FailingLifecycleTable secondWriter = new FailingLifecycleTable(true, false);
+        TestCommitCoordinator coordinator = new TestCommitCoordinator();
+        FailingLifecycleTable firstWriter =
+                new CoordinatedFailingLifecycleTable(true, false, coordinator);
+        FailingLifecycleTable secondWriter =
+                new CoordinatedFailingLifecycleTable(true, false, coordinator);
         FailingLifecycleTable reader = new FailingLifecycleTable(false, true);
 
         DelosStorageTransactionRegistry.register(owner, firstWriter, firstWriter.beginTransaction());
@@ -248,14 +254,14 @@ final class MvccInheritedTransactionLifecycleTest {
                 "a failing first provider must not prevent later providers from completing");
         assertEquals(1, reader.abortCount,
                 "transaction-scoped readers must still close after writer failure");
-        assertEquals(3, DelosStorageTransactionRegistry.pendingCountForTesting(owner),
-                "failed participants must remain registered for transaction-abort cleanup");
+        assertEquals(1, DelosStorageTransactionRegistry.pendingCountForTesting(owner),
+                "the coordinator owns writer terminality; only the failed reader remains registered");
 
         reader.failAbort = false;
         DelosStorageTransactionRegistry.abort(owner);
         assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(owner));
-        assertEquals(1, firstWriter.abortCount);
-        assertEquals(1, secondWriter.abortCount);
+        assertEquals(0, firstWriter.abortCount);
+        assertEquals(0, secondWriter.abortCount);
         assertEquals(2, reader.abortCount);
     }
 
@@ -406,7 +412,7 @@ final class MvccInheritedTransactionLifecycleTest {
         }
     }
 
-    private static final class FailingLifecycleTable
+    private static class FailingLifecycleTable
             implements DelosStorageTable, DelosStorageSavepointParticipant {
         private boolean failCommit;
         private boolean failAbort;
@@ -502,6 +508,48 @@ final class MvccInheritedTransactionLifecycleTest {
 
         @Override
         public void close() {
+        }
+    }
+
+    private static final class CoordinatedFailingLifecycleTable
+            extends FailingLifecycleTable implements DelosStorageCoordinatedCommitTable {
+        private final DelosStorageCommitCoordinator coordinator;
+
+        private CoordinatedFailingLifecycleTable(
+                boolean failCommit,
+                boolean failAbort,
+                DelosStorageCommitCoordinator coordinator) {
+            super(failCommit, failAbort);
+            this.coordinator = coordinator;
+        }
+
+        @Override
+        public DelosStorageCommitCoordinator commitCoordinator() {
+            return coordinator;
+        }
+    }
+
+    private static final class TestCommitCoordinator implements DelosStorageCommitCoordinator {
+        @Override
+        public void commit(List<Participant> participants) {
+            Throwable failure = null;
+            for (Participant participant : participants) {
+                try {
+                    participant.table().commit(participant.transaction());
+                } catch (RuntimeException | Error participantFailure) {
+                    if (failure == null) {
+                        failure = participantFailure;
+                    } else {
+                        failure.addSuppressed(participantFailure);
+                    }
+                }
+            }
+            if (failure instanceof RuntimeException runtimeFailure) {
+                throw runtimeFailure;
+            }
+            if (failure instanceof Error errorFailure) {
+                throw errorFailure;
+            }
         }
     }
 
