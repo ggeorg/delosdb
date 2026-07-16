@@ -62,7 +62,7 @@ public final class CrossEngineConsistencyFrameworkTest extends MvccSqlTestSuppor
 
             DelosCrossEngineConsistencyReport report = DelosStorageDiagnosticsRegistry.consistencyReport(
                     DelosStorageConsistencyTarget.heap(databaseDirectory, 0, heapContainerId),
-                    DelosStorageConsistencyTarget.mvcc(0, mvccContainerId));
+                    mvccTarget(databaseName, 0, mvccContainerId));
 
             assertEquals("expected one heap and one MVCC finding", 2, report.targetCount());
             assertTrue("expected clean mixed consistency report: " + report.summaries(), report.clean());
@@ -112,7 +112,7 @@ public final class CrossEngineConsistencyFrameworkTest extends MvccSqlTestSuppor
 
             DelosCrossEngineConsistencyReport report = DelosStorageDiagnosticsRegistry.consistencyReport(
                     DelosStorageConsistencyTarget.heap(databaseDirectory, 0, missingHeapContainerId),
-                    DelosStorageConsistencyTarget.mvcc(0, mvccContainerId));
+                    mvccTarget(databaseName, 0, mvccContainerId));
 
             assertEquals("expected one heap and one MVCC finding", 2, report.targetCount());
             assertFalse("expected mixed report to surface missing heap container", report.clean());

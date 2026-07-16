@@ -70,7 +70,9 @@ public final class MvccDrdaConcurrentClientStressTest extends BaseJDBCTestCase {
                 getTestConfiguration().getJDBCUrl().startsWith("jdbc:derby://"));
 
         TestConfiguration configuration = getTestConfiguration();
-        DelosStorageDiagnostics diagnostics = MvccSqlTestSupport.mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = MvccSqlTestSupport.mvccDiagnostics(
+                getTestConfiguration().getDatabasePath(
+                        getTestConfiguration().getDefaultDatabaseName()));
         long containerId;
 
         try (Connection connection = openDefaultConnection()) {

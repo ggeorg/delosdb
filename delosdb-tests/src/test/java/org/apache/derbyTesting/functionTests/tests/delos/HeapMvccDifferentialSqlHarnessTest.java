@@ -49,7 +49,7 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
 
     public void testHeapAndMvccProduceIdenticalResultsForSupportedSqlSurface() throws Exception {
         String databaseName = databaseName("heap-mvcc-differential-sql-harness-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long mvccContainerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

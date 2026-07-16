@@ -30,7 +30,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlPageBackedWriteIntentTest extends MvccSqlTestSupport {
     public void testPageBackedCommitConsumesSurvivingWriteIntents() throws Exception {
         String databaseName = databaseName("mvcc-page-backed-write-intent-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

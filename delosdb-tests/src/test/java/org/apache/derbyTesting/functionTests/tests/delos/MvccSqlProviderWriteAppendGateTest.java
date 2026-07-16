@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlProviderWriteAppendGateTest extends MvccSqlTestSupport {
     public void testProviderWriteAppendIntentsDescribeSqlMutations() throws Exception {
         String databaseName = databaseName("mvcc-provider-write-append-gate-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
         int initialCandidateRebuildCount;
         int initialPhysicalVersionCount;

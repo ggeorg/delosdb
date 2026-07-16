@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlProviderFirstWriteAppendTest extends MvccSqlTestSupport {
     public void testProviderFirstWriteAppendPathKeepsInheritedWriteFrontAsShadow() throws Exception {
         String databaseName = databaseName("mvcc-provider-first-write-append-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
         int startingProviderFirstWrites;
         int startingShadowWrites;

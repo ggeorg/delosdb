@@ -26,10 +26,10 @@ import java.util.Objects;
 /**
  * Provider-neutral target for a storage consistency check.
  *
- * <p>MVCC targets do not need a database directory because their diagnostics
- * are owned by the MVCC bridge.  Heap targets carry the database directory so
- * the inherited raw container file can be observed without adding a heap
- * implementation dependency to shared test and inspection code.</p>
+ * <p>Storage targets may carry an explicit database directory. Heap targets
+ * always require it. MVCC targets require it whenever more than one database
+ * can be active in the JVM; the directory-free factory remains only for
+ * isolated provider checks where one runtime is guaranteed.</p>
  */
 public record DelosStorageConsistencyTarget(String providerId,
                                             Path databaseDirectory,
@@ -51,6 +51,17 @@ public record DelosStorageConsistencyTarget(String providerId,
         return new DelosStorageConsistencyTarget(
                 DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID,
                 null,
+                segment,
+                containerId);
+    }
+
+    public static DelosStorageConsistencyTarget mvcc(
+            Path databaseDirectory,
+            int segment,
+            long containerId) {
+        return new DelosStorageConsistencyTarget(
+                DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID,
+                Objects.requireNonNull(databaseDirectory, "databaseDirectory"),
                 segment,
                 containerId);
     }

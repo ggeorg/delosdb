@@ -39,7 +39,7 @@ public final class MvccSqlCandidateIndexQuarantineTest extends MvccSqlTestSuppor
     private static void assertCandidateIndexAuthorityIsQuarantinedBehindDiagnostics(
             SystemPropertyScope diagnosticFallbackProperty) throws Exception {
         String databaseName = databaseName("mvcc-candidate-index-quarantine-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

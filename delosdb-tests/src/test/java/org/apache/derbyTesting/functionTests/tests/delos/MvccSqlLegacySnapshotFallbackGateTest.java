@@ -29,7 +29,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlLegacySnapshotFallbackGateTest extends MvccSqlTestSupport {
     public void testLegacySnapshotFallbackIsReplacedByPageBackedHistoricalSnapshots() throws Exception {
         String databaseName = databaseName("mvcc-legacy-snapshot-fallback-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection setup = openDatabase(databaseName, true)) {

@@ -30,7 +30,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlAttributeOverflowStorageTest extends MvccSqlTestSupport {
     public void testLargeValueUsesAttributeOverflowAndSurvivesReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-attribute-overflow-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         String small = "small-inline-value";
         String large = repeated('x', 24000);
         String replacement = repeated('y', 22000);

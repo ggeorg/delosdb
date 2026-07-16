@@ -21,29 +21,29 @@ SQL engine.
 
 ## Database ownership
 
-### Current defect
-
-The current MVCC bridge contains mutable process-global database-directory state used to resolve
-stores and table state. That is not an acceptable ownership boundary for multiple active databases.
-
-### V1 target
-
-Each database owns one explicit runtime:
+Each open Derby database owns one explicit bridge runtime:
 
 ```text
 MvccDatabaseRuntime
-    canonical identity
-    storage and table-state registry
-    maintenance service
-    backup coordinator
-    transaction coordinator
+    canonicalized database identity
+    DelosStorageStore
+    table-state registry
     database diagnostics
     close lifecycle
 ```
 
-Conglomerates attach to the runtime through their owning database/factory context. Deserialization
-restores persistent metadata before runtime attachment. Diagnostics never select a database through
-ambient global state.
+The provider store continues to own the database maintenance service and backup coordinator. The
+factory acquires a reference-counted runtime lease during database boot, and every MVCC conglomerate
+binds through that factory context.
+
+Runtime and table-state references are transient. Persistent conglomerate metadata is restored
+before runtime attachment, while normal reopen constructs a bound conglomerate through the owning
+factory. SQL, metadata, statistics, and optimizer diagnostic requests use an explicit
+database-directory context and reject ambiguous unbound table lookups when several databases are
+active. Databases retained by an integration-test JVM remain separate owners; their presence is not
+an ambient current-database mechanism.
+
+See [`MVCC-DATABASE-RUNTIME.md`](MVCC-DATABASE-RUNTIME.md).
 
 ## Transaction ownership
 

@@ -43,7 +43,7 @@ public final class MvccSqlHeapParityTest extends MvccSqlTestSupport {
 
     public void testHeapAndMvccRemainEquivalentAcrossCommonSqlWorkload() throws Exception {
         String databaseName = databaseName("mvcc-sql-heap-parity-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long mvccContainerId;
 
         String alphaInitial = "short-alpha";

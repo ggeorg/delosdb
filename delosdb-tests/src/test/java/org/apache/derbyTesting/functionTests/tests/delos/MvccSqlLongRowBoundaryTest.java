@@ -32,7 +32,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
     public void testLongVarcharUsesOverflowPagesAndSurvivesVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-long-row-overflow-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         String largePayload = repeated('x', 16000);
         long containerId;
 

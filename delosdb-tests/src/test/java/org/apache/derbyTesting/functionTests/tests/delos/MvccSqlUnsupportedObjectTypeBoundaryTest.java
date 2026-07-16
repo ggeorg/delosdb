@@ -34,7 +34,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestSupport {
     public void testJavaObjectColumnFailsCleanlyAndDoesNotPoisonMvccRuntime() throws Exception {
         String databaseName = databaseName("mvcc-sql-java-object-boundary-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
@@ -82,7 +82,7 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
 
     public void testMaterializedBlobAndClobColumnsSurviveRollbackVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-lob-minimal-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         byte[] originalBlob = blobPayload(8_000, 11);
         String originalClob = clobPayload(8_000, 'a');
         byte[] updatedBlob = blobPayload(9_000, 71);
@@ -144,7 +144,7 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
 
     public void testLargeBlobAndClobRowsUseOverflowPagesThroughVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-lob-overflow-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         byte[] originalBlob = blobPayload(40_000, 19);
         String originalClob = clobPayload(40_000, 'c');
         byte[] updatedBlob = blobPayload(54_000, 83);

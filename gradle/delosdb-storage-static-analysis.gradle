@@ -3079,6 +3079,145 @@ tasks.register('delosNoTransitionalStorageRoutingStaticAnalysis') {
     }
 }
 
+tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies explicit database-scoped MVCC runtime ownership and rejects ambient database identity.'
+
+    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java')
+    def conglomerateFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java')
+    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
+    def diagnosticsFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java')
+    def accessManagerFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMAccessManager.java')
+    def analyzeDiagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java')
+    def indexStatisticsFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/IndexStatisticsDaemonImpl.java')
+    def fromBaseTableFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java')
+    def sqlTestSupportFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTestSupport.java')
+    def sqlTestDirectory = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos')
+    inputs.files(runtimeFile, conglomerateFile, factoryFile, diagnosticsFile, accessManagerFile,
+            analyzeDiagnosticsFile, indexStatisticsFile, fromBaseTableFile, sqlTestSupportFile)
+    inputs.dir(sqlTestDirectory)
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-database-runtime-ownership-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        [runtimeFile, conglomerateFile, factoryFile, diagnosticsFile, accessManagerFile,
+                analyzeDiagnosticsFile, indexStatisticsFile, fromBaseTableFile, sqlTestSupportFile].each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required source: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def conglomerateText = conglomerateFile.getText('UTF-8')
+            def runtimeText = runtimeFile.getText('UTF-8')
+            def factoryText = factoryFile.getText('UTF-8')
+            def diagnosticsText = diagnosticsFile.getText('UTF-8')
+            def accessManagerText = accessManagerFile.getText('UTF-8')
+            def analyzeDiagnosticsText = analyzeDiagnosticsFile.getText('UTF-8')
+            def indexStatisticsText = indexStatisticsFile.getText('UTF-8')
+            def fromBaseTableText = fromBaseTableFile.getText('UTF-8')
+            def sqlTestSupportText = sqlTestSupportFile.getText('UTF-8')
+
+            [
+                    'static volatile Path databaseDirectory',
+                    'configureDatabaseDirectory(',
+                    'clearStatesForDatabase(',
+                    'new StateIdentity(databaseDirectory',
+                    'new DatabaseIdentity(databaseDirectory)'
+            ].each { token ->
+                if (conglomerateText.contains(token)) {
+                    failures << 'MvccConglomerate retains ambient database ownership token: ' + token
+                }
+            }
+
+            if (!runtimeText.contains('final class MvccDatabaseRuntime')) {
+                failures << 'MvccDatabaseRuntime must own database-scoped MVCC bridge state'
+            }
+            if (!runtimeText.contains('private final DelosStorageStore store')) {
+                failures << 'MvccDatabaseRuntime must own one DelosStorageStore'
+            }
+            if (!runtimeText.contains('private final Map<TableIdentity, MvccConglomerateState> states')) {
+                failures << 'MvccDatabaseRuntime must own the table-state registry'
+            }
+            if (!factoryText.contains('MvccDatabaseRuntime.acquire(databaseDirectory)')) {
+                failures << 'MvccConglomerateFactory must acquire its database runtime explicitly'
+            }
+            if (!diagnosticsText.contains('DelosStorageDiagnostics withContext')) {
+                failures << 'MVCC diagnostics must support explicit database context'
+            }
+            if (!accessManagerText.contains('registerExternalAccessMethodLifecycle(factory)')) {
+                failures << 'RAMAccessManager must own lifecycle for ServiceLoader-booted access methods'
+            }
+            if (!analyzeDiagnosticsText.contains('Path databaseDirectory')) {
+                failures << 'MVCC analyze diagnostics must receive explicit database identity'
+            }
+            if (!indexStatisticsText.contains('Path.of(Monitor.getServiceName(lcc.getDatabase()))')) {
+                failures << 'Explicit update-statistics diagnostics must bind to the owning database service'
+            }
+            if (!fromBaseTableText.contains('Path.of(databaseServiceName)')) {
+                failures << 'Optimizer metadata diagnostics must bind to the compiling database service'
+            }
+            if (!sqlTestSupportText.contains('activatePersistedMvccConglomerates(connection)')) {
+                failures << 'Embedded SQL reopen helper must activate persisted MVCC conglomerates explicitly'
+            }
+            if (!sqlTestSupportText.contains('ConglomerateFactory.MVCC_FACTORY_ID')) {
+                failures << 'Embedded SQL reopen helper must select only persisted MVCC conglomerates'
+            }
+            if (!sqlTestSupportText.contains('TransactionController.ISOLATION_NOLOCK')) {
+                failures << 'Embedded SQL reopen helper must not add row-read or transaction-lock semantics'
+            }
+            if (!sqlTestSupportText.contains('transaction.openConglomerate(')
+                    || !sqlTestSupportText.contains('controller.close();')) {
+                failures << 'Embedded SQL reopen helper must open and close conglomerate controllers explicitly'
+            }
+
+            if (!sqlTestDirectory.isDirectory()) {
+                failures << 'Missing DelosDB SQL test directory: ' + sqlTestDirectory
+            } else {
+                DelosDbStaticFileSupport.javaFiles([sqlTestDirectory]).each { testFile ->
+                    def testText = testFile.getText('UTF-8')
+                    if (testText.contains('mvccDiagnostics()')) {
+                        failures << testFile + ': SQL diagnostics must name their database'
+                    }
+                    if ((testText =~ /DelosStorageConsistencyTarget\.mvcc\(\s*\d/).find()) {
+                        failures << testFile + ': MVCC metadata targets must name their database'
+                    }
+                    if (testText.contains('DelosStorageDiagnosticsRegistry.mvcc()')
+                            || (testText =~ /DelosStorageDiagnosticsRegistry\.(inspectMvcc|statisticsForMvcc|mvccStorageStatistics|capabilitiesForMvcc)\(\s*\d/).find()) {
+                        failures << testFile + ': MVCC registry diagnostics must name their database'
+                    }
+                    if ((testText =~ /(?i)new\s+DelosStorage(?:ConsistencyTarget|PredicatePushdownRequest)\([\s\S]{0,240}?delos_mvcc[\s\S]{0,120}?\bnull\s*,/).find()) {
+                        failures << testFile + ': MVCC diagnostic request retains a null database directory'
+                    }
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-database-runtime-ownership-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC database runtime ownership static analysis')
+            writer.println('========================================================')
+            writer.println()
+            writer.println('Rule: MVCC database selection must be explicit and database-scoped.')
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('MVCC database runtime ownership validation failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC database runtime ownership static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -3094,6 +3233,7 @@ tasks.register('s0CloseoutVerification') {
             'delosHeapRawStoreDuplicateClassificationReport',
             'delosDerbyModuleParityStaticAnalysis',
             'delosDerbyForkDiffClassificationStaticAnalysis',
-            'delosNoTransitionalStorageRoutingStaticAnalysis'
+            'delosNoTransitionalStorageRoutingStaticAnalysis',
+            'delosMvccDatabaseRuntimeOwnershipStaticAnalysis'
 }
 

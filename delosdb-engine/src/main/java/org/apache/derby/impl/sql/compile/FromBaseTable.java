@@ -24,6 +24,7 @@ package	org.apache.derby.impl.sql.compile;
 import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
 
 import java.lang.reflect.Method;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashSet;
@@ -44,6 +45,7 @@ import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.io.FormatableArrayHolder;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.services.io.FormatableIntHolder;
+import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.iapi.services.property.PropertyUtil;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.sql.LanguageProperties;
@@ -2090,9 +2092,14 @@ class FromBaseTable extends FromTable
         }
 
         try {
+            String databaseServiceName = Monitor.getServiceName(
+                    getLanguageConnectionContext().getDatabase());
+            if (databaseServiceName == null) {
+                return;
+            }
             DelosStoragePredicatePushdownRequest request = new DelosStoragePredicatePushdownRequest(
                     "delos_mvcc",
-                    null,
+                    Path.of(databaseServiceName),
                     0,
                     tableDescriptor.getHeapConglomerateId(),
                     "optimizer base predicate metadata",

@@ -51,7 +51,7 @@ public final class OptimizerPredicatePushdownConsumptionOptInTest extends MvccSq
                 long mvccContainerId = mvccContainerId(connection, "OPT_CONSUME_MVCC_T");
                 DelosStoragePredicatePushdownRequest request = new DelosStoragePredicatePushdownRequest(
                         "delos_mvcc",
-                        null,
+                        databasePath(databaseName),
                         0,
                         mvccContainerId,
                         "name = 'mvcc-beta' and payload like 'two%'",
@@ -110,7 +110,7 @@ public final class OptimizerPredicatePushdownConsumptionOptInTest extends MvccSq
 
                 DelosStoragePredicatePushdownRequest snapshotRequest = new DelosStoragePredicatePushdownRequest(
                         "delos_mvcc",
-                        null,
+                        databasePath(databaseName),
                         0,
                         mvccContainerId,
                         "snapshot name = 'mvcc-beta'",

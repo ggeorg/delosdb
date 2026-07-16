@@ -30,7 +30,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlPurgeQueueTest extends MvccSqlTestSupport {
     public void testVacuumEnqueuesAndDrainsObsoleteVersionsThroughPurgeQueue() throws Exception {
         String databaseName = databaseName("mvcc-purge-queue-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

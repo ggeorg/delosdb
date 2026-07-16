@@ -34,7 +34,7 @@ public final class MvccSqlLongReaderPurgeStressTest extends MvccSqlTestSupport {
 
     public void testLongRepeatableReadReaderSurvivesAggressivePurgeStress() throws Exception {
         String databaseName = databaseName("mvcc-long-reader-purge-stress-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection setup = openDatabase(databaseName, true)) {

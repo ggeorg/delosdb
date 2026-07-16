@@ -33,6 +33,7 @@ not a substitute for these documents.
 
 | Document | Purpose |
 |---|---|
+| [`MVCC-DATABASE-RUNTIME.md`](MVCC-DATABASE-RUNTIME.md) | explicit database-scoped MVCC runtime ownership |
 | [`MVCC-DURABILITY-PROTOCOL.md`](MVCC-DURABILITY-PROTOCOL.md) | transaction durability, failure, and recovery authority |
 | [`MVCC-GROUP-COMMIT.md`](MVCC-GROUP-COMMIT.md) | concurrent preparation and bounded transaction grouping |
 | [`MVCC-MAINTENANCE.md`](MVCC-MAINTENANCE.md) | database-owned vacuum and maintenance scheduling |

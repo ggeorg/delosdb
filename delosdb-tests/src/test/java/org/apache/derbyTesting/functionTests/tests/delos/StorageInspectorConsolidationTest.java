@@ -55,7 +55,7 @@ public final class StorageInspectorConsolidationTest extends MvccSqlTestSupport 
 
             DelosStorageInspectionReport report = DelosStorageDiagnosticsRegistry.inspectionReport(
                     DelosStorageConsistencyTarget.heap(databaseDirectory, 0, heapContainerId),
-                    DelosStorageConsistencyTarget.mvcc(0, mvccContainerId));
+                    mvccTarget(databaseName, 0, mvccContainerId));
 
             assertEquals("expected heap and MVCC inspection targets", 2, report.targetCount());
             assertTrue("expected clean mixed storage-inspection report: " + report.summaries(),
@@ -71,7 +71,7 @@ public final class StorageInspectorConsolidationTest extends MvccSqlTestSupport 
                             DelosStorageDiagnosticsRegistry.HEAP_PROVIDER_ID));
             assertEquals("provider target should canonicalize MVCC id",
                     DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID,
-                    new DelosStorageConsistencyTarget("  DELOS_MVCC  ", null, 0, mvccContainerId).providerId());
+                    new DelosStorageConsistencyTarget("  DELOS_MVCC  ", databasePath(databaseName), 0, mvccContainerId).providerId());
 
             DelosStorageInspection heapInspection = report.inspection(
                     "  DERBY_HEAP  ", 0, heapContainerId);

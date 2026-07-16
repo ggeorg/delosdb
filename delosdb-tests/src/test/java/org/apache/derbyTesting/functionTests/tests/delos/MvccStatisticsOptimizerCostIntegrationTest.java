@@ -45,7 +45,7 @@ public final class MvccStatisticsOptimizerCostIntegrationTest extends MvccSqlTes
                 long containerId = mvccContainerId(connection, "MVCC_COST_T");
                 assertEquals("expected visible logical rows before optimizer-cost opt-in",
                         3L,
-                        DelosStorageDiagnosticsRegistry.statisticsForMvcc(0, containerId).logicalRowCount());
+                        DelosStorageDiagnosticsRegistry.statisticsForMvcc(databasePath(databaseName), 0, containerId).logicalRowCount());
 
                 assertRows(connection,
                         "select id, name from mvcc_cost_t where id >= 1 order by id",

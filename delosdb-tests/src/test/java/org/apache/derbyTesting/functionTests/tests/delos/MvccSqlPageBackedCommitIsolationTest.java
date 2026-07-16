@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlPageBackedCommitIsolationTest extends MvccSqlTestSupport {
     public void testPageBackedCommittedImageIgnoresRollbackAndSavepointMutations() throws Exception {
         String databaseName = databaseName("mvcc-page-backed-commit-isolation-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

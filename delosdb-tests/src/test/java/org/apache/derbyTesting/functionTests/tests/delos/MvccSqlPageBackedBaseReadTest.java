@@ -30,7 +30,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlPageBackedBaseReadTest extends MvccSqlTestSupport {
     public void testTransactionLocalReadsFallBackToPageBackedCommittedBase() throws Exception {
         String databaseName = databaseName("mvcc-page-backed-base-read-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

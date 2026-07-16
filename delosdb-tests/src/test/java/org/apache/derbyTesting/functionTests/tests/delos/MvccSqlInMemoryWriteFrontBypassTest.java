@@ -45,7 +45,7 @@ public final class MvccSqlInMemoryWriteFrontBypassTest extends MvccSqlTestSuppor
 
     private void assertProviderBypassKeepsActiveWriterConflictGuard() throws Exception {
         String databaseName = databaseName("mvcc-write-front-bypass-conflict-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
@@ -114,7 +114,7 @@ public final class MvccSqlInMemoryWriteFrontBypassTest extends MvccSqlTestSuppor
 
     private void assertProviderWritePathBypassesInheritedWriteFrontByDefault() throws Exception {
         String databaseName = databaseName("mvcc-write-front-bypass-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
         int startingProviderWrites;
         int startingShadowWrites;

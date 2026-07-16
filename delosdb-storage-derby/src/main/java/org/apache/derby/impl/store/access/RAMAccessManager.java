@@ -68,19 +68,24 @@ import org.apache.derby.iapi.store.raw.data.DataFactory;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.reference.Attribute;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.ServiceLoader;
+import java.util.Set;
 
 import java.io.Serializable;
 
 
 public abstract class RAMAccessManager
-    implements AccessFactory, 
-               CacheableFactory, 
-               ModuleControl, 
+    implements AccessFactory,
+               CacheableFactory,
+               ModuleControl,
                PropertySetCallback
 {
     private static final int CONGLOMERATE_FACTORY_ID_MASK = 0x0f;
@@ -107,6 +112,10 @@ public abstract class RAMAccessManager
     Hash table on primary format.
     **/
     private Map<Object,MethodFactory> formathash;
+
+    /** Lifecycle owners for access methods booted through ServiceLoader. */
+    private final Set<ModuleControl> externalAccessMethodLifecycles =
+            Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
 
 	/**
 	Service properties.  These are supplied from ModuleControl.boot(),
@@ -724,6 +733,7 @@ public abstract class RAMAccessManager
                     false, conglomProperties, impltype);
             if (factory != null)
             {
+                registerExternalAccessMethodLifecycle(factory);
                 return factory;
             }
         }
@@ -745,6 +755,7 @@ public abstract class RAMAccessManager
                     false, serviceProperties, factoryId);
             if (factory instanceof ConglomerateFactory conglomerateFactory)
             {
+                registerExternalAccessMethodLifecycle(factory);
                 registerAccessMethod(factory);
                 return conglomerateFactory;
             }
@@ -1339,6 +1350,48 @@ public abstract class RAMAccessManager
 
     public void stop()
     {
+        List<ModuleControl> lifecycles;
+        synchronized (externalAccessMethodLifecycles)
+        {
+            lifecycles = new ArrayList<>(externalAccessMethodLifecycles);
+            externalAccessMethodLifecycles.clear();
+        }
+
+        Throwable failure = null;
+        for (int i = lifecycles.size() - 1; i >= 0; i--)
+        {
+            try
+            {
+                lifecycles.get(i).stop();
+            }
+            catch (RuntimeException | Error stopFailure)
+            {
+                if (failure == null)
+                {
+                    failure = stopFailure;
+                }
+                else
+                {
+                    failure.addSuppressed(stopFailure);
+                }
+            }
+        }
+        if (failure instanceof RuntimeException runtimeFailure)
+        {
+            throw runtimeFailure;
+        }
+        if (failure instanceof Error error)
+        {
+            throw error;
+        }
+    }
+
+    private void registerExternalAccessMethodLifecycle(MethodFactory factory)
+    {
+        if (factory instanceof ModuleControl moduleControl)
+        {
+            externalAccessMethodLifecycles.add(moduleControl);
+        }
     }
 
     /* Methods of the PropertySetCallback interface */

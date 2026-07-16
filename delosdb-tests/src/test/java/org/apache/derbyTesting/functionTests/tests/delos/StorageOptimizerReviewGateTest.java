@@ -58,7 +58,7 @@ public final class StorageOptimizerReviewGateTest extends MvccSqlTestSupport {
             DelosStorageConsistencyTarget heapTarget = new DelosStorageConsistencyTarget(
                     " derby_heap ", databaseDirectory, 0, heapContainerId);
             DelosStorageConsistencyTarget mvccTarget = new DelosStorageConsistencyTarget(
-                    " delos_mvcc ", null, 0, mvccContainerId);
+                    " delos_mvcc ", databasePath(databaseName), 0, mvccContainerId);
 
             DelosStoragePredicatePushdownRequest heapRequest = new DelosStoragePredicatePushdownRequest(
                     "DERBY_HEAP",
@@ -73,7 +73,7 @@ public final class StorageOptimizerReviewGateTest extends MvccSqlTestSupport {
                     List.of("name like 'heap%'"));
             DelosStoragePredicatePushdownRequest mvccCurrentCommittedRequest = new DelosStoragePredicatePushdownRequest(
                     "DELOS_MVCC",
-                    null,
+                    databasePath(databaseName),
                     0,
                     mvccContainerId,
                     "id >= 1 and name like 'mvcc%'",
@@ -84,7 +84,7 @@ public final class StorageOptimizerReviewGateTest extends MvccSqlTestSupport {
                     List.of("name like 'mvcc%'"));
             DelosStoragePredicatePushdownRequest mvccSnapshotRequest = new DelosStoragePredicatePushdownRequest(
                     "delos_mvcc",
-                    null,
+                    databasePath(databaseName),
                     0,
                     mvccContainerId,
                     "snapshot id >= 1 and name like 'mvcc%'",
@@ -95,7 +95,7 @@ public final class StorageOptimizerReviewGateTest extends MvccSqlTestSupport {
                     List.of("name like 'mvcc%'"));
             DelosStoragePredicatePushdownRequest mvccWriterBorrowedRequest = new DelosStoragePredicatePushdownRequest(
                     "delos_mvcc",
-                    null,
+                    databasePath(databaseName),
                     0,
                     mvccContainerId,
                     "writer borrowed id >= 1 and name like 'mvcc%'",

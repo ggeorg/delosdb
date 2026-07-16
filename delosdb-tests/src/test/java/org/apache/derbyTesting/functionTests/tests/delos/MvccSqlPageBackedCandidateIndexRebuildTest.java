@@ -29,7 +29,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlPageBackedCandidateIndexRebuildTest extends MvccSqlTestSupport {
     public void testCandidateIndexRebuildsFromPageBackedCommittedRows() throws Exception {
         String databaseName = databaseName("mvcc-page-backed-candidate-index-rebuild-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
         int initialPageBackedRebuildCount;
 

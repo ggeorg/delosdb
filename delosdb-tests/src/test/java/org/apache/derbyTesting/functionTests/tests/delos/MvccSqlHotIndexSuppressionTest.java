@@ -29,7 +29,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlHotIndexSuppressionTest extends MvccSqlTestSupport {
     public void testNonKeyUpdatesDoNotAccumulateCandidateIndexEntries() throws Exception {
         String databaseName = databaseName("mvcc-hot-index-suppression-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

@@ -60,7 +60,7 @@ public final class StorageMetadataProviderChainTest extends MvccSqlTestSupport {
                 DelosStorageConsistencyTarget heapTarget = new DelosStorageConsistencyTarget(
                         " DERBY_HEAP ", databaseDirectory, 0, heapContainerId);
                 DelosStorageConsistencyTarget mvccTarget = new DelosStorageConsistencyTarget(
-                        " DELOS_MVCC ", null, 0, mvccContainerId);
+                        " DELOS_MVCC ", databasePath(databaseName), 0, mvccContainerId);
 
                 DelosStorageMetadataQuery query = DelosStorageDiagnosticsRegistry.metadataQuery();
                 List<String> providerIds = query.providerIds();

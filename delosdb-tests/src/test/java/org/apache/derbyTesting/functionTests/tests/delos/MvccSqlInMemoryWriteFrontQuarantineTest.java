@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlInMemoryWriteFrontQuarantineTest extends MvccSqlTestSupport {
     public void testInheritedWriteFrontIsGuardedShadowOnly() throws Exception {
         String databaseName = databaseName("mvcc-write-front-quarantine-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
         int startingProviderFirstWrites;
         int startingShadowWrites;

@@ -59,7 +59,7 @@ public final class OptimizerPredicatePushdownOptInTest extends MvccSqlTestSuppor
 
                 DelosStoragePredicatePushdownRequest mvccRequest = new DelosStoragePredicatePushdownRequest(
                         "delos_mvcc",
-                        null,
+                        databasePath(databaseName),
                         0,
                         mvccContainerId,
                         "id >= 1 and name like 'mvcc%'",
@@ -137,7 +137,7 @@ public final class OptimizerPredicatePushdownOptInTest extends MvccSqlTestSuppor
 
                 DelosStoragePredicatePushdownRequest snapshotRequest = new DelosStoragePredicatePushdownRequest(
                         "delos_mvcc",
-                        null,
+                        databasePath(databaseName),
                         0,
                         mvccContainerId,
                         "snapshot id >= 1",

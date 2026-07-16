@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlFreeSpaceMapTest extends MvccSqlTestSupport {
     public void testFreeSpaceMapTracksAndRoutesPartialPageReuse() throws Exception {
         String databaseName = databaseName("mvcc-free-space-map-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

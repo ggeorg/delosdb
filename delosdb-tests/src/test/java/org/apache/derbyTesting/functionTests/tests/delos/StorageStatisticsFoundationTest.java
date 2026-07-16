@@ -53,7 +53,7 @@ public final class StorageStatisticsFoundationTest extends MvccSqlTestSupport {
 
             DelosStorageStatisticsReport report = DelosStorageDiagnosticsRegistry.statisticsReport(
                     DelosStorageConsistencyTarget.heap(databaseDirectory, 0, heapContainerId),
-                    DelosStorageConsistencyTarget.mvcc(0, mvccContainerId));
+                    mvccTarget(databaseName, 0, mvccContainerId));
 
             assertEquals("expected heap and MVCC statistics targets", 2, report.targetCount());
             assertTrue("statistics report must be read-only", report.readOnly());

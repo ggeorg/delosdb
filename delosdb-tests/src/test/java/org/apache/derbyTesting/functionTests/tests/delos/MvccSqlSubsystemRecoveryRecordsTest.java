@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.types.DelosStorageRecoveryDiagnostics;
 public final class MvccSqlSubsystemRecoveryRecordsTest extends MvccSqlTestSupport {
     public void testSubsystemRecoveryRecordsExistAndSurviveReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-subsystem-recovery-records-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         String large = repeated('r', 24000);
         long containerId;
         long firstSequence;

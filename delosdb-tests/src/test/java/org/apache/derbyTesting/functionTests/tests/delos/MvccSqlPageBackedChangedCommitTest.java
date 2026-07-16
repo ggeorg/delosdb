@@ -30,7 +30,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlPageBackedChangedCommitTest extends MvccSqlTestSupport {
     public void testPageBackedCommitPersistsOnlyChangedRows() throws Exception {
         String databaseName = databaseName("mvcc-page-backed-changed-commit-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

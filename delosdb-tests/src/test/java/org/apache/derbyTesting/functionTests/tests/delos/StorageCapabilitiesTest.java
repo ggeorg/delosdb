@@ -56,7 +56,7 @@ public final class StorageCapabilitiesTest extends MvccSqlTestSupport {
             DelosStorageConsistencyTarget heapTarget = new DelosStorageConsistencyTarget(
                     " DERBY_HEAP ", databaseDirectory, 0, heapContainerId);
             DelosStorageConsistencyTarget mvccTarget = new DelosStorageConsistencyTarget(
-                    " DELOS_MVCC ", null, 0, mvccContainerId);
+                    " DELOS_MVCC ", databasePath(databaseName), 0, mvccContainerId);
 
             List<DelosStorageMetadataSnapshot> snapshots = DelosStorageDiagnosticsRegistry.metadataSnapshots(
                     List.of(heapTarget, mvccTarget));

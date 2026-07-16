@@ -79,7 +79,9 @@ public final class HeapMvccDrdaStreamingDisconnectTest extends BaseJDBCTestCase 
         assertStreamingDisconnectCleanup(HEAP_TABLE);
         assertStreamingDisconnectCleanup(MVCC_TABLE);
 
-        DelosStorageDiagnostics diagnostics = MvccSqlTestSupport.mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = MvccSqlTestSupport.mvccDiagnostics(
+                getTestConfiguration().getDatabasePath(
+                        getTestConfiguration().getDefaultDatabaseName()));
         try (Connection connection = openDefaultConnection()) {
             connection.setAutoCommit(false);
             long containerId = MvccSqlTestSupport.mvccContainerId(

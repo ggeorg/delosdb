@@ -30,7 +30,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlStoragePathDiagnosticsRuntimeTest extends MvccSqlTestSupport {
     public void testOrderedEqualityAndRowIdPathsAreRecorded() throws Exception {
         String databaseName = databaseName("mvcc-storage-path-diagnostics-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -67,7 +67,7 @@ public final class MvccSqlStoragePathDiagnosticsRuntimeTest extends MvccSqlTestS
 
     public void testSnapshotOrderedShortcutRejectionIsRecordedAsExplicitFallback() throws Exception {
         String databaseName = databaseName("mvcc-storage-path-snapshot-diagnostics-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection setup = openDatabase(databaseName, true)) {

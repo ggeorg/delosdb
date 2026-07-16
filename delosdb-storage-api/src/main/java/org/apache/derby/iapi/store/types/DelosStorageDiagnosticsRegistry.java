@@ -41,6 +41,11 @@ public final class DelosStorageDiagnosticsRegistry {
         return forProvider(MVCC_PROVIDER_ID);
     }
 
+    public static DelosStorageDiagnostics mvcc(Path databaseDirectory) {
+        return mvcc().withContext(
+                DelosStorageDiagnosticsContext.databaseDirectory(databaseDirectory));
+    }
+
     public static DelosStorageDiagnostics heap() {
         return forProvider(HEAP_PROVIDER_ID);
     }
@@ -62,8 +67,19 @@ public final class DelosStorageDiagnosticsRegistry {
         return inspectorForProvider(MVCC_PROVIDER_ID);
     }
 
+    public static DelosStorageInspector mvccInspector(Path databaseDirectory) {
+        return DelosStorageInspector.fromDiagnostics(mvcc(databaseDirectory));
+    }
+
     public static DelosStorageInspection inspectMvcc(int segment, long containerId) {
         return inspect(MVCC_PROVIDER_ID, segment, containerId);
+    }
+
+    public static DelosStorageInspection inspectMvcc(
+            Path databaseDirectory,
+            int segment,
+            long containerId) {
+        return mvccInspector(databaseDirectory).inspect(segment, containerId);
     }
 
     public static DelosStorageInspection inspectHeap(Path databaseDirectory, int segment, long containerId) {
@@ -75,8 +91,22 @@ public final class DelosStorageDiagnosticsRegistry {
         return storageStatistics(MVCC_PROVIDER_ID, segment, containerId);
     }
 
+    public static DelosStorageStatistics statisticsForMvcc(
+            Path databaseDirectory,
+            int segment,
+            long containerId) {
+        return mvcc(databaseDirectory).storageStatisticsForTesting(segment, containerId);
+    }
+
     public static DelosMvccStorageStatistics mvccStorageStatistics(int segment, long containerId) {
         return mvcc().mvccStorageStatisticsForTesting(segment, containerId);
+    }
+
+    public static DelosMvccStorageStatistics mvccStorageStatistics(
+            Path databaseDirectory,
+            int segment,
+            long containerId) {
+        return mvcc(databaseDirectory).mvccStorageStatisticsForTesting(segment, containerId);
     }
 
     public static DelosStorageStatistics statisticsForHeap(Path databaseDirectory, int segment, long containerId) {
@@ -200,6 +230,17 @@ public final class DelosStorageDiagnosticsRegistry {
 
     public static DelosStorageCapabilities capabilitiesForMvcc(int segment, long containerId) {
         return storageCapabilities(MVCC_PROVIDER_ID, segment, containerId);
+    }
+
+    public static DelosStorageCapabilities capabilitiesForMvcc(
+            Path databaseDirectory,
+            int segment,
+            long containerId) {
+        DelosStorageStatistics statistics = statisticsForMvcc(
+                databaseDirectory, segment, containerId);
+        return DelosStorageCapabilities.fromStatistics(
+                statistics,
+                DelosStorageCostIntegration.estimate(statistics));
     }
 
     public static DelosStorageCapabilities capabilitiesForHeap(Path databaseDirectory, int segment, long containerId) {

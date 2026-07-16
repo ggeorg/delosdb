@@ -120,7 +120,7 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
                     "select id, code, status, quantity from mvcc_recovery_diff_t where id = 8",
                     "8|after-recovery|ready|80");
             long containerId = mvccContainerId(reopenedAgain, "MVCC_RECOVERY_DIFF_T");
-            assertMvccConsistent(mvccDiagnostics(), containerId);
+            assertMvccConsistent(mvccDiagnostics(databaseName), containerId);
         }
     }
 
@@ -153,7 +153,7 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
 
         runCrashBoundaryWorker("vacuum-stale-checkpoint", databaseName);
 
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         try (Connection reopened = openDatabase(databaseName, false)) {
             long containerId = mvccContainerId(reopened, "MVCC_CRASH_VACUUM_T");
             assertRows(reopened,
@@ -179,7 +179,7 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
 
     public void testCorruptMvccPageRecordBodyFailsCleanlyOnReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-page-record-header-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         Path pageFile;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -209,7 +209,7 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
 
     public void testCorruptMvccPageChecksumFailsCleanlyOnReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-page-checksum-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         Path pageFile;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -504,7 +504,7 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
                 connection.commit();
 
                 long containerId = mvccContainerId(connection, "MVCC_CRASH_VACUUM_T");
-                DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+                DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
                 if (diagnostics.physicalVersionCountForTesting(0, containerId)
                         <= diagnostics.logicalRowCountForTesting(0, containerId)) {
                     throw new IllegalStateException("expected superseded versions before vacuum");

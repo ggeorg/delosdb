@@ -64,7 +64,7 @@ public final class StorageSharedServiceReadinessReportTest extends MvccSqlTestSu
             DelosStorageSharedServiceReadinessReport report = DelosStorageDiagnosticsRegistry
                     .sharedServiceReadinessReport(List.of(
                             DelosStorageConsistencyTarget.heap(Path.of(databaseName), 0, heapContainerId),
-                            DelosStorageConsistencyTarget.mvcc(0, mvccContainerId)));
+                            mvccTarget(databaseName, 0, mvccContainerId)));
 
             assertEquals("readiness report should classify the current shared-service candidates",
                     8, report.itemCount());

@@ -34,7 +34,7 @@ import org.apache.derby.iapi.store.types.DelosVacuumOutcome;
 public final class MvccSqlPageReuseTest extends MvccSqlTestSupport {
     public void testVacuumMarksReusablePagesAndNextInsertConsumesOne() throws Exception {
         String databaseName = databaseName("mvcc-sql-page-reuse-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
         long pagesAfterReuse;
         long reusablePagesAfterReuse;

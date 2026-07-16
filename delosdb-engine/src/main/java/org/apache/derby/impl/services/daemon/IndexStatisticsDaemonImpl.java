@@ -24,6 +24,7 @@ package org.apache.derby.impl.services.daemon;
 import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 import java.io.PrintWriter;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
@@ -1019,21 +1020,25 @@ public class IndexStatisticsDaemonImpl
         TableDescriptor td = (TableDescriptor) tdObject;
         ConglomerateDescriptor[] cds = (ConglomerateDescriptor[]) cdsObject;
         updateIndexStatsMinion(lcc, td, cds, AS_EXPLICIT_TASK);
-        recordDelosMvccAnalyzeStatisticsLifecycle(td, runContext);
+        recordDelosMvccAnalyzeStatisticsLifecycle(lcc, td, runContext);
         trace(0, "explicit run completed" + (runContext != null
                                         ? " (" + runContext + "): "
                                         : ": ") +
                                     td.getQualifiedName());
     }
 
-    private static void recordDelosMvccAnalyzeStatisticsLifecycle(TableDescriptor td, String runContext) {
+    private static void recordDelosMvccAnalyzeStatisticsLifecycle(
+            LanguageConnectionContext lcc,
+            TableDescriptor td,
+            String runContext) {
         try {
             DelosMvccAnalyzeStatisticsLifecycleDiagnostics.recordExplicitUpdateStatistics(
+                    Path.of(Monitor.getServiceName(lcc.getDatabase())),
                     td.getStorageProviderName(),
                     td.getQualifiedName(),
                     td.getHeapConglomerateId(),
                     runContext);
-        } catch (StandardException e) {
+        } catch (StandardException | RuntimeException e) {
             DelosMvccAnalyzeStatisticsLifecycleDiagnostics.recordDiagnosticFailure(
                     td.getStorageProviderName(),
                     td.getQualifiedName(),

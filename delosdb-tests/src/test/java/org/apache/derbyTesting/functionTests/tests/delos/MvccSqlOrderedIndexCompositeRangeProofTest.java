@@ -30,7 +30,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlOrderedIndexCompositeRangeProofTest extends MvccSqlTestSupport {
     public void testCompositePredicateUsesSafeSingleColumnNarrowingAndQualifierFiltering() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-composite-predicate-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -65,7 +65,7 @@ public final class MvccSqlOrderedIndexCompositeRangeProofTest extends MvccSqlTes
 
     public void testMultiColumnRangePredicateRecordsRejectedOrderedRangeAndFallsBack() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-multicolumn-range-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

@@ -39,7 +39,7 @@ public final class MvccSqlInMemoryWriteFrontRemovalTest extends MvccSqlTestSuppo
 
     private void assertRemovedInheritedWriteFrontCannotBeReenabledByProperty() throws Exception {
         String databaseName = databaseName("mvcc-write-front-removal-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
         int startingProviderWrites;
         int startingShadowWrites;

@@ -60,7 +60,7 @@ public final class MvccStorageStatisticsTest extends MvccSqlTestSupport {
                     "4|11");
 
             DelosMvccStorageStatistics statistics = DelosStorageDiagnosticsRegistry.mvccStorageStatistics(
-                    0, containerId);
+                    databasePath(databaseName), 0, containerId);
             assertEquals("expected normalized MVCC provider id",
                     DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID,
                     statistics.providerId());
@@ -91,7 +91,7 @@ public final class MvccStorageStatisticsTest extends MvccSqlTestSupport {
             assertTrue("expected MVCC-specific authority observation",
                     statistics.observations().contains("candidate indexes are not normal SQL read authority"));
 
-            mvccDiagnostics().assertConsistentForTesting(0, containerId);
+            mvccDiagnostics(databaseName).assertConsistentForTesting(0, containerId);
             connection.rollback();
         }
     }

@@ -54,6 +54,18 @@ public interface DelosStorageDiagnostics {
         return 0;
     }
 
+    /**
+     * Return whether the explicitly bound provider runtime is currently active.
+     *
+     * <p>Providers which do not expose a database-scoped runtime may retain the
+     * default value. This method exists primarily so lifecycle tests can verify
+     * one database without making assertions about unrelated databases that may
+     * remain booted in the same JVM.</p>
+     */
+    default boolean runtimeActiveForTesting() {
+        return false;
+    }
+
     Path pageVolumeStateFileForTesting(int segment, long containerId);
 
     Path rowDirectoryStateFileForTesting(int segment, long containerId);

@@ -59,7 +59,7 @@ public final class StorageCostIntegrationCheckpointTest extends MvccSqlTestSuppo
 
                 DelosStorageCostReport disabledReport = DelosStorageDiagnosticsRegistry.costReport(
                         DelosStorageConsistencyTarget.heap(databaseDirectory, 0, heapContainerId),
-                        DelosStorageConsistencyTarget.mvcc(0, mvccContainerId));
+                        mvccTarget(databaseName, 0, mvccContainerId));
                 assertFalse("storage cost integration should be disabled by default",
                         disabledReport.storageStatisticsEnabled());
                 assertTrue("cost report must be read-only", disabledReport.readOnly());
@@ -70,7 +70,7 @@ public final class StorageCostIntegrationCheckpointTest extends MvccSqlTestSuppo
                 System.setProperty(DelosStorageCostIntegration.ENABLED_PROPERTY, "true");
                 DelosStorageCostReport enabledReport = DelosStorageDiagnosticsRegistry.costReport(
                         DelosStorageConsistencyTarget.heap(databaseDirectory, 0, heapContainerId),
-                        DelosStorageConsistencyTarget.mvcc(0, mvccContainerId));
+                        mvccTarget(databaseName, 0, mvccContainerId));
                 assertTrue("explicit property should enable storage cost diagnostics",
                         enabledReport.storageStatisticsEnabled());
                 assertTrue("enabled report remains read-only", enabledReport.readOnly());

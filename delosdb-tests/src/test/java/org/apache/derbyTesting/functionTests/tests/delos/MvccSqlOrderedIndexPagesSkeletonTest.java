@@ -33,7 +33,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlOrderedIndexPagesSkeletonTest extends MvccSqlTestSupport {
     public void testOrderedIndexPagesMirrorCommittedCandidateKeysThroughReopen() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-pages-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -112,7 +112,7 @@ public final class MvccSqlOrderedIndexPagesSkeletonTest extends MvccSqlTestSuppo
 
     public void testOversizedValuesDoNotBreakShadowOrderedIndexRebuild() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-oversized-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
         String largePayload = "x".repeat(20000);
 

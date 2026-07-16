@@ -30,7 +30,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlTypedOrderedIndexKeyTest extends MvccSqlTestSupport {
     public void testIntegerRangeUsesNumericOrderedIndexKeySemantics() throws Exception {
         String databaseName = databaseName("mvcc-typed-ordered-index-key-int-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -83,7 +83,7 @@ public final class MvccSqlTypedOrderedIndexKeyTest extends MvccSqlTestSupport {
 
     public void testDecimalAndBigintRangesUseTypedOrderedIndexKeySemantics() throws Exception {
         String databaseName = databaseName("mvcc-typed-ordered-index-key-decimal-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -130,7 +130,7 @@ public final class MvccSqlTypedOrderedIndexKeyTest extends MvccSqlTestSupport {
 
     public void testTextValuesThatResembleLegacyTypedEnvelopeUseTextSemantics() throws Exception {
         String databaseName = databaseName("mvcc-typed-ordered-index-key-text-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -168,7 +168,7 @@ public final class MvccSqlTypedOrderedIndexKeyTest extends MvccSqlTestSupport {
 
     public void testNullValuesKeepTypedOrderedIndexKeySemanticsThroughReopen() throws Exception {
         String databaseName = databaseName("mvcc-typed-ordered-index-key-null-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

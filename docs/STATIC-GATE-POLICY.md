@@ -76,3 +76,22 @@ delosSharedStorageServiceExtractionAuditStaticAnalysis
 
 Their useful conclusions remain in source, tests, current protocol documents, or historical records.
 They are not executable release authority.
+
+## MVCC database runtime ownership
+
+`delosMvccDatabaseRuntimeOwnershipStaticAnalysis` is a stable S0 gate. It verifies that:
+
+* `MvccConglomerate` does not select a database through mutable JVM-global state;
+* `MvccDatabaseRuntime` owns the database-scoped provider store and table-state registry;
+* `MvccConglomerateFactory` acquires that runtime from its explicit Derby database directory;
+* MVCC diagnostics can bind to an explicit database context;
+* SQL and metadata tests do not use directory-free MVCC diagnostics;
+* explicit statistics and optimizer metadata hooks bind to Derby's owning database service;
+* embedded SQL reopen tests explicitly open persisted MVCC conglomerates without row scans;
+* `RAMAccessManager` stops ServiceLoader-booted access-method factories and releases their runtime leases.
+
+Run it directly with:
+
+```bash
+./gradlew delosMvccDatabaseRuntimeOwnershipStaticAnalysis
+```

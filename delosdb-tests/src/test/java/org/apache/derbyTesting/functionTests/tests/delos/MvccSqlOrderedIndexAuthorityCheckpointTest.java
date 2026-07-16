@@ -30,7 +30,7 @@ import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexDiagnostics;
 public final class MvccSqlOrderedIndexAuthorityCheckpointTest extends MvccSqlTestSupport {
     public void testCurrentCommittedReadsPreferOrderedPagesAndKeepCandidateFallbackCold() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-authority-checkpoint-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

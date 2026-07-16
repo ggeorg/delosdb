@@ -60,7 +60,9 @@ public final class MvccDrdaNetworkClientTest extends BaseJDBCTestCase {
                         + getTestConfiguration().getJDBCUrl(),
                 getTestConfiguration().getJDBCUrl().startsWith("jdbc:derby://"));
 
-        DelosStorageDiagnostics diagnostics = MvccSqlTestSupport.mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = MvccSqlTestSupport.mvccDiagnostics(
+                getTestConfiguration().getDatabasePath(
+                        getTestConfiguration().getDefaultDatabaseName()));
         byte[] originalBlob = blobPayload(66_000, 13);
         String originalClob = clobPayload(66_000, 'b');
         byte[] updatedBlob = blobPayload(72_000, 29);

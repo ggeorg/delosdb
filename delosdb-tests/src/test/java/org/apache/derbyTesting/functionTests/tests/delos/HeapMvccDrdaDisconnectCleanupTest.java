@@ -70,7 +70,9 @@ public final class HeapMvccDrdaDisconnectCleanupTest extends BaseJDBCTestCase {
         assertAbortRollsBackAndReleases(HEAP_TABLE);
         assertAbortRollsBackAndReleases(MVCC_TABLE);
 
-        DelosStorageDiagnostics diagnostics = MvccSqlTestSupport.mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = MvccSqlTestSupport.mvccDiagnostics(
+                getTestConfiguration().getDatabasePath(
+                        getTestConfiguration().getDefaultDatabaseName()));
         try (Connection connection = openDefaultConnection()) {
             connection.setAutoCommit(false);
             long containerId = MvccSqlTestSupport.mvccContainerId(

@@ -43,7 +43,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlConcurrentStressTest extends MvccSqlTestSupport {
     public void testConcurrentReadersWritersLobsIndexesRollbackVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-concurrent-stress-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

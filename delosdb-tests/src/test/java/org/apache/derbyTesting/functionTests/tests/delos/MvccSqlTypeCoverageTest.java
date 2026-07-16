@@ -38,7 +38,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlTypeCoverageTest extends MvccSqlTestSupport {
     public void testCommonDerbySqlTypesRoundTripAcrossUpdateRollbackVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-type-coverage-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

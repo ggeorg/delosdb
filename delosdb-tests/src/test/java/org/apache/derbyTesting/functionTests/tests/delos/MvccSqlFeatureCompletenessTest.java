@@ -32,7 +32,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlFeatureCompletenessTest extends MvccSqlTestSupport {
     public void testPreparedInsertSelectDefaultsAggregatesSavepointsVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-feature-completeness-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long targetContainerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

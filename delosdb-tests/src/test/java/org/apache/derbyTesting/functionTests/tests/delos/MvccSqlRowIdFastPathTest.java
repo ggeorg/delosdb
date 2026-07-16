@@ -29,7 +29,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlRowIdFastPathTest extends MvccSqlTestSupport {
     public void testCurrentCommittedPrimaryKeyAndIndexLookupsUseRowIdFastPath() throws Exception {
         String databaseName = databaseName("mvcc-row-id-fast-path-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -102,7 +102,7 @@ public final class MvccSqlRowIdFastPathTest extends MvccSqlTestSupport {
 
     public void testStableSnapshotsAndLocalWritersDoNotUseCurrentCommittedRowIdFastPath() throws Exception {
         String databaseName = databaseName("mvcc-row-id-fast-path-snapshot-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection setup = openDatabase(databaseName, true)) {

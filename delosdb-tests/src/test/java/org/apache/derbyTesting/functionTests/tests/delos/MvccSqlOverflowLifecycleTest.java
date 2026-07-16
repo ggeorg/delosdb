@@ -33,7 +33,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlOverflowLifecycleTest extends MvccSqlTestSupport {
     public void testOverflowPayloadsSurviveUpdateDeleteRollbackVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-overflow-lifecycle-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         String shortPayload = "short-payload";
         String initialLongA = repeated('a', 16000);
         String initialLongB = repeated('b', 17000);

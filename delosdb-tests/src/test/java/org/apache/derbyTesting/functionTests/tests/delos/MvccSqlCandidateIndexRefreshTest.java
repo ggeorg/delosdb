@@ -29,7 +29,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlCandidateIndexRefreshTest extends MvccSqlTestSupport {
     public void testCandidateIndexRefreshDropsStaleCommittedKeys() throws Exception {
         String databaseName = databaseName("mvcc-candidate-index-refresh-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
@@ -82,7 +82,7 @@ public final class MvccSqlCandidateIndexRefreshTest extends MvccSqlTestSupport {
     }
     public void testRepeatableReadSnapshotFallsBackWhenCandidateIndexWasRefreshed() throws Exception {
         String databaseName = databaseName("mvcc-candidate-index-refresh-repeatable-read-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (Connection setup = openDatabase(databaseName, true)) {
             setup.setAutoCommit(false);

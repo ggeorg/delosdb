@@ -72,7 +72,7 @@ public final class StorageLifecycleConsistencyReportTest extends MvccSqlTestSupp
             DelosStorageLifecycleConsistencyReport report = DelosStorageDiagnosticsRegistry
                     .lifecycleConsistencyReport(List.of(
                             DelosStorageConsistencyTarget.heap(Path.of(databaseName), 0, heapContainerId),
-                            DelosStorageConsistencyTarget.mvcc(0, mvccContainerId)));
+                            mvccTarget(databaseName, 0, mvccContainerId)));
 
             assertEquals("report should cover heap and MVCC targets", 2, report.targetCount());
             assertTrue("report should include the inherited heap provider: " + report.providerIds(),

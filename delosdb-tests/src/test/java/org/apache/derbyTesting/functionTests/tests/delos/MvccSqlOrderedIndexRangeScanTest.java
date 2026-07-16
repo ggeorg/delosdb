@@ -30,7 +30,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlOrderedIndexRangeScanTest extends MvccSqlTestSupport {
     public void testCurrentCommittedRangeScanUsesOrderedIndexPages() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-range-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -138,7 +138,7 @@ public final class MvccSqlOrderedIndexRangeScanTest extends MvccSqlTestSupport {
 
     public void testStableSnapshotsAndLocalWritersDoNotUseOrderedCurrentCommittedRangeScan() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-range-snapshot-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection setup = openDatabase(databaseName, true)) {
@@ -207,7 +207,7 @@ public final class MvccSqlOrderedIndexRangeScanTest extends MvccSqlTestSupport {
 
     public void testOversizedOrderedKeysForceRangeFallbackWithoutBreakingEquality() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-oversized-range-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
@@ -255,7 +255,7 @@ public final class MvccSqlOrderedIndexRangeScanTest extends MvccSqlTestSupport {
 
     public void testOversizedQueryBoundForcesRangeFallbackOnNormalIndexEntries() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-oversized-bound-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);

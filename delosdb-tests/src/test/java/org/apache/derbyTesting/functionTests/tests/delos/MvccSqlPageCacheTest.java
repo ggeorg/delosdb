@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.types.DelosStoragePageCacheDiagnostics;
 public final class MvccSqlPageCacheTest extends MvccSqlTestSupport {
     public void testPageCacheTracksReadsWritesAndRehydratesOnReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-page-cache-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -104,7 +104,7 @@ public final class MvccSqlPageCacheTest extends MvccSqlTestSupport {
 
     public void testBoundedPageCacheEvictsAndReloadsPages() throws Exception {
         String databaseName = databaseName("mvcc-sql-page-cache-eviction-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

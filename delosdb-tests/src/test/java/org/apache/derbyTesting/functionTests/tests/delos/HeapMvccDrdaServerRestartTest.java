@@ -107,7 +107,9 @@ public final class HeapMvccDrdaServerRestartTest extends BaseJDBCTestCase {
             }
 
             DelosStorageDiagnostics diagnostics =
-                    MvccSqlTestSupport.mvccDiagnostics();
+                    MvccSqlTestSupport.mvccDiagnostics(
+                            getTestConfiguration().getDatabasePath(
+                                    getTestConfiguration().getDefaultDatabaseName()));
             try (Connection check = openDefaultConnection()) {
                 check.setAutoCommit(false);
                 long containerId = MvccSqlTestSupport.mvccContainerId(

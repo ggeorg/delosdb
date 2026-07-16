@@ -36,15 +36,78 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.derby.iapi.store.access.ConglomerateController;
+import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
+import org.apache.derby.iapi.store.types.DelosStorageConsistencyTarget;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
+import org.apache.derby.impl.jdbc.EmbedConnection;
+import org.apache.derby.shared.common.error.StandardException;
 
 import junit.framework.TestCase;
 
 /** Shared JDBC helpers for delos_mvcc SQL integration suites. */
 abstract class MvccSqlTestSupport extends TestCase {
     protected static Connection openDatabase(String databaseName, boolean create) throws SQLException {
-        return DriverManager.getConnection("jdbc:derby:" + databaseName + (create ? ";create=true" : ""));
+        Connection connection = DriverManager.getConnection(
+                "jdbc:derby:" + databaseName + (create ? ";create=true" : ""));
+        if (!create) {
+            activatePersistedMvccConglomerates(connection);
+        }
+        return connection;
+    }
+
+    /**
+     * Boot persisted MVCC access-method state without executing a row scan.
+     *
+     * <p>Derby loads external conglomerate factories lazily. After a clean
+     * database shutdown and reopen, catalog access alone therefore does not
+     * create the database-scoped MVCC runtime. SQL integration tests that
+     * inspect storage state immediately after reopen must explicitly open the
+     * persisted MVCC conglomerates first. Opening and closing a conglomerate
+     * controller establishes the normal Derby ownership path without changing
+     * rows or diagnostic scan counters.</p>
+     */
+    private static void activatePersistedMvccConglomerates(Connection connection) throws SQLException {
+        List<Long> mvccConglomerates = new ArrayList<>();
+        try (Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery(
+                     "select conglomeratenumber from sys.sysconglomerates")) {
+            while (rs.next()) {
+                long conglomerateId = rs.getLong(1);
+                if ((conglomerateId & 0x0fL) == ConglomerateFactory.MVCC_FACTORY_ID) {
+                    mvccConglomerates.add(conglomerateId);
+                }
+            }
+        }
+        if (mvccConglomerates.isEmpty()) {
+            return;
+        }
+
+        if (!(connection instanceof EmbedConnection embeddedConnection)) {
+            throw new SQLException(
+                    "Expected an embedded Derby connection while activating MVCC conglomerates");
+        }
+
+        TransactionController transaction =
+                embeddedConnection.getLanguageConnection().getTransactionExecute();
+        for (long conglomerateId : mvccConglomerates) {
+            try {
+                ConglomerateController controller = transaction.openConglomerate(
+                        conglomerateId,
+                        false,
+                        0,
+                        TransactionController.MODE_RECORD,
+                        TransactionController.ISOLATION_NOLOCK);
+                controller.close();
+            } catch (StandardException e) {
+                throw new SQLException(
+                        "Could not activate persisted MVCC conglomerate " + conglomerateId,
+                        e.getSQLState(),
+                        e);
+            }
+        }
     }
 
     protected static void shutdownDatabase(String databaseName) throws SQLException {
@@ -56,10 +119,6 @@ abstract class MvccSqlTestSupport extends TestCase {
                 throw e;
             }
         }
-        // Keep SQL shutdown/reopen tests honest: after Derby reports a clean
-        // shutdown, force the MVCC bridge diagnostics cache to drop any
-        // same-JVM table state so the next open must hydrate from disk.
-        mvccDiagnostics().clearRuntimeStateForTesting();
     }
 
     protected static int executeUpdate(Connection connection, String sql) throws SQLException {
@@ -189,8 +248,20 @@ abstract class MvccSqlTestSupport extends TestCase {
     }
 
 
-    protected static DelosStorageDiagnostics mvccDiagnostics() {
-        return DelosStorageDiagnosticsRegistry.mvcc();
+    protected static DelosStorageDiagnostics mvccDiagnostics(String databaseName) {
+        return DelosStorageDiagnosticsRegistry.mvcc(databasePath(databaseName));
+    }
+
+    protected static DelosStorageConsistencyTarget mvccTarget(
+            String databaseName,
+            int segment,
+            long containerId) {
+        return DelosStorageConsistencyTarget.mvcc(
+                databasePath(databaseName), segment, containerId);
+    }
+
+    protected static Path databasePath(String databaseName) {
+        return new File(databaseName).toPath();
     }
 
     protected static long mvccContainerId(Connection connection, String tableName) throws SQLException {

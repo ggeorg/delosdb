@@ -38,7 +38,7 @@ public final class MvccSqlCandidateIndexAuthorityRemovalTest extends MvccSqlTest
 
     private static void assertCandidateIndexIsNotSqlAuthorityEvenWhenLegacyPropertyIsSet() throws Exception {
         String databaseName = databaseName("mvcc-candidate-index-authority-removal-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

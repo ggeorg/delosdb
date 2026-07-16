@@ -37,7 +37,7 @@ public final class MvccSqlPurgeDaemonSchedulingTest extends MvccSqlTestSupport {
 
     public void testPurgeDaemonRunsDeterministicallyAfterCommittedWriteBurst() throws Exception {
         String databaseName = databaseName("mvcc-purge-daemon-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
@@ -92,7 +92,7 @@ public final class MvccSqlPurgeDaemonSchedulingTest extends MvccSqlTestSupport {
 
     public void testPurgeDaemonUsesVisibilityDebtPolicy() throws Exception {
         String databaseName = databaseName("mvcc-purge-daemon-visibility-debt-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
              SystemPropertyScope changedRowsThreshold = setSystemProperty(THRESHOLD_PROPERTY, "1");
@@ -142,7 +142,7 @@ public final class MvccSqlPurgeDaemonSchedulingTest extends MvccSqlTestSupport {
 
     public void testAsyncPurgeUsesOneDatabaseMaintenanceService() throws Exception {
         String databaseName = databaseName("mvcc-database-maintenance-service-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
              SystemPropertyScope async = setSystemProperty(ASYNC_ENABLED_PROPERTY, "true");
@@ -196,7 +196,7 @@ public final class MvccSqlPurgeDaemonSchedulingTest extends MvccSqlTestSupport {
 
     public void testPurgeDaemonIsPausedByDefault() throws Exception {
         String databaseName = databaseName("mvcc-purge-daemon-default-paused-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (SystemPropertyScope enabled = clearSystemProperty(ENABLED_PROPERTY);
              SystemPropertyScope threshold = clearSystemProperty(THRESHOLD_PROPERTY);

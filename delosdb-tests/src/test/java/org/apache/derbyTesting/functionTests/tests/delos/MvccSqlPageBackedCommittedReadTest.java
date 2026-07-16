@@ -29,7 +29,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlPageBackedCommittedReadTest extends MvccSqlTestSupport {
     public void testCurrentCommittedReadsUsePageBackedImageButStableSnapshotsDoNot() throws Exception {
         String databaseName = databaseName("mvcc-page-backed-committed-read-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (Connection setup = openDatabase(databaseName, true)) {
             setup.setAutoCommit(false);

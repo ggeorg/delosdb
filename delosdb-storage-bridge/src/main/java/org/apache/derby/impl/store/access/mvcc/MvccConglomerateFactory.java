@@ -56,6 +56,8 @@ public final class MvccConglomerateFactory
 
     private Object formatUUID;
     private Path databaseDirectory;
+    private MvccDatabaseRuntime.Lease runtimeLease;
+    private MvccDatabaseRuntime runtime;
 
     @Override
     public Properties defaultProperties() {
@@ -97,14 +99,14 @@ public final class MvccConglomerateFactory
             int[] collationIds,
             Properties properties,
             int temporaryFlag) throws StandardException {
-        return new MvccConglomerate(segment, input_containerid, template, collationIds, temporaryFlag);
+        return new MvccConglomerate(runtime(), segment, input_containerid, template, collationIds, temporaryFlag);
     }
 
     @Override
     public Conglomerate readConglomerate(
             TransactionManager xact_mgr,
             ContainerKey container_key) throws StandardException {
-        return new MvccConglomerate(container_key);
+        return new MvccConglomerate(runtime(), container_key);
     }
 
     @Override
@@ -128,17 +130,30 @@ public final class MvccConglomerateFactory
         UUIDFactory uuidFactory = (UUIDFactory) monitor.getUUIDFactory();
         formatUUID = uuidFactory.recreateUUID(FORMAT_UUID_STRING);
         String serviceDirectory = startParams.getProperty(PersistentService.ROOT);
-        if (serviceDirectory != null && !serviceDirectory.isBlank()) {
-            databaseDirectory = Path.of(serviceDirectory);
-        } else {
-            databaseDirectory = null;
+        if (serviceDirectory == null || serviceDirectory.isBlank()) {
+            throw new IllegalStateException("Missing Derby database directory for delos_mvcc runtime");
         }
-        MvccConglomerate.configureDatabaseDirectory(databaseDirectory);
+        databaseDirectory = Path.of(serviceDirectory).toAbsolutePath().normalize();
+        runtimeLease = MvccDatabaseRuntime.acquire(databaseDirectory);
+        runtime = runtimeLease.runtime();
     }
 
     @Override
     public void stop() {
-        MvccConglomerate.clearStatesForDatabase(databaseDirectory);
+        MvccDatabaseRuntime.Lease lease = runtimeLease;
+        runtimeLease = null;
+        runtime = null;
         databaseDirectory = null;
+        if (lease != null) {
+            lease.close();
+        }
+    }
+
+    private MvccDatabaseRuntime runtime() {
+        MvccDatabaseRuntime current = runtime;
+        if (current == null) {
+            throw new IllegalStateException("delos_mvcc conglomerate factory is not booted");
+        }
+        return current;
     }
 }

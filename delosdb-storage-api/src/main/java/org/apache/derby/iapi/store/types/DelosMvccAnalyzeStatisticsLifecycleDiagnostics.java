@@ -20,6 +20,8 @@
  */
 package org.apache.derby.iapi.store.types;
 
+import java.nio.file.Path;
+
 /**
  * Diagnostic checkpoint for the MVCC analyze/update-statistics lifecycle.
  *
@@ -49,6 +51,7 @@ public final class DelosMvccAnalyzeStatisticsLifecycleDiagnostics {
     }
 
     public static void recordExplicitUpdateStatistics(
+            Path databaseDirectory,
             String storageProviderName,
             String qualifiedTableName,
             long containerId,
@@ -62,7 +65,8 @@ public final class DelosMvccAnalyzeStatisticsLifecycleDiagnostics {
         }
 
         try {
-            DelosStorageStatistics statistics = DelosStorageDiagnosticsRegistry.statisticsForMvcc(0, containerId);
+            DelosStorageStatistics statistics = DelosStorageDiagnosticsRegistry.statisticsForMvcc(
+                    databaseDirectory, 0, containerId);
             DelosStorageCostEstimate estimate = DelosStorageCostEstimate.fromStatistics(statistics, true);
             synchronized (DelosMvccAnalyzeStatisticsLifecycleDiagnostics.class) {
                 explicitUpdateCount++;

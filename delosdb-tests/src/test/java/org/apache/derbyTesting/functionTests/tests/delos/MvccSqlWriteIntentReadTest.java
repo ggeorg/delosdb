@@ -31,7 +31,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlWriteIntentReadTest extends MvccSqlTestSupport {
     public void testSameTransactionReadsUseProviderOwnedWriteIntentOverlay() throws Exception {
         String databaseName = databaseName("mvcc-write-intent-read-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

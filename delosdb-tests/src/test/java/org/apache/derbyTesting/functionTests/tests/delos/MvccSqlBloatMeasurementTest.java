@@ -32,7 +32,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlBloatMeasurementTest extends MvccSqlTestSupport {
     public void testRepeatedIndexedUpdatesExposeBloatAndVacuumCollapsesIt() throws Exception {
         String databaseName = databaseName("mvcc-sql-bloat-measurement-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {

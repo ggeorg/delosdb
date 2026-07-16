@@ -39,7 +39,7 @@ public final class MvccSqlStorageInspectorTest extends MvccSqlTestSupport {
             connection.commit();
 
             long containerId = mvccContainerId(connection, "INSPECTOR_T");
-            DelosStorageInspection inspection = DelosStorageDiagnosticsRegistry.inspectMvcc(0, containerId);
+            DelosStorageInspection inspection = DelosStorageDiagnosticsRegistry.inspectMvcc(databasePath(databaseName), 0, containerId);
 
             assertEquals(DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID, inspection.providerId());
             assertEquals(0, inspection.segment());

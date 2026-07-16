@@ -29,7 +29,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlIsolationLevelCheckpointTest extends MvccSqlTestSupport {
     public void testReadCommittedRefreshesButRepeatableReadKeepsTransactionSnapshot() throws Exception {
         String databaseName = databaseName("mvcc-isolation-level-checkpoint-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection setup = openDatabase(databaseName, true)) {

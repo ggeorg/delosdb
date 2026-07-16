@@ -32,7 +32,7 @@ import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 public final class MvccSqlOrderedIndexEqualityLookupTest extends MvccSqlTestSupport {
     public void testCurrentCommittedEqualityLookupUsesOrderedIndexPages() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-equality-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -133,7 +133,7 @@ public final class MvccSqlOrderedIndexEqualityLookupTest extends MvccSqlTestSupp
 
     public void testUnsupportedOrderedIndexPredicateFallsBackWithReason() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-unsupported-fallback-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
@@ -175,7 +175,7 @@ public final class MvccSqlOrderedIndexEqualityLookupTest extends MvccSqlTestSupp
 
     public void testMissingOrderedIndexSidecarFallsBackWithReason() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-missing-sidecar-fallback-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
         Path orderedIndexPagesFile;
 
@@ -226,7 +226,7 @@ public final class MvccSqlOrderedIndexEqualityLookupTest extends MvccSqlTestSupp
 
     public void testMalformedOrderedIndexSidecarFallsBackWithReason() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-malformed-sidecar-fallback-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
         Path orderedIndexPagesFile;
 
@@ -277,7 +277,7 @@ public final class MvccSqlOrderedIndexEqualityLookupTest extends MvccSqlTestSupp
 
     public void testStableSnapshotsAndLocalWritersDoNotUseOrderedCurrentCommittedLookup() throws Exception {
         String databaseName = databaseName("mvcc-ordered-index-equality-snapshot-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection setup = openDatabase(databaseName, true)) {

@@ -43,7 +43,7 @@ public final class MvccSqlVacuumTest extends MvccSqlTestSupport {
             assertEquals(1, executeUpdate(connection, "update mvcc_vacuum_update_t set name = 'v4' where id = 1"));
             connection.commit();
 
-            DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+            DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
             long containerId = mvccContainerId(connection, "MVCC_VACUUM_UPDATE_T");
             int versionsBeforeVacuum = diagnostics.physicalVersionCountForTesting(0, containerId);
             assertTrue("expected multiple MVCC physical versions before vacuum, got " + versionsBeforeVacuum,
@@ -90,7 +90,7 @@ public final class MvccSqlVacuumTest extends MvccSqlTestSupport {
             assertEquals(2, executeUpdate(connection, "delete from mvcc_vacuum_delete_t where id in (1, 3)"));
             connection.commit();
 
-            DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+            DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
             long containerId = mvccContainerId(connection, "MVCC_VACUUM_DELETE_T");
             int versionsBeforeVacuum = diagnostics.physicalVersionCountForTesting(0, containerId);
             assertTrue("expected deleted MVCC versions before vacuum, got " + versionsBeforeVacuum,
@@ -127,7 +127,7 @@ public final class MvccSqlVacuumTest extends MvccSqlTestSupport {
         String databaseName = databaseName("mvcc-sql-vacuum-active-reader-db");
 
         long containerId;
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics();
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (Connection setup = openDatabase(databaseName, true)) {
             setup.setAutoCommit(false);
