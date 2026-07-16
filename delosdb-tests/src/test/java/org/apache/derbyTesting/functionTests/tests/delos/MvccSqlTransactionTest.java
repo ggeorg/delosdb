@@ -33,7 +33,7 @@ import javax.transaction.xa.Xid;
 import org.apache.derbyTesting.junit.J2EEDataSource;
 import org.apache.derbyTesting.junit.XATestUtil;
 
-/** SQL integration tests for the temporary Phase 8.2 transaction participation gate. */
+/** SQL integration tests for Phase 8.2 gating and the Phase 8.3 MVCC database decision. */
 public final class MvccSqlTransactionTest extends MvccSqlTestSupport {
     private static final String UNSUPPORTED_SQL_STATE = "0A000";
 
@@ -89,51 +89,61 @@ public final class MvccSqlTransactionTest extends MvccSqlTestSupport {
         }
     }
 
-    public void testSecondMvccWriteRejectsBeforeItsMutation() throws Exception {
-        String databaseName = databaseName("mvcc-sql-multiple-mvcc-reject-db");
+    public void testTwoMvccTablesCommitThroughOneDatabaseDecision() throws Exception {
+        String databaseName = databaseName("mvcc-sql-database-decision-db");
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
-            executeUpdate(connection, "create table mvcc_reject_a (id int, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "create table mvcc_reject_b (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_commit_a (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_commit_b (id int, name varchar(32)) using delos_mvcc");
             connection.commit();
 
-            executeUpdate(connection, "insert into mvcc_reject_a values (1, 'allowed-first')");
-            assertUnsupported(() -> executeUpdate(connection,
-                    "insert into mvcc_reject_b values (1, 'must-not-appear')"));
+            executeUpdate(connection, "insert into mvcc_commit_a values (1, 'left')");
+            executeUpdate(connection, "insert into mvcc_commit_b values (1, 'right')");
+            connection.commit();
 
-            assertRows(connection, "select id, name from mvcc_reject_b order by id");
+            assertRows(connection,
+                    "select id, name from mvcc_commit_a order by id",
+                    "1|left");
+            assertRows(connection,
+                    "select id, name from mvcc_commit_b order by id",
+                    "1|right");
             connection.rollback();
-            assertRows(connection, "select id, name from mvcc_reject_a order by id");
-            assertRows(connection, "select id, name from mvcc_reject_b order by id");
+        }
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from mvcc_commit_a order by id",
+                    "1|left");
+            assertRows(reopened,
+                    "select id, name from mvcc_commit_b order by id",
+                    "1|right");
         }
     }
 
-    public void testUpdateThenDeleteAcrossMvccTablesRejectsBeforeDelete() throws Exception {
-        String databaseName = databaseName("mvcc-sql-update-delete-reject-db");
+    public void testTwoMvccTableRollbackRemainsAtomic() throws Exception {
+        String databaseName = databaseName("mvcc-sql-database-rollback-db");
 
         try (Connection connection = openDatabase(databaseName, true)) {
-            executeUpdate(connection, "create table mvcc_update_a (id int, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "create table mvcc_delete_b (id int, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "insert into mvcc_update_a values (1, 'before')");
-            executeUpdate(connection, "insert into mvcc_delete_b values (1, 'survivor')");
+            executeUpdate(connection, "create table mvcc_rollback_a (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_rollback_b (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_rollback_a values (1, 'before-a')");
+            executeUpdate(connection, "insert into mvcc_rollback_b values (1, 'before-b')");
 
             connection.setAutoCommit(false);
             assertEquals(1, executeUpdate(connection,
-                    "update mvcc_update_a set name = 'after' where id = 1"));
-            assertUnsupported(() -> executeUpdate(connection,
-                    "delete from mvcc_delete_b where id = 1"));
-            assertRows(connection,
-                    "select id, name from mvcc_delete_b order by id",
-                    "1|survivor");
+                    "update mvcc_rollback_a set name = 'after-a' where id = 1"));
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mvcc_rollback_b where id = 1"));
             connection.rollback();
 
             assertRows(connection,
-                    "select id, name from mvcc_update_a order by id",
-                    "1|before");
+                    "select id, name from mvcc_rollback_a order by id",
+                    "1|before-a");
             assertRows(connection,
-                    "select id, name from mvcc_delete_b order by id",
-                    "1|survivor");
+                    "select id, name from mvcc_rollback_b order by id",
+                    "1|before-b");
+            connection.rollback();
         }
     }
 

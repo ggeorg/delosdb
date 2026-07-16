@@ -63,20 +63,14 @@ public final class DelosStorageTransactionRegistry {
             if (current != null && current.heapWrite()) {
                 return WriteParticipationResult.MIXED_HEAP_MVCC_UNSUPPORTED;
             }
-            if (current != null
-                    && current.mvccTableId() != null
-                    && current.mvccTableId().longValue() != logicalTableId) {
-                return WriteParticipationResult.MULTIPLE_MVCC_TABLES_UNSUPPORTED;
-            }
-            WRITE_PARTICIPATION.put(requiredOwner,
-                    new WriteParticipation(false, Long.valueOf(logicalTableId)));
+            WRITE_PARTICIPATION.put(requiredOwner, new WriteParticipation(false, true));
             return WriteParticipationResult.ALLOWED;
         }
 
-        if (current != null && current.mvccTableId() != null) {
+        if (current != null && current.mvccWrite()) {
             return WriteParticipationResult.MIXED_HEAP_MVCC_UNSUPPORTED;
         }
-        WRITE_PARTICIPATION.put(requiredOwner, new WriteParticipation(true, null));
+        WRITE_PARTICIPATION.put(requiredOwner, new WriteParticipation(true, false));
         return WriteParticipationResult.ALLOWED;
     }
 
@@ -165,10 +159,7 @@ public final class DelosStorageTransactionRegistry {
 
     public static void commit(Object ownerTransaction) {
         clearSavepoints(ownerTransaction);
-        Throwable failure = null;
-        for (Writer writer : writersFor(ownerTransaction)) {
-            failure = completeParticipant(failure, writer::commit, () -> complete(writer));
-        }
+        Throwable failure = commitWriters(writersFor(ownerTransaction));
         for (Reader reader : readersFor(ownerTransaction)) {
             failure = completeParticipant(
                     failure,
@@ -179,6 +170,52 @@ public final class DelosStorageTransactionRegistry {
             clearWriteParticipation(ownerTransaction);
         }
         rethrowFailure(failure);
+    }
+
+    private static Throwable commitWriters(List<Writer> writers) {
+        if (writers.isEmpty()) {
+            return null;
+        }
+        DelosStorageCommitCoordinator coordinator = sharedCoordinator(writers);
+        if (coordinator == null) {
+            if (writers.size() != 1) {
+                return new IllegalStateException(
+                        "multiple storage writers require one shared database commit coordinator");
+            }
+            return completeParticipant(null, writers.getFirst()::commit, () -> complete(writers.getFirst()));
+        }
+
+        Throwable failure = null;
+        try {
+            coordinator.commit(writers.stream()
+                    .map(Writer::participant)
+                    .toList());
+        } catch (RuntimeException | Error coordinatorFailure) {
+            failure = coordinatorFailure;
+        } finally {
+            for (Writer writer : writers) {
+                writer.markCompleted();
+                complete(writer);
+            }
+        }
+        return failure;
+    }
+
+    private static DelosStorageCommitCoordinator sharedCoordinator(List<Writer> writers) {
+        DelosStorageCommitCoordinator coordinator = null;
+        for (Writer writer : writers) {
+            if (!(writer.table instanceof DelosStorageCoordinatedCommitTable coordinatedTable)) {
+                return null;
+            }
+            DelosStorageCommitCoordinator candidate = Objects.requireNonNull(
+                    coordinatedTable.commitCoordinator(), "commitCoordinator");
+            if (coordinator == null) {
+                coordinator = candidate;
+            } else if (coordinator != candidate) {
+                return null;
+            }
+        }
+        return coordinator;
     }
 
     public static void abort(Object ownerTransaction) {
@@ -482,6 +519,14 @@ public final class DelosStorageTransactionRegistry {
             }
         }
 
+        private DelosStorageCommitCoordinator.Participant participant() {
+            return new DelosStorageCommitCoordinator.Participant(table, transaction);
+        }
+
+        private void markCompleted() {
+            completed = true;
+        }
+
         private void setSavepoint(String savepointName) {
             if (!completed && table instanceof DelosStorageSavepointParticipant participant) {
                 participant.setSavepoint(transaction, savepointName);
@@ -510,8 +555,6 @@ public final class DelosStorageTransactionRegistry {
 
     public enum WriteParticipationResult {
         ALLOWED(""),
-        MULTIPLE_MVCC_TABLES_UNSUPPORTED(
-                "writes to multiple delos_mvcc tables in one transaction are not supported"),
         MIXED_HEAP_MVCC_UNSUPPORTED(
                 "mixed heap and delos_mvcc writes in one transaction are not supported"),
         MVCC_XA_UNSUPPORTED(
@@ -528,7 +571,7 @@ public final class DelosStorageTransactionRegistry {
         }
     }
 
-    private record WriteParticipation(boolean heapWrite, Long mvccTableId) {
+    private record WriteParticipation(boolean heapWrite, boolean mvccWrite) {
     }
 
     private record SavepointMarker(String name) {

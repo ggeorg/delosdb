@@ -24,10 +24,14 @@ package io.github.ggeorg.delosdb.storage.mvcc.store;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccOrderedIndexPageStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccTable;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusRecord;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
 
 /**
@@ -75,6 +79,14 @@ final class PageVolumeMvccOpenContext {
     }
 
     static PageVolumeMvccOpenContext open(Path databaseDirectory, String storageId) throws IOException {
+        return open(databaseDirectory, storageId, Map.of());
+    }
+
+    static PageVolumeMvccOpenContext open(
+            Path databaseDirectory,
+            String storageId,
+            Map<MvccTransactionId, MvccTransactionStatusRecord> databaseTransactionStatuses)
+            throws IOException {
         Path pageFile = PageVolumeMvccPaths.pageFile(databaseDirectory, storageId);
         Path pageMutationLog = PageVolumeMvccPaths.pageMutationLogFileFor(pageFile);
         Path transactionOutcomeLog = PageVolumeMvccPaths.transactionOutcomeLogFileFor(pageFile);
@@ -85,13 +97,22 @@ final class PageVolumeMvccOpenContext {
         MvccSubsystemRecoveryRecordStore recoveryRecordStore = MvccSubsystemRecoveryRecordStore.open(
                 databaseDirectory, storageId);
         Path transactionStatusFile = PageVolumeMvccPaths.transactionStatusFile(databaseDirectory, storageId);
-        var transactionStatuses = MvccTransactionStatusStore.open(transactionStatusFile).recoverStatuses();
+        Map<MvccTransactionId, MvccTransactionStatusRecord> transactionStatuses = new LinkedHashMap<>(
+                MvccTransactionStatusStore.open(transactionStatusFile).recoverStatuses());
+        for (Map.Entry<MvccTransactionId, MvccTransactionStatusRecord> entry :
+                Objects.requireNonNull(databaseTransactionStatuses, "databaseTransactionStatuses").entrySet()) {
+            MvccTransactionStatusRecord existing = transactionStatuses.putIfAbsent(entry.getKey(), entry.getValue());
+            if (existing != null && !existing.equals(entry.getValue())) {
+                throw new IllegalStateException("conflicting table and database MVCC transaction status for "
+                        + entry.getKey() + ": table=" + existing + ", database=" + entry.getValue());
+            }
+        }
         PageBackedMvccTable table = PageBackedMvccTable.open(
                 pageFile,
                 pageMutationLog,
                 transactionOutcomeLog,
                 recoveryRecordStore.replayPlan(),
-                transactionStatuses);
+                Map.copyOf(transactionStatuses));
         Path orderedIndexPagesPath = PageBackedMvccTable.orderedIndexPagesPath(pageFile);
         boolean orderedIndexPagesExisted = Files.exists(orderedIndexPagesPath);
         OrderedIndexOpenResult orderedIndexOpenResult = openOrderedIndexPagesSafely(

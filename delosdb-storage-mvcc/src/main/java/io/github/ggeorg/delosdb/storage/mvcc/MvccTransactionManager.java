@@ -160,6 +160,70 @@ public final class MvccTransactionManager implements MvccTransactionCatalog {
         return new PreparedCommitBatch(currentCommitSequence, commits);
     }
 
+    /**
+     * Prepares one transaction at a database-coordinator supplied sequence.
+     * The sequence may skip values but must advance this table's durable order.
+     */
+    public synchronized PreparedCommit prepareCommitAt(
+            MvccTransaction transaction,
+            MvccCommitSequence commitSequence) {
+        transaction = Objects.requireNonNull(transaction, "transaction");
+        commitSequence = Objects.requireNonNull(commitSequence, "commitSequence");
+        TransactionState state = requireActive(transaction);
+        if (!state.durableStatusTracked) {
+            throw new IllegalStateException("read-only MVCC transaction cannot commit: " + transaction.id());
+        }
+        if (commitSequence.equals(MvccCommitSequence.NONE)
+                || commitSequence.value() <= currentCommitSequence) {
+            throw new IllegalArgumentException("database commit sequence must advance beyond "
+                    + currentCommitSequence + ": " + commitSequence.value());
+        }
+        return new PreparedCommit(transaction, commitSequence);
+    }
+
+    /** Publishes one externally sequenced prepared commit. */
+    public synchronized void publishPreparedCommit(PreparedCommit preparedCommit) {
+        publishPreparedCommitBatch(new PreparedCommitBatch(
+                currentCommitSequence,
+                List.of(Objects.requireNonNull(preparedCommit, "preparedCommit"))));
+    }
+
+    /**
+     * Completes an in-memory participant after a database-scoped COMMITTED
+     * decision has become authoritative. The database decision store, rather
+     * than this table-local status journal, is the recovery authority.
+     */
+    public synchronized void acknowledgeExternalCommitDecision(PreparedCommit preparedCommit) {
+        preparedCommit = Objects.requireNonNull(preparedCommit, "preparedCommit");
+        TransactionState state = activeTransactions.get(preparedCommit.transaction().id());
+        if (state == null) {
+            if (statusOf(preparedCommit.transaction().id()) == MvccTransactionStatus.COMMITTED) {
+                currentCommitSequence = Math.max(
+                        currentCommitSequence, preparedCommit.commitSequence().value());
+                return;
+            }
+            throw new IllegalStateException("transaction is not active: "
+                    + preparedCommit.transaction().id());
+        }
+        if (!state.durableStatusTracked) {
+            throw new IllegalStateException("read-only MVCC transaction cannot commit: "
+                    + preparedCommit.transaction().id());
+        }
+        currentCommitSequence = Math.max(
+                currentCommitSequence, preparedCommit.commitSequence().value());
+        activeTransactions.remove(preparedCommit.transaction().id());
+        retainedOutcomes.put(
+                preparedCommit.transaction().id(),
+                TransactionOutcome.committed(preparedCommit.commitSequence()));
+        compactRetainedOutcomes();
+    }
+
+    /** Advances snapshot sequencing from recovered database-scoped decisions. */
+    public synchronized void observeExternalCommitSequence(MvccCommitSequence commitSequence) {
+        commitSequence = Objects.requireNonNull(commitSequence, "commitSequence");
+        currentCommitSequence = Math.max(currentCommitSequence, commitSequence.value());
+    }
+
     /** Publishes a previously prepared batch through one forced status append. */
     public synchronized void publishPreparedCommitBatch(PreparedCommitBatch preparedBatch) {
         Objects.requireNonNull(preparedBatch, "preparedBatch");

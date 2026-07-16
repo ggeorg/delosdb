@@ -13,6 +13,7 @@ import org.apache.derby.iapi.store.types.DelosStorageSavepointParticipant;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
 import org.apache.derby.iapi.store.types.DelosStorageTable;
+import org.apache.derby.iapi.store.types.DelosStorageTableKey;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreDataValue;
@@ -36,8 +37,9 @@ final class MvccInheritedTransactionLifecycleTest {
     @Test
     void oneDerbyTransactionCommitsTwoMvccTablesAndReopensBoth() {
         Object derbyTransaction = new Object();
-        MvccInheritedTable accounts = table(1, 101);
-        MvccInheritedTable ledger = table(1, 102);
+        MvccInheritedStore store = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable accounts = openTable(store, 1, 101);
+        MvccInheritedTable ledger = openTable(store, 1, 102);
 
         DelosStorageTransaction accountsTx = accounts.beginTransaction();
         DelosStorageTransaction ledgerTx = ledger.beginTransaction();
@@ -50,16 +52,80 @@ final class MvccInheritedTransactionLifecycleTest {
         assertEquals(2, DelosStorageTransactionRegistry.pendingCountForTesting(derbyTransaction));
         DelosStorageTransactionRegistry.commit(derbyTransaction);
         assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(derbyTransaction));
-        accounts.close();
-        ledger.close();
+        store.close();
 
-        MvccInheritedTable reopenedAccounts = table(1, 101);
-        MvccInheritedTable reopenedLedger = table(1, 102);
+        MvccInheritedStore reopenedStore = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable reopenedAccounts = openTable(reopenedStore, 1, 101);
+        MvccInheritedTable reopenedLedger = openTable(reopenedStore, 1, 102);
 
         assertTrue(read(reopenedAccounts, 1L).isPresent());
         assertTrue(read(reopenedLedger, 1L).isPresent());
-        reopenedAccounts.close();
-        reopenedLedger.close();
+        reopenedStore.close();
+    }
+
+    @Test
+    void databaseDecisionRecoversEveryParticipantAfterPublicationFailure() {
+        Object derbyTransaction = new Object();
+        MvccInheritedStore store = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable accounts = openTable(store, 7, 701);
+        MvccInheritedTable ledger = openTable(store, 7, 702);
+        accounts.setPagePublicationHookForTesting((stage, changes) -> {
+            if (stage == io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore
+                    .PublicationStage.OUTCOME_FENCE) {
+                throw new IllegalStateException("injected first-participant publication failure");
+            }
+        });
+
+        DelosStorageTransaction accountsTx = accounts.beginTransaction();
+        DelosStorageTransaction ledgerTx = ledger.beginTransaction();
+        DelosStorageTransactionRegistry.register(derbyTransaction, accounts, accountsTx);
+        DelosStorageTransactionRegistry.register(derbyTransaction, ledger, ledgerTx);
+        accounts.insert(1L, durableEmptyRow(), accountsTx);
+        ledger.insert(1L, durableEmptyRow(), ledgerTx);
+
+        assertThrows(
+                MvccDatabaseCommitCoordinator.DatabaseCommitRecoveryRequiredException.class,
+                () -> DelosStorageTransactionRegistry.commit(derbyTransaction));
+        assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(derbyTransaction));
+        store.close();
+
+        MvccInheritedStore reopenedStore = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable reopenedAccounts = openTable(reopenedStore, 7, 701);
+        MvccInheritedTable reopenedLedger = openTable(reopenedStore, 7, 702);
+        assertTrue(read(reopenedAccounts, 1L).isPresent());
+        assertTrue(read(reopenedLedger, 1L).isPresent());
+        reopenedStore.close();
+    }
+
+    @Test
+    void participantConflictAbortsEveryStagedTableBeforeDatabaseDecision() {
+        Object derbyTransaction = new Object();
+        MvccInheritedStore store = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable accounts = openTable(store, 8, 801);
+        MvccInheritedTable ledger = openTable(store, 8, 802);
+
+        DelosStorageTransaction competingLedgerTx = ledger.beginTransaction();
+        ledger.insert(1L, durableEmptyRow(), competingLedgerTx);
+
+        DelosStorageTransaction accountsTx = accounts.beginTransaction();
+        DelosStorageTransaction ledgerTx = ledger.beginTransaction();
+        DelosStorageTransactionRegistry.register(derbyTransaction, accounts, accountsTx);
+        DelosStorageTransactionRegistry.register(derbyTransaction, ledger, ledgerTx);
+        accounts.insert(1L, durableEmptyRow(), accountsTx);
+        ledger.insert(1L, durableEmptyRow(), ledgerTx);
+
+        assertThrows(
+                io.github.ggeorg.delosdb.storage.mvcc.MvccWriteConflictException.class,
+                () -> DelosStorageTransactionRegistry.commit(derbyTransaction));
+        ledger.abort(competingLedgerTx);
+        store.close();
+
+        MvccInheritedStore reopenedStore = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable reopenedAccounts = openTable(reopenedStore, 8, 801);
+        MvccInheritedTable reopenedLedger = openTable(reopenedStore, 8, 802);
+        assertEquals(0, reopenedAccounts.logicalRowCountForTesting());
+        assertEquals(0, reopenedLedger.logicalRowCountForTesting());
+        reopenedStore.close();
     }
 
     @Test
@@ -309,6 +375,14 @@ final class MvccInheritedTransactionLifecycleTest {
         assertEquals(1, table.abortCount,
                 "a writer that cannot join existing savepoints must not leak outside the registry");
         assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(owner));
+    }
+
+    private static MvccInheritedTable openTable(
+            MvccInheritedStore store,
+            long segmentId,
+            long containerId) {
+        return (MvccInheritedTable) store.openTable(
+                new DelosStorageTableKey(segmentId, containerId));
     }
 
     private MvccInheritedTable table(long segmentId, long containerId) {

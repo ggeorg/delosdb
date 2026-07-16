@@ -20,6 +20,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccCommandSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccSnapshot;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransaction;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionManager;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccWriteConflictException;
@@ -28,7 +29,9 @@ import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
 
 import org.apache.derby.iapi.store.types.DelosStorageCandidateIndex;
+import org.apache.derby.iapi.store.types.DelosStorageCommitCoordinator;
 import org.apache.derby.iapi.store.types.DelosStorageCommittedRead;
+import org.apache.derby.iapi.store.types.DelosStorageCoordinatedCommitTable;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenance;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
@@ -52,6 +55,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         DelosStorageRowLocator,
         DelosStorageCandidateIndex,
         DelosStorageCommittedRead,
+        DelosStorageCoordinatedCommitTable,
         DelosStorageSavepointParticipant,
         DelosStorageTableDiagnostics {
     private final long segmentId;
@@ -65,6 +69,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final MvccPurgeDaemon purgeDaemon = new MvccPurgeDaemon();
     private final MvccDatabaseMaintenanceService maintenanceService;
     private final DelosStorageBackupCoordinator backupCoordinator;
+    private final MvccDatabaseCommitCoordinator databaseCommitCoordinator;
     private final MvccDatabaseMaintenanceService.Registration maintenanceRegistration;
     private final boolean ownsMaintenanceService;
     private final Consumer<MvccInheritedTable> closeCallback;
@@ -120,6 +125,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             Path databaseDirectory,
             MvccDatabaseMaintenanceService maintenanceService,
             DelosStorageBackupCoordinator backupCoordinator,
+            MvccDatabaseCommitCoordinator databaseCommitCoordinator,
             Consumer<MvccInheritedTable> closeCallback) {
         this(
                 segmentId,
@@ -132,6 +138,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 SharedStatusForceHook.NOOP,
                 maintenanceService,
                 backupCoordinator,
+                databaseCommitCoordinator,
                 false,
                 closeCallback);
     }
@@ -172,6 +179,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 sharedStatusForceHook,
                 new MvccDatabaseMaintenanceService(databaseDirectory),
                 isolatedBackupCoordinator(segmentId, containerId, databaseDirectory),
+                new MvccDatabaseCommitCoordinator(databaseDirectory),
                 true,
                 ignored -> { });
     }
@@ -187,21 +195,27 @@ final class MvccInheritedTable implements DelosStorageTable,
             SharedStatusForceHook sharedStatusForceHook,
             MvccDatabaseMaintenanceService maintenanceService,
             DelosStorageBackupCoordinator backupCoordinator,
+            MvccDatabaseCommitCoordinator databaseCommitCoordinator,
             boolean ownsMaintenanceService,
             Consumer<MvccInheritedTable> closeCallback) {
         this.segmentId = segmentId;
         this.containerId = containerId;
         this.retiredSnapshotFile = retiredSnapshotFile(databaseDirectory, segmentId, containerId);
         this.transactionStatusFile = transactionStatusFile(databaseDirectory, segmentId, containerId);
+        this.databaseCommitCoordinator = Objects.requireNonNull(
+                databaseCommitCoordinator, "databaseCommitCoordinator");
         this.pageVolumeStateStore = PageVolumeMvccStateStore.open(
                 databaseDirectory,
                 storageId(segmentId, containerId),
-                MvccInheritedRowCodec.INSTANCE);
+                MvccInheritedRowCodec.INSTANCE,
+                this.databaseCommitCoordinator.recoveredStatuses());
         this.indexMaintenance = new MvccInheritedIndexMaintenance(pageVolumeStateStore);
         this.transactionStatusStore = transactionStatusFile == null || containerId == 0L
                 ? MvccTransactionStatusStore.disabled()
                 : MvccTransactionStatusStore.open(transactionStatusFile);
         this.transactions = new MvccTransactionManager(transactionStatusStore);
+        this.transactions.observeExternalCommitSequence(
+                this.databaseCommitCoordinator.newestRecoveredCommitSequence());
         this.durabilityCoordinator = new MvccCommitCoordinator<>(
                 coordinatorMode, coordinatorCapacity, maxGroupSize, maxGroupDelayNanos);
         this.sharedStatusForceHook = Objects.requireNonNull(sharedStatusForceHook, "sharedStatusForceHook");
@@ -379,7 +393,176 @@ final class MvccInheritedTable implements DelosStorageTable,
     }
 
     @Override
+    public DelosStorageCommitCoordinator commitCoordinator() {
+        return databaseCommitCoordinator;
+    }
+
+    @Override
     public void commit(DelosStorageTransaction transaction) {
+        databaseCommitCoordinator.commit(List.of(
+                new DelosStorageCommitCoordinator.Participant(this, transaction)));
+    }
+
+    String databaseCommitIdentity() {
+        return storageId(segmentId, containerId);
+    }
+
+    DelosStorageBackupCoordinator databaseBackupCoordinator() {
+        return backupCoordinator;
+    }
+
+    void lockForDatabaseCommit() {
+        requireOperational();
+        writeLock.lock();
+        try {
+            requireOperational();
+        } catch (RuntimeException | Error failure) {
+            writeLock.unlock();
+            throw failure;
+        }
+    }
+
+    void unlockForDatabaseCommit() {
+        writeLock.unlock();
+    }
+
+    long newestCommitSequenceForDatabaseCommit() {
+        return transactions.newestCommitSequence().value();
+    }
+
+    DatabasePreparedCommit prepareDatabaseCommit(
+            DelosStorageTransaction transaction,
+            MvccTransactionId databaseTransactionId,
+            MvccCommitSequence commitSequence) {
+        MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
+        if (handle.readOnly()) {
+            throw new IllegalStateException("read-only delos_mvcc transaction cannot commit");
+        }
+        MvccPreparedCommit preparedCommit = prepareCommit(handle);
+        requirePreparedCommitCanPublish(preparedCommit);
+        MvccTransactionManager.PreparedCommit localStatus = transactions.prepareCommitAt(
+                preparedCommit.transaction(), commitSequence);
+        PageVolumeMvccStateStore.StagedChanges stagedChanges =
+                pageVolumeStateStore.stagePreparedChanges(
+                        preparedCommit.preparedPageChanges(),
+                        commitSequence,
+                        databaseTransactionId.value());
+        return new DatabasePreparedCommit(
+                this, databaseTransactionId, preparedCommit, localStatus, stagedChanges);
+    }
+
+    void publishDatabaseCommit(DatabasePreparedCommit databaseCommit) {
+        requireOwnedDatabaseCommit(databaseCommit);
+        MvccPreparedCommit prepared = databaseCommit.preparedCommit();
+        Throwable failure = null;
+        try {
+            transactions.publishPreparedCommit(databaseCommit.localStatus());
+        } catch (RuntimeException | Error statusFailure) {
+            failure = statusFailure;
+            try {
+                transactions.acknowledgeExternalCommitDecision(databaseCommit.localStatus());
+            } catch (RuntimeException | Error acknowledgementFailure) {
+                failure.addSuppressed(acknowledgementFailure);
+            }
+        }
+        try {
+            pageVolumeStateStore.publishStagedChanges(databaseCommit.stagedChanges());
+        } catch (RuntimeException | Error publicationFailure) {
+            if (failure == null) {
+                failure = publicationFailure;
+            } else {
+                failure.addSuppressed(publicationFailure);
+            }
+        }
+
+        if (failure == null && !databaseCommit.stagedChanges().empty()) {
+            try {
+                orderedIndexPublicationHook.run();
+                indexMaintenance.rebuildFromCommittedRows();
+            } catch (RuntimeException | Error indexFailure) {
+                failure = indexFailure;
+            }
+        }
+        if (failure == null && !databaseCommit.stagedChanges().empty()) {
+            try {
+                postCommitMaintenanceHook.run();
+                runPurgeDaemonAfterCommit(prepared.changedRowCount());
+            } catch (RuntimeException maintenanceFailure) {
+                postCommitMaintenanceFailureCount++;
+                lastPostCommitMaintenanceFailure = failureSummary(maintenanceFailure);
+            }
+        }
+
+        lastCommittedChangedRowCount = prepared.changedRowCount();
+        lastCommittedWriteIntentCount = prepared.writeIntentCount();
+        lastCommittedWriteIntentPayloadSummaries = prepared.payloadSummaries();
+        prepared.handle().clearWriteIntents();
+        activeTransactions.remove(prepared.handle());
+
+        if (failure != null) {
+            RecoveryRequired unhealthy = markRecoveryRequired(
+                    "database transaction participant publication", failure);
+            throw new CommittedTransactionRecoveryRequiredException(
+                    storageId(segmentId, containerId),
+                    databaseCommit.databaseTransactionId().value(),
+                    databaseCommit.localStatus().commitSequence().value(),
+                    unhealthy,
+                    failure);
+        }
+    }
+
+    void abortDatabaseCommit(DatabasePreparedCommit databaseCommit) {
+        requireOwnedDatabaseCommit(databaseCommit);
+        Throwable failure = null;
+        try {
+            pageVolumeStateStore.abortStagedChanges(databaseCommit.stagedChanges());
+        } catch (RuntimeException | Error stageAbortFailure) {
+            failure = stageAbortFailure;
+        }
+        try {
+            abortDatabaseTransaction(databaseCommit.preparedCommit().handle());
+        } catch (RuntimeException | Error transactionAbortFailure) {
+            if (failure == null) {
+                failure = transactionAbortFailure;
+            } else {
+                failure.addSuppressed(transactionAbortFailure);
+            }
+        }
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+        if (failure instanceof Error errorFailure) {
+            throw errorFailure;
+        }
+    }
+
+    void abortDatabaseTransaction(DelosStorageTransaction transaction) {
+        abortDatabaseTransaction(nativeTransactionHandle(transaction));
+    }
+
+    private void abortDatabaseTransaction(MvccInheritedHandles.Transaction handle) {
+        Throwable failure = new IllegalStateException("database-scoped MVCC commit aborted before decision");
+        abortIfActive(handle.nativeTransaction(), failure);
+        handle.clearWriteIntents();
+        activeTransactions.remove(handle);
+        if (failure.getSuppressed().length > 0) {
+            Throwable abortFailure = failure.getSuppressed()[0];
+            if (abortFailure instanceof RuntimeException runtimeFailure) {
+                throw runtimeFailure;
+            }
+            if (abortFailure instanceof Error errorFailure) {
+                throw errorFailure;
+            }
+        }
+    }
+
+    private void requireOwnedDatabaseCommit(DatabasePreparedCommit databaseCommit) {
+        if (Objects.requireNonNull(databaseCommit, "databaseCommit").table() != this) {
+            throw new IllegalArgumentException("database commit belongs to another MVCC table");
+        }
+    }
+
+    void commitSingleParticipant(DelosStorageTransaction transaction) {
         boolean observe = MvccCommitJfr.enabled();
         MvccCommitMetrics.Concurrency noConcurrency = MvccCommitMetrics.Concurrency.NONE;
         MvccCommitMetrics.Concurrency requestConcurrency = observe
@@ -2409,6 +2592,22 @@ final class MvccInheritedTable implements DelosStorageTable,
 
         long commitSequence() {
             return commitSequence;
+        }
+    }
+
+    record DatabasePreparedCommit(
+            MvccInheritedTable table,
+            MvccTransactionId databaseTransactionId,
+            MvccPreparedCommit preparedCommit,
+            MvccTransactionManager.PreparedCommit localStatus,
+            PageVolumeMvccStateStore.StagedChanges stagedChanges) {
+        DatabasePreparedCommit {
+            table = Objects.requireNonNull(table, "table");
+            databaseTransactionId = Objects.requireNonNull(
+                    databaseTransactionId, "databaseTransactionId");
+            preparedCommit = Objects.requireNonNull(preparedCommit, "preparedCommit");
+            localStatus = Objects.requireNonNull(localStatus, "localStatus");
+            stagedChanges = Objects.requireNonNull(stagedChanges, "stagedChanges");
         }
     }
 

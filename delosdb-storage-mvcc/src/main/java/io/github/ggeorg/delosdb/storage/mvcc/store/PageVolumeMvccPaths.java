@@ -50,6 +50,15 @@ public final class PageVolumeMvccPaths {
         return directory.resolve(requireStorageId(storageId) + ".txstatus");
     }
 
+    /** Database-scoped authoritative decisions for coordinated MVCC transactions. */
+    public static Path databaseTransactionStatusFile(Path databaseDirectory) {
+        Path directory = inheritedStoreDirectory(databaseDirectory);
+        if (directory == null) {
+            return null;
+        }
+        return directory.resolve("database-transactions.txstatus");
+    }
+
     public static Path writeAheadLogFile(Path databaseDirectory, String storageId) {
         Path directory = inheritedStoreDirectory(databaseDirectory);
         if (directory == null) {

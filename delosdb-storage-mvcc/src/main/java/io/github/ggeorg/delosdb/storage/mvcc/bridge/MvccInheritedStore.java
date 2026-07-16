@@ -17,6 +17,7 @@ final class MvccInheritedStore implements DelosStorageStore {
     private final MvccDatabaseMaintenanceService maintenanceService;
     private final DelosStorageBackupCoordinator.DatabaseLease backupCoordinatorLease;
     private final DelosStorageBackupCoordinator backupCoordinator;
+    private final MvccDatabaseCommitCoordinator transactionCoordinator;
     private final Set<MvccInheritedTable> openTables = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closeStarted = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -47,6 +48,7 @@ final class MvccInheritedStore implements DelosStorageStore {
         this.maintenanceService = Objects.requireNonNull(maintenanceService, "maintenanceService");
         this.backupCoordinatorLease = Objects.requireNonNull(backupCoordinatorLease, "backupCoordinatorLease");
         this.backupCoordinator = backupCoordinatorLease.coordinator();
+        this.transactionCoordinator = new MvccDatabaseCommitCoordinator(this.databaseDirectory);
     }
 
     @Override
@@ -60,6 +62,7 @@ final class MvccInheritedStore implements DelosStorageStore {
                 databaseDirectory,
                 maintenanceService,
                 backupCoordinator,
+                transactionCoordinator,
                 openTables::remove);
         openTables.add(table);
         if (closeStarted.get() || closed.get()) {

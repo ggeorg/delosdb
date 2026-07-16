@@ -34,6 +34,8 @@ import java.util.Optional;
 
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusRecord;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccDurableConsistencyCheck;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccOrderedIndexPageStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccRowDirectoryStore;
@@ -107,11 +109,22 @@ public final class PageVolumeMvccStateStore<T> {
             Path databaseDirectory,
             String storageId,
             RowCodec<T> rowCodec) {
+        return open(databaseDirectory, storageId, rowCodec, Map.of());
+    }
+
+    public static <T> PageVolumeMvccStateStore<T> open(
+            Path databaseDirectory,
+            String storageId,
+            RowCodec<T> rowCodec,
+            Map<MvccTransactionId, MvccTransactionStatusRecord> databaseTransactionStatuses) {
         if (databaseDirectory == null || PageVolumeMvccPaths.isMissingStorageId(storageId)) {
             return disabled(rowCodec);
         }
         try {
-            PageVolumeMvccOpenContext openContext = PageVolumeMvccOpenContext.open(databaseDirectory, storageId);
+            PageVolumeMvccOpenContext openContext = PageVolumeMvccOpenContext.open(
+                    databaseDirectory,
+                    storageId,
+                    databaseTransactionStatuses);
             return new PageVolumeMvccStateStore<>(
                     openContext.storageId,
                     rowCodec,
