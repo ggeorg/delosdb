@@ -39,8 +39,45 @@ public final class DelosStorageTransactionRegistry {
     private static final Map<Object, List<Writer>> WRITERS = new IdentityHashMap<>();
     private static final Map<Object, Map<DelosStorageTable, Reader>> READERS = new IdentityHashMap<>();
     private static final Map<Object, List<SavepointMarker>> SAVEPOINTS = new IdentityHashMap<>();
+    private static final Map<Object, WriteParticipation> WRITE_PARTICIPATION = new IdentityHashMap<>();
 
     private DelosStorageTransactionRegistry() {
+    }
+
+    /**
+     * Declare one logical SQL write target before the statement can mutate it.
+     * Read-only access never registers and remains unrestricted.
+     */
+    public static synchronized WriteParticipationResult registerWriteIntent(
+            Object ownerTransaction,
+            long logicalTableId,
+            boolean mvcc,
+            boolean globalTransaction) {
+        Object requiredOwner = Objects.requireNonNull(ownerTransaction, "ownerTransaction");
+        WriteParticipation current = WRITE_PARTICIPATION.get(requiredOwner);
+
+        if (mvcc && globalTransaction) {
+            return WriteParticipationResult.MVCC_XA_UNSUPPORTED;
+        }
+        if (mvcc) {
+            if (current != null && current.heapWrite()) {
+                return WriteParticipationResult.MIXED_HEAP_MVCC_UNSUPPORTED;
+            }
+            if (current != null
+                    && current.mvccTableId() != null
+                    && current.mvccTableId().longValue() != logicalTableId) {
+                return WriteParticipationResult.MULTIPLE_MVCC_TABLES_UNSUPPORTED;
+            }
+            WRITE_PARTICIPATION.put(requiredOwner,
+                    new WriteParticipation(false, Long.valueOf(logicalTableId)));
+            return WriteParticipationResult.ALLOWED;
+        }
+
+        if (current != null && current.mvccTableId() != null) {
+            return WriteParticipationResult.MIXED_HEAP_MVCC_UNSUPPORTED;
+        }
+        WRITE_PARTICIPATION.put(requiredOwner, new WriteParticipation(true, null));
+        return WriteParticipationResult.ALLOWED;
     }
 
     public static synchronized Writer register(
@@ -138,6 +175,9 @@ public final class DelosStorageTransactionRegistry {
                     reader::close,
                     () -> completeReader(ownerTransaction, reader));
         }
+        if (failure == null) {
+            clearWriteParticipation(ownerTransaction);
+        }
         rethrowFailure(failure);
     }
 
@@ -152,6 +192,9 @@ public final class DelosStorageTransactionRegistry {
                     failure,
                     reader::close,
                     () -> completeReader(ownerTransaction, reader));
+        }
+        if (failure == null) {
+            clearWriteParticipation(ownerTransaction);
         }
         rethrowFailure(failure);
     }
@@ -273,6 +316,7 @@ public final class DelosStorageTransactionRegistry {
         WRITERS.clear();
         READERS.clear();
         SAVEPOINTS.clear();
+        WRITE_PARTICIPATION.clear();
     }
 
     private static synchronized List<Writer> writersFor(Object ownerTransaction) {
@@ -335,6 +379,10 @@ public final class DelosStorageTransactionRegistry {
         if (readers.isEmpty()) {
             READERS.remove(ownerTransaction);
         }
+    }
+
+    private static synchronized void clearWriteParticipation(Object ownerTransaction) {
+        WRITE_PARTICIPATION.remove(ownerTransaction);
     }
 
     private static String requireSavepointName(String savepointName) {
@@ -458,6 +506,29 @@ public final class DelosStorageTransactionRegistry {
             Objects.requireNonNull(ownerTransaction, "ownerTransaction");
             Objects.requireNonNull(reader, "reader");
         }
+    }
+
+    public enum WriteParticipationResult {
+        ALLOWED(""),
+        MULTIPLE_MVCC_TABLES_UNSUPPORTED(
+                "writes to multiple delos_mvcc tables in one transaction are not supported"),
+        MIXED_HEAP_MVCC_UNSUPPORTED(
+                "mixed heap and delos_mvcc writes in one transaction are not supported"),
+        MVCC_XA_UNSUPPORTED(
+                "delos_mvcc writes in XA transactions are not supported");
+
+        private final String description;
+
+        WriteParticipationResult(String description) {
+            this.description = description;
+        }
+
+        public String description() {
+            return description;
+        }
+    }
+
+    private record WriteParticipation(boolean heapWrite, Long mvccTableId) {
     }
 
     private record SavepointMarker(String name) {

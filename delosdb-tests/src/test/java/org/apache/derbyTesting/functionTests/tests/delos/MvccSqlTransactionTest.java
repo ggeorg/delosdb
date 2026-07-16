@@ -22,287 +22,199 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
+import java.sql.SQLException;
 
-/** SQL integration tests for delos_mvcc transaction behavior. */
+import javax.sql.XAConnection;
+import javax.sql.XADataSource;
+import javax.transaction.xa.XAResource;
+import javax.transaction.xa.Xid;
+
+import org.apache.derbyTesting.junit.J2EEDataSource;
+import org.apache.derbyTesting.junit.XATestUtil;
+
+/** SQL integration tests for the temporary Phase 8.2 transaction participation gate. */
 public final class MvccSqlTransactionTest extends MvccSqlTestSupport {
-    public void testTwoMvccTablesCommitInOneSqlTransactionSurvivesReopen() throws Exception {
-        String databaseName = databaseName("mvcc-sql-two-table-commit-db");
+    private static final String UNSUPPORTED_SQL_STATE = "0A000";
+
+    public void testSingleMvccTableAndHeapOnlyWritesRemainSupported() throws Exception {
+        String databaseName = databaseName("mvcc-sql-supported-write-topologies-db");
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
-            executeUpdate(connection, "create table mvcc_tx_a (id int, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "create table mvcc_tx_b (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_supported_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table heap_supported_a (id int, name varchar(32))");
+            executeUpdate(connection, "create table heap_supported_b (id int, name varchar(32))");
             connection.commit();
 
-            executeUpdate(connection, "insert into mvcc_tx_a values (1, 'left')");
-            executeUpdate(connection, "insert into mvcc_tx_b values (1, 'right')");
+            executeUpdate(connection, "insert into mvcc_supported_t values (1, 'one')");
+            executeUpdate(connection, "insert into mvcc_supported_t values (2, 'two')");
+            connection.commit();
+
+            executeUpdate(connection, "insert into heap_supported_a values (1, 'left')");
+            executeUpdate(connection, "insert into heap_supported_b values (1, 'right')");
             connection.commit();
 
             assertRows(connection,
-                    "select id, name from mvcc_tx_a order by id",
+                    "select id, name from mvcc_supported_t order by id",
+                    "1|one", "2|two");
+            assertRows(connection,
+                    "select id, name from heap_supported_a order by id",
                     "1|left");
             assertRows(connection,
-                    "select id, name from mvcc_tx_b order by id",
-                    "1|right");
-        }
-
-        shutdownDatabase(databaseName);
-
-        try (Connection reopened = openDatabase(databaseName, false)) {
-            assertRows(reopened,
-                    "select id, name from mvcc_tx_a order by id",
-                    "1|left");
-            assertRows(reopened,
-                    "select id, name from mvcc_tx_b order by id",
+                    "select id, name from heap_supported_b order by id",
                     "1|right");
         }
     }
 
-
-    public void testTwoMvccTablesRollbackInOneSqlTransactionLeavesBothEmptyAfterReopen() throws Exception {
-        String databaseName = databaseName("mvcc-sql-two-table-rollback-db");
+    public void testReadOnlyCrossTableAndMixedAccessRemainsSupported() throws Exception {
+        String databaseName = databaseName("mvcc-sql-read-only-mixed-topology-db");
 
         try (Connection connection = openDatabase(databaseName, true)) {
+            executeUpdate(connection, "create table mvcc_read_a (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_read_b (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table heap_read_t (id int, name varchar(32))");
+            executeUpdate(connection, "insert into mvcc_read_a values (1, 'a')");
+            executeUpdate(connection, "insert into mvcc_read_b values (1, 'b')");
+            executeUpdate(connection, "insert into heap_read_t values (1, 'h')");
+
             connection.setAutoCommit(false);
-            executeUpdate(connection, "create table mvcc_tx_rb_a (id int, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "create table mvcc_tx_rb_b (id int, name varchar(32)) using delos_mvcc");
-            connection.commit();
-
-            executeUpdate(connection, "insert into mvcc_tx_rb_a values (1, 'ghost-left')");
-            executeUpdate(connection, "insert into mvcc_tx_rb_b values (1, 'ghost-right')");
+            assertRows(connection,
+                    "select a.name, b.name, h.name "
+                            + "from mvcc_read_a a, mvcc_read_b b, heap_read_t h "
+                            + "where a.id = b.id and b.id = h.id",
+                    "a|b|h");
             connection.rollback();
-
-            assertRows(connection,
-                    "select id, name from mvcc_tx_rb_a order by id");
-            assertRows(connection,
-                    "select id, name from mvcc_tx_rb_b order by id");
-        }
-
-        shutdownDatabase(databaseName);
-
-        try (Connection reopened = openDatabase(databaseName, false)) {
-            assertRows(reopened,
-                    "select id, name from mvcc_tx_rb_a order by id");
-            assertRows(reopened,
-                    "select id, name from mvcc_tx_rb_b order by id");
         }
     }
 
-
-    public void testTwoMvccTablesUpdateAndDeleteCommitInOneSqlTransactionSurvivesReopen() throws Exception {
-        String databaseName = databaseName("mvcc-sql-two-table-update-delete-commit-db");
+    public void testSecondMvccWriteRejectsBeforeItsMutation() throws Exception {
+        String databaseName = databaseName("mvcc-sql-multiple-mvcc-reject-db");
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
-            executeUpdate(connection, "create table mvcc_tx_ud_a (id int, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "create table mvcc_tx_ud_b (id int, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "insert into mvcc_tx_ud_a values (1, 'before')");
-            executeUpdate(connection, "insert into mvcc_tx_ud_b values (1, 'doomed')");
+            executeUpdate(connection, "create table mvcc_reject_a (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_reject_b (id int, name varchar(32)) using delos_mvcc");
             connection.commit();
 
-            assertEquals(1, executeUpdate(connection,
-                    "update mvcc_tx_ud_a set name = 'after' where id = 1"));
-            assertEquals(1, executeUpdate(connection,
-                    "delete from mvcc_tx_ud_b where id = 1"));
-            connection.commit();
+            executeUpdate(connection, "insert into mvcc_reject_a values (1, 'allowed-first')");
+            assertUnsupported(() -> executeUpdate(connection,
+                    "insert into mvcc_reject_b values (1, 'must-not-appear')"));
 
-            assertRows(connection,
-                    "select id, name from mvcc_tx_ud_a order by id",
-                    "1|after");
-            assertRows(connection,
-                    "select id, name from mvcc_tx_ud_b order by id");
-        }
-
-        shutdownDatabase(databaseName);
-
-        try (Connection reopened = openDatabase(databaseName, false)) {
-            assertRows(reopened,
-                    "select id, name from mvcc_tx_ud_a order by id",
-                    "1|after");
-            assertRows(reopened,
-                    "select id, name from mvcc_tx_ud_b order by id");
+            assertRows(connection, "select id, name from mvcc_reject_b order by id");
+            connection.rollback();
+            assertRows(connection, "select id, name from mvcc_reject_a order by id");
+            assertRows(connection, "select id, name from mvcc_reject_b order by id");
         }
     }
 
-
-    public void testTwoMvccTablesUpdateAndDeleteRollbackInOneSqlTransactionRestoresBothAfterReopen() throws Exception {
-        String databaseName = databaseName("mvcc-sql-two-table-update-delete-rollback-db");
+    public void testUpdateThenDeleteAcrossMvccTablesRejectsBeforeDelete() throws Exception {
+        String databaseName = databaseName("mvcc-sql-update-delete-reject-db");
 
         try (Connection connection = openDatabase(databaseName, true)) {
+            executeUpdate(connection, "create table mvcc_update_a (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_delete_b (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_update_a values (1, 'before')");
+            executeUpdate(connection, "insert into mvcc_delete_b values (1, 'survivor')");
+
             connection.setAutoCommit(false);
-            executeUpdate(connection, "create table mvcc_tx_ud_rb_a (id int, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "create table mvcc_tx_ud_rb_b (id int, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "insert into mvcc_tx_ud_rb_a values (1, 'before')");
-            executeUpdate(connection, "insert into mvcc_tx_ud_rb_b values (1, 'survivor')");
-            connection.commit();
-
             assertEquals(1, executeUpdate(connection,
-                    "update mvcc_tx_ud_rb_a set name = 'after' where id = 1"));
-            assertEquals(1, executeUpdate(connection,
-                    "delete from mvcc_tx_ud_rb_b where id = 1"));
-            connection.rollback();
-
+                    "update mvcc_update_a set name = 'after' where id = 1"));
+            assertUnsupported(() -> executeUpdate(connection,
+                    "delete from mvcc_delete_b where id = 1"));
             assertRows(connection,
-                    "select id, name from mvcc_tx_ud_rb_a order by id",
-                    "1|before");
-            assertRows(connection,
-                    "select id, name from mvcc_tx_ud_rb_b order by id",
+                    "select id, name from mvcc_delete_b order by id",
                     "1|survivor");
-        }
+            connection.rollback();
 
-        shutdownDatabase(databaseName);
-
-        try (Connection reopened = openDatabase(databaseName, false)) {
-            assertRows(reopened,
-                    "select id, name from mvcc_tx_ud_rb_a order by id",
+            assertRows(connection,
+                    "select id, name from mvcc_update_a order by id",
                     "1|before");
-            assertRows(reopened,
-                    "select id, name from mvcc_tx_ud_rb_b order by id",
+            assertRows(connection,
+                    "select id, name from mvcc_delete_b order by id",
                     "1|survivor");
         }
     }
 
-
-    public void testHeapAndMvccTablesCommitInOneSqlTransactionSurvivesReopen() throws Exception {
-        String databaseName = databaseName("mvcc-sql-mixed-heap-commit-db");
-
-        try (Connection connection = openDatabase(databaseName, true)) {
-            connection.setAutoCommit(false);
-            executeUpdate(connection, "create table heap_mixed_commit_t (id int, name varchar(32))");
-            executeUpdate(connection, "create table mvcc_mixed_commit_t (id int, name varchar(32)) using delos_mvcc");
-            connection.commit();
-
-            executeUpdate(connection, "insert into heap_mixed_commit_t values (1, 'heap')");
-            executeUpdate(connection, "insert into mvcc_mixed_commit_t values (1, 'mvcc')");
-            connection.commit();
-
-            assertRows(connection,
-                    "select id, name from heap_mixed_commit_t order by id",
-                    "1|heap");
-            assertRows(connection,
-                    "select id, name from mvcc_mixed_commit_t order by id",
-                    "1|mvcc");
-            connection.rollback();
-        }
-
-        shutdownDatabase(databaseName);
-
-        try (Connection reopened = openDatabase(databaseName, false)) {
-            assertRows(reopened,
-                    "select id, name from heap_mixed_commit_t order by id",
-                    "1|heap");
-            assertRows(reopened,
-                    "select id, name from mvcc_mixed_commit_t order by id",
-                    "1|mvcc");
-        }
-    }
-
-
-    public void testHeapAndMvccTablesRollbackInOneSqlTransactionLeavesBothEmptyAfterReopen() throws Exception {
-        String databaseName = databaseName("mvcc-sql-mixed-heap-rollback-db");
+    public void testMixedHeapAndMvccWritesRejectInBothOrdersBeforeSecondMutation() throws Exception {
+        String databaseName = databaseName("mvcc-sql-mixed-write-reject-db");
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
-            executeUpdate(connection, "create table heap_mixed_rollback_t (id int, name varchar(32))");
-            executeUpdate(connection, "create table mvcc_mixed_rollback_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table heap_reject_t (id int, name varchar(32))");
+            executeUpdate(connection, "create table mvcc_reject_t (id int, name varchar(32)) using delos_mvcc");
             connection.commit();
 
-            executeUpdate(connection, "insert into heap_mixed_rollback_t values (1, 'ghost-heap')");
-            executeUpdate(connection, "insert into mvcc_mixed_rollback_t values (1, 'ghost-mvcc')");
+            executeUpdate(connection, "insert into heap_reject_t values (1, 'heap-first')");
+            assertUnsupported(() -> executeUpdate(connection,
+                    "insert into mvcc_reject_t values (1, 'must-not-appear')"));
+            assertRows(connection, "select id, name from mvcc_reject_t order by id");
             connection.rollback();
 
+            executeUpdate(connection, "insert into mvcc_reject_t values (2, 'mvcc-first')");
+            assertUnsupported(() -> executeUpdate(connection,
+                    "insert into heap_reject_t values (2, 'must-not-appear')"));
             assertRows(connection,
-                    "select id, name from heap_mixed_rollback_t order by id");
-            assertRows(connection,
-                    "select id, name from mvcc_mixed_rollback_t order by id");
+                    "select id, name from heap_reject_t order by id");
             connection.rollback();
-        }
 
-        shutdownDatabase(databaseName);
-
-        try (Connection reopened = openDatabase(databaseName, false)) {
-            assertRows(reopened,
-                    "select id, name from heap_mixed_rollback_t order by id");
-            assertRows(reopened,
-                    "select id, name from mvcc_mixed_rollback_t order by id");
+            assertRows(connection, "select id, name from heap_reject_t order by id");
+            assertRows(connection, "select id, name from mvcc_reject_t order by id");
         }
     }
 
+    public void testMvccXaWriteRejectsBeforeMutationWhileHeapXaRemainsSupported() throws Exception {
+        String databaseName = databaseName("mvcc-sql-xa-write-reject-db");
 
-    public void testHeapAndMvccTablesUpdateAndDeleteCommitInOneSqlTransactionSurvivesReopen() throws Exception {
-        String databaseName = databaseName("mvcc-sql-mixed-heap-update-delete-commit-db");
-
-        try (Connection connection = openDatabase(databaseName, true)) {
-            connection.setAutoCommit(false);
-            executeUpdate(connection, "create table heap_mixed_ud_t (id int, name varchar(32))");
-            executeUpdate(connection, "create table mvcc_mixed_ud_t (id int, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "insert into heap_mixed_ud_t values (1, 'heap-before')");
-            executeUpdate(connection, "insert into mvcc_mixed_ud_t values (1, 'mvcc-survivor')");
-            connection.commit();
-
-            assertEquals(1, executeUpdate(connection,
-                    "update heap_mixed_ud_t set name = 'heap-after' where id = 1"));
-            assertEquals(1, executeUpdate(connection,
-                    "delete from mvcc_mixed_ud_t where id = 1"));
-            connection.commit();
-
-            assertRows(connection,
-                    "select id, name from heap_mixed_ud_t order by id",
-                    "1|heap-after");
-            assertRows(connection,
-                    "select id, name from mvcc_mixed_ud_t order by id");
-            connection.rollback();
+        try (Connection setup = openDatabase(databaseName, true)) {
+            executeUpdate(setup, "create table mvcc_xa_reject_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(setup, "create table heap_xa_supported_t (id int, name varchar(32))");
         }
 
-        shutdownDatabase(databaseName);
+        XADataSource dataSource = J2EEDataSource.getXADataSource();
+        J2EEDataSource.setBeanProperty(dataSource, "databaseName", databaseName);
 
-        try (Connection reopened = openDatabase(databaseName, false)) {
-            assertRows(reopened,
-                    "select id, name from heap_mixed_ud_t order by id",
-                    "1|heap-after");
-            assertRows(reopened,
-                    "select id, name from mvcc_mixed_ud_t order by id");
-        }
-    }
-
-
-    public void testHeapAndMvccTablesUpdateAndDeleteRollbackInOneSqlTransactionRestoresBothAfterReopen() throws Exception {
-        String databaseName = databaseName("mvcc-sql-mixed-heap-update-delete-rollback-db");
-
-        try (Connection connection = openDatabase(databaseName, true)) {
-            connection.setAutoCommit(false);
-            executeUpdate(connection, "create table heap_mixed_ud_rb_t (id int, name varchar(32))");
-            executeUpdate(connection, "create table mvcc_mixed_ud_rb_t (id int, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "insert into heap_mixed_ud_rb_t values (1, 'heap-before')");
-            executeUpdate(connection, "insert into mvcc_mixed_ud_rb_t values (1, 'mvcc-survivor')");
-            connection.commit();
-
-            assertEquals(1, executeUpdate(connection,
-                    "update heap_mixed_ud_rb_t set name = 'heap-after' where id = 1"));
-            assertEquals(1, executeUpdate(connection,
-                    "delete from mvcc_mixed_ud_rb_t where id = 1"));
-            connection.rollback();
-
-            assertRows(connection,
-                    "select id, name from heap_mixed_ud_rb_t order by id",
-                    "1|heap-before");
-            assertRows(connection,
-                    "select id, name from mvcc_mixed_ud_rb_t order by id",
-                    "1|mvcc-survivor");
-            connection.rollback();
+        Xid heapXid = XATestUtil.getXid(0x8201, 1, 1);
+        XAConnection heapXaConnection = dataSource.getXAConnection();
+        try (Connection connection = heapXaConnection.getConnection()) {
+            XAResource resource = heapXaConnection.getXAResource();
+            resource.start(heapXid, XAResource.TMNOFLAGS);
+            executeUpdate(connection, "insert into heap_xa_supported_t values (1, 'heap-xa')");
+            resource.end(heapXid, XAResource.TMSUCCESS);
+            resource.commit(heapXid, true);
+        } finally {
+            heapXaConnection.close();
         }
 
-        shutdownDatabase(databaseName);
+        Xid mvccXid = XATestUtil.getXid(0x8202, 2, 2);
+        XAConnection mvccXaConnection = dataSource.getXAConnection();
+        try (Connection connection = mvccXaConnection.getConnection()) {
+            XAResource resource = mvccXaConnection.getXAResource();
+            resource.start(mvccXid, XAResource.TMNOFLAGS);
+            assertUnsupported(() -> executeUpdate(connection,
+                    "insert into mvcc_xa_reject_t values (1, 'must-not-appear')"));
+            resource.end(mvccXid, XAResource.TMFAIL);
+            resource.rollback(mvccXid);
+        } finally {
+            mvccXaConnection.close();
+        }
 
-        try (Connection reopened = openDatabase(databaseName, false)) {
-            assertRows(reopened,
-                    "select id, name from heap_mixed_ud_rb_t order by id",
-                    "1|heap-before");
-            assertRows(reopened,
-                    "select id, name from mvcc_mixed_ud_rb_t order by id",
-                    "1|mvcc-survivor");
+        try (Connection verification = openDatabase(databaseName, false)) {
+            assertRows(verification,
+                    "select id, name from heap_xa_supported_t order by id",
+                    "1|heap-xa");
+            assertRows(verification,
+                    "select id, name from mvcc_xa_reject_t order by id");
         }
     }
 
-
+    private static void assertUnsupported(SqlAction action) throws SQLException {
+        try {
+            action.run();
+            fail("Expected temporary transaction-topology rejection");
+        } catch (SQLException expected) {
+            assertEquals("unexpected SQLState for transaction-topology rejection",
+                    UNSUPPORTED_SQL_STATE,
+                    expected.getSQLState());
+        }
+    }
 }

@@ -26,6 +26,7 @@ import org.apache.derby.catalog.UUID;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.services.io.StreamStorable;
+import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.ResultColumnDescriptor;
 import org.apache.derby.iapi.sql.ResultDescription;
@@ -35,11 +36,13 @@ import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.transaction.TransactionControl;
 import org.apache.derby.iapi.types.DataTypeDescriptor;
 import org.apache.derby.iapi.types.DeferredConstraintRecorder;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.shared.common.sanity.SanityManager;
+import org.apache.derby.shared.common.reference.SQLState;
 
 /**
  * For INSERT/UPDATE/DELETE impls.  Used to tag them.
@@ -92,6 +95,20 @@ abstract public class DMLWriteResultSet extends NoRowsResultSetImpl
 		// Special handling for updatable VTIs
 		if (! (constantAction instanceof UpdatableVTIConstantAction))
 		{
+            boolean mvcc = tc.getStaticCompiledConglomInfo(this.constantAction.conglomId)
+                    .getTypeFormatId() == StoredFormatIds.ACCESS_MVCC_V1_ID;
+            DelosStorageTransactionRegistry.WriteParticipationResult participation =
+                    DelosStorageTransactionRegistry.registerWriteIntent(
+                            tc,
+                            this.constantAction.conglomId,
+                            mvcc,
+                            tc.isGlobal());
+            if (participation != DelosStorageTransactionRegistry.WriteParticipationResult.ALLOWED) {
+                throw StandardException.newException(
+                        SQLState.NOT_IMPLEMENTED,
+                        participation.description());
+            }
+
 			heapDCOCI = tc.getDynamicCompiledConglomInfo(this.constantAction.conglomId);
 			if (this.constantAction.indexCIDS.length != 0)
 			{

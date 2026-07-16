@@ -705,6 +705,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSerializableSemanticsTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccTransactionParticipationTest',
+        'Runs the Phase 8.2 fail-closed transaction participation proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccDatabaseRuntimeIsolationTest',
         'Runs the simultaneous multi-database MVCC runtime ownership proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlDatabaseRuntimeIsolationTest.class'])
