@@ -102,12 +102,12 @@ Run it directly with:
 `delosMvccTableRebuildProviderTruthStaticAnalysis` is a stable S0 gate. It verifies that inherited
 base-table rebuild DDL cannot reach the hard-coded Derby heap replacement path for an MVCC table.
 The gate requires early provider-aware rejection for offline compress, truncate, and drop-column
-rebuilds. Direct rebuild DDL must expose stable SQLState `0A000`. The public
-`SYSCS_COMPRESS_TABLE` Java routine must expose Derby's routine wrapper SQLState `38000`; the
-focused test separately executes the underlying rebuild DDL so the engine-level `0A000` contract
-remains directly verified. The gate also requires provider-preserving in-place maintenance in the
-long-row proof and proof that rejected operations preserve both data and `delos_mvcc` identity
-across reopen.
+rebuilds. Directly exposed rebuild DDL such as `TRUNCATE TABLE` and `ALTER TABLE ... DROP COLUMN`
+must return stable SQLState `0A000`. Offline compression is exposed publicly only through the
+`SYSCS_COMPRESS_TABLE` Java routine: JDBC callers receive Derby's outer routine SQLState `38000`,
+and the exception chain must retain the underlying engine SQLState `0A000`. The gate also requires
+provider-preserving in-place maintenance in the long-row proof and proof that rejected operations
+preserve both data and `delos_mvcc` identity across reopen.
 
 Run it directly with:
 

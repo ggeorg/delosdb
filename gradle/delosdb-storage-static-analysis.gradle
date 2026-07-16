@@ -3277,11 +3277,12 @@ tasks.register('delosMvccTableRebuildProviderTruthStaticAnalysis') {
             if (longRowText.contains('SYSCS_COMPRESS_TABLE')) {
                 failures << 'Long-row MVCC proof must not use inherited offline table rebuild compression'
             }
-            ['alter table mvcc_rebuild_compress compress sequential',
-             'SYSCS_COMPRESS_TABLE', 'truncate table mvcc_rebuild_truncate',
+            ['SYSCS_COMPRESS_TABLE', 'truncate table mvcc_rebuild_truncate',
              'drop column drop_value', 'NOT_IMPLEMENTED_SQLSTATE = "0A000"',
              'ROUTINE_EXCEPTION_SQLSTATE = "38000"', 'assertDirectlyRejected',
-             'assertRoutineRejected', 'assertMvccStorageProvider'].each { token ->
+             'assertRoutineRejected', 'containsSqlState',
+             'SYSCS_COMPRESS_TABLE must retain the underlying 0A000 rebuild rejection',
+             'assertMvccStorageProvider'].each { token ->
                 if (!truthTestText.contains(token)) {
                     failures << 'MVCC rebuild truth test is missing token: ' + token
                 }

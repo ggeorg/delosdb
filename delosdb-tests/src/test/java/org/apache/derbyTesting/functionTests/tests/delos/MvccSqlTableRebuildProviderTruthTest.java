@@ -23,6 +23,11 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
+
+import org.apache.derby.shared.common.error.StandardException;
 
 /** SQL proof that inherited table rebuilds cannot silently convert MVCC tables to heap. */
 public final class MvccSqlTableRebuildProviderTruthTest extends MvccSqlTestSupport {
@@ -45,8 +50,6 @@ public final class MvccSqlTableRebuildProviderTruthTest extends MvccSqlTestSuppo
             executeUpdate(connection, "insert into mvcc_rebuild_drop values (3, 30, 300)");
             connection.commit();
 
-            assertDirectlyRejected(connection,
-                    "alter table mvcc_rebuild_compress compress sequential");
             assertRoutineRejected(connection,
                     "call SYSCS_UTIL.SYSCS_COMPRESS_TABLE('APP', 'MVCC_REBUILD_COMPRESS', 1)");
             assertDirectlyRejected(connection, "truncate table mvcc_rebuild_truncate");
@@ -89,7 +92,39 @@ public final class MvccSqlTableRebuildProviderTruthTest extends MvccSqlTestSuppo
             fail("Expected unsupported MVCC table rebuild routine: " + sql);
         } catch (SQLException e) {
             assertEquals(ROUTINE_EXCEPTION_SQLSTATE, e.getSQLState());
+            assertTrue(
+                    "SYSCS_COMPRESS_TABLE must retain the underlying 0A000 rebuild rejection",
+                    containsSqlState(e, NOT_IMPLEMENTED_SQLSTATE));
             connection.rollback();
         }
+    }
+
+    private static boolean containsSqlState(Throwable throwable, String expectedSqlState) {
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        return containsSqlState(throwable, expectedSqlState, visited);
+    }
+
+    private static boolean containsSqlState(
+            Throwable throwable,
+            String expectedSqlState,
+            Set<Throwable> visited) {
+        if (throwable == null || !visited.add(throwable)) {
+            return false;
+        }
+
+        if (throwable instanceof SQLException) {
+            SQLException sqlException = (SQLException) throwable;
+            if (expectedSqlState.equals(sqlException.getSQLState())) {
+                return true;
+            }
+            if (containsSqlState(sqlException.getNextException(), expectedSqlState, visited)) {
+                return true;
+            }
+        } else if (throwable instanceof StandardException
+                && expectedSqlState.equals(((StandardException) throwable).getSQLState())) {
+            return true;
+        }
+
+        return containsSqlState(throwable.getCause(), expectedSqlState, visited);
     }
 }
