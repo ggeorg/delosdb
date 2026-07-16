@@ -59,6 +59,41 @@ stale milestone language in supported storage classes with present-tense ownersh
 and consolidates completed phase documents into current protocol authorities and a small
 `docs/history/` provenance set.
 
+## Derby peer-module preservation
+
+Do not consolidate these modules as part of cleanup:
+
+```text
+:delosdb-engine
+:delosdb-client
+:delosdb-tools
+:delosdb-server
+:delosdb-runner
+:delosdb-optionaltools
+:delosdb-commons
+:delosdb-tests
+:delosdb-pptesting
+:delosdb-storeless
+:delosdb-osgi-stub
+:delosdb-locales
+:delosdb-demos
+:delosdb-buildtools
+```
+
+These modules preserve Derby source, compatibility, test, tooling, locale, bootstrap, and product
+boundaries. Cleanup may improve their build wiring or ownership documentation, but it must not
+collapse them merely to reduce the visible module count. Any future boundary change requires a
+separate dependency and compatibility decision.
+
+The maintained classification is verified by:
+
+```bash
+./gradlew delosDerbyModuleParityStaticAnalysis
+```
+
+`delosDerbyModuleParityStaticAnalysis` is a permanent structural gate and is part of
+`s0CloseoutVerification`.
+
 ## Permanent rule
 
 Production Java source must not contain system-property routing names beginning with:
