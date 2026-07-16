@@ -45,18 +45,28 @@ more specific:
 
 The references are comparative, not product templates.
 
-## Research directions aligned with DelosDB
+## V1 research foundation
 
 ```text
-mechanistically explainable query execution
-inspectable MVCC and recovery
-deterministic failure and maintenance schedules
-correctness-driven fault injection
-heap/MVCC differential storage experiments
-readable optimizer experiments
-group-commit and durability-policy studies
-version-reclamation and maintenance studies
-structured read-only diagnostics for later tooling
+immutable structured observability snapshots
+deterministic fault injection and replay
+storage-aware EXPLAIN ANALYZE
+reproducible experiment and benchmark manifests
+```
+
+These capabilities support correctness, teaching, and controlled experiments inside the production
+engine.
+
+## Post-v1 research directions
+
+```text
+transaction and row-version provenance views
+MVCC time travel with explicit retention semantics
+adaptive durability and maintenance policies
+robust optimizer feedback and plan confidence
+online index construction
+what-if plans and index advice
+read-only external tools over authoritative snapshots
 ```
 
 ## Directions outside v1
