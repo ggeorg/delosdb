@@ -10,6 +10,8 @@ not a substitute for these documents.
 |---|---|
 | [`PRODUCT-STRATEGY.md`](PRODUCT-STRATEGY.md) | v1.0 strategic commitments, scope, and design principles |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | complete SQL-to-result and durable-state architecture |
+| [`RESEARCH-POSITIONING.md`](RESEARCH-POSITIONING.md) | research identity, scope, and comparative reference points |
+| [`DUCKDB-COMPARISON.md`](DUCKDB-COMPARISON.md) | source-backed DuckDB lessons and deliberate non-adoption |
 | [`DERBY-COMPATIBILITY.md`](DERBY-COMPATIBILITY.md) | compatibility boundaries and deliberate differences |
 | [`STORAGE-ARCHITECTURE.md`](STORAGE-ARCHITECTURE.md) | heap/MVCC storage ownership and durable boundaries |
 | [`DELOSDB-SERVER.md`](DELOSDB-SERVER.md) | DRDA server architecture and configuration |

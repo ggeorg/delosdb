@@ -1,106 +1,102 @@
-# DelosDB architecture
 
-## System boundary
+# DelosDB Architecture
 
-DelosDB is one relational database engine with two storage modes. The parser, binder, optimizer,
-execution engine, transaction boundary, catalog, JDBC layer, and DRDA server are shared.
+## Complete system
+
+DelosDB is one relational engine with Derby-compatible heap and optional MVCC storage.
 
 ```text
-Embedded JDBC                         Derby-compatible network client
-      |                                           |
-      +-------------------+-----------------------+
-                          |
-                    SQL statement
-                          |
-                    GenericStatement
-                          |
-                 parser and binder
-                          |
-                    Derby optimizer
-                          |
-              generated Activation bytecode
-                          |
-                  NoPutResultSet tree
-                          |
-              LanguageConnectionContext
-                          |
-                TransactionController
-                          |
-               conglomerate/access method
-                    /                 \
-          Derby heap/raw store      delos_mvcc
-                    \                 /
-                row and index results
-                          |
-                  EmbedResultSet / DRDA
+Embedded JDBC or Derby-compatible DRDA
+    → parser and binder
+    → Derby optimizer
+    → generated Activation
+    → NoPutResultSet tree
+    → language and transaction boundary
+    → heap or delos_mvcc
+    → EmbedResultSet or DRDA result
 ```
 
-## Compilation
+The SQL compiler, optimizer, catalog, and execution infrastructure are shared. MVCC is not a second
+SQL engine.
 
-### Parse and bind
+## Database ownership
 
-Derby's SQL grammar produces statement nodes. Binding resolves schemas, tables, columns, types,
-privileges, routines, constraints, and catalog dependencies.
+### Current defect
 
-### Optimize
+The current MVCC bridge contains mutable process-global database-directory state used to resolve
+stores and table state. That is not an acceptable ownership boundary for multiple active databases.
 
-The Derby optimizer remains the planning authority. Storage providers expose the cost and access
-information needed by the existing optimizer; they do not introduce a second planner.
+### V1 target
 
-### Generate
+Each database owns one explicit runtime:
 
-The compiler generates activation bytecode and result-set construction calls. DelosDB uses the
-permanent ASM backend for generated classes while preserving Derby's activation and result-set
-contracts.
+```text
+MvccDatabaseRuntime
+    canonical identity
+    storage and table-state registry
+    maintenance service
+    backup coordinator
+    transaction coordinator
+    database diagnostics
+    close lifecycle
+```
 
-## Execution
+Conglomerates attach to the runtime through their owning database/factory context. Deserialization
+restores persistent metadata before runtime attachment. Diagnostics never select a database through
+ambient global state.
 
-Generated activations construct a `NoPutResultSet` tree. Operators implement scans, joins,
-aggregates, sorts, projections, mutations, constraints, and result delivery.
+## Transaction ownership
 
-The authoritative heap path uses Derby's established result-set and access-method implementation.
-Phase-named proof routes and hidden system-property alternatives are not supported production
-features and are prohibited from the main source tree.
+### Current limitation
 
-## Transaction and storage dispatch
+The transaction registry currently completes MVCC writers sequentially before Derby raw-store
+commit. This coordinates commit timing but does not prove one failure-atomic outcome when several
+MVCC tables or heap and MVCC participate.
 
-The language connection coordinates commit, rollback, savepoints, isolation, and transaction
-participants. Table descriptors and conglomerate metadata select the physical access method.
+### V1 target
 
-### Derby heap
+```text
+prepare participants
+validate
+stage durable payloads
+record one authoritative transaction decision
+publish participant outcomes
+recover interrupted publication
+acknowledge
+```
 
-The heap path owns Derby-compatible page, row-location, lock, raw-log, and recovery behavior.
+Until the protocol is complete, unsafe multi-MVCC, mixed-write, and XA combinations reject before
+mutation with stable SQLStates.
+
+## Compilation and execution
+
+Derby's grammar, binding, optimizer, generated activations, and result-set operators remain
+authoritative. Phase-named proof routes and hidden production alternatives are prohibited.
+
+## Storage modes
+
+### Heap
+
+Heap owns Derby-compatible pages, locks, raw logging, recovery, and durable formats.
 
 ### `delos_mvcc`
 
-The MVCC access-method bridge adapts Derby's conglomerate contracts to the DelosDB storage API and
-page-backed MVCC implementation. It owns version visibility, ordered-index sidecars, transaction
-status, outcomes, page WAL, recovery, maintenance, and database-scoped backup coordination.
+MVCC owns versions, visibility, page-backed rows, ordered indexes, transaction payloads, recovery,
+maintenance, consistency, and database-scoped backup participation.
 
-## Result delivery
+## Plan and diagnostic model
 
-Embedded execution returns `EmbedResultSet` instances. Network execution uses the same compiled and
-executed query but encodes results through the Derby-compatible DRDA server.
+V1 adds stable, read-only plan, profile, and diagnostic snapshots derived from authoritative engine
+state. DuckDB's first-class EXPLAIN/profiling model is a useful reference; DelosDB retains its own
+execution architecture.
 
-## Ownership rules
+## Source and module ownership
 
-- The Derby compiler and optimizer remain authoritative for SQL semantics and plan selection.
-- Storage providers own physical row, index, durability, and consistency behavior.
-- The transaction layer owns cross-table commit and rollback participation.
-- The DRDA server preserves the wire protocol and must not become a second SQL engine.
-- Diagnostics observe authoritative execution; they do not become hidden routing mechanisms.
-- Test comparison modes remain package-private or test-only and are removed after an algorithm is
-  accepted.
+Artifacts, Gradle projects, and JPMS modules are separate graphs. Source ownership should make the
+RDBMS understandable, but one project or module per conceptual chapter is not required. DuckDB's
+subsystem directories assembled into one library demonstrate that distinction.
 
-## Maintainability requirement
+## Maintainability
 
-Each major subsystem must provide:
-
-- a named responsibility and owner;
-- explicit inputs, outputs, and invariants;
-- documented lifecycle and failure behavior;
-- focused verification and diagnostics;
-- a corresponding architecture or book section.
-
-Large classes are extraction candidates when they own multiple independent invariants or lifecycle
-stages. Line count alone is not the criterion.
+Each major subsystem has one named owner, explicit invariants and failure behavior, focused proof,
+diagnostics, and corresponding architecture/book material.
