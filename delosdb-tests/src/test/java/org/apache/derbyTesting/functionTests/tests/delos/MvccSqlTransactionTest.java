@@ -26,6 +26,7 @@ import java.sql.SQLException;
 
 import javax.sql.XAConnection;
 import javax.sql.XADataSource;
+import javax.transaction.xa.XAException;
 import javax.transaction.xa.XAResource;
 import javax.transaction.xa.Xid;
 
@@ -63,6 +64,7 @@ public final class MvccSqlTransactionTest extends MvccSqlTestSupport {
             assertRows(connection,
                     "select id, name from heap_supported_b order by id",
                     "1|right");
+            connection.rollback();
         }
     }
 
@@ -159,6 +161,7 @@ public final class MvccSqlTransactionTest extends MvccSqlTestSupport {
 
             assertRows(connection, "select id, name from heap_reject_t order by id");
             assertRows(connection, "select id, name from mvcc_reject_t order by id");
+            connection.rollback();
         }
     }
 
@@ -192,7 +195,12 @@ public final class MvccSqlTransactionTest extends MvccSqlTestSupport {
             resource.start(mvccXid, XAResource.TMNOFLAGS);
             assertUnsupported(() -> executeUpdate(connection,
                     "insert into mvcc_xa_reject_t values (1, 'must-not-appear')"));
-            resource.end(mvccXid, XAResource.TMFAIL);
+            try {
+                resource.end(mvccXid, XAResource.TMFAIL);
+                fail("Expected XA rollback-only outcome after TMFAIL");
+            } catch (XAException expected) {
+                assertEquals(XAException.XA_RBROLLBACK, expected.errorCode);
+            }
             resource.rollback(mvccXid);
         } finally {
             mvccXaConnection.close();
