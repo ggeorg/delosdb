@@ -113,3 +113,7 @@ replay_pid*.log
 /dev/storage-phase-o2-*/
 /dev/storage-phase-o3-*/
 /dev/storage-phase-o4-*/
+
+# Local DelosDB v1.0 planning, research, and book workspace.
+# Stable conclusions are promoted into tracked README/docs when phases close.
+/.delosdb-v1/
